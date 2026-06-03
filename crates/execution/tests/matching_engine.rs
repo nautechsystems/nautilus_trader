@@ -1113,6 +1113,57 @@ fn test_valid_market_buy(
 }
 
 #[rstest]
+fn test_market_fill_caps_pending_cached_quantity_before_commission(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.500"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&ask).unwrap();
+
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-CAP"))
+        .submit(true)
+        .build();
+
+    engine_l2.process_order(&mut market_order, account_id);
+    engine_l2.fill_market_order(market_order.client_order_id());
+
+    let fills: Vec<OrderFilled> = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 2);
+    assert_eq!(fills[0].last_qty, Quantity::from("1.500"));
+    assert_eq!(fills[1].last_qty, Quantity::from("0.500"));
+
+    let commission = fills[1].commission.expect("expected commission");
+    let expected_commission = fills[1].last_qty.as_decimal()
+        * fills[1].last_px.as_decimal()
+        * instrument_eth_usdt.taker_fee();
+    assert_eq!(commission.currency, instrument_eth_usdt.quote_currency());
+    assert_eq!(commission.as_decimal(), expected_commission);
+}
+
+#[rstest]
 fn test_market_order_with_acks_generates_accepted_then_filled(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,

@@ -4672,19 +4672,21 @@ impl OrderMatchingEngine {
         self.check_size_precision(last_qty.precision, "fill quantity")
             .unwrap();
 
-        match self.cached_filled_qty.get(&order.client_order_id()) {
-            Some(filled_qty) => {
-                // Use saturating_sub to prevent panic if filled_qty > quantity
+        let (last_qty, new_filled_qty) =
+            if let Some(filled_qty) = self.cached_filled_qty.get(&order.client_order_id()) {
                 let leaves_qty = order.quantity().saturating_sub(*filled_qty);
                 let last_qty = min(last_qty, leaves_qty);
-                let new_filled_qty = *filled_qty + last_qty;
-                self.cached_filled_qty
-                    .insert(order.client_order_id(), new_filled_qty);
-            }
-            None => {
-                self.cached_filled_qty
-                    .insert(order.client_order_id(), last_qty);
-            }
+                (last_qty, *filled_qty + last_qty)
+            } else {
+                let last_qty = min(last_qty, order.quantity());
+                (last_qty, last_qty)
+            };
+
+        self.cached_filled_qty
+            .insert(order.client_order_id(), new_filled_qty);
+
+        if last_qty.is_zero() {
+            return;
         }
 
         let underlying_px = self.fee_underlying_price();
