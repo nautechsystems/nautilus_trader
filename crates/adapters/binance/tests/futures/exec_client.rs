@@ -41,6 +41,7 @@ use nautilus_binance::{
     common::{
         consts::{BINANCE_CLIENT_ID, BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_VENUE},
         encoder::encode_broker_id,
+        enums::BinanceProductType,
         parse::parse_usdm_instrument,
     },
     config::BinanceExecClientConfig,
@@ -959,6 +960,7 @@ fn create_test_execution_client(
     let config = BinanceExecClientConfig {
         trader_id,
         account_id,
+        product_type: BinanceProductType::UsdM,
         base_url_http: Some(base_url_http),
         base_url_ws: Some(base_url_ws),
         use_ws_trading: false,
@@ -1019,6 +1021,39 @@ async fn test_client_creation() {
     assert_eq!(client.venue(), *BINANCE_VENUE);
     assert_eq!(client.oms_type(), OmsType::Hedging);
     assert!(!client.is_connected());
+}
+
+#[rstest]
+fn test_client_creation_rejects_spot_product_type() {
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("BINANCE-001");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        trader_id,
+        *BINANCE_CLIENT_ID,
+        *BINANCE_VENUE,
+        OmsType::Hedging,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache,
+    );
+    let config = BinanceExecClientConfig {
+        trader_id,
+        account_id,
+        product_type: BinanceProductType::Spot,
+        ..Default::default()
+    };
+
+    let result = BinanceFuturesExecutionClient::new(core, config);
+
+    let Err(e) = result else {
+        panic!("futures execution client should reject Spot product type");
+    };
+    assert_eq!(
+        e.to_string(),
+        "BinanceFuturesExecutionClient requires UsdM or CoinM product type, was Spot",
+    );
 }
 
 #[rstest]
@@ -2782,6 +2817,7 @@ fn create_test_execution_client_with_ws_trading(
     let config = BinanceExecClientConfig {
         trader_id,
         account_id,
+        product_type: BinanceProductType::UsdM,
         base_url_http: Some(base_url_http),
         base_url_ws: Some(base_url_ws),
         base_url_ws_trading: Some(base_url_ws_trading),

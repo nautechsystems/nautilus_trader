@@ -39,9 +39,9 @@ use crate::common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProduct
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.binance")
 )]
 pub struct BinanceDataClientConfig {
-    /// Product types to subscribe to.
-    #[builder(default = vec![BinanceProductType::Spot])]
-    pub product_types: Vec<BinanceProductType>,
+    /// Product type to subscribe to.
+    #[builder(default = BinanceProductType::Spot)]
+    pub product_type: BinanceProductType,
     /// Environment (live, testnet, or demo).
     #[builder(default = BinanceEnvironment::Live)]
     pub environment: BinanceEnvironment,
@@ -99,9 +99,9 @@ pub struct BinanceExecClientConfig {
     /// Account ID for the client.
     #[builder(default = AccountId::from("BINANCE-001"))]
     pub account_id: AccountId,
-    /// Product types to trade.
-    #[builder(default = vec![BinanceProductType::Spot])]
-    pub product_types: Vec<BinanceProductType>,
+    /// Product type to trade.
+    #[builder(default = BinanceProductType::Spot)]
+    pub product_type: BinanceProductType,
     /// Environment (live, testnet, or demo).
     #[builder(default = BinanceEnvironment::Live)]
     pub environment: BinanceEnvironment,
@@ -178,18 +178,27 @@ mod tests {
         let config: BinanceDataClientConfig = toml::from_str(
             r#"
 environment = "Testnet"
-product_types = ["SPOT", "USD_M"]
+product_type = "USD_M"
 instrument_status_poll_secs = 600
 "#,
         )
         .unwrap();
 
         assert_eq!(config.environment, BinanceEnvironment::Testnet);
-        assert_eq!(
-            config.product_types,
-            vec![BinanceProductType::Spot, BinanceProductType::UsdM]
-        );
+        assert_eq!(config.product_type, BinanceProductType::UsdM);
         assert_eq!(config.instrument_status_poll_secs, 600);
+    }
+
+    #[rstest]
+    fn test_data_config_toml_rejects_plural_product_types() {
+        let result = toml::from_str::<BinanceDataClientConfig>(
+            r#"
+product_types = ["SPOT", "USD_M"]
+"#,
+        );
+
+        let message = result.unwrap_err().to_string();
+        assert!(message.contains("unknown field `product_types`"));
     }
 
     #[rstest]
@@ -198,7 +207,7 @@ instrument_status_poll_secs = 600
         let expected = BinanceExecClientConfig::default();
 
         assert_eq!(config.environment, expected.environment);
-        assert_eq!(config.product_types, expected.product_types);
+        assert_eq!(config.product_type, expected.product_type);
         assert_eq!(config.use_ws_trading, expected.use_ws_trading);
         assert_eq!(config.use_position_ids, expected.use_position_ids);
         assert_eq!(config.default_taker_fee, expected.default_taker_fee);

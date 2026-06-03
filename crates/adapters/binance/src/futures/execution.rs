@@ -163,14 +163,18 @@ impl BinanceFuturesExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the HTTP client fails to initialize or credentials are missing.
+    /// Returns an error if the HTTP client fails to initialize, credentials are
+    /// missing, or the product type is not a futures type (UsdM or CoinM).
     pub fn new(core: ExecutionClientCore, config: BinanceExecClientConfig) -> anyhow::Result<Self> {
-        let product_type = config
-            .product_types
-            .iter()
-            .find(|pt| matches!(pt, BinanceProductType::UsdM | BinanceProductType::CoinM))
-            .copied()
-            .unwrap_or(BinanceProductType::UsdM);
+        let product_type = config.product_type;
+        match product_type {
+            BinanceProductType::UsdM | BinanceProductType::CoinM => {}
+            _ => {
+                anyhow::bail!(
+                    "BinanceFuturesExecutionClient requires UsdM or CoinM product type, was {product_type:?}"
+                );
+            }
+        }
 
         let (api_key, api_secret) = resolve_credentials(
             config.api_key.clone(),

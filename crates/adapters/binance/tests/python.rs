@@ -75,7 +75,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
     let config = Py::new(
         py,
         BinanceDataClientConfig {
-            product_types: vec![BinanceProductType::UsdM],
+            product_type: BinanceProductType::UsdM,
             environment: BinanceEnvironment::Testnet,
             ..BinanceDataClientConfig::default()
         },
@@ -107,7 +107,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
 
     assert_eq!(extracted_factory.name(), BINANCE);
     assert_eq!(extracted_factory.config_type(), "BinanceDataClientConfig");
-    assert_eq!(binance_config.product_types, [BinanceProductType::UsdM]);
+    assert_eq!(binance_config.product_type, BinanceProductType::UsdM);
     assert_eq!(binance_config.environment, BinanceEnvironment::Testnet);
     assert_eq!(client.client_id(), ClientId::from("BINANCE-DATA-EXTRACTED"));
 }
@@ -123,7 +123,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         BinanceExecClientConfig {
             trader_id,
             account_id,
-            product_types: vec![BinanceProductType::UsdM],
+            product_type: BinanceProductType::UsdM,
             environment: BinanceEnvironment::Testnet,
             api_key: Some(SMOKE_API_KEY.to_string()),
             api_secret: Some(SMOKE_API_SECRET.to_string()),
@@ -158,7 +158,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     assert_eq!(extracted_factory.config_type(), "BinanceExecClientConfig");
     assert_eq!(binance_config.trader_id, trader_id);
     assert_eq!(binance_config.account_id, account_id);
-    assert_eq!(binance_config.product_types, [BinanceProductType::UsdM]);
+    assert_eq!(binance_config.product_type, BinanceProductType::UsdM);
     assert_eq!(client.client_id(), ClientId::from("BINANCE-EXEC-EXTRACTED"));
     assert_eq!(client.account_id(), account_id);
 }

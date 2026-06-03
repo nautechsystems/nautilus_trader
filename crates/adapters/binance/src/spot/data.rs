@@ -60,7 +60,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::BINANCE_VENUE, credential::resolve_credentials, enums::BinanceProductType,
+        consts::BINANCE_VENUE, credential::resolve_credentials,
         parse::bar_spec_to_binance_interval, status::diff_and_emit_statuses,
     },
     config::BinanceDataClientConfig,
@@ -144,17 +144,11 @@ impl BinanceSpotDataClient {
             None, // proxy_url
         )?;
 
-        let product_type = config
-            .product_types
-            .first()
-            .copied()
-            .unwrap_or(BinanceProductType::Spot);
-
         let creds = resolve_credentials(
             config.api_key.clone(),
             config.api_secret.clone(),
             config.environment,
-            product_type,
+            config.product_type,
         )
         .inspect_err(|e| {
             log::warn!(
@@ -978,9 +972,9 @@ impl DataClient for BinanceSpotDataClient {
 
     fn start(&mut self) -> anyhow::Result<()> {
         log::info!(
-            "Started: client_id={}, product_types={:?}, environment={:?}",
+            "Started: client_id={}, product_type={:?}, environment={:?}",
             self.client_id,
-            self.config.product_types,
+            self.config.product_type,
             self.config.environment,
         );
         Ok(())

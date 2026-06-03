@@ -85,11 +85,7 @@ impl DataClientFactory for BinanceDataClientFactory {
 
         let client_id = ClientId::from(name);
 
-        let product_type = binance_config
-            .product_types
-            .first()
-            .copied()
-            .unwrap_or(BinanceProductType::Spot);
+        let product_type = binance_config.product_type;
 
         match product_type {
             BinanceProductType::Spot => {
@@ -159,11 +155,7 @@ impl ExecutionClientFactory for BinanceExecutionClientFactory {
             })?
             .clone();
 
-        let product_type = binance_config
-            .product_types
-            .first()
-            .copied()
-            .unwrap_or(BinanceProductType::Spot);
+        let product_type = binance_config.product_type;
 
         match product_type {
             BinanceProductType::Spot => {

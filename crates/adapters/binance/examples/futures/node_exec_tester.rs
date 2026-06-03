@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
 
     let data_config = BinanceDataClientConfig {
-        product_types: vec![BinanceProductType::UsdM],
+        product_type: BinanceProductType::UsdM,
         environment: BinanceEnvironment::Testnet,
         api_key: None,
         api_secret: None,
@@ -61,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let exec_config = BinanceExecClientConfig {
         trader_id,
         account_id,
-        product_types: vec![BinanceProductType::UsdM],
+        product_type: BinanceProductType::UsdM,
         environment: BinanceEnvironment::Testnet,
         ..Default::default()
     };

@@ -81,7 +81,7 @@ use crate::{
             ensure_accepted_emitted,
         },
         encoder::{decode_broker_id, encode_broker_id},
-        enums::{BinanceProductType, BinanceSide, BinanceTimeInForce},
+        enums::{BinanceSide, BinanceTimeInForce},
         parse::{
             parse_required_decimal, parse_required_price_at_precision,
             parse_required_quantity_at_precision,
@@ -129,17 +129,11 @@ impl BinanceSpotExecutionClient {
     ///
     /// Returns an error if the HTTP client fails to initialize or credentials are missing.
     pub fn new(core: ExecutionClientCore, config: BinanceExecClientConfig) -> anyhow::Result<Self> {
-        let product_type = config
-            .product_types
-            .first()
-            .copied()
-            .unwrap_or(BinanceProductType::Spot);
-
         let (api_key, api_secret) = resolve_credentials(
             config.api_key.clone(),
             config.api_secret.clone(),
             config.environment,
-            product_type,
+            config.product_type,
         )?;
 
         let clock = get_atomic_clock_realtime();
@@ -734,12 +728,12 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         });
 
         log::info!(
-            "Started: client_id={}, account_id={}, account_type={:?}, environment={:?}, product_types={:?}",
+            "Started: client_id={}, account_id={}, account_type={:?}, environment={:?}, product_type={:?}",
             self.core.client_id,
             self.core.account_id,
             self.core.account_type,
             self.config.environment,
-            self.config.product_types,
+            self.config.product_type,
         );
         Ok(())
     }
