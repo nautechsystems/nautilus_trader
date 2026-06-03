@@ -5657,27 +5657,9 @@ async fn test_submit_option_call_buy_limit_full_lifecycle() {
     // `instrument_type=option` instrument shape. The dispatch must accept
     // option instrument_id strings (`ETH-20260626-3500-C.DERIVE`) and walk
     // the same lifecycle as perps.
-    let rest_state = RestState::default();
-    let ws_state = WsState::default();
-    *rest_state.get_instrument_response.lock().await =
-        option_instrument_json("ETH-20260626-3500-C", "C", "3500");
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
-    tc.client.connect().await.expect("connect");
-
-    wait_until(
-        || {
-            let state = ws_state.clone();
-            async move { !state.subscribe_frames.lock().await.is_empty() }
-        },
-        "subscribe acknowledged",
-    )
-    .await;
-    let _ = drain_until(
-        &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Account(_)),
-        "initial AccountState",
-    )
-    .await;
+    let (mut tc, ws_state) =
+        build_connected_option_client("ETH-20260626-3500-C", "C", "3500").await;
+    drain_initial_account_state(&mut tc).await;
 
     let instrument_id = InstrumentId::from("ETH-20260626-3500-C.DERIVE");
     let client_order_id = ClientOrderId::from("STRAT-OPT-CALL-BUY");
@@ -5688,28 +5670,10 @@ async fn test_submit_option_call_buy_limit_full_lifecycle() {
         Price::from("100"),
         Quantity::from("1.00"),
     );
-    tc.cache
-        .borrow_mut()
-        .add_order(order.clone(), None, None, false)
-        .expect("cache insert");
-    tc.client
-        .submit_order(submit_cmd(&order))
-        .expect("submit Ok");
+    submit_cached_order(&tc, &order);
 
-    let _ = drain_until(
-        &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::Submitted(_))),
-        "OrderSubmitted",
-    )
-    .await;
-    wait_until(
-        || {
-            let state = ws_state.clone();
-            async move { !state.submitted_orders.lock().await.is_empty() }
-        },
-        "private/order posted",
-    )
-    .await;
+    drain_order_submitted(&mut tc).await;
+    wait_for_private_order_post(&ws_state).await;
     {
         let posts = ws_state.submitted_orders.lock().await;
         assert_eq!(
@@ -5720,7 +5684,6 @@ async fn test_submit_option_call_buy_limit_full_lifecycle() {
         assert_eq!(posts[0]["order_type"].as_str(), Some("limit"));
     }
 
-    let orders_channel = format!("{TEST_SUBACCOUNT}.orders");
     let open_frame = json!([order_json_with(
         "ord-opt-call-1",
         client_order_id.as_str(),
@@ -5729,7 +5692,7 @@ async fn test_submit_option_call_buy_limit_full_lifecycle() {
         1_700_000_001_000_i64,
         "open",
     )]);
-    ws_state.push_notification(make_subscription_frame(&orders_channel, &open_frame));
+    push_orders_update(&ws_state, &open_frame);
 
     let accepted = drain_until(
         &mut tc.rx,
@@ -5745,14 +5708,13 @@ async fn test_submit_option_call_buy_limit_full_lifecycle() {
         unreachable!();
     }
 
-    let trades_channel = format!("{TEST_SUBACCOUNT}.trades");
     let trade_frame = json!([trade_json_with_label(
         "trade-opt-call-1",
         "ord-opt-call-1",
         "ETH-20260626-3500-C",
         client_order_id.as_str(),
     )]);
-    ws_state.push_notification(make_subscription_frame(&trades_channel, &trade_frame));
+    push_trades_update(&ws_state, &trade_frame);
 
     let filled = drain_until(
         &mut tc.rx,
@@ -5777,27 +5739,9 @@ async fn test_submit_option_call_buy_limit_full_lifecycle() {
 async fn test_submit_option_put_sell_limit_full_lifecycle() {
     // Group 10 / Option put sell: mirror of the call-buy test on a put
     // instrument (`-P` suffix, `option_type=P`).
-    let rest_state = RestState::default();
-    let ws_state = WsState::default();
-    *rest_state.get_instrument_response.lock().await =
-        option_instrument_json("ETH-20260626-3500-P", "P", "3500");
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
-    tc.client.connect().await.expect("connect");
-
-    wait_until(
-        || {
-            let state = ws_state.clone();
-            async move { !state.subscribe_frames.lock().await.is_empty() }
-        },
-        "subscribe acknowledged",
-    )
-    .await;
-    let _ = drain_until(
-        &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Account(_)),
-        "initial AccountState",
-    )
-    .await;
+    let (mut tc, ws_state) =
+        build_connected_option_client("ETH-20260626-3500-P", "P", "3500").await;
+    drain_initial_account_state(&mut tc).await;
 
     let instrument_id = InstrumentId::from("ETH-20260626-3500-P.DERIVE");
     let client_order_id = ClientOrderId::from("STRAT-OPT-PUT-SELL");
@@ -5808,28 +5752,10 @@ async fn test_submit_option_put_sell_limit_full_lifecycle() {
         Price::from("80"),
         Quantity::from("0.50"),
     );
-    tc.cache
-        .borrow_mut()
-        .add_order(order.clone(), None, None, false)
-        .expect("cache insert");
-    tc.client
-        .submit_order(submit_cmd(&order))
-        .expect("submit Ok");
+    submit_cached_order(&tc, &order);
 
-    let _ = drain_until(
-        &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::Submitted(_))),
-        "OrderSubmitted",
-    )
-    .await;
-    wait_until(
-        || {
-            let state = ws_state.clone();
-            async move { !state.submitted_orders.lock().await.is_empty() }
-        },
-        "private/order posted",
-    )
-    .await;
+    drain_order_submitted(&mut tc).await;
+    wait_for_private_order_post(&ws_state).await;
     {
         let posts = ws_state.submitted_orders.lock().await;
         assert_eq!(
@@ -5839,7 +5765,6 @@ async fn test_submit_option_put_sell_limit_full_lifecycle() {
         assert_eq!(posts[0]["direction"].as_str(), Some("sell"));
     }
 
-    let orders_channel = format!("{TEST_SUBACCOUNT}.orders");
     let open_frame = json!([order_json_with(
         "ord-opt-put-1",
         client_order_id.as_str(),
@@ -5848,7 +5773,7 @@ async fn test_submit_option_put_sell_limit_full_lifecycle() {
         1_700_000_001_000_i64,
         "open",
     )]);
-    ws_state.push_notification(make_subscription_frame(&orders_channel, &open_frame));
+    push_orders_update(&ws_state, &open_frame);
 
     let _ = drain_until(
         &mut tc.rx,
@@ -5857,7 +5782,6 @@ async fn test_submit_option_put_sell_limit_full_lifecycle() {
     )
     .await;
 
-    let trades_channel = format!("{TEST_SUBACCOUNT}.trades");
     let trade_frame = json!([{
         "direction": "sell",
         "index_price": "3500",
@@ -5879,7 +5803,7 @@ async fn test_submit_option_put_sell_limit_full_lifecycle() {
         "tx_status": "settled",
         "wallet": "0xwallet",
     }]);
-    ws_state.push_notification(make_subscription_frame(&trades_channel, &trade_frame));
+    push_trades_update(&ws_state, &trade_frame);
 
     let filled = drain_until(
         &mut tc.rx,
@@ -5912,8 +5836,9 @@ async fn test_submit_option_order_resolves_option_instrument_for_signing() {
     let ws_state = WsState::default();
     *rest_state.get_instrument_response.lock().await =
         option_instrument_json("ETH-20260626-3500-C", "C", "3500");
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
     tc.client.connect().await.expect("connect");
+    wait_for_private_subscription(&ws_state).await;
 
     let instrument_id = InstrumentId::from("ETH-20260626-3500-C.DERIVE");
     let client_order_id = ClientOrderId::from("STRAT-OPT-SIGN");
@@ -5924,22 +5849,17 @@ async fn test_submit_option_order_resolves_option_instrument_for_signing() {
         Price::from("100"),
         Quantity::from("1.00"),
     );
-    tc.cache
-        .borrow_mut()
-        .add_order(order.clone(), None, None, false)
-        .expect("cache insert");
-    tc.client
-        .submit_order(submit_cmd(&order))
-        .expect("submit Ok");
+    submit_cached_order(&tc, &order);
 
-    wait_until(
-        || {
-            let state = ws_state.clone();
-            async move { !state.submitted_orders.lock().await.is_empty() }
-        },
-        "private/order posted",
-    )
-    .await;
+    wait_for_private_order_post(&ws_state).await;
+
+    let instrument_calls = rest_state.get_instrument_calls.lock().await;
+    assert_eq!(instrument_calls.len(), 1);
+    assert_eq!(
+        instrument_calls[0]["instrument_name"].as_str(),
+        Some("ETH-20260626-3500-C"),
+    );
+    drop(instrument_calls);
 
     let posts = ws_state.submitted_orders.lock().await;
     let body = &posts[0];
@@ -5964,19 +5884,9 @@ async fn test_submit_option_order_resolves_option_instrument_for_signing() {
 async fn test_submit_option_fok_limit_posts_fok_and_emits_filled() {
     // TC-E99: option FOK limit orders use the ordinary option signing path
     // but must preserve the FOK instruction sent to the venue.
-    let rest_state = RestState::default();
-    let ws_state = WsState::default();
-    *rest_state.get_instrument_response.lock().await =
-        option_instrument_json("ETH-20260626-3500-C", "C", "3500");
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
-    tc.client.connect().await.expect("connect");
-
-    let _ = drain_until(
-        &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Account(_)),
-        "initial AccountState",
-    )
-    .await;
+    let (mut tc, ws_state) =
+        build_connected_option_client("ETH-20260626-3500-C", "C", "3500").await;
+    drain_initial_account_state(&mut tc).await;
 
     let instrument_id = InstrumentId::from("ETH-20260626-3500-C.DERIVE");
     let client_order_id = ClientOrderId::from("STRAT-OPT-FOK");
@@ -5989,28 +5899,10 @@ async fn test_submit_option_fok_limit_posts_fok_and_emits_filled() {
         TimeInForce::Fok,
         false,
     );
-    tc.cache
-        .borrow_mut()
-        .add_order(order.clone(), None, None, false)
-        .expect("cache insert");
-    tc.client
-        .submit_order(submit_cmd(&order))
-        .expect("submit Ok");
+    submit_cached_order(&tc, &order);
 
-    let _ = drain_until(
-        &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::Submitted(_))),
-        "OrderSubmitted",
-    )
-    .await;
-    wait_until(
-        || {
-            let state = ws_state.clone();
-            async move { !state.submitted_orders.lock().await.is_empty() }
-        },
-        "private/order posted",
-    )
-    .await;
+    drain_order_submitted(&mut tc).await;
+    wait_for_private_order_post(&ws_state).await;
     {
         let posts = ws_state.submitted_orders.lock().await;
         assert_eq!(
@@ -6021,7 +5913,6 @@ async fn test_submit_option_fok_limit_posts_fok_and_emits_filled() {
         assert_eq!(posts[0]["order_type"].as_str(), Some("limit"));
     }
 
-    let orders_channel = format!("{TEST_SUBACCOUNT}.orders");
     let open_frame = json!([order_json_with(
         "ord-opt-fok-1",
         client_order_id.as_str(),
@@ -6030,7 +5921,7 @@ async fn test_submit_option_fok_limit_posts_fok_and_emits_filled() {
         1_700_000_001_000_i64,
         "open",
     )]);
-    ws_state.push_notification(make_subscription_frame(&orders_channel, &open_frame));
+    push_orders_update(&ws_state, &open_frame);
 
     let _ = drain_until(
         &mut tc.rx,
@@ -6039,14 +5930,13 @@ async fn test_submit_option_fok_limit_posts_fok_and_emits_filled() {
     )
     .await;
 
-    let trades_channel = format!("{TEST_SUBACCOUNT}.trades");
     let trade_frame = json!([trade_json_with_label(
         "trade-opt-fok-1",
         "ord-opt-fok-1",
         "ETH-20260626-3500-C",
         client_order_id.as_str(),
     )]);
-    ws_state.push_notification(make_subscription_frame(&trades_channel, &trade_frame));
+    push_trades_update(&ws_state, &trade_frame);
 
     let filled = drain_until(
         &mut tc.rx,
@@ -6073,19 +5963,9 @@ async fn test_submit_option_fok_limit_posts_fok_and_emits_filled() {
 async fn test_cancel_option_order_posts_private_cancel_and_emits_canceled() {
     // TC-E100: option cancels must keep the option symbol on private/cancel
     // and route the terminal `.orders` update back to the tracked order.
-    let rest_state = RestState::default();
-    let ws_state = WsState::default();
-    *rest_state.get_instrument_response.lock().await =
-        option_instrument_json("ETH-20260626-3500-C", "C", "3500");
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
-    tc.client.connect().await.expect("connect");
-
-    let _ = drain_until(
-        &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Account(_)),
-        "initial AccountState",
-    )
-    .await;
+    let (mut tc, ws_state) =
+        build_connected_option_client("ETH-20260626-3500-C", "C", "3500").await;
+    drain_initial_account_state(&mut tc).await;
 
     let instrument_id = InstrumentId::from("ETH-20260626-3500-C.DERIVE");
     let client_order_id = ClientOrderId::from("STRAT-OPT-CANCEL");
@@ -6097,30 +5977,11 @@ async fn test_cancel_option_order_posts_private_cancel_and_emits_canceled() {
         Price::from("100"),
         Quantity::from("1.00"),
     );
-    tc.cache
-        .borrow_mut()
-        .add_order(order.clone(), None, None, false)
-        .expect("cache insert");
-    tc.client
-        .submit_order(submit_cmd(&order))
-        .expect("submit Ok");
+    submit_cached_order(&tc, &order);
 
-    let _ = drain_until(
-        &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::Submitted(_))),
-        "OrderSubmitted",
-    )
-    .await;
-    wait_until(
-        || {
-            let state = ws_state.clone();
-            async move { !state.submitted_orders.lock().await.is_empty() }
-        },
-        "private/order posted",
-    )
-    .await;
+    drain_order_submitted(&mut tc).await;
+    wait_for_private_order_post(&ws_state).await;
 
-    let orders_channel = format!("{TEST_SUBACCOUNT}.orders");
     let open_frame = json!([order_json_with(
         venue_order_id.as_str(),
         client_order_id.as_str(),
@@ -6129,7 +5990,7 @@ async fn test_cancel_option_order_posts_private_cancel_and_emits_canceled() {
         1_700_000_001_000_i64,
         "open",
     )]);
-    ws_state.push_notification(make_subscription_frame(&orders_channel, &open_frame));
+    push_orders_update(&ws_state, &open_frame);
 
     let _ = drain_until(
         &mut tc.rx,
@@ -6178,7 +6039,7 @@ async fn test_cancel_option_order_posts_private_cancel_and_emits_canceled() {
         1_700_000_002_000_i64,
         "cancelled",
     )]);
-    ws_state.push_notification(make_subscription_frame(&orders_channel, &cancel_frame));
+    push_orders_update(&ws_state, &cancel_frame);
 
     let event = drain_until(
         &mut tc.rx,
@@ -6242,6 +6103,83 @@ async fn test_generate_position_status_reports_option_position() {
     assert_eq!(reports[0].avg_px_open, Some(dec!(80)));
 
     tc.client.disconnect().await.expect("disconnect");
+}
+
+async fn build_connected_option_client(
+    instrument_name: &str,
+    option_type: &str,
+    strike: &str,
+) -> (TestClient, WsState) {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *rest_state.get_instrument_response.lock().await =
+        option_instrument_json(instrument_name, option_type, strike);
+
+    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    tc.client.connect().await.expect("connect");
+    wait_for_private_subscription(&ws_state).await;
+
+    (tc, ws_state)
+}
+
+async fn wait_for_private_subscription(ws_state: &WsState) {
+    wait_until(
+        || {
+            let state = (*ws_state).clone();
+            async move { !state.subscribe_frames.lock().await.is_empty() }
+        },
+        "subscribe acknowledged",
+    )
+    .await;
+}
+
+async fn drain_initial_account_state(tc: &mut TestClient) {
+    let _ = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Account(_)),
+        "initial AccountState",
+    )
+    .await;
+}
+
+fn submit_cached_order(tc: &TestClient, order: &OrderAny) {
+    tc.cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .expect("cache insert");
+    tc.client
+        .submit_order(submit_cmd(order))
+        .expect("submit Ok");
+}
+
+async fn drain_order_submitted(tc: &mut TestClient) {
+    let _ = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::Submitted(_))),
+        "OrderSubmitted",
+    )
+    .await;
+}
+
+async fn wait_for_private_order_post(ws_state: &WsState) {
+    wait_until(
+        || {
+            let state = (*ws_state).clone();
+            async move { !state.submitted_orders.lock().await.is_empty() }
+        },
+        "private/order posted",
+    )
+    .await;
+}
+
+fn push_orders_update(ws_state: &WsState, data: &Value) {
+    let channel = format!("{TEST_SUBACCOUNT}.orders");
+    ws_state.push_notification(make_subscription_frame(&channel, data));
+}
+
+fn push_trades_update(ws_state: &WsState, data: &Value) {
+    let channel = format!("{TEST_SUBACCOUNT}.trades");
+    ws_state.push_notification(make_subscription_frame(&channel, data));
 }
 
 #[rstest]
