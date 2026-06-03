@@ -4305,6 +4305,55 @@ fn test_process_mark_bar_skipped_without_panic(instrument_eth_usdt: InstrumentAn
 }
 
 #[rstest]
+fn test_process_mark_bar_does_not_replace_selected_execution_bar(
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(instrument_eth_usdt, None, None, Some(config), None);
+
+    let hourly_bar_type = BarType::from("ETHUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL");
+    let first_hourly_bar = Bar {
+        bar_type: hourly_bar_type,
+        open: Price::from("1500.00"),
+        high: Price::from("1510.00"),
+        low: Price::from("1490.00"),
+        close: Price::from("1505.00"),
+        volume: Quantity::from("100000.000"),
+        ts_event: UnixNanos::from(1_000_000_000),
+        ts_init: UnixNanos::from(1_000_000_000),
+    };
+    let mark_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-MARK-EXTERNAL"),
+        open: Price::from("1400.00"),
+        high: Price::from("1410.00"),
+        low: Price::from("1390.00"),
+        close: Price::from("1405.00"),
+        volume: Quantity::from("100000.000"),
+        ts_event: UnixNanos::from(2_000_000_000),
+        ts_init: UnixNanos::from(2_000_000_000),
+    };
+    let second_hourly_bar = Bar {
+        bar_type: hourly_bar_type,
+        open: Price::from("1600.00"),
+        high: Price::from("1610.00"),
+        low: Price::from("1590.00"),
+        close: Price::from("1605.00"),
+        volume: Quantity::from("100000.000"),
+        ts_event: UnixNanos::from(3_000_000_000),
+        ts_init: UnixNanos::from(3_000_000_000),
+    };
+
+    engine.process_bar(&first_hourly_bar);
+    engine.process_bar(&mark_bar);
+    engine.process_bar(&second_hourly_bar);
+
+    assert_eq!(engine.get_core().last, Some(Price::from("1605.00")));
+}
+
+#[rstest]
 fn test_process_monthly_bar_not_skipped(instrument_eth_usdt: InstrumentAny) {
     let config = OrderMatchingEngineConfig {
         bar_execution: true,

@@ -1454,6 +1454,15 @@ impl OrderMatchingEngine {
 
         self.precision_mismatch_streak = 0;
 
+        let price_type = bar_type.spec().price_type;
+        if price_type == PriceType::Mark {
+            log::warn!(
+                "Cannot process bar for {} with `PriceType::Mark`, mark price bars are not supported for bar execution",
+                bar.instrument_id(),
+            );
+            return;
+        }
+
         let execution_bar_type =
             if let Some(execution_bar_type) = self.execution_bar_types.get(&bar.instrument_id()) {
                 execution_bar_type.to_owned()
@@ -1483,7 +1492,7 @@ impl OrderMatchingEngine {
             }
         }
 
-        match bar_type.spec().price_type {
+        match price_type {
             PriceType::Last | PriceType::Mid => self.process_trade_ticks_from_bar(bar),
             PriceType::Bid => {
                 self.last_bar_bid = Some(bar.to_owned());
@@ -1494,10 +1503,7 @@ impl OrderMatchingEngine {
                 self.process_quote_ticks_from_bar(bar);
             }
             PriceType::Mark => {
-                log::warn!(
-                    "Cannot process bar for {} with `PriceType::Mark`, mark price bars are not supported for bar execution",
-                    bar.instrument_id(),
-                );
+                unreachable!("PriceType::Mark bars return before execution bar state updates")
             }
         }
     }
