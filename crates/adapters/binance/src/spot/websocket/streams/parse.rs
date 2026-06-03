@@ -162,11 +162,17 @@ pub fn parse_depth_snapshot(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
     let ts_event = UnixNanos::from_micros(event.event_time_us as u64);
+    let sequence = event.book_update_id as u64;
 
     let mut deltas = Vec::with_capacity(event.bids.len() + event.asks.len() + 1);
 
     // Add clear delta first
-    deltas.push(OrderBookDelta::clear(instrument_id, 0, ts_event, ts_event));
+    deltas.push(OrderBookDelta::clear(
+        instrument_id,
+        sequence,
+        ts_event,
+        ts_event,
+    ));
 
     // Add bid levels
     for (i, level) in event.bids.iter().enumerate() {
@@ -193,7 +199,7 @@ pub fn parse_depth_snapshot(
             BookAction::Add,
             order,
             flags,
-            0,
+            sequence,
             ts_event,
             ts_event,
         ));
@@ -224,7 +230,7 @@ pub fn parse_depth_snapshot(
             BookAction::Add,
             order,
             flags,
-            0,
+            sequence,
             ts_event,
             ts_event,
         ));
@@ -250,6 +256,7 @@ pub fn parse_depth_diff(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
     let ts_event = UnixNanos::from_micros(event.event_time_us as u64);
+    let sequence = event.last_book_update_id as u64;
 
     let mut deltas = Vec::with_capacity(event.bids.len() + event.asks.len());
 
@@ -286,7 +293,7 @@ pub fn parse_depth_diff(
             action,
             order,
             flags,
-            0,
+            sequence,
             ts_event,
             ts_event,
         ));
@@ -324,7 +331,7 @@ pub fn parse_depth_diff(
             action,
             order,
             flags,
-            0,
+            sequence,
             ts_event,
             ts_event,
         ));
@@ -583,6 +590,8 @@ mod tests {
         assert_eq!(deltas.deltas[2].order.price, Price::new(123.50, 2));
         assert_eq!(deltas.deltas[2].order.size, Quantity::new(3.0, 4));
         assert_eq!(deltas.deltas[2].flags, RecordFlag::F_LAST as u8);
+        assert_eq!(deltas.deltas[0].sequence, 123);
+        assert_eq!(deltas.deltas[2].sequence, 123);
         assert_eq!(
             deltas.ts_event,
             UnixNanos::from(1_700_000_000_000_000_000u64)
@@ -644,6 +653,8 @@ mod tests {
         assert_eq!(deltas.deltas[2].action, BookAction::Update);
         assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell);
         assert_eq!(deltas.deltas[2].flags, RecordFlag::F_LAST as u8);
+        assert_eq!(deltas.deltas[0].sequence, 101);
+        assert_eq!(deltas.deltas[2].sequence, 101);
         assert_eq!(
             deltas.ts_event,
             UnixNanos::from(1_700_000_000_000_000_000u64)

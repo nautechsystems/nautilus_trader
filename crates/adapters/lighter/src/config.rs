@@ -20,6 +20,7 @@ use std::fmt::Debug;
 use nautilus_core::string::secret::REDACTED;
 use nautilus_model::identifiers::{AccountId, TraderId};
 use nautilus_network::websocket::TransportBackend;
+use serde::{Deserialize, Serialize};
 
 use crate::common::{
     credential::credential_env_vars,
@@ -28,7 +29,8 @@ use crate::common::{
 };
 
 /// Configuration for the Lighter data client.
-#[derive(Clone, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.lighter", from_py_object,)
@@ -94,9 +96,12 @@ impl LighterDataClientConfig {
     /// Returns the resolved WebSocket URL.
     #[must_use]
     pub fn ws_url(&self) -> String {
-        self.base_url_ws
+        let url = self
+            .base_url_ws
             .clone()
-            .unwrap_or_else(|| lighter_ws_url(self.environment).to_string())
+            .unwrap_or_else(|| lighter_ws_url(self.environment).to_string());
+
+        ensure_readonly_ws_url(url)
     }
 
     /// Returns `true` when all REST auth credential fields are available.
@@ -140,8 +145,32 @@ fn env_var_is_set(name: &str) -> bool {
     std::env::var(name).is_ok_and(|value| !value.trim().is_empty())
 }
 
+fn ensure_readonly_ws_url(url: String) -> String {
+    let Ok(mut parsed) = url::Url::parse(&url) else {
+        return url;
+    };
+
+    let pairs = parsed
+        .query_pairs()
+        .filter(|(key, _)| key != "readonly")
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect::<Vec<_>>();
+
+    parsed.set_query(None);
+    {
+        let mut query = parsed.query_pairs_mut();
+        for (key, value) in pairs {
+            query.append_pair(&key, &value);
+        }
+        query.append_pair("readonly", "true");
+    }
+
+    parsed.to_string()
+}
+
 /// Configuration for the Lighter execution client.
-#[derive(Clone, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.lighter", from_py_object,)
@@ -152,8 +181,10 @@ fn env_var_is_set(name: &str) -> bool {
 )]
 pub struct LighterExecClientConfig {
     /// Trader identifier.
+    #[builder(default = TraderId::from("TRADER-001"))]
     pub trader_id: TraderId,
     /// Account identifier on the venue.
+    #[builder(default = AccountId::from("LIGHTER-001"))]
     pub account_id: AccountId,
     /// Lighter account index (numeric, assigned at registration). Falls back
     /// to `LIGHTER_ACCOUNT_INDEX` / `LIGHTER_TESTNET_ACCOUNT_INDEX` when
@@ -192,6 +223,12 @@ pub struct LighterExecClientConfig {
     /// WebSocket transport backend.
     #[builder(default)]
     pub transport_backend: TransportBackend,
+}
+
+impl Default for LighterExecClientConfig {
+    fn default() -> Self {
+        Self::builder().build()
+    }
 }
 
 impl Debug for LighterExecClientConfig {
@@ -293,6 +330,44 @@ mod tests {
     }
 
     #[rstest]
+    fn data_config_ws_url_sets_readonly_query() {
+        let config = LighterDataClientConfig::default();
+
+        assert_eq!(
+            config.ws_url(),
+            "wss://mainnet.zklighter.elliot.ai/stream?readonly=true",
+        );
+    }
+
+    #[rstest]
+    fn data_config_ws_url_preserves_existing_query_params() {
+        let config = LighterDataClientConfig {
+            base_url_ws: Some("wss://mainnet.zklighter.elliot.ai/stream?foo=bar".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            config.ws_url(),
+            "wss://mainnet.zklighter.elliot.ai/stream?foo=bar&readonly=true",
+        );
+    }
+
+    #[rstest]
+    fn data_config_ws_url_overrides_readonly_query() {
+        let config = LighterDataClientConfig {
+            base_url_ws: Some(
+                "wss://mainnet.zklighter.elliot.ai/stream?readonly=false&foo=bar".to_string(),
+            ),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            config.ws_url(),
+            "wss://mainnet.zklighter.elliot.ai/stream?foo=bar&readonly=true",
+        );
+    }
+
+    #[rstest]
     fn exec_config_debug_redacts_private_key() {
         let config = LighterExecClientConfig {
             trader_id: TraderId::from("TRADER-001"),
@@ -315,6 +390,18 @@ mod tests {
 
         assert!(dbg_out.contains(REDACTED));
         assert!(!dbg_out.contains(PRIVATE_KEY_HEX));
+    }
+
+    #[rstest]
+    fn exec_config_ws_url_keeps_regular_stream_url() {
+        let config = LighterExecClientConfig {
+            trader_id: TraderId::from("TRADER-001"),
+            account_id: AccountId::from("LIGHTER-001"),
+            environment: LighterEnvironment::Mainnet,
+            ..Default::default()
+        };
+
+        assert_eq!(config.ws_url(), "wss://mainnet.zklighter.elliot.ai/stream");
     }
 
     // Tests that observe the `env_var_is_set` fallback live in the workspace

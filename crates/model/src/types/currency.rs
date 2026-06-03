@@ -322,9 +322,7 @@ mod tests {
         let currency = Currency::AUD();
         assert_eq!(
             format!("{currency:?}"),
-            format!(
-                "Currency(code='AUD', precision=2, iso4217=36, name='Australian dollar', currency_type=FIAT)"
-            )
+            "Currency(code='AUD', precision=2, iso4217=36, name='Australian dollar', currency_type=FIAT)".to_string()
         );
     }
 

@@ -20,9 +20,11 @@
 /Cargo.lock                      @nautechsystems/core
 /crates/Cargo.toml               @nautechsystems/core
 /crates/**/Cargo.toml            @nautechsystems/core
+/crates/**/fuzz/Cargo.lock       @nautechsystems/core
 /.cargo/config.toml              @nautechsystems/core
 /rust-toolchain.toml             @nautechsystems/core
 /deny.toml                       @nautechsystems/core
+/.cargo/deny-fuzz.toml           @nautechsystems/core
 
 # =============================================================================
 # Python Build & Dependencies - SUPPLY CHAIN RISK

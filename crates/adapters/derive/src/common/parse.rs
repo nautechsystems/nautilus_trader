@@ -24,7 +24,7 @@ use nautilus_core::{
     params::Params,
 };
 use nautilus_model::{
-    enums::{OptionKind, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{OptionKind, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
     identifiers::{InstrumentId, Symbol},
     instruments::{CryptoOption, CryptoPerpetual, CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
@@ -41,7 +41,7 @@ use crate::{
         consts::DERIVE_VENUE,
         enums::{
             DeriveInstrumentType, DeriveOptionKind, DeriveOrderSide, DeriveOrderStatus,
-            DeriveOrderType, DeriveTimeInForce,
+            DeriveOrderType, DeriveTimeInForce, DeriveTriggerPriceType, DeriveTriggerType,
         },
     },
     http::models::DeriveInstrument,
@@ -365,6 +365,59 @@ pub fn order_type_to_derive(order_type: OrderType) -> anyhow::Result<DeriveOrder
     }
 }
 
+/// Maps a supported Nautilus trigger order type to the child Derive order type.
+///
+/// # Errors
+///
+/// Returns an error for order types not supported by Derive trigger orders.
+pub fn trigger_order_type_to_derive(order_type: OrderType) -> anyhow::Result<DeriveOrderType> {
+    match order_type {
+        OrderType::StopMarket | OrderType::MarketIfTouched => Ok(DeriveOrderType::Market),
+        OrderType::StopLimit | OrderType::LimitIfTouched => Ok(DeriveOrderType::Limit),
+        other => anyhow::bail!(
+            "unsupported trigger order type for Derive: {other:?}; supported types are StopMarket, StopLimit, MarketIfTouched, and LimitIfTouched"
+        ),
+    }
+}
+
+/// Maps a Nautilus trigger order type to Derive's stop-loss/take-profit flag.
+///
+/// # Errors
+///
+/// Returns an error for order types not supported by Derive trigger orders.
+pub fn trigger_type_to_derive(order_type: OrderType) -> anyhow::Result<DeriveTriggerType> {
+    match order_type {
+        OrderType::StopMarket | OrderType::StopLimit => Ok(DeriveTriggerType::Stoploss),
+        OrderType::MarketIfTouched | OrderType::LimitIfTouched => Ok(DeriveTriggerType::Takeprofit),
+        other => anyhow::bail!(
+            "unsupported trigger order type for Derive: {other:?}; supported types are StopMarket, StopLimit, MarketIfTouched, and LimitIfTouched"
+        ),
+    }
+}
+
+/// Maps Nautilus trigger price source to Derive.
+///
+/// # Errors
+///
+/// Returns an error unless the trigger source maps to mark price, which is the
+/// only source Derive currently accepts for trigger orders.
+pub fn trigger_price_type_to_derive(
+    trigger_type: Option<TriggerType>,
+) -> anyhow::Result<DeriveTriggerPriceType> {
+    match trigger_type {
+        Some(TriggerType::Default | TriggerType::MarkPrice) => Ok(DeriveTriggerPriceType::Mark),
+        Some(TriggerType::IndexPrice) => anyhow::bail!(
+            "unsupported trigger price type for Derive: IndexPrice; Derive currently accepts only MarkPrice for trigger orders"
+        ),
+        Some(other) => anyhow::bail!(
+            "unsupported trigger price type for Derive: {other:?}; Derive trigger orders support only MarkPrice"
+        ),
+        None => anyhow::bail!(
+            "missing trigger price type for Derive trigger order; Derive trigger orders support only MarkPrice"
+        ),
+    }
+}
+
 /// Maps a Nautilus time-in-force flag to the Derive TIF.
 ///
 /// # Errors
@@ -404,6 +457,34 @@ pub fn derive_order_type_to_nautilus(order_type: DeriveOrderType) -> OrderType {
     }
 }
 
+/// Maps a Derive trigger order record back to the Nautilus order type.
+#[must_use]
+pub fn derive_order_type_to_nautilus_for_order(
+    order_type: DeriveOrderType,
+    trigger_type: Option<DeriveTriggerType>,
+) -> OrderType {
+    match (order_type, trigger_type) {
+        (DeriveOrderType::Market, Some(DeriveTriggerType::Stoploss)) => OrderType::StopMarket,
+        (DeriveOrderType::Limit, Some(DeriveTriggerType::Stoploss)) => OrderType::StopLimit,
+        (DeriveOrderType::Market, Some(DeriveTriggerType::Takeprofit)) => {
+            OrderType::MarketIfTouched
+        }
+        (DeriveOrderType::Limit, Some(DeriveTriggerType::Takeprofit)) => OrderType::LimitIfTouched,
+        (order_type, None) => derive_order_type_to_nautilus(order_type),
+    }
+}
+
+/// Maps a Derive trigger price source back to Nautilus.
+#[must_use]
+pub const fn derive_trigger_price_type_to_nautilus(
+    trigger_price_type: DeriveTriggerPriceType,
+) -> TriggerType {
+    match trigger_price_type {
+        DeriveTriggerPriceType::Mark => TriggerType::MarkPrice,
+        DeriveTriggerPriceType::Index => TriggerType::IndexPrice,
+    }
+}
+
 /// Maps a Derive TIF back to Nautilus.
 #[must_use]
 pub fn derive_tif_to_nautilus(tif: DeriveTimeInForce) -> TimeInForce {
@@ -434,6 +515,7 @@ pub fn derive_status_to_nautilus(
         DeriveOrderStatus::Rejected => OrderStatus::Rejected,
         DeriveOrderStatus::Cancelled => OrderStatus::Canceled,
         DeriveOrderStatus::Expired => OrderStatus::Expired,
+        DeriveOrderStatus::Untriggered | DeriveOrderStatus::AlgoActive => OrderStatus::Accepted,
     }
 }
 
@@ -674,7 +756,7 @@ mod tests {
 
     use nautilus_core::UnixNanos;
     use nautilus_model::{
-        enums::OptionKind,
+        enums::{OptionKind, OrderStatus, OrderType, TriggerType},
         identifiers::InstrumentId,
         instruments::{Instrument, InstrumentAny},
         types::{Currency, Price, Quantity},
@@ -742,6 +824,109 @@ mod tests {
         assert_eq!(
             probe.negative_zero.to_string(),
             "0.0000000000000000000000000000"
+        );
+    }
+
+    #[rstest]
+    #[case(OrderType::StopMarket, DeriveOrderType::Market)]
+    #[case(OrderType::MarketIfTouched, DeriveOrderType::Market)]
+    #[case(OrderType::StopLimit, DeriveOrderType::Limit)]
+    #[case(OrderType::LimitIfTouched, DeriveOrderType::Limit)]
+    fn test_trigger_order_type_to_derive(
+        #[case] order_type: OrderType,
+        #[case] expected: DeriveOrderType,
+    ) {
+        assert_eq!(trigger_order_type_to_derive(order_type).unwrap(), expected);
+    }
+
+    #[rstest]
+    fn test_trigger_order_type_to_derive_rejects_unsupported() {
+        let err = trigger_order_type_to_derive(OrderType::TrailingStopMarket)
+            .expect_err("trailing stops must be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("unsupported trigger order type for Derive"),
+            "unexpected error: {err}",
+        );
+    }
+
+    #[rstest]
+    #[case(OrderType::StopMarket, DeriveTriggerType::Stoploss)]
+    #[case(OrderType::StopLimit, DeriveTriggerType::Stoploss)]
+    #[case(OrderType::MarketIfTouched, DeriveTriggerType::Takeprofit)]
+    #[case(OrderType::LimitIfTouched, DeriveTriggerType::Takeprofit)]
+    fn test_trigger_type_to_derive(
+        #[case] order_type: OrderType,
+        #[case] expected: DeriveTriggerType,
+    ) {
+        assert_eq!(trigger_type_to_derive(order_type).unwrap(), expected);
+    }
+
+    #[rstest]
+    fn test_trigger_price_type_to_derive_accepts_only_mark_price() {
+        assert_eq!(
+            trigger_price_type_to_derive(Some(TriggerType::MarkPrice)).unwrap(),
+            DeriveTriggerPriceType::Mark,
+        );
+        assert_eq!(
+            trigger_price_type_to_derive(Some(TriggerType::Default)).unwrap(),
+            DeriveTriggerPriceType::Mark,
+        );
+
+        for trigger_type in [
+            TriggerType::IndexPrice,
+            TriggerType::LastPrice,
+            TriggerType::BidAsk,
+            TriggerType::NoTrigger,
+        ] {
+            let err = trigger_price_type_to_derive(Some(trigger_type))
+                .expect_err("unsupported trigger price type must fail");
+            assert!(
+                err.to_string().contains("unsupported trigger price type"),
+                "unexpected error for {trigger_type:?}: {err}",
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(
+        DeriveOrderType::Market,
+        Some(DeriveTriggerType::Stoploss),
+        OrderType::StopMarket
+    )]
+    #[case(
+        DeriveOrderType::Limit,
+        Some(DeriveTriggerType::Stoploss),
+        OrderType::StopLimit
+    )]
+    #[case(
+        DeriveOrderType::Market,
+        Some(DeriveTriggerType::Takeprofit),
+        OrderType::MarketIfTouched
+    )]
+    #[case(
+        DeriveOrderType::Limit,
+        Some(DeriveTriggerType::Takeprofit),
+        OrderType::LimitIfTouched
+    )]
+    #[case(DeriveOrderType::Limit, None, OrderType::Limit)]
+    fn test_derive_order_type_to_nautilus_for_order(
+        #[case] order_type: DeriveOrderType,
+        #[case] trigger_type: Option<DeriveTriggerType>,
+        #[case] expected: OrderType,
+    ) {
+        assert_eq!(
+            derive_order_type_to_nautilus_for_order(order_type, trigger_type),
+            expected,
+        );
+    }
+
+    #[rstest]
+    fn test_derive_status_to_nautilus_maps_untriggered_to_accepted() {
+        assert_eq!(
+            derive_status_to_nautilus(DeriveOrderStatus::Untriggered, dec!(0), dec!(1)),
+            OrderStatus::Accepted,
         );
     }
 

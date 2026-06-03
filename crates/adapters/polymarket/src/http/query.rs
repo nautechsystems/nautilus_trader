@@ -168,10 +168,10 @@ pub struct GetGammaMarketsParams {
     pub ascending: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slug: Option<String>,
-    /// Comma-separated CLOB token IDs.
+    /// Comma-separated CLOB token IDs, sent as repeated query params.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clob_token_ids: Option<String>,
-    /// Comma-separated condition IDs (max 100).
+    /// Comma-separated condition IDs (max 100), sent as repeated query params.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub condition_ids: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -202,7 +202,7 @@ pub struct GetGammaMarketsParams {
     pub rewards_min_size: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_tag: Option<bool>,
-    /// Comma-separated question IDs.
+    /// Comma-separated question IDs, sent as repeated query params.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub question_ids: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

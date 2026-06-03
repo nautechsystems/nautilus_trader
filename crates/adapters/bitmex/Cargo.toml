@@ -138,3 +138,8 @@ name = "bitmex-grid-mm"
 path = "examples/node_grid_mm.rs"
 required-features = ["examples"]
 doc = false
+
+[[test]]
+name = "python"
+path = "tests/python.rs"
+required-features = ["python"]

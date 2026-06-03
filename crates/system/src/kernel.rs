@@ -25,8 +25,9 @@ use nautilus_common::{
     component::Component,
     enums::Environment,
     logging::{
-        headers, init_logging,
+        arm_shutdown_on_error, disarm_shutdown_on_error, headers, init_logging,
         logger::{LogGuard, LoggerConfig},
+        try_drain_shutdown_on_error_trigger,
     },
     messages::system::ShutdownSystem,
     msgbus::{
@@ -396,9 +397,12 @@ impl NautilusKernel {
         self.ts_shutdown
     }
 
-    /// Returns `true` if a `ShutdownSystem` command has been received.
+    /// Returns `true` if shutdown has been requested.
+    ///
+    /// Drains pending shutdown-on-error logs before checking the kernel flag.
     #[must_use]
     pub fn is_shutdown_requested(&self) -> bool {
+        self.drain_shutdown_on_error_trigger();
         self.shutdown_requested.get()
     }
 
@@ -415,6 +419,27 @@ impl NautilusKernel {
     #[must_use]
     pub fn shutdown_flag(&self) -> Rc<Cell<bool>> {
         self.shutdown_requested.clone()
+    }
+
+    fn drain_shutdown_on_error_trigger(&self) {
+        try_drain_shutdown_on_error_trigger(|trigger| {
+            let command = ShutdownSystem::new(
+                self.config.trader_id(),
+                trigger.component,
+                Some(format!(
+                    "Error log received from {}: {}",
+                    trigger.component, trigger.message
+                )),
+                UUID4::new(),
+                trigger.timestamp,
+                None,
+            );
+
+            msgbus::try_publish_any(
+                MessagingSwitchboard::shutdown_system_topic(),
+                command.as_any(),
+            )
+        });
     }
 
     /// Returns whether the kernel has been configured to load state.
@@ -473,6 +498,7 @@ impl NautilusKernel {
 
     /// Starts the Nautilus system kernel synchronously (for backtest use).
     pub fn start(&mut self) {
+        arm_shutdown_on_error(self.config.shutdown_on_error());
         log::info!("Starting");
 
         self.event_store_replay = false;
@@ -577,6 +603,8 @@ impl NautilusKernel {
     /// which may trigger residual events such as order cancellations. The caller should
     /// continue processing events after calling this method to handle these residual events.
     pub fn stop_trader(&mut self) {
+        disarm_shutdown_on_error();
+
         if !self.trader.borrow().is_running() {
             return;
         }
@@ -593,6 +621,8 @@ impl NautilusKernel {
     /// This method should be called after the residual events grace period has elapsed
     /// and all remaining events have been processed. It disconnects clients and stops engines.
     pub async fn finalize_stop(&mut self) {
+        disarm_shutdown_on_error();
+
         // Execution and data clients are stopped by their engines via `stop_engines` below
 
         self.stop_engines();
@@ -634,6 +664,7 @@ impl NautilusKernel {
 
     /// Resets the Nautilus system kernel to its initial state.
     pub fn reset(&mut self) {
+        disarm_shutdown_on_error();
         log::info!("Resetting");
 
         if let Err(e) = self.trader.borrow_mut().reset() {
@@ -653,6 +684,7 @@ impl NautilusKernel {
 
     /// Disposes of the Nautilus system kernel, releasing resources.
     pub fn dispose(&mut self) {
+        disarm_shutdown_on_error();
         log::info!("Disposing");
 
         if let Err(e) = self.trader.borrow_mut().dispose() {

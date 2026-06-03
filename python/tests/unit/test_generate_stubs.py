@@ -698,6 +698,30 @@ class DexType(Enum):
     assert "    CLAM_ENHANCED = ..." in updated
 
 
+def test_rename_enum_variants_uses_source_variants_for_digit_boundaries():
+    # Arrange
+    content = """
+class Blockchain(Enum):
+    HarmonySharD0 = ...
+    MetalL2 = ...
+""".strip()
+    renamed_enums = {"Blockchain"}
+    renamed_enum_variants = {"Blockchain": ["HarmonyShard0", "Metall2"]}
+
+    # Act
+    updated = generate_stubs.rename_enum_variants(
+        content,
+        renamed_enums,
+        renamed_enum_variants,
+    )
+
+    # Assert
+    assert "    HARMONY_SHARD0 = ..." in updated
+    assert "    METALL2 = ..." in updated
+    assert "    HARMONY_SHAR_D0" not in updated
+    assert "    METAL_L2" not in updated
+
+
 def test_collect_renamed_enums_detects_rename_all(tmp_path):
     # Arrange
     rust_file = tmp_path / "crates" / "model" / "src" / "enums.rs"

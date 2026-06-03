@@ -24,11 +24,12 @@ set -euo pipefail
 #
 # Audit-relevant paths. Keep in sync with the `security_audit_paths` anchor in
 # .github/workflows/security-audit.yml.
-#   - Lock files                Cargo.lock, uv.lock, python/uv.lock
+#   - Lock files                Cargo.lock, crates/**/fuzz/Cargo.lock,
+#                               uv.lock, python/uv.lock
 #   - Manifests                 Cargo.toml, crates/(...)?Cargo.toml,
 #                               pyproject.toml, python/pyproject.toml
-#   - Audit policy              deny.toml, osv-scanner.toml, .cargo/audit.toml,
-#                               .supply-chain/*, .zizmor.yml
+#   - Audit policy              deny.toml, .cargo/deny-fuzz.toml, osv-scanner.toml,
+#                               .cargo/audit.toml, .supply-chain/*, .zizmor.yml
 #   - Toolchain config          .cargo/config.toml, rust-toolchain.toml,
 #                               tools.toml
 #   - Audit helpers             scripts/{cargo-tool-version,rust-toolchain,
@@ -82,10 +83,11 @@ esac
 pattern='^('
 pattern+='Cargo\.(lock|toml)'
 pattern+='|crates/(.*/)?Cargo\.toml'
+pattern+='|crates/.*/fuzz/Cargo\.lock'
 pattern+='|uv\.lock|pyproject\.toml'
 pattern+='|\.pre-commit-config\.yaml'
 pattern+='|python/(uv\.lock|pyproject\.toml)'
-pattern+='|deny\.toml|osv-scanner\.toml|\.supply-chain/.*|\.zizmor\.yml'
+pattern+='|deny\.toml|\.cargo/deny-fuzz\.toml|osv-scanner\.toml|\.supply-chain/.*|\.zizmor\.yml'
 pattern+='|tools\.toml|\.cargo/(config|audit)\.toml|rust-toolchain\.toml'
 pattern+='|scripts/(cargo-tool-version|rust-toolchain|uv-version)\.sh'
 pattern+='|scripts/ci/security-audit-gate\.sh'

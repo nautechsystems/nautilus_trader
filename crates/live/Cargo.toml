@@ -90,6 +90,7 @@ nautilus-trading = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 aws-lc-rs = { workspace = true, optional = true }
 bon = { workspace = true }
 indexmap = { workspace = true }
@@ -105,7 +106,6 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
-async-trait = { workspace = true }
 criterion = { workspace = true }
 madsim = { workspace = true }
 rstest = { workspace = true }

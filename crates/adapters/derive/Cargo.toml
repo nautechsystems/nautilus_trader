@@ -146,3 +146,8 @@ name = "derive-delta-neutral"
 path = "examples/node_delta_neutral.rs"
 required-features = ["examples"]
 doc = false
+
+[[test]]
+name = "python"
+path = "tests/python.rs"
+required-features = ["python"]

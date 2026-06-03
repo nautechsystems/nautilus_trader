@@ -185,3 +185,8 @@ name = "lighter-exec-tester"
 path = "examples/node_exec_tester.rs"
 required-features = ["examples"]
 doc = false
+
+[[test]]
+name = "python"
+path = "tests/python.rs"
+required-features = ["python"]

@@ -50,6 +50,7 @@ pub const KRAKEN_SPOT_WS_TOPIC_DELIMITER: char = ':';
 use super::{
     enums::{KrakenWsChannel, KrakenWsMethod},
     handler::{SpotFeedHandler, SpotHandlerCommand},
+    level_2::L2Depths,
     messages::{KrakenSpotWsMessage, KrakenWsChannelParams, KrakenWsParams, KrakenWsRequest},
 };
 use crate::{
@@ -94,6 +95,7 @@ pub struct KrakenSpotWebSocketClient {
     account_id: Arc<RwLock<Option<AccountId>>>,
     truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    l2_depths: L2Depths,
     l3_depths: Arc<std::sync::Mutex<ahash::AHashMap<String, u32>>>,
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
@@ -118,6 +120,7 @@ impl Clone for KrakenSpotWebSocketClient {
             account_id: Arc::clone(&self.account_id),
             truncated_id_map: Arc::clone(&self.truncated_id_map),
             instruments: Arc::clone(&self.instruments),
+            l2_depths: self.l2_depths.clone(),
             l3_depths: Arc::clone(&self.l3_depths),
             transport_backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
@@ -183,6 +186,7 @@ impl KrakenSpotWebSocketClient {
             account_id: Arc::new(RwLock::new(None)),
             truncated_id_map: Arc::new(AtomicMap::new()),
             instruments: Arc::new(AtomicMap::new()),
+            l2_depths: L2Depths::default(),
             l3_depths: Arc::new(std::sync::Mutex::new(ahash::AHashMap::new())),
             transport_backend,
             proxy_url,
@@ -475,6 +479,7 @@ impl KrakenSpotWebSocketClient {
         if let Ok(mut depths) = self.l3_depths.lock() {
             depths.clear();
         }
+        self.l2_depths.clear();
 
         Ok(())
     }
@@ -966,8 +971,68 @@ impl KrakenSpotWebSocketClient {
         depth: Option<u32>,
     ) -> Result<(), KrakenWsError> {
         let symbol = to_ws_v2_symbol(instrument_id.symbol.inner());
-        self.subscribe(KrakenWsChannel::Book, vec![symbol], depth)
+        let depth = depth.unwrap_or(10);
+
+        if !matches!(depth, 10 | 25 | 100 | 500 | 1000) {
+            return Err(KrakenWsError::InvalidMessage(format!(
+                "Invalid L2 depth {depth}, valid values: 10, 25, 100, 500, 1000",
+            )));
+        }
+
+        let channel_str = KrakenWsChannel::Book.as_ref();
+        let key = format!("{channel_str}:{symbol}");
+        let is_first_reference = self.subscriptions.add_reference(&key);
+
+        if !is_first_reference {
+            let existing_depth = self.l2_depths.get(symbol.as_str());
+
+            if existing_depth != Some(depth) {
+                self.subscriptions.remove_reference(&key);
+                return Err(KrakenWsError::InvalidMessage(format!(
+                    "L2 subscription for {symbol} already exists with depth \
+                     {existing_depth:?}, cannot resubscribe with depth {depth}",
+                )));
+            }
+            return Ok(());
+        }
+
+        self.subscriptions.mark_subscribe(&key);
+        self.l2_depths.insert(symbol.as_str(), depth);
+
+        let req_id = self.get_next_req_id();
+        let request = KrakenWsRequest {
+            method: KrakenWsMethod::Subscribe,
+            params: Some(KrakenWsParams::Channel(KrakenWsChannelParams {
+                channel: KrakenWsChannel::Book,
+                symbol: Some(vec![symbol]),
+                snapshot: None,
+                depth: Some(depth),
+                interval: None,
+                event_trigger: None,
+                token: None,
+                snap_orders: None,
+                snap_trades: None,
+            })),
+            req_id: Some(req_id),
+        };
+
+        let payload = match self.send_command(&request).await {
+            Ok(payload) => payload,
+            Err(e) => {
+                self.l2_depths.remove(symbol.as_str());
+                self.subscriptions.remove_reference(&key);
+                self.subscriptions.mark_unsubscribe(&key);
+                self.subscriptions.confirm_unsubscribe(&key);
+                return Err(e);
+            }
+        };
+
+        self.subscriptions.confirm_subscribe(&key);
+        self.subscription_payloads
+            .write()
             .await
+            .insert(key, payload);
+        Ok(())
     }
 
     /// Subscribes to the `level3` channel for the given Kraken symbol.
@@ -1247,6 +1312,11 @@ impl KrakenSpotWebSocketClient {
         Arc::clone(&self.l3_depths)
     }
 
+    /// Returns a shared handle to the per-symbol L2 depth map.
+    pub(crate) fn l2_depths_handle(&self) -> L2Depths {
+        self.l2_depths.clone()
+    }
+
     /// Subscribes to quote updates for the given instrument.
     ///
     /// Uses the Ticker channel with `event_trigger: "bbo"` for updates only on
@@ -1357,7 +1427,37 @@ impl KrakenSpotWebSocketClient {
     /// Unsubscribes from order book updates for the given instrument.
     pub async fn unsubscribe_book(&self, instrument_id: InstrumentId) -> Result<(), KrakenWsError> {
         let symbol = to_ws_v2_symbol(instrument_id.symbol.inner());
-        self.unsubscribe(KrakenWsChannel::Book, vec![symbol]).await
+        let channel_str = KrakenWsChannel::Book.as_ref();
+        let key = format!("{channel_str}:{symbol}");
+
+        if !self.subscriptions.remove_reference(&key) {
+            return Ok(());
+        }
+
+        self.subscriptions.mark_unsubscribe(&key);
+
+        let req_id = self.get_next_req_id();
+        let request = KrakenWsRequest {
+            method: KrakenWsMethod::Unsubscribe,
+            params: Some(KrakenWsParams::Channel(KrakenWsChannelParams {
+                channel: KrakenWsChannel::Book,
+                symbol: Some(vec![symbol]),
+                snapshot: None,
+                depth: None,
+                interval: None,
+                event_trigger: None,
+                token: None,
+                snap_orders: None,
+                snap_trades: None,
+            })),
+            req_id: Some(req_id),
+        };
+
+        self.send_command(&request).await?;
+        self.subscriptions.confirm_unsubscribe(&key);
+        self.subscription_payloads.write().await.remove(&key);
+        self.l2_depths.remove(symbol.as_str());
+        Ok(())
     }
 
     /// Unsubscribes from quote updates for the given instrument.
@@ -1666,6 +1766,70 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test]
+    async fn test_subscribe_book_invalid_depth_errors() {
+        let client = test_client_without_credentials();
+        let instrument_id = InstrumentId::from("BTC/USD.KRAKEN");
+
+        let err = client
+            .subscribe_book(instrument_id, Some(50))
+            .await
+            .expect_err("should fail on invalid depth");
+
+        assert!(matches!(err, KrakenWsError::InvalidMessage(_)));
+        assert!(!client.subscriptions_contains("book:BTC/USD"));
+        assert_eq!(client.l2_depths.get("BTC/USD"), None);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_subscribe_book_defaults_to_depth_10_and_stores_state() {
+        let client = test_client_without_credentials();
+        let key = "book:BTC/USD";
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *client.cmd_tx.write().await = cmd_tx;
+
+        client
+            .subscribe_book(InstrumentId::from("BTC/USD.KRAKEN"), None)
+            .await
+            .expect("subscribe should succeed");
+
+        let cmd = cmd_rx.try_recv().expect("expected subscribe command");
+        let SpotHandlerCommand::Subscribe { payload } = cmd else {
+            panic!("expected subscribe command");
+        };
+        assert_book_subscribe_payload(&payload, "BTC/USD", 10);
+
+        assert_eq!(client.subscriptions.get_reference_count(key), 1);
+        assert!(client.subscriptions_contains(key));
+        assert_eq!(client.l2_depths.get("BTC/USD"), Some(10));
+        assert_eq!(
+            client.subscription_payloads.read().await.get(key),
+            Some(&payload)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_subscribe_book_send_failure_rolls_back_l2_state() {
+        let client = test_client_without_credentials();
+        let key = "book:BTC/USD";
+
+        let err = client
+            .subscribe_book(InstrumentId::from("BTC/USD.KRAKEN"), Some(10))
+            .await
+            .expect_err("should fail when command receiver is closed");
+
+        assert!(matches!(err, KrakenWsError::ConnectionError(_)));
+        assert_eq!(client.subscriptions.get_reference_count(key), 0);
+        assert!(!client.subscriptions_contains(key));
+        assert!(client.subscriptions.pending_subscribe_topics().is_empty());
+        assert!(client.subscriptions.pending_unsubscribe_topics().is_empty());
+        assert_eq!(client.l2_depths.get("BTC/USD"), None);
+        assert!(!client.subscription_payloads.read().await.contains_key(key));
+    }
+
+    #[rstest]
     fn test_subscribe_book_l3_refcount_idempotent() {
         let cfg = KrakenDataClientConfig::default();
         let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None);
@@ -1702,6 +1866,62 @@ mod tests {
         assert!(matches!(err, KrakenWsError::InvalidMessage(_)));
 
         assert!(client.subscriptions.remove_reference(key));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_subscribe_book_rejects_depth_mismatch() {
+        let client = test_client_without_credentials();
+        let key = "book:BTC/USD";
+        client.subscriptions.add_reference(key);
+        client.subscriptions.mark_subscribe(key);
+        client.subscriptions.confirm_subscribe(key);
+        client.l2_depths.insert("BTC/USD", 10);
+
+        let err = client
+            .subscribe_book(InstrumentId::from("BTC/USD.KRAKEN"), Some(25))
+            .await
+            .expect_err("should reject depth mismatch");
+        assert!(matches!(err, KrakenWsError::InvalidMessage(_)));
+
+        assert!(client.subscriptions.remove_reference(key));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_unsubscribe_book_removes_l2_depth_on_last_reference() {
+        let client = test_client_without_credentials();
+        let key = "book:BTC/USD";
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *client.cmd_tx.write().await = cmd_tx;
+
+        client.subscriptions.add_reference(key);
+        client.subscriptions.mark_subscribe(key);
+        client.subscriptions.confirm_subscribe(key);
+        client.l2_depths.insert("BTC/USD", 10);
+        client
+            .subscription_payloads
+            .write()
+            .await
+            .insert(key.to_string(), "payload".to_string());
+
+        client
+            .unsubscribe_book(InstrumentId::from("BTC/USD.KRAKEN"))
+            .await
+            .expect("unsubscribe should succeed");
+
+        assert_eq!(client.subscriptions.get_reference_count(key), 0);
+        assert!(!client.subscriptions_contains(key));
+        assert_eq!(client.l2_depths.get("BTC/USD"), None);
+        assert!(!client.subscription_payloads.read().await.contains_key(key));
+
+        let cmd = cmd_rx.try_recv().expect("expected unsubscribe command");
+        let SpotHandlerCommand::Unsubscribe { payload } = cmd else {
+            panic!("expected unsubscribe command");
+        };
+        assert!(payload.contains(r#""method":"unsubscribe""#));
+        assert!(payload.contains(r#""channel":"book""#));
+        assert!(payload.contains(r#""BTC/USD""#));
     }
 
     #[rstest]
@@ -1751,6 +1971,16 @@ mod tests {
     }
 
     #[rstest]
+    fn test_l2_depths_shared_between_subscribe_and_handle() {
+        let client = test_client_without_credentials();
+
+        let handle = client.l2_depths_handle();
+        client.l2_depths.insert("BTC/USD", 10);
+
+        assert_eq!(handle.get("BTC/USD"), Some(10));
+    }
+
+    #[rstest]
     fn test_resync_book_l3_does_not_touch_refcount() {
         let cfg = KrakenDataClientConfig::default();
         let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None);
@@ -1761,5 +1991,15 @@ mod tests {
         client.subscriptions.confirm_subscribe(key);
 
         assert!(client.subscriptions_contains(key));
+    }
+
+    fn assert_book_subscribe_payload(payload: &str, symbol: &str, depth: u32) {
+        let value: serde_json::Value =
+            serde_json::from_str(payload).expect("payload should parse as JSON");
+
+        assert_eq!(value["method"], serde_json::json!("subscribe"));
+        assert_eq!(value["params"]["channel"], serde_json::json!("book"));
+        assert_eq!(value["params"]["symbol"], serde_json::json!([symbol]));
+        assert_eq!(value["params"]["depth"], serde_json::json!(depth));
     }
 }

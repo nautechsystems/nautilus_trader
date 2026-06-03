@@ -40,7 +40,8 @@ use crate::common::{
     enums::{
         DeriveAssetType, DeriveInstrumentType, DeriveLiquidityRole, DeriveMarginType,
         DeriveOptionKind, DeriveOrderCancelReason, DeriveOrderSide, DeriveOrderStatus,
-        DeriveOrderType, DeriveTimeInForce, DeriveTxStatus,
+        DeriveOrderType, DeriveTimeInForce, DeriveTriggerPriceType, DeriveTriggerType,
+        DeriveTxStatus,
     },
     parse::{deserialize_derive_decimal, deserialize_optional_derive_decimal},
 };
@@ -510,6 +511,18 @@ pub struct DeriveOrder {
     pub subaccount_id: i64,
     /// Time-in-force.
     pub time_in_force: DeriveTimeInForce,
+    /// Trigger price for trigger orders.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub trigger_price: Option<Decimal>,
+    /// Trigger price source for trigger orders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger_price_type: Option<DeriveTriggerPriceType>,
+    /// Trigger rejection text when the trigger worker cannot submit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger_reject_message: Option<String>,
+    /// Stop-loss or take-profit trigger flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger_type: Option<DeriveTriggerType>,
 }
 
 /// Result envelope returned by `private/order`.

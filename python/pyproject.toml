@@ -41,6 +41,7 @@ python-source = "."
 features = [
   "extension-module",
   "arrow",
+  "betfair",
   "high-precision",
   "redis",
   "postgres",

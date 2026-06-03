@@ -305,6 +305,9 @@ async fn close_position(
         referral_code: DERIVE_NAUTILUS_REFERRAL_CODE.to_string(),
         reduce_only: Some(true),
         mmp: None,
+        trigger_price: None,
+        trigger_price_type: None,
+        trigger_type: None,
     };
 
     log::info!(

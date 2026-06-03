@@ -62,6 +62,13 @@ signing path as perps and options; the in-repo fixtures under
 `crates/adapters/derive/test_data/spot/` capture the spot instrument, order book, ticker, and
 trade field shapes the parser and execution paths are pinned to.
 
+:::warning
+Spot trading has had less live exercise than perpetuals and options. Testnet accepts and cancels a
+passive `ETH-USDC` limit order at the `0.1 ETH` minimum amount, and mainnet place/cancel has been
+exercised manually. Public spot trade channels (`trades.erc20.ETH`, `trades.ETH-USDC`) subscribe
+successfully but can be low-volume, so expect sparse trade frames.
+:::
+
 ## Environments
 
 Configure the environment with the `DeriveEnvironment` enum on either client config.
@@ -177,31 +184,40 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
 
 ### Market data
 
-| Capability                     | Supported | Notes                                                                 |
-|--------------------------------|-----------|-----------------------------------------------------------------------|
-| Request instrument (REST)      | ✓         | `public/get_instrument`; loads one instrument into the local cache.    |
-| Request all instruments (REST) | ✓         | `public/get_instruments`; fetches each currency in `currencies`.       |
-| Instrument subscription        | -         | *Not supported.* Use the configured REST refresh interval.             |
-| Order book deltas (L2_MBP)     | ✓         | Channel: `orderbook.{instrument}.{group}.{depth}`.                    |
-| Order book depth10 (L2_MBP)    | ✓         | Same order book channel with `depth=10`.                               |
-| Order book at interval         | -         | *Not supported.* Maintain interval books from deltas locally.          |
-| Order book snapshot (REST)     | -         | *Not supported.* Not exposed by the adapter.                           |
-| Historical book deltas (REST)  | -         | *Not supported.* Not exposed by the adapter.                           |
-| Quotes (`ticker_slim`)         | ✓         | Channel: `ticker_slim.{instrument}.{interval}`.                        |
-| Quote snapshot (REST)          | ✓         | One‑shot `public/get_tickers`; emits a single `QuoteTick`.             |
-| Historical quotes (REST)       | -         | *Not supported.* The venue exposes ticker snapshots only.              |
-| Trades                         | ✓         | Channel: `trades.{instrument_type}.{currency}`.                        |
-| Historical trades (REST)       | ✓         | `public/get_trade_history`; honors `start`, `end`, and `limit`.        |
-| Bars / OHLC (REST)             | ✓         | `public/get_tradingview_chart_data`; minute, hour, day, and week bars. |
-| Bars / OHLC (WS)               | -         | *Not supported.* The venue has no candle subscription channel.         |
-| Mark price stream              | ✓         | Derived from `ticker_slim`; shares the quote subscription.             |
-| Index price stream             | ✓         | Derived from `ticker_slim`; shares the quote subscription.             |
-| Funding rate stream            | ✓         | Derived from `perp_details.funding_rate` on perp tickers.              |
-| Funding rate history (REST)    | ✓         | `public/get_funding_rate_history` for perpetuals.                      |
-| Instrument status              | -         | *Not supported.* Ticker payloads include `is_active`.                  |
-| Instrument close               | -         | *Not supported.* Option settlement is REST-only.                       |
-| Option greeks                  | ✓         | Derived from `option_pricing` on option tickers.                       |
+| Capability                     | Supported | Notes                                                                   |
+|--------------------------------|-----------|-------------------------------------------------------------------------|
+| Request instrument (REST)      | ✓         | `public/get_instrument`; loads one instrument into the local cache.     |
+| Request all instruments (REST) | ✓         | `public/get_instruments`; fetches each currency in `currencies`.        |
+| Instrument subscription        | -         | *Not supported.* Use the configured REST refresh interval.              |
+| Order book deltas (L2_MBP)     | ✓         | Channel: `orderbook.{instrument}.{group}.{depth}`.                      |
+| Order book depth10 (L2_MBP)    | ✓         | Same order book channel with `depth=10`.                                |
+| Order book at interval         | -         | *Not supported.* Maintain interval books from deltas locally.           |
+| Order book snapshot (REST)     | -         | *Not supported.* Not exposed by the adapter.                            |
+| Historical book deltas (REST)  | -         | *Not supported.* Not exposed by the adapter.                            |
+| Quotes (`ticker_slim`)         | ✓         | Channel: `ticker_slim.{instrument}.{interval}`.                         |
+| Quote snapshot (REST)          | ✓         | One‑shot `public/get_tickers`; emits a single `QuoteTick`.              |
+| Historical quotes (REST)       | -         | *Not supported.* The venue exposes ticker snapshots only.               |
+| Trades                         | ✓         | Channel: `trades.{instrument_type}.{currency}`.                         |
+| Historical trades (REST)       | ✓         | `public/get_trade_history`; honors `start`, `end`, and `limit`.         |
+| Bars / OHLC (REST)             | ✓         | `public/get_tradingview_chart_data`; minute, hour, day, and week bars.  |
+| Bars / OHLC (WS)               | -         | *Not supported.* The venue has no candle subscription channel.          |
+| Mark price stream              | ✓         | Derived from `ticker_slim`; shares the quote subscription.              |
+| Index price stream             | ✓         | Derived from `ticker_slim`; shares the quote subscription.              |
+| Funding rate stream            | ✓         | Derived from `perp_details.funding_rate` on perp tickers.               |
+| Funding rate history (REST)    | ✓         | `public/get_funding_rate_history` for perpetuals.                       |
+| Instrument status              | -         | *Not supported.* Ticker payloads include `is_active`.                   |
+| Instrument close               | -         | *Not supported.* Option settlement is REST-only.                        |
+| Option greeks                  | ✓         | Derived from `option_pricing` on option tickers.                        |
 | Option chain                   | ✓         | Aggregated from quotes and greeks; `public/get_tickers` bootstraps ATM. |
+
+`request_instrument` calls `public/get_instrument` for the requested `InstrumentId` and
+caches the returned definition before emitting the response. The cached instrument carries
+the precision and increment fields used by later quote, trade, book, and bar parsing.
+
+Derive exposes book deltas and depth10 snapshots through the same
+`orderbook.{instrument}.{group}.{depth}` channel family. `subscribe_book_deltas` publishes
+snapshot deltas as `OrderBookDeltas`, while `subscribe_book_depth10` fixes `depth=10` and
+publishes `OrderBookDepth10` snapshots.
 
 ### Execution
 
@@ -223,13 +239,44 @@ separate signing path, and reconciliation treats spot instruments like other ins
 classes except for the reduce-only guard described below.
 
 The adapter supports ordinary `private/order` requests: `LIMIT` and `MARKET` orders with
-`GTC`, `IOC`, or `FOK` time-in-force values. It does not encode trigger, algo, or TWAP order
-fields yet. Unsupported Nautilus order types are rejected before
-signing, so they cannot fill at the venue.
+`GTC`, `IOC`, or `FOK` time-in-force values. It also supports Derive trigger orders for the
+Nautilus-native stop and if-touched order types listed below. Unsupported Nautilus order
+types are rejected before signing, so they cannot fill at the venue.
 
 Market orders require a cached quote before submission. After the async submit task resolves the
 instrument, it refreshes the current ticker snapshot and derives the signed slippage-bound
 `limit_price` from that refreshed quote.
+
+#### Conditional orders
+
+Derive trigger orders use the WebSocket-only `private/trigger_order` endpoint, not the normal
+`private/order` endpoint. The venue stores them with `order_status=untriggered` until its
+trigger worker submits the signed child order. Reconciliation therefore reads both
+`private/get_open_orders` and `private/get_trigger_orders`.
+
+Derive mainnet requires trigger-order signatures to expire 30 to 90 days from venue time. The
+adapter signs trigger orders with a fixed 31-day expiry; `signature_expiry_secs` still controls
+ordinary `private/order` and `private/replace` writes, and must be greater than the 300s venue
+minimum.
+
+| Nautilus order type | Supported | Derive `order_type` | Derive `trigger_type` | Notes                         |
+|---------------------|-----------|---------------------|-----------------------|-------------------------------|
+| `StopMarket`        | ✓         | `market`            | `stoploss`            | Uses trigger price as bound.  |
+| `StopLimit`         | ✓         | `limit`             | `stoploss`            | Sends limit and trigger price. |
+| `MarketIfTouched`   | ✓         | `market`            | `takeprofit`          | Uses trigger price as bound.  |
+| `LimitIfTouched`    | ✓         | `limit`             | `takeprofit`          | Sends limit and trigger price. |
+| `MarketToLimit`     | -         | -                   | -                     | *Not supported by Derive*.    |
+| Trailing stops      | -         | -                   | -                     | *Not supported by Derive*.    |
+| TWAP / algo / RFQ   | -         | -                   | -                     | *Not exposed by this adapter*. |
+
+The adapter maps Nautilus `TriggerType::Default` and `TriggerType::MarkPrice` to Derive
+`trigger_price_type=mark`. Derive's current error-code reference states that index and
+last-trade trigger price types are not supported yet, so `IndexPrice`, `LastPrice`, `BidAsk`,
+and other trigger price types are rejected locally before signing.
+
+Derive error `11054` states that trigger orders cannot replace or be replaced. The adapter
+therefore rejects Nautilus modify requests for trigger orders with an `OrderModifyRejected`
+event; cancel and resubmit for trigger updates.
 
 #### Execution instructions
 
@@ -379,7 +426,7 @@ Class/struct: `DeriveExecClientConfig`.
 | `domain_separator`          | `None`    | Optional EIP-712 domain separator override. |
 | `action_typehash`           | `None`    | Optional EIP-712 action typehash override. |
 | `trade_module_address`      | `None`    | Optional Trade module contract address override. |
-| `signature_expiry_secs`     | `600`     | Signature expiry TTL; Derive requires at least five minutes. |
+| `signature_expiry_secs`     | `600`     | Order/replace TTL; must be >300s. Trigger orders use fixed 31-day TTL. |
 | `market_order_slippage_bps` | `50`      | Slippage bound for market‑order limit prices. |
 | `transport_backend`         | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled. |
 

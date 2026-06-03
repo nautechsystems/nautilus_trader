@@ -125,7 +125,7 @@ impl DonchianChannel {
             .iter()
             .copied()
             .fold(f64::INFINITY, f64::min);
-        self.middle = 0.5 * (self.upper + self.lower);
+        self.middle = f64::midpoint(self.upper, self.lower);
     }
 }
 

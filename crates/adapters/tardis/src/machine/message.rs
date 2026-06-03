@@ -127,6 +127,65 @@ pub struct DerivativeTickerMsg {
     pub local_timestamp: DateTime<Utc>,
 }
 
+/// Option summary info sourced from the options instrument channel, carrying exchange-provided
+/// greeks, implied volatilities, mark and underlying prices, and best bid/ask for a single option.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OptionSummaryMsg {
+    /// The symbol as provided by the exchange.
+    #[serde(deserialize_with = "deserialize_uppercase")]
+    pub symbol: Ustr,
+    /// The exchange ID.
+    pub exchange: TardisExchange,
+    /// The option type, either `put` or `call`.
+    pub option_type: String,
+    /// The option strike price.
+    pub strike_price: f64,
+    /// The option expiration date provided by the exchange.
+    pub expiration_date: DateTime<Utc>,
+    /// The best bid price if provided by the exchange.
+    pub best_bid_price: Option<f64>,
+    /// The best bid amount if provided by the exchange.
+    pub best_bid_amount: Option<f64>,
+    /// The best bid implied volatility if provided by the exchange.
+    #[serde(rename = "bestBidIV")]
+    pub best_bid_iv: Option<f64>,
+    /// The best ask price if provided by the exchange.
+    pub best_ask_price: Option<f64>,
+    /// The best ask amount if provided by the exchange.
+    pub best_ask_amount: Option<f64>,
+    /// The best ask implied volatility if provided by the exchange.
+    #[serde(rename = "bestAskIV")]
+    pub best_ask_iv: Option<f64>,
+    /// The last trade price if provided by the exchange.
+    pub last_price: Option<f64>,
+    /// The open interest if provided by the exchange.
+    pub open_interest: Option<f64>,
+    /// The mark price if provided by the exchange.
+    pub mark_price: Option<f64>,
+    /// The mark implied volatility if provided by the exchange.
+    #[serde(rename = "markIV")]
+    pub mark_iv: Option<f64>,
+    /// The option delta if provided by the exchange.
+    pub delta: Option<f64>,
+    /// The option gamma if provided by the exchange.
+    pub gamma: Option<f64>,
+    /// The option vega if provided by the exchange.
+    pub vega: Option<f64>,
+    /// The option theta if provided by the exchange.
+    pub theta: Option<f64>,
+    /// The option rho if provided by the exchange.
+    pub rho: Option<f64>,
+    /// The underlying price if provided by the exchange.
+    pub underlying_price: Option<f64>,
+    /// The underlying index name.
+    pub underlying_index: String,
+    /// The message timestamp provided by the exchange.
+    pub timestamp: DateTime<Utc>,
+    /// The local timestamp when the message was received.
+    pub local_timestamp: DateTime<Utc>,
+}
+
 /// Trades data in aggregated form, known as OHLC, candlesticks, klines etc. Not only most common
 /// time based aggregation is supported, but volume and tick count based as well. Bars are computed
 /// from tick-by-tick raw trade data, if in given interval no trades happened, there is no bar produced.
@@ -191,6 +250,7 @@ pub enum WsMessage {
     Trade(TradeMsg),
     TradeBar(BarMsg),
     DerivativeTicker(DerivativeTickerMsg),
+    OptionSummary(OptionSummaryMsg),
     Disconnect(DisconnectMsg),
 }
 
@@ -404,6 +464,36 @@ mod tests {
         assert_eq!(
             message.local_timestamp,
             DateTime::parse_from_rfc3339("2019-10-23T11:34:29.416Z").unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_option_summary_message() {
+        let json_data = load_test_json("option_summary.json");
+        let message: OptionSummaryMsg = serde_json::from_str(&json_data).unwrap();
+
+        assert_eq!(message.symbol, "BTC-28JUN24-70000-C");
+        assert_eq!(message.exchange, TardisExchange::Deribit);
+        assert_eq!(message.option_type, "call");
+        assert_eq!(message.strike_price, 70_000.0);
+        assert_eq!(message.best_bid_iv, Some(0.55));
+        assert_eq!(message.best_ask_iv, Some(0.58));
+        assert_eq!(message.mark_iv, Some(0.565));
+        assert_eq!(message.delta, Some(0.25));
+        assert_eq!(message.gamma, Some(0.000_02));
+        assert_eq!(message.vega, Some(45.5));
+        assert_eq!(message.theta, Some(-15.2));
+        assert_eq!(message.rho, Some(0.05));
+        assert_eq!(message.underlying_price, Some(63_500.0));
+        assert_eq!(message.underlying_index, "BTC-USD");
+        assert_eq!(message.open_interest, Some(150.0));
+        assert_eq!(
+            message.timestamp,
+            DateTime::parse_from_rfc3339("2024-01-15T10:30:00.123Z").unwrap()
+        );
+        assert_eq!(
+            message.local_timestamp,
+            DateTime::parse_from_rfc3339("2024-01-15T10:30:00.234Z").unwrap()
         );
     }
 

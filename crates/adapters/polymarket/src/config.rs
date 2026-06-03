@@ -157,6 +157,18 @@ pub struct PolymarketDataClientConfig {
     /// Maximum delay (seconds) between transient auto-load retries.
     #[builder(default = 15.0)]
     pub auto_load_retry_delay_max_secs: f64,
+    /// Whether automatic resolve polling is enabled.
+    #[builder(default = true)]
+    pub resolve_poll_enabled: bool,
+    /// Fixed interval between resolve poll cycles in seconds.
+    #[builder(default = 30)]
+    pub resolve_poll_interval_secs: u64,
+    /// Grace period after expiration before a market becomes resolve poll eligible.
+    #[builder(default = 10)]
+    pub resolve_poll_grace_secs: u64,
+    /// Maximum number of seconds to keep auto-polling after expiration before pausing.
+    #[builder(default = 1800)]
+    pub resolve_poll_max_wait_secs: u64,
     /// Instrument filters applied to all instruments during loading and discovery.
     #[builder(default)]
     #[serde(skip)]
@@ -349,6 +361,10 @@ ws_max_subscriptions = 50
 update_instruments_interval_mins = 5
 subscribe_new_markets = true
 auto_load_debounce_ms = 250
+resolve_poll_enabled = true
+resolve_poll_interval_secs = 30
+resolve_poll_grace_secs = 10
+resolve_poll_max_wait_secs = 1800
 ",
         )
         .unwrap();
@@ -359,6 +375,10 @@ auto_load_debounce_ms = 250
         assert!(config.subscribe_new_markets);
         assert_eq!(config.auto_load_debounce_ms, 250);
         assert!(config.instrument_config.is_none());
+        assert!(config.resolve_poll_enabled);
+        assert_eq!(config.resolve_poll_interval_secs, 30);
+        assert_eq!(config.resolve_poll_grace_secs, 10);
+        assert_eq!(config.resolve_poll_max_wait_secs, 1800);
         assert!(config.filters.is_empty());
         assert!(config.new_market_filter.is_none());
     }

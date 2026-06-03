@@ -113,9 +113,10 @@ pub fn parse_book_ticker(
     let size_precision = instrument.size_precision();
 
     let bid_price = parse_positive_price(&msg.best_bid_price, price_precision, "bid price")?;
-    let bid_size = parse_positive_quantity(&msg.best_bid_qty, size_precision, "bid quantity")?;
+    // A side that empties reports a zero size, which is a valid quote state.
+    let bid_size = parse_non_negative_quantity(&msg.best_bid_qty, size_precision, "bid quantity")?;
     let ask_price = parse_positive_price(&msg.best_ask_price, price_precision, "ask price")?;
-    let ask_size = parse_positive_quantity(&msg.best_ask_qty, size_precision, "ask quantity")?;
+    let ask_size = parse_non_negative_quantity(&msg.best_ask_qty, size_precision, "ask quantity")?;
 
     // Spot bookTicker payloads on public streams do not consistently include
     // event timestamps; fall back to receive time when absent.
@@ -151,32 +152,26 @@ pub fn parse_depth_snapshot(
     let mut deltas = Vec::with_capacity(msg.bids.len() + msg.asks.len() + 1);
     deltas.push(OrderBookDelta::clear(instrument_id, 0, ts_init, ts_init));
 
-    for (i, level) in msg.bids.iter().enumerate() {
+    for level in &msg.bids {
         let Some(price) = parse_price_at_precision(&level[0], price_precision) else {
             continue;
         };
         let Some(size) = parse_quantity_at_precision(&level[1], size_precision) else {
             continue;
-        };
-
-        let flags = if i == msg.bids.len() - 1 && msg.asks.is_empty() {
-            RecordFlag::F_LAST as u8
-        } else {
-            0
         };
 
         deltas.push(OrderBookDelta::new(
             instrument_id,
             BookAction::Add,
             BookOrder::new(OrderSide::Buy, price, size, 0),
-            flags,
+            0,
             0,
             ts_init,
             ts_init,
         ));
     }
 
-    for (i, level) in msg.asks.iter().enumerate() {
+    for level in &msg.asks {
         let Some(price) = parse_price_at_precision(&level[0], price_precision) else {
             continue;
         };
@@ -184,17 +179,11 @@ pub fn parse_depth_snapshot(
             continue;
         };
 
-        let flags = if i == msg.asks.len() - 1 {
-            RecordFlag::F_LAST as u8
-        } else {
-            0
-        };
-
         deltas.push(OrderBookDelta::new(
             instrument_id,
             BookAction::Add,
             BookOrder::new(OrderSide::Sell, price, size, 0),
-            flags,
+            0,
             0,
             ts_init,
             ts_init,
@@ -203,6 +192,13 @@ pub fn parse_depth_snapshot(
 
     if deltas.len() <= 1 {
         return None;
+    }
+
+    // Mark the final emitted delta as the snapshot terminator. Assigning F_LAST by
+    // source index would drop the terminator whenever the last level fails to parse
+    // and is skipped above.
+    if let Some(last) = deltas.last_mut() {
+        last.flags |= RecordFlag::F_LAST as u8;
     }
 
     Some(OrderBookDeltas::new(instrument_id, deltas))
@@ -407,5 +403,48 @@ mod tests {
             quote.ask_size.as_decimal(),
             Decimal::from_str("4.56000000").unwrap()
         );
+    }
+
+    #[rstest]
+    fn test_parse_book_ticker_accepts_zero_bid_size() {
+        let instrument = sample_instrument();
+        // A side that empties reports a zero size; the quote must still be produced.
+        let msg = BinanceSpotBookTickerMsg {
+            event_type: None,
+            event_time: None,
+            symbol: Ustr::from("ETHUSDT"),
+            book_update_id: 1,
+            best_bid_price: "100.00000000".to_string(),
+            best_bid_qty: "0.00000000".to_string(),
+            best_ask_price: "101.00000000".to_string(),
+            best_ask_qty: "1.00000000".to_string(),
+            transaction_time: None,
+        };
+
+        let quote = parse_book_ticker(&msg, &instrument, UnixNanos::from(1))
+            .expect("zero bid size is a valid quote");
+        assert_eq!(quote.bid_size.as_decimal(), Decimal::from_str("0").unwrap());
+    }
+
+    #[rstest]
+    fn test_parse_depth_snapshot_sets_last_flag_when_final_level_skipped() {
+        let instrument = sample_instrument();
+        // The final ask level has a zero quantity and is skipped during parsing; the
+        // F_LAST terminator must still land on the last emitted delta.
+        let msg = BinanceSpotPartialDepthMsg {
+            symbol: Ustr::from("ETHUSDT"),
+            last_update_id: 1,
+            bids: vec![["100.00000000".to_string(), "1.00000000".to_string()]],
+            asks: vec![
+                ["101.00000000".to_string(), "2.00000000".to_string()],
+                ["102.00000000".to_string(), "0.00000000".to_string()],
+            ],
+        };
+
+        let deltas = parse_depth_snapshot(&msg, &instrument, UnixNanos::from(1))
+            .expect("snapshot should produce deltas");
+
+        let last = deltas.deltas.last().expect("at least one delta");
+        assert_ne!(last.flags & RecordFlag::F_LAST as u8, 0);
     }
 }

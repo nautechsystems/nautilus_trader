@@ -608,7 +608,7 @@ mod tests {
         let mut position = BetPosition::default();
         let bet = Bet::new(dec!(2.0), dec!(100.0), BetSide::Back);
         position.add_bet(bet);
-        assert!(position.exposure != dec!(0.0));
+        assert_ne!(position.exposure, dec!(0.0));
         position.reset();
 
         // After reset, the position should be cleared

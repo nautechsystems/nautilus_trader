@@ -202,16 +202,6 @@ class BinanceAccountType(Enum):
 
 
 @unique
-class BinanceSpotMarketDataMode(Enum):
-    """
-    Represents a Binance Spot market-data transport mode.
-    """
-
-    SBE = "Sbe"
-    JSON_PUBLIC = "JsonPublic"
-
-
-@unique
 class BinanceOrderSide(Enum):
     """
     Represents a Binance order side.

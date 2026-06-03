@@ -155,3 +155,8 @@ name = "kraken-hurst-vpin-live"
 path = "examples/node_hurst_vpin_live.rs"
 required-features = ["examples"]
 doc = false
+
+[[test]]
+name = "python"
+path = "tests/python.rs"
+required-features = ["python"]

@@ -76,7 +76,6 @@ class LiveDataEngineConfig:
         emit_quotes_from_book_depths: bool | None = None,
         external_clients: typing.Sequence[model.ClientId] | None = None,
         debug: bool | None = None,
-        graceful_shutdown_on_error: bool | None = None,
     ) -> LiveDataEngineConfig: ...
 
 @typing.final
@@ -153,8 +152,15 @@ class LiveNode:
     def stop(self) -> None: ...
     def add_actor_from_config(self, config: common.ImportableActorConfig) -> None: ...
     def add_strategy_from_config(self, config: trading.ImportableStrategyConfig) -> None: ...
-    def add_native_strategy(self, config: typing.Any) -> None: ...
-    def add_native_actor(self, config: typing.Any) -> None: ...
+    def add_plugin(
+        self,
+        path: str,
+        type_name: str,
+        config: typing.Mapping[str, typing.Any] | None = None,
+        sha256: str | None = None,
+    ) -> None: ...
+    def add_native_strategy(self, type_name: str, config: typing.Any) -> None: ...
+    def add_native_actor(self, type_name: str, config: typing.Any) -> None: ...
     def add_exec_algorithm_from_config(
         self, config: trading.ImportableExecAlgorithmConfig
     ) -> None: ...
@@ -200,6 +206,8 @@ class LiveNodeConfig:
     @property
     def save_state(self) -> bool: ...
     @property
+    def shutdown_on_error(self) -> bool: ...
+    @property
     def timeout_connection_secs(self) -> float: ...
     @property
     def timeout_reconciliation_secs(self) -> float: ...
@@ -219,6 +227,7 @@ class LiveNodeConfig:
         trader_id: model.TraderId | None = None,
         load_state: bool | None = None,
         save_state: bool | None = None,
+        shutdown_on_error: bool | None = None,
         logging: common.LoggerConfig | None = None,
         instance_id: core.UUID4 | None = None,
         timeout_connection_secs: float | None = None,
@@ -246,7 +255,6 @@ class LiveRiskEngineConfig:
         max_order_modify_rate: str | None = None,
         max_notional_per_order: typing.Mapping[str, typing.Any] | None = None,
         debug: bool | None = None,
-        graceful_shutdown_on_error: bool | None = None,
     ) -> LiveRiskEngineConfig: ...
 
 @typing.final

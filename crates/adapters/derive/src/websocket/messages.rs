@@ -882,8 +882,17 @@ pub mod methods {
     pub const PUBLIC_UNSUBSCRIBE: &str = "unsubscribe";
     /// Submit a signed order. Params: [`crate::http::query::DeriveOrderParams`].
     pub const PRIVATE_ORDER: &str = "private/order";
+    /// Submit a signed trigger order. Params:
+    /// [`crate::http::query::DeriveTriggerOrderParams`].
+    pub const PRIVATE_TRIGGER_ORDER: &str = "private/trigger_order";
     /// Cancel a single order. Params: [`crate::http::query::DeriveCancelParams`].
     pub const PRIVATE_CANCEL: &str = "private/cancel";
+    /// Cancel a single trigger order. Params:
+    /// [`crate::http::query::DeriveCancelTriggerOrderParams`].
+    pub const PRIVATE_CANCEL_TRIGGER_ORDER: &str = "private/cancel_trigger_order";
+    /// List untriggered trigger orders. Params:
+    /// [`crate::http::query::DeriveGetTriggerOrdersParams`].
+    pub const PRIVATE_GET_TRIGGER_ORDERS: &str = "private/get_trigger_orders";
     /// Cancel every open order on the subaccount, optionally scoped to an
     /// instrument. Params: [`crate::http::query::DeriveCancelAllParams`].
     pub const PRIVATE_CANCEL_ALL: &str = "private/cancel_all";

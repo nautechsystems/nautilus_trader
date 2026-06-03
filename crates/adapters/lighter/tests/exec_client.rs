@@ -29,7 +29,7 @@
 //! Coverage focuses on the public `ExecutionClient` trait surface and the
 //! Lighter-specific invariants that live in `execution.rs` and
 //! `websocket/dispatch.rs`: cloid registration, sendTx attribution,
-//! TradeId-based fill dedup, empty-position-snapshot guarding, and the
+//! TradeId-based fill dedup, empty-position snapshot replacement, and the
 //! mass-status REST fan-out. Lower-level WS parsing and HTTP fixture
 //! coverage lives in `tests/websocket.rs` and `tests/http.rs`.
 
@@ -82,7 +82,10 @@ use nautilus_lighter::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
+    enums::{
+        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
+        TimeInForce, TriggerType,
+    },
     events::{AccountState, OrderEventAny},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol,
@@ -96,7 +99,6 @@ use nautilus_model::{
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
-use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
 const PRIVATE_KEY_HEX: &str =
@@ -1425,8 +1427,8 @@ async fn connect_returns_only_after_each_distinct_stream_marks_its_own_flag(
 
 /// Pins the connect-time position-cache clear. Without it a stale
 /// prior-session position would survive a disconnect/reconnect cycle and
-/// keep surfacing through `generate_position_status_reports` after the
-/// venue's empty initial frame had asserted the account holds no positions.
+/// keep surfacing through `generate_position_status_reports` before the
+/// venue delivers a replacement snapshot.
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_clears_prior_position_cache_across_reconnect() {
@@ -1466,9 +1468,9 @@ async fn connect_clears_prior_position_cache_across_reconnect() {
     client.disconnect().await.expect("disconnect");
 
     // Reconnect. The mock server's auto-emit pushes an empty
-    // `account_all_positions` frame which the consumption loop skips, so
-    // the prior cached position would still surface if `connect()` did not
-    // clear the dispatch cache itself.
+    // `account_all_positions` frame. `connect()` still clears the dispatch
+    // cache itself so no prior-session position can surface before that
+    // frame lands.
     client.connect().await.expect("second connect");
 
     let positions = client
@@ -2873,13 +2875,9 @@ async fn test_generate_fill_reports_skips_trade_seen_on_websocket() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_account_all_positions_empty_snapshot_preserves_prior_cache() {
-    // The consumption loop drops empty `account_all_positions` frames so
-    // a transient reconnect echo cannot synthesise spurious flat-position
-    // reports. We push a non-empty snapshot first, then an empty one, then
-    // assert the cache still surfaces the original position.
+async fn test_account_all_positions_empty_snapshot_clears_cache_and_emits_flat_report() {
     let (addr, state) = start_server().await;
-    let (mut client, _rx, _cache) = build_client(addr);
+    let (mut client, mut rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");
     await_subscribe_count(&state, 4).await;
 
@@ -2909,7 +2907,8 @@ async fn test_account_all_positions_empty_snapshot_preserves_prior_cache() {
     )
     .await;
 
-    // Push an empty positions snapshot. The dispatcher must ignore it.
+    // Push an empty positions snapshot. The dispatcher must treat it as
+    // authoritative and flatten the prior cached position.
     state.push_frame(&json!({
         "type": "update/account_all_positions",
         "channel": format!("account_all_positions:{TEST_ACCOUNT_INDEX}"),
@@ -2919,10 +2918,26 @@ async fn test_account_all_positions_empty_snapshot_preserves_prior_cache() {
         "last_funding_discount": null,
     }));
 
-    // Let the runtime work the empty frame through.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    let flat_report = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
+        matches!(
+            e,
+            ExecutionEvent::Report(ExecutionReport::Position(report))
+                if report.instrument_id == eth_perp_id()
+                    && report.position_side == PositionSideSpecified::Flat
+                    && report.quantity.is_zero()
+        )
+    })
+    .await
+    .expect("flat position report");
 
-    // Prior position is still cached: the empty snapshot was a no-op.
+    let ExecutionEvent::Report(ExecutionReport::Position(flat_report)) = flat_report else {
+        unreachable!("predicate only accepts position reports");
+    };
+    assert_eq!(flat_report.instrument_id, eth_perp_id());
+    assert_eq!(flat_report.position_side, PositionSideSpecified::Flat);
+    assert!(flat_report.quantity.is_zero());
+
+    // The empty snapshot also clears the cached position used by status reports.
     let positions = client
         .generate_position_status_reports(&GeneratePositionStatusReports::new(
             UUID4::new(),
@@ -2936,12 +2951,110 @@ async fn test_account_all_positions_empty_snapshot_preserves_prior_cache() {
         .await
         .expect("position reports");
     assert!(
-        !positions.is_empty(),
-        "empty position snapshot must not evict the prior cache",
+        positions.is_empty(),
+        "empty position snapshot must clear the prior cache, was {positions:?}",
     );
-    // The cached position quantity matches the original fixture (1.5).
-    let qty = positions[0].quantity.as_decimal();
-    assert_eq!(qty, Decimal::new(15, 1));
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prior_position() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    await_subscribe_count(&state, 4).await;
+
+    state.push_frame(&load_json("ws_account_all_positions_update.json"));
+
+    wait_until_async(
+        || {
+            let client_ptr = std::ptr::addr_of!(client);
+            async move {
+                let client = unsafe { &*client_ptr };
+                !client
+                    .generate_position_status_reports(&GeneratePositionStatusReports::new(
+                        UUID4::new(),
+                        UnixNanos::default(),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    ))
+                    .await
+                    .unwrap_or_default()
+                    .is_empty()
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    // Force a transparent reconnect. The execution loop keeps the prior
+    // position cache across this lifecycle event, then lets the next complete
+    // venue snapshot drive the diff.
+    let subs_before_reconnect = state.subscribes().await.len();
+    state.close_after_next_frame.store(true, Ordering::Relaxed);
+    let _ = client.cancel_order(CancelOrder::new(
+        trader_id(),
+        Some(client_id()),
+        strategy_id(),
+        eth_perp_id(),
+        ClientOrderId::from("O-POSITION-RECONNECT"),
+        Some(VenueOrderId::from("1")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    ));
+    await_subscribe_count(&state, subs_before_reconnect + 4).await;
+
+    state.push_frame(&json!({
+        "type": "update/account_all_positions",
+        "channel": format!("account_all_positions:{TEST_ACCOUNT_INDEX}"),
+        "positions": {},
+        "shares": [],
+        "last_funding_round": null,
+        "last_funding_discount": null,
+    }));
+
+    let flat_report = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
+        matches!(
+            e,
+            ExecutionEvent::Report(ExecutionReport::Position(report))
+                if report.instrument_id == eth_perp_id()
+                    && report.position_side == PositionSideSpecified::Flat
+                    && report.quantity.is_zero()
+        )
+    })
+    .await
+    .expect("flat position report after reconnect");
+
+    let ExecutionEvent::Report(ExecutionReport::Position(flat_report)) = flat_report else {
+        unreachable!("predicate only accepts position reports");
+    };
+    assert_eq!(flat_report.instrument_id, eth_perp_id());
+    assert_eq!(flat_report.position_side, PositionSideSpecified::Flat);
+    assert!(flat_report.quantity.is_zero());
+
+    let positions = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect("position reports");
+    assert!(
+        positions.is_empty(),
+        "empty position snapshot after reconnect must clear the prior cache, was {positions:?}",
+    );
 
     client.disconnect().await.expect("disconnect");
 }

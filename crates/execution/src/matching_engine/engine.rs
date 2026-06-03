@@ -1454,6 +1454,15 @@ impl OrderMatchingEngine {
 
         self.precision_mismatch_streak = 0;
 
+        let price_type = bar_type.spec().price_type;
+        if price_type == PriceType::Mark {
+            log::warn!(
+                "Cannot process bar for {} with `PriceType::Mark`, mark price bars are not supported for bar execution",
+                bar.instrument_id(),
+            );
+            return;
+        }
+
         let execution_bar_type =
             if let Some(execution_bar_type) = self.execution_bar_types.get(&bar.instrument_id()) {
                 execution_bar_type.to_owned()
@@ -1483,7 +1492,7 @@ impl OrderMatchingEngine {
             }
         }
 
-        match bar_type.spec().price_type {
+        match price_type {
             PriceType::Last | PriceType::Mid => self.process_trade_ticks_from_bar(bar),
             PriceType::Bid => {
                 self.last_bar_bid = Some(bar.to_owned());
@@ -1493,7 +1502,9 @@ impl OrderMatchingEngine {
                 self.last_bar_ask = Some(bar.to_owned());
                 self.process_quote_ticks_from_bar(bar);
             }
-            PriceType::Mark => panic!("Not implemented"),
+            PriceType::Mark => {
+                unreachable!("PriceType::Mark bars return before execution bar state updates")
+            }
         }
     }
 
@@ -4672,24 +4683,27 @@ impl OrderMatchingEngine {
         self.check_size_precision(last_qty.precision, "fill quantity")
             .unwrap();
 
-        match self.cached_filled_qty.get(&order.client_order_id()) {
-            Some(filled_qty) => {
-                // Use saturating_sub to prevent panic if filled_qty > quantity
+        let (last_qty, new_filled_qty) =
+            if let Some(filled_qty) = self.cached_filled_qty.get(&order.client_order_id()) {
                 let leaves_qty = order.quantity().saturating_sub(*filled_qty);
                 let last_qty = min(last_qty, leaves_qty);
-                let new_filled_qty = *filled_qty + last_qty;
-                self.cached_filled_qty
-                    .insert(order.client_order_id(), new_filled_qty);
-            }
-            None => {
-                self.cached_filled_qty
-                    .insert(order.client_order_id(), last_qty);
-            }
+                (last_qty, *filled_qty + last_qty)
+            } else {
+                let last_qty = min(last_qty, order.quantity());
+                (last_qty, last_qty)
+            };
+
+        self.cached_filled_qty
+            .insert(order.client_order_id(), new_filled_qty);
+
+        if last_qty.is_zero() {
+            return;
         }
 
+        let underlying_px = self.fee_underlying_price();
         let commission = self
             .fee_model
-            .get_commission(order, last_qty, last_px, &self.instrument)
+            .get_commission_with_context(order, last_qty, last_px, &self.instrument, underlying_px)
             .unwrap_or_else(|e| {
                 panic!(
                     "Failed to compute commission for {}: {}",
@@ -4710,10 +4724,13 @@ impl OrderMatchingEngine {
             liquidity_side,
         );
 
-        let fully_filled = self
+        let post_fill_filled_qty = self
             .cached_filled_qty
             .get(&order.client_order_id())
-            .is_some_and(|qty| qty >= &order.quantity());
+            .copied()
+            .unwrap_or(order.filled_qty());
+        let post_fill_leaves_qty = order.quantity().saturating_sub(post_fill_filled_qty);
+        let fully_filled = post_fill_leaves_qty.is_zero();
 
         if order.is_closed() || fully_filled {
             if self.core.order_exists(order.client_order_id()) {
@@ -4819,16 +4836,26 @@ impl OrderMatchingEngine {
                                 continue;
                             }
 
-                            if order.is_closed() && child_order.is_open() {
+                            let child_filled_qty = self
+                                .cached_filled_qty
+                                .get(&child_order.client_order_id())
+                                .copied()
+                                .unwrap_or(child_order.filled_qty());
+
+                            if post_fill_leaves_qty.is_zero() && child_order.is_open() {
                                 self.cancel_order(&child_order, None);
-                            } else if !order.leaves_qty().is_zero()
-                                && order.leaves_qty() != child_order.leaves_qty()
+                            } else if child_order.is_open()
+                                && child_filled_qty >= post_fill_leaves_qty
+                            {
+                                self.cancel_order(&child_order, Some(false));
+                            } else if !post_fill_leaves_qty.is_zero()
+                                && post_fill_leaves_qty != child_order.leaves_qty()
                             {
                                 let price = child_order.price();
                                 let trigger_price = child_order.trigger_price();
                                 self.update_order(
                                     &mut child_order,
-                                    Some(order.leaves_qty()),
+                                    Some(post_fill_leaves_qty),
                                     price,
                                     trigger_price,
                                     Some(false),
@@ -4845,6 +4872,30 @@ impl OrderMatchingEngine {
                 _ => {}
             }
         }
+    }
+
+    fn fee_underlying_price(&self) -> Option<Price> {
+        if !matches!(
+            self.instrument,
+            InstrumentAny::CryptoOption(_) | InstrumentAny::OptionContract(_)
+        ) {
+            return None;
+        }
+
+        let underlying = self.instrument.underlying()?;
+        let underlying_id = InstrumentId::from(format!("{underlying}.{}", self.venue).as_str());
+        let instrument_id = self.instrument.id();
+        let cache = self.cache.borrow();
+        cache
+            .price(&underlying_id, PriceType::Last)
+            .or_else(|| cache.price(&underlying_id, PriceType::Mark))
+            .or_else(|| cache.price(&underlying_id, PriceType::Mid))
+            .or_else(|| {
+                cache
+                    .option_greeks(&instrument_id)
+                    .and_then(|greeks| greeks.underlying_price)
+                    .map(|price| Price::new(price, FIXED_PRECISION))
+            })
     }
 
     fn cached_order_is_closed(&self, client_order_id: ClientOrderId) -> bool {
@@ -5397,7 +5448,7 @@ impl OrderMatchingEngine {
                     .is_some_and(|c| c != ContingencyType::NoContingency)
                 && update_contingencies
             {
-                self.update_contingent_order(order);
+                self.update_contingent_order(order, quantity);
             }
             // Pass false since we already handled contingents above
             self.cancel_order(order, Some(false));
@@ -5410,7 +5461,7 @@ impl OrderMatchingEngine {
                 .is_some_and(|c| c != ContingencyType::NoContingency)
             && update_contingencies
         {
-            self.update_contingent_order(order);
+            self.update_contingent_order(order, quantity);
         }
 
         true
@@ -5579,15 +5630,19 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn update_contingent_order(&mut self, order: &OrderAny) {
-        log::debug!("Updating OUO orders from {}", order.client_order_id());
+    fn update_contingent_order(&mut self, order: &OrderAny, parent_quantity: Quantity) {
+        log::debug!(
+            "Updating contingent orders from {}",
+            order.client_order_id()
+        );
+
         if let Some(linked_order_ids) = order.linked_order_ids() {
             let parent_filled_qty = self
                 .cached_filled_qty
                 .get(&order.client_order_id())
                 .copied()
                 .unwrap_or(order.filled_qty());
-            let parent_leaves_qty = order.quantity().saturating_sub(parent_filled_qty);
+            let parent_leaves_qty = parent_quantity.saturating_sub(parent_filled_qty);
 
             for client_order_id in linked_order_ids {
                 let mut child_order = match self.cache.borrow().order(client_order_id) {

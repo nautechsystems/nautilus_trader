@@ -46,6 +46,7 @@ pub struct BacktestResult {
     pub total_events: usize,
     pub total_orders: usize,
     pub total_positions: usize,
+    pub summary: AHashMap<String, String>,
     pub stats_pnls: AHashMap<String, AHashMap<String, f64>>,
     pub stats_returns: AHashMap<String, f64>,
     pub stats_general: AHashMap<String, f64>,

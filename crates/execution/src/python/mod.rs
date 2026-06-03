@@ -51,6 +51,8 @@ pub fn execution(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::models::fee::FixedFeeModel>()?;
     m.add_class::<crate::models::fee::MakerTakerFeeModel>()?;
     m.add_class::<crate::models::fee::PerContractFeeModel>()?;
+    m.add_class::<crate::models::fee::CappedOptionFeeModel>()?;
+    m.add_class::<crate::models::fee::TieredNotionalOptionFeeModel>()?;
     m.add_class::<crate::models::fill::DefaultFillModel>()?;
     m.add_class::<crate::models::fill::BestPriceFillModel>()?;
     m.add_class::<crate::models::fill::OneTickSlippageFillModel>()?;

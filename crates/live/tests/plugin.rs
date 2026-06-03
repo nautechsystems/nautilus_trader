@@ -1888,6 +1888,109 @@ fn live_node_loads_configured_plugin_actor_strategy_and_custom_data() {
 }
 
 #[rstest]
+fn live_node_add_plugin_registers_actor() {
+    let path = build_example_once();
+    let mut node = LiveNode::build(
+        "PluginAddNode".to_string(),
+        Some(LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+    )
+    .unwrap();
+
+    node.add_plugin(PluginConfig {
+        path: path.display().to_string(),
+        type_name: "ExampleActor".to_string(),
+        config: HashMap::from([(
+            "actor_id".to_string(),
+            serde_json::json!("ExampleActorAdd-001"),
+        )]),
+        sha256: None,
+    })
+    .unwrap();
+
+    let trader = node.kernel().trader.borrow();
+    assert!(
+        trader
+            .actor_ids()
+            .contains(&ActorId::from("ExampleActorAdd-001"))
+    );
+}
+
+#[rstest]
+fn live_node_add_plugin_rejects_sha256_mismatch() {
+    let path = build_example_once();
+    let mut node = LiveNode::build(
+        "PluginAddShaNode".to_string(),
+        Some(LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+    )
+    .unwrap();
+
+    let error = node
+        .add_plugin(PluginConfig {
+            path: path.display().to_string(),
+            type_name: "ExampleActor".to_string(),
+            config: HashMap::from([(
+                "actor_id".to_string(),
+                serde_json::json!("ExampleActorShaMismatch-001"),
+            )]),
+            sha256: Some("0".repeat(64)),
+        })
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("SHA-256 mismatch"));
+    let trader = node.kernel().trader.borrow();
+    assert!(
+        !trader
+            .actor_ids()
+            .contains(&ActorId::from("ExampleActorShaMismatch-001"))
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn live_node_add_plugin_rejects_after_start() {
+    let mut node = LiveNode::build(
+        "PluginAddRunningNode".to_string(),
+        Some(LiveNodeConfig {
+            delay_post_stop: Duration::ZERO,
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+    )
+    .unwrap();
+
+    node.start().await.unwrap();
+    let error = node
+        .add_plugin(PluginConfig {
+            path: "./libexample.so".to_string(),
+            type_name: "ExampleActor".to_string(),
+            ..Default::default()
+        })
+        .unwrap_err()
+        .to_string();
+
+    if node.is_running() {
+        node.stop().await.unwrap();
+    }
+
+    assert!(error.contains("Cannot add plug-in after the node leaves Idle state"));
+}
+
+#[rstest]
 fn live_node_accepts_matching_plugin_sha256() {
     let path = build_example_once();
     let bytes = fs::read(&path).expect("example cdylib can be read");

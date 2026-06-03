@@ -124,6 +124,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
                 LogColor.BLUE,
             )
             self._is_ib_connected.set()
+            self._had_ib_connection = True
 
     async def _handle_subscription_error(
         self,

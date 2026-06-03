@@ -109,5 +109,5 @@ config = GridMarketMakerConfig(
     requote_threshold_bps=5,
 )
 
-node.add_native_strategy(config)
+node.add_native_strategy("GridMarketMaker", config)
 ```

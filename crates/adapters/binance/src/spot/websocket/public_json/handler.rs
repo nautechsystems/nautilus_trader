@@ -288,6 +288,18 @@ impl BinanceSpotPublicWsHandler {
                 .collect();
         }
 
+        // `serverShutdown` is not a `BinanceWsEventType` variant (it deserializes to
+        // `Unknown` via `#[serde(other)]`), so detect it from the raw `e` field before
+        // enum dispatch, mirroring the SBE streams handler.
+        if payload.get("e").and_then(|v| v.as_str()) == Some("serverShutdown") {
+            return serde_json::from_value::<BinanceSpotServerShutdownMsg>(payload)
+                .map(BinanceSpotPublicWsMessage::ServerShutdown)
+                .map_err(|e| log::warn!("Failed to parse Spot server shutdown event: {e}"))
+                .ok()
+                .into_iter()
+                .collect();
+        }
+
         let Some(event_type) = extract_event_type(&payload) else {
             return vec![BinanceSpotPublicWsMessage::RawJson(payload)];
         };
@@ -313,18 +325,7 @@ impl BinanceSpotPublicWsHandler {
                 .ok()
                 .into_iter()
                 .collect(),
-            BinanceWsEventType::Unknown => vec![BinanceSpotPublicWsMessage::RawJson(payload)],
-            _ => {
-                if event_type.as_str() == "serverShutdown" {
-                    return serde_json::from_value::<BinanceSpotServerShutdownMsg>(payload)
-                        .map(BinanceSpotPublicWsMessage::ServerShutdown)
-                        .map_err(|e| log::warn!("Failed to parse Spot server shutdown event: {e}"))
-                        .ok()
-                        .into_iter()
-                        .collect();
-                }
-                vec![BinanceSpotPublicWsMessage::RawJson(payload)]
-            }
+            _ => vec![BinanceSpotPublicWsMessage::RawJson(payload)],
         }
     }
 }
@@ -484,5 +485,33 @@ mod tests {
         let out = handler.handle_stream_data(&payload);
         assert_eq!(out.len(), 1);
         assert!(matches!(out[0], BinanceSpotPublicWsMessage::BookTicker(_)));
+    }
+
+    #[rstest]
+    fn test_handle_stream_data_emits_server_shutdown() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let request_id_counter = Arc::new(AtomicU64::new(1));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new('@');
+
+        let handler = BinanceSpotPublicWsHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            subscriptions,
+            request_id_counter,
+        );
+
+        // `serverShutdown` is not a BinanceWsEventType variant, so it must be
+        // recognized from the raw `e` field rather than dropped as RawJson.
+        let payload = json!({"e": "serverShutdown", "E": 1_700_000_000_000_i64});
+
+        let out = handler.handle_stream_data(&payload);
+        assert_eq!(out.len(), 1);
+        assert!(matches!(
+            out[0],
+            BinanceSpotPublicWsMessage::ServerShutdown(_)
+        ));
     }
 }

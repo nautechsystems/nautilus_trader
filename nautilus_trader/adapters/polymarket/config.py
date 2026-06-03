@@ -88,6 +88,16 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
         The initial delay (seconds) between transient auto-load retries.
     auto_load_retry_delay_max_secs : PositiveFloat, default 15.0
         The maximum delay (seconds) between transient auto-load retries.
+    resolve_poll_enabled : bool, default True
+        If automatic post-expiry resolve polling is enabled.
+    resolve_poll_interval_secs : PositiveInt, default 30
+        The fixed interval (seconds) between automatic resolve poll cycles.
+    resolve_poll_grace_secs : NonNegativeInt, default 10
+        The grace period (seconds) after market expiry before automatic resolve
+        polling becomes eligible.
+    resolve_poll_max_wait_secs : PositiveInt, default 1800
+        The maximum number of seconds to continue automatic resolve polling
+        after expiry before leaving positions in a paused manual-recovery state.
 
     """
 
@@ -106,6 +116,7 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
     ws_connection_delay_secs: PositiveFloat = 0.1
     ws_max_subscriptions_per_connection: PositiveInt = 200
     update_instruments_interval_mins: PositiveInt | None = 60
+    subscribe_new_markets: bool = False
     compute_effective_deltas: bool = False
     drop_quotes_missing_side: bool = True
     auto_load_missing_instruments: bool = True
@@ -113,6 +124,10 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
     auto_load_max_retries: NonNegativeInt = 12
     auto_load_retry_delay_initial_secs: PositiveFloat = 5.0
     auto_load_retry_delay_max_secs: PositiveFloat = 15.0
+    resolve_poll_enabled: bool = True
+    resolve_poll_interval_secs: PositiveInt = 30
+    resolve_poll_grace_secs: NonNegativeInt = 10
+    resolve_poll_max_wait_secs: PositiveInt = 1800
 
 
 class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):

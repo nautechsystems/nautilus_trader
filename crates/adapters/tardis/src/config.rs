@@ -83,6 +83,8 @@ pub struct TardisReplayConfig {
     /// - `deltas`: Convert to `OrderBookDeltas` and write to `order_book_deltas/` (default).
     /// - `depth10`: Convert to `OrderBookDepth10` and write to `order_book_depths/`.
     pub book_snapshot_output: Option<BookSnapshotOutput>,
+    /// If best bid/offer fields from Tardis `option_summary` messages should emit `QuoteTick`.
+    pub extract_bbo_as_quotes: Option<bool>,
     /// The compression codec for written data files.
     ///
     /// - `zstd`: Use Zstandard compression level 3 (default).
@@ -118,6 +120,9 @@ pub struct TardisDataClientConfig {
     /// Output format for `book_snapshot_*` messages.
     #[builder(default)]
     pub book_snapshot_output: BookSnapshotOutput,
+    /// Whether to emit `QuoteTick` from Tardis `option_summary` best bid/offer fields.
+    #[builder(default)]
+    pub extract_bbo_as_quotes: bool,
     /// Replay options defining exchanges, symbols, date ranges, and data types.
     /// When non-empty the client connects to `ws-replay-normalized`.
     #[builder(default)]
@@ -152,6 +157,7 @@ mod tests {
             config.book_snapshot_output,
             BookSnapshotOutput::Deltas
         ));
+        assert!(!config.extract_bbo_as_quotes);
         assert!(config.options.is_empty());
         assert!(config.stream_options.is_empty());
     }
@@ -229,6 +235,7 @@ book_snapshot_output = "depth10"
             config.book_snapshot_output,
             BookSnapshotOutput::Depth10
         ));
+        assert!(!config.extract_bbo_as_quotes);
         assert!(config.options.is_empty());
     }
 
@@ -245,6 +252,7 @@ normalize_symbols = false
         assert!(config.options.is_empty());
         assert_eq!(config.tardis_ws_url.as_deref(), Some("wss://example.com"));
         assert_eq!(config.normalize_symbols, Some(false));
+        assert_eq!(config.extract_bbo_as_quotes, None);
     }
 
     #[rstest]
@@ -256,6 +264,7 @@ normalize_symbols = false
             "options": [],
             "proxy_url": null,
             "book_snapshot_output": "depth10",
+            "extract_bbo_as_quotes": true,
             "compression": "zstd"
         }"#;
 
@@ -265,6 +274,7 @@ normalize_symbols = false
             config.book_snapshot_output,
             Some(BookSnapshotOutput::Depth10)
         ));
+        assert_eq!(config.extract_bbo_as_quotes, Some(true));
         assert!(matches!(config.compression, Some(ParquetCompression::Zstd)));
     }
 }

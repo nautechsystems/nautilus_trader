@@ -51,6 +51,17 @@ Margin account features (borrow, repay, isolated margin management) are not impl
 The Python adapter will not add margin support. Full margin trading support is planned for v2.
 :::
 
+:::info
+Each Binance client instance handles one product type. The Rust configs use a
+singular `product_type` field, and the live factories create one data or
+execution client from one config. To run Spot and Futures in the same node,
+configure separate clients with distinct IDs such as `BINANCE_SPOT` and
+`BINANCE_FUTURES`, then pass the matching `client_id` when a strategy subscribes
+or submits orders. The Python adapter uses different config field names, but
+`examples/live/binance/binance_spot_and_futures_market_maker.py` shows the same
+multi-client ID routing pattern.
+:::
+
 ## Data types
 
 The integration includes several custom data types:

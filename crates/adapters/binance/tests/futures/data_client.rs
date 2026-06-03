@@ -414,7 +414,7 @@ fn create_test_data_client(
     set_data_event_sender(tx);
 
     let config = BinanceDataClientConfig {
-        product_types: vec![BinanceProductType::UsdM],
+        product_type: BinanceProductType::UsdM,
         base_url_http: Some(base_url_http),
         base_url_ws: Some(base_url_ws),
         ..Default::default()
@@ -439,7 +439,7 @@ fn create_test_data_client_for_product_type(
     set_data_event_sender(tx);
 
     let config = BinanceDataClientConfig {
-        product_types: vec![product_type],
+        product_type,
         base_url_http: Some(base_url_http),
         base_url_ws: Some(base_url_ws),
         ..Default::default()

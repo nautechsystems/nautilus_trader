@@ -26,6 +26,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 /// Derive network selector. Drives REST/WS URLs and per-network protocol
 /// constants (`DOMAIN_SEPARATOR`, module addresses).
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -113,7 +114,7 @@ pub enum DeriveOrderSide {
     Sell,
 }
 
-/// Order type accepted by `private/order`.
+/// Order type accepted by `private/order` and `private/trigger_order`.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString, AsRefStr,
 )]
@@ -124,13 +125,39 @@ pub enum DeriveOrderType {
     Market,
 }
 
-/// Order lifecycle status reported by `private/get_orders`,
-/// `private/get_order_history`, and the WS `{subaccount_id}.orders` channel.
+/// Trigger side accepted by `private/trigger_order`.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString, AsRefStr,
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
+pub enum DeriveTriggerType {
+    /// Stop-loss trigger.
+    Stoploss,
+    /// Take-profit trigger.
+    Takeprofit,
+}
+
+/// Trigger price source accepted by `private/trigger_order`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString, AsRefStr,
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum DeriveTriggerPriceType {
+    /// Derive mark price.
+    Mark,
+    /// Derive index price. Present in schemas, but currently rejected by the venue.
+    Index,
+}
+
+/// Order lifecycle status reported by `private/get_orders`,
+/// `private/get_order_history`, and the WS `{subaccount_id}.orders` channel.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString, AsRefStr,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum DeriveOrderStatus {
     /// Resting in the book or accepted by the matching engine.
     Open,
@@ -142,6 +169,10 @@ pub enum DeriveOrderStatus {
     Cancelled,
     /// `signature_expiry_sec` was reached.
     Expired,
+    /// Trigger order saved but not yet fired.
+    Untriggered,
+    /// Algorithmic parent order active on the venue.
+    AlgoActive,
 }
 
 /// Time-in-force flag accepted by `private/order`.
@@ -225,10 +256,18 @@ pub enum DeriveOrderCancelReason {
     #[serde(rename = "compliance")]
     #[strum(serialize = "compliance")]
     Compliance,
+    /// Trigger worker could not submit the child order.
+    #[serde(rename = "trigger_failed")]
+    #[strum(serialize = "trigger_failed")]
+    TriggerFailed,
     /// Pre-engine validation failure (SDK-only, not in the public schema).
     #[serde(rename = "validation_failed")]
     #[strum(serialize = "validation_failed")]
     ValidationFailed,
+    /// Algorithmic parent completed after finishing its slices.
+    #[serde(rename = "algo_completed")]
+    #[strum(serialize = "algo_completed")]
+    AlgoCompleted,
     /// Post-only order would cross the market.
     #[serde(rename = "Post only order cannot cross the market")]
     #[strum(serialize = "Post only order cannot cross the market")]
@@ -593,11 +632,32 @@ mod tests {
     }
 
     #[rstest]
+    #[case(DeriveTriggerType::Stoploss, "stoploss")]
+    #[case(DeriveTriggerType::Takeprofit, "takeprofit")]
+    fn test_trigger_type_wire_strings(#[case] variant: DeriveTriggerType, #[case] expected: &str) {
+        assert_eq!(variant.to_string(), expected);
+        assert_eq!(DeriveTriggerType::from_str(expected).unwrap(), variant);
+    }
+
+    #[rstest]
+    #[case(DeriveTriggerPriceType::Mark, "mark")]
+    #[case(DeriveTriggerPriceType::Index, "index")]
+    fn test_trigger_price_type_wire_strings(
+        #[case] variant: DeriveTriggerPriceType,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(variant.to_string(), expected);
+        assert_eq!(DeriveTriggerPriceType::from_str(expected).unwrap(), variant);
+    }
+
+    #[rstest]
     #[case(DeriveOrderStatus::Open, "open")]
     #[case(DeriveOrderStatus::Filled, "filled")]
     #[case(DeriveOrderStatus::Rejected, "rejected")]
     #[case(DeriveOrderStatus::Cancelled, "cancelled")]
     #[case(DeriveOrderStatus::Expired, "expired")]
+    #[case(DeriveOrderStatus::Untriggered, "untriggered")]
+    #[case(DeriveOrderStatus::AlgoActive, "algo_active")]
     fn test_order_status_wire_strings(#[case] variant: DeriveOrderStatus, #[case] expected: &str) {
         assert_eq!(variant.to_string(), expected);
         assert_eq!(DeriveOrderStatus::from_str(expected).unwrap(), variant);
@@ -620,7 +680,9 @@ mod tests {
     )]
     #[case(DeriveOrderCancelReason::SubaccountWithdrawn, "subaccount_withdrawn")]
     #[case(DeriveOrderCancelReason::Compliance, "compliance")]
+    #[case(DeriveOrderCancelReason::TriggerFailed, "trigger_failed")]
     #[case(DeriveOrderCancelReason::ValidationFailed, "validation_failed")]
+    #[case(DeriveOrderCancelReason::AlgoCompleted, "algo_completed")]
     #[case(
         DeriveOrderCancelReason::PostOnlyCrossMarket,
         "Post only order cannot cross the market"

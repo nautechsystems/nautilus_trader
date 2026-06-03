@@ -352,6 +352,22 @@ pub struct ClobBookResponse {
     pub asks: Vec<ClobBookLevel>,
 }
 
+/// A single outcome token in a CLOB market response.
+#[derive(Clone, Debug, Deserialize)]
+pub struct ClobMarketToken {
+    pub token_id: String,
+    pub outcome: String,
+    pub winner: bool,
+}
+
+/// Response from CLOB `GET /markets/{condition_id}`.
+#[derive(Clone, Debug, Deserialize)]
+pub struct ClobMarketResponse {
+    pub condition_id: String,
+    pub closed: bool,
+    pub tokens: Vec<ClobMarketToken>,
+}
+
 /// A position from the Polymarket Data API `GET /positions` endpoint.
 #[derive(Clone, Debug, Deserialize)]
 pub struct DataApiPosition {
@@ -761,6 +777,36 @@ mod tests {
         let response: ClobBookResponse = serde_json::from_str(json).unwrap();
         assert!(response.bids.is_empty());
         assert!(response.asks.is_empty());
+    }
+
+    #[rstest]
+    fn test_clob_market_response_deserialization_accepting_false() {
+        let response: ClobMarketResponse = load("clob_market_closed_binary_accepting_false.json");
+        assert_eq!(
+            response.condition_id,
+            "0x8ccc3f4951ff02c1d34b87988752b4444ad17228732780a6cf22afefe8478bb6"
+        );
+        assert!(response.closed);
+        assert_eq!(response.tokens.len(), 2);
+        assert_eq!(response.tokens[0].outcome, "Yes");
+        assert!(!response.tokens[0].winner);
+        assert_eq!(response.tokens[1].outcome, "No");
+        assert!(response.tokens[1].winner);
+    }
+
+    #[rstest]
+    fn test_clob_market_response_deserialization_accepting_true() {
+        let response: ClobMarketResponse = load("clob_market_closed_binary_accepting_true.json");
+        assert_eq!(
+            response.condition_id,
+            "0xd57eed0d44f5b8ca54925d8d6ff440b146b3e6e071da18136ee3ee572d34479e"
+        );
+        assert!(response.closed);
+        assert_eq!(response.tokens.len(), 2);
+        assert_eq!(response.tokens[0].outcome, "Yes");
+        assert!(response.tokens[0].winner);
+        assert_eq!(response.tokens[1].outcome, "No");
+        assert!(!response.tokens[1].winner);
     }
 
     #[rstest]

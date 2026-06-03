@@ -7,6 +7,7 @@ from nautilus_trader import model
 
 __all__ = [
     "BestPriceFillModel",
+    "CappedOptionFeeModel",
     "CompetitionAwareFillModel",
     "DefaultFillModel",
     "ExecutionEngineConfig",
@@ -21,6 +22,7 @@ __all__ = [
     "SizeAwareFillModel",
     "StaticLatencyModel",
     "ThreeTierFillModel",
+    "TieredNotionalOptionFeeModel",
     "TwoTierFillModel",
     "VolumeSensitiveFillModel",
     "calculate_reconciliation_price",
@@ -33,6 +35,15 @@ __all__ = [
 class BestPriceFillModel:
     def __init__(
         self, prob_fill_on_limit: float, prob_slippage: float, random_seed: int | None = ...
+    ) -> None: ...
+
+@typing.final
+class CappedOptionFeeModel:
+    def __init__(
+        self,
+        maker_rate: decimal.Decimal | None = None,
+        taker_rate: decimal.Decimal | None = None,
+        cap_rate: decimal.Decimal | None = None,
     ) -> None: ...
 
 @typing.final
@@ -152,6 +163,12 @@ class StaticLatencyModel:
 class ThreeTierFillModel:
     def __init__(
         self, prob_fill_on_limit: float, prob_slippage: float, random_seed: int | None = ...
+    ) -> None: ...
+
+@typing.final
+class TieredNotionalOptionFeeModel:
+    def __init__(
+        self, maker_rate: decimal.Decimal | None = None, taker_rate: decimal.Decimal | None = None
     ) -> None: ...
 
 @typing.final

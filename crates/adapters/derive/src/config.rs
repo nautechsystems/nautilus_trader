@@ -19,11 +19,13 @@ use std::fmt::Debug;
 
 use nautilus_network::websocket::TransportBackend;
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 
 use crate::common::{enums::DeriveEnvironment, urls};
 
 /// Configuration for the Derive data client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Clone, Debug, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.derive", from_py_object)
@@ -101,7 +103,8 @@ impl DeriveDataClientConfig {
 /// `Debug` is implemented manually so that `session_key` is redacted; the
 /// derived `Debug` would leak the raw secret through any logger or Python
 /// `__repr__`.
-#[derive(Clone, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.derive", from_py_object)
@@ -158,9 +161,9 @@ pub struct DeriveExecClientConfig {
     /// Override for the Trade module contract address. Falls back to the
     /// shipped per-environment constant when unset.
     pub trade_module_address: Option<String>,
-    /// Signature expiry TTL in seconds (added to the wall clock when signing
-    /// each action). Must be at least the venue minimum
-    /// ([`crate::common::consts::MIN_SIGNATURE_TTL`], 300s).
+    /// Signature expiry TTL in seconds for normal orders and replaces (added
+    /// to the wall clock before signing). Must be greater than the venue
+    /// minimum ([`crate::common::consts::MIN_SIGNATURE_TTL`], 300s).
     #[builder(default = 600)]
     pub signature_expiry_secs: u64,
     /// Slippage bound applied to market orders when deriving a worst-acceptable

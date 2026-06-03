@@ -58,7 +58,7 @@ class BinanceBar:
 class BinanceDataClientConfig:
     def __init__(
         self,
-        product_types: typing.Sequence[BinanceProductType] | None = None,
+        product_type: BinanceProductType | None = None,
         environment: BinanceEnvironment | None = None,
         base_url_http: str | None = None,
         base_url_ws: str | None = None,
@@ -78,7 +78,7 @@ class BinanceExecClientConfig:
         self,
         trader_id: model.TraderId,
         account_id: model.AccountId,
-        product_types: typing.Sequence[BinanceProductType] | None = None,
+        product_type: BinanceProductType | None = None,
         environment: BinanceEnvironment | None = None,
         base_url_http: str | None = None,
         base_url_ws: str | None = None,

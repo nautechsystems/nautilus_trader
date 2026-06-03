@@ -206,6 +206,28 @@ Each `BacktestRunConfig` object consists of the following:
 - An optional `ImportableControllerConfig` object.
 - An optional `BacktestEngineConfig` object, with a default configuration if not specified.
 
+## Shutdown on error
+
+Set `BacktestEngineConfig.shutdown_on_error=True` so that a Rust error log ends the
+backtest run. The Rust logger records the first `log::error!` emitted after the kernel
+starts, and the kernel converts that trigger into a `ShutdownSystem` command the next time
+the backtest loop checks for shutdown.
+
+The shutdown request follows the normal backtest stop path. It stops the trader and
+engines, then returns the backtest results collected up to the shutdown point. It does not
+abort the process.
+
+```python
+from nautilus_trader.backtest import BacktestEngineConfig
+
+config = BacktestEngineConfig(shutdown_on_error=True)
+```
+
+Error logs suppressed by component filters or `bypass_logging=True` still request shutdown.
+The trigger is cleared and re-armed when a new kernel run starts, so a process can run
+another backtest without reinitializing the logging system. Shutdown-on-error observes Rust
+`log` records, not Python `logging.error(...)` calls.
+
 ## Repeated runs
 
 When conducting multiple backtest runs, it's important to understand how components reset to avoid unexpected behavior.

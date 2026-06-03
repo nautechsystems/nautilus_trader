@@ -570,6 +570,8 @@ config.order_expire_time_delta_mins = Some(60);
 ## Group 3: Stop and conditional orders
 
 Test stop and conditional order types. These orders rest on the venue until a trigger condition is met.
+Adapters that support venue-native conditional orders should also verify that open trigger
+orders appear in restart reconciliation, not only in the normal open-order endpoint.
 
 | TC     | Name                   | Description                                           | Skip when           |
 |--------|------------------------|-------------------------------------------------------|---------------------|
@@ -596,7 +598,11 @@ Test stop and conditional order types. These orders rest on the venue until a tr
 
 - The trigger price should be above the current ask by `stop_offset_ticks`.
 - The order should NOT trigger immediately (trigger price is above market).
+- For venues with long-lived trigger signatures, verify the trigger-order signing expiry uses
+  the venue's trigger-order window rather than the normal order expiry.
 - Verifying trigger and fill requires the market to move, which may not happen during the test.
+- After acceptance, restart or force reconciliation and verify the order still appears as an
+  open order report when the venue keeps trigger orders in a separate endpoint.
 
 **Python config:**
 
@@ -936,7 +942,12 @@ config.cancel_replace_orders_to_maintain_tob_offset = true;
 | **Action**         | ExecTester modifies stop trigger price as market moves (`modify_stop_orders_to_maintain_offset=True`). |
 | **Event sequence** | `OrderPendingUpdate` -> `OrderUpdated`.                                 |
 | **Pass criteria**  | `OrderUpdated` event logged with the new trigger price; order exits `PendingUpdate`. |
-| **Skip when**      | Adapter does not support modify, or no stop order support.             |
+| **Skip when**      | Adapter does not support native stop modify, or no stop order support. |
+
+**Considerations:**
+
+- Some venues allow limit-order modify but reject trigger-order replace. For those adapters,
+  skip TC-E34 and run TC-E35 instead.
 
 **Python config:**
 
@@ -966,6 +977,12 @@ config.modify_stop_orders_to_maintain_offset = true;
 | **Event sequence** | `OrderPendingCancel` -> `OrderCanceled` -> `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`. |
 | **Pass criteria**  | Original stop canceled, new stop accepted at updated trigger price.    |
 | **Skip when**      | No stop order support.                                                 |
+
+**Considerations:**
+
+- This is the required path for venues that do not support native trigger-order replace.
+- After the new stop is accepted, restart or force reconciliation and verify exactly one
+  current trigger order remains.
 
 **Python config:**
 

@@ -5,6 +5,7 @@ from . import _libnautilus
 from . import analysis
 from . import architect_ax
 from . import backtest
+from . import betfair
 from . import binance
 from . import bitmex
 from . import blockchain
@@ -42,6 +43,7 @@ __all__ = [
     "analysis",
     "architect_ax",
     "backtest",
+    "betfair",
     "binance",
     "bitmex",
     "blockchain",

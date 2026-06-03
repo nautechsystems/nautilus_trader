@@ -37,7 +37,7 @@ use nautilus_model::{
     data::{BarSpecification, BarType},
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{ClientId, InstrumentId, TraderId, Venue},
-    types::{Currency, Money},
+    types::{Currency, Money, Price},
 };
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
@@ -117,6 +117,11 @@ pub struct BacktestEngineConfig {
     /// If trading strategy state should be saved to the database on stop.
     #[builder(default)]
     pub save_state: bool,
+    /// If the system should request shutdown when an error log is emitted.
+    ///
+    /// Filtered or bypassed error logs still request shutdown.
+    #[builder(default)]
+    pub shutdown_on_error: bool,
     /// The logging configuration for the kernel.
     #[builder(default)]
     pub logging: LoggerConfig,
@@ -181,6 +186,10 @@ impl NautilusKernelConfig for BacktestEngineConfig {
 
     fn save_state(&self) -> bool {
         self.save_state
+    }
+
+    fn shutdown_on_error(&self) -> bool {
+        self.shutdown_on_error
     }
 
     fn logging(&self) -> LoggerConfig {
@@ -316,6 +325,9 @@ pub struct SimulatedVenueConfig {
     pub oto_full_trigger: bool,
     #[builder(default = 0)]
     pub price_protection_points: u32,
+    /// Settlement prices for expiring instruments keyed by instrument ID.
+    #[builder(default)]
+    pub settlement_prices: AHashMap<InstrumentId, Price>,
     /// If liquidation of positions should be triggered when maintenance margin is breached.
     #[builder(default = false)]
     pub liquidation_enabled: bool,

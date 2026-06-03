@@ -7,6 +7,7 @@ import typing
 from nautilus_trader import model
 
 __all__ = [
+    "OKX",
     "OKXBalanceDetail",
     "OKXContractType",
     "OKXDataClientConfig",
@@ -32,6 +33,8 @@ __all__ = [
     "get_okx_ws_url_public",
     "okx_requires_authentication",
 ]
+
+OKX: str
 
 @typing.final
 class OKXBalanceDetail:

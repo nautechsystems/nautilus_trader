@@ -224,6 +224,22 @@ fn extract_data_config_from_pyobject(
         .map(|value| value.extract::<f64>())
         .transpose()?
         .unwrap_or(default.auto_load_retry_delay_max_secs);
+    let resolve_poll_enabled = getattr_optional(obj, "resolve_poll_enabled")?
+        .map(|value| value.extract::<bool>())
+        .transpose()?
+        .unwrap_or(default.resolve_poll_enabled);
+    let resolve_poll_interval_secs = getattr_optional(obj, "resolve_poll_interval_secs")?
+        .map(|value| value.extract::<u64>())
+        .transpose()?
+        .unwrap_or(default.resolve_poll_interval_secs);
+    let resolve_poll_grace_secs = getattr_optional(obj, "resolve_poll_grace_secs")?
+        .map(|value| value.extract::<u64>())
+        .transpose()?
+        .unwrap_or(default.resolve_poll_grace_secs);
+    let resolve_poll_max_wait_secs = getattr_optional(obj, "resolve_poll_max_wait_secs")?
+        .map(|value| value.extract::<u64>())
+        .transpose()?
+        .unwrap_or(default.resolve_poll_max_wait_secs);
     Ok(PolymarketDataClientConfig {
         instrument_config,
         base_url_http,
@@ -240,6 +256,10 @@ fn extract_data_config_from_pyobject(
         auto_load_max_retries,
         auto_load_retry_delay_initial_secs,
         auto_load_retry_delay_max_secs,
+        resolve_poll_enabled,
+        resolve_poll_interval_secs,
+        resolve_poll_grace_secs,
+        resolve_poll_max_wait_secs,
         filters: Vec::new(),
         new_market_filter: None,
         transport_backend: default.transport_backend,
@@ -413,6 +433,18 @@ mod tests {
             config_kwargs
                 .set_item("auto_load_retry_delay_max_secs", 15.0)
                 .unwrap();
+            config_kwargs
+                .set_item("resolve_poll_enabled", false)
+                .unwrap();
+            config_kwargs
+                .set_item("resolve_poll_interval_secs", 45)
+                .unwrap();
+            config_kwargs
+                .set_item("resolve_poll_grace_secs", 12)
+                .unwrap();
+            config_kwargs
+                .set_item("resolve_poll_max_wait_secs", 2400)
+                .unwrap();
             let config_obj = namespace
                 .call((), Some(&config_kwargs))
                 .expect("config namespace");
@@ -452,6 +484,10 @@ mod tests {
             );
             assert_eq!(rust_config.ws_timeout_secs, 41);
             assert_eq!(rust_config.ws_max_subscriptions, 512);
+            assert!(!rust_config.resolve_poll_enabled);
+            assert_eq!(rust_config.resolve_poll_interval_secs, 45);
+            assert_eq!(rust_config.resolve_poll_grace_secs, 12);
+            assert_eq!(rust_config.resolve_poll_max_wait_secs, 2400);
         });
     }
 

@@ -21,6 +21,8 @@
 //! - KRAKEN_API_KEY: Your Kraken API key
 //! - KRAKEN_API_SECRET: Your Kraken API secret
 
+use std::num::NonZeroUsize;
+
 use nautilus_common::enums::Environment;
 use nautilus_kraken::{
     common::{consts::KRAKEN_CLIENT_ID, enums::KrakenProductType},
@@ -46,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let product_type = KrakenProductType::Futures; // Spot or Futures
 
     // Symbol and settings based on product type
-    let (symbols, subscribe_bars, subscribe_mark_prices, subscribe_index_prices) =
+    let (symbols, subscribe_bars, _subscribe_mark_prices, _subscribe_index_prices) =
         match product_type {
             KrakenProductType::Spot => {
                 // Spot symbols are normalized to BTC (from Kraken's XBT)
@@ -99,16 +101,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = DataTesterConfig::builder()
         .client_id(client_id)
         .instrument_ids(instrument_ids)
-        .subscribe_quotes(true)
-        .subscribe_trades(true)
         .bar_types(bar_types)
-        .subscribe_bars(subscribe_bars)
-        .subscribe_mark_prices(subscribe_mark_prices)
-        .subscribe_index_prices(subscribe_index_prices)
-        .request_trades(true)
-        .request_bars(subscribe_bars)
-        // .book_interval_ms(NonZeroUsize::new(10).unwrap())
-        // .subscribe_book_at_interval(true)
+        // .subscribe_quotes(true)
+        // .subscribe_trades(true)
+        // .subscribe_bars(subscribe_bars)
+        // .subscribe_mark_prices(subscribe_mark_prices)
+        // .subscribe_index_prices(subscribe_index_prices)
+        // .request_trades(true)
+        // .request_bars(subscribe_bars)
+        .book_interval_ms(NonZeroUsize::new(10).unwrap())
+        .subscribe_book_at_interval(true)
         .manage_book(true)
         .build();
 

@@ -7,7 +7,9 @@ from nautilus_trader import model
 
 __all__ = [
     "PolymarketDataClientConfig",
+    "PolymarketDataClientFactory",
     "PolymarketExecClientConfig",
+    "PolymarketExecutionClientFactory",
     "PolymarketInstrumentProviderConfig",
     "SignatureType",
 ]
@@ -31,7 +33,16 @@ class PolymarketDataClientConfig:
         auto_load_max_retries: int | None = None,
         auto_load_retry_delay_initial_secs: float | None = None,
         auto_load_retry_delay_max_secs: float | None = None,
+        resolve_poll_enabled: bool | None = None,
+        resolve_poll_interval_secs: int | None = None,
+        resolve_poll_grace_secs: int | None = None,
+        resolve_poll_max_wait_secs: int | None = None,
     ) -> None: ...
+
+@typing.final
+class PolymarketDataClientFactory:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
 
 @typing.final
 class PolymarketExecClientConfig:
@@ -56,6 +67,11 @@ class PolymarketExecClientConfig:
     ) -> None: ...
 
 @typing.final
+class PolymarketExecutionClientFactory:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
+
+@typing.final
 class PolymarketInstrumentProviderConfig:
     def __init__(
         self,
@@ -74,3 +90,4 @@ class SignatureType(enum.Enum):
     Eoa = ...
     PolyProxy = ...
     PolyGnosisSafe = ...
+    Poly1271 = ...

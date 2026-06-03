@@ -139,6 +139,7 @@ cdef class BacktestEngine:
         bint only_now,
         bint as_of_now=*,
     )
+    cdef dict _get_result_summary(self)
 
     cpdef void _handle_data_command(self, DataCommand command)
     cdef void _handle_subscribe(self, SubscribeData command)

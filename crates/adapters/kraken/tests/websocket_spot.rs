@@ -339,7 +339,11 @@ async fn test_websocket_subscribe_trades() {
     .await;
 
     let subs = state.subscriptions.lock().await;
-    assert!(!subs.is_empty());
+    assert_eq!(subs.len(), 1);
+    assert_eq!(subs[0]["method"], json!("subscribe"));
+    assert_eq!(subs[0]["params"]["channel"], json!("trade"));
+    assert_eq!(subs[0]["params"]["symbol"], json!(["BTC/USDT"]));
+    assert!(subs[0]["params"].get("depth").is_none());
 
     client.disconnect().await.unwrap();
 }
@@ -376,7 +380,11 @@ async fn test_websocket_subscribe_book() {
     .await;
 
     let subs = state.subscriptions.lock().await;
-    assert!(!subs.is_empty());
+    assert_eq!(subs.len(), 1);
+    assert_eq!(subs[0]["method"], json!("subscribe"));
+    assert_eq!(subs[0]["params"]["channel"], json!("book"));
+    assert_eq!(subs[0]["params"]["symbol"], json!(["BTC/USDT"]));
+    assert_eq!(subs[0]["params"]["depth"], json!(10));
 
     client.disconnect().await.unwrap();
 }

@@ -54,6 +54,7 @@ impl BacktestEngineConfig {
         trader_id = None,
         load_state = None,
         save_state = None,
+        shutdown_on_error = None,
         bypass_logging = None,
         run_analysis = None,
         timeout_connection = None,
@@ -76,6 +77,7 @@ impl BacktestEngineConfig {
         trader_id: Option<TraderId>,
         load_state: Option<bool>,
         save_state: Option<bool>,
+        shutdown_on_error: Option<bool>,
         bypass_logging: Option<bool>,
         run_analysis: Option<bool>,
         timeout_connection: Option<u64>,
@@ -99,6 +101,7 @@ impl BacktestEngineConfig {
             trader_id: trader_id.unwrap_or_default(),
             load_state: load_state.unwrap_or(defaults.load_state),
             save_state: save_state.unwrap_or(defaults.save_state),
+            shutdown_on_error: shutdown_on_error.unwrap_or(defaults.shutdown_on_error),
             bypass_logging: bypass_logging.unwrap_or(defaults.bypass_logging),
             run_analysis: run_analysis.unwrap_or(defaults.run_analysis),
             timeout_connection: Duration::from_secs(timeout_connection.unwrap_or(60)),
@@ -138,6 +141,12 @@ impl BacktestEngineConfig {
     }
 
     #[getter]
+    #[pyo3(name = "shutdown_on_error")]
+    const fn py_shutdown_on_error(&self) -> bool {
+        self.shutdown_on_error
+    }
+
+    #[getter]
     #[pyo3(name = "bypass_logging")]
     const fn py_bypass_logging(&self) -> bool {
         self.bypass_logging
@@ -147,6 +156,42 @@ impl BacktestEngineConfig {
     #[pyo3(name = "run_analysis")]
     const fn py_run_analysis(&self) -> bool {
         self.run_analysis
+    }
+
+    #[getter]
+    #[pyo3(name = "timeout_connection")]
+    fn py_timeout_connection(&self) -> f64 {
+        self.timeout_connection.as_secs_f64()
+    }
+
+    #[getter]
+    #[pyo3(name = "timeout_reconciliation")]
+    fn py_timeout_reconciliation(&self) -> f64 {
+        self.timeout_reconciliation.as_secs_f64()
+    }
+
+    #[getter]
+    #[pyo3(name = "timeout_portfolio")]
+    fn py_timeout_portfolio(&self) -> f64 {
+        self.timeout_portfolio.as_secs_f64()
+    }
+
+    #[getter]
+    #[pyo3(name = "timeout_disconnection")]
+    fn py_timeout_disconnection(&self) -> f64 {
+        self.timeout_disconnection.as_secs_f64()
+    }
+
+    #[getter]
+    #[pyo3(name = "delay_post_stop")]
+    fn py_delay_post_stop(&self) -> f64 {
+        self.delay_post_stop.as_secs_f64()
+    }
+
+    #[getter]
+    #[pyo3(name = "timeout_shutdown")]
+    fn py_timeout_shutdown(&self) -> f64 {
+        self.timeout_shutdown.as_secs_f64()
     }
 
     #[getter]

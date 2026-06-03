@@ -54,9 +54,9 @@ use nautilus_model::{
 
 /// Lighter L2 mainnet chain id, used by every `compute_tx_hash` / `sign_tx`
 /// fixture so the bench numbers reflect the production hash domain.
-pub const CHAIN_ID: u32 = 304;
+pub(crate) const CHAIN_ID: u32 = 304;
 
-pub fn fixed_sk() -> PrivateKey {
+pub(crate) fn fixed_sk() -> PrivateKey {
     let bytes: [u8; SCALAR_BYTES] = [
         0x0b, 0x8e, 0x0f, 0x63, 0xc2, 0x4d, 0x8b, 0xaa, 0xcd, 0x9d, 0x29, 0xad, 0x4e, 0x9a, 0x4b,
         0x73, 0xc4, 0xa8, 0xd2, 0xbb, 0x8b, 0x16, 0xdc, 0x4f, 0xa9, 0xd7, 0xc2, 0xe1, 0xd3, 0xa8,
@@ -65,11 +65,11 @@ pub fn fixed_sk() -> PrivateKey {
     PrivateKey::from_le_bytes_reduce(bytes)
 }
 
-pub fn fixed_pk() -> PublicKey {
+pub(crate) fn fixed_pk() -> PublicKey {
     fixed_sk().public_key()
 }
 
-pub fn fixed_k() -> Scalar {
+pub(crate) fn fixed_k() -> Scalar {
     let mut bytes = [0u8; SCALAR_BYTES];
     bytes[0] = 0x42;
     bytes[7] = 0x01;
@@ -78,7 +78,7 @@ pub fn fixed_k() -> Scalar {
     Scalar::from_le_bytes_reduce(bytes)
 }
 
-pub fn fixed_hashed_msg() -> Fp5 {
+pub(crate) fn fixed_hashed_msg() -> Fp5 {
     Fp5::from_u64s_reduce([
         0x0123_4567_89AB_CDEF,
         0xFEDC_BA98_7654_3210,
@@ -88,11 +88,11 @@ pub fn fixed_hashed_msg() -> Fp5 {
     ])
 }
 
-pub fn fixed_signature() -> Signature {
+pub(crate) fn fixed_signature() -> Signature {
     fixed_sk().sign(fixed_hashed_msg(), fixed_k())
 }
 
-pub fn create_order_tx() -> CreateOrderTxInfo {
+pub(crate) fn create_order_tx() -> CreateOrderTxInfo {
     CreateOrderTxInfo {
         context: TxContext {
             account_index: 12345,
@@ -116,7 +116,7 @@ pub fn create_order_tx() -> CreateOrderTxInfo {
     }
 }
 
-pub fn cancel_order_tx() -> CancelOrderTxInfo {
+pub(crate) fn cancel_order_tx() -> CancelOrderTxInfo {
     CancelOrderTxInfo {
         context: TxContext {
             account_index: 12345,
@@ -130,14 +130,14 @@ pub fn cancel_order_tx() -> CancelOrderTxInfo {
     }
 }
 
-pub fn fp_inputs() -> (Fp, Fp) {
+pub(crate) fn fp_inputs() -> (Fp, Fp) {
     (
         Fp::from_u64_reduce(0x9E37_79B9_7F4A_7C15),
         Fp::from_u64_reduce(0xBB67_AE85_84CA_A73B),
     )
 }
 
-pub fn fp5_inputs() -> (Fp5, Fp5) {
+pub(crate) fn fp5_inputs() -> (Fp5, Fp5) {
     (
         Fp5::from_u64s_reduce([
             0x9E37_79B9_7F4A_7C15,
@@ -156,40 +156,40 @@ pub fn fp5_inputs() -> (Fp5, Fp5) {
     )
 }
 
-pub fn fixed_signed_tx() -> SignedTx {
+pub(crate) fn fixed_signed_tx() -> SignedTx {
     sign_tx(&create_order_tx(), CHAIN_ID, &fixed_sk(), fixed_k())
 }
 
 // ----- Data / exec pipeline fixtures --------------------------------------
 
-pub const TRADER_ID: &str = "BENCH-001";
-pub const ACCOUNT_ID: &str = "LIGHTER-001";
-pub const BENCH_ACCOUNT_INDEX: i64 = 1234;
-pub const ETH_MARKET_INDEX: i16 = 0;
-pub const BTC_MARKET_INDEX: i16 = 1;
+pub(crate) const TRADER_ID: &str = "BENCH-001";
+pub(crate) const ACCOUNT_ID: &str = "LIGHTER-001";
+pub(crate) const BENCH_ACCOUNT_INDEX: i64 = 1234;
+pub(crate) const ETH_MARKET_INDEX: i16 = 0;
+pub(crate) const BTC_MARKET_INDEX: i16 = 1;
 
 #[must_use]
-pub fn clock() -> &'static AtomicTime {
+pub(crate) fn clock() -> &'static AtomicTime {
     get_atomic_clock_realtime()
 }
 
 #[must_use]
-pub fn trader_id() -> TraderId {
+pub(crate) fn trader_id() -> TraderId {
     TraderId::from(TRADER_ID)
 }
 
 #[must_use]
-pub fn account_id() -> AccountId {
+pub(crate) fn account_id() -> AccountId {
     AccountId::from(ACCOUNT_ID)
 }
 
 #[must_use]
-pub fn eth_perp() -> InstrumentAny {
+pub(crate) fn eth_perp() -> InstrumentAny {
     perp_instrument("ETH", 2, 4)
 }
 
 #[must_use]
-pub fn btc_perp() -> InstrumentAny {
+pub(crate) fn btc_perp() -> InstrumentAny {
     perp_instrument("BTC", 2, 4)
 }
 
@@ -229,14 +229,14 @@ fn perp_instrument(coin: &str, price_precision: u8, size_precision: u8) -> Instr
 
 /// Maps market index -> instrument for hot-path lookups in the data benches.
 #[must_use]
-pub fn instrument_cache() -> AHashMap<i16, InstrumentAny> {
+pub(crate) fn instrument_cache() -> AHashMap<i16, InstrumentAny> {
     let mut cache = AHashMap::new();
     cache.insert(ETH_MARKET_INDEX, eth_perp());
     cache.insert(BTC_MARKET_INDEX, btc_perp());
     cache
 }
 
-pub mod fixtures {
+pub(crate) mod fixtures {
     //! Inline WS frame strings shaped exactly like the venue wire format.
     //! Each fixture exercises one [`LighterWsFrame`] variant end-to-end and
     //! is kept small so the cost being measured stays attributable to one
@@ -245,7 +245,7 @@ pub mod fixtures {
     //!
     //! [`LighterWsFrame`]: nautilus_lighter::websocket::messages::LighterWsFrame
 
-    pub const TRADE_UPDATE: &str = r#"{
+    pub(crate) const TRADE_UPDATE: &str = r#"{
         "channel": "trade:0",
         "liquidation_trades": [],
         "nonce": 8630448841,
@@ -278,7 +278,7 @@ pub mod fixtures {
         "type": "update/trade"
     }"#;
 
-    pub const BOOK_UPDATE: &str = r#"{
+    pub(crate) const BOOK_UPDATE: &str = r#"{
         "channel": "order_book:0",
         "last_updated_at": 1774884082309144,
         "offset": 1558300,
@@ -307,7 +307,7 @@ pub mod fixtures {
         "type": "update/order_book"
     }"#;
 
-    pub const BOOK_SNAPSHOT: &str = r#"{
+    pub(crate) const BOOK_SNAPSHOT: &str = r#"{
         "channel": "order_book:0",
         "last_updated_at": 1778138389655150,
         "offset": 2164,
@@ -336,7 +336,7 @@ pub mod fixtures {
         "type": "subscribed/order_book"
     }"#;
 
-    pub const TICKER_UPDATE: &str = r#"{
+    pub(crate) const TICKER_UPDATE: &str = r#"{
         "channel": "ticker:0",
         "last_updated_at": 1774883844921166,
         "nonce": 9182390020,
@@ -350,7 +350,7 @@ pub mod fixtures {
         "type": "update/ticker"
     }"#;
 
-    pub const CANDLE_UPDATE: &str = r#"{
+    pub(crate) const CANDLE_UPDATE: &str = r#"{
         "candles": [{
             "t": 1778821440000,
             "o": 2264.2,
@@ -366,7 +366,7 @@ pub mod fixtures {
         "type": "update/candle"
     }"#;
 
-    pub const MARKET_STATS_SINGLE: &str = r#"{
+    pub(crate) const MARKET_STATS_SINGLE: &str = r#"{
         "channel": "market_stats:0",
         "market_stats": {
             "symbol": "ETH",
@@ -392,7 +392,7 @@ pub mod fixtures {
         "type": "update/market_stats"
     }"#;
 
-    pub const ACCOUNT_ORDERS_UPDATE: &str = r#"{
+    pub(crate) const ACCOUNT_ORDERS_UPDATE: &str = r#"{
         "type": "update/account_orders",
         "channel": "account_orders:0:1234",
         "account": 1234,
@@ -440,7 +440,7 @@ pub mod fixtures {
         }
     }"#;
 
-    pub const ACCOUNT_ALL_TRADES_UPDATE: &str = r#"{
+    pub(crate) const ACCOUNT_ALL_TRADES_UPDATE: &str = r#"{
         "type": "update/account_all_trades",
         "channel": "account_all_trades:1234",
         "trades": {

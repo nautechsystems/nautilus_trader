@@ -98,6 +98,7 @@ nautilus-trading = { path = "crates/trading", version = "0.58.0" }
 # Note: default-features = false to control high-precision separately (not supported on Windows)
 # -----------------------------------------------------------------------------
 nautilus-architect-ax = { path = "crates/adapters/architect_ax", version = "0.58.0" }
+nautilus-betfair = { path = "crates/adapters/betfair", version = "0.58.0", default-features = false }
 nautilus-binance = { path = "crates/adapters/binance", version = "0.58.0", default-features = false }
 nautilus-bitmex = { path = "crates/adapters/bitmex", version = "0.58.0", default-features = false }
 nautilus-blockchain = { path = "crates/adapters/blockchain", version = "0.58.0" }

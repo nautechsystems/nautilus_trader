@@ -1,9 +1,9 @@
 # Plugins
 
 The plug-in system extends a Nautilus live node with independently compiled Rust cdylibs. The host
-loads each cdylib at process startup and runs its actors, strategies, controllers, and custom-data
-types alongside compiled-in components. The host owns the C-ABI boundary; plug-in authors write
-standard Rust traits, and a macro emits the boundary glue.
+loads each cdylib while the live node is `Idle` and runs its actors, strategies, controllers, and
+custom-data types alongside compiled-in components. The host owns the C-ABI boundary; plug-in
+authors write standard Rust traits, and a macro emits the boundary glue.
 
 :::note
 The plug-in system is supported on Linux only.
@@ -13,7 +13,8 @@ The plug-in system is supported on Linux only.
 
 - The boundary is C ABI, because Rust's `#[repr(Rust)]` layout is unstable across compilations.
 - Authors write normal Rust traits; macros generate the `extern "C"` thunks and `#[repr(C)]` vtables.
-- Plug-ins load at process startup, register through a validated manifest, and live for the process lifetime.
+- Plug-ins load while the live node is `Idle`, register through a validated manifest, and live for
+  the process lifetime.
 - The host adapts actor and strategy instances into a `DataActor` or `Strategy` so the live engine
   sees no FFI.
 - The live node owns controller instances directly and drives their lifecycle outside trader
@@ -94,7 +95,7 @@ The plug-in system is intentionally narrow. Out of scope today:
 - Async client adapters for data and execution.
 - Catalog, cache, and event-store backends as plug-ins.
 - Pre-trade risk gating as a plug-in.
-- Hot reload (plug-ins load at process startup and stay loaded).
+- Hot reload (plug-ins load while the live node is `Idle` and stay loaded).
 - Mutable host `OrderBook` state and native or Python `CustomData` on the actor or strategy
   callback surface. Order book callbacks receive cloned snapshots, and non-plug-in custom data has
   no plug-in vtable and handle to downcast through.
@@ -313,9 +314,15 @@ Key points:
 - `dlclose` is intentionally never called. The `LoadedPlugin` wraps its `libloading::Library` in
   `ManuallyDrop` so manifest and vtable pointers copied into the host's registries never dangle.
 
-## Configuration
+## Loading
 
-Plug-in instances are declared on `LiveNodeConfig.plugins` as a list of `PluginConfig` entries:
+Plug-in instances use the same `PluginConfig` shape whether they are declared on
+`LiveNodeConfig.plugins` or added imperatively with `LiveNode::add_plugin` in Rust or
+`LiveNode.add_plugin` in Python.
+
+### Config-driven loading
+
+Declare plug-in instances on `LiveNodeConfig.plugins` as a list of `PluginConfig` entries:
 
 ```toml
 [[plugins]]
@@ -352,10 +359,49 @@ entries:
 Controller entries do not use those keys in the host. Their `config` object is still passed
 verbatim into `PluginController::new`.
 
+### Imperative loading
+
+Use `LiveNode::add_plugin` before starting the node when code needs to build the plug-in list at
+runtime:
+
+```rust
+use std::collections::HashMap;
+
+use nautilus_live::{config::PluginConfig, node::LiveNode};
+
+let mut node = LiveNode::build("PLUGIN-NODE".to_string(), None)?;
+
+node.add_plugin(PluginConfig {
+    path: "./target/debug/examples/libcustom_data_plugin.so".to_string(),
+    type_name: "ExampleActor".to_string(),
+    config: HashMap::from([(
+        "actor_id".to_string(),
+        serde_json::json!("PLUGIN-ACTOR-001"),
+    )]),
+    sha256: None,
+})?;
+```
+
+Python exposes the same path without constructing a `PluginConfig` explicitly:
+
+```python
+node = LiveNode.build("PLUGIN-NODE")
+node.add_plugin(
+    path="./target/debug/examples/libcustom_data_plugin.so",
+    type_name="ExampleActor",
+    config={"actor_id": "PLUGIN-ACTOR-001"},
+)
+```
+
+Both entry points validate the path, type name, optional SHA-256 digest, ABI version, build ID, and
+manifest contents (including precision mode) before registering the component. The host rejects
+imperative registration after the node leaves `Idle`.
+
 Plug-in support is gated behind the `plugin` Cargo feature on the live crate, which is on by
 default. A build compiled with `--no-default-features` (or any feature set that omits `plugin`)
 rejects a non-empty `plugins` list with a clear error so plug-in users cannot accidentally run
-without host-side support compiled in.
+without host-side support compiled in. `LiveNode::add_plugin` returns the same kind of feature-gate
+error when the live crate is built without plug-in support.
 
 ## Author API
 
@@ -427,8 +473,8 @@ cargo build -p nautilus-plugin --example custom_data_plugin
   Crate version, `rustc`, target triple, and build profile travel as diagnostics in load-error
   output.
 - Use the optional `sha256` field on a `PluginConfig` entry as a deployment-time integrity check.
-- The node refuses to load plug-ins once it has left the `Idle` state, so any `LoadError` surfaces
-  during startup, before client connections.
+- The node refuses to load plug-ins once it has left the `Idle` state. Config-driven load errors
+  surface during node construction, and imperative `add_plugin` errors surface at the call site.
 - A plug-in panic in a fallible callback surfaces as `PluginError::Panic`. A panic in an
   infallible callback (e.g. `create`, `drop_handle`) aborts the process; see
   `nautilus_plugin::panic` for the rationale.
