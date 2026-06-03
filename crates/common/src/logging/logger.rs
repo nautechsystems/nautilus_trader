@@ -387,11 +387,7 @@ impl LogLineWrapper {
             write!(
                 s,
                 "{} [{}] {}.{}: {}",
-                timestamp,
-                self.line.level,
-                self.trader_id,
-                &self.line.component,
-                &self.line.message,
+                timestamp, self.line.level, self.trader_id, self.line.component, self.line.message,
             )
             .expect("writing to String should not fail");
 
@@ -429,8 +425,8 @@ impl LogLineWrapper {
                 color_ansi,
                 self.line.level,
                 self.trader_id,
-                &self.line.component,
-                &self.line.message,
+                self.line.component,
+                self.line.message,
             )
             .expect("writing to String should not fail");
 

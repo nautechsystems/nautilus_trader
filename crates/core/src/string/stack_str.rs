@@ -867,7 +867,7 @@ mod tests {
     #[rstest]
     fn test_partial_eq_str_literal() {
         let s = StackStr::new("hello");
-        assert!(s == "hello");
+        assert_eq!(s, "hello");
         assert!(s != "world");
     }
 

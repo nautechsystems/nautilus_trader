@@ -145,7 +145,7 @@ impl TardisHttpClient {
         symbol: Option<&str>,
         filter: Option<&InstrumentFilter>,
     ) -> Result<Vec<TardisInstrumentInfo>> {
-        let mut url = format!("{}/instruments/{exchange}", &self.base_url);
+        let mut url = format!("{}/instruments/{exchange}", self.base_url);
 
         if let Some(symbol) = symbol {
             url.push_str(&format!("/{symbol}"));

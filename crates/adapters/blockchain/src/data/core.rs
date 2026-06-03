@@ -1106,7 +1106,7 @@ impl BlockchainDataClientCore {
             } else {
                 anyhow::bail!(
                     "DEX {} does not have initialize event set.",
-                    &profiler.pool.dex.name
+                    profiler.pool.dex.name
                 );
             };
         let mint_sig_bytes = hex::decode(

@@ -896,7 +896,7 @@ mod tests {
 
         // Equality
         let m3 = Money::new(100.0, usd);
-        assert!(m1 == m3);
+        assert_eq!(m1, m3);
     }
 
     #[rstest]

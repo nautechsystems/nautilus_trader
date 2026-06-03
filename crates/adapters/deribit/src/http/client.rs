@@ -516,7 +516,7 @@ impl DeribitRawHttpClient {
                         );
                         log::debug!(
                             "Response JSON (first 2000 chars): {}",
-                            &json_value
+                            json_value
                                 .to_string()
                                 .chars()
                                 .take(2000)

@@ -765,7 +765,7 @@ mod tests {
         .unwrap();
 
         assert!(!writer.json_format);
-        assert!(writer.path.extension().unwrap() == "log");
+        assert_eq!(writer.path.extension().unwrap(), "log");
     }
 
     #[rstest]
@@ -790,7 +790,7 @@ mod tests {
         .unwrap();
 
         assert!(writer.json_format);
-        assert!(writer.path.extension().unwrap() == "jsonl");
+        assert_eq!(writer.path.extension().unwrap(), "jsonl");
     }
 
     #[rstest]

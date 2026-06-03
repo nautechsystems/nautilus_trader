@@ -1310,14 +1310,14 @@ mod tests {
         assert!(
             matches!(&instruments[0], InstrumentAny::CryptoPerpetual(_)),
             "Expected CryptoPerpetual for BTC PERP, was{:?}",
-            &instruments[0]
+            instruments[0]
         );
 
         // Second product is "BTC 24 APR 26" -> CryptoFuture
         assert!(
             matches!(&instruments[1], InstrumentAny::CryptoFuture(_)),
             "Expected CryptoFuture for dated future, was{:?}",
-            &instruments[1]
+            instruments[1]
         );
     }
 

@@ -648,7 +648,7 @@ async fn drain_buffer(
             }
         };
 
-        let key = format!("{trader_key}{REDIS_DELIMITER}{}", &key);
+        let key = format!("{trader_key}{REDIS_DELIMITER}{key}");
 
         match msg.op_type {
             DatabaseOperation::Insert => {
