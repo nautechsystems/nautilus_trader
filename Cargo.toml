@@ -147,7 +147,7 @@ bincode = { version = "2.0.1", features = ["serde"] }
 blake3 = { version = "1.8.5", default-features = false, features = ["std"] }
 bon = "3.9.1"
 bytes = { version = "1.11.1", features = ["serde"] }
-capnp = "0.25.4"
+capnp = "0.25.5"
 chrono = { version = "0.4.44", default-features = false, features = [
   "serde",
   "std",
@@ -189,7 +189,7 @@ indexmap = { version = "2.14.0", features = ["serde"] }
 itchy = "0.3"
 itertools = "0.14.0"
 libloading = "0.9.0"
-log = { version = "0.4.30", features = [
+log = { version = "0.4.31", features = [
   "std",
   "kv_unstable",
   "serde",
@@ -340,7 +340,7 @@ bollard = { version = "0.21.0", default-features = false, features = [
 bzip2 = "0.6.1"
 cosmrs = { version = "0.22.0", default-features = false, features = ["bip32"] }
 csv = "1.4.0"
-databento = { version = "0.52.0", default-features = false, features = [
+databento = { version = "0.53.0", default-features = false, features = [
   "historical",
   "live",
 ] }
