@@ -771,6 +771,50 @@ def test_margin_account_apply_updates_balances():
     assert account.balance_locked() == Money.from_str("150.00 USD")
 
 
+def test_margin_account_apply_clears_margin_getters():
+    instrument = TestInstrumentProvider.audusd_sim()
+    usd = Currency.from_str("USD")
+    balance = AccountBalance(
+        total=Money.from_str("1000.00 USD"),
+        locked=Money.from_str("100.00 USD"),
+        free=Money.from_str("900.00 USD"),
+    )
+    initial = AccountState(
+        account_id=AccountId("SIM-002"),
+        account_type=AccountType.MARGIN,
+        balances=[balance],
+        margins=[
+            MarginBalance(
+                initial=Money.from_str("12.00 USD"),
+                maintenance=Money.from_str("6.00 USD"),
+                instrument_id=instrument.id,
+            ),
+        ],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=1,
+        ts_init=2,
+        base_currency=usd,
+    )
+    updated = AccountState(
+        account_id=AccountId("SIM-002"),
+        account_type=AccountType.MARGIN,
+        balances=[balance],
+        margins=[],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=3,
+        ts_init=4,
+        base_currency=usd,
+    )
+
+    account = MarginAccount(initial, calculate_account_state=True)
+    account.apply(updated)
+
+    assert account.initial_margin(instrument.id) is None
+    assert account.maintenance_margin(instrument.id) is None
+
+
 def test_margin_account_calculate_balance_locked_buy():
     """
     Ensures ``calculate_balance_locked`` is callable via the newly exposed pyo3 method
