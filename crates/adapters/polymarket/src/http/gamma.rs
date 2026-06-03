@@ -36,10 +36,10 @@ use nautilus_core::{
 };
 use nautilus_model::instruments::InstrumentAny;
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, Method, USER_AGENT},
+    http::{HttpClient, HttpClientError, HttpResponse, Method, USER_AGENT},
     retry::{RetryConfig, RetryManager},
 };
-use serde::Serialize;
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 use crate::{
@@ -97,7 +97,7 @@ impl PolymarketGammaRawHttpClient {
         format!("{}{path}", self.base_url)
     }
 
-    async fn send_get<P: Serialize, T: serde::de::DeserializeOwned>(
+    async fn send_get<P: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
         params: Option<&P>,
@@ -109,14 +109,22 @@ impl PolymarketGammaRawHttpClient {
             .await
             .map_err(Error::from_http_client)?;
 
-        if response.status.is_success() {
-            serde_json::from_slice(&response.body).map_err(Error::Serde)
-        } else {
-            Err(Error::from_status_code(
-                response.status.as_u16(),
-                &response.body,
-            ))
-        }
+        decode_response(&response)
+    }
+
+    async fn send_get_query_map<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        params: Option<&HashMap<String, Vec<String>>>,
+    ) -> Result<T> {
+        let url = self.url(path);
+        let response = self
+            .client
+            .request(Method::GET, url, params, None, None, None, None)
+            .await
+            .map_err(Error::from_http_client)?;
+
+        decode_response(&response)
     }
 
     /// Fetches markets from the Gamma API.
@@ -126,7 +134,10 @@ impl PolymarketGammaRawHttpClient {
         &self,
         params: GetGammaMarketsParams,
     ) -> Result<Vec<GammaMarket>> {
-        let value: Value = self.send_get("/markets", Some(&params)).await?;
+        let query_params = gamma_markets_query_params(params)?;
+        let value: Value = self
+            .send_get_query_map("/markets", Some(&query_params))
+            .await?;
 
         let array = match value {
             Value::Array(_) => value,
@@ -172,6 +183,76 @@ impl PolymarketGammaRawHttpClient {
     /// Searches the Gamma API via `GET /public-search`.
     pub async fn get_public_search(&self, params: GetSearchParams) -> Result<SearchResponse> {
         self.send_get("/public-search", Some(&params)).await
+    }
+}
+
+fn decode_response<T: DeserializeOwned>(response: &HttpResponse) -> Result<T> {
+    if response.status.is_success() {
+        serde_json::from_slice(&response.body).map_err(Error::Serde)
+    } else {
+        Err(Error::from_status_code(
+            response.status.as_u16(),
+            &response.body,
+        ))
+    }
+}
+
+fn gamma_markets_query_params(
+    params: GetGammaMarketsParams,
+) -> Result<HashMap<String, Vec<String>>> {
+    let mut scalar_params = params;
+    let clob_token_ids = scalar_params.clob_token_ids.take();
+    let condition_ids = scalar_params.condition_ids.take();
+    let question_ids = scalar_params.question_ids.take();
+    let value = serde_json::to_value(&scalar_params).map_err(Error::Serde)?;
+    let fields = value
+        .as_object()
+        .ok_or_else(|| Error::decode("Gamma markets params must encode to an object"))?;
+    let mut params = HashMap::with_capacity(fields.len());
+
+    for (key, value) in fields {
+        if let Some(value) = gamma_markets_query_value(value)? {
+            params.insert(key.clone(), vec![value]);
+        }
+    }
+
+    insert_repeated_csv_param(&mut params, "clob_token_ids", clob_token_ids);
+    insert_repeated_csv_param(&mut params, "condition_ids", condition_ids);
+    insert_repeated_csv_param(&mut params, "question_ids", question_ids);
+
+    Ok(params)
+}
+
+fn insert_repeated_csv_param(
+    params: &mut HashMap<String, Vec<String>>,
+    key: &str,
+    value: Option<String>,
+) {
+    let Some(value) = value else {
+        return;
+    };
+
+    let values: Vec<String> = value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+        .collect();
+
+    if !values.is_empty() {
+        params.insert(key.to_string(), values);
+    }
+}
+
+fn gamma_markets_query_value(value: &Value) -> Result<Option<String>> {
+    match value {
+        Value::Null => Ok(None),
+        Value::String(value) => Ok(Some(value.clone())),
+        Value::Bool(value) => Ok(Some(value.to_string())),
+        Value::Number(value) => Ok(Some(value.to_string())),
+        other => Err(Error::decode(format!(
+            "Unsupported Gamma markets query value: {other}"
+        ))),
     }
 }
 

@@ -137,6 +137,7 @@ Released on TBD (UTC).
 - Fixed OKX `OKXExecutionClient` not forwarding config credentials to WebSocket clients (#4115), thanks @pusteckiy
 - Fixed OKX adapter to validate `clOrdId` rules before submission (#4116), thanks for reporting @pusteckiy
 - Fixed Polymarket adapter dropping auto-load batches on Gamma chunk failures (Rust)
+- Fixed Polymarket Gamma market lookups to send repeated list query params (Rust)
 - Fixed Polymarket adapter treating encoded-empty `clob_token_ids` as terminal instead of transient (Rust)
 - Fixed Polymarket PyO3 bootstrap to honor `instrument_config` (#4127), thanks @graceyangfan
 - Fixed Tardis CSV delta loaders missing book resets between consecutive snapshots
