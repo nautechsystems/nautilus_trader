@@ -67,7 +67,7 @@
 //! `plugin` feature:
 //!
 //! ```toml
-//! nautilus-live = { workspace = true, default-features = ["node"] }
+//! nautilus-live = { workspace = true, default-features = false, features = ["node"] }
 //! ```
 //!
 //! With `plugin` disabled, the `plugin` module is removed, the unsafe FFI
@@ -102,15 +102,8 @@ pub mod node;
 #[cfg(feature = "node")]
 mod execution;
 
-/// Re-export of the shared plug-in host bridge.
-///
-/// The host-side adapters and `HostVTable` implementation live in
-/// `nautilus-plugin::bridge` so backtest and live engines can share them.
-/// This re-export preserves the historical `nautilus_live::plugin::*`
-/// import path that existing callers (configs, tests, downstream crates)
-/// already use.
 #[cfg(feature = "plugin")]
-pub use nautilus_plugin::bridge as plugin;
+pub mod plugin;
 
 #[cfg(feature = "python")]
 pub mod python;
