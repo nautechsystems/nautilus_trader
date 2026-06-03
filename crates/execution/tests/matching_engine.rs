@@ -4276,6 +4276,35 @@ fn test_protection_filtered_fills_do_not_consume_liquidity(
 }
 
 #[rstest]
+fn test_process_mark_bar_skipped_without_panic(instrument_eth_usdt: InstrumentAny) {
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(instrument_eth_usdt, None, None, Some(config), None);
+
+    // Mark price bars are not supported for bar execution, they must be skipped rather than panic
+    let bar_type = BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-MARK-EXTERNAL");
+    let mark_bar = Bar {
+        bar_type,
+        open: Price::from("1500.00"),
+        high: Price::from("1510.00"),
+        low: Price::from("1490.00"),
+        close: Price::from("1505.00"),
+        volume: Quantity::from("100000.000"),
+        ts_event: UnixNanos::from(1_000_000_000),
+        ts_init: UnixNanos::from(1_000_000_000),
+    };
+
+    engine.process_bar(&mark_bar);
+
+    assert!(
+        engine.get_core().last.is_none(),
+        "Mark price bar should be skipped and not update market state"
+    );
+}
+
+#[rstest]
 fn test_process_monthly_bar_not_skipped(instrument_eth_usdt: InstrumentAny) {
     let config = OrderMatchingEngineConfig {
         bar_execution: true,
