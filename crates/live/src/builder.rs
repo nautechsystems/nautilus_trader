@@ -40,6 +40,7 @@ use nautilus_system::{
 
 use crate::{
     config::{LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig},
+    execution::LiveExecutionClient,
     manager::{ExecutionManager, ExecutionManagerConfig},
     node::LiveNode,
     runner::AsyncRunner,
@@ -457,6 +458,8 @@ impl LiveNodeBuilder {
             }
         }
 
+        let mut exec_clients = Vec::new();
+
         for (name, factory) in self.exec_client_factories {
             if let Some(config) = self.exec_client_configs.remove(&name) {
                 log::debug!("Creating execution client {name}");
@@ -469,11 +472,16 @@ impl LiveNodeBuilder {
                         factory.create(&name, config.as_ref(), kernel.cache())?
                     }
                 };
+                let client = LiveExecutionClient::new(client);
                 let client_id = client.client_id();
                 let venue = client.venue();
 
-                kernel.exec_engine.borrow_mut().register_client(client)?;
+                kernel
+                    .exec_engine
+                    .borrow_mut()
+                    .register_client(Box::new(client.clone()))?;
                 ExecutionEngine::subscribe_venue_instruments(&kernel.exec_engine, venue);
+                exec_clients.push(client);
 
                 log::info!("Registered ExecutionClient-{client_id}");
             } else {
@@ -493,7 +501,8 @@ impl LiveNodeBuilder {
             not(feature = "plugin"),
             expect(unused_mut, reason = "plugin builds need mutable node state")
         )]
-        let mut node = LiveNode::new_from_builder(kernel, runner, self.config, exec_manager);
+        let mut node =
+            LiveNode::new_from_builder(kernel, runner, self.config, exec_manager, exec_clients);
         node.load_configured_plugins()?;
 
         log::info!("Built successfully");

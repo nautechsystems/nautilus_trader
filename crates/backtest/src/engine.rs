@@ -1217,14 +1217,7 @@ impl BacktestEngine {
                         settlement_ns,
                     );
                 }
-                Data::MarkPriceUpdate(_)
-                | Data::IndexPriceUpdate(_)
-                | Data::OptionGreeks(_)
-                | Data::Custom(_) => {
-                    unreachable!("filtered by early return above")
-                }
-                #[cfg(feature = "defi")]
-                Data::Defi(_) => unreachable!("filtered by early return above"),
+                _ => {}
             }
         } else {
             log::warn!("No exchange found for venue {venue}, data not routed");

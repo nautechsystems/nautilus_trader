@@ -45,13 +45,13 @@
 //!
 //! # Reconciliation
 //!
-//! Three sub-checks run on independent intervals: inflight orders, open order
-//! consistency, and position consistency. The shared maintenance timer in the
-//! select loop dispatches reconciliation at the minimum enabled interval.
-//! Each dispatch the handler checks which sub-checks are due based on elapsed
-//! nanoseconds and runs them in sequence. The open order and position checks
-//! query venues via async HTTP calls, blocking the select loop for the
-//! duration of each query.
+//! Continuous inflight and open-order checks run on independent intervals. The
+//! shared maintenance timer in the select loop dispatches reconciliation at
+//! the minimum enabled interval. Each dispatch the handler checks which
+//! sub-checks are due based on elapsed nanoseconds and schedules their work.
+//! Continuous checks do not await venue HTTP in the select loop: open-order
+//! checks poll a bulk venue report future from the loop, while position checks
+//! stay disabled until a non-blocking command path exists for them.
 //!
 //! # Maintenance dispatcher
 //!
@@ -76,12 +76,12 @@
 //! `inflight_check_interval_ms` and `own_books_audit_interval_secs` smaller)
 //! get rounded up to the next tick. Real workloads do not run venue or cache
 //! maintenance below 100ms (defaults are seconds to minutes). Cadence drifts
-//! by at most one body duration per fire; the recon body can await venue
-//! HTTP, so `now` is refreshed after that await before sync tasks evaluate
-//! due-status.
+//! by at most one body duration per fire.
 
 use std::{
     fmt::Debug,
+    future::Future,
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU8, Ordering},
@@ -103,7 +103,9 @@ use nautilus_common::{
     live::dst,
     log_info,
     messages::{
-        DataEvent, ExecutionEvent, ExecutionReport, data::DataCommand, execution::TradingCommand,
+        DataEvent, ExecutionEvent, ExecutionReport,
+        data::DataCommand,
+        execution::{GenerateOrderStatusReports, TradingCommand},
     },
     timer::TimeEventHandler,
 };
@@ -119,6 +121,7 @@ use nautilus_model::{
     events::OrderEventAny,
     identifiers::{ClientOrderId, TraderId},
     orders::Order,
+    reports::OrderStatusReport,
 };
 #[cfg(feature = "plugin")]
 use nautilus_plugin::loader::PluginLoader;
@@ -136,7 +139,8 @@ use crate::plugin::{
 use crate::{
     builder::LiveNodeBuilder,
     config::{LiveNodeConfig, PluginConfig},
-    manager::{ExecutionManager, ExecutionManagerConfig},
+    execution::LiveExecutionClient,
+    manager::{ExecutionManager, ExecutionManagerConfig, OpenOrderReportCheck},
     runner::{AsyncRunner, AsyncRunnerChannels},
 };
 
@@ -281,6 +285,7 @@ pub struct LiveNode {
     config: LiveNodeConfig,
     handle: LiveNodeHandle,
     exec_manager: ExecutionManager,
+    exec_clients: Vec<LiveExecutionClient>,
     shutdown_deadline: Option<dst::time::Instant>,
     #[cfg(feature = "plugin")]
     plugin_loader: Option<PluginLoader>,
@@ -303,6 +308,7 @@ impl LiveNode {
         runner: AsyncRunner,
         config: LiveNodeConfig,
         exec_manager: ExecutionManager,
+        exec_clients: Vec<LiveExecutionClient>,
     ) -> Self {
         Self {
             kernel,
@@ -310,6 +316,7 @@ impl LiveNode {
             config,
             handle: LiveNodeHandle::new(),
             exec_manager,
+            exec_clients,
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
             plugin_loader: None,
@@ -386,6 +393,7 @@ impl LiveNode {
             config,
             handle: LiveNodeHandle::new(),
             exec_manager,
+            exec_clients: Vec::new(),
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
             plugin_loader: None,
@@ -1183,18 +1191,16 @@ impl LiveNode {
             .open_check_interval_secs
             .filter(|&s| s > 0.0)
             .map_or(0, secs_to_nanos_unchecked);
-        let position_interval_ns = exec_config
+        let position_check_configured = exec_config
             .position_check_interval_secs
-            .filter(|&s| s > 0.0)
-            .map_or(0, secs_to_nanos_unchecked);
+            .is_some_and(|interval_secs| interval_secs > 0.0);
         let has_clients = !self
             .kernel
             .exec_engine
             .borrow()
             .get_all_clients()
             .is_empty();
-        let recon_enabled = has_clients
-            && (inflight_interval_ns > 0 || open_interval_ns > 0 || position_interval_ns > 0);
+        let recon_enabled = has_clients && (inflight_interval_ns > 0 || open_interval_ns > 0);
 
         let recon_min_interval = if recon_enabled {
             let mut intervals = Vec::new();
@@ -1209,12 +1215,6 @@ impl LiveNode {
                 intervals.push(Duration::from_secs_f64(s));
             }
 
-            if let Some(s) = exec_config
-                .position_check_interval_secs
-                .filter(|&s| s > 0.0)
-            {
-                intervals.push(Duration::from_secs_f64(s));
-            }
             intervals
                 .into_iter()
                 .min()
@@ -1237,7 +1237,6 @@ impl LiveNode {
 
         let mut ts_last_inflight = self.exec_manager.generate_timestamp_ns();
         let mut ts_last_open = ts_last_inflight;
-        let mut ts_last_position = ts_last_inflight;
 
         // Per-task `(interval, next_fire)` schedules dispatched by the
         // shared `maintenance_timer` below. See module docs for rationale.
@@ -1297,8 +1296,16 @@ impl LiveNode {
 
         // Running phase: runs until shutdown deadline expires
         let mut residual_events = 0usize;
+        let mut open_order_report_task: Option<OpenOrderReportTask> = None;
         let ctrl_c = dst::signal::ctrl_c();
         tokio::pin!(ctrl_c);
+
+        if has_clients && position_check_configured {
+            log::warn!(
+                "Skipping continuous position reconciliation: no non-blocking position \
+                 reconciliation path is configured"
+            );
+        }
 
         loop {
             let shutdown_deadline = self.shutdown_deadline;
@@ -1333,6 +1340,18 @@ impl LiveNode {
                 }, if self.state() == NodeState::ShuttingDown => {
                     break;
                 }
+                result = async {
+                    match open_order_report_task.as_mut() {
+                        Some(task) => task.future.as_mut().await,
+                        None => std::future::pending::<OpenOrderReportResult>().await,
+                    }
+                }, if open_order_report_task.is_some() => {
+                    open_order_report_task = None;
+                    let events = self
+                        .exec_manager
+                        .reconcile_open_order_reports(&result.check, result.reports);
+                    self.process_reconciliation_events(&events);
+                }
 
                 // Maintenance dispatcher (before event processing to avoid
                 // starvation). See module docs for design rationale.
@@ -1340,16 +1359,21 @@ impl LiveNode {
                     let mut now = dst::time::Instant::now();
 
                     if recon_enabled && now >= recon_next {
-                        if let Err(e) = self.run_reconciliation_checks(
-                            inflight_interval_ns,
-                            open_interval_ns,
-                            position_interval_ns,
-                            &mut ts_last_inflight,
-                            &mut ts_last_open,
-                            &mut ts_last_position,
-                        ).await {
-                            log::error!("Reconciliation check error: {e}");
-                        }
+                        let recon_intervals = ReconciliationCheckIntervals {
+                            inflight_ns: inflight_interval_ns,
+                            open_ns: open_interval_ns,
+                        };
+                        let mut recon_state = ReconciliationCheckState {
+                            ts_last_inflight: &mut ts_last_inflight,
+                            ts_last_open: &mut ts_last_open,
+                            open_order_report_task: &mut open_order_report_task,
+                        };
+
+                        self.run_reconciliation_checks(
+                            recon_intervals,
+                            &mut recon_state,
+                        );
+
                         now = dst::time::Instant::now();
                         recon_next = now + recon_interval;
                     }
@@ -1522,6 +1546,7 @@ impl LiveNode {
             log::debug!("Processed {residual_events} residual events during shutdown");
         }
 
+        drop(open_order_report_task.take());
         let _ = self.kernel.cache().borrow().check_residuals();
 
         self.finalize_stop().await?;
@@ -1873,72 +1898,115 @@ impl LiveNode {
             .add_exec_algorithm(exec_algorithm)
     }
 
-    // Runs up to three reconciliation sub-checks (inflight, open orders,
-    // positions), each gated by its own interval. The maintenance timer in
-    // the select! loop dispatches this method at the minimum enabled
-    // interval; the method then checks which sub-checks are actually due.
-    //
-    // The exec_engine borrow is held across the async venue queries because
-    // get_all_clients() returns references into the engine's client map.
-    // This is safe: select! runs one branch to completion, so no other
-    // branch can borrow the same RefCells concurrently.
-    #[expect(clippy::await_holding_refcell_ref)]
-    async fn run_reconciliation_checks(
+    // Runs reconciliation sub-checks, each gated by its own interval.
+    // Continuous checks only schedule venue work; they do not await venue I/O
+    // in the event loop.
+    fn run_reconciliation_checks(
         &mut self,
-        inflight_interval_ns: u64,
-        open_interval_ns: u64,
-        position_interval_ns: u64,
-        ts_last_inflight: &mut UnixNanos,
-        ts_last_open: &mut UnixNanos,
-        ts_last_position: &mut UnixNanos,
-    ) -> anyhow::Result<()> {
+        intervals: ReconciliationCheckIntervals,
+        state: &mut ReconciliationCheckState<'_>,
+    ) {
         let ts_now = self.exec_manager.generate_timestamp_ns();
 
-        if inflight_interval_ns > 0 && (ts_now - *ts_last_inflight).as_u64() >= inflight_interval_ns
-        {
+        if reconciliation_check_due(ts_now, *state.ts_last_inflight, intervals.inflight_ns) {
             if self.state() == NodeState::ShuttingDown {
-                return Ok(());
+                return;
             }
             let result = self.exec_manager.check_inflight_orders();
             self.process_reconciliation_events(&result.events);
             for cmd in result.queries {
                 AsyncRunner::handle_exec_command(cmd);
             }
-            *ts_last_inflight = ts_now;
+            *state.ts_last_inflight = ts_now;
         }
 
-        if open_interval_ns > 0 && (ts_now - *ts_last_open).as_u64() >= open_interval_ns {
+        if reconciliation_check_due(ts_now, *state.ts_last_open, intervals.open_ns) {
             if self.state() == NodeState::ShuttingDown {
-                return Ok(());
+                return;
             }
-            let eng_ref = self.kernel.exec_engine.borrow();
-            let clients = eng_ref.get_all_clients();
-            let events = self.exec_manager.check_open_orders(&clients).await;
-            drop(clients);
-            drop(eng_ref);
-            self.process_reconciliation_events(&events);
-            *ts_last_open = ts_now;
-        }
 
-        if position_interval_ns > 0 && (ts_now - *ts_last_position).as_u64() >= position_interval_ns
-        {
-            if self.state() == NodeState::ShuttingDown {
-                return Ok(());
+            if state.open_order_report_task.is_none() {
+                *state.open_order_report_task = self.start_open_order_report_check();
+            } else {
+                log::debug!("Open-order reconciliation already in progress");
             }
-            let eng_ref = self.kernel.exec_engine.borrow();
-            let clients = eng_ref.get_all_clients();
-            let events = self
-                .exec_manager
-                .check_positions_consistency(&clients)
-                .await;
-            drop(clients);
-            drop(eng_ref);
-            self.process_reconciliation_events(&events);
-            *ts_last_position = ts_now;
-        }
 
-        Ok(())
+            *state.ts_last_open = ts_now;
+        }
     }
+
+    fn start_open_order_report_check(&self) -> Option<OpenOrderReportTask> {
+        if self.exec_clients.is_empty() {
+            log::debug!("No execution clients to check orders consistency");
+            return None;
+        }
+
+        let check = self
+            .exec_manager
+            .prepare_open_order_report_check(UUID4::new());
+        let command = check.command.clone();
+        let clients = self.exec_clients.clone();
+
+        Some(OpenOrderReportTask {
+            future: Box::pin(async move {
+                let reports = request_open_order_reports(clients, command).await;
+                OpenOrderReportResult { check, reports }
+            }),
+        })
+    }
+}
+
+async fn request_open_order_reports(
+    clients: Vec<LiveExecutionClient>,
+    command: GenerateOrderStatusReports,
+) -> Vec<OrderStatusReport> {
+    let mut all_reports = Vec::new();
+
+    for client in clients {
+        match client.generate_order_status_reports(&command).await {
+            Ok(reports) => {
+                all_reports.extend(reports);
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to generate order status reports from {}: {e}",
+                    client.client_id()
+                );
+            }
+        }
+    }
+
+    all_reports
+}
+
+fn reconciliation_check_due(ts_now: UnixNanos, ts_last: UnixNanos, interval_ns: u64) -> bool {
+    interval_ns > 0
+        && ts_now
+            .duration_since(&ts_last)
+            .is_some_and(|elapsed_ns| elapsed_ns >= interval_ns)
+}
+
+#[derive(Clone, Copy)]
+struct ReconciliationCheckIntervals {
+    inflight_ns: u64,
+    open_ns: u64,
+}
+
+struct ReconciliationCheckState<'a> {
+    ts_last_inflight: &'a mut UnixNanos,
+    ts_last_open: &'a mut UnixNanos,
+    open_order_report_task: &'a mut Option<OpenOrderReportTask>,
+}
+
+type OpenOrderReportFuture = Pin<Box<dyn Future<Output = OpenOrderReportResult>>>;
+
+struct OpenOrderReportTask {
+    future: OpenOrderReportFuture,
+}
+
+struct OpenOrderReportResult {
+    check: OpenOrderReportCheck,
+    reports: Vec<OrderStatusReport>,
 }
 
 #[cfg(feature = "plugin")]
@@ -2277,10 +2345,20 @@ mod tests {
         SyncDataCommandSender, SyncTradingCommandSender, replace_data_cmd_sender,
         replace_exec_cmd_sender,
     };
-    use nautilus_common::{cache::Cache, clock::Clock};
+    use nautilus_common::{
+        cache::Cache,
+        clock::Clock,
+        msgbus::{self, MessagingSwitchboard, TypedIntoHandler},
+    };
     use nautilus_core::{UUID4, UnixNanos};
-    use nautilus_execution::engine::SnapshotAnchorer;
-    use nautilus_model::identifiers::TraderId;
+    use nautilus_execution::engine::{ExecutionEngine, SnapshotAnchorer};
+    use nautilus_model::{
+        enums::OrderType,
+        identifiers::{AccountId, ClientId, InstrumentId, TraderId, VenueOrderId},
+        instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+        orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
+        types::{Price, Quantity},
+    };
     use nautilus_system::{KernelEventStore, RegisteredComponents, event_store::EventStoreConfig};
     use rstest::*;
 
@@ -2352,6 +2430,111 @@ mod tests {
             });
 
         builder.build().unwrap()
+    }
+
+    #[rstest]
+    fn test_run_reconciliation_checks_does_not_publish_open_order_queries() {
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: true,
+                open_check_interval_secs: Some(1.0),
+                position_check_interval_secs: Some(1.0),
+                max_single_order_queries_per_cycle: 5,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut node =
+            LiveNode::build("ReconciliationFallbackNode".to_string(), Some(config)).unwrap();
+        let client_id = ClientId::from("TEST-QUERY");
+        let account_id = AccountId::from("TEST-QUERY-001");
+
+        let trading_commands = Rc::new(RefCell::new(Vec::new()));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_execute(),
+            TypedIntoHandler::from({
+                let trading_commands = trading_commands.clone();
+                move |command: TradingCommand| {
+                    trading_commands.borrow_mut().push(command);
+                }
+            }),
+        );
+
+        let venue_order_id = VenueOrderId::from("V-NODE-QUERY-001");
+        let instrument = crypto_perpetual_ethusdt();
+        let instrument_id = instrument.id();
+        let client_order_id = ClientOrderId::from("O-NODE-QUERY-001");
+
+        node.kernel
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+            .unwrap();
+        insert_accepted_limit_order_in_node(
+            &node,
+            account_id,
+            client_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+        );
+
+        let mut ts_last_inflight = UnixNanos::default();
+        let mut ts_last_open = UnixNanos::default();
+        let mut open_order_report_task = None;
+
+        node.run_reconciliation_checks(
+            ReconciliationCheckIntervals {
+                inflight_ns: 0,
+                open_ns: 1,
+            },
+            &mut ReconciliationCheckState {
+                ts_last_inflight: &mut ts_last_inflight,
+                ts_last_open: &mut ts_last_open,
+                open_order_report_task: &mut open_order_report_task,
+            },
+        );
+
+        let commands = trading_commands.borrow();
+
+        assert!(commands.is_empty());
+        assert!(open_order_report_task.is_none());
+
+        ExecutionEngine::register_msgbus_handlers(&node.kernel.exec_engine);
+    }
+
+    fn insert_accepted_limit_order_in_node(
+        node: &LiveNode,
+        account_id: AccountId,
+        client_id: ClientId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(client_order_id)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("10.0"))
+            .price(Price::from("100.0"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        node.kernel
+            .cache
+            .borrow_mut()
+            .add_order(order, None, Some(client_id), false)
+            .unwrap();
+        let order = node
+            .kernel
+            .cache
+            .borrow_mut()
+            .update_order(&submitted)
+            .unwrap();
+        let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+        node.kernel
+            .cache
+            .borrow_mut()
+            .update_order(&accepted)
+            .unwrap();
     }
 
     #[rstest]

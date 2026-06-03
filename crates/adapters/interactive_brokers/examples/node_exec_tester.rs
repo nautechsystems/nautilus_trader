@@ -44,7 +44,7 @@ use nautilus_interactive_brokers::{
     },
     factories::{InteractiveBrokersDataClientFactory, InteractiveBrokersExecutionClientFactory},
 };
-use nautilus_live::node::LiveNode;
+use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
 use nautilus_model::{
     enums::{OrderType, TimeInForce},
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
@@ -95,9 +95,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         instrument_provider: instrument_provider_config(instrument_id),
         ..Default::default()
     };
+    let exec_engine_config = LiveExecEngineConfig {
+        open_check_interval_secs: Some(10.0),
+        position_check_interval_secs: Some(30.0),
+        ..Default::default()
+    };
 
     let mut node = LiveNode::builder(trader_id, Environment::Live)?
         .with_name("IB-EXEC-TESTER-001".to_string())
+        .with_exec_engine_config(exec_engine_config)
         .with_delay_post_stop_secs(5)
         .with_reconciliation(true)
         .add_data_client(
