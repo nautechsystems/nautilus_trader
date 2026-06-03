@@ -1,26 +1,23 @@
-name: scorecard
+name: openssf-scorecard
 
 # OpenSSF Scorecard posture scan.
 #
 # Triggers:
-#   - Pushes to develop refresh the public Scorecard badge/API result.
-#   - Weekly schedule keeps the result fresh even without source changes.
-#   - Manual dispatch lets maintainers refresh the result from develop after repo-setting changes.
+#   - Weekly schedule refreshes the public Scorecard badge/API result.
+#   - Manual dispatch lets maintainers run a scan from develop after repo-setting changes.
 
 permissions:
   contents: read
   actions: read
 
 on:
-  push:
-    branches: [develop]
   schedule:
     - cron: "30 12 * * 6" # Weekly on Saturdays at 12:30 UTC.
   workflow_dispatch:
 
 jobs:
   scorecard:
-    name: scorecard
+    name: openssf-scorecard
     if: >-
       github.repository == 'nautechsystems/nautilus_trader' &&
       github.ref == 'refs/heads/develop'
@@ -39,6 +36,13 @@ jobs:
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ghcr.io:443
             api.scorecard.dev:443
+            fulcio.sigstore.dev:443
+            rekor.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
+            www.bestpractices.dev:443
+            oss-fuzz-build-logs.storage.googleapis.com:443
+            api.osv.dev:443
+            api.deps.dev:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
