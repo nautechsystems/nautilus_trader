@@ -31,7 +31,10 @@ use crate::{
         Error,
         client::{TardisMachineClient, determine_instrument_info},
         message::WsMessage,
-        parse::{parse_tardis_ws_message, parse_tardis_ws_message_funding_rate},
+        parse::{
+            parse_tardis_ws_message, parse_tardis_ws_message_data,
+            parse_tardis_ws_message_funding_rate,
+        },
         replay_normalized, stream_normalized,
         types::{
             ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions, TardisInstrumentKey,
@@ -82,11 +85,17 @@ impl StreamNormalizedRequestOptions {
 impl TardisMachineClient {
     /// Provides a client for connecting to a [Tardis Machine Server](https://docs.tardis.dev/api/tardis-machine).
     #[new]
-    #[pyo3(signature = (base_url=None, normalize_symbols=true, book_snapshot_output="deltas"))]
+    #[pyo3(signature = (
+        base_url = None,
+        normalize_symbols = true,
+        book_snapshot_output = "deltas",
+        extract_bbo_as_quotes = false,
+    ))]
     fn py_new(
         base_url: Option<&str>,
         normalize_symbols: bool,
         book_snapshot_output: &str,
+        extract_bbo_as_quotes: bool,
     ) -> PyResult<Self> {
         let output = match book_snapshot_output {
             "depth10" => BookSnapshotOutput::Depth10,
@@ -97,7 +106,10 @@ impl TardisMachineClient {
                 )));
             }
         };
-        Self::new(base_url, normalize_symbols, output).map_err(to_pyruntime_err)
+        let mut client =
+            Self::new(base_url, normalize_symbols, output).map_err(to_pyruntime_err)?;
+        client.extract_bbo_as_quotes = extract_bbo_as_quotes;
+        Ok(client)
     }
 
     /// Returns `true` if `close()` has been called.
@@ -140,6 +152,7 @@ impl TardisMachineClient {
         let base_url = self.base_url.clone();
         let replay_signal = self.replay_signal.clone();
         let book_snapshot_output = self.book_snapshot_output.clone();
+        let extract_bbo_as_quotes = self.extract_bbo_as_quotes;
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let stream = replay_normalized(&base_url, options, replay_signal)
@@ -154,6 +167,7 @@ impl TardisMachineClient {
                 None,
                 Some(map),
                 book_snapshot_output,
+                extract_bbo_as_quotes,
             )
             .await;
             Ok(())
@@ -238,6 +252,7 @@ impl TardisMachineClient {
         let base_url = self.base_url.clone();
         let replay_signal = self.replay_signal.clone();
         let book_snapshot_output = self.book_snapshot_output.clone();
+        let extract_bbo_as_quotes = self.extract_bbo_as_quotes;
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let stream = stream_normalized(&base_url, options, replay_signal)
@@ -252,6 +267,7 @@ impl TardisMachineClient {
                 None,
                 Some(instrument_map),
                 book_snapshot_output,
+                extract_bbo_as_quotes,
             )
             .await;
             Ok(())
@@ -289,6 +305,7 @@ async fn handle_python_stream<S>(
     instrument: Option<Arc<TardisInstrumentMiniInfo>>,
     instrument_map: Option<AHashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>>,
     book_snapshot_output: BookSnapshotOutput,
+    extract_bbo_as_quotes: bool,
 ) where
     S: Stream<Item = Result<WsMessage, Error>> + Unpin,
 {
@@ -307,12 +324,19 @@ async fn handle_python_stream<S>(
                 });
 
                 if let Some(info) = info.clone() {
-                    if let Some(data) =
-                        parse_tardis_ws_message(msg.clone(), &info, &book_snapshot_output)
-                    {
+                    let data = parse_tardis_ws_message_data(
+                        msg.clone(),
+                        &info,
+                        &book_snapshot_output,
+                        extract_bbo_as_quotes,
+                    );
+
+                    if !data.is_empty() {
                         Python::attach(|py| {
-                            let py_obj = data_to_pycapsule(py, data);
-                            call_python(py, &callback, py_obj);
+                            for data in data {
+                                let py_obj = data_to_pycapsule(py, data);
+                                call_python(py, &callback, py_obj);
+                            }
                         });
                     } else if let Some(funding_rate) =
                         parse_tardis_ws_message_funding_rate(msg, &info)

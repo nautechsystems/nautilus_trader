@@ -67,6 +67,7 @@ Released on TBD (UTC).
 - Added Polymarket `POLY_1271` deposit-wallet signing support (#4053), thanks for reporting @sumuzhao and @sophyphilo
 - Added `shutdown_on_error` to stop Rust backtests and live nodes after error logs
 - Added Tardis option greeks ingestion to the catalog for backtest replay
+- Added Tardis `extract_bbo_as_quotes` to emit `QuoteTick` from `option_summary` BBO fields
 
 ### Breaking Changes
 - Renamed custom-data field marker `json` to `serde` (#4133), thanks @faysou

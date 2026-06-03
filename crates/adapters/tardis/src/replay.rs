@@ -109,6 +109,9 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         .unwrap_or(BookSnapshotOutput::Deltas);
     log::info!("book_snapshot_output={book_snapshot_output:?}");
 
+    let extract_bbo_as_quotes = config.extract_bbo_as_quotes.unwrap_or(false);
+    log::info!("extract_bbo_as_quotes={extract_bbo_as_quotes}");
+
     let compression = config
         .compression
         .clone()
@@ -128,6 +131,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         normalize_symbols,
         book_snapshot_output,
     )?;
+    machine_client.extract_bbo_as_quotes = extract_bbo_as_quotes;
 
     let exchanges: AHashSet<_> = config.options.iter().map(|opt| opt.exchange).collect();
     let (instrument_map, _instruments) = http_client
