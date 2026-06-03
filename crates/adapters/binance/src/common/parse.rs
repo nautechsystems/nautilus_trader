@@ -392,65 +392,70 @@ fn sbe_mantissa_precision(mantissa: i64, exponent: i8) -> u8 {
 }
 
 /// Parses an SBE price filter into tick_size, max_price, min_price.
-fn parse_sbe_price_filter(filter: &BinancePriceFilterSbe) -> (Price, Option<Price>, Option<Price>) {
+fn parse_sbe_price_filter(
+    filter: &BinancePriceFilterSbe,
+) -> anyhow::Result<(Price, Option<Price>, Option<Price>)> {
     let precision = sbe_mantissa_precision(filter.tick_size, filter.price_exponent);
 
     let tick_size =
-        Price::from_mantissa_exponent(filter.tick_size, filter.price_exponent, precision);
+        Price::from_mantissa_exponent_checked(filter.tick_size, filter.price_exponent, precision)?;
 
     let max_price = if filter.max_price != 0 {
-        Some(Price::from_mantissa_exponent(
+        Some(Price::from_mantissa_exponent_checked(
             filter.max_price,
             filter.price_exponent,
             precision,
-        ))
+        )?)
     } else {
         None
     };
 
     let min_price = if filter.min_price != 0 {
-        Some(Price::from_mantissa_exponent(
+        Some(Price::from_mantissa_exponent_checked(
             filter.min_price,
             filter.price_exponent,
             precision,
-        ))
+        )?)
     } else {
         None
     };
 
-    (tick_size, max_price, min_price)
+    Ok((tick_size, max_price, min_price))
 }
 
 /// Parses an SBE lot size filter into step_size, max_qty, min_qty.
 fn parse_sbe_lot_size_filter(
     filter: &BinanceLotSizeFilterSbe,
-) -> (Quantity, Option<Quantity>, Option<Quantity>) {
+) -> anyhow::Result<(Quantity, Option<Quantity>, Option<Quantity>)> {
     let precision = sbe_mantissa_precision(filter.step_size, filter.qty_exponent);
 
-    let step_size =
-        Quantity::from_mantissa_exponent(filter.step_size as u64, filter.qty_exponent, precision);
+    let step_size = Quantity::from_mantissa_exponent_checked(
+        filter.step_size as u64,
+        filter.qty_exponent,
+        precision,
+    )?;
 
     let max_qty = if filter.max_qty != 0 {
-        Some(Quantity::from_mantissa_exponent(
+        Some(Quantity::from_mantissa_exponent_checked(
             filter.max_qty as u64,
             filter.qty_exponent,
             precision,
-        ))
+        )?)
     } else {
         None
     };
 
     let min_qty = if filter.min_qty != 0 {
-        Some(Quantity::from_mantissa_exponent(
+        Some(Quantity::from_mantissa_exponent_checked(
             filter.min_qty as u64,
             filter.qty_exponent,
             precision,
-        ))
+        )?)
     } else {
         None
     };
 
-    (step_size, max_qty, min_qty)
+    Ok((step_size, max_qty, min_qty))
 }
 
 /// Parses a Binance Spot SBE symbol into a Nautilus CurrencyPair instrument.
@@ -489,7 +494,7 @@ pub fn parse_spot_instrument_sbe(
         .as_ref()
         .context("Missing PRICE_FILTER in symbol filters")?;
 
-    let (tick_size, max_price, min_price) = parse_sbe_price_filter(price_filter);
+    let (tick_size, max_price, min_price) = parse_sbe_price_filter(price_filter)?;
 
     let lot_filter = symbol
         .filters
@@ -497,7 +502,7 @@ pub fn parse_spot_instrument_sbe(
         .as_ref()
         .context("Missing LOT_SIZE in symbol filters")?;
 
-    let (step_size, max_quantity, min_quantity) = parse_sbe_lot_size_filter(lot_filter);
+    let (step_size, max_quantity, min_quantity) = parse_sbe_lot_size_filter(lot_filter)?;
 
     // Spot has no leverage, use 1.0 margin
     let default_margin = Decimal::new(1, 0);
@@ -1085,6 +1090,7 @@ pub fn bar_spec_to_binance_interval(
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use serde_json::json;
     use ustr::Ustr;
 
@@ -1772,12 +1778,16 @@ mod tests {
                 tick_size: 1_000_000,
             };
 
-            let (tick_size, max_price, min_price) = parse_sbe_price_filter(&filter);
+            let (tick_size, max_price, min_price) = parse_sbe_price_filter(&filter).unwrap();
+            let max_price = max_price.unwrap();
+            let min_price = min_price.unwrap();
 
             assert_eq!(tick_size.precision, 2, "tick_size precision");
-            assert_eq!(tick_size.as_f64(), 0.01);
-            assert_eq!(max_price.unwrap().precision, 2);
-            assert_eq!(min_price.unwrap().precision, 2);
+            assert_eq!(tick_size.as_decimal(), dec!(0.01));
+            assert_eq!(max_price.precision, 2);
+            assert_eq!(max_price.as_decimal(), dec!(1000000.00));
+            assert_eq!(min_price.precision, 2);
+            assert_eq!(min_price.as_decimal(), dec!(0.01));
         }
 
         #[rstest]
@@ -1789,10 +1799,10 @@ mod tests {
                 tick_size: 1,
             };
 
-            let (tick_size, _, _) = parse_sbe_price_filter(&filter);
+            let (tick_size, _, _) = parse_sbe_price_filter(&filter).unwrap();
 
             assert_eq!(tick_size.precision, 8);
-            assert_eq!(tick_size.as_f64(), 0.00000001);
+            assert_eq!(tick_size.as_decimal(), dec!(0.00000001));
         }
 
         #[rstest]
@@ -1804,11 +1814,16 @@ mod tests {
                 step_size: 10_000,
             };
 
-            let (step_size, max_qty, min_qty) = parse_sbe_lot_size_filter(&filter);
+            let (step_size, max_qty, min_qty) = parse_sbe_lot_size_filter(&filter).unwrap();
+            let max_qty = max_qty.unwrap();
+            let min_qty = min_qty.unwrap();
 
             assert_eq!(step_size.precision, 4, "step_size precision");
-            assert_eq!(min_qty.unwrap().precision, 4);
-            assert_eq!(max_qty.unwrap().precision, 4);
+            assert_eq!(step_size.as_decimal(), dec!(0.0001));
+            assert_eq!(min_qty.precision, 4);
+            assert_eq!(min_qty.as_decimal(), dec!(0.0001));
+            assert_eq!(max_qty.precision, 4);
+            assert_eq!(max_qty.as_decimal(), dec!(9000.0000));
         }
     }
 }

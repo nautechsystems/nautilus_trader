@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Added funding-rate catalog replay and `FundingSettlement` handling for backtests (Rust)
 - Added generic structured key-value fields to `LogLine` (#4090), thanks @filipmacek
 - Added `correlation_id` field to trading and system command structs for request tracing (Rust)
+- Added checked mantissa/exponent constructors for `Price` and `Quantity` (Rust)
 - Added Cap'n Proto and adapter split propagation of trading command `correlation_id`
 - Added `nautilus-plugin` crate for loading separately compiled Rust cdylibs at live-node startup (Rust)
 - Added custom-data plug point via `PluginCustomData` trait and `nautilus_plugin!` macro (Rust)
@@ -115,6 +116,8 @@ Released on TBD (UTC).
 - Fixed Betfair adapter RCM custom data `ts_init` parity between live and historical streams (Rust)
 - Fixed Betfair adapter overfill checks for rounded stream matched sizes (Rust)
 - Fixed Betfair adapter unsupported unsubscribe commands logging above debug (Rust)
+- Fixed Binance Spot full-depth books to seed diffs from REST snapshots
+- Fixed Binance Spot SBE numeric parsing to reject invalid price and quantity values
 - Fixed BitMEX mark/index price updates on altcoin perps (#4147), thanks @filipmacek
 - Fixed Blockchain adapter caching a half-initialized `PoolProfiler` when `initialize` returns `InitialTickMismatch`
 - Fixed Coinbase book snapshot deltas missing `F_SNAPSHOT` flag in REST and WebSocket parsers
