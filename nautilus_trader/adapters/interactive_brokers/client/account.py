@@ -212,6 +212,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         if self._next_valid_order_id >= 0 and not self._is_ib_connected.is_set():
             self._log.debug("`_is_ib_connected` set by `managedAccounts`", LogColor.BLUE)
             self._is_ib_connected.set()
+            self._had_ib_connection = True
 
     async def process_position(
         self,
