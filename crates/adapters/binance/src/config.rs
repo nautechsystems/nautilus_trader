@@ -25,6 +25,28 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProductType};
 
+/// Spot market-data transport mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.binance",
+        eq,
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.binance")
+)]
+pub enum SpotMarketDataMode {
+    #[default]
+    /// Spot SBE streams (requires Ed25519 credentials).
+    Sbe,
+    /// Force Spot public JSON streams (does not require credentials).
+    JsonPublic,
+}
+
 /// Configuration for Binance data client.
 ///
 /// Ed25519 API keys are required for SBE WebSocket streams.
@@ -56,6 +78,12 @@ pub struct BinanceDataClientConfig {
     pub api_key: Option<String>,
     /// API secret (Ed25519 base64-encoded or PEM).
     pub api_secret: Option<String>,
+    /// Spot market-data transport mode.
+    ///
+    /// - `Sbe` uses SBE streams and requires Ed25519 credentials.
+    /// - `JsonPublic` forces public JSON streams with no credentials.
+    #[builder(default)]
+    pub spot_market_data_mode: SpotMarketDataMode,
     /// Interval in seconds for polling exchange info to detect instrument status
     /// changes (e.g. Trading -> Halt). Set to 0 to disable. Defaults to 3600 (60 minutes).
     #[builder(default = 3600)]
@@ -186,7 +214,20 @@ instrument_status_poll_secs = 600
 
         assert_eq!(config.environment, BinanceEnvironment::Testnet);
         assert_eq!(config.product_type, BinanceProductType::UsdM);
+        assert_eq!(config.spot_market_data_mode, SpotMarketDataMode::Sbe);
         assert_eq!(config.instrument_status_poll_secs, 600);
+    }
+
+    #[rstest]
+    fn test_data_config_toml_spot_market_data_mode_override() {
+        let config: BinanceDataClientConfig = toml::from_str(
+            r#"
+spot_market_data_mode = "JsonPublic"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.spot_market_data_mode, SpotMarketDataMode::JsonPublic);
     }
 
     #[rstest]
