@@ -55,7 +55,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.lighter")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.lighter")
 )]
 pub enum LighterEnvironment {
     /// Mainnet trading environment.

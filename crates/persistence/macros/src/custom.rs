@@ -1551,20 +1551,20 @@ mod tests {
     #[rstest]
     fn parse_options_accepts_no_arrow_stub_module_with_pyo3() {
         let options =
-            parse_options(&quote! { pyo3, no_arrow, stub_module = "nautilus_trader.hyperliquid" })
+            parse_options(&quote! { pyo3, no_arrow, stub_module = "nautilus_trader.persistence" })
                 .expect("parse options");
 
         assert!(options.pyo3);
         assert!(options.no_arrow);
         assert_eq!(
             options.stub_module.as_ref().map(LitStr::value).as_deref(),
-            Some("nautilus_trader.hyperliquid"),
+            Some("nautilus_trader.persistence"),
         );
     }
 
     #[rstest]
     fn parse_options_rejects_stub_module_without_pyo3() {
-        let err = parse_options_error(&quote! { stub_module = "nautilus_trader.hyperliquid" });
+        let err = parse_options_error(&quote! { stub_module = "nautilus_trader.persistence" });
 
         assert_eq!(err.to_string(), "`stub_module` requires `pyo3`");
     }

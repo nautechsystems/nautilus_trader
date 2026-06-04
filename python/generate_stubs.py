@@ -284,7 +284,7 @@ def generate_stubs() -> bool:
         relocate_classes_from_libnautilus(root)
         inject_module_constants(root, workspace_root)
         format_stub_files(root)
-        mirror_missing_adapter_stubs(root)
+        remove_stale_top_level_adapter_stubs(root)
 
     relative_root = dest_dir.relative_to(Path(__file__).parent)
     print(f"Type stubs written to {relative_root or Path('.')} ")
@@ -368,23 +368,30 @@ def post_process_stubs(root: Path) -> None:
             stub_file.write_text(content)
 
 
-def mirror_missing_adapter_stubs(root: Path) -> None:
+def remove_stale_top_level_adapter_stubs(root: Path) -> None:
     """
-    Mirror top-level adapter stubs into adapter wrapper packages when missing.
+    Remove generated top-level adapter stubs from the former flat package layout.
     """
     adapters_dir = root / "adapters"
     if not adapters_dir.exists():
         return
 
-    for init_py in sorted(adapters_dir.glob("*/__init__.py")):
-        target = init_py.with_suffix(".pyi")
-        if target.exists():
+    adapter_names = {
+        path.parent.name
+        for path in [*adapters_dir.glob("*/__init__.py"), *adapters_dir.glob("*/__init__.pyi")]
+    }
+
+    for adapter_name in sorted(adapter_names):
+        stale_dir = root / adapter_name
+        stale_init = stale_dir / "__init__.pyi"
+        if not stale_init.exists():
             continue
 
-        adapter_name = init_py.parent.name
-        source = root / adapter_name / "__init__.pyi"
-        if source.exists():
-            target.write_text(source.read_text())
+        if any(child.name != "__init__.pyi" for child in stale_dir.iterdir()):
+            continue
+
+        stale_init.unlink()
+        stale_dir.rmdir()
 
 
 IDENTIFIER_MACRO_METHOD_FIXUPS = ClassMethodFixup(
@@ -2520,8 +2527,8 @@ def collect_module_constants(workspace_root: Path) -> dict[str, list[ModuleConst
     """
     Collect module-level constants exported via ``m.add()`` in pymodule definitions.
 
-    Returns a mapping of stub module path (e.g. ``"core"``, ``"hyperliquid"``) to
-    constant declarations.
+    Returns a mapping of stub module path (e.g. ``"core"``, ``"adapters.hyperliquid"``)
+    to constant declarations.
 
     """
     constants: dict[str, list[ModuleConstant]] = {}
@@ -2550,13 +2557,12 @@ def _derive_module_path(crate_dir: Path, workspace_root: Path) -> str:
     """
     Derive the stub module path from a crate directory.
 
-    The ``adapters`` directory is organizational only and is not part of
-    the module path, so ``crates/adapters/bybit`` maps to ``"bybit"``.
+    Adapter crates map to the public adapter package path, so
+    ``crates/adapters/bybit`` maps to ``"adapters.bybit"``.
 
     """
     relative = crate_dir.relative_to(workspace_root / "crates")
-    parts = [p for p in relative.parts if p != "adapters"]
-    return ".".join(parts)
+    return ".".join(relative.parts)
 
 
 def _infer_constant_python_type(

@@ -62,6 +62,7 @@ class DeriveExecClientConfig:
         trade_module_address: str | None = None,
         signature_expiry_secs: int | None = None,
         market_order_slippage_bps: int | None = None,
+        max_matching_requests_per_second: int | None = None,
     ) -> None: ...
     @property
     def proxy_url(self) -> str | None: ...

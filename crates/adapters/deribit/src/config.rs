@@ -37,7 +37,7 @@ use crate::{
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.deribit")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.deribit")
 )]
 pub struct DeribitDataClientConfig {
     /// Optional API key for authenticated endpoints.
@@ -130,7 +130,7 @@ impl DeribitDataClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.deribit")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.deribit")
 )]
 pub struct DeribitExecClientConfig {
     /// The trader ID for this client.

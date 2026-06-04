@@ -6,12 +6,12 @@ traders to speculate on event outcomes by buying and selling outcome tokens.
 NautilusTrader provides a venue integration for data and execution via Polymarket's Central Limit
 Order Book (CLOB) API.
 
-Today the repository exposes two Polymarket implementations:
+Today the repository exposes two Polymarket implementations through the public package path
+`nautilus_trader.adapters.polymarket`:
 
-- The Python adapter in `nautilus_trader.adapters.polymarket`, which uses the
+- The Python adapter, which uses the
   [official Python CLOB V2 client library](https://github.com/Polymarket/py-clob-client-v2).
-- The Rust-native adapter surface in `nautilus_trader.polymarket`, which NautilusTrader is
-  consolidating toward.
+- The Rust-native adapter surface, which NautilusTrader is consolidating toward.
 
 :::warning
 The two implementations overlap heavily, but they do not behave identically in every area.
@@ -84,7 +84,7 @@ The table below shows the main differences that affect behavior today.
 
 | Area                | Python adapter                                                                | Rust adapter                                                  | Notes |
 |---------------------|-------------------------------------------------------------------------------|---------------------------------------------------------------|-------|
-| Public package path | `nautilus_trader.adapters.polymarket`                                         | `nautilus_trader.polymarket`                                  | Rust is the consolidation target. |
+| Public package path | `nautilus_trader.adapters.polymarket`                                         | `nautilus_trader.adapters.polymarket`                         | Rust is the consolidation target. |
 | Order signing       | Uses `py-clob-client-v2`                                                      | Native Rust signing                                           | Python signing is slower. |
 | Post‑only orders    | Supported for `GTC` and `GTD` only                                            | Supported for `GTC` and `GTD` only                            | Both reject post‑only with market TIF (`IOC` or `FOK`). |
 | Batch submit        | Uses `POST /orders` for batchable `SubmitOrderList` requests                  | Uses `POST /orders` for batchable `SubmitOrderList` requests  | Both batch only independent limit orders, capped at 15 per request. |
@@ -844,9 +844,8 @@ The following limitations are currently known:
 
 ## Configuration
 
-The Python adapter (`nautilus_trader.adapters.polymarket`) and the Rust-native adapter
-(`nautilus_trader.polymarket`) expose different config surfaces. The tables below document
-both adapters in full.
+The Python adapter and the Rust-native adapter expose different config surfaces. The tables
+below document both adapters in full.
 
 ### Data client options (Python v2)
 

@@ -54,7 +54,7 @@ use crate::{
 /// - `"BTCUSDT-SPOT"` → `"BTCUSDT"`
 /// - `"ETHUSDT"` → `"ETHUSDT"` (no suffix)
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.bybit")]
 #[pyo3(name = "bybit_extract_raw_symbol")]
 fn py_bybit_extract_raw_symbol(symbol: &str) -> &str {
     extract_raw_symbol(symbol)
@@ -66,7 +66,7 @@ fn py_bybit_extract_raw_symbol(symbol: &str) -> &str {
 ///
 /// Returns an error if the aggregation type or step is not supported by Bybit.
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.bybit")]
 #[pyo3(name = "bybit_bar_spec_to_interval")]
 fn py_bybit_bar_spec_to_interval(aggregation: u8, step: u64) -> PyResult<String> {
     let aggregation = BarAggregation::from_repr(aggregation as usize)
@@ -87,7 +87,7 @@ fn py_bybit_bar_spec_to_interval(aggregation: u8, step: u64) -> PyResult<String>
 ///
 /// Returns an error if the symbol does not contain a valid Bybit product type suffix.
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.bybit")]
 #[pyo3(name = "bybit_product_type_from_symbol")]
 fn py_bybit_product_type_from_symbol(
     symbol: &str,
@@ -102,7 +102,7 @@ fn py_bybit_product_type_from_symbol(
 /// hedge-mode index for the position being affected (long or short), accounting
 /// for `is_reduce_only`. A `manual_override` always wins.
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.bybit")]
 #[pyo3(name = "bybit_resolve_position_idx")]
 #[pyo3(signature = (position_mode, order_side, is_reduce_only, manual_override=None))]
 fn py_bybit_resolve_position_idx(
@@ -122,7 +122,7 @@ fn py_bybit_resolve_position_idx(
 
 /// Constructs a venue position ID only for hedge-mode Bybit position indexes.
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.bybit")]
 #[pyo3(name = "bybit_make_hedge_venue_position_id")]
 #[pyo3(signature = (instrument_id, position_idx=None))]
 fn py_bybit_make_hedge_venue_position_id(

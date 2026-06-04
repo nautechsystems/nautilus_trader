@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Enforces PyO3 conventions:
 # - Functions with #[pyo3(name = "...")] must have Rust names prefixed with py_
-# - Adapter pyclasses must use specific adapter module names
+# - Adapter stub metadata must use the public adapter package path
 # - Standard Python exceptions must use error helper functions
 
 set -euo pipefail
@@ -53,26 +53,35 @@ fi
 
 echo "✓ All PyO3 naming conventions are valid"
 
-# Check adapter module naming: module paths must not nest under "adapters"
+# Check adapter module naming.
 echo "Checking adapter module paths..."
 ADAPTER_VIOLATIONS=0
 
 while IFS=: read -r file line_num match; do
   [[ -z "$file" ]] && continue
 
-  echo -e "${RED}Error:${NC} Module path nests under 'adapters' in $file:$line_num"
+  module_path="$(echo "$match" | sed -E 's/.*(module|stub_module)[[:space:]]*=[[:space:]]*"([^"]+)".*/\2/')"
+
+  case "$module_path" in
+    nautilus_trader.adapters.* | nautilus_trader.core.nautilus_pyo3.*)
+      continue
+      ;;
+  esac
+
+  echo -e "${RED}Error:${NC} Adapter module path is not canonical in $file:$line_num"
   echo "  Found: $(echo "$match" | xargs)"
-  echo "  Use: nautilus_trader.<adapter_name> (not nautilus_trader.adapters.<adapter_name>)"
+  echo "  Use: nautilus_trader.adapters.<adapter_name> for stub metadata"
+  echo "  Runtime PyO3 paths may use nautilus_trader.core.nautilus_pyo3.<adapter_name>"
   echo
   ADAPTER_VIOLATIONS=$((ADAPTER_VIOLATIONS + 1))
-done < <(rg -n 'module\s*=\s*"nautilus_trader\.adapters\.' crates/adapters --type rust 2> /dev/null || true)
+done < <(rg -n '(module|stub_module)\s*=\s*"nautilus_trader\.[^"]+"' crates/adapters --type rust 2> /dev/null || true)
 
 if [ $ADAPTER_VIOLATIONS -gt 0 ]; then
   echo -e "${RED}Found $ADAPTER_VIOLATIONS adapter module path violation(s)${NC}"
   echo
   echo "Convention:"
-  echo "  - Adapter module paths are flat: nautilus_trader.<adapter_name>"
-  echo "  - The 'adapters' directory is organizational only, not part of the module path"
+  echo "  - Public adapter stub paths use nautilus_trader.adapters.<adapter_name>"
+  echo "  - Runtime PyO3 paths use nautilus_trader.core.nautilus_pyo3.<adapter_name>"
   exit 1
 fi
 

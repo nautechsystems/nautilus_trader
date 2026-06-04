@@ -32,7 +32,7 @@ use crate::common::{enums::DeriveEnvironment, urls};
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.derive")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.derive")
 )]
 pub struct DeriveDataClientConfig {
     /// Override for the REST API base URL.
@@ -111,7 +111,7 @@ impl DeriveDataClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.derive")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.derive")
 )]
 pub struct DeriveExecClientConfig {
     /// Derive Chain smart-contract wallet address (`X-LYRAWALLET`). Falls back

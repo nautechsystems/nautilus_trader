@@ -37,7 +37,7 @@ use crate::common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProduct
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.binance")
 )]
 pub enum BinanceSpotMarketDataMode {
     #[default]
@@ -58,7 +58,7 @@ pub enum BinanceSpotMarketDataMode {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
 )]
 pub struct BinanceDataClientConfig {
     /// Product type to subscribe to.
@@ -118,7 +118,7 @@ impl ClientConfig for BinanceDataClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
 )]
 pub struct BinanceExecClientConfig {
     /// Trader ID for the client.

@@ -51,7 +51,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bitmex")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bitmex")
 )]
 pub enum BitmexSymbolStatus {
     /// Symbol is open for trading.
@@ -128,7 +128,7 @@ impl From<BitmexSide> for OrderSide {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bitmex")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bitmex")
 )]
 pub enum BitmexPositionSide {
     /// Long position.
@@ -902,7 +902,7 @@ pub enum BitmexMarkMethod {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bitmex")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bitmex")
 )]
 pub enum BitmexEnvironment {
     /// Live trading environment.

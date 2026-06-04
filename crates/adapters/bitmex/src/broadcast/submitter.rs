@@ -392,7 +392,7 @@ impl TransportClient {
 #[cfg_attr(feature = "python", pyo3::pyclass)]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bitmex")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")
 )]
 #[derive(Debug)]
 pub struct SubmitBroadcaster {

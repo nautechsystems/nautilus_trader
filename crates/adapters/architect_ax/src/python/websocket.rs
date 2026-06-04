@@ -74,9 +74,9 @@ use crate::{
 /// at the Python boundary for parsing venue messages into Nautilus domain types.
 #[pyclass(
     name = "AxMdWebSocketClient",
-    module = "nautilus_trader.core.nautilus_pyo3.architect"
+    module = "nautilus_trader.core.nautilus_pyo3.architect_ax"
 )]
-#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.architect_ax")]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.architect_ax")]
 pub struct PyAxMdWebSocketClient {
     inner: AxMdWebSocketClient,
     instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
@@ -457,9 +457,9 @@ impl PyAxMdWebSocketClient {
 /// parsing at the Python boundary.
 #[pyclass(
     name = "AxOrdersWebSocketClient",
-    module = "nautilus_trader.core.nautilus_pyo3.architect"
+    module = "nautilus_trader.core.nautilus_pyo3.architect_ax"
 )]
-#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.architect_ax")]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.architect_ax")]
 pub struct PyAxOrdersWebSocketClient {
     inner: AxOrdersWebSocketClient,
 }

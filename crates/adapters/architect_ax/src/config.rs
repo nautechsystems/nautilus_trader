@@ -25,13 +25,13 @@ use crate::common::{credential::credential_env_vars, enums::AxEnvironment};
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
         from_py_object
     )
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.architect_ax")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.architect_ax")
 )]
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
@@ -131,13 +131,13 @@ impl AxDataClientConfig {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
         from_py_object
     )
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.architect_ax")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.architect_ax")
 )]
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]

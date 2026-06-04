@@ -33,7 +33,7 @@ use crate::common::{
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.coinbase")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.coinbase")
 )]
 pub struct CoinbaseDataClientConfig {
     /// CDP API key name (falls back to `COINBASE_API_KEY` env var).
@@ -120,7 +120,7 @@ impl CoinbaseDataClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.coinbase")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.coinbase")
 )]
 pub struct CoinbaseExecClientConfig {
     /// CDP API key name (falls back to `COINBASE_API_KEY` env var).

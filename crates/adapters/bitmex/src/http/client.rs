@@ -797,7 +797,7 @@ impl BitmexRawHttpClient {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bitmex")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")
 )]
 pub struct BitmexHttpClient {
     pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,

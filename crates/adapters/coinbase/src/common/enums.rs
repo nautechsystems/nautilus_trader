@@ -29,7 +29,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.coinbase")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.coinbase")
 )]
 pub enum CoinbaseEnvironment {
     /// Production environment.
@@ -191,7 +191,7 @@ pub enum CoinbaseOrderPlacementSource {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.coinbase")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.coinbase")
 )]
 pub enum CoinbaseMarginType {
     #[serde(alias = "Cross")]

@@ -164,8 +164,8 @@ let expirations = client
 ```
 
 ```python tab="Python"
-from nautilus_trader.deribit import DeribitCurrency
-from nautilus_trader.deribit import DeribitHttpClient
+from nautilus_trader.adapters.deribit import DeribitCurrency
+from nautilus_trader.adapters.deribit import DeribitHttpClient
 
 client = DeribitHttpClient()
 expirations = await client.request_option_expirations(DeribitCurrency.BTC)

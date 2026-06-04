@@ -56,7 +56,7 @@ impl ClientConfig for LighterExecClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.lighter")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.lighter")
 )]
 pub struct LighterDataClientFactory;
 
@@ -108,7 +108,7 @@ impl DataClientFactory for LighterDataClientFactory {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.lighter")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.lighter")
 )]
 pub struct LighterExecutionClientFactory;
 

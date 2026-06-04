@@ -85,7 +85,7 @@ const AUTHENTICATION_TIMEOUT_SECS: u64 = 30;
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.deribit")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.deribit")
 )]
 pub struct DeribitWebSocketClient {
     url: String,

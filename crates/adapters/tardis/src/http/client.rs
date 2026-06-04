@@ -53,7 +53,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.tardis")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.tardis")
 )]
 #[derive(Clone)]
 pub struct TardisHttpClient {

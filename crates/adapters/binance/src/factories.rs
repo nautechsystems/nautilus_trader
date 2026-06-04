@@ -47,7 +47,7 @@ use crate::{
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
 )]
 pub struct BinanceDataClientFactory;
 
@@ -120,7 +120,7 @@ impl DataClientFactory for BinanceDataClientFactory {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
 )]
 pub struct BinanceExecutionClientFactory;
 
