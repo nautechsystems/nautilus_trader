@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     events::{PositionAdjusted, PositionChanged, PositionClosed, PositionOpened},
     identifiers::{AccountId, InstrumentId},
@@ -23,7 +25,7 @@ pub mod closed;
 pub mod opened;
 pub mod snapshot;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PositionEvent {
     PositionOpened(PositionOpened),
     PositionChanged(PositionChanged),
