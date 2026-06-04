@@ -416,13 +416,16 @@ pub enum LighterWsFrame {
         ticker: LighterTicker,
         timestamp: u64,
     },
-    #[serde(rename = "update/market_stats")]
+    #[serde(rename = "update/market_stats", alias = "subscribed/market_stats")]
     MarketStats {
         channel: Ustr,
         market_stats: LighterMarketStatsPayload,
         timestamp: u64,
     },
-    #[serde(rename = "update/spot_market_stats")]
+    #[serde(
+        rename = "update/spot_market_stats",
+        alias = "subscribed/spot_market_stats"
+    )]
     SpotMarketStats {
         channel: Ustr,
         spot_market_stats: LighterSpotMarketStatsPayload,
@@ -745,10 +748,14 @@ mod tests {
     const WS_TICKER_SUBSCRIBED: &str = include_str!("../../test_data/ws_ticker_subscribed.json");
     const WS_MARKET_STATS_UPDATE_SINGLE: &str =
         include_str!("../../test_data/ws_market_stats_update_single.json");
+    const WS_MARKET_STATS_SUBSCRIBED_SINGLE: &str =
+        include_str!("../../test_data/ws_market_stats_subscribed_single.json");
     const WS_MARKET_STATS_UPDATE_ALL: &str =
         include_str!("../../test_data/ws_market_stats_update_all.json");
     const WS_SPOT_MARKET_STATS_UPDATE_SINGLE: &str =
         include_str!("../../test_data/ws_spot_market_stats_update_single.json");
+    const WS_SPOT_MARKET_STATS_SUBSCRIBED_SINGLE: &str =
+        include_str!("../../test_data/ws_spot_market_stats_subscribed_single.json");
     const WS_SPOT_MARKET_STATS_UPDATE_ALL: &str =
         include_str!("../../test_data/ws_spot_market_stats_update_all.json");
     const WS_ACCOUNT_ALL_ASSETS_UPDATE: &str =
@@ -1047,6 +1054,27 @@ mod tests {
     }
 
     #[rstest]
+    fn test_market_stats_subscribed_frame_deserializes_single_payload() {
+        let frame: LighterWsFrame =
+            serde_json::from_str(WS_MARKET_STATS_SUBSCRIBED_SINGLE).unwrap();
+
+        match frame {
+            LighterWsFrame::MarketStats {
+                channel,
+                market_stats: LighterMarketStatsPayload::One(stats),
+                timestamp,
+            } => {
+                assert_eq!(channel, Ustr::from("market_stats:1"));
+                assert_eq!(stats.symbol, Ustr::from("BTC"));
+                assert_eq!(stats.market_id, 1);
+                assert_eq!(stats.mark_price, Decimal::from_str("64356.3").unwrap());
+                assert_eq!(timestamp, 1_780_546_209_291);
+            }
+            _ => panic!("expected subscribed market stats frame"),
+        }
+    }
+
+    #[rstest]
     fn test_market_stats_frame_deserializes_all_payload() {
         let frame: LighterWsFrame = serde_json::from_str(WS_MARKET_STATS_UPDATE_ALL).unwrap();
 
@@ -1086,6 +1114,27 @@ mod tests {
                 assert_eq!(timestamp, 1_774_883_844_933);
             }
             _ => panic!("expected single spot market stats frame"),
+        }
+    }
+
+    #[rstest]
+    fn test_spot_market_stats_subscribed_frame_deserializes_single_payload() {
+        let frame: LighterWsFrame =
+            serde_json::from_str(WS_SPOT_MARKET_STATS_SUBSCRIBED_SINGLE).unwrap();
+
+        match frame {
+            LighterWsFrame::SpotMarketStats {
+                channel,
+                spot_market_stats: LighterSpotMarketStatsPayload::One(stats),
+                timestamp,
+            } => {
+                assert_eq!(channel, Ustr::from("spot_market_stats:2048"));
+                assert_eq!(stats.symbol, Ustr::from("USDC"));
+                assert_eq!(stats.market_id, 2048);
+                assert_eq!(stats.mid_price, Decimal::from_str("1.000001").unwrap());
+                assert_eq!(timestamp, 1_774_883_844_933);
+            }
+            _ => panic!("expected subscribed spot market stats frame"),
         }
     }
 

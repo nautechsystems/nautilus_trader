@@ -41,7 +41,7 @@ use std::{
 use axum::{
     Router,
     extract::{
-        Query, State,
+        State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::StatusCode,
@@ -69,7 +69,6 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_lighter::{
     common::consts::LIGHTER_VENUE, config::LighterDataClientConfig, data::LighterDataClient,
-    http::query::LighterTradesQuery,
 };
 use nautilus_model::{
     data::{BarSpecification, BarType, Data},
@@ -79,9 +78,6 @@ use nautilus_model::{
 };
 use rstest::rstest;
 use serde_json::{Value, json};
-
-const PRIVATE_KEY_HEX: &str =
-    "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
 const ETH_PERP_SYMBOL: &str = "ETH-PERP";
 
 fn data_path() -> PathBuf {
@@ -167,27 +163,6 @@ async fn fundings() -> Response {
     (
         StatusCode::OK,
         std::fs::read_to_string(data_path().join("http_fundings.json")).unwrap(),
-    )
-        .into_response()
-}
-
-async fn trades(Query(query): Query<LighterTradesQuery>) -> Response {
-    // The data-client trades path uses Schnorr-derived auth tokens. The mock
-    // does not verify the signature; it asserts the token is shaped as
-    // `<deadline>:<account_index>:<api_key_index>:<sig_hex>` so a regression
-    // that drops the token through silently fails here.
-    let token = query
-        .auth
-        .as_deref()
-        .expect("auth token must be present on /api/v1/trades");
-    assert_eq!(
-        token.split(':').count(),
-        4,
-        "unexpected token shape: `{token}`",
-    );
-    (
-        StatusCode::OK,
-        std::fs::read_to_string(data_path().join("http_recent_trades.json")).unwrap(),
     )
         .into_response()
 }
@@ -300,7 +275,6 @@ fn build_router(state: Arc<TestServerState>) -> Router {
         .route("/api/v1/orderBookOrders", get(order_book_orders))
         .route("/api/v1/recentTrades", get(recent_trades))
         .route("/api/v1/fundings", get(fundings))
-        .route("/api/v1/trades", get(trades))
         .route("/api/v1/candles", get(candles))
         .route("/stream", get(handle_ws_upgrade))
         .with_state(state)
@@ -329,18 +303,6 @@ fn build_config(addr: SocketAddr) -> LighterDataClientConfig {
         // via `connect()` and request_instruments(). A nonzero interval would
         // leak a background task across the entire crate's test run.
         update_instruments_interval_mins: 0,
-        ..LighterDataClientConfig::default()
-    }
-}
-
-fn build_config_with_credentials(addr: SocketAddr) -> LighterDataClientConfig {
-    LighterDataClientConfig {
-        base_url_http: Some(format!("http://{addr}")),
-        base_url_ws: Some(format!("ws://{addr}/stream")),
-        update_instruments_interval_mins: 0,
-        account_index: Some(12_345),
-        api_key_index: Some(5),
-        private_key: Some(PRIVATE_KEY_HEX.to_string()),
         ..LighterDataClientConfig::default()
     }
 }
@@ -1527,9 +1489,9 @@ async fn test_request_funding_rates_emits_response() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trades_with_credentials_emits_response() {
+async fn test_request_trades_emits_response() {
     let (addr, _state) = start_server().await;
-    let (mut client, mut rx) = build_client(build_config_with_credentials(addr));
+    let (mut client, mut rx) = build_client(build_config(addr));
 
     client.connect().await.expect("connect");
     drain_pending(&mut rx);
@@ -1560,16 +1522,6 @@ async fn test_request_trades_with_credentials_emits_response() {
 
     client.disconnect().await.expect("disconnect");
 }
-
-// The credentials-missing path for `request_trades` is covered by the
-// in-source test in `data.rs#test_request_trades_requires_credentials`, which
-// forcibly nulls `client.credential` after construction. From an external
-// integration test we cannot mutate that private field, and
-// `LighterDataClientConfig::has_credentials()` falls back to the `LIGHTER_*`
-// env vars, so the no-credentials assertion cannot be made deterministic here
-// without env mutation (which would need to be pinned to the workspace
-// `serial_tests` nextest group). The positive path is exercised by
-// `test_request_trades_with_credentials_emits_response`.
 
 #[rstest]
 #[tokio::test]
