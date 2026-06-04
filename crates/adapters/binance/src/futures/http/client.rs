@@ -1811,8 +1811,15 @@ impl BinanceFuturesHttpClient {
         let binance_order_type = order_type_to_binance_futures(order_type)?;
         let binance_tif = BinanceTimeInForce::try_from(time_in_force)?;
 
+        let requires_trigger_price = matches!(
+            order_type,
+            OrderType::StopMarket
+                | OrderType::StopLimit
+                | OrderType::MarketIfTouched
+                | OrderType::LimitIfTouched
+        );
         anyhow::ensure!(
-            trigger_price.is_some(),
+            !requires_trigger_price || trigger_price.is_some(),
             "Algo order type {order_type:?} requires a trigger price"
         );
 
@@ -1821,7 +1828,16 @@ impl BinanceFuturesHttpClient {
             matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched);
 
         let price_str = price.map(|p| p.to_string());
-        let trigger_price_str = trigger_price.map(|p| p.to_string());
+        let trigger_price_str = if matches!(order_type, OrderType::TrailingStopMarket) {
+            None
+        } else {
+            trigger_price.map(|p| p.to_string())
+        };
+        let reduce_only = if reduce_only && position_side.is_none() {
+            Some(true)
+        } else {
+            None
+        };
         let client_id_str = encode_broker_id(&client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
 
         // closePosition is mutually exclusive with quantity and reduceOnly
@@ -1869,7 +1885,7 @@ impl BinanceFuturesHttpClient {
                 working_type,
                 close_position: None,
                 price_protect: None,
-                reduce_only: if reduce_only { Some(true) } else { None },
+                reduce_only,
                 activation_price: activation_price.map(|p| p.to_string()),
                 callback_rate,
                 client_algo_id: Some(client_id_str),
@@ -2557,6 +2573,7 @@ mod tests {
     use tokio_util::bytes::Bytes;
 
     use super::*;
+    use crate::common::enums::BinanceTradingStatus;
 
     #[rstest]
     fn test_rate_limit_config_usdm_has_request_weight_and_orders() {
@@ -2671,6 +2688,84 @@ mod tests {
             None,
         )
         .expect("Failed to create test client")
+    }
+
+    fn create_test_client() -> BinanceFuturesHttpClient {
+        BinanceFuturesHttpClient::new(
+            BinanceProductType::UsdM,
+            BinanceEnvironment::Live,
+            get_atomic_clock_realtime(),
+            None,
+            None,
+            Some("http://127.0.0.1:1".to_string()),
+            None,
+            Some(1),
+            None,
+            false,
+        )
+        .expect("Failed to create test client")
+    }
+
+    fn test_usdm_symbol() -> BinanceFuturesUsdSymbol {
+        BinanceFuturesUsdSymbol {
+            symbol: Ustr::from("BTCUSDT"),
+            pair: Ustr::from("BTCUSDT"),
+            contract_type: "PERPETUAL".to_string(),
+            delivery_date: 4_133_404_800_000,
+            onboard_date: 1_569_398_400_000,
+            status: BinanceTradingStatus::Trading,
+            maint_margin_percent: "2.5000".to_string(),
+            required_margin_percent: "5.0000".to_string(),
+            base_asset: Ustr::from("BTC"),
+            quote_asset: Ustr::from("USDT"),
+            margin_asset: Ustr::from("USDT"),
+            price_precision: 2,
+            quantity_precision: 3,
+            base_asset_precision: 8,
+            quote_precision: 8,
+            underlying_type: None,
+            underlying_sub_type: Vec::new(),
+            settle_plan: None,
+            trigger_protect: None,
+            liquidation_fee: None,
+            market_take_bound: None,
+            order_types: Vec::new(),
+            time_in_force: Vec::new(),
+            filters: Vec::new(),
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_submit_algo_order_stop_market_requires_trigger_price() {
+        let client = create_test_client();
+        client.instruments_cache().insert(
+            Ustr::from("BTCUSDT"),
+            BinanceFuturesInstrument::UsdM(test_usdm_symbol()),
+        );
+
+        let result = client
+            .submit_algo_order(
+                AccountId::from("BINANCE-001"),
+                InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+                ClientOrderId::new("missing-trigger-test-001"),
+                OrderSide::Sell,
+                OrderType::StopMarket,
+                Quantity::from("0.001"),
+                TimeInForce::Gtc,
+                None,
+                None,
+                false,
+                false,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+
+        let error = result.unwrap_err().to_string();
+        assert_eq!(error, "Algo order type StopMarket requires a trigger price");
     }
 
     #[rstest]

@@ -119,6 +119,7 @@ Released on TBD (UTC).
 - Fixed Betfair adapter RCM custom data `ts_init` parity between live and historical streams (Rust)
 - Fixed Betfair adapter overfill checks for rounded stream matched sizes (Rust)
 - Fixed Betfair adapter unsupported unsubscribe commands logging above debug (Rust)
+- Fixed Binance Futures algo params for trailing stops/reduce-only (#4192), thanks for reporting @luckykefu
 - Fixed Binance Spot full-depth books to seed diffs from REST snapshots
 - Fixed Binance Spot SBE numeric parsing to reject invalid price and quantity values
 - Fixed BitMEX mark/index price updates on altcoin perps (#4147), thanks @filipmacek
