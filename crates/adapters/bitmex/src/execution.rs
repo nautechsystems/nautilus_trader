@@ -47,7 +47,7 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderSide, OrderType},
+    enums::{AccountType, OmsType, OrderSide, OrderType, TrailingOffsetType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
@@ -63,14 +63,14 @@ use ustr::Ustr;
 use crate::{
     broadcast::{
         canceller::{CancelBroadcaster, CancelBroadcasterConfig},
-        submitter::{SubmitBroadcaster, SubmitBroadcasterConfig},
+        submitter::{DEFINITIVE_SUBMIT_REJECTION, SubmitBroadcaster, SubmitBroadcasterConfig},
     },
     common::{
-        enums::BitmexPegPriceType,
+        enums::{BitmexContingencyType, BitmexOrderType, BitmexPegPriceType, BitmexTimeInForce},
         parse::{parse_peg_offset_value, parse_peg_price_type},
     },
     config::BitmexExecClientConfig,
-    http::client::BitmexHttpClient,
+    http::{client::BitmexHttpClient, error::BitmexHttpError},
     websocket::{
         client::BitmexWebSocketClient,
         dispatch::{self, OrderIdentity, WsDispatchState},
@@ -478,6 +478,11 @@ impl BitmexExecutionClient {
             return;
         }
 
+        if let Err(e) = validate_order_for_bitmex_submit(order, peg_price_type, peg_offset_value) {
+            self.emitter.emit_order_denied(order, &e.to_string());
+            return;
+        }
+
         self.emitter.emit_order_submitted(order);
 
         let strategy_id = order.strategy_id();
@@ -572,30 +577,16 @@ impl BitmexExecutionClient {
                     // to generate inferred fills that conflict with real fills from the
                     // Execution table WS stream.
                 }
-                Err(e) => {
-                    let error_msg = e.to_string();
-
-                    // If all transports returned "Duplicate clOrdID", the order likely exists
-                    // but the success response was lost. Wait for WebSocket confirmation.
-                    if error_msg.contains("IDEMPOTENT_DUPLICATE") {
-                        log::warn!(
-                            "Order {client_order_id} may exist (duplicate clOrdID from all transports), \
-                             awaiting WebSocket confirmation",
-                        );
-                        return Ok(());
-                    }
-
-                    ws_dispatch_state.order_identities.remove(&client_order_id);
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        &format!("submit-order-error: {error_msg}"),
-                        ts_event,
-                        post_only,
-                    );
-                }
+                Err(e) => handle_submit_failure(&SubmitFailure {
+                    err: &e,
+                    ws_dispatch_state: &ws_dispatch_state,
+                    emitter: &emitter,
+                    clock,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    post_only,
+                }),
             }
             Ok(())
         });
@@ -939,9 +930,6 @@ impl ExecutionClient for BitmexExecutionClient {
             .and_then(|p| p.get_usize("submit_tries"))
             .filter(|&n| n > 0);
 
-        let peg_price_type = parse_peg_price_type(cmd.params.as_ref())?;
-        let peg_offset_value = parse_peg_offset_value(cmd.params.as_ref())?;
-
         let order = self
             .core
             .cache()
@@ -950,6 +938,21 @@ impl ExecutionClient for BitmexExecutionClient {
             .ok_or_else(|| {
                 anyhow::anyhow!("Order not found in cache for {}", cmd.client_order_id)
             })?;
+
+        let peg_price_type = match parse_peg_price_type(cmd.params.as_ref()) {
+            Ok(value) => value,
+            Err(e) => {
+                self.emitter.emit_order_denied(&order, &e.to_string());
+                return Ok(());
+            }
+        };
+        let peg_offset_value = match parse_peg_offset_value(cmd.params.as_ref()) {
+            Ok(value) => value,
+            Err(e) => {
+                self.emitter.emit_order_denied(&order, &e.to_string());
+                return Ok(());
+            }
+        };
 
         self.submit_cached_order(
             &order,
@@ -973,10 +976,26 @@ impl ExecutionClient for BitmexExecutionClient {
             .and_then(|p| p.get_usize("submit_tries"))
             .filter(|&n| n > 0);
 
-        let peg_price_type = parse_peg_price_type(cmd.params.as_ref())?;
-        let peg_offset_value = parse_peg_offset_value(cmd.params.as_ref())?;
-
         let orders = self.core.get_orders_for_list(&cmd.order_list)?;
+
+        let peg_price_type = match parse_peg_price_type(cmd.params.as_ref()) {
+            Ok(value) => value,
+            Err(e) => {
+                for order in &orders {
+                    self.emitter.emit_order_denied(order, &e.to_string());
+                }
+                return Ok(());
+            }
+        };
+        let peg_offset_value = match parse_peg_offset_value(cmd.params.as_ref()) {
+            Ok(value) => value,
+            Err(e) => {
+                for order in &orders {
+                    self.emitter.emit_order_denied(order, &e.to_string());
+                }
+                return Ok(());
+            }
+        };
 
         log::info!(
             "Submitting BitMEX order list: order_list_id={}, count={}",
@@ -1001,18 +1020,21 @@ impl ExecutionClient for BitmexExecutionClient {
         self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
+        let clock = self.clock;
         let instrument_id = cmd.instrument_id;
-        let client_order_id = Some(cmd.client_order_id);
+        let client_order_id = cmd.client_order_id;
+        let client_order_id_opt = Some(client_order_id);
         let venue_order_id = cmd.venue_order_id;
         let quantity = cmd.quantity;
         let price = cmd.price;
         let trigger_price = cmd.trigger_price;
+        let strategy_id = cmd.strategy_id;
 
         self.spawn_task("modify_order", async move {
             match http_client
                 .modify_order(
                     instrument_id,
-                    client_order_id,
+                    client_order_id_opt,
                     venue_order_id,
                     quantity,
                     price,
@@ -1021,7 +1043,15 @@ impl ExecutionClient for BitmexExecutionClient {
                 .await
             {
                 Ok(report) => emitter.send_order_status_report(report),
-                Err(e) => log::error!("BitMEX modify order failed: {e:?}"),
+                Err(e) => handle_modify_failure(&ModifyFailure {
+                    err: &e,
+                    emitter: &emitter,
+                    clock,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                }),
             }
             Ok(())
         });
@@ -1150,5 +1180,584 @@ impl ExecutionClient for BitmexExecutionClient {
         });
 
         Ok(())
+    }
+}
+
+struct SubmitFailure<'a> {
+    err: &'a anyhow::Error,
+    ws_dispatch_state: &'a Arc<WsDispatchState>,
+    emitter: &'a ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    post_only: bool,
+}
+
+fn handle_submit_failure(failure: &SubmitFailure<'_>) {
+    let error_msg = failure.err.to_string();
+
+    // A duplicate clOrdID can mean the original success response was lost
+    if is_bitmex_duplicate_clordid_submit_failure(failure.err) {
+        log::warn!(
+            "Order {} may exist (duplicate clOrdID), \
+             awaiting WebSocket confirmation",
+            failure.client_order_id,
+        );
+        return;
+    }
+
+    if is_definitive_bitmex_submit_rejection(failure.err) {
+        failure
+            .ws_dispatch_state
+            .order_identities
+            .remove(&failure.client_order_id);
+        let ts_event = failure.clock.get_time_ns();
+        let rejection_reason = error_msg
+            .strip_prefix(DEFINITIVE_SUBMIT_REJECTION)
+            .map_or(error_msg.as_str(), |msg| {
+                msg.trim_start_matches(':').trim_start()
+            });
+        failure.emitter.emit_order_rejected_event(
+            failure.strategy_id,
+            failure.instrument_id,
+            failure.client_order_id,
+            &format!("submit-order-error: {rejection_reason}"),
+            ts_event,
+            failure.post_only,
+        );
+    } else {
+        log::error!(
+            "Ambiguous BitMEX submit failure for {}, awaiting reconciliation: {:?}",
+            failure.client_order_id,
+            failure.err,
+        );
+    }
+}
+
+struct ModifyFailure<'a> {
+    err: &'a anyhow::Error,
+    emitter: &'a ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: Option<VenueOrderId>,
+}
+
+fn handle_modify_failure(failure: &ModifyFailure<'_>) {
+    if is_definitive_bitmex_modify_rejection(failure.err) {
+        let ts_event = failure.clock.get_time_ns();
+        failure.emitter.emit_order_modify_rejected_event(
+            failure.strategy_id,
+            failure.instrument_id,
+            failure.client_order_id,
+            failure.venue_order_id,
+            &format!("modify-order-error: {}", failure.err),
+            ts_event,
+        );
+    } else {
+        log::error!(
+            "Ambiguous BitMEX modify failure for {}, awaiting reconciliation: {:?}",
+            failure.client_order_id,
+            failure.err,
+        );
+    }
+}
+
+fn validate_order_for_bitmex_submit(
+    order: &OrderAny,
+    peg_price_type: Option<BitmexPegPriceType>,
+    peg_offset_value: Option<f64>,
+) -> anyhow::Result<()> {
+    if order.order_side() == OrderSide::NoOrderSide {
+        anyhow::bail!("Order side must be Buy or Sell");
+    }
+
+    BitmexOrderType::try_from_order_type(order.order_type())?;
+    BitmexTimeInForce::try_from_time_in_force(order.time_in_force())?;
+
+    let is_trailing_stop = matches!(
+        order.order_type(),
+        OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+    );
+
+    if is_trailing_stop
+        && let Some(offset_type) = order.trailing_offset_type()
+        && offset_type != TrailingOffsetType::Price
+    {
+        anyhow::bail!("BitMEX only supports PRICE trailing offset type, was {offset_type:?}");
+    }
+
+    if peg_price_type.is_none() && peg_offset_value.is_some() {
+        anyhow::bail!("`peg_offset_value` requires `peg_price_type`");
+    }
+
+    if peg_price_type.is_some() && order.order_type() != OrderType::Limit {
+        let order_type = order.order_type();
+        anyhow::bail!("Pegged orders only supported for LIMIT order type, was {order_type:?}");
+    }
+
+    if let Some(contingency_type) = order.contingency_type() {
+        BitmexContingencyType::try_from(contingency_type)?;
+    }
+
+    Ok(())
+}
+
+fn is_definitive_bitmex_submit_rejection(err: &anyhow::Error) -> bool {
+    if is_bitmex_duplicate_clordid_submit_failure(err) {
+        return false;
+    }
+
+    if has_bitmex_api_refusal(err) {
+        return true;
+    }
+
+    let message = err.to_string();
+    message.starts_with("Order rejected:") || message.starts_with(DEFINITIVE_SUBMIT_REJECTION)
+}
+
+fn is_bitmex_duplicate_clordid_submit_failure(err: &anyhow::Error) -> bool {
+    if err.to_string().contains("IDEMPOTENT_DUPLICATE") {
+        return true;
+    }
+
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<BitmexHttpError>()
+            .is_some_and(|e| {
+                matches!(e, BitmexHttpError::BitmexError { message, .. } if message.contains("Duplicate clOrdID"))
+            })
+    })
+}
+
+fn is_definitive_bitmex_modify_rejection(err: &anyhow::Error) -> bool {
+    if has_bitmex_api_refusal(err) {
+        return true;
+    }
+
+    err.to_string().starts_with("Order modification rejected:")
+}
+
+fn has_bitmex_api_refusal(err: &anyhow::Error) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<BitmexHttpError>()
+            .is_some_and(|e| matches!(e, BitmexHttpError::BitmexError { .. }))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{cache::Cache, clients::ExecutionClient, messages::ExecutionEvent};
+    use nautilus_core::{Params, UUID4};
+    use nautilus_model::{
+        events::OrderEventAny,
+        identifiers::TraderId,
+        orders::builder::OrderTestBuilder,
+        types::{Price, Quantity},
+    };
+    use nautilus_network::http::StatusCode;
+    use rstest::rstest;
+
+    use super::*;
+    use crate::common::consts::{BITMEX_CLIENT_ID, BITMEX_VENUE};
+
+    fn bitmex_api_error() -> anyhow::Error {
+        anyhow::Error::new(BitmexHttpError::BitmexError {
+            error_name: "HTTPError".to_string(),
+            message: "Invalid price".to_string(),
+        })
+    }
+
+    fn test_execution_client() -> (BitmexExecutionClient, Rc<RefCell<Cache>>) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            *BITMEX_CLIENT_ID,
+            *BITMEX_VENUE,
+            OmsType::Netting,
+            AccountId::from("BITMEX-001"),
+            AccountType::Margin,
+            None,
+            cache.clone(),
+        );
+        let config = BitmexExecClientConfig {
+            api_key: Some("test_key".to_string()),
+            api_secret: Some("test_secret".to_string()),
+            base_url_http: Some("http://127.0.0.1:9/api/v1".to_string()),
+            base_url_ws: Some("ws://127.0.0.1:9/realtime".to_string()),
+            ..Default::default()
+        };
+
+        (BitmexExecutionClient::new(core, config).unwrap(), cache)
+    }
+
+    fn make_emitter() -> (
+        ExecutionEventEmitter,
+        tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    ) {
+        let mut emitter = ExecutionEventEmitter::new(
+            get_atomic_clock_realtime(),
+            TraderId::from("TESTER-001"),
+            AccountId::from("BITMEX-001"),
+            AccountType::Margin,
+            None,
+        );
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(tx);
+        (emitter, rx)
+    }
+
+    fn limit_order() -> OrderAny {
+        limit_order_with_id(ClientOrderId::from("O-LIMIT"))
+    }
+
+    fn limit_order_with_id(client_order_id: ClientOrderId) -> OrderAny {
+        let mut builder = OrderTestBuilder::new(OrderType::Limit);
+        builder
+            .instrument_id(InstrumentId::from("XBTUSD.BITMEX"))
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("100.0"))
+            .build()
+    }
+
+    fn market_order() -> OrderAny {
+        let mut builder = OrderTestBuilder::new(OrderType::Market);
+        builder
+            .instrument_id(InstrumentId::from("XBTUSD.BITMEX"))
+            .quantity(Quantity::from("1"))
+            .build()
+    }
+
+    fn order_identity(order: &OrderAny) -> OrderIdentity {
+        OrderIdentity {
+            instrument_id: order.instrument_id(),
+            strategy_id: order.strategy_id(),
+            order_side: order.order_side(),
+            order_type: order.order_type(),
+        }
+    }
+
+    fn submit_command(order: &OrderAny, params: Option<Params>) -> SubmitOrder {
+        SubmitOrder::new(
+            order.trader_id(),
+            Some(*BITMEX_CLIENT_ID),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.init_event().clone(),
+            None,
+            None,
+            params,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        )
+    }
+
+    fn drain_order_events(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    ) -> Vec<OrderEventAny> {
+        let mut events = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            if let ExecutionEvent::Order(event) = event {
+                events.push(event);
+            }
+        }
+        events
+    }
+
+    #[rstest]
+    fn test_bitmex_api_error_is_definitive_submit_rejection() {
+        let err = bitmex_api_error();
+
+        assert!(is_definitive_bitmex_submit_rejection(&err));
+    }
+
+    #[rstest]
+    fn test_bitmex_api_error_is_definitive_modify_rejection() {
+        let err = bitmex_api_error();
+
+        assert!(is_definitive_bitmex_modify_rejection(&err));
+    }
+
+    #[rstest]
+    fn test_parsed_submit_reject_is_definitive_submit_rejection() {
+        let err = anyhow::anyhow!("Order rejected: Price is invalid");
+
+        assert!(is_definitive_bitmex_submit_rejection(&err));
+        assert!(!is_definitive_bitmex_modify_rejection(&err));
+    }
+
+    #[rstest]
+    fn test_broadcast_submit_refusal_is_definitive_submit_rejection() {
+        let err =
+            anyhow::anyhow!("{DEFINITIVE_SUBMIT_REJECTION}: All submit requests were refused");
+
+        assert!(is_definitive_bitmex_submit_rejection(&err));
+        assert!(!is_definitive_bitmex_modify_rejection(&err));
+    }
+
+    #[rstest]
+    fn test_duplicate_clordid_is_ambiguous_submit_failure() {
+        let err = anyhow::Error::new(BitmexHttpError::BitmexError {
+            error_name: "HTTPError".to_string(),
+            message: "Duplicate clOrdID".to_string(),
+        });
+
+        assert!(is_bitmex_duplicate_clordid_submit_failure(&err));
+        assert!(!is_definitive_bitmex_submit_rejection(&err));
+    }
+
+    #[rstest]
+    fn test_parsed_modify_reject_is_definitive_modify_rejection() {
+        let err = anyhow::anyhow!("Order modification rejected: Price is invalid");
+
+        assert!(is_definitive_bitmex_modify_rejection(&err));
+        assert!(!is_definitive_bitmex_submit_rejection(&err));
+    }
+
+    #[rstest]
+    fn test_network_error_is_ambiguous_command_failure() {
+        let err = anyhow::Error::new(BitmexHttpError::NetworkError("timeout".to_string()));
+
+        assert!(!is_definitive_bitmex_submit_rejection(&err));
+        assert!(!is_definitive_bitmex_modify_rejection(&err));
+    }
+
+    #[rstest]
+    fn test_canceled_request_is_ambiguous_command_failure() {
+        let err = anyhow::Error::new(BitmexHttpError::Canceled("shutdown".to_string()));
+
+        assert!(!is_definitive_bitmex_submit_rejection(&err));
+        assert!(!is_definitive_bitmex_modify_rejection(&err));
+    }
+
+    #[rstest]
+    fn test_unstructured_http_status_is_ambiguous_command_failure() {
+        let err = anyhow::Error::new(BitmexHttpError::UnexpectedStatus {
+            status: StatusCode::BAD_GATEWAY,
+            body: "bad gateway".to_string(),
+        });
+
+        assert!(!is_definitive_bitmex_submit_rejection(&err));
+        assert!(!is_definitive_bitmex_modify_rejection(&err));
+    }
+
+    #[rstest]
+    fn test_validate_order_for_bitmex_submit_requires_peg_type_for_offset() {
+        let order = limit_order();
+        let err = validate_order_for_bitmex_submit(&order, None, Some(1.0)).unwrap_err();
+
+        assert!(err.to_string().contains("`peg_offset_value` requires"));
+    }
+
+    #[rstest]
+    fn test_validate_order_for_bitmex_submit_rejects_pegged_market_order() {
+        let order = market_order();
+        let err = validate_order_for_bitmex_submit(&order, Some(BitmexPegPriceType::LastPeg), None)
+            .unwrap_err();
+
+        assert!(err.to_string().contains("Pegged orders only supported"));
+    }
+
+    #[rstest]
+    fn test_submit_order_invalid_peg_params_emits_denied_without_submitted() {
+        let (mut client, cache) = test_execution_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+
+        let order = limit_order_with_id(ClientOrderId::from("O-INVALID-PEG"));
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*BITMEX_CLIENT_ID), false)
+            .unwrap();
+
+        let mut params = Params::new();
+        params.insert("peg_price_type".to_string(), serde_json::json!("BadPeg"));
+
+        client
+            .submit_order(submit_command(&order, Some(params)))
+            .unwrap();
+
+        let events = drain_order_events(&mut rx);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            OrderEventAny::Denied(denied) => {
+                assert_eq!(denied.client_order_id, order.client_order_id());
+                assert_eq!(denied.reason.to_string(), "Invalid peg_price_type: BadPeg");
+            }
+            event => panic!("expected OrderDenied event, was {event:?}"),
+        }
+        assert!(
+            !client
+                .ws_dispatch_state
+                .order_identities
+                .contains_key(&order.client_order_id())
+        );
+    }
+
+    #[rstest]
+    fn test_submit_failure_definitive_refusal_removes_identity_and_emits_rejected() {
+        let (emitter, mut rx) = make_emitter();
+        let ws_dispatch_state = Arc::new(WsDispatchState::default());
+        let order = limit_order_with_id(ClientOrderId::from("O-SUBMIT-REJECTED"));
+        ws_dispatch_state
+            .order_identities
+            .insert(order.client_order_id(), order_identity(&order));
+
+        let err = anyhow::anyhow!(
+            "{DEFINITIVE_SUBMIT_REJECTION}: All submit requests were refused by BitMEX"
+        );
+
+        handle_submit_failure(&SubmitFailure {
+            err: &err,
+            ws_dispatch_state: &ws_dispatch_state,
+            emitter: &emitter,
+            clock: get_atomic_clock_realtime(),
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            client_order_id: order.client_order_id(),
+            post_only: false,
+        });
+
+        assert!(
+            !ws_dispatch_state
+                .order_identities
+                .contains_key(&order.client_order_id())
+        );
+
+        let events = drain_order_events(&mut rx);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            OrderEventAny::Rejected(rejected) => {
+                assert_eq!(rejected.client_order_id, order.client_order_id());
+                assert_eq!(
+                    rejected.reason.to_string(),
+                    "submit-order-error: All submit requests were refused by BitMEX"
+                );
+                assert!(!rejected.due_post_only);
+            }
+            event => panic!("expected OrderRejected event, was {event:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_submit_failure_duplicate_clordid_keeps_identity_and_emits_no_rejection() {
+        let (emitter, mut rx) = make_emitter();
+        let ws_dispatch_state = Arc::new(WsDispatchState::default());
+        let order = limit_order_with_id(ClientOrderId::from("O-DUPLICATE"));
+        ws_dispatch_state
+            .order_identities
+            .insert(order.client_order_id(), order_identity(&order));
+        let err = anyhow::Error::new(BitmexHttpError::BitmexError {
+            error_name: "HTTPError".to_string(),
+            message: "Duplicate clOrdID".to_string(),
+        });
+
+        handle_submit_failure(&SubmitFailure {
+            err: &err,
+            ws_dispatch_state: &ws_dispatch_state,
+            emitter: &emitter,
+            clock: get_atomic_clock_realtime(),
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            client_order_id: order.client_order_id(),
+            post_only: false,
+        });
+
+        assert!(
+            ws_dispatch_state
+                .order_identities
+                .contains_key(&order.client_order_id())
+        );
+        assert!(drain_order_events(&mut rx).is_empty());
+    }
+
+    #[rstest]
+    fn test_submit_failure_network_error_keeps_identity_and_emits_no_rejection() {
+        let (emitter, mut rx) = make_emitter();
+        let ws_dispatch_state = Arc::new(WsDispatchState::default());
+        let order = limit_order_with_id(ClientOrderId::from("O-SUBMIT-NETWORK"));
+        ws_dispatch_state
+            .order_identities
+            .insert(order.client_order_id(), order_identity(&order));
+        let err = anyhow::Error::new(BitmexHttpError::NetworkError("timeout".to_string()));
+
+        handle_submit_failure(&SubmitFailure {
+            err: &err,
+            ws_dispatch_state: &ws_dispatch_state,
+            emitter: &emitter,
+            clock: get_atomic_clock_realtime(),
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            client_order_id: order.client_order_id(),
+            post_only: false,
+        });
+
+        assert!(
+            ws_dispatch_state
+                .order_identities
+                .contains_key(&order.client_order_id())
+        );
+        assert!(drain_order_events(&mut rx).is_empty());
+    }
+
+    #[rstest]
+    fn test_modify_failure_definitive_refusal_emits_modify_rejected() {
+        let (emitter, mut rx) = make_emitter();
+        let order = limit_order_with_id(ClientOrderId::from("O-MODIFY-REJECTED"));
+        let venue_order_id = Some(VenueOrderId::from("V-001"));
+        let err = bitmex_api_error();
+
+        handle_modify_failure(&ModifyFailure {
+            err: &err,
+            emitter: &emitter,
+            clock: get_atomic_clock_realtime(),
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            client_order_id: order.client_order_id(),
+            venue_order_id,
+        });
+
+        let events = drain_order_events(&mut rx);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            OrderEventAny::ModifyRejected(rejected) => {
+                assert_eq!(rejected.client_order_id, order.client_order_id());
+                assert_eq!(rejected.venue_order_id, venue_order_id);
+                assert_eq!(
+                    rejected.reason.to_string(),
+                    "modify-order-error: BitMEX error HTTPError: Invalid price"
+                );
+            }
+            event => panic!("expected OrderModifyRejected event, was {event:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_modify_failure_network_error_emits_no_modify_rejected() {
+        let (emitter, mut rx) = make_emitter();
+        let order = limit_order_with_id(ClientOrderId::from("O-MODIFY-NETWORK"));
+        let err = anyhow::Error::new(BitmexHttpError::NetworkError("timeout".to_string()));
+
+        handle_modify_failure(&ModifyFailure {
+            err: &err,
+            emitter: &emitter,
+            clock: get_atomic_clock_realtime(),
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            client_order_id: order.client_order_id(),
+            venue_order_id: None,
+        });
+
+        assert!(drain_order_events(&mut rx).is_empty());
     }
 }

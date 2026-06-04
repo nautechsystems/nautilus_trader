@@ -60,8 +60,10 @@ use crate::{
         consts::BITMEX_HTTP_TESTNET_URL,
         enums::{BitmexEnvironment, BitmexPegPriceType},
     },
-    http::client::BitmexHttpClient,
+    http::{client::BitmexHttpClient, error::BitmexHttpError},
 };
+
+pub(crate) const DEFINITIVE_SUBMIT_REJECTION: &str = "DEFINITIVE_SUBMIT_REJECTION";
 
 /// Trait for order submission operations.
 ///
@@ -563,6 +565,7 @@ impl SubmitBroadcaster {
     {
         let mut errors = Vec::new();
         let mut all_duplicate_clordid = true;
+        let mut all_definitive_refusals = true;
 
         while !handles.is_empty() {
             let current_handles = std::mem::take(&mut handles);
@@ -582,9 +585,14 @@ impl SubmitBroadcaster {
                 Ok((client_id, Err(e))) => {
                     let error_msg = e.to_string();
                     let is_duplicate = error_msg.contains("Duplicate clOrdID");
+                    let is_definitive_refusal = is_definitive_submit_refusal(&e);
 
                     if !is_duplicate {
                         all_duplicate_clordid = false;
+                    }
+
+                    if !is_definitive_refusal {
+                        all_definitive_refusals = false;
                     }
 
                     if self.is_expected_reject(&error_msg) {
@@ -603,6 +611,7 @@ impl SubmitBroadcaster {
                 }
                 Err(e) => {
                     all_duplicate_clordid = false;
+                    all_definitive_refusals = false;
                     log::warn!("{operation} task join error: {e:?}");
                     errors.push(format!("Task panicked: {e:?}"));
                 }
@@ -620,6 +629,17 @@ impl SubmitBroadcaster {
                 operation.to_lowercase(),
             );
             anyhow::bail!("IDEMPOTENT_DUPLICATE: Order likely exists but confirmation was lost");
+        }
+
+        if all_definitive_refusals && !errors.is_empty() {
+            log::error!(
+                "All {} requests were refused by BitMEX: {errors:?} {params}",
+                operation.to_lowercase(),
+            );
+            anyhow::bail!(
+                "{DEFINITIVE_SUBMIT_REJECTION}: All {} requests were refused by BitMEX: {errors:?}",
+                operation.to_lowercase(),
+            );
         }
 
         log::error!(
@@ -818,6 +838,18 @@ impl SubmitBroadcaster {
             expected_rejects: Arc::new(AtomicU64::new(0)),
         }
     }
+}
+
+fn is_definitive_submit_refusal(err: &anyhow::Error) -> bool {
+    if err.chain().any(|cause| {
+        cause
+            .downcast_ref::<BitmexHttpError>()
+            .is_some_and(|e| matches!(e, BitmexHttpError::BitmexError { .. }))
+    }) {
+        return true;
+    }
+
+    err.to_string().starts_with("Order rejected:")
 }
 
 /// Broadcaster metrics snapshot.
@@ -1101,6 +1133,110 @@ mod tests {
                 .to_string()
                 .contains("All submit requests failed")
         );
+
+        let metrics = broadcaster.get_metrics_async().await;
+        assert_eq!(metrics.failed_submits, 1);
+        assert_eq!(metrics.successful_submits, 0);
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_submit_all_bitmex_refusals_preserves_definitive_outcome() {
+        let transports = vec![
+            create_stub_transport("client-0", || async {
+                Err(anyhow::Error::new(BitmexHttpError::BitmexError {
+                    error_name: "HTTPError".to_string(),
+                    message: "Invalid price".to_string(),
+                }))
+            }),
+            create_stub_transport("client-1", || async {
+                Err(anyhow::Error::new(BitmexHttpError::BitmexError {
+                    error_name: "HTTPError".to_string(),
+                    message: "Invalid price".to_string(),
+                }))
+            }),
+        ];
+
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
+
+        let instrument_id = InstrumentId::from_str("XBTUSD.BITMEX").unwrap();
+        let result = broadcaster
+            .broadcast_submit(
+                instrument_id,
+                ClientOrderId::from("O-REFUSED"),
+                OrderSide::Sell,
+                OrderType::Limit,
+                Quantity::new(50.0, 0),
+                TimeInForce::Gtc,
+                Some(Price::new(50000.0, 2)),
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+
+        let err = result.unwrap_err().to_string();
+
+        assert!(err.starts_with(DEFINITIVE_SUBMIT_REJECTION));
+
+        let metrics = broadcaster.get_metrics_async().await;
+        assert_eq!(metrics.failed_submits, 1);
+        assert_eq!(metrics.successful_submits, 0);
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_submit_mixed_refusal_and_network_failure_stays_ambiguous() {
+        let transports = vec![
+            create_stub_transport("client-0", || async {
+                Err(anyhow::Error::new(BitmexHttpError::BitmexError {
+                    error_name: "HTTPError".to_string(),
+                    message: "Invalid price".to_string(),
+                }))
+            }),
+            create_stub_transport("client-1", || async { anyhow::bail!("Connection refused") }),
+        ];
+
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
+
+        let instrument_id = InstrumentId::from_str("XBTUSD.BITMEX").unwrap();
+        let result = broadcaster
+            .broadcast_submit(
+                instrument_id,
+                ClientOrderId::from("O-MIXED-FAILURE"),
+                OrderSide::Sell,
+                OrderType::Limit,
+                Quantity::from("50"),
+                TimeInForce::Gtc,
+                Some(Price::from("50000.00")),
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+
+        let err = result.unwrap_err().to_string();
+
+        assert!(err.starts_with("All submit requests failed"));
+        assert!(!err.starts_with(DEFINITIVE_SUBMIT_REJECTION));
 
         let metrics = broadcaster.get_metrics_async().await;
         assert_eq!(metrics.failed_submits, 1);
