@@ -22,8 +22,10 @@ use nautilus_core::{UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType},
-    identifiers::{AccountId, ClientOrderId, OrderListId, Symbol, TradeId, VenueOrderId},
-    instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
+    identifiers::{ClientOrderId, OrderListId, Symbol, TradeId, VenueOrderId},
+    instruments::{
+        CryptoFuture, CryptoFuturesSpread, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
+    },
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Money, Price, Quantity, fixed::FIXED_PRECISION},
 };
@@ -39,11 +41,12 @@ use crate::common::{
         BitmexOrderType, BitmexPegPriceType,
     },
     parse::{
-        clean_reason, convert_contract_quantity, derive_contract_decimal_and_increment,
-        derive_trade_id, extract_trigger_type, map_bitmex_currency, normalize_trade_bin_prices,
-        normalize_trade_bin_volume, parse_aggressor_side, parse_contracts_quantity,
-        parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
-        parse_position_side, parse_signed_contracts_quantity,
+        bitmex_account_id, clean_reason, convert_contract_quantity,
+        derive_contract_decimal_and_increment, derive_trade_id, extract_trigger_type,
+        map_bitmex_currency, normalize_trade_bin_prices, normalize_trade_bin_volume,
+        parse_aggressor_side, parse_contracts_quantity, parse_instrument_id, parse_liquidity_side,
+        parse_optional_datetime_to_unix_nanos, parse_position_side,
+        parse_signed_contracts_quantity,
     },
 };
 
@@ -131,6 +134,16 @@ pub fn parse_instrument_any(
                 error: e.to_string(),
             },
         },
+        BitmexInstrumentType::FuturesSpread => {
+            match parse_crypto_futures_spread_instrument(instrument, ts_init) {
+                Ok(inst) => InstrumentParseResult::Ok(Box::new(inst)),
+                Err(e) => InstrumentParseResult::Failed {
+                    symbol,
+                    instrument_type,
+                    error: e.to_string(),
+                },
+            }
+        }
         BitmexInstrumentType::PredictionMarket => {
             // Prediction markets work similarly to futures (bounded 0-100, cash settled)
             match parse_futures_instrument(instrument, ts_init) {
@@ -169,7 +182,8 @@ pub fn parse_instrument_any(
         | BitmexInstrumentType::ReferenceBasket
         | BitmexInstrumentType::LegacyFutures
         | BitmexInstrumentType::LegacyFuturesN
-        | BitmexInstrumentType::FuturesSpreads => InstrumentParseResult::Unsupported {
+        | BitmexInstrumentType::FuturesSpreads
+        | BitmexInstrumentType::Other => InstrumentParseResult::Unsupported {
             symbol,
             instrument_type,
         },
@@ -491,6 +505,7 @@ pub fn parse_futures_instrument(
     let min_price = definition
         .min_price
         .map(|price| Price::from(price.to_string()));
+
     let instrument = CryptoFuture::new(
         instrument_id,
         raw_symbol,
@@ -522,6 +537,111 @@ pub fn parse_futures_instrument(
     );
 
     Ok(InstrumentAny::CryptoFuture(instrument))
+}
+
+/// Parse a BitMEX futures spread instrument into a Nautilus `InstrumentAny`.
+///
+/// # Errors
+///
+/// Returns an error if values are out of valid range or cannot be parsed.
+pub fn parse_crypto_futures_spread_instrument(
+    definition: &BitmexInstrument,
+    ts_init: UnixNanos,
+) -> anyhow::Result<InstrumentAny> {
+    let instrument_id = parse_instrument_id(definition.symbol);
+    let raw_symbol = Symbol::new(definition.symbol);
+    let underlying = get_currency(&definition.underlying.to_uppercase());
+    let quote_currency = get_currency(&definition.quote_currency.to_uppercase());
+    let settlement_currency = get_currency(&definition.settl_currency.as_ref().map_or_else(
+        || definition.quote_currency.to_uppercase(),
+        |s| s.to_uppercase(),
+    ));
+    let is_inverse = definition.is_inverse;
+
+    let ts_event = UnixNanos::from(definition.timestamp);
+    let activation_ns = definition
+        .listing
+        .as_ref()
+        .map_or(ts_event, |dt| UnixNanos::from(*dt));
+    let expiration_ns = parse_optional_datetime_to_unix_nanos(&definition.expiry, "expiry");
+    let price_increment = Price::from(definition.tick_size.to_string());
+
+    let max_scale = FIXED_PRECISION as u32;
+    let (contract_decimal, size_increment) =
+        derive_contract_decimal_and_increment(get_position_multiplier(definition), max_scale)?;
+
+    let lot_size =
+        convert_contract_quantity(definition.lot_size, contract_decimal, max_scale, "lot size")?;
+
+    let taker_fee = definition
+        .taker_fee
+        .and_then(|fee| Decimal::try_from(fee).ok())
+        .unwrap_or(Decimal::ZERO);
+    let maker_fee = definition
+        .maker_fee
+        .and_then(|fee| Decimal::try_from(fee).ok())
+        .unwrap_or(Decimal::ZERO);
+
+    let margin_init = definition
+        .init_margin
+        .as_ref()
+        .and_then(|margin| Decimal::try_from(*margin).ok())
+        .unwrap_or(Decimal::ZERO);
+    let margin_maint = definition
+        .maint_margin
+        .as_ref()
+        .and_then(|margin| Decimal::try_from(*margin).ok())
+        .unwrap_or(Decimal::ZERO);
+
+    let multiplier = Some(Quantity::new_checked(definition.multiplier.abs(), 0)?);
+    let max_quantity = convert_contract_quantity(
+        definition.max_order_qty,
+        contract_decimal,
+        max_scale,
+        "max quantity",
+    )?;
+    let min_quantity = lot_size;
+    let max_notional: Option<Money> = None;
+    let min_notional: Option<Money> = None;
+    let max_price = definition
+        .max_price
+        .map(|price| Price::from(price.to_string()));
+    let min_price = definition
+        .min_price
+        .map(|price| Price::from(price.to_string()));
+
+    let instrument = CryptoFuturesSpread::new(
+        instrument_id,
+        raw_symbol,
+        underlying,
+        quote_currency,
+        settlement_currency,
+        is_inverse,
+        Ustr::from("FS"),
+        activation_ns,
+        expiration_ns,
+        price_increment.precision,
+        size_increment.precision,
+        price_increment,
+        size_increment,
+        multiplier,
+        lot_size,
+        max_quantity,
+        min_quantity,
+        max_notional,
+        min_notional,
+        max_price,
+        min_price,
+        Some(margin_init),
+        Some(margin_maint),
+        Some(maker_fee),
+        Some(taker_fee),
+        None,
+        ts_event,
+        ts_init,
+    );
+
+    Ok(InstrumentAny::CryptoFuturesSpread(instrument))
 }
 
 /// Parse a BitMEX trade into a Nautilus `TradeTick`.
@@ -629,7 +749,7 @@ pub fn parse_order_status_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
-    let account_id = AccountId::new(format!("BITMEX-{}", order.account));
+    let account_id = bitmex_account_id(order.account);
     let venue_order_id = VenueOrderId::new(order.order_id.to_string());
     let order_side: OrderSide = order
         .side
@@ -939,7 +1059,7 @@ pub fn parse_fill_report(
         anyhow::anyhow!("Skipping execution without order_id: {:?}", exec.exec_type)
     })?;
 
-    let account_id = AccountId::new(format!("BITMEX-{}", exec.account));
+    let account_id = bitmex_account_id(exec.account);
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(order_id.to_string());
     // trd_match_id might be missing for some execution types, use exec_id as fallback
@@ -996,7 +1116,7 @@ pub fn parse_position_report(
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<PositionStatusReport> {
-    let account_id = AccountId::new(format!("BITMEX-{}", position.account));
+    let account_id = bitmex_account_id(position.account);
     let instrument_id = instrument.id();
     let position_side = parse_position_side(position.current_qty).as_specified();
     let quantity = parse_signed_contracts_quantity(position.current_qty.unwrap_or(0), instrument);
@@ -1072,6 +1192,49 @@ mod tests {
             instrument.timestamp.to_rfc3339(),
             "2024-11-24T23:33:19.034+00:00"
         );
+    }
+
+    #[rstest]
+    fn test_parse_instrument_any_parses_active_crypto_futures_spread() {
+        let json_data = load_test_json("http_get_instrument_xbtm26_xbtu26_spread.json");
+        let instrument: BitmexInstrument = serde_json::from_str(&json_data).unwrap();
+
+        let result = parse_instrument_any(&instrument, UnixNanos::default());
+
+        match result {
+            InstrumentParseResult::Ok(instrument_any) => {
+                let InstrumentAny::CryptoFuturesSpread(spread) = *instrument_any else {
+                    panic!("expected CryptoFuturesSpread variant");
+                };
+
+                assert_eq!(
+                    instrument.instrument_type,
+                    BitmexInstrumentType::FuturesSpread
+                );
+                assert_eq!(spread.id.symbol.as_str(), "XBTM26-XBTU26");
+                assert_eq!(spread.id.venue.as_str(), "BITMEX");
+                assert_eq!(spread.raw_symbol.as_str(), "XBTM26-XBTU26");
+                assert_eq!(spread.underlying.code.as_str(), "XBT");
+                assert_eq!(spread.quote_currency.code.as_str(), "USD");
+                assert_eq!(spread.settlement_currency.code.as_str(), "XBT");
+                assert_eq!(spread.strategy_type.as_str(), "FS");
+                assert!(!spread.is_inverse);
+                assert_eq!(spread.price_precision, 1);
+                assert_eq!(spread.size_precision, 0);
+                assert_eq!(spread.price_increment.as_f64(), 0.5);
+                assert_eq!(spread.size_increment.as_f64(), 1.0);
+                assert_eq!(spread.lot_size.as_f64(), 100.0);
+                assert_eq!(spread.min_quantity.unwrap().as_f64(), 100.0);
+                assert_eq!(spread.max_quantity.unwrap().as_f64(), 10000000.0);
+                assert_eq!(spread.min_price.unwrap().as_f64(), -1000000.0);
+                assert_eq!(spread.max_price.unwrap().as_f64(), 1000000.0);
+                assert_eq!(spread.maker_fee.to_f64().unwrap(), 0.0005);
+                assert_eq!(spread.taker_fee.to_f64().unwrap(), 0.0005);
+                assert!(spread.activation_ns.as_u64() > 0);
+                assert!(spread.expiration_ns.as_u64() > 0);
+            }
+            result => panic!("expected parsed crypto futures spread, was {result:?}"),
+        }
     }
 
     #[rstest]

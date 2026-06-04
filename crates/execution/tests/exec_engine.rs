@@ -12810,7 +12810,7 @@ fn test_reconcile_order_status_report_filter_keeps_claimed_external_order() {
 }
 
 #[rstest]
-fn test_reconcile_fill_report_filter_keeps_synthetic_external_order() {
+fn test_reconcile_fill_report_filters_unclaimed_external_order() {
     let mut execution_engine = execution_engine_with_unclaimed_external_order_filter(true);
     let instrument = audusd_sim();
     let client_order_id = ClientOrderId::from("O-FILL-FILTER");
@@ -12834,10 +12834,50 @@ fn test_reconcile_fill_report_filter_keeps_synthetic_external_order() {
     execution_engine.reconcile_fill_report(&report);
 
     let cache = execution_engine.cache().borrow();
+    assert!(!cache.order_exists(&client_order_id));
+    assert_eq!(cache.positions_total_count(None, None, None, None, None), 0,);
+    assert_eq!(
+        execution_engine.filtered_unclaimed_external_order_count(),
+        1
+    );
+}
+
+#[rstest]
+fn test_reconcile_fill_report_filter_keeps_claimed_external_order() {
+    let mut execution_engine = execution_engine_with_unclaimed_external_order_filter(true);
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-CLAIMED-FILL-FILTER");
+    let venue_order_id = VenueOrderId::from("V-CLAIMED-FILL-FILTER");
+    let strategy_id = StrategyId::from("MyStrategy-001");
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+
+    let mut instruments = HashSet::new();
+    instruments.insert(instrument.id());
+    execution_engine
+        .register_external_order_claims(strategy_id, &instruments)
+        .unwrap();
+
+    let report = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-CLAIMED-FILL-FILTER"),
+        Quantity::from(50_000),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_fill_report(&report);
+
+    let cache = execution_engine.cache().borrow();
     let order = cache
         .order(&client_order_id)
-        .expect("synthetic external order should be in cache");
-    assert_eq!(order.strategy_id(), StrategyId::external());
+        .expect("claimed external order should be in cache");
+    assert_eq!(order.strategy_id(), strategy_id);
     assert_eq!(order.status(), OrderStatus::Filled);
     assert_eq!(
         execution_engine.filtered_unclaimed_external_order_count(),

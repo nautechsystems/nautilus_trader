@@ -123,6 +123,8 @@ Released on TBD (UTC).
 - Fixed Binance Futures algo params for trailing stops/reduce-only (#4192), thanks for reporting @luckykefu
 - Fixed Binance Spot full-depth books to seed diffs from REST snapshots
 - Fixed Binance Spot SBE numeric parsing to reject invalid price and quantity values
+- Fixed BitMEX startup handling for crypto futures spreads, duplicate subscriptions, `USYC` margins, and account ID discovery
+- Fixed BitMEX order submission to deny unsupported GTD time-in-force locally
 - Fixed BitMEX mark/index price updates on altcoin perps (#4147), thanks @filipmacek
 - Fixed Blockchain adapter `analyze-pool --to-block` bounds during snapshot replay
 - Fixed Blockchain adapter caching a half-initialized `PoolProfiler` when `initialize` returns `InitialTickMismatch`

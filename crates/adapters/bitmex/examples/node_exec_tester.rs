@@ -30,6 +30,7 @@ use nautilus_bitmex::{
 use nautilus_common::enums::Environment;
 use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
 use nautilus_model::{
+    enums::TimeInForce,
     identifiers::{InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
@@ -60,6 +61,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_factory = BitmexDataClientFactory::new();
     let exec_factory = BitmexExecutionClientFactory::new();
     let exec_engine_config = LiveExecEngineConfig {
+        reconciliation_instrument_ids: Some(vec![instrument_id.to_string()]),
+        filter_unclaimed_external_orders: true,
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()
@@ -74,6 +77,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
+    let order_qty = Quantity::from("100");
+
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from("EXEC-TESTER-001")),
@@ -82,8 +87,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .instrument_id(instrument_id)
         .client_id(*BITMEX_CLIENT_ID)
-        .order_qty(Quantity::from("100"))
+        .order_qty(order_qty)
         .use_post_only(true)
+        .open_position_on_start_qty(order_qty.as_decimal())
+        .open_position_time_in_force(TimeInForce::Ioc)
+        .close_positions_time_in_force(TimeInForce::Ioc)
         .log_data(false)
         .build();
 

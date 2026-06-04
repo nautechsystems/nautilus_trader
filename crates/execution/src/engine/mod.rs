@@ -1130,8 +1130,33 @@ impl ExecutionEngine {
     ///
     /// This handles venue-initiated fills (most commonly Hyperliquid liquidations)
     /// where the venue does not surface a user-level order on its order channel.
-    fn materialize_external_order_from_fill(&self, report: &FillReport) -> Option<OrderAny> {
+    fn materialize_external_order_from_fill(&mut self, report: &FillReport) -> Option<OrderAny> {
         let strategy_id = self.resolve_external_strategy(&report.instrument_id);
+        if self.should_filter_unclaimed_external_order(strategy_id) {
+            self.filtered_unclaimed_external_order_count += 1;
+
+            let external_order_id = report
+                .client_order_id
+                .map_or_else(|| report.venue_order_id.to_string(), |id| id.to_string());
+
+            if self.filtered_unclaimed_external_order_count == 1 {
+                log::info!(
+                    "Filtering unclaimed external orders; first filtered fill {} ({}) for {}",
+                    external_order_id,
+                    report.venue_order_id,
+                    report.instrument_id,
+                );
+            } else {
+                log::debug!(
+                    "Filtered unclaimed external fill {} ({}) for {}",
+                    external_order_id,
+                    report.venue_order_id,
+                    report.instrument_id,
+                );
+            }
+
+            return None;
+        }
 
         let client_order_id = report
             .client_order_id

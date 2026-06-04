@@ -63,6 +63,7 @@ config_node = TradingNodeConfig(
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         reconciliation_instrument_ids=[instrument_id],  # Only reconcile this instrument
+        filter_unclaimed_external_orders=True,
         open_check_interval_secs=5.0,
         open_check_open_only=False,
         # position_check_interval_secs=60.0,

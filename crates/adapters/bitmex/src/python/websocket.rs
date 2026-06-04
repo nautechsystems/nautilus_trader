@@ -915,6 +915,7 @@ fn handle_table_message(
                 order_symbol_cache,
                 dispatch_state,
                 trader_id,
+                account_id,
                 ts_init,
                 call_soon,
                 callback,
@@ -927,16 +928,16 @@ fn handle_table_message(
                     continue;
                 };
 
-                send_to_python(
-                    parse_position_msg(&msg, instrument, ts_init),
-                    call_soon,
-                    callback,
-                );
+                let mut report = parse_position_msg(&msg, instrument, ts_init);
+                report.account_id = account_id;
+                send_to_python(report, call_soon, callback);
             }
         }
         BitmexTableMessage::Wallet { data, .. } => {
             for msg in data {
-                send_to_python(parse_wallet_msg(&msg, ts_init), call_soon, callback);
+                let mut account_state = parse_wallet_msg(&msg, ts_init);
+                account_state.account_id = account_id;
+                send_to_python(account_state, call_soon, callback);
             }
         }
         BitmexTableMessage::Margin { .. } => {}
@@ -1162,13 +1163,14 @@ fn handle_order_messages(
                     }
                 } else {
                     match parse_order_msg(&order_msg, instrument, order_type_cache, ts_init) {
-                        Ok(report) => {
+                        Ok(mut report) => {
                             if report.order_status.is_closed()
                                 && let Some(cid) = report.client_order_id
                             {
                                 order_type_cache.remove(&cid);
                                 order_symbol_cache.remove(&cid);
                             }
+                            report.account_id = account_id;
                             send_to_python(report, call_soon, callback);
                         }
                         Err(e) => log::error!("Failed to parse order message: {e}"),
@@ -1252,6 +1254,7 @@ fn handle_execution_messages(
     order_symbol_cache: &AHashMap<ClientOrderId, Ustr>,
     dispatch_state: &WsDispatchState,
     trader_id: TraderId,
+    account_id: AccountId,
     ts_init: UnixNanos,
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
@@ -1302,9 +1305,10 @@ fn handle_execution_messages(
             continue;
         };
 
-        let Some(fill) = parse_execution_msg(exec_msg, instrument, ts_init) else {
+        let Some(mut fill) = parse_execution_msg(exec_msg, instrument, ts_init) else {
             continue;
         };
+        fill.account_id = account_id;
 
         let identity = fill.client_order_id.and_then(|cid| {
             dispatch_state

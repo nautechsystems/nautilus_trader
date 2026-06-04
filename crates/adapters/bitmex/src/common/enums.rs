@@ -366,6 +366,12 @@ impl BitmexTimeInForce {
     ///
     /// Returns an error if the time in force is not supported by BitMEX.
     pub fn try_from_time_in_force(value: TimeInForce) -> anyhow::Result<Self> {
+        if value == TimeInForce::Gtd {
+            anyhow::bail!(
+                "GTD time in force is not supported for BitMEX order submit; use GTC, Day, IOC, or FOK"
+            );
+        }
+
         Self::try_from(value)
     }
 }
@@ -625,6 +631,10 @@ pub enum BitmexInstrumentType {
     #[serde(rename = "FMXXS")]
     FuturesSpreads,
 
+    /// Active crypto futures spreads.
+    #[serde(rename = "FFMCSX")]
+    FuturesSpread,
+
     /// Prediction Markets (non-standardized financial future on index, cash settled).
     /// CFI code FFICSX - traders predict outcomes of events.
     #[serde(rename = "FFICSX")]
@@ -694,6 +704,10 @@ pub enum BitmexInstrumentType {
     /// BitMEX Yield/Dividend Index.
     #[serde(rename = "MRVDXX")]
     YieldIndex,
+
+    /// Unknown instrument type.
+    #[serde(other)]
+    Other,
 }
 
 /// Represents the different types of instrument subscriptions available on BitMEX.
@@ -1019,6 +1033,10 @@ mod tests {
             r#""FMXXS""#
         );
         assert_eq!(
+            serde_json::to_string(&BitmexInstrumentType::FuturesSpread).unwrap(),
+            r#""FFMCSX""#
+        );
+        assert_eq!(
             serde_json::to_string(&BitmexInstrumentType::ReferenceBasket).unwrap(),
             r#""RCSXXX""#
         );
@@ -1108,6 +1126,10 @@ mod tests {
             BitmexInstrumentType::FuturesSpreads
         );
         assert_eq!(
+            serde_json::from_str::<BitmexInstrumentType>(r#""FFMCSX""#).unwrap(),
+            BitmexInstrumentType::FuturesSpread
+        );
+        assert_eq!(
             serde_json::from_str::<BitmexInstrumentType>(r#""RCSXXX""#).unwrap(),
             BitmexInstrumentType::ReferenceBasket
         );
@@ -1142,8 +1164,10 @@ mod tests {
             BitmexInstrumentType::YieldIndex
         );
 
-        // Error case
-        assert!(serde_json::from_str::<BitmexInstrumentType>(r#""INVALID""#).is_err());
+        assert_eq!(
+            serde_json::from_str::<BitmexInstrumentType>(r#""INVALID""#).unwrap(),
+            BitmexInstrumentType::Other
+        );
     }
 
     #[rstest]
@@ -1276,6 +1300,15 @@ mod tests {
         let result = BitmexTimeInForce::try_from_time_in_force(TimeInForce::Ioc);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), BitmexTimeInForce::ImmediateOrCancel);
+
+        let result = BitmexTimeInForce::try_from_time_in_force(TimeInForce::Gtd);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("GTD time in force is not supported")
+        );
     }
 
     #[rstest]

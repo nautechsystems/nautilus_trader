@@ -114,13 +114,20 @@ impl BitmexExecutionClient {
     /// # Errors
     ///
     /// Returns an error if either the HTTP or WebSocket client fail to construct.
-    pub fn new(core: ExecutionClientCore, config: BitmexExecClientConfig) -> anyhow::Result<Self> {
+    pub fn new(
+        mut core: ExecutionClientCore,
+        config: BitmexExecClientConfig,
+    ) -> anyhow::Result<Self> {
         if !config.has_api_credentials() {
             anyhow::bail!("BitMEX execution client requires API key and secret");
         }
 
+        if let Some(account_id) = config.account_id {
+            core.set_account_id(account_id);
+        }
+
         let trader_id = core.trader_id;
-        let account_id = config.account_id.unwrap_or(core.account_id);
+        let account_id = core.account_id;
         let clock = get_atomic_clock_realtime();
         let emitter =
             ExecutionEventEmitter::new(clock, trader_id, account_id, AccountType::Margin, None);
@@ -377,15 +384,30 @@ impl BitmexExecutionClient {
         Ok(())
     }
 
-    async fn refresh_account_state(&self) -> anyhow::Result<()> {
+    async fn refresh_account_state(&mut self) -> anyhow::Result<()> {
         let account_state = self
             .http_client
             .request_account_state(self.core.account_id)
             .await
             .context("failed to request BitMEX account state")?;
 
+        self.apply_account_id(account_state.account_id);
         self.emitter.send_account_state(account_state);
         Ok(())
+    }
+
+    fn apply_account_id(&mut self, account_id: AccountId) {
+        if self.core.account_id != account_id {
+            log::info!(
+                "Discovered BitMEX account ID: account_id={} (was {})",
+                account_id,
+                self.core.account_id
+            );
+        }
+
+        self.core.set_account_id(account_id);
+        self.emitter.set_account_id(account_id);
+        self.ws_client.set_account_id(account_id);
     }
 
     async fn await_account_registered(&self, timeout_secs: f64) -> anyhow::Result<()> {
@@ -683,6 +705,9 @@ impl ExecutionClient for BitmexExecutionClient {
 
         self.ensure_instruments_initialized_async().await?;
 
+        self.refresh_account_state().await?;
+        self.await_account_registered(30.0).await?;
+
         self.ws_client.connect().await?;
         self.ws_client.wait_until_active(10.0).await?;
 
@@ -699,8 +724,6 @@ impl ExecutionClient for BitmexExecutionClient {
         }
 
         self.start_ws_stream();
-        self.refresh_account_state().await?;
-        self.await_account_registered(30.0).await?;
 
         self.core.set_connected();
         self.start_deadmans_switch();
@@ -1352,19 +1375,34 @@ fn has_bitmex_api_refusal(err: &anyhow::Error) -> bool {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{cache::Cache, clients::ExecutionClient, messages::ExecutionEvent};
+    use nautilus_common::{
+        cache::Cache,
+        clients::ExecutionClient,
+        messages::{ExecutionEvent, ExecutionReport},
+    };
     use nautilus_core::{Params, UUID4};
     use nautilus_model::{
+        enums::TimeInForce,
         events::OrderEventAny,
-        identifiers::TraderId,
+        identifiers::{Symbol, TraderId},
+        instruments::crypto_perpetual::CryptoPerpetual,
         orders::builder::OrderTestBuilder,
-        types::{Price, Quantity},
+        types::{Currency, Price, Quantity},
     };
     use nautilus_network::http::StatusCode;
     use rstest::rstest;
 
     use super::*;
-    use crate::common::consts::{BITMEX_CLIENT_ID, BITMEX_VENUE};
+    use crate::{
+        common::{
+            consts::{BITMEX_CLIENT_ID, BITMEX_VENUE},
+            testing::load_test_json,
+        },
+        websocket::{
+            enums::BitmexAction,
+            messages::{BitmexExecutionMsg, BitmexTableMessage, BitmexWalletMsg, BitmexWsMessage},
+        },
+    };
 
     fn bitmex_api_error() -> anyhow::Error {
         anyhow::Error::new(BitmexHttpError::BitmexError {
@@ -1427,6 +1465,36 @@ mod tests {
             .build()
     }
 
+    fn test_perpetual_instrument() -> InstrumentAny {
+        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
+            InstrumentId::from("XBTUSD.BITMEX"),
+            Symbol::new("XBTUSD"),
+            Currency::BTC(),
+            Currency::USD(),
+            Currency::BTC(),
+            true,
+            1,
+            0,
+            Price::new(0.5, 1),
+            Quantity::new(1.0, 0),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+    }
+
     fn market_order() -> OrderAny {
         let mut builder = OrderTestBuilder::new(OrderType::Market);
         builder
@@ -1474,11 +1542,160 @@ mod tests {
         events
     }
 
+    fn dispatch_execution_fixture(
+        state: &WsDispatchState,
+        emitter: &ExecutionEventEmitter,
+        account_id: AccountId,
+    ) {
+        let exec_msg: BitmexExecutionMsg =
+            serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
+        let mut instruments_by_symbol = AHashMap::new();
+        instruments_by_symbol.insert(Ustr::from("XBTUSD"), test_perpetual_instrument());
+        let mut order_type_cache = AHashMap::new();
+        let mut order_symbol_cache = AHashMap::new();
+
+        dispatch::dispatch_ws_message(
+            UnixNanos::default(),
+            BitmexWsMessage::Table(BitmexTableMessage::Execution {
+                action: BitmexAction::Insert,
+                data: vec![exec_msg],
+            }),
+            emitter,
+            state,
+            &mut instruments_by_symbol,
+            &mut order_type_cache,
+            &mut order_symbol_cache,
+            account_id,
+        );
+    }
+
     #[rstest]
     fn test_bitmex_api_error_is_definitive_submit_rejection() {
         let err = bitmex_api_error();
 
         assert!(is_definitive_bitmex_submit_rejection(&err));
+    }
+
+    #[rstest]
+    fn test_config_account_id_seeds_core_account_id() {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            *BITMEX_CLIENT_ID,
+            *BITMEX_VENUE,
+            OmsType::Netting,
+            AccountId::from("BITMEX-001"),
+            AccountType::Margin,
+            None,
+            cache,
+        );
+        let config = BitmexExecClientConfig {
+            api_key: Some("test_key".to_string()),
+            api_secret: Some("test_secret".to_string()),
+            account_id: Some(AccountId::from("BITMEX-319111")),
+            base_url_http: Some("http://127.0.0.1:9/api/v1".to_string()),
+            base_url_ws: Some("ws://127.0.0.1:9/realtime".to_string()),
+            ..Default::default()
+        };
+
+        let client = BitmexExecutionClient::new(core, config).unwrap();
+
+        assert_eq!(client.account_id(), AccountId::from("BITMEX-319111"));
+    }
+
+    #[rstest]
+    fn test_apply_account_id_updates_core_emitter_and_websocket_client() {
+        let (mut client, _) = test_execution_client();
+        let account_id = AccountId::from("BITMEX-319111");
+
+        client.apply_account_id(account_id);
+
+        assert_eq!(client.account_id(), account_id);
+        assert_eq!(client.emitter.account_id(), account_id);
+        assert_eq!(client.ws_client.account_id(), account_id);
+    }
+
+    #[rstest]
+    fn test_dispatch_tracked_fill_uses_bitmex_account_id() {
+        let (emitter, mut rx) = make_emitter();
+        let state = WsDispatchState::default();
+        let account_id = AccountId::from("BITMEX-1234567");
+        let client_order_id = ClientOrderId::from("mm_bitmex_2b/oemUeQ4CAJZgP3fjHsB");
+        state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id: InstrumentId::from("XBTUSD.BITMEX"),
+                strategy_id: StrategyId::from("S-001"),
+                order_side: OrderSide::Sell,
+                order_type: OrderType::Limit,
+            },
+        );
+
+        dispatch_execution_fixture(&state, &emitter, account_id);
+
+        let events = drain_order_events(&mut rx);
+        assert_eq!(events.len(), 2);
+        match &events[..] {
+            [
+                OrderEventAny::Accepted(accepted),
+                OrderEventAny::Filled(filled),
+            ] => {
+                assert_eq!(accepted.account_id, account_id);
+                assert_eq!(filled.account_id, account_id);
+            }
+            events => panic!("expected accepted and filled events, was {events:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_dispatch_untracked_fill_report_uses_bitmex_account_id() {
+        let (emitter, mut rx) = make_emitter();
+        let state = WsDispatchState::default();
+        let account_id = AccountId::from("BITMEX-1234567");
+
+        dispatch_execution_fixture(&state, &emitter, account_id);
+
+        match rx.try_recv().unwrap() {
+            ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
+                assert_eq!(report.account_id, account_id);
+            }
+            event => panic!("expected fill report, was {event:?}"),
+        }
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_dispatch_wallet_account_state_uses_bitmex_account_id() {
+        let (emitter, mut rx) = make_emitter();
+        let state = WsDispatchState::default();
+        let account_id = AccountId::from("BITMEX-1234567");
+        let wallet_msg: BitmexWalletMsg =
+            serde_json::from_str(&load_test_json("ws_wallet.json")).unwrap();
+        let mut instruments_by_symbol = AHashMap::new();
+        let mut order_type_cache = AHashMap::new();
+        let mut order_symbol_cache = AHashMap::new();
+
+        dispatch::dispatch_ws_message(
+            UnixNanos::default(),
+            BitmexWsMessage::Table(BitmexTableMessage::Wallet {
+                action: BitmexAction::Insert,
+                data: vec![wallet_msg],
+            }),
+            &emitter,
+            &state,
+            &mut instruments_by_symbol,
+            &mut order_type_cache,
+            &mut order_symbol_cache,
+            account_id,
+        );
+
+        match rx.try_recv().unwrap() {
+            ExecutionEvent::Account(state) => {
+                assert_eq!(state.account_id, account_id);
+            }
+            event => panic!("expected account state, was {event:?}"),
+        }
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]
@@ -1593,6 +1810,51 @@ mod tests {
             OrderEventAny::Denied(denied) => {
                 assert_eq!(denied.client_order_id, order.client_order_id());
                 assert_eq!(denied.reason.to_string(), "Invalid peg_price_type: BadPeg");
+            }
+            event => panic!("expected OrderDenied event, was {event:?}"),
+        }
+        assert!(
+            !client
+                .ws_dispatch_state
+                .order_identities
+                .contains_key(&order.client_order_id())
+        );
+    }
+
+    #[rstest]
+    fn test_submit_order_gtd_time_in_force_emits_denied_without_submitted() {
+        let (mut client, cache) = test_execution_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+
+        let mut builder = OrderTestBuilder::new(OrderType::Limit);
+        let order = builder
+            .instrument_id(InstrumentId::from("XBTUSD.BITMEX"))
+            .client_order_id(ClientOrderId::from("O-GTD"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("100.0"))
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(UnixNanos::from(1_000_000_000_u64))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*BITMEX_CLIENT_ID), false)
+            .unwrap();
+
+        client.submit_order(submit_command(&order, None)).unwrap();
+
+        let events = drain_order_events(&mut rx);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            OrderEventAny::Denied(denied) => {
+                assert_eq!(denied.client_order_id, order.client_order_id());
+                assert!(
+                    denied
+                        .reason
+                        .to_string()
+                        .contains("GTD time in force is not supported")
+                );
             }
             event => panic!("expected OrderDenied event, was {event:?}"),
         }
