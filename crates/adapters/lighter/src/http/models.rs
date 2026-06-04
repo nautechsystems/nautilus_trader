@@ -50,6 +50,26 @@ pub struct LighterNextNonce {
     pub nonce: i64,
 }
 
+/// One account row from `GET /api/v1/account`.
+///
+/// Models only the fields the adapter consumes; the venue response carries
+/// many more, which are ignored on deserialization.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LighterAccountDetail {
+    pub account_index: u64,
+    pub account_type: u8,
+    pub status: i32,
+}
+
+/// Response payload of `GET /api/v1/account`.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LighterAccountsResponse {
+    pub code: i32,
+    pub message: Option<String>,
+    pub total: i64,
+    pub accounts: Vec<LighterAccountDetail>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LighterSendTxRequest {
     pub tx_type: u8,
@@ -502,6 +522,20 @@ mod tests {
     const HTTP_ORDERS: &str = include_str!("../../test_data/http_orders.json");
     const HTTP_CANDLES: &str = include_str!("../../test_data/http_candles.json");
     const HTTP_FUNDINGS: &str = include_str!("../../test_data/http_fundings.json");
+    const HTTP_ACCOUNT: &str = include_str!("../../test_data/http_account.json");
+
+    #[rstest]
+    fn test_account_response_deserializes_live_shape() {
+        let response: LighterAccountsResponse = serde_json::from_str(HTTP_ACCOUNT).unwrap();
+
+        assert_eq!(response.code, 200);
+        assert_eq!(response.total, 1);
+        assert_eq!(response.accounts.len(), 1);
+        let account = &response.accounts[0];
+        assert_eq!(account.account_index, 123_456);
+        assert_eq!(account.account_type, 0);
+        assert_eq!(account.status, 1);
+    }
 
     #[rstest]
     fn test_order_book_details_deserializes_live_shape() {

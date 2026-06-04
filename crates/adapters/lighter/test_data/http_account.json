@@ -1,0 +1,68 @@
+{
+  "code": 200,
+  "total": 1,
+  "accounts": [
+    {
+      "code": 0,
+      "account_type": 0,
+      "index": 123456,
+      "l1_address": "0x0000000000000000000000000000000000000000",
+      "cancel_all_time": 0,
+      "total_order_count": 0,
+      "total_isolated_order_count": 0,
+      "pending_order_count": 0,
+      "available_balance": "0.000000",
+      "status": 1,
+      "collateral": "0.000000",
+      "transaction_time": 0,
+      "account_trading_mode": 0,
+      "account_index": 123456,
+      "name": "",
+      "description": "",
+      "can_invite": false,
+      "referral_points_percentage": "",
+      "can_rfq": false,
+      "can_rfq_market_ids": null,
+      "created_at": 0,
+      "metadata": {
+        "color": ""
+      },
+      "positions": [
+        {
+          "market_id": 1,
+          "symbol": "BTC",
+          "initial_margin_fraction": "10.00",
+          "open_order_count": 0,
+          "pending_order_count": 0,
+          "position_tied_order_count": 0,
+          "sign": 1,
+          "position": "0.00000",
+          "avg_entry_price": "0.0",
+          "position_value": "0.000000",
+          "unrealized_pnl": "0.000000",
+          "realized_pnl": "0.000000",
+          "liquidation_price": "0",
+          "margin_mode": 0,
+          "allocated_margin": "0.000000"
+        }
+      ],
+      "assets": [
+        {
+          "symbol": "USDC",
+          "asset_id": 3,
+          "balance": "0.000000",
+          "locked_balance": "0.000000",
+          "margin_mode": "disabled",
+          "margin_balance": "0.000000"
+        }
+      ],
+      "total_asset_value": "0.000000",
+      "cross_asset_value": "0.000000",
+      "cross_initial_margin_requirement": "0.000000",
+      "cross_maintenance_margin_requirement": "0.000000",
+      "shares": [],
+      "pending_unlocks": [],
+      "approved_integrators": []
+    }
+  ]
+}

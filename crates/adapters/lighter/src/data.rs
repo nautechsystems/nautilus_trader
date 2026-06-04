@@ -64,6 +64,7 @@ use crate::{
         consts::LIGHTER_VENUE,
         credential::{Credential, scrub_auth},
         enums::{LighterCandleResolution, LighterMarketStatus},
+        rate_limit::resolve_quota,
         symbol::MarketRegistry,
     },
     config::LighterDataClientConfig,
@@ -199,11 +200,13 @@ impl LighterDataClient {
 
         let registry = Arc::new(MarketRegistry::new());
 
-        let raw_http = LighterRawHttpClient::new(
+        let raw_http = LighterRawHttpClient::new_with_quotas(
             config.environment,
             config.base_url_http.clone(),
             config.http_timeout_secs,
             config.proxy_url.clone(),
+            resolve_quota(config.rest_quota_per_min),
+            None,
         )
         .context("failed to construct Lighter raw HTTP client")?;
         let http_client =

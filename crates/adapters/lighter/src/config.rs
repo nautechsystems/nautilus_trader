@@ -67,6 +67,9 @@ pub struct LighterDataClientConfig {
     /// Refresh interval for instrument metadata in minutes.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
+    /// Optional REST read-bucket quota override in requests per minute; unset keeps
+    /// the conservative 60 req/min default (raising it requires venue IP registration).
+    pub rest_quota_per_min: Option<u32>,
     /// WebSocket transport backend.
     #[builder(default)]
     pub transport_backend: TransportBackend,
@@ -136,6 +139,7 @@ impl Debug for LighterDataClientConfig {
                 "update_instruments_interval_mins",
                 &self.update_instruments_interval_mins,
             )
+            .field("rest_quota_per_min", &self.rest_quota_per_min)
             .field("transport_backend", &self.transport_backend)
             .finish()
     }
@@ -220,6 +224,12 @@ pub struct LighterExecClientConfig {
     /// Slippage buffer in basis points for market-style orders.
     #[builder(default = 50)]
     pub market_order_slippage_bps: u32,
+    /// Optional REST read-bucket quota override in requests per minute; unset keeps
+    /// the conservative 60 req/min default (raising it requires venue IP registration).
+    pub rest_quota_per_min: Option<u32>,
+    /// Optional transaction quota override (req/min), independent of `rest_quota_per_min`;
+    /// unset keeps 60. Enforced across the HTTP and WebSocket sendTx paths (execution only).
+    pub sendtx_quota_per_min: Option<u32>,
     /// WebSocket transport backend.
     #[builder(default)]
     pub transport_backend: TransportBackend,
@@ -247,6 +257,8 @@ impl Debug for LighterExecClientConfig {
             .field("ws_timeout_secs", &self.ws_timeout_secs)
             .field("active_markets", &self.active_markets)
             .field("market_order_slippage_bps", &self.market_order_slippage_bps)
+            .field("rest_quota_per_min", &self.rest_quota_per_min)
+            .field("sendtx_quota_per_min", &self.sendtx_quota_per_min)
             .field("transport_backend", &self.transport_backend)
             .finish()
     }
@@ -383,6 +395,8 @@ mod tests {
             ws_timeout_secs: 30,
             active_markets: Vec::new(),
             market_order_slippage_bps: 50,
+            rest_quota_per_min: None,
+            sendtx_quota_per_min: None,
             transport_backend: TransportBackend::default(),
         };
 
