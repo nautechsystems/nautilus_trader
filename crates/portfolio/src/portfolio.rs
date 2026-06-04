@@ -1342,7 +1342,8 @@ impl Portfolio {
                     .collect()
             };
 
-            self.update_net_position(&instrument_id, &positions_open);
+            let position_refs: Vec<&Position> = positions_open.iter().collect();
+            self.update_net_position(&instrument_id, &position_refs);
 
             if let Some(calculated_unrealized_pnl) =
                 self.calculate_unrealized_pnl(&instrument_id, None)
@@ -1485,11 +1486,11 @@ impl Portfolio {
         update_position(&self.cache, &self.clock, &self.inner, self.config, event);
     }
 
-    fn update_net_position(&self, instrument_id: &InstrumentId, positions_open: &[Position]) {
+    fn update_net_position(&self, instrument_id: &InstrumentId, positions: &[&Position]) {
         let mut net_position = Decimal::ZERO;
 
-        for open_position in positions_open {
-            log::debug!("open_position: {open_position}");
+        for open_position in positions {
+            log::debug!("open_position: {}", *open_position);
             net_position += open_position.signed_decimal_qty();
         }
 
@@ -2461,18 +2462,6 @@ fn update_position(
     let instrument_id = event.instrument_id();
     let account_id = event.account_id();
 
-    let positions_open: Vec<Position> = {
-        let cache_ref = cache.borrow();
-
-        cache_ref
-            .positions_open(None, Some(&instrument_id), None, None, None)
-            .iter()
-            .map(|o| (*o).clone())
-            .collect()
-    };
-
-    log::debug!("position fresh from cache -> {positions_open:?}");
-
     update_snapshot_timer_state(cache, clock, inner, config, &account_id);
 
     let portfolio_clone = Portfolio {
@@ -2482,7 +2471,13 @@ fn update_position(
         config,
     };
 
-    portfolio_clone.update_net_position(&instrument_id, &positions_open);
+    {
+        let cache_ref = cache.borrow();
+        let refs = cache_ref.positions_open(None, Some(&instrument_id), None, None, None);
+        log::debug!("position fresh from cache -> {refs:?}");
+        let positions: Vec<&Position> = refs.iter().map(|r| &**r).collect();
+        portfolio_clone.update_net_position(&instrument_id, &positions);
+    }
 
     if let Some(calculated_unrealized_pnl) =
         portfolio_clone.calculate_unrealized_pnl(&instrument_id, None)
@@ -2526,12 +2521,18 @@ fn update_position(
             if margin_account.calculate_account_state {
                 let instrument = { cache.borrow().instrument(&instrument_id).cloned() };
                 if let Some(instrument) = instrument {
-                    let result = inner.borrow_mut().accounts.update_positions(
-                        &margin_account,
-                        &instrument,
-                        positions_open.iter().collect(),
-                        clock.borrow().timestamp_ns(),
-                    );
+                    let result = {
+                        let cache_ref = cache.borrow();
+                        let refs =
+                            cache_ref.positions_open(None, Some(&instrument_id), None, None, None);
+                        let positions: Vec<&Position> = refs.iter().map(|r| &**r).collect();
+                        inner.borrow_mut().accounts.update_positions(
+                            &margin_account,
+                            &instrument,
+                            positions,
+                            clock.borrow().timestamp_ns(),
+                        )
+                    };
 
                     if let Some((margin_account, account_state)) = result {
                         cache

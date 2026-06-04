@@ -4637,6 +4637,81 @@ fn test_update_position_with_calculate_account_state_does_not_panic(
 }
 
 #[rstest]
+fn test_update_position_margin_state_across_multiple_open_positions(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    // Regression for the borrow-instead-of-clone refactor of `update_position`:
+    // the margin `calculate_account_state` path now borrows every open position
+    // straight from the cache (a non-trivial `Vec<&Position>` when more than one
+    // is open) and holds that shared borrow while computing the account state,
+    // then releases it before taking the exclusive borrow that persists the
+    // account. This exercises the borrow scoping end-to-end with >1 position and
+    // pins the borrowed-vs-cloned net-position equivalence.
+    let account_state = get_margin_account(None);
+    portfolio.update_account(&account_state);
+
+    let mut account = portfolio
+        .cache()
+        .borrow()
+        .account(&account_state.account_id)
+        .unwrap()
+        .clone();
+    account.set_calculate_account_state(true);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_account(&account)
+        .unwrap();
+
+    let last = get_quote_tick(&instrument_audusd, 10510.0, 10511.0, 1.0, 1.0);
+    portfolio.cache().borrow_mut().add_quote(last).unwrap();
+    portfolio.update_quote_tick(&last);
+
+    // Two separate open BUY positions on the same instrument (hedging OMS).
+    let mut expected_net = Decimal::ZERO;
+
+    for position_id in ["PT-1", "PT-2"] {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_audusd.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10.00"))
+            .build();
+        let mut fill = fill_order(&order);
+        fill.position_id = Some(PositionId::new(position_id));
+        let position = Position::new(&instrument_audusd, fill);
+        expected_net += position.signed_decimal_qty();
+        portfolio
+            .cache()
+            .borrow_mut()
+            .add_position(&position, OmsType::Hedging)
+            .unwrap();
+        let opened = get_open_position(&position);
+        portfolio.update_position(&PositionEvent::PositionOpened(opened));
+    }
+
+    // The borrowed open positions yield the same net as summing each leg directly.
+    assert_eq!(
+        portfolio.net_position(&instrument_audusd.id()),
+        expected_net
+    );
+    assert!(portfolio.is_net_long(&instrument_audusd.id()));
+
+    // Account state was computed and persisted without a RefCell double-borrow.
+    let cached = portfolio
+        .cache()
+        .borrow()
+        .account(&account_state.account_id)
+        .unwrap()
+        .clone();
+
+    match cached {
+        AccountAny::Margin(margin) => assert!(margin.base.calculate_account_state),
+        _ => panic!("Expected MarginAccount"),
+    }
+}
+
+#[rstest]
 fn test_initialize_positions_arms_snapshot_timer_for_reconciled_venues(
     mut simple_cache: Cache,
     clock: TestClock,
