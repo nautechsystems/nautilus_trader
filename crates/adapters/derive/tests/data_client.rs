@@ -886,7 +886,14 @@ fn request_forward_prices(
 }
 
 async fn recv_response(rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>) -> DataResponse {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    recv_response_within(rx, Duration::from_secs(5)).await
+}
+
+async fn recv_response_within(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    within: Duration,
+) -> DataResponse {
+    let deadline = tokio::time::Instant::now() + within;
     loop {
         let event = tokio::time::timeout_at(deadline, rx.recv())
             .await
@@ -1614,7 +1621,9 @@ async fn test_request_bars_terminates_at_safety_cap() {
         ))
         .unwrap();
 
-    let response = recv_response(&mut rx).await;
+    // The 100-page walk is paced by the non-matching REST quota (10/s after the
+    // 50-request burst), so it takes ~5s; allow well beyond that.
+    let response = recv_response_within(&mut rx, Duration::from_secs(15)).await;
     let DataResponse::Bars(bars) = response else {
         panic!("expected bars response");
     };

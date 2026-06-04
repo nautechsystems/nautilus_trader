@@ -963,6 +963,7 @@ fn test_config(rest: SocketAddr, ws: SocketAddr) -> DeriveExecClientConfig {
         trade_module_address: Some(TEST_TRADE_MODULE_ADDRESS.to_string()),
         signature_expiry_secs: 600,
         market_order_slippage_bps: 50,
+        max_matching_requests_per_second: None,
     }
 }
 

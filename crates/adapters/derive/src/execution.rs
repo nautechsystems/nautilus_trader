@@ -185,6 +185,7 @@ impl DeriveExecutionClient {
             config.transport_backend,
             config.proxy_url.clone(),
             ws_credentials,
+            config.max_matching_requests_per_second,
         );
         // The handle shares the client's command channel, which survives the
         // reconnect swap, so it stays valid for the client's lifetime.
