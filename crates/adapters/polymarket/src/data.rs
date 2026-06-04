@@ -100,6 +100,10 @@ const NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP: usize = 64;
 const NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS: usize = 1;
 const NEW_MARKET_EMPTY_RECHECK_DELAY: Duration = Duration::from_millis(500);
 
+fn clamp_new_market_fetch_max_concurrency(value: usize) -> usize {
+    value.clamp(1, NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP)
+}
+
 struct NewMarketInflightGuard {
     inflight_keys: Arc<DashMap<String, ()>>,
     key: String,
@@ -343,7 +347,7 @@ impl PolymarketDataClient {
     /// Creates a new [`PolymarketDataClient`].
     pub fn new(
         client_id: ClientId,
-        config: PolymarketDataClientConfig,
+        mut config: PolymarketDataClientConfig,
         gamma_client: PolymarketGammaHttpClient,
         clob_public_client: PolymarketClobPublicClient,
         data_api_client: PolymarketDataApiHttpClient,
@@ -353,21 +357,20 @@ impl PolymarketDataClient {
         let data_sender = get_data_event_sender();
         let provider =
             PolymarketInstrumentProvider::new(gamma_client, config.instrument_config.clone());
-        let fetch_max_concurrency = config
-            .new_market_fetch_max_concurrency
-            .clamp(1, NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP);
+        let configured_fetch_max_concurrency = config.new_market_fetch_max_concurrency;
+        let fetch_max_concurrency =
+            clamp_new_market_fetch_max_concurrency(configured_fetch_max_concurrency);
 
-        if config.new_market_fetch_max_concurrency == 0 {
+        if configured_fetch_max_concurrency == 0 {
             log::warn!(
                 "PolymarketDataClientConfig.new_market_fetch_max_concurrency=0 is invalid, clamping to 1"
             );
-        } else if config.new_market_fetch_max_concurrency > NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP {
+        } else if configured_fetch_max_concurrency > NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP {
             log::warn!(
-                "PolymarketDataClientConfig.new_market_fetch_max_concurrency={} exceeds cap {}, clamping",
-                config.new_market_fetch_max_concurrency,
-                NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP,
+                "PolymarketDataClientConfig.new_market_fetch_max_concurrency={configured_fetch_max_concurrency} exceeds cap {NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP}, clamping",
             );
         }
+        config.new_market_fetch_max_concurrency = fetch_max_concurrency;
 
         Self {
             clock,
@@ -1467,7 +1470,7 @@ impl PolymarketDataClient {
                             }
                         }
                         Err(e) => log::warn!(
-                            "Failed to fetch instruments for new market slug '{slug}' after retries: {e}"
+                            "Failed to fetch instruments for new market slug '{slug}': {e}"
                         ),
                     }
                 });
@@ -1585,7 +1588,7 @@ impl DataClient for PolymarketDataClient {
         self.active_delta_subs = Arc::new(AtomicSet::new());
         self.active_trade_subs = Arc::new(AtomicSet::new());
         self.pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
-        self.new_market_inflight_keys.clear();
+        self.new_market_inflight_keys = Arc::new(DashMap::new());
         self.ws_open_tokens = Arc::new(AtomicSet::new());
 
         self.pending_auto_loads
@@ -3657,6 +3660,7 @@ mod tests {
     fn new_market_fetch_concurrency_clamps_zero_to_one() {
         let client = make_client_with_fetch_concurrency(0);
         assert_eq!(client.new_market_fetch_semaphore.available_permits(), 1);
+        assert_eq!(client.config.new_market_fetch_max_concurrency, 1);
     }
 
     #[rstest]
@@ -3665,6 +3669,33 @@ mod tests {
         assert_eq!(
             client.new_market_fetch_semaphore.available_permits(),
             NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP,
+        );
+        assert_eq!(
+            client.config.new_market_fetch_max_concurrency,
+            NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP,
+        );
+    }
+
+    #[rstest]
+    fn reset_replaces_new_market_inflight_keys_generation() {
+        let mut client = make_client_for_reset_test();
+        let old_inflight_keys = client.new_market_inflight_keys.clone();
+
+        old_inflight_keys.insert("cond:0xold".to_string(), ());
+        client.reset().expect("reset should succeed");
+
+        client
+            .new_market_inflight_keys
+            .insert("cond:0xold".to_string(), ());
+        old_inflight_keys.remove("cond:0xold");
+
+        assert!(
+            client.new_market_inflight_keys.contains_key("cond:0xold"),
+            "old-generation guard cleanup should not remove reset-generation dedupe keys",
+        );
+        assert!(
+            !Arc::ptr_eq(&old_inflight_keys, &client.new_market_inflight_keys),
+            "reset should replace in-flight dedupe map generation",
         );
     }
 

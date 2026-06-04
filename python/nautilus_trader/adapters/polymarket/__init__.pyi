@@ -7,49 +7,43 @@ from nautilus_trader import model
 
 __all__ = [
     "PolymarketDataClientConfig",
+    "PolymarketDataClientFactory",
     "PolymarketExecClientConfig",
+    "PolymarketExecutionClientFactory",
     "PolymarketInstrumentProviderConfig",
     "SignatureType",
 ]
 
 @typing.final
-class PolymarketInstrumentProviderConfig:
-    def __init__(
-        self,
-        load_all: bool | None = None,
-        load_ids: typing.Sequence[model.InstrumentId] | None = None,
-        filters: dict[str, str] | None = None,
-        event_slugs: typing.Sequence[str] | None = None,
-        market_slugs: typing.Sequence[str] | None = None,
-        event_slug_builder: str | None = None,
-        log_warnings: bool | None = None,
-        use_gamma_markets: bool | None = None,
-    ) -> None: ...
-
-@typing.final
 class PolymarketDataClientConfig:
     def __init__(
         self,
-        instrument_config: PolymarketInstrumentProviderConfig | None = None,
-        base_url_http: str | None = None,
-        base_url_ws: str | None = None,
-        base_url_gamma: str | None = None,
-        base_url_data_api: str | None = None,
-        http_timeout_secs: int | None = None,
-        ws_timeout_secs: int | None = None,
-        ws_max_subscriptions: int | None = None,
-        update_instruments_interval_mins: int | None = None,
+        instrument_config: PolymarketInstrumentProviderConfig | None = ...,
+        base_url_http: str | None = ...,
+        base_url_ws: str | None = ...,
+        base_url_gamma: str | None = ...,
+        base_url_data_api: str | None = ...,
+        http_timeout_secs: int | None = ...,
+        ws_timeout_secs: int | None = ...,
+        ws_max_subscriptions: int | None = ...,
+        update_instruments_interval_mins: int | None = ...,
         subscribe_new_markets: bool | None = None,
         auto_load_missing_instruments: bool | None = None,
         auto_load_debounce_ms: int | None = None,
         auto_load_max_retries: int | None = None,
         auto_load_retry_delay_initial_secs: float | None = None,
         auto_load_retry_delay_max_secs: float | None = None,
+        new_market_fetch_max_concurrency: int | None = None,
         resolve_poll_enabled: bool | None = None,
         resolve_poll_interval_secs: int | None = None,
         resolve_poll_grace_secs: int | None = None,
         resolve_poll_max_wait_secs: int | None = None,
     ) -> None: ...
+
+@typing.final
+class PolymarketDataClientFactory:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
 
 @typing.final
 class PolymarketExecClientConfig:
@@ -74,7 +68,27 @@ class PolymarketExecClientConfig:
     ) -> None: ...
 
 @typing.final
+class PolymarketExecutionClientFactory:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
+
+@typing.final
+class PolymarketInstrumentProviderConfig:
+    def __init__(
+        self,
+        load_all: bool | None = None,
+        load_ids: typing.Sequence[model.InstrumentId] | None = None,
+        filters: typing.Mapping[str, str] | None = None,
+        event_slugs: typing.Sequence[str] | None = None,
+        market_slugs: typing.Sequence[str] | None = None,
+        event_slug_builder: str | None = None,
+        log_warnings: bool | None = None,
+        use_gamma_markets: bool | None = None,
+    ) -> None: ...
+
+@typing.final
 class SignatureType(enum.Enum):
     Eoa = ...
     PolyProxy = ...
     PolyGnosisSafe = ...
+    Poly1271 = ...
