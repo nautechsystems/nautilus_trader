@@ -1,0 +1,26 @@
+{
+  "channel": "market_stats:1",
+  "market_stats": {
+    "base_interest_rate": "0.0100",
+    "current_funding_rate": "-0.0028",
+    "daily_base_token_volume": 23621.29428,
+    "daily_price_change": -4.366136694955931,
+    "daily_price_high": 67478.8,
+    "daily_price_low": 61376.4,
+    "daily_quote_token_volume": 1531624159.687143,
+    "funding_clamp_big": "4.0000",
+    "funding_clamp_small": "0.0500",
+    "funding_rate": "-0.0005",
+    "funding_timestamp": 1780545600001,
+    "index_price": "64400.1",
+    "last_trade_price": "64351.5",
+    "mark_price": "64356.3",
+    "market_id": 1,
+    "mid_price": "64349.7",
+    "open_interest": "102123609.308856",
+    "open_interest_limit": "72057594037927936.000000",
+    "symbol": "BTC"
+  },
+  "timestamp": 1780546209291,
+  "type": "subscribed/market_stats"
+}

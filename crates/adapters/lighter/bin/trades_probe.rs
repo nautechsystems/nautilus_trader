@@ -507,7 +507,7 @@ fn redact_auth(url: &str) -> String {
             (k.into_owned(), masked)
         })
         .collect();
-    let mut out = parsed.clone();
+    let mut out = parsed;
     out.set_query(None);
     {
         let mut q = out.query_pairs_mut();

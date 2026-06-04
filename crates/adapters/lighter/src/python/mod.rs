@@ -162,7 +162,7 @@ async fn submit_integrator_revocation(environment: LighterEnvironment) -> anyhow
 ///
 /// Returns a status string on the awaitable; raises on failure.
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.lighter")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.lighter")]
 #[pyo3(name = "revoke_lighter_integrator", signature = (environment = LighterEnvironment::Mainnet))]
 fn py_revoke_lighter_integrator(
     py: Python<'_>,

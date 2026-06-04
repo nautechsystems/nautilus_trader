@@ -34,7 +34,7 @@ use super::{
 };
 use crate::{
     common::urls::resolve_ws_base_url, config::BookSnapshotOutput,
-    machine::parse::parse_tardis_ws_message,
+    machine::parse::parse_tardis_ws_message_data,
 };
 
 /// Provides a client for connecting to a [Tardis Machine Server](https://docs.tardis.dev/api/tardis-machine).
@@ -44,7 +44,7 @@ use crate::{
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.tardis")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.tardis")
 )]
 #[derive(Debug, Clone)]
 pub struct TardisMachineClient {
@@ -54,6 +54,7 @@ pub struct TardisMachineClient {
     pub instruments: AHashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>,
     pub normalize_symbols: bool,
     pub book_snapshot_output: BookSnapshotOutput,
+    pub extract_bbo_as_quotes: bool,
 }
 
 impl TardisMachineClient {
@@ -76,6 +77,7 @@ impl TardisMachineClient {
             instruments: AHashMap::new(),
             normalize_symbols,
             book_snapshot_output,
+            extract_bbo_as_quotes: false,
         })
     }
 
@@ -122,6 +124,7 @@ impl TardisMachineClient {
             None,
             Some(self.instruments.clone()),
             self.book_snapshot_output.clone(),
+            self.extract_bbo_as_quotes,
         ))
     }
 
@@ -144,6 +147,7 @@ impl TardisMachineClient {
             Some(Arc::new(instrument)),
             None,
             self.book_snapshot_output.clone(),
+            self.extract_bbo_as_quotes,
         ))
     }
 }
@@ -153,6 +157,7 @@ fn handle_ws_stream<S>(
     instrument: Option<Arc<TardisInstrumentMiniInfo>>,
     instrument_map: Option<AHashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>>,
     book_snapshot_output: BookSnapshotOutput,
+    extract_bbo_as_quotes: bool,
 ) -> impl Stream<Item = Result<Data, Error>>
 where
     S: Stream<Item = Result<WsMessage, Error>> + Unpin,
@@ -180,7 +185,12 @@ where
                     });
 
                     if let Some(info) = info {
-                        if let Some(data) = parse_tardis_ws_message(msg, &info, &book_snapshot_output) {
+                        for data in parse_tardis_ws_message_data(
+                            msg,
+                            &info,
+                            &book_snapshot_output,
+                            extract_bbo_as_quotes,
+                        ) {
                             yield Ok(data);
                         }
                     } else {

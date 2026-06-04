@@ -30,7 +30,7 @@ use crate::{
 
 /// Parameters for placing an order via WebSocket.
 #[pyclass(from_py_object)]
-#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")]
 #[derive(Clone, Debug)]
 pub struct BybitWsPlaceOrderParams {
     #[pyo3(get, set)]
@@ -526,7 +526,7 @@ mod tests {
 
 /// Parameters for amending an order via WebSocket.
 #[pyclass(from_py_object)]
-#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")]
 #[derive(Clone, Debug)]
 pub struct BybitWsAmendOrderParams {
     #[pyo3(get, set)]
@@ -665,7 +665,7 @@ impl From<messages::BybitWsAmendOrderParams> for BybitWsAmendOrderParams {
 
 /// Parameters for canceling an order via WebSocket.
 #[pyclass(from_py_object)]
-#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")]
 #[derive(Clone, Debug)]
 pub struct BybitWsCancelOrderParams {
     #[pyo3(get, set)]
@@ -724,7 +724,7 @@ impl From<messages::BybitWsCancelOrderParams> for BybitWsCancelOrderParams {
 
 /// Parameters for fetching tickers via HTTP API.
 #[pyclass(from_py_object)]
-#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")]
 #[derive(Clone, Debug)]
 pub struct BybitTickersParams {
     #[pyo3(get, set)]

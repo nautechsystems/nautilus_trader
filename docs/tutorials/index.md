@@ -65,6 +65,7 @@ For task-oriented data recipes, see the [how-to guides](../how_to/):
 |:------------------------------------------------------------------------------------|:--------------------------------------------------|:------------------|
 | [Options Data and Greeks (Bybit)](options_data_bybit)                               | Stream Greeks and option chain snapshots.         | Live API          |
 | [Delta‑Neutral Options Strategy (Bybit)](delta_neutral_options_bybit)               | Short strangle with perpetual delta hedging.      | Live API          |
+| [Delta‑Neutral Options Strategy (Derive)](delta_neutral_options_derive)             | Derive ETH strangle hedger with premium entry.    | Live API          |
 
 ## Rust
 

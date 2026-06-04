@@ -185,6 +185,7 @@ impl DeriveExecutionClient {
             config.transport_backend,
             config.proxy_url.clone(),
             ws_credentials,
+            config.max_matching_requests_per_second,
         );
         // The handle shares the client's command channel, which survives the
         // reconnect swap, so it stays valid for the client's lifetime.
@@ -1960,9 +1961,7 @@ pub fn dispatch_orders_payload(
             }
         };
 
-        let identity = report
-            .client_order_id
-            .and_then(|cid| dispatch_state.identity(&cid).map(|ident| (cid, ident)));
+        let identity = tracked_order_identity(report.client_order_id, dispatch_state);
 
         match identity {
             Some((client_order_id, identity)) => emit_tracked_order_event(
@@ -2005,9 +2004,7 @@ pub fn dispatch_trades_payload(
                     continue;
                 }
 
-                let identity = report
-                    .client_order_id
-                    .and_then(|cid| dispatch_state.identity(&cid).map(|ident| (cid, ident)));
+                let identity = tracked_order_identity(report.client_order_id, dispatch_state);
 
                 match identity {
                     Some((client_order_id, identity)) => emit_tracked_fill(
@@ -2026,6 +2023,17 @@ pub fn dispatch_trades_payload(
             Err(e) => log::warn!("Failed to parse Derive trade WS update: {e}"),
         }
     }
+}
+
+fn tracked_order_identity(
+    client_order_id: Option<ClientOrderId>,
+    dispatch_state: &WsDispatchState,
+) -> Option<(ClientOrderId, OrderIdentity)> {
+    client_order_id.and_then(|cid| {
+        dispatch_state
+            .identity(&cid)
+            .map(|identity| (cid, identity))
+    })
 }
 
 /// Synthesizes and emits `OrderAccepted` when one has not yet been emitted

@@ -1361,7 +1361,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 .await
             {
                 Ok(Some(report)) => {
-                    log::info!("Queried order status for {client_order_id}");
+                    log::debug!("Queried order status for {client_order_id}");
                     emitter.send_order_status_report(report);
                     return Ok(());
                 }
@@ -1374,7 +1374,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             }
 
             let Some(venue_order_id) = venue_order_id else {
-                log::info!("No order status report found for {client_order_id}");
+                log::debug!("No order status report found for {client_order_id}");
                 return Ok(());
             };
 
@@ -1391,11 +1391,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 .await
             {
                 Ok(Some(report)) => {
-                    log::info!("Queried order status for oid {oid}");
+                    log::debug!("Queried order status for oid {oid}");
                     emitter.send_order_status_report(report);
                 }
                 Ok(None) => {
-                    log::info!("No order status report found for oid {oid}");
+                    log::debug!("No order status report found for oid {oid}");
                 }
                 Err(e) => {
                     log::warn!("Failed to query order status for oid {oid}: {e}");
@@ -1497,7 +1497,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 .await
             {
                 Ok(Some(report)) => {
-                    log::info!("Generated order status report for {client_order_id}");
+                    log::debug!("Generated order status report for {client_order_id}");
                     return Ok(Some(report));
                 }
                 Ok(None) => {}
@@ -1526,7 +1526,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                     match cached_oid {
                         Some(oid) => oid,
                         None => {
-                            log::info!("No order status report found for {client_order_id}");
+                            log::debug!("No order status report found for {client_order_id}");
                             return Ok(None);
                         }
                     }
@@ -1542,9 +1542,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .context("failed to generate order status report")?;
 
         if report.is_some() {
-            log::info!("Generated order status report for oid {oid}");
+            log::debug!("Generated order status report for oid {oid}");
         } else {
-            log::info!("No order status report found for oid {oid}");
+            log::debug!("No order status report found for oid {oid}");
         }
         Ok(report)
     }
@@ -1561,26 +1561,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .await
             .context("failed to generate order status reports")?;
 
-        // Filter by open_only if specified
-        let reports = if cmd.open_only {
-            reports
-                .into_iter()
-                .filter(|r| r.order_status.is_open())
-                .collect()
-        } else {
-            reports
-        };
-
-        // Filter by time range if specified
-        let reports = match (cmd.start, cmd.end) {
-            (Some(start), Some(end)) => reports
-                .into_iter()
-                .filter(|r| r.ts_last >= start && r.ts_last <= end)
-                .collect(),
-            (Some(start), None) => reports.into_iter().filter(|r| r.ts_last >= start).collect(),
-            (None, Some(end)) => reports.into_iter().filter(|r| r.ts_last <= end).collect(),
-            (None, None) => reports,
-        };
+        let reports = filter_order_status_reports_for_command(reports, cmd);
 
         log::debug!("Generated {} order status reports", reports.len());
         Ok(reports)
@@ -1806,6 +1787,30 @@ impl HyperliquidExecutionClient {
         *self.ws_stream_handle.lock().expect(MUTEX_POISONED) = Some(handle);
         log::info!("Hyperliquid WebSocket execution stream started");
         Ok(())
+    }
+}
+
+fn filter_order_status_reports_for_command(
+    reports: Vec<OrderStatusReport>,
+    cmd: &GenerateOrderStatusReports,
+) -> Vec<OrderStatusReport> {
+    let reports = if cmd.open_only {
+        reports
+            .into_iter()
+            .filter(|r| r.order_status.is_open())
+            .collect()
+    } else {
+        reports
+    };
+
+    match (cmd.start, cmd.end) {
+        (Some(start), Some(end)) => reports
+            .into_iter()
+            .filter(|r| r.ts_last >= start && r.ts_last <= end)
+            .collect(),
+        (Some(start), None) => reports.into_iter().filter(|r| r.ts_last >= start).collect(),
+        (None, Some(end)) => reports.into_iter().filter(|r| r.ts_last <= end).collect(),
+        (None, None) => reports,
     }
 }
 
@@ -2301,7 +2306,7 @@ use crate::common::parse::determine_order_list_grouping;
 mod tests {
     use std::sync::Arc;
 
-    use nautilus_common::messages::ExecutionEvent;
+    use nautilus_common::messages::{ExecutionEvent, execution::GenerateOrderStatusReports};
     use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_live::ExecutionEventEmitter;
     use nautilus_model::{
@@ -2325,7 +2330,8 @@ mod tests {
     use super::{
         ExecutionReport, FifoCache, HyperliquidHttpClient, HyperliquidWebSocketClient,
         OrderIdentity, PostRejectionRoute, WsDispatchState, determine_order_list_grouping,
-        handle_execution_report, register_order_identity_into, validate_order_for_hyperliquid,
+        filter_order_status_reports_for_command, handle_execution_report,
+        register_order_identity_into, validate_order_for_hyperliquid,
     };
     use crate::{
         common::enums::HyperliquidEnvironment,
@@ -2470,6 +2476,107 @@ mod tests {
     fn cloid_for(id: &str) -> Ustr {
         let cloid = Cloid::from_client_order_id(ClientOrderId::from(id));
         Ustr::from(&cloid.to_hex())
+    }
+
+    #[rstest]
+    fn test_filter_order_status_reports_for_command_filters_open_only() {
+        let open_report =
+            make_status_report(Some("O-HER-FILTER-OPEN"), "v-open", OrderStatus::Accepted);
+        let closed_report =
+            make_status_report(Some("O-HER-FILTER-CLOSED"), "v-closed", OrderStatus::Filled);
+        let cmd = order_reports_command(true, None, None);
+
+        let filtered =
+            filter_order_status_reports_for_command(vec![open_report, closed_report], &cmd);
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(
+            filtered[0].client_order_id,
+            Some(ClientOrderId::from("O-HER-FILTER-OPEN"))
+        );
+    }
+
+    #[rstest]
+    fn test_filter_order_status_reports_for_command_filters_time_range_inclusively() {
+        let mut before = make_status_report(
+            Some("O-HER-FILTER-BEFORE"),
+            "v-before",
+            OrderStatus::Accepted,
+        );
+        let mut at_start =
+            make_status_report(Some("O-HER-FILTER-START"), "v-start", OrderStatus::Accepted);
+        let mut at_end =
+            make_status_report(Some("O-HER-FILTER-END"), "v-end", OrderStatus::Accepted);
+        let mut after =
+            make_status_report(Some("O-HER-FILTER-AFTER"), "v-after", OrderStatus::Accepted);
+        before.ts_last = UnixNanos::from(9);
+        at_start.ts_last = UnixNanos::from(10);
+        at_end.ts_last = UnixNanos::from(20);
+        after.ts_last = UnixNanos::from(21);
+        let cmd =
+            order_reports_command(false, Some(UnixNanos::from(10)), Some(UnixNanos::from(20)));
+
+        let filtered =
+            filter_order_status_reports_for_command(vec![before, at_start, at_end, after], &cmd);
+        let filtered_ids: Vec<Option<ClientOrderId>> = filtered
+            .iter()
+            .map(|report| report.client_order_id)
+            .collect();
+
+        assert_eq!(
+            filtered_ids,
+            vec![
+                Some(ClientOrderId::from("O-HER-FILTER-START")),
+                Some(ClientOrderId::from("O-HER-FILTER-END")),
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_filter_order_status_reports_for_command_without_filters_preserves_reports() {
+        let open_report = make_status_report(
+            Some("O-HER-FILTER-KEEP-OPEN"),
+            "v-keep-open",
+            OrderStatus::Accepted,
+        );
+        let closed_report = make_status_report(
+            Some("O-HER-FILTER-KEEP-CLOSED"),
+            "v-keep-closed",
+            OrderStatus::Canceled,
+        );
+        let cmd = order_reports_command(false, None, None);
+
+        let filtered =
+            filter_order_status_reports_for_command(vec![open_report, closed_report], &cmd);
+        let filtered_ids: Vec<Option<ClientOrderId>> = filtered
+            .iter()
+            .map(|report| report.client_order_id)
+            .collect();
+
+        assert_eq!(
+            filtered_ids,
+            vec![
+                Some(ClientOrderId::from("O-HER-FILTER-KEEP-OPEN")),
+                Some(ClientOrderId::from("O-HER-FILTER-KEEP-CLOSED")),
+            ]
+        );
+    }
+
+    fn order_reports_command(
+        open_only: bool,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> GenerateOrderStatusReports {
+        GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            open_only,
+            None,
+            start,
+            end,
+            None,
+            None,
+        )
     }
 
     fn limit_order(

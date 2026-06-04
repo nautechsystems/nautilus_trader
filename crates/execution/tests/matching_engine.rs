@@ -1113,6 +1113,57 @@ fn test_valid_market_buy(
 }
 
 #[rstest]
+fn test_market_fill_caps_pending_cached_quantity_before_commission(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.500"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&ask).unwrap();
+
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-CAP"))
+        .submit(true)
+        .build();
+
+    engine_l2.process_order(&mut market_order, account_id);
+    engine_l2.fill_market_order(market_order.client_order_id());
+
+    let fills: Vec<OrderFilled> = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 2);
+    assert_eq!(fills[0].last_qty, Quantity::from("1.500"));
+    assert_eq!(fills[1].last_qty, Quantity::from("0.500"));
+
+    let commission = fills[1].commission.expect("expected commission");
+    let expected_commission = fills[1].last_qty.as_decimal()
+        * fills[1].last_px.as_decimal()
+        * instrument_eth_usdt.taker_fee();
+    assert_eq!(commission.currency, instrument_eth_usdt.quote_currency());
+    assert_eq!(commission.as_decimal(), expected_commission);
+}
+
+#[rstest]
 fn test_market_order_with_acks_generates_accepted_then_filled(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
@@ -4222,6 +4273,84 @@ fn test_protection_filtered_fills_do_not_consume_liquidity(
     // Sell should fill at bid 1000, protection = 1000 - 1 = 999, so 1000 is within protection
     assert_eq!(fill2.last_qty, Quantity::from("5.000"));
     assert_eq!(fill2.last_px, Price::from("1000.00"));
+}
+
+#[rstest]
+fn test_process_mark_bar_skipped_without_panic(instrument_eth_usdt: InstrumentAny) {
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(instrument_eth_usdt, None, None, Some(config), None);
+
+    // Mark price bars are not supported for bar execution, they must be skipped rather than panic
+    let bar_type = BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-MARK-EXTERNAL");
+    let mark_bar = Bar {
+        bar_type,
+        open: Price::from("1500.00"),
+        high: Price::from("1510.00"),
+        low: Price::from("1490.00"),
+        close: Price::from("1505.00"),
+        volume: Quantity::from("100000.000"),
+        ts_event: UnixNanos::from(1_000_000_000),
+        ts_init: UnixNanos::from(1_000_000_000),
+    };
+
+    engine.process_bar(&mark_bar);
+
+    assert!(
+        engine.get_core().last.is_none(),
+        "Mark price bar should be skipped and not update market state"
+    );
+}
+
+#[rstest]
+fn test_process_mark_bar_does_not_replace_selected_execution_bar(
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(instrument_eth_usdt, None, None, Some(config), None);
+
+    let hourly_bar_type = BarType::from("ETHUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL");
+    let first_hourly_bar = Bar {
+        bar_type: hourly_bar_type,
+        open: Price::from("1500.00"),
+        high: Price::from("1510.00"),
+        low: Price::from("1490.00"),
+        close: Price::from("1505.00"),
+        volume: Quantity::from("100000.000"),
+        ts_event: UnixNanos::from(1_000_000_000),
+        ts_init: UnixNanos::from(1_000_000_000),
+    };
+    let mark_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-MARK-EXTERNAL"),
+        open: Price::from("1400.00"),
+        high: Price::from("1410.00"),
+        low: Price::from("1390.00"),
+        close: Price::from("1405.00"),
+        volume: Quantity::from("100000.000"),
+        ts_event: UnixNanos::from(2_000_000_000),
+        ts_init: UnixNanos::from(2_000_000_000),
+    };
+    let second_hourly_bar = Bar {
+        bar_type: hourly_bar_type,
+        open: Price::from("1600.00"),
+        high: Price::from("1610.00"),
+        low: Price::from("1590.00"),
+        close: Price::from("1605.00"),
+        volume: Quantity::from("100000.000"),
+        ts_event: UnixNanos::from(3_000_000_000),
+        ts_init: UnixNanos::from(3_000_000_000),
+    };
+
+    engine.process_bar(&first_hourly_bar);
+    engine.process_bar(&mark_bar);
+    engine.process_bar(&second_hourly_bar);
+
+    assert_eq!(engine.get_core().last, Some(Price::from("1605.00")));
 }
 
 #[rstest]

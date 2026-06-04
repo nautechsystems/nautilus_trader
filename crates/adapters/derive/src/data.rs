@@ -85,8 +85,9 @@ use crate::{
         DeriveWebSocketSubscriptionHandle, DeriveWsMessage, WsMessageContext,
         bar_spec_to_derive_period, orderbook_channel, parse_candle_record, parse_funding_rate,
         parse_funding_rate_history_record, parse_index_price, parse_mark_price,
-        parse_option_greeks, parse_orderbook_deltas, parse_public_ws_data, parse_ticker_quote,
-        parse_ticker_quote_from_rest, parse_trade_tick, ticker_channel, trades_channel,
+        parse_option_greeks, parse_orderbook_deltas, parse_orderbook_depth10, parse_public_ws_data,
+        parse_ticker_quote, parse_ticker_quote_from_rest, parse_trade_tick, ticker_channel,
+        trades_channel,
     },
 };
 
@@ -284,7 +285,13 @@ impl DeriveDataClient {
         match data {
             DerivePublicWsData::Orderbook(msg) => {
                 let instrument_id = msg.data.instrument_id();
-                if !book_channel_is_active(ctx, instrument_id, msg.channel.as_str()) {
+                let channel = msg.channel.as_str();
+                let deltas_active =
+                    channel_is_active(&ctx.active_book_delta_channels, instrument_id, channel);
+                let depth10_active =
+                    channel_is_active(&ctx.active_book_depth10_channels, instrument_id, channel);
+
+                if !deltas_active && !depth10_active {
                     return;
                 }
 
@@ -295,16 +302,30 @@ impl DeriveDataClient {
 
                 let ts_init = ctx.clock.get_time_ns();
 
-                match parse_orderbook_deltas(
-                    &msg,
-                    instrument.price_precision(),
-                    instrument.size_precision(),
-                    ts_init,
-                ) {
-                    Ok(deltas) => {
-                        Self::send_data(ctx, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+                if deltas_active {
+                    match parse_orderbook_deltas(
+                        &msg,
+                        instrument.price_precision(),
+                        instrument.size_precision(),
+                        ts_init,
+                    ) {
+                        Ok(deltas) => {
+                            Self::send_data(ctx, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+                        }
+                        Err(e) => log::warn!("Failed to parse Derive orderbook deltas: {e}"),
                     }
-                    Err(e) => log::warn!("Failed to parse Derive orderbook deltas: {e}"),
+                }
+
+                if depth10_active {
+                    match parse_orderbook_depth10(
+                        &msg,
+                        instrument.price_precision(),
+                        instrument.size_precision(),
+                        ts_init,
+                    ) {
+                        Ok(depth) => Self::send_data(ctx, Data::Depth10(Box::new(depth))),
+                        Err(e) => log::warn!("Failed to parse Derive orderbook depth10: {e}"),
+                    }
                 }
             }
             DerivePublicWsData::Trades(msg) => {
@@ -1753,15 +1774,6 @@ fn quote_side(price: Price, size: Quantity) -> (Option<Price>, Option<Quantity>)
     }
 }
 
-fn book_channel_is_active(
-    ctx: &WsMessageContext,
-    instrument_id: InstrumentId,
-    channel: &str,
-) -> bool {
-    channel_is_active(&ctx.active_book_delta_channels, instrument_id, channel)
-        || channel_is_active(&ctx.active_book_depth10_channels, instrument_id, channel)
-}
-
 fn channel_is_active(
     channels: &AtomicMap<InstrumentId, String>,
     instrument_id: InstrumentId,
@@ -2277,11 +2289,14 @@ mod tests {
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &mut ctx);
 
         match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::Deltas(deltas)) => {
-                assert_eq!(deltas.instrument_id, instrument_id);
-                assert_eq!(deltas.deltas.len(), 3);
+            DataEvent::Data(Data::Depth10(depth)) => {
+                assert_eq!(depth.instrument_id, instrument_id);
+                assert_eq!(depth.bids[0].price, Price::from("3500.00"));
+                assert_eq!(depth.bids[0].size, Quantity::from("1.000"));
+                assert_eq!(depth.asks[0].price, Price::from("3501.00"));
+                assert_eq!(depth.asks[0].size, Quantity::from("2.000"));
             }
-            other => panic!("expected deltas data event, was {other:?}"),
+            other => panic!("expected depth10 data event, was {other:?}"),
         }
     }
 

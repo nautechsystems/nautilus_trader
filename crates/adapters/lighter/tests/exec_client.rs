@@ -228,6 +228,11 @@ async fn order_book_details() -> Response {
     (StatusCode::OK, load_text("http_order_book_details.json")).into_response()
 }
 
+async fn account() -> Response {
+    // Standard-tier account fixture; exercises tier detection on connect.
+    (StatusCode::OK, load_text("http_account.json")).into_response()
+}
+
 async fn next_nonce() -> Response {
     // Always return the same nonce baseline. The execution client refreshes
     // on connect and again on reconnect; both fetches resolve to this value.
@@ -467,6 +472,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
 fn build_router(state: Arc<TestServerState>) -> Router {
     Router::new()
         .route("/api/v1/orderBookDetails", get(order_book_details))
+        .route("/api/v1/account", get(account))
         .route("/api/v1/nextNonce", get(next_nonce))
         .route("/api/v1/accountActiveOrders", get(account_active_orders))
         .route(
@@ -594,6 +600,8 @@ fn build_config(addr: SocketAddr) -> LighterExecClientConfig {
         ws_timeout_secs: 5,
         active_markets: Vec::new(),
         market_order_slippage_bps: 50,
+        rest_quota_per_min: None,
+        sendtx_quota_per_min: None,
         transport_backend: Default::default(),
     }
 }

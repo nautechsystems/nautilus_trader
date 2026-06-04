@@ -5,7 +5,7 @@
 ![pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
-[![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
+[![Downloads](https://img.shields.io/pepy/dt/nautilus-trader?color=blue)](https://pepy.tech/projects/nautilus-trader)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
 | Branch    | Version                                                                                                                                                                                                                     | Status                                                                                                                                                                                            |
@@ -572,8 +572,17 @@ developer looking to contribute or just want to learn more about the platform, a
 
 ## Security
 
-To report a vulnerability, see our [Security Policy](SECURITY.md).
-For full security policies including supply chain security, see <https://nautilustrader.io/security/>.
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/nautechsystems/nautilus_trader/badge)](https://scorecard.dev/viewer/?uri=github.com/nautechsystems/nautilus_trader)
+
+The OpenSSF Scorecard badge tracks automated repository-health signals. It complements manual
+review, CI hardening, and security audits rather than replacing them.
+
+NautilusTrader uses layered supply-chain and code-security controls, including CodeQL static
+analysis, pinned GitHub Actions, dependency auditing, cargo-vet, OSV scanning, fuzzing for
+selected adapter and signing surfaces, and signed release provenance for official artifacts.
+
+To report a vulnerability, see our [Security Policy](SECURITY.md). For full security policies
+including supply chain security, see <https://nautilustrader.io/security/>.
 
 ## License
 

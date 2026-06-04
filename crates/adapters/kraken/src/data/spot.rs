@@ -49,7 +49,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Bar, Data, OrderBookDeltas, OrderBookDeltas_API},
+    data::{Bar, Data, OrderBookDeltas_API},
     enums::{AggregationSource, BookType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -67,13 +67,14 @@ use crate::{
     http::{KrakenSpotHttpClient, spot::client::KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND},
     websocket::spot_v2::{
         client::KrakenSpotWebSocketClient,
+        level_2::{L2BookState, L2Depths},
         level_3::{
             BookOrderIdHasher, KrakenL3WsMessage,
             resync::retry_l3_resync,
             runtime::{L3Sink, L3State, process_l3_message},
         },
         messages::KrakenSpotWsMessage,
-        parse::{parse_book_deltas, parse_quote_tick, parse_trade_tick, parse_ws_bar},
+        parse::{parse_quote_tick, parse_trade_tick, parse_ws_bar},
     },
 };
 
@@ -88,6 +89,15 @@ impl L3Sink for DataEventSink<'_> {
             log::error!("Failed to send L3 deltas: {e}");
         }
     }
+}
+
+struct SpotMessageContext<'a> {
+    sender: &'a tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    instruments: &'a Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    book_sequence: &'a Arc<AtomicU64>,
+    l2_depths: &'a L2Depths,
+    ohlc_buffer: &'a OhlcBuffer,
+    clock: &'static AtomicTime,
 }
 
 /// Kraken Spot data client.
@@ -380,11 +390,13 @@ impl KrakenSpotDataClient {
         let instruments = self.instruments.clone();
         let book_sequence = Arc::new(AtomicU64::new(0));
         let ohlc_buffer: OhlcBuffer = Arc::new(Mutex::new(AHashMap::new()));
+        let l2_depths = self.ws.l2_depths_handle();
         let cancellation_token = self.cancellation_token.clone();
         let clock = self.clock;
 
         let handle = get_runtime().spawn(async move {
             tokio::pin!(stream);
+            let mut l2_books = L2BookState::default();
 
             loop {
                 tokio::select! {
@@ -396,14 +408,15 @@ impl KrakenSpotDataClient {
                     msg = stream.next() => {
                         match msg {
                             Some(ws_msg) => {
-                                Self::handle_ws_message(
-                                    ws_msg,
-                                    &data_sender,
-                                    &instruments,
-                                    &book_sequence,
-                                    &ohlc_buffer,
+                                let context = SpotMessageContext {
+                                    sender: &data_sender,
+                                    instruments: &instruments,
+                                    book_sequence: &book_sequence,
+                                    l2_depths: &l2_depths,
+                                    ohlc_buffer: &ohlc_buffer,
                                     clock,
-                                );
+                                };
+                                Self::handle_ws_message(ws_msg, &context, &mut l2_books);
                             }
                             None => {
                                 log::debug!("Spot WebSocket stream ended");
@@ -437,17 +450,14 @@ impl KrakenSpotDataClient {
 
     fn handle_ws_message(
         msg: KrakenSpotWsMessage,
-        sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-        book_sequence: &Arc<AtomicU64>,
-        ohlc_buffer: &OhlcBuffer,
-        clock: &'static AtomicTime,
+        context: &SpotMessageContext,
+        l2_books: &mut L2BookState,
     ) {
-        let ts_init = clock.get_time_ns();
+        let ts_init = context.clock.get_time_ns();
 
         match msg {
             KrakenSpotWsMessage::Ticker(tickers) => {
-                let instruments = instruments.load();
+                let instruments = context.instruments.load();
 
                 for ticker in &tickers {
                     let Some(instrument) =
@@ -459,7 +469,8 @@ impl KrakenSpotDataClient {
 
                     match parse_quote_tick(ticker, instrument, ts_init) {
                         Ok(quote) => {
-                            if let Err(e) = sender.send(DataEvent::Data(Data::Quote(quote))) {
+                            if let Err(e) = context.sender.send(DataEvent::Data(Data::Quote(quote)))
+                            {
                                 log::error!("Failed to send quote: {e}");
                             }
                         }
@@ -468,7 +479,7 @@ impl KrakenSpotDataClient {
                 }
             }
             KrakenSpotWsMessage::Trade(trades) => {
-                let instruments = instruments.load();
+                let instruments = context.instruments.load();
 
                 for trade in &trades {
                     let Some(instrument) =
@@ -480,7 +491,8 @@ impl KrakenSpotDataClient {
 
                     match parse_trade_tick(trade, instrument, ts_init) {
                         Ok(tick) => {
-                            if let Err(e) = sender.send(DataEvent::Data(Data::Trade(tick))) {
+                            if let Err(e) = context.sender.send(DataEvent::Data(Data::Trade(tick)))
+                            {
                                 log::error!("Failed to send trade: {e}");
                             }
                         }
@@ -488,11 +500,8 @@ impl KrakenSpotDataClient {
                     }
                 }
             }
-            KrakenSpotWsMessage::Book {
-                data,
-                is_snapshot: _,
-            } => {
-                let instruments = instruments.load();
+            KrakenSpotWsMessage::Book { data, is_snapshot } => {
+                let instruments = context.instruments.load();
 
                 for book in &data {
                     let Some(instrument) =
@@ -501,30 +510,41 @@ impl KrakenSpotDataClient {
                         log::warn!("No instrument for symbol: {}", book.symbol);
                         continue;
                     };
-                    let sequence = book_sequence.load(Ordering::Relaxed);
-                    match parse_book_deltas(book, instrument, sequence, ts_init) {
-                        Ok(delta_vec) => {
-                            if delta_vec.is_empty() {
-                                continue;
-                            }
-                            book_sequence.fetch_add(delta_vec.len() as u64, Ordering::Relaxed);
-                            let deltas = OrderBookDeltas::new(instrument.id(), delta_vec);
+                    let sequence = context.book_sequence.load(Ordering::Relaxed);
+                    let depth = context.l2_depths.get(book.symbol.as_str());
+                    match l2_books.process_book(
+                        book,
+                        instrument,
+                        sequence,
+                        is_snapshot,
+                        depth,
+                        ts_init,
+                    ) {
+                        Ok(Some((deltas, next_sequence))) => {
+                            context
+                                .book_sequence
+                                .store(next_sequence, Ordering::Relaxed);
                             let api_deltas = OrderBookDeltas_API::new(deltas);
-                            if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(api_deltas))) {
+
+                            if let Err(e) = context
+                                .sender
+                                .send(DataEvent::Data(Data::Deltas(api_deltas)))
+                            {
                                 log::error!("Failed to send deltas: {e}");
                             }
                         }
+                        Ok(None) => {}
                         Err(e) => log::error!("Failed to parse book deltas: {e}"),
                     }
                 }
             }
             KrakenSpotWsMessage::Ohlc(ohlc_data) => {
-                let Ok(mut buffer) = ohlc_buffer.lock() else {
+                let Ok(mut buffer) = context.ohlc_buffer.lock() else {
                     log::error!("OHLC buffer lock poisoned");
                     return;
                 };
 
-                let instruments = instruments.load();
+                let instruments = context.instruments.load();
 
                 for ohlc in &ohlc_data {
                     let Some(instrument) =
@@ -543,8 +563,9 @@ impl KrakenSpotDataClient {
 
                             if let Some((buffered_bar, buffered_begin)) = buffer.get(&key)
                                 && new_interval_begin != *buffered_begin
-                                && let Err(e) =
-                                    sender.send(DataEvent::Data(Data::Bar(*buffered_bar)))
+                                && let Err(e) = context
+                                    .sender
+                                    .send(DataEvent::Data(Data::Bar(*buffered_bar)))
                             {
                                 log::error!("Failed to send bar: {e}");
                             }
@@ -1153,7 +1174,7 @@ impl DataClient for KrakenSpotDataClient {
 mod tests {
     use nautilus_common::{live::runner::set_data_event_sender, messages::DataEvent};
     use nautilus_model::{
-        enums::BookAction,
+        enums::{BookAction, RecordFlag},
         identifiers::Symbol,
         instruments::{InstrumentAny, currency_pair::CurrencyPair},
         types::{Currency, Price, Quantity},
@@ -1162,8 +1183,12 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::consts::KRAKEN_CLIENT_ID, config::KrakenDataClientConfig,
-        websocket::spot_v2::level_3::messages::KrakenL3Snapshot,
+        common::consts::KRAKEN_CLIENT_ID,
+        config::KrakenDataClientConfig,
+        websocket::spot_v2::{
+            level_3::messages::KrakenL3Snapshot,
+            messages::{KrakenWsBookData, KrakenWsBookLevel},
+        },
     };
 
     fn setup_test_env() {
@@ -1280,6 +1305,129 @@ mod tests {
     }
 
     #[rstest]
+    fn test_l2_update_prunes_levels_beyond_subscribed_depth() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let instruments = Arc::new(AtomicMap::new());
+        let instrument = make_instrument();
+        let instrument_id = instrument.id();
+        instruments.insert(instrument_id, instrument);
+
+        let book_sequence = Arc::new(AtomicU64::new(0));
+        let l2_depths = L2Depths::default();
+        l2_depths.insert("BTC/USD", 10);
+        let mut l2_books = L2BookState::default();
+        let ohlc_buffer = Arc::new(Mutex::new(AHashMap::new()));
+        let context = SpotMessageContext {
+            sender: &sender,
+            instruments: &instruments,
+            book_sequence: &book_sequence,
+            l2_depths: &l2_depths,
+            ohlc_buffer: &ohlc_buffer,
+            clock: get_atomic_clock_realtime(),
+        };
+
+        let snapshot = KrakenWsBookData {
+            symbol: Ustr::from("BTC/USD"),
+            bids: Some(
+                (0..10)
+                    .map(|i| book_level(100.0 - f64::from(i), 1.0))
+                    .collect(),
+            ),
+            asks: Some(
+                (0..10)
+                    .map(|i| book_level(101.0 + f64::from(i), 1.0))
+                    .collect(),
+            ),
+            checksum: Some(0),
+            timestamp: "2024-01-01T00:00:00Z".parse().unwrap(),
+        };
+        KrakenSpotDataClient::handle_ws_message(
+            KrakenSpotWsMessage::Book {
+                data: vec![snapshot],
+                is_snapshot: true,
+            },
+            &context,
+            &mut l2_books,
+        );
+
+        let DataEvent::Data(Data::Deltas(snapshot_deltas)) =
+            receiver.try_recv().expect("expected snapshot deltas")
+        else {
+            panic!("expected snapshot deltas");
+        };
+        assert_eq!(snapshot_deltas.deltas.len(), 21);
+        assert_eq!(snapshot_deltas.deltas[0].action, BookAction::Clear);
+        assert!(RecordFlag::F_LAST.matches(snapshot_deltas.deltas.last().unwrap().flags));
+
+        let bid_update = KrakenWsBookData {
+            symbol: Ustr::from("BTC/USD"),
+            bids: Some(vec![book_level(100.5, 1.0)]),
+            asks: Some(vec![]),
+            checksum: Some(0),
+            timestamp: "2024-01-01T00:00:01Z".parse().unwrap(),
+        };
+        KrakenSpotDataClient::handle_ws_message(
+            KrakenSpotWsMessage::Book {
+                data: vec![bid_update],
+                is_snapshot: false,
+            },
+            &context,
+            &mut l2_books,
+        );
+
+        let DataEvent::Data(Data::Deltas(bid_update_deltas)) =
+            receiver.try_recv().expect("expected bid update deltas")
+        else {
+            panic!("expected bid update deltas");
+        };
+        assert_eq!(bid_update_deltas.deltas.len(), 2);
+        assert_eq!(bid_update_deltas.deltas[0].action, BookAction::Update);
+        assert_eq!(bid_update_deltas.deltas[1].action, BookAction::Delete);
+        assert_eq!(bid_update_deltas.deltas[1].order.price, Price::from("91.0"));
+        assert!(RecordFlag::F_LAST.matches(bid_update_deltas.deltas[1].flags));
+
+        let ask_update = KrakenWsBookData {
+            symbol: Ustr::from("BTC/USD"),
+            bids: Some(vec![]),
+            asks: Some(vec![book_level(100.6, 1.0)]),
+            checksum: Some(0),
+            timestamp: "2024-01-01T00:00:02Z".parse().unwrap(),
+        };
+        KrakenSpotDataClient::handle_ws_message(
+            KrakenSpotWsMessage::Book {
+                data: vec![ask_update],
+                is_snapshot: false,
+            },
+            &context,
+            &mut l2_books,
+        );
+
+        let DataEvent::Data(Data::Deltas(ask_update_deltas)) =
+            receiver.try_recv().expect("expected ask update deltas")
+        else {
+            panic!("expected ask update deltas");
+        };
+        assert_eq!(ask_update_deltas.deltas.len(), 2);
+        assert_eq!(ask_update_deltas.deltas[0].action, BookAction::Update);
+        assert_eq!(ask_update_deltas.deltas[1].action, BookAction::Delete);
+        assert_eq!(
+            ask_update_deltas.deltas[1].order.price,
+            Price::from("110.0")
+        );
+        assert!(RecordFlag::F_LAST.matches(ask_update_deltas.deltas[1].flags));
+
+        let book = l2_books
+            .books
+            .get(&instrument_id)
+            .expect("expected shadow book");
+        assert_eq!(book.bids(None).count(), 10);
+        assert_eq!(book.asks(None).count(), 10);
+        assert_eq!(book.best_bid_price(), Some(Price::from("100.5")));
+        assert_eq!(book.best_ask_price(), Some(Price::from("100.6")));
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
     fn test_spot_data_client_start_stop() {
         setup_test_env();
         let config = KrakenDataClientConfig::default();
@@ -1288,5 +1436,9 @@ mod tests {
         assert!(client.start().is_ok());
         assert!(client.stop().is_ok());
         assert!(client.is_disconnected());
+    }
+
+    fn book_level(price: f64, qty: f64) -> KrakenWsBookLevel {
+        KrakenWsBookLevel { price, qty }
     }
 }

@@ -113,7 +113,9 @@ pub(crate) async fn run_analyze_pool(
         .get_pool(&pool_identifier)
         .expect("Pool not found in cache")
         .clone();
-    let (profiler, already_valid) = data_client.bootstrap_latest_pool_profiler(&pool).await?;
+    let (profiler, already_valid) = data_client
+        .bootstrap_latest_pool_profiler(&pool, to_block)
+        .await?;
     let snapshot = profiler.extract_snapshot();
 
     // Save complete pool snapshot to database (includes state, positions, and ticks)

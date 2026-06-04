@@ -762,7 +762,10 @@ impl BlockchainDataClient {
                         let pool_data = DataEvent::DeFi(DefiData::Pool(pool.as_ref().clone()));
                         core_client.send_data(pool_data);
 
-                        match core_client.bootstrap_latest_pool_profiler(&pool).await {
+                        match core_client
+                            .bootstrap_latest_pool_profiler(&pool, None)
+                            .await
+                        {
                             Ok((profiler, already_valid)) => {
                                 let snapshot = profiler.extract_snapshot();
 

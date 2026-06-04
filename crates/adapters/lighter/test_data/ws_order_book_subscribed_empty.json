@@ -1,0 +1,15 @@
+{
+  "channel": "order_book:39",
+  "offset": 1,
+  "order_book": {
+    "asks": [],
+    "begin_nonce": 0,
+    "bids": [],
+    "code": 0,
+    "last_updated_at": 0,
+    "nonce": 0,
+    "offset": 1
+  },
+  "timestamp": 1778138582602,
+  "type": "subscribed/order_book"
+}

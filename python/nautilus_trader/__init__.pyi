@@ -2,78 +2,44 @@
 # ruff: noqa: F401
 
 from . import _libnautilus
+from . import adapters
 from . import analysis
-from . import architect_ax
 from . import backtest
-from . import betfair
-from . import binance
-from . import bitmex
-from . import blockchain
-from . import bybit
-from . import coinbase
 from . import common
 from . import core
 from . import cryptography
 from . import data
-from . import databento
-from . import deribit
-from . import derive
-from . import dydx
 from . import execution
-from . import hyperliquid
 from . import indicators
 from . import infrastructure
-from . import kraken
-from . import lighter
 from . import live
 from . import model
 from . import network
-from . import okx
 from . import persistence
-from . import polymarket
 from . import portfolio
 from . import risk
-from . import sandbox
 from . import serialization
-from . import tardis
 from . import testkit
 from . import trading
 
 __all__ = [
+    "adapters",
     "analysis",
-    "architect_ax",
     "backtest",
-    "betfair",
-    "binance",
-    "bitmex",
-    "blockchain",
-    "bybit",
-    "coinbase",
     "common",
     "core",
     "cryptography",
     "data",
-    "databento",
-    "deribit",
-    "derive",
-    "dydx",
     "execution",
-    "hyperliquid",
     "indicators",
     "infrastructure",
-    "kraken",
-    "lighter",
     "live",
     "model",
     "network",
-    "okx",
     "persistence",
-    "polymarket",
     "portfolio",
     "risk",
-    "sandbox",
     "serialization",
-    "tardis",
     "testkit",
     "trading",
 ]

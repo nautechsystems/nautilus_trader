@@ -6,12 +6,12 @@ traders to speculate on event outcomes by buying and selling outcome tokens.
 NautilusTrader provides a venue integration for data and execution via Polymarket's Central Limit
 Order Book (CLOB) API.
 
-Today the repository exposes two Polymarket implementations:
+Today the repository exposes two Polymarket implementations through the public package path
+`nautilus_trader.adapters.polymarket`:
 
-- The Python adapter in `nautilus_trader.adapters.polymarket`, which uses the
+- The Python adapter, which uses the
   [official Python CLOB V2 client library](https://github.com/Polymarket/py-clob-client-v2).
-- The Rust-native adapter surface in `nautilus_trader.polymarket`, which NautilusTrader is
-  consolidating toward.
+- The Rust-native adapter surface, which NautilusTrader is consolidating toward.
 
 :::warning
 The two implementations overlap heavily, but they do not behave identically in every area.
@@ -84,7 +84,7 @@ The table below shows the main differences that affect behavior today.
 
 | Area                | Python adapter                                                                | Rust adapter                                                  | Notes |
 |---------------------|-------------------------------------------------------------------------------|---------------------------------------------------------------|-------|
-| Public package path | `nautilus_trader.adapters.polymarket`                                         | `nautilus_trader.polymarket`                                  | Rust is the consolidation target. |
+| Public package path | `nautilus_trader.adapters.polymarket`                                         | `nautilus_trader.adapters.polymarket`                         | Rust is the consolidation target. |
 | Order signing       | Uses `py-clob-client-v2`                                                      | Native Rust signing                                           | Python signing is slower. |
 | Post‑only orders    | Supported for `GTC` and `GTD` only                                            | Supported for `GTC` and `GTD` only                            | Both reject post‑only with market TIF (`IOC` or `FOK`). |
 | Batch submit        | Uses `POST /orders` for batchable `SubmitOrderList` requests                  | Uses `POST /orders` for batchable `SubmitOrderList` requests  | Both batch only independent limit orders, capped at 15 per request. |
@@ -119,7 +119,7 @@ Polymarket supports multiple signature types for order signing and verification:
 | `0`            | EOA (Externally Owned Account) | Standard EIP712 signatures from wallets with direct private key control. | **Default.** Direct wallet connections (MetaMask, hardware wallets, etc.).                                 |
 | `1`            | Email/Magic Wallet Proxy       | Smart contract wallet for email‑based accounts (Magic Link).             | Polymarket Proxy associated with Email/Magic accounts. Requires `funder` address.                          |
 | `2`            | Browser Wallet Proxy           | Modified Gnosis Safe (1-of-1 multisig) for browser wallets.              | Polymarket Proxy associated with browser wallets. Enables UI verification. Requires `funder` address.      |
-| `3`            | Deposit Wallet                 | ERC-1271 deposit wallet flow for new API users.                          | New Polymarket API accounts. Requires the deposit wallet as `funder` and API credentials for that address. |
+| `3`            | Deposit Wallet                 | ERC-1271 deposit wallet flow for new API users.                          | Requires deposit wallet `funder`; API credentials stay bound to the signer.                               |
 
 :::note
 See also: [Proxy wallet](https://docs.polymarket.com/developers/proxy-wallet) in the Polymarket documentation for more details about signature types and proxy wallet infrastructure.
@@ -231,6 +231,8 @@ When setting up NautilusTrader to work with Polymarket, it’s crucial to proper
   - `api_key`: If not provided, will source the `POLYMARKET_API_KEY` environment variable.
   - `api_secret`: If not provided, will source the `POLYMARKET_API_SECRET` environment variable.
   - `passphrase`: If not provided, will source the `POLYMARKET_PASSPHRASE` environment variable.
+  API credentials are created from the private-key signer for L2 authentication. For
+  `POLY_1271`, the deposit wallet remains the `funder`, but it is not the L2 auth address.
 - `auto_load_missing_instruments` (default `True`): Controls whether subscribe and
   request commands for an instrument that is not already in the cache trigger an
   ad-hoc load via the Gamma API. When disabled, subscribing to an uncached
@@ -842,9 +844,8 @@ The following limitations are currently known:
 
 ## Configuration
 
-The Python adapter (`nautilus_trader.adapters.polymarket`) and the Rust-native adapter
-(`nautilus_trader.polymarket`) expose different config surfaces. The tables below document
-both adapters in full.
+The Python adapter and the Rust-native adapter expose different config surfaces. The tables
+below document both adapters in full.
 
 ### Data client options (Python v2)
 
@@ -945,8 +946,8 @@ Struct: `PolymarketExecClientConfig` in `crates/adapters/polymarket/src/config.r
 | `api_key`                | `None` (`POLYMARKET_API_KEY` env)          | CLOB API key (L2 auth). |
 | `api_secret`             | `None` (`POLYMARKET_API_SECRET` env)       | CLOB API secret (L2 auth). |
 | `passphrase`             | `None` (`POLYMARKET_PASSPHRASE` env)       | CLOB API passphrase (L2 auth). |
-| `funder`                 | `None` (`POLYMARKET_FUNDER` env)           | pUSD funding wallet. |
-| `signature_type`         | `Eoa`                                      | Signature scheme (`Eoa`, `PolyProxy`, `PolyGnosisSafe`). |
+| `funder`                 | `None` (`POLYMARKET_FUNDER` env)           | pUSD funding wallet; for `Poly1271`, this is the deposit wallet. |
+| `signature_type`         | `Eoa`                                      | Signature scheme (`Eoa`, `PolyProxy`, `PolyGnosisSafe`, `Poly1271`). |
 | `base_url_http`          | `None` (official CLOB endpoint)            | Override for the CLOB REST base URL. |
 | `base_url_ws`            | `None` (official CLOB endpoint)            | Override for the CLOB WebSocket base URL. |
 | `base_url_data_api`      | `None` (`https://data-api.polymarket.com`) | Override for the Data API base URL. |

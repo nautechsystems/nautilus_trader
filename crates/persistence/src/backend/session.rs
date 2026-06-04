@@ -176,7 +176,7 @@ impl DataBackendSession {
             self.registered_tables.insert(table_name.to_string());
 
             // Only add batch stream for newly registered tables to avoid duplicates
-            let default_query = format!("SELECT * FROM {} ORDER BY ts_init", &table_name);
+            let default_query = format!("SELECT * FROM {table_name} ORDER BY ts_init");
             let sql_query = sql_query.unwrap_or(&default_query);
             let query = self.runtime.block_on(self.session_ctx.sql(sql_query))?;
             let batch_stream = self.runtime.block_on(query.execute_stream())?;

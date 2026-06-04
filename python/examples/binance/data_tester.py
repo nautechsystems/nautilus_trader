@@ -52,7 +52,7 @@ def main() -> None:
         None,
         BinanceDataClientFactory(),
         BinanceDataClientConfig(
-            product_types=[BinanceProductType.SPOT],
+            product_type=BinanceProductType.SPOT,
             environment=BinanceEnvironment.LIVE,
         ),
     )

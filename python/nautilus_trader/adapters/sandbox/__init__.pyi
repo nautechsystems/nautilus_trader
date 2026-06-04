@@ -7,6 +7,7 @@ from nautilus_trader import model
 
 __all__ = [
     "SandboxExecutionClientConfig",
+    "SandboxExecutionClientFactory",
 ]
 
 @typing.final
@@ -68,3 +69,8 @@ class SandboxExecutionClientConfig:
     def use_random_ids(self) -> bool: ...
     @property
     def use_reduce_only(self) -> bool: ...
+
+@typing.final
+class SandboxExecutionClientFactory:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...

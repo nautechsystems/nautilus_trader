@@ -242,7 +242,7 @@ def test_collect_rust_class_fixups_reads_custom_data_stub_module(tmp_path):
     rust_file.parent.mkdir(parents=True)
     rust_file.write_text(
         """
-#[custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.hyperliquid")]
+#[custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.hyperliquid")]
 pub struct HyperliquidAllMids {
     #[custom_data_field(json)]
     pub mids: HashMap<InstrumentId, Price>,
@@ -269,11 +269,11 @@ def test_collect_rust_class_fixups_detects_cfg_attr_wrapped_custom_data(tmp_path
         """
 #[cfg_attr(
     feature = "arrow",
-    custom_data(pyo3, stub_module = "nautilus_trader.hyperliquid")
+    custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")
 )]
 #[cfg_attr(
     not(feature = "arrow"),
-    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.hyperliquid")
+    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.hyperliquid")
 )]
 pub struct HyperliquidAllMids {
     #[custom_data_field(json)]
@@ -802,6 +802,79 @@ pub const MY_CONSTANT: u64 = 42;
     assert "MyException" not in names
     assert consts[names.index("MY_VERSION")].python_type == "str"
     assert consts[names.index("MY_CONSTANT")].python_type == "int"
+
+
+def test_collect_module_constants_uses_adapter_package_path(tmp_path):
+    # Arrange
+    mod_rs = tmp_path / "crates" / "adapters" / "polymarket" / "src" / "python" / "mod.rs"
+    mod_rs.parent.mkdir(parents=True)
+    mod_rs.write_text(
+        """
+#[pymodule]
+pub fn polymarket(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add(stringify!(POLYMARKET), POLYMARKET)?;
+    Ok(())
+}
+""".strip(),
+    )
+
+    const_rs = tmp_path / "crates" / "adapters" / "polymarket" / "src" / "common" / "consts.rs"
+    const_rs.parent.mkdir(parents=True, exist_ok=True)
+    const_rs.write_text(
+        """
+pub const POLYMARKET: &str = "POLYMARKET";
+""".strip(),
+    )
+
+    # Act
+    result = generate_stubs.collect_module_constants(tmp_path)
+
+    # Assert
+    assert "adapters.polymarket" in result
+    assert "polymarket" not in result
+
+
+def test_remove_stale_top_level_adapter_stubs_deletes_generated_aliases(tmp_path):
+    # Arrange
+    root = tmp_path / "nautilus_trader"
+    adapters_dir = root / "adapters"
+    (adapters_dir / "polymarket").mkdir(parents=True)
+    (adapters_dir / "polymarket" / "__init__.pyi").write_text("class Polymarket: ...\n")
+
+    stale_dir = root / "polymarket"
+    stale_dir.mkdir()
+    stale_init = stale_dir / "__init__.pyi"
+    stale_init.write_text("class Polymarket: ...\n")
+
+    (adapters_dir / "bybit").mkdir()
+    (adapters_dir / "bybit" / "__init__.pyi").write_text("class Bybit: ...\n")
+    non_stale_dir = root / "bybit"
+    non_stale_dir.mkdir()
+    (non_stale_dir / "__init__.pyi").write_text("class Bybit: ...\n")
+    (non_stale_dir / "extra.pyi").write_text("class Extra: ...\n")
+
+    # Act
+    generate_stubs.remove_stale_top_level_adapter_stubs(root)
+
+    # Assert
+    assert not stale_dir.exists()
+    assert non_stale_dir.exists()
+
+
+def test_generated_stubs_do_not_expose_top_level_adapter_packages():
+    # Arrange
+    adapters_dir = STUB_ROOT / "adapters"
+
+    # Act
+    adapter_names = sorted(path.parent.name for path in adapters_dir.glob("*/__init__.pyi"))
+    exposed = [
+        adapter_name
+        for adapter_name in adapter_names
+        if (STUB_ROOT / adapter_name / "__init__.pyi").exists()
+    ]
+
+    # Assert
+    assert not exposed
 
 
 def test_add_names_to_all_inserts_sorted():

@@ -63,11 +63,12 @@ use crate::{
             BitmexPegPriceType, BitmexSide,
         },
         parse::{
-            bitmex_currency_divisor, clean_reason, derive_trade_id, extract_trigger_type,
-            map_bitmex_currency, normalize_trade_bin_prices, normalize_trade_bin_volume,
-            parse_account_balance, parse_contracts_quantity, parse_fractional_quantity,
-            parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
-            parse_position_side, parse_signed_contracts_quantity,
+            bitmex_account_id, bitmex_currency_divisor, clean_reason, derive_trade_id,
+            extract_trigger_type, map_bitmex_currency, normalize_trade_bin_prices,
+            normalize_trade_bin_volume, parse_account_balance, parse_contracts_quantity,
+            parse_fractional_quantity, parse_instrument_id, parse_liquidity_side,
+            parse_optional_datetime_to_unix_nanos, parse_position_side,
+            parse_signed_contracts_quantity,
         },
     },
     http::parse::get_currency,
@@ -521,7 +522,7 @@ pub fn parse_order_msg(
     order_type_cache: &mut AHashMap<ClientOrderId, OrderType>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
-    let account_id = AccountId::new(format!("BITMEX-{}", msg.account)); // TODO: Revisit
+    let account_id = bitmex_account_id(msg.account);
     let instrument_id = parse_instrument_id(msg.symbol);
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
     let common_side: BitmexSide = msg.side.into();
@@ -938,7 +939,7 @@ pub fn parse_execution_msg(
         }
     }
 
-    let account_id = AccountId::new(format!("BITMEX-{}", msg.account?));
+    let account_id = bitmex_account_id(msg.account?);
     let instrument_id = parse_instrument_id(msg.symbol?);
     let venue_order_id = VenueOrderId::new(msg.order_id?.to_string());
     let trade_id = TradeId::new(msg.trd_match_id?.to_string());
@@ -986,7 +987,7 @@ pub fn parse_position_msg(
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> PositionStatusReport {
-    let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
+    let account_id = bitmex_account_id(msg.account);
     let instrument_id = parse_instrument_id(msg.symbol);
     let position_side = parse_position_side(msg.current_qty).as_specified();
     let quantity = parse_signed_contracts_quantity(msg.current_qty.unwrap_or(0), instrument);
@@ -1124,7 +1125,7 @@ pub fn parse_funding_msg(msg: &BitmexFundingMsg, ts_init: UnixNanos) -> FundingR
 /// Panics if the balance calculation is invalid (total != locked + free).
 #[must_use]
 pub fn parse_wallet_msg(msg: &BitmexWalletMsg, ts_init: UnixNanos) -> AccountState {
-    let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
+    let account_id = bitmex_account_id(msg.account);
 
     // Map BitMEX currency to standard currency code
     let currency_str = map_bitmex_currency(msg.currency.as_str());
@@ -1171,7 +1172,7 @@ pub fn parse_margin_msg(msg: &BitmexMarginMsg) -> MarginBalance {
 /// Parses a BitMEX margin message into an [`AccountState`] with balances and margins.
 #[must_use]
 pub fn parse_margin_account_state(msg: &BitmexMarginMsg, ts_init: UnixNanos) -> AccountState {
-    let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
+    let account_id = bitmex_account_id(msg.account);
     let balance = parse_account_balance(msg);
 
     let margin = parse_margin_msg(msg);

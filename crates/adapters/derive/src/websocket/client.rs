@@ -37,12 +37,14 @@ use nautilus_common::live::get_runtime;
 use nautilus_core::UUID4;
 use nautilus_network::{
     mode::ConnectionMode,
+    ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
     websocket::{
         AuthTracker, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
+use ustr::Ustr;
 
 use super::{
     error::{DeriveWsError, Result},
@@ -52,8 +54,8 @@ use super::{
     },
     messages::{
         DeriveWsChannel, WsLoginParams, WsLoginResult, WsSubscribeParams, WsSubscribeResult,
-        WsUnsubscribeParams, WsUnsubscribeResult, methods, orderbook_channel, ticker_channel,
-        trades_channel,
+        WsUnsubscribeParams, WsUnsubscribeResult, methods, orderbook_channel, rate_limit_key_for,
+        ticker_channel, trades_channel,
     },
 };
 use crate::{
@@ -63,6 +65,7 @@ use crate::{
             RECONNECT_MAX_BACKOFF, RECONNECT_TIMEOUT, WS_HEARTBEAT_SECS, WS_REQUEST_TIMEOUT,
         },
         enums::DeriveEnvironment,
+        rate_limit::{self, DERIVE_MATCHING_RATE_KEY},
         urls,
     },
     http::{
@@ -115,6 +118,11 @@ impl Debug for DeriveWsCredentials {
     }
 }
 
+// Rate limiter keyed by request kind (matching vs non-matching), shared with the
+// command handles so each frame is paced in the caller's task before it is
+// enqueued for the feed handler.
+type WsRateLimiter = RateLimiter<Ustr, MonotonicClock>;
+
 /// WebSocket client for the Derive JSON-RPC stream.
 ///
 /// Construct with [`Self::new`] (public-only) or [`Self::with_credentials`]
@@ -136,6 +144,7 @@ pub struct DeriveWebSocketClient {
     task_handle: Option<tokio::task::JoinHandle<()>>,
     request_timeout: Duration,
     conn_id: Arc<ArcSwap<String>>,
+    rate_limiter: Arc<WsRateLimiter>,
 }
 
 /// Cloneable command handle for Derive public market data subscriptions.
@@ -144,6 +153,7 @@ pub struct DeriveWebSocketSubscriptionHandle {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     subscriptions: Arc<DashMap<String, ()>>,
     request_timeout: Duration,
+    rate_limiter: Arc<WsRateLimiter>,
 }
 
 /// Cloneable handle for issuing signed `private/*` trading requests over the
@@ -159,6 +169,7 @@ pub struct DeriveWsExecutionHandle {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     request_timeout: Duration,
     conn_id: Arc<ArcSwap<String>>,
+    rate_limiter: Arc<WsRateLimiter>,
 }
 
 impl DeriveWebSocketClient {
@@ -172,11 +183,15 @@ impl DeriveWebSocketClient {
         proxy_url: Option<String>,
     ) -> Self {
         let url = url.unwrap_or_else(|| urls::ws_url(environment).to_string());
-        Self::build(url, transport_backend, proxy_url, None)
+        Self::build(url, transport_backend, proxy_url, None, None)
     }
 
     /// Builds a client that will issue `public/login` on connect and replay
     /// it after each reconnect.
+    ///
+    /// `max_matching_requests_per_second` sets the matching-engine rate limit
+    /// for order writes; `None` applies the Trader-tier default. See
+    /// [`crate::common::rate_limit`].
     #[must_use]
     pub fn with_credentials(
         url: Option<String>,
@@ -184,9 +199,17 @@ impl DeriveWebSocketClient {
         transport_backend: TransportBackend,
         proxy_url: Option<String>,
         credentials: DeriveWsCredentials,
+        max_matching_requests_per_second: Option<u32>,
     ) -> Self {
         let url = url.unwrap_or_else(|| urls::ws_url(environment).to_string());
-        Self::build(url, transport_backend, proxy_url, Some(credentials))
+        let matching_quota = rate_limit::matching_quota(max_matching_requests_per_second);
+        Self::build(
+            url,
+            transport_backend,
+            proxy_url,
+            Some(credentials),
+            Some(matching_quota),
+        )
     }
 
     fn build(
@@ -194,12 +217,25 @@ impl DeriveWebSocketClient {
         transport_backend: TransportBackend,
         proxy_url: Option<String>,
         credentials: Option<DeriveWsCredentials>,
+        matching_quota: Option<Quota>,
     ) -> Self {
         let connection_mode = Arc::new(ArcSwap::new(Arc::new(AtomicU8::new(
             ConnectionMode::Closed as u8,
         ))));
         // Placeholder channel; replaced by connect() before commands are issued.
         let (placeholder_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        // Matching-engine writes draw on the matching quota (authenticated
+        // clients only); logins, subscriptions, and reads fall through to the
+        // non-matching default. Handles pace each frame against this in the
+        // caller's task before enqueueing, so the feed handler never sleeps.
+        let mut keyed_quotas: Vec<(Ustr, Quota)> = Vec::new();
+        if let Some(quota) = matching_quota {
+            keyed_quotas.push((Ustr::from(DERIVE_MATCHING_RATE_KEY), quota));
+        }
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(
+            Some(rate_limit::non_matching_quota()),
+            keyed_quotas,
+        ));
         Self {
             url,
             transport_backend,
@@ -215,6 +251,7 @@ impl DeriveWebSocketClient {
             task_handle: None,
             request_timeout: WS_REQUEST_TIMEOUT,
             conn_id: Arc::new(ArcSwap::from_pointee(UUID4::new().to_string())),
+            rate_limiter,
         }
     }
 
@@ -278,6 +315,9 @@ impl DeriveWebSocketClient {
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
         };
+        // Rate limiting runs caller-side via `self.rate_limiter` before frames
+        // are enqueued, so the network client's own limiter is left unconfigured
+        // and never sleeps inside the single feed-handler task.
         let client = WebSocketClient::connect(cfg, Some(message_handler), None, None, vec![], None)
             .await
             .map_err(|e| DeriveWsError::transport(e.to_string()))?;
@@ -310,6 +350,7 @@ impl DeriveWebSocketClient {
         let subscriptions = Arc::clone(&self.subscriptions);
         let conn_id = Arc::clone(&self.conn_id);
         let cmd_tx_for_loop = cmd_tx.clone();
+        let rate_limiter = Arc::clone(&self.rate_limiter);
         let request_timeout = self.request_timeout;
 
         let stream_handle = get_runtime().spawn(async move {
@@ -333,10 +374,12 @@ impl DeriveWebSocketClient {
                         let auth_tracker_async = auth_tracker.clone();
                         let creds_async = credentials.clone();
                         let subs_async = Arc::clone(&subscriptions);
+                        let rate_limiter_async = Arc::clone(&rate_limiter);
 
                         get_runtime().spawn(async move {
                             if let Some(creds) = creds_async
                                 && let Err(e) = login_via_handler(
+                                    &rate_limiter_async,
                                     &cmd_tx_async,
                                     &auth_tracker_async,
                                     &creds,
@@ -353,6 +396,7 @@ impl DeriveWebSocketClient {
                                 subs_async.iter().map(|e| e.key().clone()).collect();
                             for channel in channels {
                                 if let Err(e) = subscribe_via_handler(
+                                    &rate_limiter_async,
                                     &cmd_tx_async,
                                     vec![channel.clone()],
                                     request_timeout,
@@ -382,8 +426,14 @@ impl DeriveWebSocketClient {
         self.task_handle = Some(stream_handle);
 
         if let Some(creds) = self.credentials.clone()
-            && let Err(e) =
-                login_via_handler(&cmd_tx, &self.auth_tracker, &creds, self.request_timeout).await
+            && let Err(e) = login_via_handler(
+                &self.rate_limiter,
+                &cmd_tx,
+                &self.auth_tracker,
+                &creds,
+                self.request_timeout,
+            )
+            .await
         {
             // Without teardown, a retry connect() would short-circuit on
             // is_active() and return Ok without a valid session.
@@ -587,6 +637,7 @@ impl DeriveWebSocketClient {
             cmd_tx: Arc::clone(&self.cmd_tx),
             subscriptions: Arc::clone(&self.subscriptions),
             request_timeout: self.request_timeout,
+            rate_limiter: Arc::clone(&self.rate_limiter),
         }
     }
 
@@ -602,6 +653,7 @@ impl DeriveWebSocketClient {
             cmd_tx: Arc::clone(&self.cmd_tx),
             request_timeout: self.request_timeout,
             conn_id: Arc::clone(&self.conn_id),
+            rate_limiter: Arc::clone(&self.rate_limiter),
         }
     }
 
@@ -714,6 +766,7 @@ impl DeriveWebSocketSubscriptionHandle {
         let params = WsSubscribeParams { channels };
         let cmd_tx = self.cmd_tx.read().await.clone();
         let _: WsSubscribeResult = send_request(
+            &self.rate_limiter,
             &cmd_tx,
             methods::PUBLIC_SUBSCRIBE,
             &params,
@@ -746,6 +799,7 @@ impl DeriveWebSocketSubscriptionHandle {
         let params = WsUnsubscribeParams { channels };
         let cmd_tx = self.cmd_tx.read().await.clone();
         let _: WsUnsubscribeResult = send_request(
+            &self.rate_limiter,
             &cmd_tx,
             methods::PUBLIC_UNSUBSCRIBE,
             &params,
@@ -762,6 +816,7 @@ impl DeriveWebSocketSubscriptionHandle {
     async fn send_subscribe(&self, channel: String, params: &WsSubscribeParams) -> Result<()> {
         let cmd_tx = self.cmd_tx.read().await.clone();
         let _: WsSubscribeResult = send_request(
+            &self.rate_limiter,
             &cmd_tx,
             methods::PUBLIC_SUBSCRIBE,
             params,
@@ -778,6 +833,7 @@ impl DeriveWebSocketSubscriptionHandle {
         };
         let cmd_tx = self.cmd_tx.read().await.clone();
         let _: WsUnsubscribeResult = send_request(
+            &self.rate_limiter,
             &cmd_tx,
             methods::PUBLIC_UNSUBSCRIBE,
             &params,
@@ -810,6 +866,7 @@ impl DeriveWsExecutionHandle {
     pub async fn submit_order(&self, params: &DeriveOrderParams) -> Result<DeriveOrder> {
         let cmd_tx = self.cmd_tx.read().await.clone();
         let result: DeriveOrderResult = send_request_typed(
+            &self.rate_limiter,
             &cmd_tx,
             methods::PRIVATE_ORDER,
             params,
@@ -832,6 +889,7 @@ impl DeriveWsExecutionHandle {
     ) -> Result<DeriveOrder> {
         let cmd_tx = self.cmd_tx.read().await.clone();
         let result: DeriveOrderResult = send_request_typed(
+            &self.rate_limiter,
             &cmd_tx,
             methods::PRIVATE_TRIGGER_ORDER,
             params,
@@ -853,6 +911,7 @@ impl DeriveWsExecutionHandle {
     pub async fn modify_order(&self, params: &DeriveReplaceParams) -> Result<DeriveOrder> {
         let cmd_tx = self.cmd_tx.read().await.clone();
         let result: DeriveReplaceResult = send_request_typed(
+            &self.rate_limiter,
             &cmd_tx,
             methods::PRIVATE_REPLACE,
             params,
@@ -872,6 +931,7 @@ impl DeriveWsExecutionHandle {
     pub async fn cancel_order(&self, params: &DeriveCancelParams) -> Result<()> {
         let cmd_tx = self.cmd_tx.read().await.clone();
         let _: DeriveEmptyResult = send_request(
+            &self.rate_limiter,
             &cmd_tx,
             methods::PRIVATE_CANCEL,
             params,
@@ -894,6 +954,7 @@ impl DeriveWsExecutionHandle {
     ) -> Result<DeriveOrder> {
         let cmd_tx = self.cmd_tx.read().await.clone();
         send_request_typed(
+            &self.rate_limiter,
             &cmd_tx,
             methods::PRIVATE_CANCEL_TRIGGER_ORDER,
             params,
@@ -916,6 +977,7 @@ impl DeriveWsExecutionHandle {
     ) -> Result<DeriveOpenOrdersResult> {
         let cmd_tx = self.cmd_tx.read().await.clone();
         send_request_typed(
+            &self.rate_limiter,
             &cmd_tx,
             methods::PRIVATE_GET_TRIGGER_ORDERS,
             params,
@@ -935,6 +997,7 @@ impl DeriveWsExecutionHandle {
     pub async fn cancel_all_orders(&self, params: &DeriveCancelAllParams) -> Result<()> {
         let cmd_tx = self.cmd_tx.read().await.clone();
         let _: DeriveEmptyResult = send_request(
+            &self.rate_limiter,
             &cmd_tx,
             methods::PRIVATE_CANCEL_ALL,
             params,
@@ -949,6 +1012,7 @@ impl DeriveWsExecutionHandle {
 // (handler torn down on reconnect) surfaces as `RequestCancelled`, a timeout as
 // `Timeout`; both leave a state-changing write's outcome ambiguous.
 async fn send_raw<P>(
+    rate_limiter: &WsRateLimiter,
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
     method: &'static str,
     params: &P,
@@ -958,6 +1022,20 @@ where
     P: Serialize + ?Sized,
 {
     let params = serde_json::to_value(params)?;
+
+    // Pace in the caller's task before enqueueing, so the shared feed handler
+    // never sleeps mid-loop. Matching methods (order/cancel/replace) draw on the
+    // matching quota; everything else on the non-matching default.
+    //
+    // Known limitation: matching writes arrive here already signed with a
+    // `signature_expiry_sec`, so a long pace eats into that TTL. It only bites
+    // under a pathological backlog (wait beyond the venue's ~300s TTL margin,
+    // i.e. hundreds of orders queued at the 1/s Trader rate); moderate bursts
+    // stay well inside it. Pacing above the signing layer would remove it and
+    // is left as a follow-up.
+    let rate_keys = [rate_limit_key_for(method)];
+    rate_limiter.await_keys_ready(Some(&rate_keys)).await;
+
     let (response_tx, response_rx) = tokio::sync::oneshot::channel();
     cmd_tx
         .send(HandlerCommand::Request {
@@ -984,6 +1062,7 @@ where
 // Decodes the result, treating a null/absent `result` as `R::default()` (for
 // login/subscribe/unsubscribe and the cancel family's `DeriveEmptyResult`).
 async fn send_request<P, R>(
+    rate_limiter: &WsRateLimiter,
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
     method: &'static str,
     params: &P,
@@ -993,7 +1072,7 @@ where
     P: Serialize + ?Sized,
     R: Default + DeserializeOwned,
 {
-    let value = send_raw(cmd_tx, method, params, timeout).await?;
+    let value = send_raw(rate_limiter, cmd_tx, method, params, timeout).await?;
     let typed = if value.is_null() {
         R::default()
     } else {
@@ -1005,6 +1084,7 @@ where
 // Decodes the result with no `Default` fallback, for `private/order` and
 // `private/replace` whose success result is always a populated object.
 async fn send_request_typed<P, R>(
+    rate_limiter: &WsRateLimiter,
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
     method: &'static str,
     params: &P,
@@ -1014,7 +1094,7 @@ where
     P: Serialize + ?Sized,
     R: DeserializeOwned,
 {
-    let value = send_raw(cmd_tx, method, params, timeout).await?;
+    let value = send_raw(rate_limiter, cmd_tx, method, params, timeout).await?;
     Ok(serde_json::from_value(value)?)
 }
 
@@ -1023,6 +1103,7 @@ fn channel_topics(channels: &[DeriveWsChannel]) -> Vec<String> {
 }
 
 async fn login_via_handler(
+    rate_limiter: &WsRateLimiter,
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
     auth_tracker: &AuthTracker,
     creds: &DeriveWsCredentials,
@@ -1036,7 +1117,15 @@ async fn login_via_handler(
     };
     let _receiver = auth_tracker.begin();
 
-    match send_request::<_, WsLoginResult>(cmd_tx, methods::PUBLIC_LOGIN, &params, timeout).await {
+    match send_request::<_, WsLoginResult>(
+        rate_limiter,
+        cmd_tx,
+        methods::PUBLIC_LOGIN,
+        &params,
+        timeout,
+    )
+    .await
+    {
         Ok(_) => {
             auth_tracker.succeed();
             log::info!("Derive WebSocket authenticated");
@@ -1050,6 +1139,7 @@ async fn login_via_handler(
 }
 
 async fn subscribe_via_handler(
+    rate_limiter: &WsRateLimiter,
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
     channels: Vec<String>,
     timeout: Duration,
@@ -1057,8 +1147,14 @@ async fn subscribe_via_handler(
     let params = WsSubscribeParams {
         channels: channels.into_iter().map(DeriveWsChannel::from).collect(),
     };
-    let _: WsSubscribeResult =
-        send_request(cmd_tx, methods::PUBLIC_SUBSCRIBE, &params, timeout).await?;
+    let _: WsSubscribeResult = send_request(
+        rate_limiter,
+        cmd_tx,
+        methods::PUBLIC_SUBSCRIBE,
+        &params,
+        timeout,
+    )
+    .await?;
     Ok(())
 }
 
@@ -1108,6 +1204,7 @@ mod tests {
             TransportBackend::default(),
             None,
             creds,
+            None,
         );
         assert!(client.url().contains("demo"));
         assert!(!client.is_authenticated());
@@ -1138,7 +1235,9 @@ mod tests {
         // Keep the receiver alive so the request enqueues, but never reply: the
         // bounded await must surface a Timeout rather than hang forever.
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let rate_limiter: WsRateLimiter = RateLimiter::new_with_quota(None, Vec::new());
         let err = send_raw(
+            &rate_limiter,
             &cmd_tx,
             methods::PRIVATE_ORDER,
             &serde_json::json!({}),
@@ -1165,7 +1264,9 @@ mod tests {
                 let _ = response_tx.send(Ok(Value::Null));
             }
         });
+        let rate_limiter: WsRateLimiter = RateLimiter::new_with_quota(None, Vec::new());
         let result: Result<DeriveOrderResult> = send_request_typed(
+            &rate_limiter,
             &cmd_tx,
             methods::PRIVATE_ORDER,
             &serde_json::json!({}),

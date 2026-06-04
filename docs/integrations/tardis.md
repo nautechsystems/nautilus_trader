@@ -58,7 +58,7 @@ The following normalized Tardis Machine formats are supported by NautilusTrader.
 | `trade_bar_*`       | `Bar`                                                             |
 | `instrument`        | `CurrencyPair`, `CryptoFuture`, `CryptoPerpetual`, `CryptoOption` |
 | `derivative_ticker` | `FundingRateUpdate`                                               |
-| `option_summary`    | `OptionGreeks`                                                    |
+| `option_summary`    | `OptionGreeks`; optional `QuoteTick` from BBO fields              |
 | `disconnect`        | *Not applicable*                                                  |
 
 **Notes:**
@@ -68,8 +68,9 @@ The following normalized Tardis Machine formats are supported by NautilusTrader.
 - `quote`, `quote_10s`, and one-level snapshots are parsed as `QuoteTick`.
 - The Rust data client also emits mark and index price updates from `derivative_ticker` messages
   when those values change.
-- Tardis `option_summary` messages include best bid/ask fields, but Nautilus maps this feed to
-  `OptionGreeks`. Use `quote` or one-level book snapshots when a backtest needs option BBO data.
+- Tardis `option_summary` messages include best bid/offer fields. Nautilus always maps this feed to
+  `OptionGreeks`; set `extract_bbo_as_quotes` to `true` to also emit `QuoteTick` from those BBO
+  fields.
 
 :::info
 See also the Tardis [Tardis Machine quickstart](https://docs.tardis.dev/tardis-machine/quickstart).
@@ -245,6 +246,8 @@ Next, ensure you have a configuration JSON file available.
   then the current working directory.
 - `book_snapshot_output` (`"deltas" | "depth10" | null`): output format for snapshots. Defaults
   to `"deltas"`.
+- `extract_bbo_as_quotes` (`bool | null`): also writes `QuoteTick` data from best bid/offer fields
+  in Tardis Machine `option_summary` messages. Defaults to `false`.
 - `compression` (`"zstd" | "snappy" | "uncompressed" | null`): Parquet compression codec.
   Defaults to `"zstd"` level 3.
 - `proxy_url` (`str | null`): proxy URL for Tardis HTTP requests. Defaults to no proxy.
@@ -314,6 +317,32 @@ Example configuration with explicit format:
 }
 ```
 
+### Option summary BBO extraction
+
+Set `extract_bbo_as_quotes` to `true` when requesting Tardis Machine `option_summary` data and the
+backtest also needs option BBO quotes. Nautilus still writes `OptionGreeks` from every
+`option_summary` message. When all best bid/offer fields are present and sizes are valid, it also
+writes a `QuoteTick` for the same instrument and timestamps.
+
+This option only applies to Tardis Machine `option_summary` replay and stream messages. It does not
+change Tardis CSV loading.
+
+```json
+{
+  "tardis_ws_url": "ws://localhost:8001",
+  "extract_bbo_as_quotes": true,
+  "options": [
+    {
+      "exchange": "deribit",
+      "symbols": ["BTC-28JUN24-70000-C"],
+      "data_types": ["option_summary"],
+      "from": "2024-01-01",
+      "to": "2024-01-02"
+    }
+  ]
+}
+```
+
 ### Python replays
 
 To run a replay in Python, create a script similar to the following:
@@ -373,7 +402,8 @@ catalog. The backtest loader does not request missing Tardis data during a run, 
 catalog must contain:
 
 - Option instruments from the Tardis instrument metadata API.
-- `QuoteTick` data from one-level option book snapshots or quote data.
+- `QuoteTick` data from one-level option book snapshots, quote data, or `option_summary` BBO
+  extraction.
 - `OptionGreeks` data from Tardis `option_summary` messages.
 
 Use both `QuoteTick` and `OptionGreeks` in the `BacktestDataConfig` list for the same
@@ -752,7 +782,8 @@ The Python live data client translates standard subscriptions into Tardis Machin
 
 Configured Tardis Machine replay/stream options can also emit `OrderBookDepth10` when
 `book_snapshot_output` is `depth10`. `OptionGreeks` from `option_summary` is supported by the
-Tardis Machine replay path and catalog writer.
+Tardis Machine replay path and catalog writer. Set `extract_bbo_as_quotes` to also emit
+`QuoteTick` from the best bid/offer fields in those `option_summary` messages.
 
 ### Data WebSockets
 

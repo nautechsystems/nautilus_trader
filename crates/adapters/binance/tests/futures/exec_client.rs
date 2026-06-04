@@ -41,6 +41,7 @@ use nautilus_binance::{
     common::{
         consts::{BINANCE_CLIENT_ID, BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_VENUE},
         encoder::encode_broker_id,
+        enums::BinanceProductType,
         parse::parse_usdm_instrument,
     },
     config::BinanceExecClientConfig,
@@ -177,6 +178,7 @@ struct CommandResponseState {
     captured_queries: Option<CapturedQueries>,
     captured_ws_trading_messages: Option<CapturedWsTradingMessages>,
     report_fixture_mode: ReportFixtureMode,
+    hedge_mode: bool,
 }
 
 #[derive(Clone)]
@@ -319,6 +321,7 @@ fn create_exec_test_router() -> Router {
         captured_queries: None,
         captured_ws_trading_messages: None,
         report_fixture_mode: ReportFixtureMode::Empty,
+        hedge_mode: false,
     })
 }
 
@@ -331,12 +334,14 @@ fn create_exec_test_router_with_command_responses(state: CommandResponseState) -
         )
         .route(
             "/fapi/v1/positionSide/dual",
-            get(|headers: HeaderMap| async move {
-                if !has_auth_headers(&headers) {
-                    return unauthorized_response();
-                }
-                json_response(&json!({"dualSidePosition": false}))
-            }),
+            get(
+                |State(state): State<CommandResponseState>, headers: HeaderMap| async move {
+                    if !has_auth_headers(&headers) {
+                        return unauthorized_response();
+                    }
+                    json_response(&json!({"dualSidePosition": state.hedge_mode}))
+                },
+            ),
         )
         .route(
             "/fapi/v1/listenKey",
@@ -570,10 +575,19 @@ fn command_response(response: CommandResponse, success: &serde_json::Value) -> R
     }
 }
 
-fn create_exec_test_router_with_algo_capture(
+fn create_exec_test_router_with_algo_capture_and_hedge_mode(
     captured_query: &Arc<std::sync::Mutex<Option<HashMap<String, String>>>>,
+    hedge_mode: bool,
 ) -> Router {
-    create_exec_test_router().route(
+    create_exec_test_router_with_command_responses(CommandResponseState {
+        responses: CommandResponses::default(),
+        request_count: Arc::new(AtomicUsize::new(0)),
+        captured_queries: None,
+        captured_ws_trading_messages: None,
+        report_fixture_mode: ReportFixtureMode::Empty,
+        hedge_mode,
+    })
+    .route(
         "/fapi/v1/algoOrder",
         post({
             let captured_query = captured_query.clone();
@@ -648,6 +662,7 @@ async fn start_exec_test_server_with_command_responses(
         captured_queries: None,
         captured_ws_trading_messages: None,
         report_fixture_mode: ReportFixtureMode::Empty,
+        hedge_mode: false,
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -693,6 +708,7 @@ async fn start_exec_test_server_with_query_capture_and_responses(
         captured_queries: Some(captured_queries.clone()),
         captured_ws_trading_messages: None,
         report_fixture_mode,
+        hedge_mode: false,
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -728,6 +744,7 @@ async fn start_exec_test_server_with_ws_trading_capture() -> (SocketAddr, Captur
         captured_queries: None,
         captured_ws_trading_messages: Some(captured_ws_trading_messages.clone()),
         report_fixture_mode: ReportFixtureMode::Empty,
+        hedge_mode: false,
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -758,8 +775,18 @@ async fn start_exec_test_server_with_algo_capture() -> (
     SocketAddr,
     Arc<std::sync::Mutex<Option<HashMap<String, String>>>>,
 ) {
+    start_exec_test_server_with_algo_capture_and_hedge_mode(false).await
+}
+
+async fn start_exec_test_server_with_algo_capture_and_hedge_mode(
+    hedge_mode: bool,
+) -> (
+    SocketAddr,
+    Arc<std::sync::Mutex<Option<HashMap<String, String>>>>,
+) {
     let captured_query = Arc::new(std::sync::Mutex::new(None));
-    let router = create_exec_test_router_with_algo_capture(&captured_query);
+    let router =
+        create_exec_test_router_with_algo_capture_and_hedge_mode(&captured_query, hedge_mode);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -959,6 +986,7 @@ fn create_test_execution_client(
     let config = BinanceExecClientConfig {
         trader_id,
         account_id,
+        product_type: BinanceProductType::UsdM,
         base_url_http: Some(base_url_http),
         base_url_ws: Some(base_url_ws),
         use_ws_trading: false,
@@ -1019,6 +1047,39 @@ async fn test_client_creation() {
     assert_eq!(client.venue(), *BINANCE_VENUE);
     assert_eq!(client.oms_type(), OmsType::Hedging);
     assert!(!client.is_connected());
+}
+
+#[rstest]
+fn test_client_creation_rejects_spot_product_type() {
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("BINANCE-001");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        trader_id,
+        *BINANCE_CLIENT_ID,
+        *BINANCE_VENUE,
+        OmsType::Hedging,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache,
+    );
+    let config = BinanceExecClientConfig {
+        trader_id,
+        account_id,
+        product_type: BinanceProductType::Spot,
+        ..Default::default()
+    };
+
+    let result = BinanceFuturesExecutionClient::new(core, config);
+
+    let Err(e) = result else {
+        panic!("futures execution client should reject Spot product type");
+    };
+    assert_eq!(
+        e.to_string(),
+        "BinanceFuturesExecutionClient requires UsdM or CoinM product type, was Spot",
+    );
 }
 
 #[rstest]
@@ -1223,7 +1284,97 @@ async fn test_submit_trailing_stop_order_uses_activate_price_and_precise_callbac
     assert_eq!(query.get("type"), Some(&"TRAILING_STOP_MARKET".to_string()));
     assert_eq!(query.get("activatePrice"), Some(&"10000.00".to_string()));
     assert_eq!(query.get("callbackRate"), Some(&"0.25".to_string()));
+    assert_eq!(query.get("reduceOnly"), Some(&"true".to_string()));
+    assert!(!query.contains_key("triggerPrice"));
     assert!(!query.contains_key("activationPrice"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_algo_order_in_hedge_mode_omits_reduce_only() {
+    let (addr, captured_query) =
+        start_exec_test_server_with_algo_capture_and_hedge_mode(true).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    let client_order_id = ClientOrderId::new("hedge-trailing-stop-test-001");
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("TEST-STRATEGY");
+
+    let mut order = TrailingStopMarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        OrderSide::Sell,
+        Quantity::from("0.001"),
+        Price::from("10000.00"),
+        TriggerType::MarkPrice,
+        rust_decimal::Decimal::from(25),
+        TrailingOffsetType::BasisPoints,
+        TimeInForce::Gtc,
+        None,
+        true,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+    );
+    order.activation_price = Some(Price::from("10000.00"));
+
+    let order_any = OrderAny::TrailingStopMarket(order);
+    cache
+        .borrow_mut()
+        .add_order(order_any.clone(), None, None, false)
+        .unwrap();
+
+    let submit_cmd = SubmitOrder::new(
+        trader_id,
+        Some(*BINANCE_CLIENT_ID),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        order_any.init_event().clone(),
+        None,
+        None,
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.submit_order(submit_cmd).unwrap();
+
+    wait_until_async(
+        || {
+            let captured_query = captured_query.clone();
+
+            async move { captured_query.lock().unwrap().is_some() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let query = captured_query.lock().unwrap().clone().unwrap();
+    assert_eq!(query.get("positionSide"), Some(&"LONG".to_string()));
+    assert!(!query.contains_key("reduceOnly"));
 }
 
 #[rstest]
@@ -2782,6 +2933,7 @@ fn create_test_execution_client_with_ws_trading(
     let config = BinanceExecClientConfig {
         trader_id,
         account_id,
+        product_type: BinanceProductType::UsdM,
         base_url_http: Some(base_url_http),
         base_url_ws: Some(base_url_ws),
         base_url_ws_trading: Some(base_url_ws_trading),

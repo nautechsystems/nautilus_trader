@@ -66,7 +66,7 @@ def main() -> None:
             None,
             BinanceDataClientFactory(),
             BinanceDataClientConfig(
-                product_types=[BinanceProductType.SPOT],
+                product_type=BinanceProductType.SPOT,
                 environment=BinanceEnvironment.LIVE,
             ),
         )
@@ -76,7 +76,7 @@ def main() -> None:
             BinanceExecClientConfig(
                 trader_id=trader_id,
                 account_id=account_id,
-                product_types=[BinanceProductType.SPOT],
+                product_type=BinanceProductType.SPOT,
                 environment=BinanceEnvironment.LIVE,
                 api_key=None if args.run else SMOKE_API_KEY,
                 api_secret=None if args.run else SMOKE_API_SECRET,

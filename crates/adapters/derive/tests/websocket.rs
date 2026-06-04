@@ -262,6 +262,7 @@ async fn test_connect_with_credentials_completes_login() {
         TransportBackend::default(),
         None,
         test_credentials(),
+        None,
     );
     client.connect().await.expect("connect failed");
     wait_for_active(&client, Duration::from_secs(2)).await;
@@ -300,6 +301,7 @@ async fn test_connect_accepts_venue_array_login_result() {
         TransportBackend::default(),
         None,
         test_credentials(),
+        None,
     );
     client.connect().await.expect("connect failed");
     wait_for_active(&client, Duration::from_secs(2)).await;
@@ -323,6 +325,7 @@ async fn test_connect_with_login_rejection_tears_down_transport() {
         TransportBackend::default(),
         None,
         test_credentials(),
+        None,
     );
     let err = client.connect().await.expect_err("login must reject");
     match err {

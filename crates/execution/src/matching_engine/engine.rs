@@ -1454,6 +1454,15 @@ impl OrderMatchingEngine {
 
         self.precision_mismatch_streak = 0;
 
+        let price_type = bar_type.spec().price_type;
+        if price_type == PriceType::Mark {
+            log::warn!(
+                "Cannot process bar for {} with `PriceType::Mark`, mark price bars are not supported for bar execution",
+                bar.instrument_id(),
+            );
+            return;
+        }
+
         let execution_bar_type =
             if let Some(execution_bar_type) = self.execution_bar_types.get(&bar.instrument_id()) {
                 execution_bar_type.to_owned()
@@ -1483,7 +1492,7 @@ impl OrderMatchingEngine {
             }
         }
 
-        match bar_type.spec().price_type {
+        match price_type {
             PriceType::Last | PriceType::Mid => self.process_trade_ticks_from_bar(bar),
             PriceType::Bid => {
                 self.last_bar_bid = Some(bar.to_owned());
@@ -1493,7 +1502,9 @@ impl OrderMatchingEngine {
                 self.last_bar_ask = Some(bar.to_owned());
                 self.process_quote_ticks_from_bar(bar);
             }
-            PriceType::Mark => panic!("Not implemented"),
+            PriceType::Mark => {
+                unreachable!("PriceType::Mark bars return before execution bar state updates")
+            }
         }
     }
 
@@ -4672,19 +4683,21 @@ impl OrderMatchingEngine {
         self.check_size_precision(last_qty.precision, "fill quantity")
             .unwrap();
 
-        match self.cached_filled_qty.get(&order.client_order_id()) {
-            Some(filled_qty) => {
-                // Use saturating_sub to prevent panic if filled_qty > quantity
+        let (last_qty, new_filled_qty) =
+            if let Some(filled_qty) = self.cached_filled_qty.get(&order.client_order_id()) {
                 let leaves_qty = order.quantity().saturating_sub(*filled_qty);
                 let last_qty = min(last_qty, leaves_qty);
-                let new_filled_qty = *filled_qty + last_qty;
-                self.cached_filled_qty
-                    .insert(order.client_order_id(), new_filled_qty);
-            }
-            None => {
-                self.cached_filled_qty
-                    .insert(order.client_order_id(), last_qty);
-            }
+                (last_qty, *filled_qty + last_qty)
+            } else {
+                let last_qty = min(last_qty, order.quantity());
+                (last_qty, last_qty)
+            };
+
+        self.cached_filled_qty
+            .insert(order.client_order_id(), new_filled_qty);
+
+        if last_qty.is_zero() {
+            return;
         }
 
         let underlying_px = self.fee_underlying_price();

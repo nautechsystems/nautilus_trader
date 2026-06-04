@@ -32,8 +32,10 @@
 //! - Inline user data stream (`userDataStream.subscribe`)
 
 pub mod error;
+pub mod public_json;
 pub mod streams;
 pub mod trading;
 
+pub use public_json::BinanceSpotPublicJsonWebSocketClient;
 pub use streams::BinanceSpotWebSocketClient;
 pub use trading::BinanceSpotWsTradingClient;

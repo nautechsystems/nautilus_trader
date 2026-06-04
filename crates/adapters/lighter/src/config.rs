@@ -37,7 +37,7 @@ use crate::common::{
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.lighter")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.lighter")
 )]
 pub struct LighterDataClientConfig {
     /// Optional REST URL override.
@@ -67,6 +67,9 @@ pub struct LighterDataClientConfig {
     /// Refresh interval for instrument metadata in minutes.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
+    /// Optional REST read-bucket quota override in requests per minute; unset keeps
+    /// the conservative 60 req/min default (raising it requires venue IP registration).
+    pub rest_quota_per_min: Option<u32>,
     /// WebSocket transport backend.
     #[builder(default)]
     pub transport_backend: TransportBackend,
@@ -96,9 +99,12 @@ impl LighterDataClientConfig {
     /// Returns the resolved WebSocket URL.
     #[must_use]
     pub fn ws_url(&self) -> String {
-        self.base_url_ws
+        let url = self
+            .base_url_ws
             .clone()
-            .unwrap_or_else(|| lighter_ws_url(self.environment).to_string())
+            .unwrap_or_else(|| lighter_ws_url(self.environment).to_string());
+
+        ensure_readonly_ws_url(url)
     }
 
     /// Returns `true` when all REST auth credential fields are available.
@@ -133,6 +139,7 @@ impl Debug for LighterDataClientConfig {
                 "update_instruments_interval_mins",
                 &self.update_instruments_interval_mins,
             )
+            .field("rest_quota_per_min", &self.rest_quota_per_min)
             .field("transport_backend", &self.transport_backend)
             .finish()
     }
@@ -140,6 +147,29 @@ impl Debug for LighterDataClientConfig {
 
 fn env_var_is_set(name: &str) -> bool {
     std::env::var(name).is_ok_and(|value| !value.trim().is_empty())
+}
+
+fn ensure_readonly_ws_url(url: String) -> String {
+    let Ok(mut parsed) = url::Url::parse(&url) else {
+        return url;
+    };
+
+    let pairs = parsed
+        .query_pairs()
+        .filter(|(key, _)| key != "readonly")
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect::<Vec<_>>();
+
+    parsed.set_query(None);
+    {
+        let mut query = parsed.query_pairs_mut();
+        for (key, value) in pairs {
+            query.append_pair(&key, &value);
+        }
+        query.append_pair("readonly", "true");
+    }
+
+    parsed.to_string()
 }
 
 /// Configuration for the Lighter execution client.
@@ -151,7 +181,7 @@ fn env_var_is_set(name: &str) -> bool {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.lighter")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.lighter")
 )]
 pub struct LighterExecClientConfig {
     /// Trader identifier.
@@ -194,6 +224,12 @@ pub struct LighterExecClientConfig {
     /// Slippage buffer in basis points for market-style orders.
     #[builder(default = 50)]
     pub market_order_slippage_bps: u32,
+    /// Optional REST read-bucket quota override in requests per minute; unset keeps
+    /// the conservative 60 req/min default (raising it requires venue IP registration).
+    pub rest_quota_per_min: Option<u32>,
+    /// Optional transaction quota override (req/min), independent of `rest_quota_per_min`;
+    /// unset keeps 60. Enforced across the HTTP and WebSocket sendTx paths (execution only).
+    pub sendtx_quota_per_min: Option<u32>,
     /// WebSocket transport backend.
     #[builder(default)]
     pub transport_backend: TransportBackend,
@@ -221,6 +257,8 @@ impl Debug for LighterExecClientConfig {
             .field("ws_timeout_secs", &self.ws_timeout_secs)
             .field("active_markets", &self.active_markets)
             .field("market_order_slippage_bps", &self.market_order_slippage_bps)
+            .field("rest_quota_per_min", &self.rest_quota_per_min)
+            .field("sendtx_quota_per_min", &self.sendtx_quota_per_min)
             .field("transport_backend", &self.transport_backend)
             .finish()
     }
@@ -304,6 +342,44 @@ mod tests {
     }
 
     #[rstest]
+    fn data_config_ws_url_sets_readonly_query() {
+        let config = LighterDataClientConfig::default();
+
+        assert_eq!(
+            config.ws_url(),
+            "wss://mainnet.zklighter.elliot.ai/stream?readonly=true",
+        );
+    }
+
+    #[rstest]
+    fn data_config_ws_url_preserves_existing_query_params() {
+        let config = LighterDataClientConfig {
+            base_url_ws: Some("wss://mainnet.zklighter.elliot.ai/stream?foo=bar".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            config.ws_url(),
+            "wss://mainnet.zklighter.elliot.ai/stream?foo=bar&readonly=true",
+        );
+    }
+
+    #[rstest]
+    fn data_config_ws_url_overrides_readonly_query() {
+        let config = LighterDataClientConfig {
+            base_url_ws: Some(
+                "wss://mainnet.zklighter.elliot.ai/stream?readonly=false&foo=bar".to_string(),
+            ),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            config.ws_url(),
+            "wss://mainnet.zklighter.elliot.ai/stream?foo=bar&readonly=true",
+        );
+    }
+
+    #[rstest]
     fn exec_config_debug_redacts_private_key() {
         let config = LighterExecClientConfig {
             trader_id: TraderId::from("TRADER-001"),
@@ -319,6 +395,8 @@ mod tests {
             ws_timeout_secs: 30,
             active_markets: Vec::new(),
             market_order_slippage_bps: 50,
+            rest_quota_per_min: None,
+            sendtx_quota_per_min: None,
             transport_backend: TransportBackend::default(),
         };
 
@@ -326,6 +404,18 @@ mod tests {
 
         assert!(dbg_out.contains(REDACTED));
         assert!(!dbg_out.contains(PRIVATE_KEY_HEX));
+    }
+
+    #[rstest]
+    fn exec_config_ws_url_keeps_regular_stream_url() {
+        let config = LighterExecClientConfig {
+            trader_id: TraderId::from("TRADER-001"),
+            account_id: AccountId::from("LIGHTER-001"),
+            environment: LighterEnvironment::Mainnet,
+            ..Default::default()
+        };
+
+        assert_eq!(config.ws_url(), "wss://mainnet.zklighter.elliot.ai/stream");
     }
 
     // Tests that observe the `env_var_is_set` fallback live in the workspace

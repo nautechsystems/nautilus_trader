@@ -156,6 +156,42 @@ pub fn parse_tardis_ws_message(
     }
 }
 
+#[must_use]
+pub fn parse_tardis_ws_message_data(
+    msg: WsMessage,
+    info: &Arc<TardisInstrumentMiniInfo>,
+    book_snapshot_output: &BookSnapshotOutput,
+    extract_bbo_as_quotes: bool,
+) -> Vec<Data> {
+    match msg {
+        WsMessage::OptionSummary(msg) if extract_bbo_as_quotes => {
+            let mut data = Vec::with_capacity(2);
+
+            match parse_option_summary_msg_as_quote(
+                &msg,
+                info.price_precision,
+                info.size_precision,
+                info.instrument_id,
+            ) {
+                Ok(Some(quote)) => data.push(Data::Quote(quote)),
+                Ok(None) => {}
+                Err(e) => {
+                    log::error!("Failed to parse option summary quote message: {e}");
+                }
+            }
+
+            data.push(Data::OptionGreeks(parse_option_summary_msg(
+                &msg,
+                info.instrument_id,
+            )));
+            data
+        }
+        msg => parse_tardis_ws_message(msg, info, book_snapshot_output)
+            .into_iter()
+            .collect(),
+    }
+}
+
 /// Parses a Tardis option summary message into a Nautilus `OptionGreeks`.
 ///
 /// Greeks absent from the exchange feed default to `0.0` (matching the existing exchange-greeks
@@ -184,6 +220,48 @@ pub fn parse_option_summary_msg(
         ts_event: UnixNanos::from(msg.timestamp),
         ts_init: UnixNanos::from(msg.local_timestamp),
     }
+}
+
+/// Parses a Tardis option summary best bid/offer into a Nautilus `QuoteTick`.
+///
+/// Returns `Ok(None)` when any best bid/offer field is absent.
+///
+/// # Errors
+///
+/// Returns an error if a provided bid or ask price or size is invalid.
+pub fn parse_option_summary_msg_as_quote(
+    msg: &OptionSummaryMsg,
+    price_precision: u8,
+    size_precision: u8,
+    instrument_id: InstrumentId,
+) -> anyhow::Result<Option<QuoteTick>> {
+    let (Some(best_bid_price), Some(best_bid_amount), Some(best_ask_price), Some(best_ask_amount)) = (
+        msg.best_bid_price,
+        msg.best_bid_amount,
+        msg.best_ask_price,
+        msg.best_ask_amount,
+    ) else {
+        return Ok(None);
+    };
+
+    let bid_price = Price::new_checked(best_bid_price, price_precision)
+        .with_context(|| format!("invalid option summary bid price for message: {msg:?}"))?;
+    let ask_price = Price::new_checked(best_ask_price, price_precision)
+        .with_context(|| format!("invalid option summary ask price for message: {msg:?}"))?;
+    let bid_size = Quantity::non_zero_checked(best_bid_amount, size_precision)
+        .with_context(|| format!("invalid option summary bid size for message: {msg:?}"))?;
+    let ask_size = Quantity::non_zero_checked(best_ask_amount, size_precision)
+        .with_context(|| format!("invalid option summary ask size for message: {msg:?}"))?;
+
+    Ok(Some(QuoteTick::new(
+        instrument_id,
+        bid_price,
+        ask_price,
+        bid_size,
+        ask_size,
+        UnixNanos::from(msg.timestamp),
+        UnixNanos::from(msg.local_timestamp),
+    )))
 }
 
 /// Parse a Tardis WebSocket message specifically for funding rate updates.
@@ -1039,6 +1117,153 @@ mod tests {
         assert_eq!(greeks.ask_iv, Some(0.58));
         assert_eq!(greeks.underlying_price, Some(63_500.0));
         assert_eq!(greeks.open_interest, Some(150.0));
+        assert_eq!(greeks.ts_event, ts_event);
+        assert_eq!(greeks.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_tardis_ws_message_data_extracts_option_summary_quote_when_enabled() {
+        let json_data = load_test_json("option_summary.json");
+        let msg: OptionSummaryMsg = serde_json::from_str(&json_data).unwrap();
+        let ts_event = UnixNanos::from(msg.timestamp);
+        let ts_init = UnixNanos::from(msg.local_timestamp);
+        let ws_msg = WsMessage::OptionSummary(msg);
+
+        let instrument_id = InstrumentId::from("BTC-28JUN24-70000-C.DERIBIT");
+        let info = Arc::new(TardisInstrumentMiniInfo::new(
+            instrument_id,
+            None,
+            TardisExchange::Deribit,
+            4,
+            1,
+        ));
+
+        let data = parse_tardis_ws_message_data(ws_msg, &info, &BookSnapshotOutput::Deltas, true);
+
+        assert_eq!(data.len(), 2);
+        let Data::Quote(quote) = &data[0] else {
+            panic!("Expected first data item to be QuoteTick");
+        };
+        let Data::OptionGreeks(greeks) = &data[1] else {
+            panic!("Expected second data item to be OptionGreeks");
+        };
+        assert_eq!(quote.instrument_id, instrument_id);
+        assert_eq!(quote.bid_price, Price::from("0.035"));
+        assert_eq!(quote.bid_size, Quantity::from("5"));
+        assert_eq!(quote.ask_price, Price::from("0.04"));
+        assert_eq!(quote.ask_size, Quantity::from("10"));
+        assert_eq!(quote.ts_event, ts_event);
+        assert_eq!(quote.ts_init, ts_init);
+        assert_eq!(greeks.instrument_id, instrument_id);
+        assert_eq!(greeks.ts_event, ts_event);
+        assert_eq!(greeks.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_tardis_ws_message_data_skips_option_summary_quote_when_disabled() {
+        let json_data = load_test_json("option_summary.json");
+        let msg: OptionSummaryMsg = serde_json::from_str(&json_data).unwrap();
+        let ws_msg = WsMessage::OptionSummary(msg);
+
+        let instrument_id = InstrumentId::from("BTC-28JUN24-70000-C.DERIBIT");
+        let info = Arc::new(TardisInstrumentMiniInfo::new(
+            instrument_id,
+            None,
+            TardisExchange::Deribit,
+            4,
+            1,
+        ));
+
+        let data = parse_tardis_ws_message_data(ws_msg, &info, &BookSnapshotOutput::Deltas, false);
+
+        assert_eq!(data.len(), 1);
+        assert!(
+            matches!(data[0], Data::OptionGreeks(_)),
+            "Expected OptionGreeks, was {:?}",
+            data[0]
+        );
+    }
+
+    #[rstest]
+    fn test_parse_tardis_ws_message_data_skips_option_summary_quote_when_bbo_missing() {
+        let json_data = load_test_json("option_summary.json");
+        let mut msg: OptionSummaryMsg = serde_json::from_str(&json_data).unwrap();
+        msg.best_ask_price = None;
+        let ws_msg = WsMessage::OptionSummary(msg);
+
+        let instrument_id = InstrumentId::from("BTC-28JUN24-70000-C.DERIBIT");
+        let info = Arc::new(TardisInstrumentMiniInfo::new(
+            instrument_id,
+            None,
+            TardisExchange::Deribit,
+            4,
+            1,
+        ));
+
+        let data = parse_tardis_ws_message_data(ws_msg, &info, &BookSnapshotOutput::Deltas, true);
+
+        assert_eq!(data.len(), 1);
+        assert!(
+            matches!(data[0], Data::OptionGreeks(_)),
+            "Expected OptionGreeks, was {:?}",
+            data[0]
+        );
+    }
+
+    #[rstest]
+    fn test_parse_tardis_ws_message_data_keeps_option_summary_when_bbo_size_invalid() {
+        let json_data = load_test_json("option_summary.json");
+        let mut msg: OptionSummaryMsg = serde_json::from_str(&json_data).unwrap();
+        let ts_event = UnixNanos::from(msg.timestamp);
+        let ts_init = UnixNanos::from(msg.local_timestamp);
+        msg.best_bid_amount = Some(0.0);
+        let ws_msg = WsMessage::OptionSummary(msg);
+
+        let instrument_id = InstrumentId::from("BTC-28JUN24-70000-C.DERIBIT");
+        let info = Arc::new(TardisInstrumentMiniInfo::new(
+            instrument_id,
+            None,
+            TardisExchange::Deribit,
+            4,
+            1,
+        ));
+
+        let data = parse_tardis_ws_message_data(ws_msg, &info, &BookSnapshotOutput::Deltas, true);
+
+        assert_eq!(data.len(), 1);
+        let Data::OptionGreeks(greeks) = &data[0] else {
+            panic!("Expected OptionGreeks, was {:?}", data[0]);
+        };
+        assert_eq!(greeks.instrument_id, instrument_id);
+        assert_eq!(greeks.ts_event, ts_event);
+        assert_eq!(greeks.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_tardis_ws_message_data_keeps_option_summary_when_bbo_price_invalid() {
+        let json_data = load_test_json("option_summary.json");
+        let mut msg: OptionSummaryMsg = serde_json::from_str(&json_data).unwrap();
+        let ts_event = UnixNanos::from(msg.timestamp);
+        let ts_init = UnixNanos::from(msg.local_timestamp);
+        msg.best_bid_price = Some(f64::MAX);
+        let ws_msg = WsMessage::OptionSummary(msg);
+
+        let instrument_id = InstrumentId::from("BTC-28JUN24-70000-C.DERIBIT");
+        let info = Arc::new(TardisInstrumentMiniInfo::new(
+            instrument_id,
+            None,
+            TardisExchange::Deribit,
+            4,
+            1,
+        ));
+
+        let data = parse_tardis_ws_message_data(ws_msg, &info, &BookSnapshotOutput::Deltas, true);
+
+        assert_eq!(data.len(), 1);
+        let Data::OptionGreeks(greeks) = &data[0] else {
+            panic!("Expected OptionGreeks, was {:?}", data[0]);
+        };
+        assert_eq!(greeks.instrument_id, instrument_id);
         assert_eq!(greeks.ts_event, ts_event);
         assert_eq!(greeks.ts_init, ts_init);
     }

@@ -37,7 +37,7 @@ use crate::cache::database::BlockchainCacheDatabase;
 /// Returns a `PyErr` if `pool_address` is not a valid pool identifier, or if the database
 /// connection or query fails.
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.blockchain")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.blockchain")]
 #[pyo3(name = "load_pool_snapshot")]
 #[pyo3(signature = (pg_config, chain_id, pool_address, before_block=None, require_valid=true))]
 #[gen_stub(

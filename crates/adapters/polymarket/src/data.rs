@@ -616,6 +616,7 @@ impl PolymarketDataClient {
                 // Gamma caps `condition_ids=` filters at ~100; chunk and merge.
                 let mut loaded: Vec<InstrumentAny> = Vec::new();
                 let mut transient: AHashSet<String> = AHashSet::new();
+                let mut batch_returned_any = false;
                 let mut chunk_failed = false;
 
                 for chunk in condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
@@ -629,6 +630,7 @@ impl PolymarketDataClient {
                         .await
                     {
                         Ok((insts, trans)) => {
+                            batch_returned_any |= !insts.is_empty() || !trans.is_empty();
                             loaded.extend(insts);
                             transient.extend(trans);
                         }
@@ -713,24 +715,37 @@ impl PolymarketDataClient {
                 }
 
                 if attempt >= max_retries {
-                    let reason = if chunk_failed {
-                        "Gamma fetch failed"
+                    let absent_reason = if batch_returned_any {
+                        "Gamma returned no market for condition_id"
                     } else {
-                        "no usable token_id"
+                        "Gamma returned no markets for batch query"
                     };
 
                     for id in &next_batch {
+                        let reason = if chunk_failed {
+                            "Gamma fetch failed"
+                        } else if extract_condition_id(id)
+                            .is_ok_and(|condition_id| transient.contains(&condition_id))
+                        {
+                            "no usable token_id (CLOB lifecycle race)"
+                        } else {
+                            absent_reason
+                        };
+
                         log::error!(
-                            "Cannot find instrument for {id}: {reason} after {max_retries} retries (CLOB lifecycle race)"
+                            "Cannot find instrument for {id}: {reason} after {max_retries} retries"
                         );
                     }
                     return;
                 }
 
-                let delay = crate::common::retry::auto_load_retry_delay(
-                    attempt, base_secs, max_secs,
-                );
-                let kind = if chunk_failed { "chunk failure" } else { "transient" };
+                let delay =
+                    crate::common::retry::auto_load_retry_delay(attempt, base_secs, max_secs);
+                let kind = if chunk_failed {
+                    "chunk failure"
+                } else {
+                    "transient"
+                };
                 log::info!(
                     "Auto-load retry {}/{} for {} {kind} instrument(s) in {:.1}s",
                     attempt + 1,

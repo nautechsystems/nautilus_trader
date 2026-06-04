@@ -71,6 +71,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
         LighterDataClientConfig {
             environment: LighterEnvironment::Testnet,
             http_timeout_secs: 7,
+            rest_quota_per_min: Some(24_000),
             ..LighterDataClientConfig::default()
         },
     )
@@ -103,6 +104,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
     assert_eq!(extracted_factory.config_type(), "LighterDataClientConfig");
     assert_eq!(lighter_config.environment, LighterEnvironment::Testnet);
     assert_eq!(lighter_config.http_timeout_secs, 7);
+    assert_eq!(lighter_config.rest_quota_per_min, Some(24_000));
     assert_eq!(client.client_id(), ClientId::from("LIGHTER-DATA-EXTRACTED"));
 }
 
@@ -119,6 +121,8 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
             .account_id(account_id)
             .environment(LighterEnvironment::Testnet)
             .active_markets(vec![0])
+            .rest_quota_per_min(24_000)
+            .sendtx_quota_per_min(4_000)
             .build(),
     )
     .expect("config should convert to Python object")
@@ -150,6 +154,8 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     assert_eq!(lighter_config.account_id, account_id);
     assert_eq!(lighter_config.environment, LighterEnvironment::Testnet);
     assert_eq!(lighter_config.active_markets, [0]);
+    assert_eq!(lighter_config.rest_quota_per_min, Some(24_000));
+    assert_eq!(lighter_config.sendtx_quota_per_min, Some(4_000));
     assert_eq!(client.client_id(), ClientId::from("LIGHTER-EXEC-EXTRACTED"));
     assert_eq!(client.account_id(), account_id);
 }

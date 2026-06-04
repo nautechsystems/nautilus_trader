@@ -15,6 +15,8 @@
 
 //! Lighter venue enums mirrored from REST and WebSocket payloads.
 
+use std::fmt::Display;
+
 use nautilus_model::{
     data::{BarSpecification, BarType},
     enums::{AggregationSource, BarAggregation, OrderSide, OrderType, PriceType},
@@ -53,7 +55,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.lighter")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.lighter")
 )]
 pub enum LighterEnvironment {
     /// Mainnet trading environment.
@@ -677,6 +679,66 @@ pub enum LighterMarginUpdateDirection {
     AddToIsolated = 1,
 }
 
+/// Lighter account tier, classified from the venue `account_type` code.
+///
+/// The code `0` is confirmed to be the standard tier. Codes for the higher
+/// tiers are not published in the venue schema, so they are mapped on a
+/// best-effort basis and any unrecognized code is preserved as
+/// [`Self::Unknown`] rather than silently misclassified. This type is a
+/// classification of the raw `account_type` byte, not a wire representation, so
+/// it is not serialized.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum LighterAccountTier {
+    Standard,
+    Premium,
+    Plus,
+    Builder,
+    Unknown(u8),
+}
+
+impl LighterAccountTier {
+    /// Classifies a venue `account_type` code into a tier.
+    #[must_use]
+    pub const fn from_code(code: u8) -> Self {
+        match code {
+            0 => Self::Standard,
+            1 => Self::Premium,
+            2 => Self::Plus,
+            3 => Self::Builder,
+            other => Self::Unknown(other),
+        }
+    }
+
+    /// Returns the documented REST weighted limit (requests per minute) for the
+    /// tier, or `None` when the tier is unrecognized.
+    ///
+    /// This drives log hints only. The adapter never sets the active quota from
+    /// this value, because the higher limits require registering the caller IP
+    /// with the venue and so are not guaranteed by the tier alone.
+    #[must_use]
+    pub const fn documented_rest_quota_per_min(self) -> Option<u32> {
+        match self {
+            Self::Standard => Some(60),
+            Self::Premium => Some(24_000),
+            Self::Plus => Some(120_000),
+            Self::Builder => Some(240_000),
+            Self::Unknown(_) => None,
+        }
+    }
+}
+
+impl Display for LighterAccountTier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Standard => f.write_str("Standard"),
+            Self::Premium => f.write_str("Premium"),
+            Self::Plus => f.write_str("Plus"),
+            Self::Builder => f.write_str("Builder"),
+            Self::Unknown(code) => write!(f, "Unknown({code})"),
+        }
+    }
+}
+
 // Conversions between `LighterTimeInForce` and Nautilus `TimeInForce` are
 // intentionally not provided here. `GoodTillTime` is ambiguous in isolation:
 // the venue uses it for both true GTD (paired with a positive `order_expiry`
@@ -1148,5 +1210,39 @@ mod tests {
             BarSpecification::new(step, aggregation, price_type),
             aggregation_source,
         )
+    }
+
+    #[rstest]
+    #[case(0, LighterAccountTier::Standard)]
+    #[case(1, LighterAccountTier::Premium)]
+    #[case(2, LighterAccountTier::Plus)]
+    #[case(3, LighterAccountTier::Builder)]
+    #[case(4, LighterAccountTier::Unknown(4))]
+    #[case(255, LighterAccountTier::Unknown(255))]
+    fn test_account_tier_from_code(#[case] code: u8, #[case] expected: LighterAccountTier) {
+        assert_eq!(LighterAccountTier::from_code(code), expected);
+    }
+
+    #[rstest]
+    #[case(LighterAccountTier::Standard, Some(60))]
+    #[case(LighterAccountTier::Premium, Some(24_000))]
+    #[case(LighterAccountTier::Plus, Some(120_000))]
+    #[case(LighterAccountTier::Builder, Some(240_000))]
+    #[case(LighterAccountTier::Unknown(9), None)]
+    fn test_account_tier_documented_rest_quota(
+        #[case] tier: LighterAccountTier,
+        #[case] expected: Option<u32>,
+    ) {
+        assert_eq!(tier.documented_rest_quota_per_min(), expected);
+    }
+
+    #[rstest]
+    #[case(LighterAccountTier::Standard, "Standard")]
+    #[case(LighterAccountTier::Premium, "Premium")]
+    #[case(LighterAccountTier::Plus, "Plus")]
+    #[case(LighterAccountTier::Builder, "Builder")]
+    #[case(LighterAccountTier::Unknown(7), "Unknown(7)")]
+    fn test_account_tier_display(#[case] tier: LighterAccountTier, #[case] expected: &str) {
+        assert_eq!(tier.to_string(), expected);
     }
 }

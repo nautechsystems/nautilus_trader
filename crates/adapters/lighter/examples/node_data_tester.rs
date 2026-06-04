@@ -25,6 +25,8 @@ use nautilus_lighter::{
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
+    data::{BarSpecification, BarType},
+    enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::{ClientId, InstrumentId, TraderId},
     stubs::TestDefault,
 };
@@ -37,11 +39,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let environment = Environment::Live;
     let trader_id = TraderId::test_default();
     let node_name = "LIGHTER-DATA-TESTER-001".to_string();
+    let instrument_id = InstrumentId::from("BTC-PERP.LIGHTER");
+    // let instrument_id = InstrumentId::from("0G-PERP.LIGHTER");
     let instrument_ids = vec![
-        InstrumentId::from("BTC-PERP.LIGHTER"),
+        instrument_id,
         // InstrumentId::from("ETH-PERP.LIGHTER"),
         // InstrumentId::from("SOL-PERP.LIGHTER"),
     ];
+    let bar_types = vec![BarType::new(
+        instrument_id,
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+        AggregationSource::External,
+    )];
 
     let lighter_config = LighterDataClientConfig {
         environment: LighterEnvironment::Mainnet,
@@ -66,11 +75,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = DataTesterConfig::builder()
         .client_id(client_id)
         .instrument_ids(instrument_ids)
+        .bar_types(bar_types)
         .request_instruments(true)
         .subscribe_book_deltas(true)
+        .manage_book(true)
+        // .request_funding_rates(true)
+        // .request_bars(true)
+        // .request_trades(true)
         // .subscribe_quotes(true)
         // .subscribe_trades(true)
-        .manage_book(true)
+        // .subscribe_bars(true)
+        // .subscribe_index_prices(true)
+        // .subscribe_mark_prices(true)
+        // .subscribe_funding_rates(true)
         .build();
     let tester = DataTester::new(tester_config);
 

@@ -59,6 +59,10 @@ pub struct ExecutionEngineConfig {
     #[serde(default)]
     #[builder(default)]
     pub allow_overfills: bool,
+    /// If unclaimed venue orders should be filtered during execution reconciliation.
+    #[serde(default)]
+    #[builder(default)]
+    pub filter_unclaimed_external_orders: bool,
     /// The client IDs declared for external stream processing.
     ///
     /// The execution engine will not attempt to send trading commands to these

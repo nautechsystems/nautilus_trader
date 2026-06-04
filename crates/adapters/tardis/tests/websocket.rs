@@ -39,6 +39,7 @@ const TRADE_FIXTURE: &str = include_str!("../test_data/trade.json");
 const BOOK_CHANGE_FIXTURE: &str = include_str!("../test_data/book_change.json");
 const BAR_FIXTURE: &str = include_str!("../test_data/bar.json");
 const DISCONNECT_FIXTURE: &str = include_str!("../test_data/disconnect.json");
+const OPTION_SUMMARY_FIXTURE: &str = include_str!("../test_data/option_summary.json");
 
 async fn start_mock_ws_server(app: Router) -> (SocketAddr, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -242,6 +243,64 @@ async fn test_replay_stream_receives_bar() {
 
     assert!(!received.is_empty(), "Expected at least one bar");
     assert!(matches!(received[0], Data::Bar(_)), "Expected Bar variant");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_replay_stream_extracts_option_summary_bbo_as_quote() {
+    let app = Router::new().route(
+        "/ws-replay-normalized",
+        get(|ws: WebSocketUpgrade| async {
+            ws.on_upgrade(|mut socket: WebSocket| async move {
+                let _ = socket
+                    .send(Message::Text(OPTION_SUMMARY_FIXTURE.into()))
+                    .await;
+                let _ = socket.close().await;
+            })
+        }),
+    );
+    let (addr, _handle) = start_mock_ws_server(app).await;
+    let base_url = format!("ws://{addr}");
+    let mut client =
+        TardisMachineClient::new(Some(&base_url), true, BookSnapshotOutput::Deltas).unwrap();
+    client.extract_bbo_as_quotes = true;
+    client.add_instrument_info(TardisInstrumentMiniInfo::new(
+        InstrumentId::from("BTC-28JUN24-70000-C.DERIBIT"),
+        Some(Ustr::from("BTC-28JUN24-70000-C")),
+        TardisExchange::Deribit,
+        4,
+        1,
+    ));
+
+    let options = vec![ReplayNormalizedRequestOptions {
+        exchange: TardisExchange::Deribit,
+        symbols: Some(vec!["BTC-28JUN24-70000-C".to_string()]),
+        from: chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+        to: chrono::NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+        data_types: vec!["option_summary".to_string()],
+        with_disconnect_messages: Some(false),
+    }];
+
+    let stream = client.replay(options).await.unwrap();
+    futures_util::pin_mut!(stream);
+
+    let mut received = Vec::new();
+
+    while let Some(result) = stream.next().await {
+        if let Ok(data) = result {
+            received.push(data);
+        }
+    }
+
+    assert_eq!(received.len(), 2, "Expected quote and option greeks");
+    assert!(
+        matches!(received[0], Data::Quote(_)),
+        "Expected first item to be QuoteTick"
+    );
+    assert!(
+        matches!(received[1], Data::OptionGreeks(_)),
+        "Expected second item to be OptionGreeks"
+    );
 }
 
 #[rstest]

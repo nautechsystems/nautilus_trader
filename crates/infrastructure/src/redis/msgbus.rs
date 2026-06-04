@@ -380,7 +380,7 @@ async fn drain_buffer(
             ("payload", msg.payload.as_ref()),
         ];
         let stream_key = if stream_per_topic {
-            format!("{stream_key}:{}", &msg.topic)
+            format!("{stream_key}:{}", msg.topic)
         } else {
             stream_key.to_string()
         };

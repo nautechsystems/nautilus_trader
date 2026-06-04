@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     let binance_config = BinanceDataClientConfig {
-        product_types: vec![BinanceProductType::Spot],
+        product_type: BinanceProductType::Spot,
         environment: BinanceEnvironment::Live,
         api_key: None,
         api_secret: None,

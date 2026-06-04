@@ -56,7 +56,7 @@ impl ClientConfig for DeriveExecClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.derive")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.derive")
 )]
 pub struct DeriveDataClientFactory;
 
@@ -115,7 +115,7 @@ impl DataClientFactory for DeriveDataClientFactory {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.derive")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.derive")
 )]
 pub struct DeriveExecFactoryConfig {
     /// The trader ID for the execution client.
@@ -140,7 +140,7 @@ impl ClientConfig for DeriveExecFactoryConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.derive")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.derive")
 )]
 pub struct DeriveExecutionClientFactory;
 

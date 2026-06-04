@@ -180,11 +180,6 @@ impl BinanceSpotWsFeedHandler {
     }
 
     fn handle_text_frame(&mut self, text: &str) -> Vec<BinanceSpotWsMessage> {
-        if let Ok(response) = serde_json::from_str::<BinanceWsResponse>(text) {
-            self.handle_subscription_response(&response);
-            return vec![];
-        }
-
         if let Ok(error) = serde_json::from_str::<BinanceWsErrorResponse>(text) {
             if let Some(id) = error.id
                 && let Some(streams) = self.pending_requests.remove(&id)
@@ -202,6 +197,11 @@ impl BinanceSpotWsFeedHandler {
                 code: error.code,
                 msg: error.msg,
             })];
+        }
+
+        if let Ok(response) = serde_json::from_str::<BinanceWsResponse>(text) {
+            self.handle_subscription_response(&response);
+            return vec![];
         }
 
         classify_unsolicited_json(text)
@@ -306,6 +306,12 @@ fn classify_unsolicited_json(text: &str) -> Vec<BinanceSpotWsMessage> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64},
+    };
+
+    use nautilus_network::websocket::SubscriptionState;
     use rstest::rstest;
 
     use super::*;
@@ -336,5 +342,38 @@ mod tests {
     fn test_classify_unsolicited_json_invalid_returns_empty() {
         let out = classify_unsolicited_json("not json");
         assert!(out.is_empty());
+    }
+
+    #[rstest]
+    fn test_handle_text_frame_error_with_id_emits_error_and_clears_pending_request() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let request_id_counter = Arc::new(AtomicU64::new(2));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new('@');
+
+        let mut handler = BinanceSpotWsFeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            subscriptions,
+            request_id_counter,
+        );
+        handler
+            .pending_requests
+            .insert(1, vec!["btcusdt@trade".to_string()]);
+
+        let out = handler.handle_text_frame(r#"{"code":2,"msg":"Invalid request","id":1}"#);
+        assert_eq!(out.len(), 1);
+        match &out[0] {
+            BinanceSpotWsMessage::Error(err) => {
+                assert_eq!(err.code, 2);
+                assert_eq!(err.msg, "Invalid request");
+            }
+            other => panic!("expected Error variant, was {other:?}"),
+        }
+        assert!(handler.pending_requests.is_empty());
     }
 }

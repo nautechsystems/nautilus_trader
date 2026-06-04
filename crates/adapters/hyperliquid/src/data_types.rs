@@ -29,11 +29,11 @@ use serde::{Deserialize, Serialize};
 /// Hyperliquid all mid prices snapshot from the `allMids` WebSocket channel.
 #[cfg_attr(
     feature = "arrow",
-    custom_data(pyo3, stub_module = "nautilus_trader.hyperliquid")
+    custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")
 )]
 #[cfg_attr(
     not(feature = "arrow"),
-    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.hyperliquid")
+    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.hyperliquid")
 )]
 pub struct HyperliquidAllMids {
     /// Mapping of instrument ID to mid price for all tradable coins.
@@ -51,11 +51,11 @@ pub struct HyperliquidAllMids {
 /// `ts_event` mirrors `ts_init` like the peer asset-context update types.
 #[cfg_attr(
     feature = "arrow",
-    custom_data(pyo3, stub_module = "nautilus_trader.hyperliquid")
+    custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")
 )]
 #[cfg_attr(
     not(feature = "arrow"),
-    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.hyperliquid")
+    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.hyperliquid")
 )]
 pub struct HyperliquidOpenInterest {
     /// The instrument ID for this open interest update.
@@ -110,7 +110,7 @@ pub struct HyperliquidDexAssetCtx {
 /// Hyperliquid normalized aggregate snapshot from the `allDexsAssetCtxs` WebSocket channel.
 ///
 /// This feed is live-only and intentionally JSON-backed; it is not coupled to Arrow persistence.
-#[custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.hyperliquid")]
+#[custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.hyperliquid")]
 pub struct HyperliquidAllDexsAssetCtxs {
     /// Normalized per-instrument entries across all perp dexes.
     #[custom_data_field(serde)]

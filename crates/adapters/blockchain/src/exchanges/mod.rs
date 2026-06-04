@@ -95,12 +95,7 @@ mod tests {
     /// Pre-existing (chain, dex, event) parser gaps that predate the structured-error
     /// patch. New gaps must not be added without also wiring the parser; legacy gaps
     /// belong to a separate cleanup.
-    const KNOWN_PARSER_GAPS: &[(Blockchain, DexType, &str)] = &[
-        (Blockchain::Base, DexType::UniswapV3, "Swap"),
-        (Blockchain::Base, DexType::UniswapV3, "Mint"),
-        (Blockchain::Base, DexType::UniswapV3, "Burn"),
-        (Blockchain::Base, DexType::UniswapV3, "Collect"),
-    ];
+    const KNOWN_PARSER_GAPS: &[(Blockchain, DexType, &str)] = &[];
 
     fn is_known_gap(blockchain: Blockchain, dex_type: DexType, event: &str) -> bool {
         KNOWN_PARSER_GAPS

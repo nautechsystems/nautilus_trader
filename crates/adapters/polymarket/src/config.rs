@@ -41,7 +41,7 @@ use crate::{
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.polymarket")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")
 )]
 pub struct PolymarketInstrumentProviderConfig {
     /// Whether all venue instruments should be loaded on startup.
@@ -116,7 +116,7 @@ impl PolymarketInstrumentProviderConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.polymarket")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")
 )]
 pub struct PolymarketDataClientConfig {
     pub instrument_config: Option<PolymarketInstrumentProviderConfig>,
@@ -246,7 +246,7 @@ impl PolymarketDataClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.polymarket")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")
 )]
 pub struct PolymarketExecClientConfig {
     #[builder(default)]

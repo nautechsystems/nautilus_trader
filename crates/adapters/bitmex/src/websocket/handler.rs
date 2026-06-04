@@ -260,9 +260,15 @@ impl BitmexWsFeedHandler {
                         }
                         BitmexWsFrame::Subscription { .. } => return Some(msg),
                         BitmexWsFrame::Error { status, error, .. } => {
-                            log::error!(
-                                "Received error from BitMEX: status={status}, error={error}",
-                            );
+                            if Self::is_already_subscribed_error(error) {
+                                log::debug!(
+                                    "Ignoring duplicate BitMEX subscription: status={status}, error={error}",
+                                );
+                            } else {
+                                log::error!(
+                                    "Received error from BitMEX: status={status}, error={error}",
+                                );
+                            }
                         }
                         _ => return Some(msg),
                     },
@@ -301,6 +307,10 @@ impl BitmexWsFeedHandler {
         }
 
         trimmed.contains("\"op\":\"ping\"") || trimmed.contains("\"op\":\"pong\"")
+    }
+
+    fn is_already_subscribed_error(error: &str) -> bool {
+        error.contains("already subscribed to this topic")
     }
 
     fn handle_subscription_ack(
@@ -464,6 +474,21 @@ mod tests {
         ));
         assert!(!BitmexWsFeedHandler::is_heartbeat_message(
             "{\"op\":\"subscribe\",\"args\":[\"trade:XBTUSD\"]}"
+        ));
+    }
+
+    #[rstest]
+    fn test_is_already_subscribed_error() {
+        let duplicate_error = concat!(
+            "You are already subscribed to this topic:instrument.",
+            " Please see the documentation at https://www.bitmex.com/app/wsAPI."
+        );
+
+        assert!(BitmexWsFeedHandler::is_already_subscribed_error(
+            duplicate_error
+        ));
+        assert!(!BitmexWsFeedHandler::is_already_subscribed_error(
+            "Invalid subscription request"
         ));
     }
 }

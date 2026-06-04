@@ -262,10 +262,14 @@ jobs:
         run: uv python install 3.13
 
       - name: Run pip-audit
+        # aiohttp 3.14.0 fixes these advisories, but remains inside uv's 3-day
+        # exclude-newer window while aiohttp source builds are disabled.
         run: >
           uv export --no-hashes --frozen |
           uv run --no-project --no-build --with "pip-audit==$(bash scripts/tool-version.sh pip-audit)" --
           pip-audit --disable-pip --no-deps -r /dev/stdin
+          --ignore-vuln GHSA-jg22-mg44-37j8
+          --ignore-vuln GHSA-hg6j-4rv6-33pg
 
   osv-scanner:
     name: osv-scanner

@@ -68,7 +68,10 @@ use crate::{
     common::{
         consts::{BINANCE_BOOK_DEPTHS, BINANCE_VENUE},
         enums::{BinanceEnvironment, BinanceProductType},
-        parse::bar_spec_to_binance_interval,
+        parse::{
+            bar_spec_to_binance_interval, parse_price_at_precision, parse_quantity_at_precision,
+            parse_required_price_at_precision, parse_required_quantity_at_precision,
+        },
         status::diff_and_emit_statuses,
         symbol::{format_binance_stream_symbol, format_binance_symbol},
         urls::{get_usdm_ws_route_base_url, get_ws_public_base_url},
@@ -557,17 +560,19 @@ impl BinanceFuturesDataClient {
             BinanceFuturesWsStreamsMessage::ForceOrder(ref liq_msg) => {
                 if let Some(instrument) = cache.get(&liq_msg.order.symbol) {
                     let parse_price = |value: &str, field: &str| -> anyhow::Result<Price> {
-                        let value_f64 = value
-                            .parse::<f64>()
-                            .with_context(|| format!("invalid {field} value `{value}`"))?;
-                        Ok(Price::new(value_f64, instrument.price_precision()))
+                        parse_required_price_at_precision(
+                            value,
+                            instrument.price_precision(),
+                            field,
+                        )
                     };
 
                     let parse_quantity = |value: &str, field: &str| -> anyhow::Result<Quantity> {
-                        let value_f64 = value
-                            .parse::<f64>()
-                            .with_context(|| format!("invalid {field} value `{value}`"))?;
-                        Ok(Quantity::new(value_f64, instrument.size_precision()))
+                        parse_required_quantity_at_precision(
+                            value,
+                            instrument.size_precision(),
+                            field,
+                        )
                     };
 
                     match (
@@ -1074,54 +1079,66 @@ fn parse_order_book_snapshot(
         ts_init,
     ));
 
-    for (i, (price_str, qty_str)) in order_book.bids.iter().enumerate() {
-        let price: f64 = price_str.parse().unwrap_or(0.0);
-        let size: f64 = qty_str.parse().unwrap_or(0.0);
+    for (price_str, qty_str) in &order_book.bids {
+        let Some(price) = parse_price_at_precision(price_str, price_precision) else {
+            log::warn!(
+                "Skipping Futures order book bid level for {instrument_id}: invalid or \
+                non-positive price='{price_str}'"
+            );
+            continue;
+        };
+        let Some(size) = parse_quantity_at_precision(qty_str, size_precision) else {
+            log::warn!(
+                "Skipping Futures order book bid level for {instrument_id}: invalid or \
+                non-positive quantity='{qty_str}'"
+            );
+            continue;
+        };
 
-        let is_last = i == order_book.bids.len() - 1 && order_book.asks.is_empty();
-        let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
-
-        let order = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(price, price_precision),
-            Quantity::new(size, size_precision),
-            0,
-        );
+        let order = BookOrder::new(OrderSide::Buy, price, size, 0);
 
         deltas.push(OrderBookDelta::new(
             instrument_id,
             BookAction::Add,
             order,
-            flags,
+            0,
             sequence,
             ts_event,
             ts_init,
         ));
     }
 
-    for (i, (price_str, qty_str)) in order_book.asks.iter().enumerate() {
-        let price: f64 = price_str.parse().unwrap_or(0.0);
-        let size: f64 = qty_str.parse().unwrap_or(0.0);
+    for (price_str, qty_str) in &order_book.asks {
+        let Some(price) = parse_price_at_precision(price_str, price_precision) else {
+            log::warn!(
+                "Skipping Futures order book ask level for {instrument_id}: invalid or \
+                non-positive price='{price_str}'"
+            );
+            continue;
+        };
+        let Some(size) = parse_quantity_at_precision(qty_str, size_precision) else {
+            log::warn!(
+                "Skipping Futures order book ask level for {instrument_id}: invalid or \
+                non-positive quantity='{qty_str}'"
+            );
+            continue;
+        };
 
-        let is_last = i == order_book.asks.len() - 1;
-        let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
-
-        let order = BookOrder::new(
-            OrderSide::Sell,
-            Price::new(price, price_precision),
-            Quantity::new(size, size_precision),
-            0,
-        );
+        let order = BookOrder::new(OrderSide::Sell, price, size, 0);
 
         deltas.push(OrderBookDelta::new(
             instrument_id,
             BookAction::Add,
             order,
-            flags,
+            0,
             sequence,
             ts_event,
             ts_init,
         ));
+    }
+
+    if let Some(delta) = deltas.last_mut() {
+        delta.flags |= RecordFlag::F_LAST as u8;
     }
 
     OrderBookDeltas::new(instrument_id, deltas)
@@ -2490,5 +2507,65 @@ impl DataClient for BinanceFuturesDataClient {
         });
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use rust_decimal_macros::dec;
+
+    use super::*;
+
+    #[rstest]
+    fn test_parse_order_book_snapshot_skips_invalid_levels() {
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let order_book = BinanceOrderBook {
+            last_update_id: 10,
+            bids: vec![
+                ("not-a-price".to_string(), "1.0".to_string()),
+                ("100.00".to_string(), "0.5".to_string()),
+            ],
+            asks: vec![
+                ("101.00".to_string(), "not-a-quantity".to_string()),
+                ("102.00".to_string(), "0.7".to_string()),
+            ],
+            event_time: None,
+            transaction_time: None,
+        };
+
+        let deltas =
+            parse_order_book_snapshot(&order_book, instrument_id, 2, 3, UnixNanos::from(1));
+
+        assert_eq!(deltas.deltas.len(), 3);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[1].order.price.as_decimal(), dec!(100.00));
+        assert_eq!(deltas.deltas[1].order.size.as_decimal(), dec!(0.500));
+        assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[2].order.price.as_decimal(), dec!(102.00));
+        assert_eq!(deltas.deltas[2].order.size.as_decimal(), dec!(0.700));
+        assert_eq!(deltas.deltas[2].flags, RecordFlag::F_LAST as u8);
+    }
+
+    #[rstest]
+    fn test_parse_order_book_snapshot_all_invalid_levels_marks_clear_last() {
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let order_book = BinanceOrderBook {
+            last_update_id: 10,
+            bids: vec![("not-a-price".to_string(), "1.0".to_string())],
+            asks: vec![("101.00".to_string(), "not-a-quantity".to_string())],
+            event_time: None,
+            transaction_time: None,
+        };
+
+        let deltas =
+            parse_order_book_snapshot(&order_book, instrument_id, 2, 3, UnixNanos::from(1));
+
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(
+            deltas.deltas[0].flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
     }
 }

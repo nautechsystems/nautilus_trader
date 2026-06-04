@@ -34,6 +34,7 @@ use crate::{
             DeriveInstrumentType, DeriveOrderbookDepth, DeriveOrderbookGroup, DeriveTickerInterval,
         },
         parse::format_instrument_id,
+        rate_limit::{DERIVE_MATCHING_RATE_KEY, DERIVE_NON_MATCHING_RATE_KEY},
     },
     http::models::{
         DeriveAggregateTradingStats, DeriveOptionPricing, DeriveOrder, DerivePublicTrade,
@@ -901,6 +902,33 @@ pub mod methods {
     pub const PRIVATE_REPLACE: &str = "private/replace";
 }
 
+/// Returns the rate-limit key for a JSON-RPC `method` sent over the WebSocket.
+///
+/// Matching-engine actions (order create/cancel/replace) draw on the venue's
+/// per-account matching allowance; everything else (login, subscribe, reads)
+/// draws on the non-matching allowance. See [`crate::common::rate_limit`].
+#[must_use]
+pub(crate) fn rate_limit_key_for(method: &str) -> Ustr {
+    let key = if is_matching_method(method) {
+        DERIVE_MATCHING_RATE_KEY
+    } else {
+        DERIVE_NON_MATCHING_RATE_KEY
+    };
+    Ustr::from(key)
+}
+
+fn is_matching_method(method: &str) -> bool {
+    matches!(
+        method,
+        methods::PRIVATE_ORDER
+            | methods::PRIVATE_TRIGGER_ORDER
+            | methods::PRIVATE_REPLACE
+            | methods::PRIVATE_CANCEL
+            | methods::PRIVATE_CANCEL_TRIGGER_ORDER
+            | methods::PRIVATE_CANCEL_ALL
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -927,6 +955,21 @@ mod tests {
             orderbook_channel("ETH-PERP", "1", "10"),
             "orderbook.ETH-PERP.1.10",
         );
+    }
+
+    #[rstest]
+    #[case(methods::PRIVATE_ORDER, DERIVE_MATCHING_RATE_KEY)]
+    #[case(methods::PRIVATE_TRIGGER_ORDER, DERIVE_MATCHING_RATE_KEY)]
+    #[case(methods::PRIVATE_REPLACE, DERIVE_MATCHING_RATE_KEY)]
+    #[case(methods::PRIVATE_CANCEL, DERIVE_MATCHING_RATE_KEY)]
+    #[case(methods::PRIVATE_CANCEL_TRIGGER_ORDER, DERIVE_MATCHING_RATE_KEY)]
+    #[case(methods::PRIVATE_CANCEL_ALL, DERIVE_MATCHING_RATE_KEY)]
+    #[case(methods::PUBLIC_LOGIN, DERIVE_NON_MATCHING_RATE_KEY)]
+    #[case(methods::PUBLIC_SUBSCRIBE, DERIVE_NON_MATCHING_RATE_KEY)]
+    #[case(methods::PUBLIC_UNSUBSCRIBE, DERIVE_NON_MATCHING_RATE_KEY)]
+    #[case(methods::PRIVATE_GET_TRIGGER_ORDERS, DERIVE_NON_MATCHING_RATE_KEY)]
+    fn test_rate_limit_key_for(#[case] method: &str, #[case] expected: &str) {
+        assert_eq!(rate_limit_key_for(method), Ustr::from(expected));
     }
 
     #[rstest]

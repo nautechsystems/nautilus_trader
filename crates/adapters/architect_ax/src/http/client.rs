@@ -1047,13 +1047,13 @@ impl AxRawHttpClient {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
         from_py_object
     )
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.architect_ax")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub struct AxHttpClient {
     pub(crate) inner: Arc<AxRawHttpClient>,

@@ -22,7 +22,7 @@ use nautilus_model::{
     data::{Bar, BarSpecification, BarType, BookOrder, OrderBookDelta, QuoteTick, TradeTick},
     enums::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, LiquiditySide, OrderSide,
-        OrderStatus, OrderType, PriceType, TimeInForce, TriggerType,
+        OrderStatus, OrderType, PriceType, RecordFlag, TimeInForce, TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
@@ -135,6 +135,7 @@ pub fn parse_book_deltas(
     book: &KrakenWsBookData,
     instrument: &InstrumentAny,
     sequence: u64,
+    is_snapshot: bool,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Vec<OrderBookDelta>> {
     let instrument_id = instrument.id();
@@ -143,82 +144,135 @@ pub fn parse_book_deltas(
 
     let ts_event = datetime_to_nanos(book.timestamp, "book.timestamp")?;
 
-    let mut deltas = Vec::new();
     let mut current_sequence = sequence;
+    let mut deltas = Vec::new();
+
+    if is_snapshot {
+        deltas.push(OrderBookDelta::clear(
+            instrument_id,
+            current_sequence,
+            ts_event,
+            ts_init,
+        ));
+        current_sequence += 1;
+    }
 
     if let Some(ref bids) = book.bids {
-        for level in bids {
-            let delta = parse_book_level(
-                level,
-                OrderSide::Buy,
-                instrument_id,
-                price_precision,
-                size_precision,
-                current_sequence,
-                ts_event,
-                ts_init,
-            )?;
-            deltas.push(delta);
-            current_sequence += 1;
-        }
+        parse_book_side_levels(
+            bids,
+            OrderSide::Buy,
+            is_snapshot,
+            instrument_id,
+            price_precision,
+            size_precision,
+            ts_event,
+            ts_init,
+            &mut current_sequence,
+            &mut deltas,
+        )?;
     }
 
     if let Some(ref asks) = book.asks {
-        for level in asks {
-            let delta = parse_book_level(
-                level,
-                OrderSide::Sell,
-                instrument_id,
-                price_precision,
-                size_precision,
-                current_sequence,
-                ts_event,
-                ts_init,
-            )?;
-            deltas.push(delta);
-            current_sequence += 1;
-        }
+        parse_book_side_levels(
+            asks,
+            OrderSide::Sell,
+            is_snapshot,
+            instrument_id,
+            price_precision,
+            size_precision,
+            ts_event,
+            ts_init,
+            &mut current_sequence,
+            &mut deltas,
+        )?;
+    }
+
+    if let Some(last) = deltas.last_mut() {
+        last.flags |= RecordFlag::F_LAST as u8;
     }
 
     Ok(deltas)
 }
 
 #[expect(clippy::too_many_arguments)]
+fn parse_book_side_levels(
+    levels: &[KrakenWsBookLevel],
+    side: OrderSide,
+    is_snapshot: bool,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    current_sequence: &mut u64,
+    deltas: &mut Vec<OrderBookDelta>,
+) -> anyhow::Result<()> {
+    for level in levels {
+        let Some(delta) = parse_book_level(
+            level,
+            side,
+            is_snapshot,
+            instrument_id,
+            price_precision,
+            size_precision,
+            *current_sequence,
+            ts_event,
+            ts_init,
+        )?
+        else {
+            continue;
+        };
+        deltas.push(delta);
+        *current_sequence += 1;
+    }
+
+    Ok(())
+}
+
+#[expect(clippy::too_many_arguments)]
 fn parse_book_level(
     level: &KrakenWsBookLevel,
     side: OrderSide,
+    is_snapshot: bool,
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
     sequence: u64,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> anyhow::Result<OrderBookDelta> {
+) -> anyhow::Result<Option<OrderBookDelta>> {
     let price = Price::new_checked(level.price, price_precision)
         .with_context(|| format!("Failed to construct Price with precision {price_precision}"))?;
     let size = Quantity::new_checked(level.qty, size_precision)
         .with_context(|| format!("Failed to construct Quantity with precision {size_precision}"))?;
 
-    // Determine action based on quantity
-    let action = if size.raw == 0 {
+    let action = if is_snapshot {
+        if size.raw == 0 {
+            return Ok(None);
+        }
+        BookAction::Add
+    } else if size.raw == 0 {
         BookAction::Delete
     } else {
         BookAction::Update
     };
 
-    // Create order ID from price (Kraken doesn't provide order IDs)
     let order_id = price.raw as u64;
     let order = BookOrder::new(side, price, size, order_id);
+    let mut flags = RecordFlag::F_MBP as u8;
+    if is_snapshot {
+        flags |= RecordFlag::F_SNAPSHOT as u8;
+    }
 
-    Ok(OrderBookDelta::new(
+    Ok(Some(OrderBookDelta::new(
         instrument_id,
         action,
         order,
-        0, // flags
+        flags,
         sequence,
         ts_event,
         ts_init,
-    ))
+    )))
 }
 
 pub(super) fn datetime_to_nanos(value: DateTime<Utc>, field: &str) -> anyhow::Result<UnixNanos> {
@@ -598,6 +652,7 @@ pub fn parse_order_response(text: &str) -> anyhow::Result<Option<KrakenSpotWsMes
 mod tests {
     use nautilus_model::{identifiers::Symbol, types::Currency};
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
     use crate::{common::consts::KRAKEN_VENUE, websocket::spot_v2::messages::KrakenWsMessage};
@@ -700,11 +755,10 @@ mod tests {
         let book: KrakenWsBookData = serde_json::from_value(message.data[0].clone()).unwrap();
 
         let instrument = create_mock_instrument();
-        let deltas = parse_book_deltas(&book, &instrument, 1, TS).unwrap();
+        let deltas = parse_book_deltas(&book, &instrument, 1, true, TS).unwrap();
 
         assert!(!deltas.is_empty());
 
-        // Check that we have both bids and asks
         let bid_count = deltas
             .iter()
             .filter(|d| d.order.side == OrderSide::Buy)
@@ -717,11 +771,24 @@ mod tests {
         assert!(bid_count > 0);
         assert!(ask_count > 0);
 
-        // Check first delta
         let first_delta = &deltas[0];
         assert_eq!(first_delta.instrument_id, instrument.id());
-        assert!(first_delta.order.price.as_f64() > 0.0);
-        assert!(first_delta.order.size.as_f64() > 0.0);
+        assert_eq!(first_delta.action, BookAction::Clear);
+        assert!(RecordFlag::F_SNAPSHOT.matches(first_delta.flags));
+        assert!(!RecordFlag::F_LAST.matches(first_delta.flags));
+
+        assert!(deltas[1..].iter().all(|d| d.action == BookAction::Add));
+        assert!(
+            deltas[1..]
+                .iter()
+                .all(|d| RecordFlag::F_MBP.matches(d.flags))
+        );
+        assert!(
+            deltas[1..]
+                .iter()
+                .all(|d| RecordFlag::F_SNAPSHOT.matches(d.flags))
+        );
+        assert!(RecordFlag::F_LAST.matches(deltas.last().unwrap().flags));
 
         let expected_ts_event = UnixNanos::from(1_696_613_755_440_295_000);
         assert!(deltas.iter().all(|d| d.ts_event == expected_ts_event));
@@ -735,18 +802,85 @@ mod tests {
         let book: KrakenWsBookData = serde_json::from_value(message.data[0].clone()).unwrap();
 
         let instrument = create_mock_instrument();
-        let deltas = parse_book_deltas(&book, &instrument, 1, TS).unwrap();
+        let deltas = parse_book_deltas(&book, &instrument, 1, false, TS).unwrap();
 
         assert!(!deltas.is_empty());
 
-        // Check that we have at least one delta
         let first_delta = &deltas[0];
         assert_eq!(first_delta.instrument_id, instrument.id());
+        assert_eq!(first_delta.action, BookAction::Update);
+        assert_eq!(first_delta.order.side, OrderSide::Buy);
         assert!(first_delta.order.price.as_f64() > 0.0);
+        assert!(RecordFlag::F_MBP.matches(first_delta.flags));
+        assert!(RecordFlag::F_LAST.matches(first_delta.flags));
+        assert!(!RecordFlag::F_SNAPSHOT.matches(first_delta.flags));
 
         let expected_ts_event = UnixNanos::from(1_696_613_755_440_295_000);
         assert!(deltas.iter().all(|d| d.ts_event == expected_ts_event));
         assert!(deltas.iter().all(|d| d.ts_init == TS));
+    }
+
+    #[rstest]
+    fn test_parse_book_deltas_snapshot_skips_zero_qty_levels() {
+        let book = KrakenWsBookData {
+            symbol: Ustr::from("BTC/USD"),
+            bids: Some(vec![KrakenWsBookLevel {
+                price: 100.0,
+                qty: 0.0,
+            }]),
+            asks: Some(vec![KrakenWsBookLevel {
+                price: 101.0,
+                qty: 2.0,
+            }]),
+            checksum: Some(0),
+            timestamp: "2024-01-01T00:00:00Z".parse().unwrap(),
+        };
+
+        let instrument = create_mock_instrument();
+        let deltas = parse_book_deltas(&book, &instrument, 7, true, TS).unwrap();
+
+        assert_eq!(deltas.len(), 2);
+        assert_eq!(deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas[0].sequence, 7);
+        assert!(RecordFlag::F_SNAPSHOT.matches(deltas[0].flags));
+        assert!(!RecordFlag::F_LAST.matches(deltas[0].flags));
+
+        let add = &deltas[1];
+        assert_eq!(add.action, BookAction::Add);
+        assert_eq!(add.sequence, 8);
+        assert_eq!(add.order.side, OrderSide::Sell);
+        assert_eq!(add.order.price, Price::from("101.0"));
+        assert!(RecordFlag::F_MBP.matches(add.flags));
+        assert!(RecordFlag::F_SNAPSHOT.matches(add.flags));
+        assert!(RecordFlag::F_LAST.matches(add.flags));
+    }
+
+    #[rstest]
+    fn test_parse_book_deltas_update_zero_qty_deletes_level() {
+        let book = KrakenWsBookData {
+            symbol: Ustr::from("BTC/USD"),
+            bids: Some(vec![KrakenWsBookLevel {
+                price: 100.0,
+                qty: 0.0,
+            }]),
+            asks: Some(vec![]),
+            checksum: Some(0),
+            timestamp: "2024-01-01T00:00:00Z".parse().unwrap(),
+        };
+
+        let instrument = create_mock_instrument();
+        let deltas = parse_book_deltas(&book, &instrument, 11, false, TS).unwrap();
+
+        assert_eq!(deltas.len(), 1);
+        let delete = &deltas[0];
+        assert_eq!(delete.action, BookAction::Delete);
+        assert_eq!(delete.sequence, 11);
+        assert_eq!(delete.order.side, OrderSide::Buy);
+        assert_eq!(delete.order.price, Price::from("100.0"));
+        assert_eq!(delete.order.size.raw, 0);
+        assert!(RecordFlag::F_MBP.matches(delete.flags));
+        assert!(RecordFlag::F_LAST.matches(delete.flags));
+        assert!(!RecordFlag::F_SNAPSHOT.matches(delete.flags));
     }
 
     #[rstest]

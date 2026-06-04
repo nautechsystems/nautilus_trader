@@ -109,7 +109,7 @@ fn build_stream_config(
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.betfair")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.betfair")
 )]
 pub struct BetfairDataConfig {
     /// Account currency code.
@@ -275,7 +275,7 @@ impl BetfairDataConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.betfair")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.betfair")
 )]
 pub struct BetfairExecConfig {
     /// Trader ID for the client core.

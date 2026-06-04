@@ -56,7 +56,7 @@ impl ClientConfig for CoinbaseExecClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.coinbase")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.coinbase")
 )]
 pub struct CoinbaseDataClientFactory;
 
@@ -122,7 +122,7 @@ impl DataClientFactory for CoinbaseDataClientFactory {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.coinbase")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.coinbase")
 )]
 pub struct CoinbaseExecutionClientFactory {
     trader_id: TraderId,

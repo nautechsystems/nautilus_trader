@@ -119,6 +119,7 @@ pub struct ExecutionEngine {
     command_count: Cell<u64>,
     event_count: u64,
     report_count: u64,
+    filtered_unclaimed_external_order_count: u64,
     snapshot_anchorer: Option<SnapshotAnchorer>,
 }
 
@@ -157,6 +158,7 @@ impl ExecutionEngine {
             command_count: Cell::new(0),
             event_count: 0,
             report_count: 0,
+            filtered_unclaimed_external_order_count: 0,
             snapshot_anchorer: None,
         }
     }
@@ -226,6 +228,12 @@ impl ExecutionEngine {
     #[must_use]
     pub const fn report_count(&self) -> u64 {
         self.report_count
+    }
+
+    /// Returns the count of unclaimed external venue orders filtered by execution reconciliation.
+    #[must_use]
+    pub const fn filtered_unclaimed_external_order_count(&self) -> u64 {
+        self.filtered_unclaimed_external_order_count
     }
 
     /// Subscribes to instrument updates for a venue via the message bus.
@@ -1021,11 +1029,46 @@ impl ExecutionEngine {
     /// Builds and registers an external order from an [`OrderStatusReport`] without
     /// emitting status events. Returns the registered order.
     fn materialize_external_order_from_status(
-        &self,
+        &mut self,
         report: &OrderStatusReport,
     ) -> Option<OrderAny> {
         let strategy_id = self.resolve_external_strategy(&report.instrument_id);
+        if self.should_filter_unclaimed_external_order(strategy_id) {
+            self.filtered_unclaimed_external_order_count += 1;
 
+            if self.filtered_unclaimed_external_order_count == 1 {
+                let external_order_id = report
+                    .client_order_id
+                    .map_or_else(|| report.venue_order_id.to_string(), |id| id.to_string());
+                log::info!(
+                    "Filtering unclaimed external orders; first filtered order {} ({}) for {}",
+                    external_order_id,
+                    report.venue_order_id,
+                    report.instrument_id,
+                );
+            } else {
+                let external_order_id = report
+                    .client_order_id
+                    .map_or_else(|| report.venue_order_id.to_string(), |id| id.to_string());
+                log::debug!(
+                    "Filtered unclaimed external order {} ({}) for {}",
+                    external_order_id,
+                    report.venue_order_id,
+                    report.instrument_id,
+                );
+            }
+
+            return None;
+        }
+
+        self.materialize_external_order_from_status_with_strategy(report, strategy_id)
+    }
+
+    fn materialize_external_order_from_status_with_strategy(
+        &self,
+        report: &OrderStatusReport,
+        strategy_id: StrategyId,
+    ) -> Option<OrderAny> {
         let client_order_id = report
             .client_order_id
             .unwrap_or_else(|| ClientOrderId::from(report.venue_order_id.as_str()));
@@ -1087,8 +1130,33 @@ impl ExecutionEngine {
     ///
     /// This handles venue-initiated fills (most commonly Hyperliquid liquidations)
     /// where the venue does not surface a user-level order on its order channel.
-    fn materialize_external_order_from_fill(&self, report: &FillReport) -> Option<OrderAny> {
+    fn materialize_external_order_from_fill(&mut self, report: &FillReport) -> Option<OrderAny> {
         let strategy_id = self.resolve_external_strategy(&report.instrument_id);
+        if self.should_filter_unclaimed_external_order(strategy_id) {
+            self.filtered_unclaimed_external_order_count += 1;
+
+            let external_order_id = report
+                .client_order_id
+                .map_or_else(|| report.venue_order_id.to_string(), |id| id.to_string());
+
+            if self.filtered_unclaimed_external_order_count == 1 {
+                log::info!(
+                    "Filtering unclaimed external orders; first filtered fill {} ({}) for {}",
+                    external_order_id,
+                    report.venue_order_id,
+                    report.instrument_id,
+                );
+            } else {
+                log::debug!(
+                    "Filtered unclaimed external fill {} ({}) for {}",
+                    external_order_id,
+                    report.venue_order_id,
+                    report.instrument_id,
+                );
+            }
+
+            return None;
+        }
 
         let client_order_id = report
             .client_order_id
@@ -1148,7 +1216,11 @@ impl ExecutionEngine {
         self.external_order_claims
             .get(instrument_id)
             .copied()
-            .unwrap_or_else(|| StrategyId::from("EXTERNAL"))
+            .unwrap_or_else(StrategyId::external)
+    }
+
+    fn should_filter_unclaimed_external_order(&self, strategy_id: StrategyId) -> bool {
+        self.config.filter_unclaimed_external_orders && strategy_id.is_external()
     }
 
     /// Adds an external order to the cache and registers it for adapter routing.
@@ -1595,6 +1667,7 @@ impl ExecutionEngine {
         );
 
         let mut external_venue_ids = AHashSet::new();
+        let mut filtered_venue_ids = AHashSet::new();
 
         for order_report in mass_status.order_reports().values() {
             let existed = {
@@ -1609,11 +1682,31 @@ impl ExecutionEngine {
                     })
                     .is_some()
             };
+            let filtered_count = self.filtered_unclaimed_external_order_count;
 
             self.reconcile_order_status_report(order_report);
 
             if !existed {
-                external_venue_ids.insert(order_report.venue_order_id);
+                if self.filtered_unclaimed_external_order_count > filtered_count {
+                    filtered_venue_ids.insert(order_report.venue_order_id);
+                } else {
+                    let exists_after = {
+                        let cache = self.cache.borrow();
+                        order_report
+                            .client_order_id
+                            .and_then(|id| cache.order(&id).map(|o| o.clone()))
+                            .or_else(|| {
+                                cache
+                                    .client_order_id(&order_report.venue_order_id)
+                                    .and_then(|cid| cache.order(cid).map(|o| o.clone()))
+                            })
+                            .is_some()
+                    };
+
+                    if exists_after {
+                        external_venue_ids.insert(order_report.venue_order_id);
+                    }
+                }
             }
         }
 
@@ -1629,6 +1722,16 @@ impl ExecutionEngine {
 
                     log::debug!(
                         "Skipping fill report for external order {}: covered by inferred fill",
+                        fill_report.venue_order_id
+                    );
+                    continue;
+                }
+
+                if filtered_venue_ids.contains(&fill_report.venue_order_id) {
+                    msgbus::publish_any(raw_fill_topic, fill_report);
+
+                    log::debug!(
+                        "Skipping fill report for filtered unclaimed external order {}",
                         fill_report.venue_order_id
                     );
                     continue;
@@ -1731,6 +1834,7 @@ impl ExecutionEngine {
         self.command_count.set(0);
         self.event_count = 0;
         self.report_count = 0;
+        self.filtered_unclaimed_external_order_count = 0;
 
         log::info!("Reset");
     }

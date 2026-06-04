@@ -51,7 +51,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, InstrumentStatus, OrderBookDeltas_API},
+    data::{Data, InstrumentStatus, OrderBookDeltas_API, TradeTick},
     enums::{BookType, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -62,17 +62,17 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     common::{
         consts::LIGHTER_VENUE,
-        credential::{Credential, scrub_auth},
+        credential::Credential,
         enums::{LighterCandleResolution, LighterMarketStatus},
+        rate_limit::resolve_quota,
         symbol::MarketRegistry,
     },
     config::LighterDataClientConfig,
     http::{
         client::{LighterHttpClient, LighterRawHttpClient},
         parse::parse_l2_order_book_snapshot,
-        query::{LighterOrderBookOrdersQuery, LighterTradeSortBy, LighterTradesQuery},
+        query::LighterOrderBookOrdersQuery,
     },
-    signing::auth_token::build_auth_token_for,
     websocket::{
         client::LighterWebSocketClient,
         error::LighterWsError,
@@ -199,18 +199,20 @@ impl LighterDataClient {
 
         let registry = Arc::new(MarketRegistry::new());
 
-        let raw_http = LighterRawHttpClient::new(
+        let raw_http = LighterRawHttpClient::new_with_quotas(
             config.environment,
             config.base_url_http.clone(),
             config.http_timeout_secs,
             config.proxy_url.clone(),
+            resolve_quota(config.rest_quota_per_min),
+            None,
         )
         .context("failed to construct Lighter raw HTTP client")?;
         let http_client =
             LighterHttpClient::from_raw_with_registry(raw_http, Arc::clone(&registry));
 
         let ws_client = LighterWebSocketClient::new(
-            config.base_url_ws.clone(),
+            Some(config.ws_url()),
             config.environment,
             Arc::clone(&registry),
             config.transport_backend,
@@ -1496,36 +1498,16 @@ impl DataClient for LighterDataClient {
         let limit = request.limit.map_or(DEFAULT_TRADES_LIMIT, |n| {
             u16::try_from(n.get()).unwrap_or(u16::MAX)
         });
-        let from_timestamp = request.start.map(|dt| dt.timestamp_millis());
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
         let params = request.params;
         let clock = self.clock;
-        let auth = match &self.credential {
-            Some(credential) => Some(
-                build_auth_token_for(credential)
-                    .context("failed to mint Lighter auth token for trades request")?,
-            ),
-            None => {
-                let message = "Lighter historical trade requests require credentials; \
-                               configure Lighter data credentials to call /api/v1/trades";
-                log::warn!("{message}");
-                anyhow::bail!("{message}");
-            }
-        };
-
-        // Marketwide trade history: omit `account_index` (it filters server-side).
-        let query = LighterTradesQuery {
-            auth,
-            sort_by: LighterTradeSortBy::Timestamp,
-            from_timestamp,
-            limit,
-            ..Default::default()
-        };
 
         get_runtime().spawn(async move {
-            match http.request_trades(&instrument, query).await {
-                Ok(trades) => {
+            match http.request_recent_trades(&instrument, limit).await {
+                Ok(mut trades) => {
+                    retain_trade_ticks_in_range(&mut trades, start_nanos, end_nanos);
+
                     let response = DataResponse::Trades(TradesResponse::new(
                         request_id,
                         client_id,
@@ -1542,10 +1524,7 @@ impl DataClient for LighterDataClient {
                     }
                 }
                 Err(e) => {
-                    log::error!(
-                        "Lighter trades request failed for {instrument_id}: {}",
-                        scrub_auth(&format!("{e:#}")),
-                    );
+                    log::error!("Lighter trades request failed for {instrument_id}: {e}");
                 }
             }
         });
@@ -1681,6 +1660,23 @@ impl DataClient for LighterDataClient {
     }
 }
 
+fn retain_trade_ticks_in_range(
+    trades: &mut Vec<TradeTick>,
+    start_nanos: Option<UnixNanos>,
+    end_nanos: Option<UnixNanos>,
+) {
+    trades.retain(|trade| trade_tick_in_range(trade.ts_event, start_nanos, end_nanos));
+    trades.sort_by_key(|trade| trade.ts_event);
+}
+
+fn trade_tick_in_range(
+    ts_event: UnixNanos,
+    start_nanos: Option<UnixNanos>,
+    end_nanos: Option<UnixNanos>,
+) -> bool {
+    start_nanos.is_none_or(|start| ts_event >= start) && end_nanos.is_none_or(|end| ts_event <= end)
+}
+
 /// Returns an error if `book_type` is not [`BookType::L2_MBP`].
 ///
 /// Lighter publishes only level-aggregated book updates, so any other book
@@ -1729,9 +1725,12 @@ mod tests {
     use nautilus_common::live::runner::replace_data_event_sender;
     use nautilus_core::UUID4;
     use nautilus_model::{
-        data::{BarSpecification, BarType, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate},
+        data::{
+            BarSpecification, BarType, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
+            TradeTick,
+        },
         enums::{AggregationSource, AggressorSide, BarAggregation, PriceType},
-        identifiers::{InstrumentId, Symbol},
+        identifiers::{InstrumentId, Symbol, TradeId},
         instruments::{CryptoPerpetual, CurrencyPair},
         types::{Currency, Price, Quantity},
     };
@@ -1741,12 +1740,15 @@ mod tests {
     use super::*;
     use crate::{
         common::enums::{LighterFundingResolution, LighterProductType},
-        http::query::LighterFundingsQuery,
+        http::query::{LighterFundingsQuery, LighterRecentTradesQuery},
     };
 
     const HTTP_ORDER_BOOK_DETAILS: &str = include_str!("../test_data/http_order_book_details.json");
     const HTTP_FUNDINGS: &str = include_str!("../test_data/http_fundings.json");
     const HTTP_RECENT_TRADES: &str = include_str!("../test_data/http_recent_trades.json");
+    const HTTP_RECENT_TRADES_NULL: &str = include_str!("../test_data/http_recent_trades_null.json");
+    const HTTP_RECENT_TRADES_UNORDERED: &str =
+        include_str!("../test_data/http_recent_trades_unordered.json");
     const PRIVATE_KEY_HEX: &str =
         "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
 
@@ -1762,6 +1764,16 @@ mod tests {
     fn test_clamp_book_snapshot_limit(#[case] depth: Option<usize>, #[case] expected: u16) {
         let depth = depth.map(|n| NonZeroUsize::new(n).expect("non-zero"));
         assert_eq!(clamp_book_snapshot_limit(depth), expected);
+    }
+
+    #[rstest]
+    fn test_new_uses_readonly_websocket_url() {
+        let client = create_data_client_for_test();
+
+        assert_eq!(
+            client.ws_client.url(),
+            "wss://mainnet.zklighter.elliot.ai/stream?readonly=true",
+        );
     }
 
     #[rstest]
@@ -2385,13 +2397,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_request_trades_uses_auth_when_credentials_available() {
+    async fn test_request_trades_uses_recent_trades_endpoint() {
         let base_url = spawn_trades_server().await;
         let config = LighterDataClientConfig {
             base_url_http: Some(base_url),
-            account_index: Some(12_345),
-            api_key_index: Some(5),
-            private_key: Some(PRIVATE_KEY_HEX.to_string()),
             ..Default::default()
         };
         let (client, mut receiver) = create_data_client_with_receiver_and_config_for_test(config);
@@ -2431,13 +2440,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_request_trades_requires_credentials() {
-        let (mut client, mut receiver) = create_data_client_with_receiver_for_test();
-        client.credential = None;
+    async fn test_request_trades_emits_empty_response_for_null_recent_trades() {
+        let base_url = spawn_trades_server_with_response(HTTP_RECENT_TRADES_NULL).await;
+        let config = LighterDataClientConfig {
+            base_url_http: Some(base_url),
+            ..Default::default()
+        };
+        let (client, mut receiver) = create_data_client_with_receiver_and_config_for_test(config);
         let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
+        let start = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
         let request = RequestTrades::new(
             instrument_id,
-            None,
+            Some(start),
             None,
             NonZeroUsize::new(50),
             Some(ClientId::new("LIGHTER")),
@@ -2446,13 +2460,145 @@ mod tests {
             None,
         );
 
-        let err = DataClient::request_trades(&client, request).unwrap_err();
+        DataClient::request_trades(&client, request).unwrap();
 
-        assert!(
-            err.to_string()
-                .contains("historical trade requests require credentials"),
+        let event = tokio::time::timeout(Duration::from_secs(2), receiver.recv())
+            .await
+            .expect("trades response")
+            .expect("trades event");
+
+        match event {
+            DataEvent::Response(DataResponse::Trades(response)) => {
+                assert_eq!(response.instrument_id, instrument_id);
+                assert!(response.data.is_empty());
+            }
+            event => panic!("expected trades response, was {event:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_trades_filters_recent_trades_to_requested_range() {
+        let base_url = spawn_trades_server().await;
+        let config = LighterDataClientConfig {
+            base_url_http: Some(base_url),
+            ..Default::default()
+        };
+        let (client, mut receiver) = create_data_client_with_receiver_and_config_for_test(config);
+        let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
+        let end = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+        let request = RequestTrades::new(
+            instrument_id,
+            None,
+            Some(end),
+            NonZeroUsize::new(50),
+            Some(ClientId::new("LIGHTER")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
         );
-        assert!(receiver.try_recv().is_err());
+
+        DataClient::request_trades(&client, request).unwrap();
+
+        let event = tokio::time::timeout(Duration::from_secs(2), receiver.recv())
+            .await
+            .expect("trades response")
+            .expect("trades event");
+
+        match event {
+            DataEvent::Response(DataResponse::Trades(response)) => {
+                assert_eq!(response.instrument_id, instrument_id);
+                assert!(response.data.is_empty());
+            }
+            event => panic!("expected trades response, was {event:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_trades_returns_recent_trades_in_timestamp_order() {
+        let base_url = spawn_trades_server_with_response(HTTP_RECENT_TRADES_UNORDERED).await;
+        let config = LighterDataClientConfig {
+            base_url_http: Some(base_url),
+            ..Default::default()
+        };
+        let (client, mut receiver) = create_data_client_with_receiver_and_config_for_test(config);
+        let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
+        let start = DateTime::from_timestamp_millis(1_777_945_103_092).unwrap();
+        let end = DateTime::from_timestamp_millis(1_777_945_103_094).unwrap();
+        let request = RequestTrades::new(
+            instrument_id,
+            Some(start),
+            Some(end),
+            NonZeroUsize::new(50),
+            Some(ClientId::new("LIGHTER")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+
+        DataClient::request_trades(&client, request).unwrap();
+
+        let event = tokio::time::timeout(Duration::from_secs(2), receiver.recv())
+            .await
+            .expect("trades response")
+            .expect("trades event");
+
+        match event {
+            DataEvent::Response(DataResponse::Trades(response)) => {
+                assert_eq!(response.instrument_id, instrument_id);
+                assert_eq!(
+                    response
+                        .data
+                        .iter()
+                        .map(|trade| trade.trade_id.to_string())
+                        .collect::<Vec<_>>(),
+                    vec!["19211490282", "19211490283", "19211490284"],
+                );
+                assert_eq!(
+                    response
+                        .data
+                        .iter()
+                        .map(|trade| trade.ts_event.as_u64())
+                        .collect::<Vec<_>>(),
+                    vec![
+                        1_777_945_103_092_000_000,
+                        1_777_945_103_093_000_000,
+                        1_777_945_103_094_000_000,
+                    ],
+                );
+            }
+            event => panic!("expected trades response, was {event:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_retain_trade_ticks_in_range_sorts_ascending() {
+        let instrument_id = InstrumentId::new(Symbol::new("ETH-PERP"), *LIGHTER_VENUE);
+        let tick = |ts_event, trade_id| {
+            TradeTick::new(
+                instrument_id,
+                Price::from("1.0"),
+                Quantity::from("1.0"),
+                AggressorSide::Buyer,
+                TradeId::new(trade_id),
+                UnixNanos::from(ts_event),
+                UnixNanos::from(ts_event + 1),
+            )
+        };
+        let mut trades = vec![tick(4, "4"), tick(1, "1"), tick(3, "3"), tick(2, "2")];
+
+        retain_trade_ticks_in_range(
+            &mut trades,
+            Some(UnixNanos::from(2)),
+            Some(UnixNanos::from(4)),
+        );
+
+        assert_eq!(
+            trades
+                .iter()
+                .map(|trade| trade.ts_event.as_u64())
+                .collect::<Vec<_>>(),
+            vec![2, 3, 4],
+        );
     }
 
     #[tokio::test]
@@ -2637,7 +2783,18 @@ mod tests {
     }
 
     async fn spawn_trades_server() -> String {
-        let app = Router::new().route("/api/v1/trades", get(trades));
+        spawn_trades_server_with_response(HTTP_RECENT_TRADES).await
+    }
+
+    async fn spawn_trades_server_with_response(response_body: &'static str) -> String {
+        let app = Router::new().route(
+            "/api/v1/recentTrades",
+            get(
+                move |Query(query): Query<LighterRecentTradesQuery>| async move {
+                    recent_trades_response(&query, response_body)
+                },
+            ),
+        );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
@@ -2660,27 +2817,13 @@ mod tests {
         (StatusCode::OK, HTTP_FUNDINGS).into_response()
     }
 
-    async fn trades(Query(query): Query<LighterTradesQuery>) -> Response {
-        let token = query
-            .auth
-            .as_deref()
-            .expect("auth token must be present on /api/v1/trades");
-        // Token format: `<deadline>:<account_index>:<api_key_index>:<sig_hex>`.
-        let parts: Vec<&str> = token.split(':').collect();
-        assert_eq!(parts.len(), 4, "unexpected token shape: `{token}`");
-        assert_eq!(parts[1], "12345", "embedded account_index mismatch");
-        assert_eq!(parts[2], "5", "embedded api_key_index mismatch");
-        assert!(!parts[3].is_empty(), "signature segment is empty");
-        assert_eq!(query.authorization, None);
-        assert_eq!(query.market_id, Some(0));
-        assert_eq!(
-            query.account_index, None,
-            "request_trades must be marketwide (no account_index filter)",
-        );
-        assert_eq!(query.sort_by, LighterTradeSortBy::Timestamp);
-        assert_eq!(query.from_timestamp, Some(1_700_000_000_000));
+    fn recent_trades_response(
+        query: &LighterRecentTradesQuery,
+        response_body: &'static str,
+    ) -> Response {
+        assert_eq!(query.market_id, 0);
         assert_eq!(query.limit, 50);
-        (StatusCode::OK, HTTP_RECENT_TRADES).into_response()
+        (StatusCode::OK, response_body).into_response()
     }
 
     fn cache_test_instrument(

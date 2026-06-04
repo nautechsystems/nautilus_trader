@@ -184,31 +184,40 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
 
 ### Market data
 
-| Capability                     | Supported | Notes                                                                 |
-|--------------------------------|-----------|-----------------------------------------------------------------------|
-| Request instrument (REST)      | ✓         | `public/get_instrument`; loads one instrument into the local cache.    |
-| Request all instruments (REST) | ✓         | `public/get_instruments`; fetches each currency in `currencies`.       |
-| Instrument subscription        | -         | *Not supported.* Use the configured REST refresh interval.             |
-| Order book deltas (L2_MBP)     | ✓         | Channel: `orderbook.{instrument}.{group}.{depth}`.                    |
-| Order book depth10 (L2_MBP)    | ✓         | Same order book channel with `depth=10`.                               |
-| Order book at interval         | -         | *Not supported.* Maintain interval books from deltas locally.          |
-| Order book snapshot (REST)     | -         | *Not supported.* Not exposed by the adapter.                           |
-| Historical book deltas (REST)  | -         | *Not supported.* Not exposed by the adapter.                           |
-| Quotes (`ticker_slim`)         | ✓         | Channel: `ticker_slim.{instrument}.{interval}`.                        |
-| Quote snapshot (REST)          | ✓         | One‑shot `public/get_tickers`; emits a single `QuoteTick`.             |
-| Historical quotes (REST)       | -         | *Not supported.* The venue exposes ticker snapshots only.              |
-| Trades                         | ✓         | Channel: `trades.{instrument_type}.{currency}`.                        |
-| Historical trades (REST)       | ✓         | `public/get_trade_history`; honors `start`, `end`, and `limit`.        |
-| Bars / OHLC (REST)             | ✓         | `public/get_tradingview_chart_data`; minute, hour, day, and week bars. |
-| Bars / OHLC (WS)               | -         | *Not supported.* The venue has no candle subscription channel.         |
-| Mark price stream              | ✓         | Derived from `ticker_slim`; shares the quote subscription.             |
-| Index price stream             | ✓         | Derived from `ticker_slim`; shares the quote subscription.             |
-| Funding rate stream            | ✓         | Derived from `perp_details.funding_rate` on perp tickers.              |
-| Funding rate history (REST)    | ✓         | `public/get_funding_rate_history` for perpetuals.                      |
-| Instrument status              | -         | *Not supported.* Ticker payloads include `is_active`.                  |
-| Instrument close               | -         | *Not supported.* Option settlement is REST-only.                       |
-| Option greeks                  | ✓         | Derived from `option_pricing` on option tickers.                       |
+| Capability                     | Supported | Notes                                                                   |
+|--------------------------------|-----------|-------------------------------------------------------------------------|
+| Request instrument (REST)      | ✓         | `public/get_instrument`; loads one instrument into the local cache.     |
+| Request all instruments (REST) | ✓         | `public/get_instruments`; fetches each currency in `currencies`.        |
+| Instrument subscription        | -         | *Not supported.* Use the configured REST refresh interval.              |
+| Order book deltas (L2_MBP)     | ✓         | Channel: `orderbook.{instrument}.{group}.{depth}`.                      |
+| Order book depth10 (L2_MBP)    | ✓         | Same order book channel with `depth=10`.                                |
+| Order book at interval         | -         | *Not supported.* Maintain interval books from deltas locally.           |
+| Order book snapshot (REST)     | -         | *Not supported.* Not exposed by the adapter.                            |
+| Historical book deltas (REST)  | -         | *Not supported.* Not exposed by the adapter.                            |
+| Quotes (`ticker_slim`)         | ✓         | Channel: `ticker_slim.{instrument}.{interval}`.                         |
+| Quote snapshot (REST)          | ✓         | One‑shot `public/get_tickers`; emits a single `QuoteTick`.              |
+| Historical quotes (REST)       | -         | *Not supported.* The venue exposes ticker snapshots only.               |
+| Trades                         | ✓         | Channel: `trades.{instrument_type}.{currency}`.                         |
+| Historical trades (REST)       | ✓         | `public/get_trade_history`; honors `start`, `end`, and `limit`.         |
+| Bars / OHLC (REST)             | ✓         | `public/get_tradingview_chart_data`; minute, hour, day, and week bars.  |
+| Bars / OHLC (WS)               | -         | *Not supported.* The venue has no candle subscription channel.          |
+| Mark price stream              | ✓         | Derived from `ticker_slim`; shares the quote subscription.              |
+| Index price stream             | ✓         | Derived from `ticker_slim`; shares the quote subscription.              |
+| Funding rate stream            | ✓         | Derived from `perp_details.funding_rate` on perp tickers.               |
+| Funding rate history (REST)    | ✓         | `public/get_funding_rate_history` for perpetuals.                       |
+| Instrument status              | -         | *Not supported.* Ticker payloads include `is_active`.                   |
+| Instrument close               | -         | *Not supported.* Option settlement is REST-only.                        |
+| Option greeks                  | ✓         | Derived from `option_pricing` on option tickers.                        |
 | Option chain                   | ✓         | Aggregated from quotes and greeks; `public/get_tickers` bootstraps ATM. |
+
+`request_instrument` calls `public/get_instrument` for the requested `InstrumentId` and
+caches the returned definition before emitting the response. The cached instrument carries
+the precision and increment fields used by later quote, trade, book, and bar parsing.
+
+Derive exposes book deltas and depth10 snapshots through the same
+`orderbook.{instrument}.{group}.{depth}` channel family. `subscribe_book_deltas` publishes
+snapshot deltas as `OrderBookDeltas`, while `subscribe_book_depth10` fixes `depth=10` and
+publishes `OrderBookDepth10` snapshots.
 
 ### Execution
 

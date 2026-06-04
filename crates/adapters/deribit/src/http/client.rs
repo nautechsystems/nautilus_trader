@@ -516,7 +516,7 @@ impl DeribitRawHttpClient {
                         );
                         log::debug!(
                             "Response JSON (first 2000 chars): {}",
-                            &json_value
+                            json_value
                                 .to_string()
                                 .chars()
                                 .take(2000)
@@ -893,7 +893,7 @@ impl DeribitRawHttpClient {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.deribit")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.deribit")
 )]
 pub struct DeribitHttpClient {
     pub(crate) inner: Arc<DeribitRawHttpClient>,

@@ -238,6 +238,7 @@ pub fn dispatch_ws_message(
                     state,
                     instruments_by_symbol,
                     order_symbol_cache,
+                    account_id,
                     ts_init,
                 );
             }
@@ -251,14 +252,16 @@ pub fn dispatch_ws_message(
                         );
                         continue;
                     };
-                    let report = parse_position_msg(&pos_msg, instrument, ts_init);
+                    let mut report = parse_position_msg(&pos_msg, instrument, ts_init);
+                    report.account_id = account_id;
                     emitter.send_position_report(report);
                 }
             }
             BitmexTableMessage::Wallet { data, .. } => {
                 if !state.margin_subscribed.load(Ordering::Relaxed) {
                     for wallet_msg in data {
-                        let acct_state = parse_wallet_msg(&wallet_msg, ts_init);
+                        let mut acct_state = parse_wallet_msg(&wallet_msg, ts_init);
+                        acct_state.account_id = account_id;
                         emitter.send_account_state(acct_state);
                     }
                 }
@@ -267,7 +270,8 @@ pub fn dispatch_ws_message(
                 state.margin_subscribed.store(true, Ordering::Relaxed);
 
                 for margin_msg in data {
-                    let acct_state = parse_margin_account_state(&margin_msg, ts_init);
+                    let mut acct_state = parse_margin_account_state(&margin_msg, ts_init);
+                    acct_state.account_id = account_id;
                     emitter.send_account_state(acct_state);
                 }
             }
@@ -410,13 +414,14 @@ fn dispatch_order_messages(
                 } else {
                     // Untracked order: fall back to report
                     match parse_order_msg(&order_msg, instrument, order_type_cache, ts_init) {
-                        Ok(report) => {
+                        Ok(mut report) => {
                             if report.order_status.is_closed()
                                 && let Some(cid) = report.client_order_id
                             {
                                 order_type_cache.remove(&cid);
                                 order_symbol_cache.remove(&cid);
                             }
+                            report.account_id = account_id;
                             emitter.send_order_status_report(report);
                         }
                         Err(e) => {
@@ -510,6 +515,7 @@ fn dispatch_execution_messages(
     state: &WsDispatchState,
     instruments_by_symbol: &AHashMap<Ustr, InstrumentAny>,
     order_symbol_cache: &AHashMap<ClientOrderId, Ustr>,
+    account_id: AccountId,
     ts_init: UnixNanos,
 ) {
     for exec_msg in data {
@@ -566,9 +572,10 @@ fn dispatch_execution_messages(
             continue;
         };
 
-        let Some(fill) = parse_execution_msg(exec_msg, instrument, ts_init) else {
+        let Some(mut fill) = parse_execution_msg(exec_msg, instrument, ts_init) else {
             continue;
         };
+        fill.account_id = account_id;
 
         let identity = fill
             .client_order_id

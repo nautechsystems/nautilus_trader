@@ -12647,6 +12647,333 @@ fn test_reconcile_order_status_report_creates_external_order_when_filled(
 }
 
 #[rstest]
+#[case::filter_enabled(true, false, 1)]
+#[case::filter_disabled(false, true, 0)]
+fn test_reconcile_execution_report_filters_unclaimed_external_order(
+    #[case] filter_unclaimed_external_orders: bool,
+    #[case] expected_order_exists: bool,
+    #[case] expected_filtered_count: u64,
+) {
+    let mut execution_engine =
+        execution_engine_with_unclaimed_external_order_filter(filter_unclaimed_external_orders);
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-UNCLAIMED-001");
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let report = create_order_status_report(
+        Some(client_order_id),
+        VenueOrderId::from("V-UNCLAIMED-001"),
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(50_000),
+        Quantity::from(0),
+    );
+
+    execution_engine.reconcile_execution_report(&ExecutionReport::Order(Box::new(report)));
+
+    let order_exists = execution_engine
+        .cache()
+        .borrow()
+        .order_exists(&client_order_id);
+    assert_eq!(order_exists, expected_order_exists);
+    assert_eq!(
+        execution_engine.filtered_unclaimed_external_order_count(),
+        expected_filtered_count,
+    );
+
+    if filter_unclaimed_external_orders {
+        assert_eq!(execution_engine.event_count(), 0);
+    } else {
+        assert_eq!(execution_engine.event_count(), 1);
+    }
+}
+
+#[rstest]
+fn test_reconcile_execution_mass_status_filters_unclaimed_external_order() {
+    let mut execution_engine = execution_engine_with_unclaimed_external_order_filter(true);
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-UNCLAIMED-MASS");
+    let venue_order_id = VenueOrderId::from("V-UNCLAIMED-MASS");
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let order_report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(50_000),
+        Quantity::from(0),
+    );
+    let fill_report = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-UNCLAIMED-MASS"),
+        Quantity::from(50_000),
+        Price::from("1.00000"),
+    );
+
+    let mut mass_status = ExecutionMassStatus::new(
+        ClientId::from("SIM"),
+        AccountId::test_default(),
+        Venue::from("SIM"),
+        UnixNanos::from(1_000_000),
+        None,
+    );
+    mass_status.add_order_reports(vec![order_report.clone()]);
+    mass_status.add_fill_reports(vec![fill_report.clone()]);
+
+    let raw_order_topic = MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
+    let raw_order_pattern: msgbus::MStr<msgbus::Pattern> = raw_order_topic.into();
+    let (raw_order_handler, raw_order_saver) = get_any_saving_handler::<OrderStatusReport>(None);
+    msgbus::subscribe_any(raw_order_pattern, raw_order_handler.clone(), None);
+
+    let raw_fill_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+    let raw_fill_pattern: msgbus::MStr<msgbus::Pattern> = raw_fill_topic.into();
+    let (raw_fill_handler, raw_fill_saver) = get_any_saving_handler::<FillReport>(None);
+    msgbus::subscribe_any(raw_fill_pattern, raw_fill_handler.clone(), None);
+
+    execution_engine.reconcile_execution_mass_status(&mass_status);
+
+    msgbus::unsubscribe_any(raw_order_pattern, &raw_order_handler);
+    msgbus::unsubscribe_any(raw_fill_pattern, &raw_fill_handler);
+
+    let captured_orders = raw_order_saver.get_messages();
+    let captured_fills = raw_fill_saver.get_messages();
+    let order_exists = execution_engine
+        .cache()
+        .borrow()
+        .order_exists(&client_order_id);
+    assert!(!order_exists);
+    assert_eq!(execution_engine.event_count(), 0);
+    assert_eq!(execution_engine.report_count(), 1);
+    assert_eq!(
+        execution_engine.filtered_unclaimed_external_order_count(),
+        1,
+    );
+    assert_eq!(captured_orders.len(), 1);
+    assert_eq!(captured_orders[0], order_report);
+    assert_eq!(captured_fills.len(), 1);
+    assert_eq!(captured_fills[0], fill_report);
+}
+
+#[rstest]
+fn test_reconcile_order_status_report_filter_keeps_claimed_external_order() {
+    let mut execution_engine = execution_engine_with_unclaimed_external_order_filter(true);
+    let instrument = audusd_sim();
+    let strategy_id = StrategyId::from("MyStrategy-001");
+    let client_order_id = ClientOrderId::from("O-CLAIMED-FILTER");
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let mut instruments = HashSet::new();
+    instruments.insert(instrument.id());
+    execution_engine
+        .register_external_order_claims(strategy_id, &instruments)
+        .unwrap();
+
+    let report = create_order_status_report(
+        Some(client_order_id),
+        VenueOrderId::from("V-CLAIMED-FILTER"),
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(50_000),
+        Quantity::from(0),
+    );
+
+    execution_engine.reconcile_order_status_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&client_order_id)
+        .expect("claimed external order should be in cache");
+    assert_eq!(order.strategy_id(), strategy_id);
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    assert_eq!(
+        execution_engine.filtered_unclaimed_external_order_count(),
+        0,
+    );
+}
+
+#[rstest]
+fn test_reconcile_fill_report_filters_unclaimed_external_order() {
+    let mut execution_engine = execution_engine_with_unclaimed_external_order_filter(true);
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-FILL-FILTER");
+    let venue_order_id = VenueOrderId::from("V-FILL-FILTER");
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+
+    let report = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-FILL-FILTER"),
+        Quantity::from(50_000),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_fill_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    assert!(!cache.order_exists(&client_order_id));
+    assert_eq!(cache.positions_total_count(None, None, None, None, None), 0,);
+    assert_eq!(
+        execution_engine.filtered_unclaimed_external_order_count(),
+        1
+    );
+}
+
+#[rstest]
+fn test_reconcile_fill_report_filter_keeps_claimed_external_order() {
+    let mut execution_engine = execution_engine_with_unclaimed_external_order_filter(true);
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-CLAIMED-FILL-FILTER");
+    let venue_order_id = VenueOrderId::from("V-CLAIMED-FILL-FILTER");
+    let strategy_id = StrategyId::from("MyStrategy-001");
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+
+    let mut instruments = HashSet::new();
+    instruments.insert(instrument.id());
+    execution_engine
+        .register_external_order_claims(strategy_id, &instruments)
+        .unwrap();
+
+    let report = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-CLAIMED-FILL-FILTER"),
+        Quantity::from(50_000),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_fill_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&client_order_id)
+        .expect("claimed external order should be in cache");
+    assert_eq!(order.strategy_id(), strategy_id);
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(
+        execution_engine.filtered_unclaimed_external_order_count(),
+        0
+    );
+}
+
+#[rstest]
+fn test_reconcile_order_with_fills_filters_unclaimed_external_order() {
+    let mut execution_engine = execution_engine_with_unclaimed_external_order_filter(true);
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-BUNDLED-FILTER");
+    let venue_order_id = VenueOrderId::from("V-BUNDLED-FILTER");
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+
+    let order_report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::Filled,
+        Quantity::from(50_000),
+        Quantity::from(50_000),
+    );
+    let fill_report = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-BUNDLED-FILTER"),
+        Quantity::from(50_000),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_order_with_fills(&order_report, &[fill_report]);
+
+    let cache = execution_engine.cache().borrow();
+    assert!(!cache.order_exists(&client_order_id));
+    assert_eq!(cache.positions_total_count(None, None, None, None, None), 0,);
+    assert_eq!(execution_engine.event_count(), 0);
+    assert_eq!(
+        execution_engine.filtered_unclaimed_external_order_count(),
+        1,
+    );
+}
+
+#[rstest]
+fn test_reset_clears_filtered_unclaimed_external_order_count() {
+    let mut execution_engine = execution_engine_with_unclaimed_external_order_filter(true);
+    let instrument = audusd_sim();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+
+    let report = create_order_status_report(
+        Some(ClientOrderId::from("O-RESET-FILTER")),
+        VenueOrderId::from("V-RESET-FILTER"),
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(50_000),
+        Quantity::from(0),
+    );
+
+    execution_engine.reconcile_order_status_report(&report);
+    assert_eq!(
+        execution_engine.filtered_unclaimed_external_order_count(),
+        1,
+    );
+
+    execution_engine.reset();
+
+    assert_eq!(
+        execution_engine.filtered_unclaimed_external_order_count(),
+        0,
+    );
+}
+
+fn execution_engine_with_unclaimed_external_order_filter(
+    filter_unclaimed_external_orders: bool,
+) -> ExecutionEngine {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        filter_unclaimed_external_orders,
+        ..Default::default()
+    };
+    ExecutionEngine::new(clock, cache, Some(config))
+}
+
+#[rstest]
 fn test_reconcile_order_status_report_creates_external_order_accepted(
     mut execution_engine: ExecutionEngine,
 ) {

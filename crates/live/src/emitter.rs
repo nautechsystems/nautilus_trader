@@ -109,6 +109,11 @@ impl ExecutionEventEmitter {
         self.factory.account_id()
     }
 
+    /// Sets the account ID for generated events.
+    pub fn set_account_id(&mut self, account_id: AccountId) {
+        self.factory.set_account_id(account_id);
+    }
+
     /// Generates and emits an account state event.
     pub fn emit_account_state(
         &self,

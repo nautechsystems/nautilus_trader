@@ -189,14 +189,9 @@ impl PolymarketExecutionClient {
                 "POLY_1271 signature type requires a deposit wallet funder distinct from the signing address"
             );
         }
-        let api_address = match config.signature_type {
-            SignatureType::Poly1271 => maker_address.clone(),
-            _ => signer_address.clone(),
-        };
-
         let http_client = PolymarketClobHttpClient::new(
             secrets.credential.clone(),
-            api_address,
+            signer_address.clone(),
             config.base_url_http.clone(),
             config.http_timeout_secs,
         )

@@ -15,11 +15,7 @@
 
 //! Raw and domain HTTP clients for Lighter REST endpoints.
 
-use std::{
-    collections::HashMap,
-    num::NonZeroU32,
-    sync::{Arc, LazyLock},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use nautilus_core::{
@@ -43,6 +39,9 @@ use crate::{
             LighterCandleResolution, LighterEnvironment, LighterFundingResolution,
             LighterMarketStatus,
         },
+        rate_limit::{
+            LIGHTER_REST_BUCKET, LIGHTER_REST_QUOTA, LighterTxRateLimiter, await_tx_quota,
+        },
         symbol::MarketRegistry,
         urls::lighter_http_base_url,
     },
@@ -52,10 +51,11 @@ use crate::{
             should_retry_lighter_http_error,
         },
         models::{
-            LighterCandle, LighterCandles, LighterFundings, LighterNextNonce,
-            LighterOrderBookDetails, LighterOrderBookOrders, LighterOrderBooks, LighterOrders,
-            LighterResultCode, LighterSendTxBatchRequest, LighterSendTxBatchResponse,
-            LighterSendTxRequest, LighterSendTxResponse, LighterTrade, LighterTrades,
+            LighterAccountDetail, LighterAccountsResponse, LighterCandle, LighterCandles,
+            LighterFundings, LighterNextNonce, LighterOrderBookDetails, LighterOrderBookOrders,
+            LighterOrderBooks, LighterOrders, LighterResultCode, LighterSendTxBatchRequest,
+            LighterSendTxBatchResponse, LighterSendTxRequest, LighterSendTxResponse, LighterTrade,
+            LighterTrades,
         },
         parse::{
             parse_candle_bar, parse_funding_rate_update,
@@ -65,14 +65,15 @@ use crate::{
         },
         query::{
             LighterAccountActiveOrdersQuery, LighterAccountInactiveOrdersQuery,
-            LighterCandlesQuery, LighterFundingsQuery, LighterNextNonceQuery,
-            LighterOrderBookDetailsQuery, LighterOrderBookOrdersQuery, LighterOrderBooksQuery,
-            LighterRecentTradesQuery, LighterTradesQuery,
+            LighterAccountLookup, LighterAccountQuery, LighterCandlesQuery, LighterFundingsQuery,
+            LighterNextNonceQuery, LighterOrderBookDetailsQuery, LighterOrderBookOrdersQuery,
+            LighterOrderBooksQuery, LighterRecentTradesQuery, LighterTradesQuery,
         },
     },
 };
 
 const API_V1: &str = "/api/v1";
+const ENDPOINT_ACCOUNT: &str = "/api/v1/account";
 const ENDPOINT_ACCOUNT_ACTIVE_ORDERS: &str = "/api/v1/accountActiveOrders";
 const ENDPOINT_ACCOUNT_INACTIVE_ORDERS: &str = "/api/v1/accountInactiveOrders";
 const ENDPOINT_CANDLES: &str = "/api/v1/candles";
@@ -86,13 +87,6 @@ const ENDPOINT_SEND_TX: &str = "/api/v1/sendTx";
 const ENDPOINT_SEND_TX_BATCH: &str = "/api/v1/sendTxBatch";
 const ENDPOINT_TRADES: &str = "/api/v1/trades";
 const MULTIPART_BOUNDARY: &str = "nautilus-lighter-form-boundary";
-
-/// Conservative Lighter REST rate limit for standard accounts.
-///
-/// Lighter documents 60 REST requests per rolling minute for standard accounts. Builder and
-/// premium accounts can authenticate requests to get higher weighted limits.
-pub static LIGHTER_REST_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_minute(NonZeroU32::new(60).expect("non-zero")));
 
 /// Maximum page size accepted by Lighter REST list endpoints (`/api/v1/trades`,
 /// `/api/v1/accountInactiveOrders`). Values above this trigger `20001 invalid
@@ -127,6 +121,7 @@ macro_rules! impl_lighter_response_check {
 }
 
 impl_lighter_response_check!(
+    LighterAccountsResponse,
     LighterCandles,
     LighterFundings,
     LighterNextNonce,
@@ -150,6 +145,7 @@ pub struct LighterRawHttpClient {
     environment: LighterEnvironment,
     client: HttpClient,
     retry_manager: RetryManager<LighterHttpError>,
+    tx_rate_limiter: Option<Arc<LighterTxRateLimiter>>,
 }
 
 impl Default for LighterRawHttpClient {
@@ -171,6 +167,37 @@ impl LighterRawHttpClient {
         timeout_secs: u64,
         proxy_url: Option<String>,
     ) -> LighterHttpResult<Self> {
+        Self::new_with_quotas(
+            environment,
+            base_url,
+            timeout_secs,
+            proxy_url,
+            *LIGHTER_REST_QUOTA,
+            None,
+        )
+    }
+
+    /// Creates a new [`LighterRawHttpClient`] with an explicit read quota and an
+    /// optional shared transaction limiter.
+    ///
+    /// `default_quota` governs the REST read bucket ([`LIGHTER_REST_BUCKET`]),
+    /// resolved from the client's configured `rest_quota_per_min` (detected tier
+    /// only logs hints). `tx_rate_limiter` paces `sendTx` / `sendTxBatch`; the
+    /// execution client shares one limiter across this and the WebSocket
+    /// `sendTx` path so their combined rate honours the single venue tx bucket.
+    /// The data client passes `None` (it sends no transactions).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying HTTP client cannot be created.
+    pub fn new_with_quotas(
+        environment: LighterEnvironment,
+        base_url: Option<String>,
+        timeout_secs: u64,
+        proxy_url: Option<String>,
+        default_quota: Quota,
+        tx_rate_limiter: Option<Arc<LighterTxRateLimiter>>,
+    ) -> LighterHttpResult<Self> {
         let base_url = base_url
             .unwrap_or_else(|| lighter_http_base_url(environment).to_string())
             .trim_end_matches('/')
@@ -183,11 +210,12 @@ impl LighterRawHttpClient {
                 Self::default_headers(),
                 vec![],
                 vec![],
-                Some(*LIGHTER_REST_QUOTA),
+                Some(default_quota),
                 Some(timeout_secs),
                 proxy_url,
             )?,
             retry_manager: create_http_retry_manager(),
+            tx_rate_limiter,
         })
     }
 
@@ -297,6 +325,18 @@ impl LighterRawHttpClient {
         query: &LighterFundingsQuery,
     ) -> LighterHttpResult<LighterFundings> {
         self.send_get_request(ENDPOINT_FUNDINGS, Some(query)).await
+    }
+
+    /// Calls `GET /api/v1/account`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
+    pub async fn get_account(
+        &self,
+        query: &LighterAccountQuery,
+    ) -> LighterHttpResult<LighterAccountsResponse> {
+        self.send_get_request(ENDPOINT_ACCOUNT, Some(query)).await
     }
 
     /// Calls `GET /api/v1/accountActiveOrders`.
@@ -413,6 +453,19 @@ impl LighterRawHttpClient {
     where
         T: DeserializeOwned + LighterResponseCheck,
     {
+        // send_post_form only carries sendTx / sendTxBatch. With a shared tx
+        // limiter (execution client) pace on it and pass no REST keys, so the
+        // read quota does not also cap transactions. Without one (e.g. the
+        // integrator-revoke utility) fall back to the internal REST limiter so
+        // the request is still bounded rather than unthrottled.
+        let rate_keys = match &self.tx_rate_limiter {
+            Some(limiter) => {
+                await_tx_quota(limiter).await;
+                None
+            }
+            None => Some(Self::rate_limit_keys(endpoint)),
+        };
+
         let response = self
             .client
             .request(
@@ -422,7 +475,7 @@ impl LighterRawHttpClient {
                 Some(multipart_headers()),
                 Some(multipart_form_bytes(fields)),
                 None,
-                Some(Self::rate_limit_keys(endpoint)),
+                rate_keys,
             )
             .await?;
 
@@ -494,7 +547,7 @@ impl LighterRawHttpClient {
     fn rate_limit_keys(endpoint: &str) -> Vec<String> {
         let route = endpoint.strip_prefix(API_V1).unwrap_or(endpoint);
         vec![
-            "lighter:rest".to_string(),
+            LIGHTER_REST_BUCKET.to_string(),
             format!("lighter:{}", route.trim_start_matches('/')),
         ]
     }
@@ -697,6 +750,31 @@ impl LighterHttpClient {
         query: &LighterFundingsQuery,
     ) -> LighterHttpResult<LighterFundings> {
         self.inner.get_fundings(query).await
+    }
+
+    /// Fetches the account row for `account_index` via `GET /api/v1/account`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails, the response is invalid, or the
+    /// venue returns no account for the index.
+    pub async fn get_account_detail(
+        &self,
+        account_index: i64,
+    ) -> LighterHttpResult<LighterAccountDetail> {
+        let query = LighterAccountQuery {
+            by: LighterAccountLookup::Index,
+            value: account_index.to_string(),
+        };
+        self.inner
+            .get_account(&query)
+            .await?
+            .accounts
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                LighterHttpError::Parse(format!("no account returned for index {account_index}"))
+            })
     }
 
     /// Calls `GET /api/v1/accountActiveOrders`.
@@ -1205,5 +1283,28 @@ fn venue_error(code: i32, message: Option<&str>, default_message: &str) -> Light
     LighterHttpError::Venue {
         code: i64::from(code),
         message: message.unwrap_or(default_message).to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(ENDPOINT_TRADES, "lighter:trades")]
+    #[case(ENDPOINT_SEND_TX, "lighter:sendTx")]
+    #[case(ENDPOINT_SEND_TX_BATCH, "lighter:sendTxBatch")]
+    fn test_rate_limit_keys_uses_rest_bucket_and_route(
+        #[case] endpoint: &str,
+        #[case] route: &str,
+    ) {
+        // Transactions are paced by the shared tx limiter, not a separate HTTP
+        // key, so every endpoint (reads and tx) keys uniformly on the rest bucket.
+        assert_eq!(
+            LighterRawHttpClient::rate_limit_keys(endpoint),
+            vec![LIGHTER_REST_BUCKET.to_string(), route.to_string()],
+        );
     }
 }

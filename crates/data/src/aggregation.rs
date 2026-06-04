@@ -2498,7 +2498,7 @@ impl SpreadQuoteAggregator {
             self.ask_sizes[idx] = tick.ask_size.as_f64();
 
             if !self.is_futures_spread {
-                self.mid_prices[idx] = (ask_price + bid_price) * 0.5;
+                self.mid_prices[idx] = f64::midpoint(ask_price, bid_price);
                 self.bid_ask_spreads[idx] = ask_price - bid_price;
 
                 if let Some(ref vp) = self.vega_provider

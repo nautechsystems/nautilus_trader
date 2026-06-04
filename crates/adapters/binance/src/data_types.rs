@@ -37,7 +37,7 @@ use serde::{Deserialize, Serialize};
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
 )]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BinanceFuturesOpenInterest {
@@ -127,7 +127,7 @@ impl CustomDataTrait for BinanceFuturesOpenInterest {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
 )]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BinanceFuturesOpenInterestHistPoint {
@@ -167,7 +167,7 @@ impl BinanceFuturesOpenInterestHistPoint {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
 )]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BinanceFuturesOpenInterestHist {
@@ -261,7 +261,7 @@ impl CustomDataTrait for BinanceFuturesOpenInterestHist {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
 )]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BinanceFuturesLiquidation {

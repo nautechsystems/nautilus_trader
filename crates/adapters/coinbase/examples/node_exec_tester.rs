@@ -87,7 +87,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `trigger_type` fields from REST on first sight, so external LIMIT and
     // STOP_LIMIT orders are safe under the default
     // `filter_unclaimed_external_orders=false`.
-    let exec_engine_config = LiveExecEngineConfig::builder().build();
+    let exec_engine_config = LiveExecEngineConfig {
+        open_check_interval_secs: Some(10.0),
+        position_check_interval_secs: Some(30.0),
+        ..Default::default()
+    };
 
     // Coinbase modules at debug surface subscribe / parse details for new
     // deployments; switch to Info once the feed is trusted.

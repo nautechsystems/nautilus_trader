@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Added funding-rate catalog replay and `FundingSettlement` handling for backtests (Rust)
 - Added generic structured key-value fields to `LogLine` (#4090), thanks @filipmacek
 - Added `correlation_id` field to trading and system command structs for request tracing (Rust)
+- Added checked mantissa/exponent constructors for `Price` and `Quantity` (Rust)
 - Added Cap'n Proto and adapter split propagation of trading command `correlation_id`
 - Added `nautilus-plugin` crate for loading separately compiled Rust cdylibs at live-node startup (Rust)
 - Added custom-data plug point via `PluginCustomData` trait and `nautilus_plugin!` macro (Rust)
@@ -66,6 +67,7 @@ Released on TBD (UTC).
 - Added Polymarket `POLY_1271` deposit-wallet signing support (#4053), thanks for reporting @sumuzhao and @sophyphilo
 - Added `shutdown_on_error` to stop Rust backtests and live nodes after error logs
 - Added Tardis option greeks ingestion to the catalog for backtest replay
+- Added Tardis `extract_bbo_as_quotes` to emit `QuoteTick` from `option_summary` BBO fields
 
 ### Breaking Changes
 - Renamed custom-data field marker `json` to `serde` (#4133), thanks @faysou
@@ -88,6 +90,8 @@ Released on TBD (UTC).
 - Fixed `StackStr::from_c_ptr_checked` to return `None` for null C string pointers
 
 ### Fixes
+- Fixed `OrderMatchingEngine` panicking on `PriceType::Mark` bars during bar execution, now logs a warning and skips the bar (Rust)
+- Fixed `PRICE_RAW_MAX`/`MIN`, `QUANTITY_RAW_MAX`, and `MONEY_RAW_MAX`/`MIN` computed with lossy `f64` scaling, which rounded the bound below the representable maximum and could panic `from_raw` at the limits (Rust)
 - Fixed unbounded Cache `VecDeque` memory leak (Rust) (#4107), thanks @filipmacek
 - Fixed `Cache.reset` clearing FX rate lookup for retained instruments (#4159), thanks for reporting @dfjmax
 - Fixed `BacktestEngine` option positions remaining open when data stops before expiry
@@ -97,9 +101,10 @@ Released on TBD (UTC).
 - Fixed `MaxDrawdown`, `CAGR`, and `CalmarRatio` Rust trait impls panicking on `calculate_from_realized_pnls` and `calculate_from_positions` (#4174), thanks @mahimn01
 - Fixed matching engine not canceling unmatched IOC/FOK limit orders (Rust) (#4112), thanks for reporting @Jonah-Chan
 - Fixed matching engine L1 slip-through for market orders exhausting top-of-book volume (Rust)
+- Fixed multi-currency balance update violating `total == locked + free` (#4165), thanks for reporting @qaxayuan
 - Fixed NETTING reconciliation opening phantom reduce-only positions (#4106), thanks for reporting @M-at-ti-a
 - Fixed HEDGING margin scaling with fill count instead of net exposure (#4110), thanks for reporting @qaxayuan
-- Fixed multi-currency balance update violating `total == locked + free` (#4165), thanks for reporting @qaxayuan
+- Fixed live reconciliation filtering for unclaimed external venue orders (Rust)
 - Fixed `ExecTester` on_stop leaving INITIALIZED orders and bracket legs live across all cancel modes (Rust)
 - Fixed Aerodrome Slipstream `AmmType` from `StableSwap` to `CLAMM`
 - Fixed `PoolProfiler::update_position` to pre-validate active liquidity so failures leave pool state unchanged
@@ -115,7 +120,13 @@ Released on TBD (UTC).
 - Fixed Betfair adapter RCM custom data `ts_init` parity between live and historical streams (Rust)
 - Fixed Betfair adapter overfill checks for rounded stream matched sizes (Rust)
 - Fixed Betfair adapter unsupported unsubscribe commands logging above debug (Rust)
+- Fixed Binance Futures algo params for trailing stops/reduce-only (#4192), thanks for reporting @luckykefu
+- Fixed Binance Spot full-depth books to seed diffs from REST snapshots
+- Fixed Binance Spot SBE numeric parsing to reject invalid price and quantity values
+- Fixed BitMEX startup handling for crypto futures spreads, duplicate subscriptions, `USYC` margins, and account ID discovery
+- Fixed BitMEX order submission to deny unsupported GTD time-in-force locally
 - Fixed BitMEX mark/index price updates on altcoin perps (#4147), thanks @filipmacek
+- Fixed Blockchain adapter `analyze-pool --to-block` bounds during snapshot replay
 - Fixed Blockchain adapter caching a half-initialized `PoolProfiler` when `initialize` returns `InitialTickMismatch`
 - Fixed Coinbase book snapshot deltas missing `F_SNAPSHOT` flag in REST and WebSocket parsers
 - Fixed Deribit `DeribitExecutionClient` not forwarding config credentials to the WebSocket client
@@ -129,9 +140,11 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers Rust orders routing to exchange MIC venues (#4129), thanks @faysou
 - Fixed Interactive Brokers live bar reconnect tracking cleanup (#4169), thanks @faysou
 - Fixed Kraken Futures `feeScheduleUid` deserialization to tolerate absence ahead of the 2026-06-22 Fee Schedules deprecation
+- Fixed Kraken Spot L2 snapshots and subscribed-depth pruning
 - Fixed OKX `OKXExecutionClient` not forwarding config credentials to WebSocket clients (#4115), thanks @pusteckiy
 - Fixed OKX adapter to validate `clOrdId` rules before submission (#4116), thanks for reporting @pusteckiy
 - Fixed Polymarket adapter dropping auto-load batches on Gamma chunk failures (Rust)
+- Fixed Polymarket Gamma market lookups to send repeated list query params (Rust)
 - Fixed Polymarket adapter treating encoded-empty `clob_token_ids` as terminal instead of transient (Rust)
 - Fixed Polymarket PyO3 bootstrap to honor `instrument_config` (#4127), thanks @graceyangfan
 - Fixed Tardis CSV delta loaders missing book resets between consecutive snapshots
@@ -170,7 +183,8 @@ Released on TBD (UTC).
 - Optimized Hyperliquid signing and hot paths with benchmark report
 - Optimized OKX hot paths with benchmark report
 - Upgraded Rust (MSRV) to 1.96.0
-- Upgraded `databento` crate to v0.52.0
+- Upgraded Cython to v3.2.5
+- Upgraded `databento` crate to v0.53.0
 - Upgraded `redis` crate to v1.2.2
 - Upgraded `sqlx` crate to v0.9.0
 

@@ -1,0 +1,18 @@
+{
+  "channel": "ticker:39",
+  "nonce": 2475051,
+  "ticker": {
+    "a": {
+      "price": "",
+      "size": ""
+    },
+    "b": {
+      "price": "",
+      "size": ""
+    },
+    "last_updated_at": 0,
+    "s": "ADA"
+  },
+  "timestamp": 1778138582640,
+  "type": "subscribed/ticker"
+}

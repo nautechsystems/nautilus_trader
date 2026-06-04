@@ -163,14 +163,18 @@ impl BinanceFuturesExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the HTTP client fails to initialize or credentials are missing.
+    /// Returns an error if the HTTP client fails to initialize, credentials are
+    /// missing, or the product type is not a futures type (UsdM or CoinM).
     pub fn new(core: ExecutionClientCore, config: BinanceExecClientConfig) -> anyhow::Result<Self> {
-        let product_type = config
-            .product_types
-            .iter()
-            .find(|pt| matches!(pt, BinanceProductType::UsdM | BinanceProductType::CoinM))
-            .copied()
-            .unwrap_or(BinanceProductType::UsdM);
+        let product_type = config.product_type;
+        match product_type {
+            BinanceProductType::UsdM | BinanceProductType::CoinM => {}
+            _ => {
+                anyhow::bail!(
+                    "BinanceFuturesExecutionClient requires UsdM or CoinM product type, was {product_type:?}"
+                );
+            }
+        }
 
         let (api_key, api_secret) = resolve_credentials(
             config.api_key.clone(),
@@ -810,7 +814,7 @@ impl BinanceFuturesExecutionClient {
             self.core.account_id,
             instrument_id,
             position_side,
-            Quantity::new(position_amount.abs().to_string().parse()?, size_precision),
+            Quantity::from_decimal_dp(position_amount.abs(), size_precision)?,
             ts_now,
             ts_now,
             Some(UUID4::new()),
@@ -1520,8 +1524,18 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let mut reports = Vec::new();
 
         for position in positions {
-            let position_amt: f64 = position.position_amt.parse().unwrap_or(0.0);
-            if position_amt == 0.0 {
+            let position_amt = match position.position_amt.parse::<Decimal>() {
+                Ok(value) => value,
+                Err(e) => {
+                    log::warn!(
+                        "Failed to parse Futures position_amt for symbol={}: {e}",
+                        position.symbol
+                    );
+                    continue;
+                }
+            };
+
+            if position_amt.is_zero() {
                 continue;
             }
 
@@ -1530,13 +1544,20 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 .instruments(&BINANCE_VENUE, None)
                 .into_iter()
                 .find(|i| i.raw_symbol().as_str() == position.symbol.as_str())
-                && let Ok(report) = self.create_position_report(
+            {
+                match self.create_position_report(
                     &position,
                     instrument.id(),
                     instrument.size_precision(),
-                )
-            {
-                reports.push(report);
+                ) {
+                    Ok(report) => reports.push(report),
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to create Futures position report for symbol={}: {e}",
+                            position.symbol
+                        );
+                    }
+                }
             }
         }
 

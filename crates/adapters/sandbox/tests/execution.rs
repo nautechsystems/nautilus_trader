@@ -26,18 +26,22 @@ use nautilus_common::{
         ExecutionEvent,
         execution::{SubmitOrder, TradingCommand},
     },
-    msgbus::{self, MessagingSwitchboard, stubs::get_typed_into_message_saving_handler},
+    msgbus::{
+        self, MessageBus, MessagingSwitchboard, TypedHandler,
+        stubs::get_typed_into_message_saving_handler,
+    },
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
 use nautilus_execution::{client::core::ExecutionClientCore, engine::ExecutionEngine};
 use nautilus_model::{
+    accounts::AccountAny,
     data::{Bar, BarType, Data, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick},
     enums::{
         AccountType, AggressorSide, BookType, InstrumentCloseType, MarketStatusAction, OmsType,
         OrderSide, OrderType,
     },
-    events::{OrderEventAny, OrderFilled},
+    events::{AccountState, OrderEventAny, OrderFilled},
     identifiers::{AccountId, ClientId, InstrumentId, PositionId, TradeId, TraderId, Venue},
     instruments::{
         CryptoPerpetual, Instrument, InstrumentAny,
@@ -480,6 +484,16 @@ fn setup_order_event_handler() {
     msgbus::register_order_event_endpoint(MessagingSwitchboard::exec_engine_process(), handler);
 }
 
+fn setup_account_state_handler(cache: Rc<RefCell<Cache>>) {
+    let handler = TypedHandler::from(move |state: &AccountState| {
+        cache.borrow_mut().update_account_state(state).unwrap();
+    });
+    msgbus::register_account_state_endpoint(
+        MessagingSwitchboard::portfolio_update_account(),
+        handler,
+    );
+}
+
 #[rstest]
 fn test_config_default() {
     let config = SandboxExecutionClientConfig::default();
@@ -604,6 +618,70 @@ async fn test_client_connect(mut execution_client: SandboxExecutionClient) {
 
     assert!(result.is_ok());
     assert!(execution_client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_client_connect_syncs_cached_margin_account_config(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let leverage = Decimal::from(5);
+    let instrument_id = instrument.id();
+    let context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.default_leverage = leverage;
+        config.leverages.insert(instrument_id, leverage);
+    });
+    setup_account_state_handler(context.cache.clone());
+
+    let mut execution_client = context.client;
+    execution_client.connect().await.unwrap();
+
+    let cache = context.cache.borrow();
+    let account = cache
+        .account(&account_id)
+        .expect("expected cached account after initial AccountState");
+
+    let AccountAny::Margin(margin) = &*account else {
+        panic!("expected margin account");
+    };
+
+    assert!(margin.base.calculate_account_state);
+    assert_eq!(margin.default_leverage, leverage);
+    assert_eq!(margin.get_leverage(&instrument_id), leverage);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_client_connect_respects_frozen_account_config(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.frozen_account = true;
+    });
+    setup_account_state_handler(context.cache.clone());
+
+    let mut execution_client = context.client;
+    execution_client.connect().await.unwrap();
+
+    let cache = context.cache.borrow();
+    let account = cache
+        .account(&account_id)
+        .expect("expected cached account after initial AccountState");
+
+    let AccountAny::Margin(margin) = &*account else {
+        panic!("expected margin account");
+    };
+
+    assert!(!margin.base.calculate_account_state);
 }
 
 #[rstest]

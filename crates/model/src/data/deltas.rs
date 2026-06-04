@@ -609,7 +609,7 @@ mod tests {
         assert_eq!(api_wrapper.ts_init(), deltas.ts_init());
 
         // Test accessing methods through Deref
-        let display_str = format!("{}", &*api_wrapper);
+        let display_str = format!("{}", *api_wrapper);
         assert!(display_str.contains("EURUSD.SIM"));
     }
 

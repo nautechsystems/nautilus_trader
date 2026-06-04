@@ -18,7 +18,7 @@ use std::{cmp::max, sync::Arc};
 use anyhow::Context;
 use futures_util::StreamExt;
 use nautilus_common::messages::DataEvent;
-use nautilus_core::{hex, string::formatting::Separable};
+use nautilus_core::{UnixNanos, hex, string::formatting::Separable};
 use nautilus_model::defi::{
     Block, Blockchain, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolProfiler, PoolSwap,
     SharedChain, SharedDex, SharedPool,
@@ -54,6 +54,7 @@ use crate::{
 };
 
 const BLOCKS_PROCESS_IN_SYNC_REPORT: u64 = 50_000;
+const POOL_EVENT_BLOCK_BATCH_SIZE: usize = 20_000;
 
 /// Core blockchain data client responsible for fetching, processing, and caching blockchain data.
 ///
@@ -530,6 +531,7 @@ impl BlockchainDataClientCore {
         let mut liquidity_batch: Vec<PoolLiquidityUpdate> = Vec::with_capacity(EVENT_BATCH_SIZE);
         let mut collect_batch: Vec<PoolFeeCollect> = Vec::with_capacity(EVENT_BATCH_SIZE);
         let mut flash_batch: Vec<PoolFlash> = Vec::with_capacity(EVENT_BATCH_SIZE);
+        let mut block_batch: Vec<Block> = Vec::with_capacity(POOL_EVENT_BLOCK_BATCH_SIZE);
 
         // Track when we've moved beyond stale data and can use COPY
         let mut beyond_stale_data = last_block_across_pool_events_table
@@ -544,8 +546,8 @@ impl BlockchainDataClientCore {
             result = async {
                 while let Some(item) = pool_events_stream.next().await {
                     let log = match item {
-                        PoolEventStreamItem::BlockTimestamp { number, timestamp } => {
-                            self.cache.cache_block_timestamp(number, timestamp);
+                        PoolEventStreamItem::Block(block) => {
+                            self.record_pool_event_block(block, &mut block_batch).await?;
                             continue;
                         }
                         PoolEventStreamItem::Log(log) => log,
@@ -662,6 +664,7 @@ impl BlockchainDataClientCore {
             true,
         )
         .await?;
+        self.flush_pool_event_blocks(&mut block_batch).await?;
 
         metrics.log_final_stats();
         self.cache
@@ -721,6 +724,33 @@ impl BlockchainDataClientCore {
             flash_batch.clear();
         }
         Ok(())
+    }
+
+    async fn record_pool_event_block(
+        &mut self,
+        block: Block,
+        block_batch: &mut Vec<Block>,
+    ) -> anyhow::Result<()> {
+        self.cache
+            .cache_block_timestamp(block.number, block.timestamp);
+        block_batch.push(block);
+        if block_batch.len() >= POOL_EVENT_BLOCK_BATCH_SIZE {
+            self.flush_pool_event_blocks(block_batch).await?;
+        }
+        Ok(())
+    }
+
+    async fn flush_pool_event_blocks(
+        &mut self,
+        block_batch: &mut Vec<Block>,
+    ) -> anyhow::Result<()> {
+        if block_batch.is_empty() {
+            return Ok(());
+        }
+
+        self.cache
+            .add_pool_event_blocks_batch(std::mem::take(block_batch))
+            .await
     }
 
     /// Processes a swap event and converts it to a pool swap.
@@ -946,6 +976,7 @@ impl BlockchainDataClientCore {
     pub async fn bootstrap_latest_pool_profiler(
         &mut self,
         pool: &SharedPool,
+        to_block: Option<u64>,
     ) -> anyhow::Result<(PoolProfiler, bool)> {
         log::info!(
             "Bootstrapping latest pool profiler for pool {}",
@@ -958,6 +989,10 @@ impl BlockchainDataClientCore {
             );
         }
 
+        let to_block = match to_block {
+            Some(block) => block,
+            None => self.hypersync_client.current_block().await,
+        };
         let mut profiler = PoolProfiler::new(pool.clone());
 
         // Calculate latest valid block position after which we need to start profiling.
@@ -966,7 +1001,12 @@ impl BlockchainDataClientCore {
             .database
             .as_ref()
             .unwrap()
-            .load_latest_valid_pool_snapshot(pool.chain.chain_id, &pool.pool_identifier)
+            .load_latest_pool_snapshot(
+                pool.chain.chain_id,
+                &pool.pool_identifier,
+                Some(to_block),
+                true,
+            )
             .await
         {
             Ok(Some(snapshot)) => {
@@ -1017,13 +1057,19 @@ impl BlockchainDataClientCore {
             .is_none()
         {
             return self
-                .construct_pool_profiler_from_hypersync_rpc(profiler, from_position)
+                .construct_pool_profiler_from_hypersync_rpc(profiler, from_position, to_block)
                 .await;
         }
 
         // Sync the pool events before bootstrapping of pool profiler
         if let Err(e) = self
-            .sync_pool_events(&pool.dex.name, pool.pool_identifier, None, None, false)
+            .sync_pool_events(
+                &pool.dex.name,
+                pool.pool_identifier,
+                None,
+                Some(to_block),
+                false,
+            )
             .await
         {
             log::error!("Failed to sync pool events for snapshot request: {e}");
@@ -1044,7 +1090,6 @@ impl BlockchainDataClientCore {
             .map_or(profiler.pool.creation_block, |block_position| {
                 block_position.number
             });
-        let to_block = self.hypersync_client.current_block().await;
         let total_blocks = to_block.saturating_sub(from_block) + 1;
 
         // Enable embedded profiler reporting
@@ -1056,6 +1101,7 @@ impl BlockchainDataClientCore {
             pool.instrument_id,
             pool.pool_identifier,
             from_position.clone(),
+            Some(to_block),
         );
 
         while let Some(result) = stream.next().await {
@@ -1095,6 +1141,7 @@ impl BlockchainDataClientCore {
         &mut self,
         mut profiler: PoolProfiler,
         from_position: Option<BlockPosition>,
+        to_block: u64,
     ) -> anyhow::Result<(PoolProfiler, bool)> {
         log::info!("Constructing pool profiler from hypersync stream and RPC final state querying");
         let dex_extended = self.get_dex_extended(&profiler.pool.dex.name)?.clone();
@@ -1106,7 +1153,7 @@ impl BlockchainDataClientCore {
             } else {
                 anyhow::bail!(
                     "DEX {} does not have initialize event set.",
-                    &profiler.pool.dex.name
+                    profiler.pool.dex.name
                 );
             };
         let mint_sig_bytes = hex::decode(
@@ -1128,7 +1175,6 @@ impl BlockchainDataClientCore {
         let from_block = from_position.map_or(profiler.pool.creation_block, |block_position| {
             block_position.number
         });
-        let to_block = self.hypersync_client.current_block().await;
         let total_blocks = to_block.saturating_sub(from_block) + 1;
 
         log::info!(
@@ -1146,7 +1192,7 @@ impl BlockchainDataClientCore {
             .hypersync_client
             .request_contract_events_stream(
                 from_block,
-                None,
+                Some(to_block),
                 &profiler.pool.address,
                 vec![
                     mint_event_signature,
@@ -1156,11 +1202,13 @@ impl BlockchainDataClientCore {
             )
             .await;
         tokio::pin!(pool_events_stream);
+        let mut block_batch: Vec<Block> = Vec::with_capacity(POOL_EVENT_BLOCK_BATCH_SIZE);
 
         while let Some(item) = pool_events_stream.next().await {
             let log = match item {
-                PoolEventStreamItem::BlockTimestamp { number, timestamp } => {
-                    self.cache.cache_block_timestamp(number, timestamp);
+                PoolEventStreamItem::Block(block) => {
+                    self.record_pool_event_block(block, &mut block_batch)
+                        .await?;
                     continue;
                 }
                 PoolEventStreamItem::Log(log) => log,
@@ -1210,6 +1258,7 @@ impl BlockchainDataClientCore {
             }
         }
 
+        self.flush_pool_event_blocks(&mut block_batch).await?;
         profiler.finalize_reporting();
 
         let on_chain_snapshot = self
@@ -1312,11 +1361,12 @@ impl BlockchainDataClientCore {
     async fn get_on_chain_snapshot(&self, profiler: &PoolProfiler) -> anyhow::Result<PoolSnapshot> {
         if profiler.pool.dex.name == DexType::UniswapV3 {
             let last_processed_event = Self::last_processed_event_for_on_chain_snapshot(profiler)?;
-            let timestamp = self
-                .cache
-                .get_block_timestamp(last_processed_event.number)
-                .copied()
-                .context("missing block timestamp for on-chain snapshot")?;
+            let timestamp = Self::timestamp_for_on_chain_snapshot(
+                profiler,
+                self.cache
+                    .get_block_timestamp(last_processed_event.number)
+                    .copied(),
+            )?;
             let on_chain_snapshot = self
                 .univ3_pool
                 .fetch_snapshot(
@@ -1337,6 +1387,19 @@ impl BlockchainDataClientCore {
                 profiler.pool.dex.name
             )
         }
+    }
+
+    fn timestamp_for_on_chain_snapshot(
+        profiler: &PoolProfiler,
+        cached_timestamp: Option<UnixNanos>,
+    ) -> anyhow::Result<UnixNanos> {
+        if let Some(timestamp) = cached_timestamp {
+            return Ok(timestamp);
+        }
+
+        profiler
+            .last_processed_ts
+            .context("missing block timestamp for on-chain snapshot")
     }
 
     fn last_processed_event_for_on_chain_snapshot(
@@ -1371,6 +1434,7 @@ impl BlockchainDataClientCore {
                 dex.clone(),
                 pool.instrument_id,
                 pool.pool_identifier,
+                None,
                 None,
             );
             let mut event_count = 0;
@@ -1498,6 +1562,48 @@ mod tests {
         );
     }
 
+    #[rstest]
+    fn timestamp_for_on_chain_snapshot_prefers_cached_block_timestamp() {
+        let pool = weth_usdt_pool();
+        let mut profiler = PoolProfiler::new(pool);
+        let cached_ts = UnixNanos::from(1_700_000_001_000_000_000);
+        let profiler_ts = UnixNanos::from(1_700_000_000_000_000_000);
+        profiler.last_processed_ts = Some(profiler_ts);
+
+        let timestamp =
+            BlockchainDataClientCore::timestamp_for_on_chain_snapshot(&profiler, Some(cached_ts))
+                .unwrap();
+
+        assert_eq!(timestamp, cached_ts);
+    }
+
+    #[rstest]
+    fn timestamp_for_on_chain_snapshot_falls_back_to_profiler_timestamp() {
+        let pool = weth_usdt_pool();
+        let mut profiler = PoolProfiler::new(pool);
+        let profiler_ts = UnixNanos::from(1_700_000_000_000_000_000);
+        profiler.last_processed_ts = Some(profiler_ts);
+
+        let timestamp =
+            BlockchainDataClientCore::timestamp_for_on_chain_snapshot(&profiler, None).unwrap();
+
+        assert_eq!(timestamp, profiler_ts);
+    }
+
+    #[rstest]
+    fn timestamp_for_on_chain_snapshot_rejects_missing_timestamp() {
+        let pool = weth_usdt_pool();
+        let profiler = PoolProfiler::new(pool);
+
+        let error = BlockchainDataClientCore::timestamp_for_on_chain_snapshot(&profiler, None)
+            .expect_err("missing timestamps should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "missing block timestamp for on-chain snapshot"
+        );
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "requires ENVIO_API_TOKEN and live HyperSync access"]
     async fn live_hypersync_bootstrap_fails_closed_when_rpc_hydration_fails() {
@@ -1545,7 +1651,11 @@ mod tests {
         profiler.last_processed_event = Some(block_position.clone());
 
         let result = core
-            .construct_pool_profiler_from_hypersync_rpc(profiler, Some(block_position))
+            .construct_pool_profiler_from_hypersync_rpc(
+                profiler,
+                Some(block_position),
+                WETH_USDT_CREATION_BLOCK,
+            )
             .await;
 
         let error = result.expect_err("RPC hydration failure should fail closed");

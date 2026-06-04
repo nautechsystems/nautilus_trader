@@ -34,6 +34,11 @@ updates arrive. Orders are priced in implied volatility (`px_vol`) at the
 mark IV minus `entry_iv_offset`. An offset of 0.0 sells at mark; a positive
 offset (e.g. 0.02) sells 2 vol points below mark for faster fills.
 
+Set `entry_premium_offset_ticks` to use explicit option premium prices
+instead of IV params. In that mode the strategy subscribes to quotes for both
+option legs and sells at the current ask plus the configured tick offset. If
+the quote side is empty, it computes a premium from the venue IV fields.
+
 When `enter_strangle` is `false` the strategy operates as a delta hedger
 for positions entered externally or carried forward from a previous session.
 
@@ -71,20 +76,21 @@ data feeds. It leaves live positions unchanged.
 
 ## Configuration
 
-| Parameter                 | Type              | Default       | Description                                                                              |
-|---------------------------|-------------------|---------------|------------------------------------------------------------------------------------------|
-| `option_family`           | `String`          | *required*    | OKX option family (e.g. `BTC-USD`). Filters instruments from the cache.                  |
-| `hedge_instrument_id`     | `InstrumentId`    | *required*    | Underlying hedge instrument (e.g. `BTC-USD-SWAP.OKX`).                                   |
-| `client_id`               | `ClientId`        | *required*    | Data and execution client identifier (e.g. `OKX`).                                       |
-| `target_call_delta`       | `f64`             | `0.20`        | Target call delta used by the startup strike heuristic. Higher values select strikes closer to ATM. |
-| `target_put_delta`        | `f64`             | `-0.20`       | Target put delta used by the startup strike heuristic. More negative values select strikes closer to ATM. |
-| `contracts`               | `u64`             | `1`           | Number of option contracts per leg.                                                       |
-| `rehedge_delta_threshold` | `f64`             | `0.5`         | Absolute portfolio delta that triggers a hedge order. Lower values hedge more frequently. |
-| `rehedge_interval_secs`   | `u64`             | `30`          | Periodic rehedge timer interval in seconds.                                               |
-| `expiry_filter`           | `Option<String>`  | `None`        | Restrict to a specific expiry (e.g. `260327`). When `None`, uses the nearest expiry.      |
-| `enter_strangle`          | `bool`            | `true`        | Place strangle entry orders when Greeks arrive. When `false`, only hedges existing positions. |
-| `entry_iv_offset`         | `f64`             | `0.0`         | Vol points subtracted from mark IV for entry limit price. Positive values sell below mark. |
-| `entry_time_in_force`     | `TimeInForce`     | `Gtc`         | Time-in-force for strangle entry orders.                                                  |
+| Parameter                    | Type             | Default    | Description                                     |
+|------------------------------|------------------|------------|-------------------------------------------------|
+| `option_family`              | `String`         | *required* | Option family filter, e.g. `BTC-USD`.           |
+| `hedge_instrument_id`        | `InstrumentId`   | *required* | Underlying hedge instrument.                    |
+| `client_id`                  | `ClientId`       | *required* | Data and execution client identifier.           |
+| `target_call_delta`          | `f64`            | `0.20`     | Startup call strike heuristic target.           |
+| `target_put_delta`           | `f64`            | `-0.20`    | Startup put strike heuristic target.            |
+| `contracts`                  | `u64`            | `1`        | Number of option contracts per leg.             |
+| `rehedge_delta_threshold`    | `f64`            | `0.5`      | Absolute portfolio delta that triggers a hedge. |
+| `rehedge_interval_secs`      | `u64`            | `30`       | Periodic rehedge timer interval in seconds.     |
+| `expiry_filter`              | `Option<String>` | `None`     | Restrict to a specific expiry, e.g. `260327`.   |
+| `enter_strangle`             | `bool`           | `true`     | Place strangle entry orders.                    |
+| `entry_iv_offset`            | `f64`            | `0.0`      | Vol points subtracted from mark IV.             |
+| `entry_time_in_force`        | `TimeInForce`    | `Gtc`      | Time-in-force for strangle entry orders.        |
+| `entry_premium_offset_ticks` | `Option<i32>`    | `None`     | Ticks above ask for explicit premium entry.     |
 
 ### Inherited from `StrategyConfig`
 

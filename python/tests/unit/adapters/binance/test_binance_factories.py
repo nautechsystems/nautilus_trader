@@ -52,7 +52,7 @@ def test_live_node_builder_accepts_binance_data_factory() -> None:
             None,
             BinanceDataClientFactory(),
             BinanceDataClientConfig(
-                product_types=[BinanceProductType.SPOT],
+                product_type=BinanceProductType.SPOT,
                 environment=BinanceEnvironment.LIVE,
             ),
         )
@@ -74,7 +74,7 @@ def test_live_node_builder_accepts_binance_exec_factory() -> None:
             None,
             BinanceDataClientFactory(),
             BinanceDataClientConfig(
-                product_types=[BinanceProductType.SPOT],
+                product_type=BinanceProductType.SPOT,
                 environment=BinanceEnvironment.LIVE,
             ),
         )
@@ -84,7 +84,7 @@ def test_live_node_builder_accepts_binance_exec_factory() -> None:
             BinanceExecClientConfig(
                 trader_id=trader_id,
                 account_id=account_id,
-                product_types=[BinanceProductType.SPOT],
+                product_type=BinanceProductType.SPOT,
                 environment=BinanceEnvironment.LIVE,
                 api_key=SMOKE_API_KEY,
                 api_secret=SMOKE_API_SECRET,

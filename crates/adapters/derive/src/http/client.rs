@@ -43,6 +43,7 @@ use crate::{
     common::{
         consts::{HEADER_LYRA_SIGNATURE, HEADER_LYRA_TIMESTAMP, HEADER_LYRA_WALLET, HTTP_TIMEOUT},
         enums::DeriveInstrumentType,
+        rate_limit::{self, DERIVE_NON_MATCHING_RATE_KEY},
         retry::{http_retry_config, should_retry_http_error},
     },
     http::{
@@ -625,6 +626,11 @@ impl DeriveHttpClient {
         let body_value = serde_json::to_value(params).map_err(DeriveHttpError::from)?;
         let body = serde_json::to_vec(&body_value).map_err(DeriveHttpError::from)?;
 
+        // Every REST call is a non-matching read; gate it on the shared
+        // non-matching quota. A non-empty key is required: the limiter skips
+        // requests sent with no keys even when a default quota is configured.
+        let rate_keys = vec![DERIVE_NON_MATCHING_RATE_KEY.to_string()];
+
         // Sign per-attempt so the venue never sees a stale `X-LYRATIMESTAMP`
         // after a long backoff window; single-shot writes still run the
         // closure once and use freshly built headers.
@@ -647,7 +653,7 @@ impl DeriveHttpClient {
                     Some(headers.into_iter().collect()),
                     Some(body.clone()),
                     Some(self.timeout_secs),
-                    None,
+                    Some(rate_keys.clone()),
                 )
                 .await
                 .map_err(DeriveHttpError::from)?;
@@ -729,11 +735,14 @@ fn build_client(
     timeout_secs: u64,
     proxy_url: Option<String>,
 ) -> std::result::Result<HttpClient, HttpClientError> {
+    // Every REST endpoint this client calls is a non-matching read, so a single
+    // default quota (keyed by `DERIVE_NON_MATCHING_RATE_KEY` at the call site)
+    // covers them; no per-endpoint keyed quotas are needed.
     HttpClient::new(
         HashMap::new(),
         Vec::new(),
         Vec::new(),
-        None,
+        Some(rate_limit::non_matching_quota()),
         Some(timeout_secs),
         proxy_url,
     )

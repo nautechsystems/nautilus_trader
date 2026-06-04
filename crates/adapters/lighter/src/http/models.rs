@@ -50,6 +50,26 @@ pub struct LighterNextNonce {
     pub nonce: i64,
 }
 
+/// One account row from `GET /api/v1/account`.
+///
+/// Models only the fields the adapter consumes; the venue response carries
+/// many more, which are ignored on deserialization.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LighterAccountDetail {
+    pub account_index: u64,
+    pub account_type: u8,
+    pub status: i32,
+}
+
+/// Response payload of `GET /api/v1/account`.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LighterAccountsResponse {
+    pub code: i32,
+    pub message: Option<String>,
+    pub total: i64,
+    pub accounts: Vec<LighterAccountDetail>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LighterSendTxRequest {
     pub tx_type: u8,
@@ -132,6 +152,7 @@ pub struct LighterSendTxBatchResponse {
 pub struct LighterOrderBooks {
     pub code: i32,
     pub message: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_null_vec")]
     pub order_books: Vec<LighterOrderBook>,
 }
 
@@ -164,7 +185,9 @@ pub struct LighterOrderBook {
 pub struct LighterOrderBookDetails {
     pub code: i32,
     pub message: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_null_vec")]
     pub order_book_details: Vec<LighterPerpOrderBookDetail>,
+    #[serde(default, deserialize_with = "deserialize_null_vec")]
     pub spot_order_book_details: Vec<LighterSpotOrderBookDetail>,
 }
 
@@ -239,8 +262,10 @@ pub struct LighterOrderBookOrders {
     pub code: i32,
     pub message: Option<String>,
     pub total_asks: i64,
+    #[serde(default, deserialize_with = "deserialize_null_vec")]
     pub asks: Vec<LighterSimpleOrder>,
     pub total_bids: i64,
+    #[serde(default, deserialize_with = "deserialize_null_vec")]
     pub bids: Vec<LighterSimpleOrder>,
 }
 
@@ -263,7 +288,9 @@ pub struct LighterSimpleOrder {
 pub struct LighterOrderBookDepth {
     pub code: i32,
     pub message: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_null_vec")]
     pub asks: Vec<LighterPriceLevel>,
+    #[serde(default, deserialize_with = "deserialize_null_vec")]
     pub bids: Vec<LighterPriceLevel>,
     pub offset: i64,
     pub nonce: i64,
@@ -290,6 +317,7 @@ pub struct LighterTrades {
     pub code: i32,
     pub message: Option<String>,
     pub next_cursor: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_null_vec")]
     pub trades: Vec<LighterTrade>,
 }
 
@@ -299,7 +327,7 @@ pub struct LighterCandles {
     pub message: Option<String>,
     #[serde(rename = "r")]
     pub resolution: LighterCandleResolution,
-    #[serde(rename = "c")]
+    #[serde(rename = "c", default, deserialize_with = "deserialize_null_vec")]
     pub candles: Vec<LighterCandle>,
 }
 
@@ -328,6 +356,7 @@ pub struct LighterFundings {
     pub code: i32,
     pub message: Option<String>,
     pub resolution: LighterFundingResolution,
+    #[serde(default, deserialize_with = "deserialize_null_vec")]
     pub fundings: Vec<LighterFunding>,
 }
 
@@ -401,6 +430,7 @@ pub struct LighterOrders {
     pub code: i32,
     pub message: Option<String>,
     pub next_cursor: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_null_vec")]
     pub orders: Vec<LighterOrder>,
 }
 
@@ -473,6 +503,14 @@ where
     })
 }
 
+fn deserialize_null_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<Vec<T>>::deserialize(deserializer).map(Option::unwrap_or_default)
+}
+
 fn deserialize_order_side<'de, D>(deserializer: D) -> Result<Option<LighterOrderSide>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -495,13 +533,34 @@ mod tests {
     const HTTP_ORDER_BOOK_DETAILS: &str =
         include_str!("../../test_data/http_order_book_details.json");
     const HTTP_RECENT_TRADES: &str = include_str!("../../test_data/http_recent_trades.json");
+    const HTTP_RECENT_TRADES_MISSING: &str =
+        include_str!("../../test_data/http_recent_trades_missing.json");
+    const HTTP_RECENT_TRADES_NULL: &str =
+        include_str!("../../test_data/http_recent_trades_null.json");
     const HTTP_ORDER_BOOKS: &str = include_str!("../../test_data/http_order_books.json");
     const HTTP_ORDER_BOOK_ORDERS: &str =
         include_str!("../../test_data/http_order_book_orders.json");
     const HTTP_ORDER_BOOK_DEPTH: &str = include_str!("../../test_data/http_order_book_depth.json");
+    const HTTP_ORDER_BOOK_DEPTH_NULL: &str =
+        include_str!("../../test_data/http_order_book_depth_null.json");
     const HTTP_ORDERS: &str = include_str!("../../test_data/http_orders.json");
     const HTTP_CANDLES: &str = include_str!("../../test_data/http_candles.json");
+    const HTTP_CANDLES_NULL: &str = include_str!("../../test_data/http_candles_null.json");
     const HTTP_FUNDINGS: &str = include_str!("../../test_data/http_fundings.json");
+    const HTTP_ACCOUNT: &str = include_str!("../../test_data/http_account.json");
+
+    #[rstest]
+    fn test_account_response_deserializes_live_shape() {
+        let response: LighterAccountsResponse = serde_json::from_str(HTTP_ACCOUNT).unwrap();
+
+        assert_eq!(response.code, 200);
+        assert_eq!(response.total, 1);
+        assert_eq!(response.accounts.len(), 1);
+        let account = &response.accounts[0];
+        assert_eq!(account.account_index, 123_456);
+        assert_eq!(account.account_type, 0);
+        assert_eq!(account.status, 1);
+    }
 
     #[rstest]
     fn test_order_book_details_deserializes_live_shape() {
@@ -546,6 +605,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_recent_trades_deserializes_null_trades_as_empty() {
+        let trades: LighterTrades = serde_json::from_str(HTTP_RECENT_TRADES_NULL).unwrap();
+
+        assert_eq!(trades.code, 200);
+        assert!(trades.trades.is_empty());
+    }
+
+    #[rstest]
+    fn test_recent_trades_deserializes_missing_trades_as_empty() {
+        let trades: LighterTrades = serde_json::from_str(HTTP_RECENT_TRADES_MISSING).unwrap();
+
+        assert_eq!(trades.code, 200);
+        assert!(trades.trades.is_empty());
+    }
+
+    #[rstest]
     fn test_candles_deserializes_live_shape_with_omitted_raw_fields() {
         let candles: LighterCandles = serde_json::from_str(HTTP_CANDLES).unwrap();
 
@@ -559,6 +634,15 @@ mod tests {
         assert_eq!(candles.candles[0].close, Decimal::new(236_131, 2));
         assert_eq!(candles.candles[0].volume_base, Decimal::new(12_345, 4));
         assert_eq!(candles.candles[0].last_trade_id, 19_211_490_282);
+    }
+
+    #[rstest]
+    fn test_candles_deserializes_null_candles_as_empty() {
+        let candles: LighterCandles = serde_json::from_str(HTTP_CANDLES_NULL).unwrap();
+
+        assert_eq!(candles.code, 200);
+        assert_eq!(candles.resolution, LighterCandleResolution::OneMinute);
+        assert!(candles.candles.is_empty());
     }
 
     #[rstest]
@@ -621,6 +705,18 @@ mod tests {
         assert_eq!(depth.bids[0].size, Decimal::from_str("0.2125").unwrap());
         assert_eq!(depth.offset, 1_558_300);
         assert_eq!(depth.nonce, 9_182_390_020);
+    }
+
+    #[rstest]
+    fn test_order_book_depth_deserializes_null_sides_as_empty() {
+        let depth: LighterOrderBookDepth =
+            serde_json::from_str(HTTP_ORDER_BOOK_DEPTH_NULL).unwrap();
+
+        assert_eq!(depth.code, 200);
+        assert!(depth.asks.is_empty());
+        assert!(depth.bids.is_empty());
+        assert_eq!(depth.offset, 1);
+        assert_eq!(depth.nonce, 0);
     }
 
     #[rstest]

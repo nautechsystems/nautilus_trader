@@ -83,7 +83,9 @@ use crate::{
             BitmexContingencyType, BitmexEnvironment, BitmexExecInstruction, BitmexOrderStatus,
             BitmexOrderType, BitmexPegPriceType, BitmexSide, BitmexTimeInForce,
         },
-        parse::{bitmex_currency_divisor, parse_account_balance, quantity_to_u32},
+        parse::{
+            bitmex_account_id, bitmex_currency_divisor, parse_account_balance, quantity_to_u32,
+        },
     },
     http::{
         parse::{
@@ -795,7 +797,7 @@ impl BitmexRawHttpClient {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bitmex")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")
 )]
 pub struct BitmexHttpClient {
     pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
@@ -1447,20 +1449,21 @@ impl BitmexHttpClient {
             .map_err(|e| anyhow::anyhow!(e))
     }
 
-    /// Request account state for the given account.
+    /// Request account state for the authenticated BitMEX account.
     ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or no account state is returned.
     pub async fn request_account_state(
         &self,
-        account_id: AccountId,
+        fallback_account_id: AccountId,
     ) -> anyhow::Result<AccountState> {
         let margins = self
             .inner
             .get_all_margins()
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
+        let account_id = account_id_from_margins(&margins)?.unwrap_or(fallback_account_id);
 
         let ts_init =
             UnixNanos::from(chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default() as u64);
@@ -2509,6 +2512,22 @@ impl BitmexHttpClient {
     }
 }
 
+fn account_id_from_margins(margins: &[BitmexMargin]) -> anyhow::Result<Option<AccountId>> {
+    let Some(first) = margins.first() else {
+        return Ok(None);
+    };
+
+    let account = first.account;
+    if let Some(mismatch) = margins.iter().find(|margin| margin.account != account) {
+        anyhow::bail!(
+            "BitMEX returned inconsistent margin account IDs: {account} and {}",
+            mismatch.account
+        );
+    }
+
+    Ok(Some(bitmex_account_id(account)))
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_core::UUID4;
@@ -2517,6 +2536,52 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    fn margin_with_account(account: i64) -> BitmexMargin {
+        BitmexMargin {
+            account,
+            currency: Ustr::from("XBt"),
+            risk_limit: None,
+            prev_state: None,
+            state: None,
+            action: None,
+            amount: None,
+            pending_credit: None,
+            pending_debit: None,
+            confirmed_debit: None,
+            prev_realised_pnl: None,
+            prev_unrealised_pnl: None,
+            gross_comm: None,
+            gross_open_cost: None,
+            gross_open_premium: None,
+            gross_exec_cost: None,
+            gross_mark_value: None,
+            risk_value: None,
+            taxable_margin: None,
+            init_margin: None,
+            maint_margin: None,
+            session_margin: None,
+            target_excess_margin: None,
+            var_margin: None,
+            realised_pnl: None,
+            unrealised_pnl: None,
+            indicative_tax: None,
+            unrealised_profit: None,
+            synthetic_margin: None,
+            wallet_balance: None,
+            margin_balance: None,
+            margin_balance_pcnt: None,
+            margin_leverage: None,
+            margin_used_pcnt: None,
+            excess_margin: None,
+            excess_margin_pcnt: None,
+            available_margin: None,
+            withdrawable_margin: None,
+            timestamp: None,
+            gross_last_value: None,
+            commission: None,
+        }
+    }
 
     fn build_report(
         client_order_id: &str,
@@ -2546,6 +2611,33 @@ mod tests {
         }
 
         report.with_contingency_type(contingency_type)
+    }
+
+    #[rstest]
+    fn test_account_id_from_margins_uses_bitmex_account_number() {
+        let margins = vec![margin_with_account(319111), margin_with_account(319111)];
+
+        let account_id = account_id_from_margins(&margins).unwrap().unwrap();
+
+        assert_eq!(account_id, AccountId::from("BITMEX-319111"));
+    }
+
+    #[rstest]
+    fn test_account_id_from_margins_empty_returns_none() {
+        let margins = [];
+
+        let account_id = account_id_from_margins(&margins).unwrap();
+
+        assert_eq!(account_id, None);
+    }
+
+    #[rstest]
+    fn test_account_id_from_margins_rejects_inconsistent_accounts() {
+        let margins = vec![margin_with_account(319111), margin_with_account(319112)];
+
+        let err = account_id_from_margins(&margins).unwrap_err();
+
+        assert!(err.to_string().contains("inconsistent margin account IDs"));
     }
 
     #[rstest]
