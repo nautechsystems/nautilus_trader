@@ -4415,6 +4415,117 @@ fn test_process_yearly_bar_not_skipped(instrument_eth_usdt: InstrumentAny) {
     );
 }
 
+// Regression: quartering bar volume at `FIXED_PRECISION` scale produced synthesized
+// tick sizes whose raw values were not multiples of `10^(FIXED_PRECISION - precision)`,
+// which silently failed `quantity_matches_precision` downstream and caused
+// `normalize_fill_quantity` to skip fills. See the new `quarter_bar_volume` helper.
+#[rstest]
+fn test_process_trade_bar_with_volume_not_divisible_by_four(instrument_eth_usdt: InstrumentAny) {
+    let instrument = crypto_perpetual_with_size_precision(instrument_eth_usdt, 2, "0.01");
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(instrument, None, None, Some(config), None);
+
+    // Volume = 0.05 at size_precision=2 → 5 units, quarter=1, remainder=1.
+    // Pre-fix the synthesized close size would have raw = 5*FIXED_SCALAR/4, not
+    // aligned to 10^(FIXED_PRECISION-2), and any submitted order would have its
+    // fill silently dropped by `normalize_fill_quantity`.
+    let bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+        open: Price::from("1500.00"),
+        high: Price::from("1510.00"),
+        low: Price::from("1490.00"),
+        close: Price::from("1505.00"),
+        volume: Quantity::from("0.05"),
+        ts_event: UnixNanos::from(1_000_000_000),
+        ts_init: UnixNanos::from(1_000_000_000),
+    };
+
+    engine.process_bar(&bar);
+
+    assert_eq!(
+        engine.get_core().last,
+        Some(Price::from("1505.00")),
+        "Bar should advance market state through to the close tick",
+    );
+}
+
+#[rstest]
+fn test_process_trade_bar_with_units_less_than_four(instrument_eth_usdt: InstrumentAny) {
+    let instrument = crypto_perpetual_with_size_precision(instrument_eth_usdt, 0, "1");
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(instrument, None, None, Some(config), None);
+
+    // Volume = 3 at size_precision=0 → quarter_units=0; the entire volume coalesces
+    // onto the close tick, and the open/high/low ticks carry zero size. Should still
+    // advance the engine through the O→H→L→C sequence without panicking.
+    let bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+        open: Price::from("1500.00"),
+        high: Price::from("1510.00"),
+        low: Price::from("1490.00"),
+        close: Price::from("1505.00"),
+        volume: Quantity::from("3"),
+        ts_event: UnixNanos::from(1_000_000_000),
+        ts_init: UnixNanos::from(1_000_000_000),
+    };
+
+    engine.process_bar(&bar);
+
+    assert_eq!(
+        engine.get_core().last,
+        Some(Price::from("1505.00")),
+        "Low-volume bar should still advance market state through to the close tick",
+    );
+}
+
+#[rstest]
+fn test_process_quote_bar_with_volume_not_divisible_by_four(instrument_eth_usdt: InstrumentAny) {
+    let instrument = crypto_perpetual_with_size_precision(instrument_eth_usdt, 2, "0.01");
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(instrument, None, None, Some(config), None);
+
+    let ts = UnixNanos::from(1_000_000_000);
+    // Bid and ask bars at matching ts_init with volumes that have non-zero remainder
+    // mod 4 at size_precision=2: bid=0.07 (7 units), ask=0.09 (9 units).
+    let bid_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-BID-EXTERNAL"),
+        open: Price::from("1499.00"),
+        high: Price::from("1500.00"),
+        low: Price::from("1498.00"),
+        close: Price::from("1499.50"),
+        volume: Quantity::from("0.07"),
+        ts_event: ts,
+        ts_init: ts,
+    };
+    let ask_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-ASK-EXTERNAL"),
+        open: Price::from("1500.00"),
+        high: Price::from("1501.00"),
+        low: Price::from("1499.00"),
+        close: Price::from("1500.50"),
+        volume: Quantity::from("0.09"),
+        ts_event: ts,
+        ts_init: ts,
+    };
+
+    // The bug pattern: pre-fix, the synthesized bid/ask quote sizes had unaligned
+    // raw values that would cause `QuoteTick` construction or downstream precision
+    // checks to fail. After the fix `quarter_bar_volume` floors each output to
+    // `size_increment` and aligns to the volume's precision scale, so this call
+    // must complete without panicking.
+    engine.process_bar(&bid_bar);
+    engine.process_bar(&ask_bar);
+}
+
 #[rstest]
 fn test_modify_partially_filled_order_quantity_below_filled_rejected(
     instrument_eth_usdt: InstrumentAny,

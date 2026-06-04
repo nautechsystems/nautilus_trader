@@ -1132,6 +1132,20 @@ impl OrderMatchingEngine {
         quantity.raw.is_multiple_of(scale)
     }
 
+    fn quarter_bar_volume(volume: Quantity, size_increment: Quantity) -> (Quantity, Quantity) {
+        let precision_diff = FIXED_PRECISION.saturating_sub(volume.precision);
+        let scale = QuantityRaw::pow(10, u32::from(precision_diff));
+        let units = volume.raw / scale;
+        let quarter_units = units / 4;
+        let remainder_units = units % 4;
+        let quarter_raw = (quarter_units * scale).max(size_increment.raw);
+        let close_raw = ((quarter_units + remainder_units) * scale).max(size_increment.raw);
+        (
+            Quantity::from_raw(quarter_raw, volume.precision),
+            Quantity::from_raw(close_raw, volume.precision),
+        )
+    }
+
     fn normalize_price_for_current_instrument(&self, price: Price) -> Option<Price> {
         if !self.price_matches_current_instrument(price) {
             return None;
@@ -1496,11 +1510,11 @@ impl OrderMatchingEngine {
             PriceType::Last | PriceType::Mid => self.process_trade_ticks_from_bar(bar),
             PriceType::Bid => {
                 self.last_bar_bid = Some(bar.to_owned());
-                self.process_quote_ticks_from_bar(bar);
+                self.process_quote_ticks_from_bar();
             }
             PriceType::Ask => {
                 self.last_bar_ask = Some(bar.to_owned());
-                self.process_quote_ticks_from_bar(bar);
+                self.process_quote_ticks_from_bar();
             }
             PriceType::Mark => {
                 unreachable!("PriceType::Mark bars return before execution bar state updates")
@@ -1509,11 +1523,9 @@ impl OrderMatchingEngine {
     }
 
     fn process_trade_ticks_from_bar(&mut self, bar: &Bar) {
-        // Split the bar into 4 trades, adding remainder to close trade
-        let quarter_raw = bar.volume.raw / 4;
-        let remainder_raw = bar.volume.raw % 4;
-        let size = Quantity::from_raw(quarter_raw, bar.volume.precision);
-        let close_size = Quantity::from_raw(quarter_raw + remainder_raw, bar.volume.precision);
+        // Split the bar into 4 trades at the volume's own precision scale
+        let (size, close_size) =
+            Self::quarter_bar_volume(bar.volume, self.instrument.size_increment());
 
         let aggressor_side = if self.core.last.is_none_or(|last| bar.open > last) {
             AggressorSide::Buyer
@@ -1621,7 +1633,7 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn process_quote_ticks_from_bar(&mut self, bar: &Bar) {
+    fn process_quote_ticks_from_bar(&mut self) {
         // Wait for next bar
         if self.last_bar_bid.is_none()
             || self.last_bar_ask.is_none()
@@ -1632,16 +1644,10 @@ impl OrderMatchingEngine {
         let bid_bar = self.last_bar_bid.unwrap();
         let ask_bar = self.last_bar_ask.unwrap();
 
-        // Split bar volume into 4, adding remainder to close quote
-        let bid_quarter = bid_bar.volume.raw / 4;
-        let bid_remainder = bid_bar.volume.raw % 4;
-        let ask_quarter = ask_bar.volume.raw / 4;
-        let ask_remainder = ask_bar.volume.raw % 4;
-
-        let bid_size = Quantity::from_raw(bid_quarter, bar.volume.precision);
-        let ask_size = Quantity::from_raw(ask_quarter, bar.volume.precision);
-        let bid_close_size = Quantity::from_raw(bid_quarter + bid_remainder, bar.volume.precision);
-        let ask_close_size = Quantity::from_raw(ask_quarter + ask_remainder, bar.volume.precision);
+        // Split each bar's volume into 4 quotes at its own precision scale
+        let size_increment = self.instrument.size_increment();
+        let (bid_size, bid_close_size) = Self::quarter_bar_volume(bid_bar.volume, size_increment);
+        let (ask_size, ask_close_size) = Self::quarter_bar_volume(ask_bar.volume, size_increment);
 
         // Create reusable quote tick
         let mut quote_tick = QuoteTick::new(
@@ -5969,5 +5975,96 @@ impl OrderMatchingEngine {
         ));
 
         self.dispatch_order_event(event);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use nautilus_model::types::{Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw};
+    use rstest::rstest;
+
+    use super::OrderMatchingEngine;
+
+    /// Both outputs must be aligned to `volume.precision` (the matching engine
+    /// invariant the surrounding fix is designed to preserve).
+    fn assert_aligned(volume: Quantity, size_increment: Quantity) {
+        let (q, c) = OrderMatchingEngine::quarter_bar_volume(volume, size_increment);
+        assert_eq!(q.precision, volume.precision);
+        assert_eq!(c.precision, volume.precision);
+        assert!(
+            OrderMatchingEngine::quantity_matches_precision(q, volume.precision),
+            "open/high/low quantity {q} not aligned to precision {}",
+            volume.precision,
+        );
+        assert!(
+            OrderMatchingEngine::quantity_matches_precision(c, volume.precision),
+            "close quantity {c} not aligned to precision {}",
+            volume.precision,
+        );
+    }
+
+    #[rstest]
+    fn test_quarter_bar_volume_divisible() {
+        // precision=3, units=100_000 → exactly divisible by 4, no flooring.
+        let volume = Quantity::from("100.000");
+        let increment = Quantity::from("0.001");
+        let (q, c) = OrderMatchingEngine::quarter_bar_volume(volume, increment);
+        assert_eq!(q, Quantity::from("25.000"));
+        assert_eq!(c, Quantity::from("25.000"));
+        assert_aligned(volume, increment);
+    }
+
+    #[rstest]
+    fn test_quarter_bar_volume_indivisible_with_remainder() {
+        // precision=2, units=5 → quarter_units=1, remainder=1; close carries 2*scale.
+        let volume = Quantity::from("0.05");
+        let increment = Quantity::from("0.01");
+        let (q, c) = OrderMatchingEngine::quarter_bar_volume(volume, increment);
+        assert_eq!(q, Quantity::from("0.01"));
+        assert_eq!(c, Quantity::from("0.02"));
+        assert_aligned(volume, increment);
+        // Sanity: total volume preserved when units >= 4.
+        assert_eq!(q.raw * 3 + c.raw, volume.raw);
+    }
+
+    #[rstest]
+    fn test_quarter_bar_volume_units_less_than_four_floors_to_size_increment() {
+        // precision=0, units=3 → quarter_units=0; floored to size_increment so the
+        // downstream `TradeTick::new(size)` invariant `size > 0` is upheld.
+        let volume = Quantity::from("3");
+        let increment = Quantity::from("1");
+        let (q, c) = OrderMatchingEngine::quarter_bar_volume(volume, increment);
+        assert_eq!(q, Quantity::from("1"));
+        assert_eq!(c, Quantity::from("3"));
+        assert_aligned(volume, increment);
+    }
+
+    #[rstest]
+    fn test_quarter_bar_volume_zero_volume_floors_to_size_increment() {
+        // Zero-volume bars are typically filtered upstream, but if one reaches the
+        // engine the floor still produces valid (positive-size) ticks rather than
+        // panicking via `TradeTick::new`.
+        let volume = Quantity::zero(3);
+        let increment = Quantity::from("0.001");
+        let (q, c) = OrderMatchingEngine::quarter_bar_volume(volume, increment);
+        assert_eq!(q, increment);
+        assert_eq!(c, increment);
+        assert_aligned(volume, increment);
+    }
+
+    #[rstest]
+    fn test_quarter_bar_volume_at_fixed_precision() {
+        // When volume.precision == FIXED_PRECISION the scale is 1 and the formula
+        // degenerates to a plain raw-space quartering. Asserts alignment + floor.
+        let units: QuantityRaw = 17;
+        let volume = Quantity::from_raw(units, FIXED_PRECISION);
+        let increment = Quantity::from_raw(1, FIXED_PRECISION);
+        let (q, c) = OrderMatchingEngine::quarter_bar_volume(volume, increment);
+        assert_eq!(q.raw, 4);
+        assert_eq!(c.raw, 5);
+        assert_aligned(volume, increment);
     }
 }
