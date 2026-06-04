@@ -101,9 +101,10 @@ Released on TBD (UTC).
 - Fixed `MaxDrawdown`, `CAGR`, and `CalmarRatio` Rust trait impls panicking on `calculate_from_realized_pnls` and `calculate_from_positions` (#4174), thanks @mahimn01
 - Fixed matching engine not canceling unmatched IOC/FOK limit orders (Rust) (#4112), thanks for reporting @Jonah-Chan
 - Fixed matching engine L1 slip-through for market orders exhausting top-of-book volume (Rust)
+- Fixed multi-currency balance update violating `total == locked + free` (#4165), thanks for reporting @qaxayuan
 - Fixed NETTING reconciliation opening phantom reduce-only positions (#4106), thanks for reporting @M-at-ti-a
 - Fixed HEDGING margin scaling with fill count instead of net exposure (#4110), thanks for reporting @qaxayuan
-- Fixed multi-currency balance update violating `total == locked + free` (#4165), thanks for reporting @qaxayuan
+- Fixed live reconciliation filtering for unclaimed external venue orders (Rust)
 - Fixed `ExecTester` on_stop leaving INITIALIZED orders and bracket legs live across all cancel modes (Rust)
 - Fixed Aerodrome Slipstream `AmmType` from `StableSwap` to `CLAMM`
 - Fixed `PoolProfiler::update_position` to pre-validate active liquidity so failures leave pool state unchanged

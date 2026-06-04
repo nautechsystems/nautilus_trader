@@ -433,6 +433,7 @@ impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
             snapshot_positions: config.snapshot_positions,
             snapshot_positions_interval_secs: config.snapshot_positions_interval_secs,
             allow_overfills: config.allow_overfills,
+            filter_unclaimed_external_orders: config.filter_unclaimed_external_orders,
             external_clients: config.external_clients,
             purge_closed_orders_interval_mins: config.purge_closed_orders_interval_mins,
             purge_closed_orders_buffer_mins: config.purge_closed_orders_buffer_mins,
@@ -1080,6 +1081,7 @@ mod tests {
         let config = LiveExecEngineConfig {
             load_cache: false,
             snapshot_positions_interval_secs: Some(30.0),
+            filter_unclaimed_external_orders: true,
             ..Default::default()
         };
 
@@ -1087,6 +1089,7 @@ mod tests {
 
         assert!(!converted.load_cache);
         assert_eq!(converted.snapshot_positions_interval_secs, Some(30.0));
+        assert!(converted.filter_unclaimed_external_orders);
     }
 
     #[rstest]
