@@ -213,9 +213,9 @@ impl<'a> PoolDiscoveryService<'a> {
 
             result = async {
                 while let Some(item) = pools_stream.next().await {
-                    // Pool discovery does not need block timestamps
+                    // Pool discovery does not need block data
                     let log = match item {
-                        PoolEventStreamItem::BlockTimestamp { .. } => continue,
+                        PoolEventStreamItem::Block(_) => continue,
                         PoolEventStreamItem::Log(log) => log,
                     };
                     let block_number = extract_block_number(&log)?;

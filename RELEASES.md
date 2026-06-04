@@ -124,6 +124,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot full-depth books to seed diffs from REST snapshots
 - Fixed Binance Spot SBE numeric parsing to reject invalid price and quantity values
 - Fixed BitMEX mark/index price updates on altcoin perps (#4147), thanks @filipmacek
+- Fixed Blockchain adapter `analyze-pool --to-block` bounds during snapshot replay
 - Fixed Blockchain adapter caching a half-initialized `PoolProfiler` when `initialize` returns `InitialTickMismatch`
 - Fixed Coinbase book snapshot deltas missing `F_SNAPSHOT` flag in REST and WebSocket parsers
 - Fixed Deribit `DeribitExecutionClient` not forwarding config credentials to the WebSocket client

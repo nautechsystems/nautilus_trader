@@ -24,7 +24,7 @@ use hypersync_client::{
     simple_types::Log,
 };
 use nautilus_common::live::get_runtime;
-use nautilus_core::{UnixNanos, hex};
+use nautilus_core::hex;
 use nautilus_model::{
     defi::{Block, Blockchain, DexType, SharedChain},
     identifiers::InstrumentId,
@@ -38,18 +38,18 @@ use crate::{
 
 /// An item yielded by the contract-events stream.
 ///
-/// Block timestamps are surfaced ahead of the logs from the same response so callers can
-/// populate their block-timestamp cache before converting events from those blocks.
+/// Blocks are surfaced ahead of the logs from the same response so callers can populate their
+/// block-timestamp cache before converting events from those blocks.
 #[derive(Debug)]
 pub enum PoolEventStreamItem {
-    /// The timestamp for a block referenced by subsequent logs.
-    BlockTimestamp { number: u64, timestamp: UnixNanos },
+    /// A block referenced by subsequent logs.
+    Block(Block),
     /// A contract event log.
     Log(Log),
 }
 
-/// Maps one HyperSync response into stream items, surfacing block timestamps ahead of the logs
-/// from the same response so callers can cache them before converting events from those blocks.
+/// Maps one HyperSync response into stream items, surfacing blocks ahead of the logs from the
+/// same response so callers can cache them before converting events from those blocks.
 ///
 /// Blocks that fail to transform are logged and skipped without dropping the response's logs.
 fn pool_events_from_response(
@@ -62,10 +62,7 @@ fn pool_events_from_response(
     for batch in blocks {
         for block in batch {
             match transform_hypersync_block(chain, block) {
-                Ok(block) => items.push(PoolEventStreamItem::BlockTimestamp {
-                    number: block.number,
-                    timestamp: block.timestamp,
-                }),
+                Ok(block) => items.push(PoolEventStreamItem::Block(block)),
                 Err(e) => log::error!("Failed to transform block for timestamp: {e}"),
             }
         }
@@ -487,7 +484,7 @@ impl HyperSyncClient {
     fn construct_block_query(from_block: u64, to_block: Option<u64>) -> Query {
         Query {
             from_block,
-            to_block,
+            to_block: Self::to_hypersync_exclusive_bound(to_block),
             blocks: vec![BlockSelection::default()],
             field_selection: FieldSelection {
                 block: BlockField::all(),
@@ -535,13 +532,17 @@ impl HyperSyncClient {
             }
         });
 
-        if let Some(to_block) = to_block
+        if let Some(to_block) = Self::to_hypersync_exclusive_bound(to_block)
             && let Some(obj) = query_value.as_object_mut()
         {
             obj.insert("to_block".to_string(), serde_json::json!(to_block));
         }
 
         serde_json::from_value(query_value).unwrap()
+    }
+
+    fn to_hypersync_exclusive_bound(to_block: Option<u64>) -> Option<u64> {
+        to_block.map(|block| block.saturating_add(1))
     }
 
     /// Unsubscribes from new blocks by stopping the background watch task.
@@ -565,10 +566,10 @@ mod tests {
     use std::str::FromStr;
 
     use hypersync_client::{
-        format::{Address, Hash, Quantity},
+        format::{Address as HypersyncAddress, Hash, Quantity},
         simple_types::{Block as HypersyncBlock, Log},
     };
-    use nautilus_core::datetime::NANOSECONDS_IN_SECOND;
+    use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
     use rstest::rstest;
 
     use super::*;
@@ -588,7 +589,9 @@ mod tests {
                 )
                 .unwrap(),
             ),
-            miner: Some(Address::from_str("0x0000000000000000000000000000000000000001").unwrap()),
+            miner: Some(
+                HypersyncAddress::from_str("0x0000000000000000000000000000000000000001").unwrap(),
+            ),
             gas_limit: Some(Quantity::from(21_000u64)),
             gas_used: Some(Quantity::from(21_000u64)),
             timestamp: Some(Quantity::from(timestamp_secs)),
@@ -597,7 +600,7 @@ mod tests {
     }
 
     #[rstest]
-    fn pool_events_yields_block_timestamps_before_logs() {
+    fn pool_events_yields_blocks_before_logs() {
         let items = pool_events_from_response(
             Blockchain::Ethereum,
             vec![vec![synthetic_block(12, 100)]],
@@ -606,11 +609,11 @@ mod tests {
 
         assert_eq!(items.len(), 3);
         match &items[0] {
-            PoolEventStreamItem::BlockTimestamp { number, timestamp } => {
-                assert_eq!(*number, 12);
-                assert_eq!(*timestamp, UnixNanos::new(100 * NANOSECONDS_IN_SECOND));
+            PoolEventStreamItem::Block(block) => {
+                assert_eq!(block.number, 12);
+                assert_eq!(block.timestamp, UnixNanos::new(100 * NANOSECONDS_IN_SECOND));
             }
-            other => panic!("expected BlockTimestamp first, was {other:?}"),
+            other => panic!("expected Block first, was {other:?}"),
         }
         assert!(matches!(items[1], PoolEventStreamItem::Log(_)));
         assert!(matches!(items[2], PoolEventStreamItem::Log(_)));
@@ -632,5 +635,27 @@ mod tests {
 
         assert_eq!(items.len(), 1);
         assert!(matches!(items[0], PoolEventStreamItem::Log(_)));
+    }
+
+    #[rstest]
+    fn construct_block_query_converts_to_block_to_hypersync_exclusive_bound() {
+        let query = HyperSyncClient::construct_block_query(10, Some(12));
+
+        assert_eq!(query.from_block, 10);
+        assert_eq!(query.to_block, Some(13));
+    }
+
+    #[rstest]
+    fn construct_contract_events_query_converts_to_block_to_hypersync_exclusive_bound() {
+        let address = Address::from_str("0x0000000000000000000000000000000000000001").unwrap();
+        let query = HyperSyncClient::construct_contract_events_query(
+            10,
+            Some(12),
+            &[address],
+            &["0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"],
+        );
+
+        assert_eq!(query.from_block, 10);
+        assert_eq!(query.to_block, Some(13));
     }
 }

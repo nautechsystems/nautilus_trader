@@ -398,6 +398,29 @@ impl BlockchainCache {
         Ok(())
     }
 
+    /// Adds block timestamps observed while streaming pool events.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the block timestamps to the database fails.
+    pub async fn add_pool_event_blocks_batch(&mut self, blocks: Vec<Block>) -> anyhow::Result<()> {
+        if blocks.is_empty() {
+            return Ok(());
+        }
+
+        if let Some(database) = &self.database {
+            database
+                .add_pool_event_blocks_batch(self.chain.chain_id, &blocks)
+                .await?;
+        }
+
+        for block in blocks {
+            self.block_timestamps.insert(block.number, block.timestamp);
+        }
+
+        Ok(())
+    }
+
     /// Adds a DEX to the cache with the specified identifier.
     ///
     /// # Errors

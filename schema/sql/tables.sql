@@ -306,6 +306,13 @@ CREATE TABLE IF NOT EXISTS "block" (
 ) PARTITION BY LIST (chain_id);
 CREATE TABLE IF NOT EXISTS "block_default" PARTITION OF "block" DEFAULT;
 
+CREATE TABLE IF NOT EXISTS "pool_event_block" (
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    number BIGINT NOT NULL,
+    timestamp TEXT NOT NULL,
+    PRIMARY KEY (chain_id, number)
+);
+
 CREATE TABLE IF NOT EXISTS "token"(
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
     address TEXT NOT NULL,
