@@ -964,7 +964,12 @@ impl DataEngine {
             SubscribeCommand::Bars(cmd) if has_continuous_future_params(cmd.params.as_ref()) => {
                 return self.subscribe_continuous_future_bars(cmd);
             }
-            SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd)?,
+            SubscribeCommand::Bars(cmd) => {
+                self.subscribe_bars(cmd)?;
+                if cmd.bar_type.is_internally_aggregated() {
+                    return Ok(());
+                }
+            }
             SubscribeCommand::OptionChain(cmd) => {
                 self.subscribe_option_chain(cmd);
                 return Ok(());
@@ -1049,7 +1054,12 @@ impl DataEngine {
                 self.unsubscribe_continuous_future_bars(cmd);
                 return Ok(());
             }
-            UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd),
+            UnsubscribeCommand::Bars(cmd) => {
+                self.unsubscribe_bars(cmd);
+                if cmd.bar_type.is_internally_aggregated() {
+                    return Ok(());
+                }
+            }
             UnsubscribeCommand::OptionChain(cmd) => {
                 self.unsubscribe_option_chain(cmd);
                 return Ok(());
