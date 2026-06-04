@@ -1746,6 +1746,7 @@ mod tests {
     const HTTP_ORDER_BOOK_DETAILS: &str = include_str!("../test_data/http_order_book_details.json");
     const HTTP_FUNDINGS: &str = include_str!("../test_data/http_fundings.json");
     const HTTP_RECENT_TRADES: &str = include_str!("../test_data/http_recent_trades.json");
+    const HTTP_RECENT_TRADES_NULL: &str = include_str!("../test_data/http_recent_trades_null.json");
     const HTTP_RECENT_TRADES_UNORDERED: &str =
         include_str!("../test_data/http_recent_trades_unordered.json");
     const PRIVATE_KEY_HEX: &str =
@@ -2433,6 +2434,43 @@ mod tests {
                 assert_eq!(tick.size, Quantity::from("0.0005"));
                 assert_eq!(tick.aggressor_side, AggressorSide::Seller);
                 assert_eq!(tick.trade_id.to_string(), "19211490282");
+            }
+            event => panic!("expected trades response, was {event:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_trades_emits_empty_response_for_null_recent_trades() {
+        let base_url = spawn_trades_server_with_response(HTTP_RECENT_TRADES_NULL).await;
+        let config = LighterDataClientConfig {
+            base_url_http: Some(base_url),
+            ..Default::default()
+        };
+        let (client, mut receiver) = create_data_client_with_receiver_and_config_for_test(config);
+        let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
+        let start = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+        let request = RequestTrades::new(
+            instrument_id,
+            Some(start),
+            None,
+            NonZeroUsize::new(50),
+            Some(ClientId::new("LIGHTER")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+
+        DataClient::request_trades(&client, request).unwrap();
+
+        let event = tokio::time::timeout(Duration::from_secs(2), receiver.recv())
+            .await
+            .expect("trades response")
+            .expect("trades event");
+
+        match event {
+            DataEvent::Response(DataResponse::Trades(response)) => {
+                assert_eq!(response.instrument_id, instrument_id);
+                assert!(response.data.is_empty());
             }
             event => panic!("expected trades response, was {event:?}"),
         }
