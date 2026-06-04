@@ -39,12 +39,12 @@ use crate::common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProduct
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.binance")
 )]
-pub enum SpotMarketDataMode {
+pub enum BinanceSpotMarketDataMode {
     #[default]
     /// Spot SBE streams (requires Ed25519 credentials).
     Sbe,
     /// Force Spot public JSON streams (does not require credentials).
-    JsonPublic,
+    Json,
 }
 
 /// Configuration for Binance data client.
@@ -81,9 +81,9 @@ pub struct BinanceDataClientConfig {
     /// Spot market-data transport mode.
     ///
     /// - `Sbe` uses SBE streams and requires Ed25519 credentials.
-    /// - `JsonPublic` forces public JSON streams with no credentials.
+    /// - `Json` forces public JSON streams with no credentials.
     #[builder(default)]
-    pub spot_market_data_mode: SpotMarketDataMode,
+    pub spot_market_data_mode: BinanceSpotMarketDataMode,
     /// Interval in seconds for polling exchange info to detect instrument status
     /// changes (e.g. Trading -> Halt). Set to 0 to disable. Defaults to 3600 (60 minutes).
     #[builder(default = 3600)]
@@ -214,7 +214,7 @@ instrument_status_poll_secs = 600
 
         assert_eq!(config.environment, BinanceEnvironment::Testnet);
         assert_eq!(config.product_type, BinanceProductType::UsdM);
-        assert_eq!(config.spot_market_data_mode, SpotMarketDataMode::Sbe);
+        assert_eq!(config.spot_market_data_mode, BinanceSpotMarketDataMode::Sbe);
         assert_eq!(config.instrument_status_poll_secs, 600);
     }
 
@@ -222,12 +222,15 @@ instrument_status_poll_secs = 600
     fn test_data_config_toml_spot_market_data_mode_override() {
         let config: BinanceDataClientConfig = toml::from_str(
             r#"
-spot_market_data_mode = "JsonPublic"
+spot_market_data_mode = "Json"
 "#,
         )
         .unwrap();
 
-        assert_eq!(config.spot_market_data_mode, SpotMarketDataMode::JsonPublic);
+        assert_eq!(
+            config.spot_market_data_mode,
+            BinanceSpotMarketDataMode::Json
+        );
     }
 
     #[rstest]

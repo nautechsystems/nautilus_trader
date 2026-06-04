@@ -67,7 +67,7 @@ use crate::{
         status::diff_and_emit_statuses,
         urls::get_ws_base_url,
     },
-    config::{BinanceDataClientConfig, SpotMarketDataMode},
+    config::{BinanceDataClientConfig, BinanceSpotMarketDataMode},
     spot::{
         http::{BinanceDepth, DepthParams, client::BinanceSpotHttpClient},
         sbe::generated::symbol_status::SymbolStatus,
@@ -203,7 +203,7 @@ pub struct BinanceSpotDataClient {
     config: BinanceDataClientConfig,
     http_client: BinanceSpotHttpClient,
     ws_client: SpotWsClient,
-    spot_market_data_mode: SpotMarketDataMode,
+    spot_market_data_mode: BinanceSpotMarketDataMode,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
     tasks: Vec<JoinHandle<()>>,
@@ -236,7 +236,7 @@ impl BinanceSpotDataClient {
             None, // proxy_url
         )?;
 
-        let creds = if spot_market_data_mode == SpotMarketDataMode::Sbe {
+        let creds = if spot_market_data_mode == BinanceSpotMarketDataMode::Sbe {
             resolve_credentials(
                 config.api_key.clone(),
                 config.api_secret.clone(),
@@ -258,14 +258,14 @@ impl BinanceSpotDataClient {
 
         let ws_client = match spot_market_data_mode {
             // SBE streams require Ed25519 authentication
-            SpotMarketDataMode::Sbe => SpotWsClient::Sbe(BinanceSpotWebSocketClient::new(
+            BinanceSpotMarketDataMode::Sbe => SpotWsClient::Sbe(BinanceSpotWebSocketClient::new(
                 config.base_url_ws.clone(),
                 creds.as_ref().map(|(k, _)| k.clone()),
                 creds.as_ref().map(|(_, s)| s.clone()),
                 Some(20), // Heartbeat interval
                 config.transport_backend,
             )?),
-            SpotMarketDataMode::JsonPublic => {
+            BinanceSpotMarketDataMode::Json => {
                 SpotWsClient::JsonPublic(BinanceSpotPublicJsonWebSocketClient::new(
                     Some(resolve_spot_json_ws_url(
                         config.base_url_ws.clone(),
@@ -530,8 +530,8 @@ impl BinanceSpotDataClient {
 
     fn quote_stream_suffix(&self) -> &'static str {
         match self.spot_market_data_mode {
-            SpotMarketDataMode::Sbe => "bestBidAsk",
-            SpotMarketDataMode::JsonPublic => "bookTicker",
+            BinanceSpotMarketDataMode::Sbe => "bestBidAsk",
+            BinanceSpotMarketDataMode::Json => "bookTicker",
         }
     }
 
@@ -1204,7 +1204,7 @@ impl DataClient for BinanceSpotDataClient {
             return Ok(());
         }
 
-        if self.spot_market_data_mode == SpotMarketDataMode::Sbe
+        if self.spot_market_data_mode == BinanceSpotMarketDataMode::Sbe
             && !self.ws_client.has_credentials()
         {
             anyhow::bail!(
@@ -1463,7 +1463,7 @@ impl DataClient for BinanceSpotDataClient {
         let ws = self.ws_client.clone();
         let symbol_lower = instrument_id.symbol.as_str().to_lowercase();
 
-        if self.spot_market_data_mode == SpotMarketDataMode::JsonPublic {
+        if self.spot_market_data_mode == BinanceSpotMarketDataMode::Json {
             // Spot public JSON exposes partial-book streams only (no diff stream),
             // so each @depth{level} message is a self-contained snapshot; the REST
             // snapshot + diff buffering path used for SBE does not apply here.
@@ -1911,7 +1911,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::{
-        BinanceDepth, BinanceEnvironment, BufferedDepthUpdate, SpotMarketDataMode,
+        BinanceDepth, BinanceEnvironment, BinanceSpotMarketDataMode, BufferedDepthUpdate,
         first_applicable_spot_update, parse_spot_depth_snapshot, resolve_spot_json_ws_url,
         spot_continuity_ok, spot_overlap_valid,
     };
@@ -2077,7 +2077,10 @@ mod tests {
 
     #[rstest]
     fn test_spot_market_data_mode_default_is_sbe() {
-        assert_eq!(SpotMarketDataMode::default(), SpotMarketDataMode::Sbe);
+        assert_eq!(
+            BinanceSpotMarketDataMode::default(),
+            BinanceSpotMarketDataMode::Sbe
+        );
     }
 
     #[rstest]

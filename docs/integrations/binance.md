@@ -453,6 +453,12 @@ The sequence of events is as follows:
 - Deltas will stop buffering.
 - Remaining deltas are sent to the `DataEngine`.
 
+:::note
+This snapshot-and-buffer sequence applies to Futures and the Spot `Sbe` mode.
+The Spot `Json` mode delivers self-contained partial-book snapshots with no diff
+buffering. See [Spot market data mode](#spot-market-data-mode).
+:::
+
 ## Binance data differences
 
 The `ts_event` field on `QuoteTick` differs between Spot and Futures. Spot
@@ -714,6 +720,7 @@ definitive list of Rust config options.
 | `environment`                      | `None`    | Binance environment: `LIVE`, `TESTNET`, or `DEMO`. Defaults to `LIVE` when `None`. |
 | `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalogue refreshes. |
 | `use_agg_trade_ticks`              | `False`   | When `True`, subscribe to aggregated trade ticks instead of raw trades. Futures WebSocket subscriptions always use `@aggTrade` regardless of this flag. |
+| `spot_market_data_mode`            | `Sbe`     | *Rust only.* Spot market data transport (`Sbe` or `Json`). See [Spot market data mode](#spot-market-data-mode). |
 | `instrument_status_poll_secs`      | `3600`    | *Rust only.* Interval (seconds) between exchange info polls to detect instrument status changes. Set to `0` to disable. |
 | `transport_backend`                | `Sockudo` | *Rust only.* WebSocket transport backend. |
 
@@ -799,6 +806,26 @@ node.add_exec_client_factory(BINANCE, BinanceLiveExecClientFactory)
 # Finally build the node
 node.build()
 ```
+
+### Spot market data mode
+
+`spot_market_data_mode` (Rust `BinanceDataClientConfig`) selects the Spot data
+transport. It affects Spot only; Futures is unchanged.
+
+| Mode   | Credentials        | Quotes       |
+|--------|--------------------|--------------|
+| `Sbe`  | Ed25519 (required) | `bestBidAsk` |
+| `Json` | None (public)      | `bookTicker` |
+
+`Sbe` (default) uses Binance Simple Binary Encoding streams and requires Ed25519
+keys (see [Key types](#key-types)); the client refuses to connect without them.
+`Json` uses public streams with no credentials, and delivers order books as
+partial-book snapshots rather than buffered diffs (see [Order books](#order-books)).
+
+:::note
+Exposed to Python as `BinanceSpotMarketDataMode` on
+`nautilus_trader.core.nautilus_pyo3.binance`; not on the legacy Python adapter config.
+:::
 
 ### Key types
 

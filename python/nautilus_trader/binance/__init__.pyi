@@ -20,6 +20,7 @@ __all__ = [
     "BinanceMarginType",
     "BinancePositionSide",
     "BinanceProductType",
+    "BinanceSpotMarketDataMode",
     "get_binance_arrow_schema_map",
 ]
 
@@ -64,6 +65,7 @@ class BinanceDataClientConfig:
         base_url_ws: str | None = None,
         api_key: str | None = None,
         api_secret: str | None = None,
+        spot_market_data_mode: BinanceSpotMarketDataMode | None = None,
         instrument_status_poll_secs: int | None = None,
     ) -> None: ...
 
@@ -177,5 +179,10 @@ class BinanceProductType(enum.Enum):
     USD_M = ...
     COIN_M = ...
     OPTIONS = ...
+
+@typing.final
+class BinanceSpotMarketDataMode(enum.Enum):
+    Sbe = ...
+    Json = ...
 
 def get_binance_arrow_schema_map(cls: type) -> typing.Any: ...

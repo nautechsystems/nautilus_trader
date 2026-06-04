@@ -23,7 +23,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProductType},
-    config::{BinanceDataClientConfig, BinanceExecClientConfig, SpotMarketDataMode},
+    config::{BinanceDataClientConfig, BinanceExecClientConfig, BinanceSpotMarketDataMode},
 };
 
 #[pymethods]
@@ -51,7 +51,7 @@ impl BinanceDataClientConfig {
         base_url_ws: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
-        spot_market_data_mode: Option<SpotMarketDataMode>,
+        spot_market_data_mode: Option<BinanceSpotMarketDataMode>,
         instrument_status_poll_secs: Option<u64>,
     ) -> Self {
         let defaults = Self::default();
@@ -184,7 +184,7 @@ mod tests {
             Some("wss://ws.example".to_string()),
             Some("api-key".to_string()),
             Some("api-secret".to_string()),
-            Some(SpotMarketDataMode::JsonPublic),
+            Some(BinanceSpotMarketDataMode::Json),
             Some(15),
         );
 
@@ -197,7 +197,10 @@ mod tests {
         assert_eq!(config.base_url_ws.as_deref(), Some("wss://ws.example"));
         assert_eq!(config.api_key.as_deref(), Some("api-key"));
         assert_eq!(config.api_secret.as_deref(), Some("api-secret"));
-        assert_eq!(config.spot_market_data_mode, SpotMarketDataMode::JsonPublic);
+        assert_eq!(
+            config.spot_market_data_mode,
+            BinanceSpotMarketDataMode::Json
+        );
         assert_eq!(config.instrument_status_poll_secs, 15);
     }
 
