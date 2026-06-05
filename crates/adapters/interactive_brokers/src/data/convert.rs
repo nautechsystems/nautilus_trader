@@ -17,7 +17,7 @@
 
 use chrono::{DateTime, Utc};
 use ibapi::market_data::historical::{
-    BarSize as HistoricalBarSize, Duration as IBDuration, ToDuration,
+    BarSize as HistoricalBarSize, BarTimestamp, Duration as IBDuration, ToDuration,
     WhatToShow as HistoricalWhatToShow,
 };
 use nautilus_core::UnixNanos;
@@ -140,7 +140,7 @@ pub fn ib_bar_to_nautilus_bar(
     size_precision: u8,
 ) -> anyhow::Result<Bar> {
     // Convert IB timestamp to UnixNanos
-    let ts_event = ib_timestamp_to_unix_nanos(&ib_bar.date);
+    let ts_event = ib_bar_timestamp_to_unix_nanos(&ib_bar.date);
     let ts_init = ts_event; // Use same timestamp for init
 
     // Validate and correct prices
@@ -173,6 +173,15 @@ pub fn ib_bar_to_nautilus_bar(
         ts_event,
         ts_init,
     ))
+}
+
+/// Convert IB historical bar timestamp to UnixNanos.
+#[must_use]
+pub fn ib_bar_timestamp_to_unix_nanos(dt: &BarTimestamp) -> UnixNanos {
+    match dt {
+        BarTimestamp::Date(date) => ib_timestamp_to_unix_nanos(&date.midnight().assume_utc()),
+        BarTimestamp::DateTime(dt) => ib_timestamp_to_unix_nanos(dt),
+    }
 }
 
 /// Convert IB timestamp (OffsetDateTime) to UnixNanos.
@@ -396,7 +405,7 @@ mod tests {
     #[rstest]
     fn test_ib_bar_to_nautilus_bar() {
         let ib_bar = ibapi::market_data::historical::Bar {
-            date: datetime!(2024-01-01 10:00:00 UTC),
+            date: datetime!(2024-01-01 10:00:00 UTC).into(),
             open: 150.0,
             high: 151.0,
             low: 149.0,
@@ -425,7 +434,7 @@ mod tests {
     #[rstest]
     fn test_ib_bar_to_nautilus_bar_negative_volume() {
         let ib_bar = ibapi::market_data::historical::Bar {
-            date: datetime!(2024-01-01 10:00:00 UTC),
+            date: datetime!(2024-01-01 10:00:00 UTC).into(),
             open: 150.0,
             high: 151.0,
             low: 149.0,

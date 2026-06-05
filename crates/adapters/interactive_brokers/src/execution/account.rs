@@ -24,6 +24,7 @@ use ibapi::{
         types::{AccountGroup, AccountId as IbAccountId},
     },
     client::Client,
+    prelude::{StreamExt, SubscriptionItemStreamExt},
 };
 use nautilus_common::{
     live::runner::get_exec_event_sender,
@@ -72,10 +73,11 @@ pub async fn subscribe_account_summary(
     ];
 
     let group = AccountGroup("All".to_string());
-    let mut subscription = client
+    let subscription = client
         .account_summary(&group, tags)
         .await
         .context("Failed to subscribe to account summary")?;
+    let mut subscription = subscription.filter_data();
 
     tracing::info!("Subscribed to account summary for account: {}", account_id);
 
@@ -214,10 +216,11 @@ fn merge_account_summary_balance(
 /// Returns an error if subscription fails.
 pub async fn subscribe_pnl(client: &Arc<Client>, account_id: AccountId) -> anyhow::Result<()> {
     let account = IbAccountId(raw_ib_account_code(&account_id));
-    let mut subscription = client
+    let subscription = client
         .pnl(&account, None)
         .await
         .context("Failed to subscribe to PnL")?;
+    let mut subscription = subscription.filter_data();
 
     tracing::info!("Subscribed to PnL updates for account: {}", account_id);
 
@@ -301,10 +304,11 @@ pub async fn initialize_position_tracking(
     position_tracker: PositionTracker,
 ) -> anyhow::Result<()> {
     let raw_account_id = raw_ib_account_code(&account_id);
-    let mut subscription = client
+    let subscription = client
         .positions()
         .await
         .context("Failed to request positions")?;
+    let mut subscription = subscription.filter_data();
 
     tracing::info!("Initializing position tracking for account: {}", account_id);
 
@@ -360,10 +364,11 @@ pub async fn subscribe_positions(
     instrument_provider: Arc<crate::providers::instruments::InteractiveBrokersInstrumentProvider>,
 ) -> anyhow::Result<()> {
     let raw_account_id = raw_ib_account_code(&account_id);
-    let mut subscription = client
+    let subscription = client
         .positions()
         .await
         .context("Failed to subscribe to positions")?;
+    let mut subscription = subscription.filter_data();
 
     tracing::info!("Subscribed to position updates for account: {}", account_id);
 

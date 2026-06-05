@@ -7,13 +7,17 @@
 //  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, str::FromStr};
 
 use ibapi::{
-    contracts::{Contract, Currency as IBCurrency, Exchange, SecurityType, Symbol as IBSymbol},
+    contracts::{
+        Contract, Currency as IBCurrency, Exchange, LegAction, OptionRight, SecurityType,
+        Symbol as IBSymbol,
+    },
     orders::{
-        CommissionReport, Execution, ExecutionData, Liquidity, Order as IBOrder,
-        OrderData as IBOrderData, OrderState, OrderStatus as IBOrderStatus, OrderUpdate,
+        CommissionReport, Execution, ExecutionData, ExecutionSide, Liquidity, Order as IBOrder,
+        OrderData as IBOrderData, OrderState, OrderStatus as IBOrderStatus, OrderStatusKind,
+        OrderUpdate,
     },
     subscriptions::Subscription,
 };
@@ -346,7 +350,7 @@ fn create_test_execution_data(
         security_type: SecurityType::Option,
         last_trade_date_or_contract_month: String::from("20250101"),
         strike: 400.0,
-        right: String::from("C"),
+        right: Some(OptionRight::Call),
         multiplier: String::from("100"),
         exchange: Exchange::from("SMART"),
         currency: IBCurrency::from("USD"),
@@ -360,7 +364,11 @@ fn create_test_execution_data(
         execution_id: execution_id.to_string(),
         order_id,
         time: String::from("20250101 08:00:00"),
-        side: side.to_string(),
+        side: if side == "BOT" {
+            ExecutionSide::Bought
+        } else {
+            ExecutionSide::Sold
+        },
         shares,
         price,
         perm_id: 0,
@@ -404,7 +412,7 @@ fn create_test_stock_execution_data(
         execution_id: execution_id.to_string(),
         order_id,
         time: String::from("20250101 08:00:00"),
-        side: String::from("BOT"),
+        side: ExecutionSide::Bought,
         shares: 10.0,
         price: 150.25,
         perm_id: 0,
@@ -441,7 +449,7 @@ fn create_test_bag_execution_data(order_id: i32, execution_id: &str) -> Executio
             ibapi::contracts::ComboLeg {
                 contract_id: 12345,
                 ratio: 1,
-                action: String::from("BUY"),
+                action: LegAction::Buy,
                 exchange: String::from("SMART"),
                 open_close: ibapi::contracts::ComboLegOpenClose::Same,
                 short_sale_slot: 0,
@@ -451,7 +459,7 @@ fn create_test_bag_execution_data(order_id: i32, execution_id: &str) -> Executio
             ibapi::contracts::ComboLeg {
                 contract_id: 67890,
                 ratio: 1,
-                action: String::from("SELL"),
+                action: LegAction::Sell,
                 exchange: String::from("SMART"),
                 open_close: ibapi::contracts::ComboLegOpenClose::Same,
                 short_sale_slot: 0,
@@ -466,7 +474,7 @@ fn create_test_bag_execution_data(order_id: i32, execution_id: &str) -> Executio
         execution_id: execution_id.to_string(),
         order_id,
         time: String::from("20250101 08:00:00"),
-        side: String::from("BOT"),
+        side: ExecutionSide::Bought,
         shares: 1.0,
         price: 1.25,
         perm_id: 0,
@@ -545,16 +553,16 @@ fn create_test_option_spread() -> OptionSpread {
 fn create_test_order_status(order_id: i32, status: &str) -> IBOrderStatus {
     IBOrderStatus {
         order_id,
-        status: status.to_string(),
+        status: OrderStatusKind::from_str(status).unwrap(),
         filled: 0.0,
         remaining: 0.0,
-        average_fill_price: 0.0,
+        average_fill_price: Some(0.0),
         perm_id: 0,
         parent_id: 0,
-        last_fill_price: 0.0,
+        last_fill_price: Some(0.0),
         client_id: 0,
         why_held: String::new(),
-        market_cap_price: 0.0,
+        market_cap_price: Some(0.0),
     }
 }
 
@@ -574,7 +582,7 @@ fn create_test_open_order(order_id: i32, status: &str, order_ref: &str) -> IBOrd
             ..Default::default()
         },
         order_state: OrderState {
-            status: status.to_string(),
+            status: OrderStatusKind::from_str(status).unwrap(),
             ..Default::default()
         },
     }
@@ -641,7 +649,7 @@ async fn test_get_leg_instrument_id_and_ratio() {
         security_type: SecurityType::Option,
         last_trade_date_or_contract_month: String::from("20250101"),
         strike: 400.0,
-        right: String::from("C"),
+        right: Some(OptionRight::Call),
         multiplier: String::from("100"),
         exchange: Exchange::from("SMART"),
         currency: IBCurrency::from("USD"),
@@ -650,7 +658,7 @@ async fn test_get_leg_instrument_id_and_ratio() {
         combo_legs: vec![ibapi::contracts::ComboLeg {
             contract_id: 12345,
             ratio: 1,
-            action: String::from("BUY"),
+            action: LegAction::Buy,
             exchange: String::from("SMART"),
             open_close: ibapi::contracts::ComboLegOpenClose::Same,
             short_sale_slot: 0,
@@ -683,7 +691,7 @@ async fn test_get_leg_instrument_id_and_ratio_with_sell_action() {
         security_type: SecurityType::Option,
         last_trade_date_or_contract_month: String::from("20250101"),
         strike: 400.0,
-        right: String::from("C"),
+        right: Some(OptionRight::Call),
         multiplier: String::from("100"),
         exchange: Exchange::from("SMART"),
         currency: IBCurrency::from("USD"),
@@ -692,7 +700,7 @@ async fn test_get_leg_instrument_id_and_ratio_with_sell_action() {
         combo_legs: vec![ibapi::contracts::ComboLeg {
             contract_id: 12345,
             ratio: 2,
-            action: String::from("SELL"),
+            action: LegAction::Sell,
             exchange: String::from("SMART"),
             open_close: ibapi::contracts::ComboLegOpenClose::Same,
             short_sale_slot: 0,

@@ -46,6 +46,7 @@ use ibapi::{
         ExecutionData, ExecutionFilter, Executions, OrderStatus as IBOrderStatus, OrderUpdate,
         Orders,
     },
+    prelude::{StreamExt, SubscriptionItemStreamExt},
 };
 use nautilus_common::{
     cache::Cache,
@@ -192,14 +193,14 @@ struct PendingComboFill {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IbOrderSelector {
     OrderId(i32),
-    PermId(i32),
+    PermId(i64),
 }
 
 impl IbOrderSelector {
     fn from_venue_order_id(venue_order_id: &VenueOrderId) -> anyhow::Result<Self> {
         let raw = venue_order_id.as_str();
         if let Some(perm_id) = raw.strip_prefix("PERM-") {
-            return Ok(Self::PermId(perm_id.parse::<i32>().with_context(|| {
+            return Ok(Self::PermId(perm_id.parse::<i64>().with_context(|| {
                 format!("Failed to parse venue_order_id {raw:?} as IB perm_id")
             })?));
         }
@@ -209,7 +210,7 @@ impl IbOrderSelector {
         })?))
     }
 
-    fn matches(self, order_id: i32, perm_id: i32) -> bool {
+    fn matches(self, order_id: i32, perm_id: i64) -> bool {
         match self {
             Self::OrderId(target_order_id) => order_id == target_order_id,
             Self::PermId(target_perm_id) => perm_id == target_perm_id,
@@ -398,9 +399,10 @@ impl InteractiveBrokersExecutionClient {
 
     async fn get_highest_open_order_id(&self, client: &Client) -> anyhow::Result<Option<i32>> {
         let timeout_dur = Duration::from_secs(self.config.request_timeout);
-        let mut subscription = tokio::time::timeout(timeout_dur, client.all_open_orders())
+        let subscription = tokio::time::timeout(timeout_dur, client.all_open_orders())
             .await
             .context("Timeout requesting open orders for next order ID initialization")??;
+        let mut subscription = subscription.filter_data();
         let mut highest_order_id = None;
 
         while let Some(order_result) = subscription.next().await {
@@ -813,9 +815,10 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let client = self.ib_client.as_ref().context("IB client not connected")?;
 
         let timeout_dur = Duration::from_secs(self.config.request_timeout);
-        let mut subscription = tokio::time::timeout(timeout_dur, client.all_open_orders())
+        let subscription = tokio::time::timeout(timeout_dur, client.all_open_orders())
             .await
             .context("Timeout requesting open orders")??;
+        let mut subscription = subscription.filter_data();
         let mut reports = Vec::new();
         let mut open_order_fills: AHashMap<InstrumentId, Decimal> = AHashMap::new();
         let ts_init = get_atomic_clock_realtime().get_time_ns();
@@ -857,17 +860,17 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                     match parse_order_status_to_report(
                         &IBOrderStatus {
                             order_id: data.order_id,
-                            status: data.order_state.status.clone(),
+                            status: data.order_state.status,
                             filled: data.order.filled_quantity,
                             remaining: (data.order.total_quantity - data.order.filled_quantity)
                                 .max(0.0),
-                            average_fill_price: 0.0, // Not available in OrderState
+                            average_fill_price: None, // Not available in OrderState
                             perm_id: data.order.perm_id,
-                            parent_id: 0,         // Not available in OrderState
-                            last_fill_price: 0.0, // Not available in OrderState
+                            parent_id: 0,          // Not available in OrderState
+                            last_fill_price: None, // Not available in OrderState
                             client_id: data.order.client_id,
                             why_held: String::new(), // Not available in OrderState
-                            market_cap_price: 0.0,   // Not available in OrderState
+                            market_cap_price: None,  // Not available in OrderState
                         },
                         Some(&data.order),
                         instrument_id,
@@ -904,9 +907,10 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         }
 
         if !cmd.open_only {
-            let mut positions = tokio::time::timeout(timeout_dur, client.positions())
+            let positions = tokio::time::timeout(timeout_dur, client.positions())
                 .await
                 .context("Timeout requesting positions for synthetic order reports")??;
+            let mut positions = positions.filter_data();
 
             while let Some(position_result) = positions.next().await {
                 match position_result {
@@ -1026,15 +1030,16 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             symbol: String::new(),
             security_type: String::new(),
             exchange: String::new(),
-            side: String::new(),
+            side: None,
             last_n_days: 0,
             specific_dates: Vec::new(),
         };
 
         let timeout_dur = Duration::from_secs(self.config.request_timeout);
-        let mut subscription = tokio::time::timeout(timeout_dur, client.executions(filter))
+        let subscription = tokio::time::timeout(timeout_dur, client.executions(filter))
             .await
             .context("Timeout requesting executions")??;
+        let mut subscription = subscription.filter_data();
         let mut reports = Vec::new();
         let ts_init = get_atomic_clock_realtime().get_time_ns();
         let mut pending_exec_data: AHashMap<String, ExecutionData> = AHashMap::new();
@@ -1078,9 +1083,6 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                         );
                     }
                 }
-                Ok(_) => {
-                    // Ignore other message types (Notice, etc.)
-                }
                 Err(e) => {
                     tracing::warn!("Error receiving execution data: {e}");
                 }
@@ -1104,9 +1106,10 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let client = self.ib_client.as_ref().context("IB client not connected")?;
 
         let timeout_dur = Duration::from_secs(self.config.request_timeout);
-        let mut subscription = tokio::time::timeout(timeout_dur, client.positions())
+        let subscription = tokio::time::timeout(timeout_dur, client.positions())
             .await
             .context("Timeout requesting positions")??;
+        let mut subscription = subscription.filter_data();
         let mut reports = Vec::new();
         let ts_init = get_atomic_clock_realtime().get_time_ns();
         let raw_account_id = raw_ib_account_code(&self.core.account_id);
@@ -1365,7 +1368,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
         let handle = get_runtime().spawn(async move {
             let timeout_dur = Duration::from_secs(request_timeout_secs);
-            let mut subscription =
+            let subscription =
                 match tokio::time::timeout(timeout_dur, client_clone.all_open_orders()).await {
                     Ok(Ok(s)) => s,
                     Ok(Err(e)) => {
@@ -1377,6 +1380,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                         return;
                     }
                 };
+            let mut subscription = subscription.filter_data();
 
             while let Some(order_result) = subscription.next().await {
                 if let Ok(Orders::OrderData(data)) = order_result {
@@ -1408,17 +1412,17 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                     let report = match parse_order_status_to_report(
                         &IBOrderStatus {
                             order_id: data.order_id,
-                            status: data.order_state.status.clone(),
+                            status: data.order_state.status,
                             filled: data.order.filled_quantity,
                             remaining: (data.order.total_quantity - data.order.filled_quantity)
                                 .max(0.0),
-                            average_fill_price: 0.0,
+                            average_fill_price: None,
                             perm_id: data.order.perm_id,
                             parent_id: 0,
-                            last_fill_price: 0.0,
+                            last_fill_price: None,
                             client_id: data.order.client_id,
                             why_held: String::new(),
-                            market_cap_price: 0.0,
+                            market_cap_price: None,
                         },
                         Some(&data.order),
                         instrument_id,
@@ -2074,7 +2078,7 @@ impl InteractiveBrokersExecutionClient {
         )
         .await?;
 
-        client
+        let _cancel_subscription = client
             .cancel_order(ib_order_id, "")
             .await
             .context("Failed to cancel order with IB")?;
@@ -2107,13 +2111,12 @@ impl InteractiveBrokersExecutionClient {
 
         let timeout_dur = Duration::from_secs(request_timeout_secs);
         let raw_account_id = raw_ib_account_code(&account_id);
-        let mut subscription = match tokio::time::timeout(timeout_dur, client.all_open_orders())
-            .await
-        {
+        let subscription = match tokio::time::timeout(timeout_dur, client.all_open_orders()).await {
             Ok(Ok(subscription)) => subscription,
             Ok(Err(e)) => anyhow::bail!("Failed to request open orders for perm_id lookup: {e}"),
             Err(_) => anyhow::bail!("Timed out requesting open orders for perm_id lookup"),
         };
+        let mut subscription = subscription.filter_data();
 
         while let Some(order_result) = subscription.next().await {
             let Orders::OrderData(data) = order_result? else {
