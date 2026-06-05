@@ -16,6 +16,7 @@
 import datetime
 import sys
 import tempfile
+from typing import Any
 from unittest.mock import patch
 
 import pandas as pd
@@ -3016,6 +3017,38 @@ def test_backend_session_table_naming_multiple_instruments(catalog: ParquetDataC
     assert len(instrument_ids) == 2
     assert instrument1.id.value in instrument_ids
     assert instrument2.id.value in instrument_ids
+
+
+def test_backend_session_directory_registration_preserves_file_order(
+    catalog: ParquetDataCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    files = [
+        "/catalog/data/trades/ETHUSDT.BINANCE/0_0.parquet",
+        "/catalog/data/trades/AUDUSD.SIM/0_0.parquet",
+        "/catalog/data/trades/ETHUSDT.BINANCE/1_1.parquet",
+    ]
+    registered_directories: list[str] = []
+
+    def capture_register_directory_table(**kwargs: Any) -> None:
+        registered_directories.append(kwargs["directory"])
+
+    monkeypatch.setattr(
+        catalog,
+        "_register_directory_table",
+        capture_register_directory_table,
+    )
+
+    catalog.backend_session(
+        data_cls=TradeTick,
+        files=files,
+        optimize_file_loading=True,
+    )
+
+    assert registered_directories == [
+        "/catalog/data/trades/ETHUSDT.BINANCE",
+        "/catalog/data/trades/AUDUSD.SIM",
+    ]
 
 
 def test_backend_session_table_naming_special_characters(catalog: ParquetDataCatalog) -> None:
