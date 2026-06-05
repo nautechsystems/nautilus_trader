@@ -518,6 +518,10 @@ mod tests {
             assert_eq!(nm.id, "1031769");
             assert_eq!(nm.slug, "nvda-above-240-on-january-30-2026");
             assert_eq!(
+                nm.market.as_str(),
+                "0x311d0c4b6671ab54af4970c06fcf58662516f5168997bdda209ec3db5aa6b0c1"
+            );
+            assert_eq!(
                 nm.condition_id,
                 "0x311d0c4b6671ab54af4970c06fcf58662516f5168997bdda209ec3db5aa6b0c1"
             );

@@ -367,6 +367,16 @@ impl PolymarketWebSocketClient {
         self.subscriptions.all_topics().len()
     }
 
+    /// Clears retained subscription/auth replay state.
+    ///
+    /// Useful for hard resets where the caller wants reconnect to start from a
+    /// clean slate rather than replaying a previous generation's topics.
+    pub(crate) fn clear_reconnect_state(&self) {
+        self.subscriptions.clear();
+        self.user_subscribed.store(false, Ordering::Relaxed);
+        self.auth_tracker.invalidate();
+    }
+
     /// Returns `true` if the user channel has been authenticated.
     #[must_use]
     pub fn is_authenticated(&self) -> bool {

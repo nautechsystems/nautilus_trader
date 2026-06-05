@@ -83,7 +83,7 @@ impl PolymarketDataClientConfig {
     /// and are skipped during serialization; they default to empty/`None` and must be
     /// installed programmatically after deserialization.
     #[new]
-    #[pyo3(signature = (instrument_config=None, base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=PY_OPTION_U64_MISSING_SENTINEL, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None, resolve_poll_enabled=None, resolve_poll_interval_secs=None, resolve_poll_grace_secs=None, resolve_poll_max_wait_secs=None))]
+    #[pyo3(signature = (instrument_config=None, base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=PY_OPTION_U64_MISSING_SENTINEL, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None, new_market_fetch_max_concurrency=None, resolve_poll_enabled=None, resolve_poll_interval_secs=None, resolve_poll_grace_secs=None, resolve_poll_max_wait_secs=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         instrument_config: Option<PolymarketInstrumentProviderConfig>,
@@ -101,6 +101,7 @@ impl PolymarketDataClientConfig {
         auto_load_max_retries: Option<u32>,
         auto_load_retry_delay_initial_secs: Option<f64>,
         auto_load_retry_delay_max_secs: Option<f64>,
+        new_market_fetch_max_concurrency: Option<usize>,
         resolve_poll_enabled: Option<bool>,
         resolve_poll_interval_secs: Option<u64>,
         resolve_poll_grace_secs: Option<u64>,
@@ -122,6 +123,8 @@ impl PolymarketDataClientConfig {
                 default.update_instruments_interval_mins,
             ),
             subscribe_new_markets: subscribe_new_markets.unwrap_or(default.subscribe_new_markets),
+            new_market_fetch_max_concurrency: new_market_fetch_max_concurrency
+                .unwrap_or(default.new_market_fetch_max_concurrency),
             auto_load_missing_instruments: auto_load_missing_instruments
                 .unwrap_or(default.auto_load_missing_instruments),
             auto_load_debounce_ms: auto_load_debounce_ms.unwrap_or(default.auto_load_debounce_ms),
@@ -291,6 +294,21 @@ mod tests {
             let config = construct_data_client_config(py, Some(&args), None);
 
             assert_eq!(config.update_instruments_interval_mins, None);
+        });
+    }
+
+    #[rstest]
+    fn direct_pyo3_constructor_sets_new_market_fetch_max_concurrency() {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item("new_market_fetch_max_concurrency", 23)
+                .unwrap();
+
+            let config = construct_data_client_config(py, None, Some(&kwargs));
+
+            assert_eq!(config.new_market_fetch_max_concurrency, 23);
         });
     }
 }
