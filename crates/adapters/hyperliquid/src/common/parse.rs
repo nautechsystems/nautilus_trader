@@ -962,10 +962,10 @@ pub fn parse_account_balances_and_margins(
 
 /// Merges perp clearinghouse balances with spot balances into a unified set.
 ///
-/// The perp parser already reflects combined USDC (its `withdrawable` may include
-/// spot buckets). To avoid double-counting, this helper appends only non-USDC
-/// spot tokens onto the perp-derived balances. If the perp state has no margin
-/// summary, the full spot balance set is used verbatim.
+/// The perp parser already reflects combined USDC when its cross-margin summary
+/// carries collateral or margin state, so this helper appends only non-USDC spot
+/// tokens in that case. If the perp state has no margin summary, or the summary
+/// is present but zeroed, spot USDC is used verbatim.
 ///
 /// # Errors
 ///
@@ -976,12 +976,24 @@ pub fn parse_combined_account_balances_and_margins(
 ) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>)> {
     let (mut balances, margins) = parse_account_balances_and_margins(perp_state)?;
 
-    let has_perp_summary = perp_state.cross_margin_summary.is_some();
+    let perp_reflects_usdc = perp_state
+        .cross_margin_summary
+        .as_ref()
+        .is_some_and(|summary| {
+            summary.total_raw_usd > Decimal::ZERO
+                || summary.total_margin_used > Decimal::ZERO
+                || perp_state.withdrawable.unwrap_or(Decimal::ZERO) > Decimal::ZERO
+        });
+
+    if perp_state.cross_margin_summary.is_some() && !perp_reflects_usdc {
+        balances.retain(|balance| balance.currency.code.as_str() != "USDC");
+    }
+
     let spot_balances = parse_spot_account_balances(spot_state)?;
 
     for balance in spot_balances {
         let is_usdc = balance.currency.code.as_str() == "USDC";
-        if has_perp_summary && is_usdc {
+        if perp_reflects_usdc && is_usdc {
             continue;
         }
         balances.push(balance);
@@ -2184,6 +2196,144 @@ mod tests {
         assert_eq!(balances.len(), 2);
         assert_eq!(balances[0].currency.code.as_str(), "USDC");
         assert_eq!(balances[0].total.as_decimal(), dec!(500));
+        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].total.as_decimal(), dec!(10));
+    }
+
+    #[rstest]
+    fn test_parse_combined_surfaces_spot_usdc_when_perp_summary_zeroed_unified() {
+        let perp_json = r#"{
+            "assetPositions": [],
+            "crossMarginSummary": {
+                "accountValue": "0",
+                "totalNtlPos": "0",
+                "totalRawUsd": "0",
+                "totalMarginUsed": "0",
+                "withdrawable": "0"
+            },
+            "withdrawable": "0"
+        }"#;
+        let perp_state: ClearinghouseState = serde_json::from_str(perp_json).unwrap();
+
+        let spot_json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "75", "hold": "5", "entryNtl": "0"},
+                {"coin": "PURR", "token": 1, "total": "10", "hold": "0", "entryNtl": "5"}
+            ]
+        }"#;
+        let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
+
+        let (balances, margins) =
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+
+        assert!(margins.is_empty());
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(75));
+        assert_eq!(balances[0].free.as_decimal(), dec!(70));
+        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].total.as_decimal(), dec!(10));
+    }
+
+    #[rstest]
+    fn test_parse_combined_deduplicates_usdc_when_perp_total_raw_usd_non_zero() {
+        let perp_json = r#"{
+            "assetPositions": [],
+            "crossMarginSummary": {
+                "accountValue": "50",
+                "totalNtlPos": "0",
+                "totalRawUsd": "50",
+                "totalMarginUsed": "0",
+                "withdrawable": "0"
+            },
+            "withdrawable": "0"
+        }"#;
+        let perp_state: ClearinghouseState = serde_json::from_str(perp_json).unwrap();
+
+        let spot_json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "75", "hold": "0", "entryNtl": "0"},
+                {"coin": "PURR", "token": 1, "total": "10", "hold": "0", "entryNtl": "5"}
+            ]
+        }"#;
+        let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
+
+        let (balances, margins) =
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+
+        assert!(margins.is_empty());
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(50));
+        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].total.as_decimal(), dec!(10));
+    }
+
+    #[rstest]
+    fn test_parse_combined_deduplicates_usdc_when_perp_margin_used_non_zero() {
+        let perp_json = r#"{
+            "assetPositions": [],
+            "crossMarginSummary": {
+                "accountValue": "0",
+                "totalNtlPos": "0",
+                "totalRawUsd": "0",
+                "totalMarginUsed": "25",
+                "withdrawable": "0"
+            },
+            "withdrawable": "0"
+        }"#;
+        let perp_state: ClearinghouseState = serde_json::from_str(perp_json).unwrap();
+
+        let spot_json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "75", "hold": "0", "entryNtl": "0"},
+                {"coin": "PURR", "token": 1, "total": "10", "hold": "0", "entryNtl": "5"}
+            ]
+        }"#;
+        let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
+
+        let (balances, margins) =
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+
+        assert_eq!(margins.len(), 1);
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(0));
+        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].total.as_decimal(), dec!(10));
+    }
+
+    #[rstest]
+    fn test_parse_combined_deduplicates_usdc_when_perp_withdrawable_non_zero() {
+        let perp_json = r#"{
+            "assetPositions": [],
+            "crossMarginSummary": {
+                "accountValue": "0",
+                "totalNtlPos": "0",
+                "totalRawUsd": "0",
+                "totalMarginUsed": "0",
+                "withdrawable": "50"
+            },
+            "withdrawable": "50"
+        }"#;
+        let perp_state: ClearinghouseState = serde_json::from_str(perp_json).unwrap();
+
+        let spot_json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "75", "hold": "0", "entryNtl": "0"},
+                {"coin": "PURR", "token": 1, "total": "10", "hold": "0", "entryNtl": "5"}
+            ]
+        }"#;
+        let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
+
+        let (balances, margins) =
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+
+        assert!(margins.is_empty());
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(50));
+        assert_eq!(balances[0].free.as_decimal(), dec!(50));
         assert_eq!(balances[1].currency.code.as_str(), "PURR");
         assert_eq!(balances[1].total.as_decimal(), dec!(10));
     }
