@@ -992,6 +992,11 @@ fn test_rust_query_files_with_multiple_files() {
         .unwrap();
 
     assert_eq!(files.len(), 3);
+    assert_eq!(files, {
+        let mut sorted = files.clone();
+        sorted.sort();
+        sorted
+    });
 }
 
 #[rstest]
