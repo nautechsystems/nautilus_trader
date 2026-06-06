@@ -182,6 +182,7 @@ Released on TBD (UTC).
 - Optimized Derive signing and hot paths with benchmark report
 - Optimized Hyperliquid signing and hot paths with benchmark report
 - Optimized OKX hot paths with benchmark report
+- Optimized portfolio `update_position` hot path by borrowing open positions instead of cloning per event (Rust)
 - Upgraded Rust (MSRV) to 1.96.0
 - Upgraded Cython to v3.2.5
 - Upgraded `databento` crate to v0.53.0
