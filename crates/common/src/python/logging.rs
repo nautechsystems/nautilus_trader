@@ -350,30 +350,35 @@ impl PyLogger {
 
     /// Emit a TRACE level record.
     #[pyo3(name = "trace")]
+    #[pyo3(signature = (message, color=None))]
     fn py_trace(&self, message: &str, color: Option<LogColor>) {
         self.log_message(LogLevel::Trace, color, message);
     }
 
     /// Emit a DEBUG level record.
     #[pyo3(name = "debug")]
+    #[pyo3(signature = (message, color=None))]
     fn py_debug(&self, message: &str, color: Option<LogColor>) {
         self.log_message(LogLevel::Debug, color, message);
     }
 
     /// Emit an INFO level record.
     #[pyo3(name = "info")]
+    #[pyo3(signature = (message, color=None))]
     fn py_info(&self, message: &str, color: Option<LogColor>) {
         self.log_message(LogLevel::Info, color, message);
     }
 
     /// Emit a WARNING level record.
     #[pyo3(name = "warning")]
+    #[pyo3(signature = (message, color=None))]
     fn py_warning(&self, message: &str, color: Option<LogColor>) {
         self.log_message(LogLevel::Warning, color, message);
     }
 
     /// Emit an ERROR level record.
     #[pyo3(name = "error")]
+    #[pyo3(signature = (message, color=None))]
     fn py_error(&self, message: &str, color: Option<LogColor>) {
         self.log_message(LogLevel::Error, color, message);
     }
@@ -406,6 +411,7 @@ impl PyLogger {
 
     /// Emit a log record at the given level (Python-facing helper).
     #[pyo3(name = "_log")]
+    #[pyo3(signature = (level, color=None, message=""))]
     fn py_log(&self, level: LogLevel, color: Option<LogColor>, message: &str) {
         self.log_message(level, color, message);
     }
