@@ -93,6 +93,7 @@ use crate::{
 };
 
 const MAX_SNAPSHOT_RETRIES: u32 = 5;
+const MAX_BUFFERED_DEPTH_UPDATES: usize = 10_000;
 const SNAPSHOT_RETRY_BACKOFF_BASE_MS: u64 = 250;
 const SNAPSHOT_RETRY_BACKOFF_CAP_MS: u64 = 3_000;
 
@@ -389,6 +390,7 @@ impl BinanceSpotDataClient {
                                         first_update_id,
                                         final_update_id,
                                     });
+                                    trim_buffered_depth_updates(&mut buffer.updates);
                                 }
                             }
                         });
@@ -574,6 +576,13 @@ impl BinanceSpotDataClient {
     ) {
         const SNAPSHOT_DEPTH: u32 = 5000;
 
+        if Self::wait_for_buffered_update(&buffers, instrument_id, epoch)
+            .await
+            .is_none()
+        {
+            return;
+        }
+
         let params = DepthParams {
             symbol: instrument_id.symbol.as_str().to_uppercase(),
             limit: Some(SNAPSHOT_DEPTH),
@@ -652,7 +661,6 @@ impl BinanceSpotDataClient {
                             MAX_SNAPSHOT_RETRIES
                         );
 
-                        Self::reset_book_sync_buffer(&buffers, instrument_id, epoch);
                         tokio::time::sleep(spot_snapshot_retry_backoff(retry_count)).await;
 
                         Box::pin(Self::fetch_and_emit_snapshot_inner(
@@ -737,11 +745,16 @@ impl BinanceSpotDataClient {
                     replay_ready.push(update);
                 }
 
+                let snapshot_ts_event = replay_ready
+                    .first()
+                    .map_or(ts_init, |update| update.deltas.ts_event);
+
                 let snapshot_deltas = match parse_spot_depth_snapshot(
                     &depth_snapshot,
                     instrument_id,
                     price_precision,
                     size_precision,
+                    snapshot_ts_event,
                     ts_init,
                 ) {
                     Ok(Some(deltas)) => deltas,
@@ -754,7 +767,6 @@ impl BinanceSpotDataClient {
                                 MAX_SNAPSHOT_RETRIES
                             );
 
-                            Self::reset_book_sync_buffer(&buffers, instrument_id, epoch);
                             tokio::time::sleep(spot_snapshot_retry_backoff(retry_count)).await;
 
                             Box::pin(Self::fetch_and_emit_snapshot_inner(
@@ -788,7 +800,6 @@ impl BinanceSpotDataClient {
                                 MAX_SNAPSHOT_RETRIES
                             );
 
-                            Self::reset_book_sync_buffer(&buffers, instrument_id, epoch);
                             tokio::time::sleep(spot_snapshot_retry_backoff(retry_count)).await;
 
                             Box::pin(Self::fetch_and_emit_snapshot_inner(
@@ -903,7 +914,6 @@ impl BinanceSpotDataClient {
                         MAX_SNAPSHOT_RETRIES
                     );
 
-                    Self::reset_book_sync_buffer(&buffers, instrument_id, epoch);
                     tokio::time::sleep(spot_snapshot_retry_backoff(retry_count)).await;
 
                     Box::pin(Self::fetch_and_emit_snapshot_inner(
@@ -927,6 +937,31 @@ impl BinanceSpotDataClient {
                 );
                 Self::mark_book_sync_failed(&buffers, instrument_id, epoch);
             }
+        }
+    }
+
+    async fn wait_for_buffered_update(
+        buffers: &Arc<AtomicMap<InstrumentId, BookBuffer>>,
+        instrument_id: InstrumentId,
+        epoch: u64,
+    ) -> Option<()> {
+        loop {
+            let guard = buffers.load();
+            match guard.get(&instrument_id) {
+                Some(buffer)
+                    if buffer.epoch == epoch
+                        && buffer.status == BookSyncStatus::Buffering
+                        && !buffer.updates.is_empty() =>
+                {
+                    return Some(());
+                }
+                Some(buffer)
+                    if buffer.epoch == epoch && buffer.status == BookSyncStatus::Buffering => {}
+                _ => return None,
+            }
+
+            drop(guard);
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
 
@@ -1075,11 +1110,19 @@ fn first_applicable_spot_update(
         .find(|update| update.final_update_id > last_update_id)
 }
 
+fn trim_buffered_depth_updates(updates: &mut Vec<BufferedDepthUpdate>) {
+    let excess = updates.len().saturating_sub(MAX_BUFFERED_DEPTH_UPDATES);
+    if excess > 0 {
+        updates.drain(..excess);
+    }
+}
+
 fn parse_spot_depth_snapshot(
     depth: &BinanceDepth,
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
+    ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<OrderBookDeltas>> {
     let sequence = depth.last_update_id as u64;
@@ -1087,11 +1130,11 @@ fn parse_spot_depth_snapshot(
     let total_levels = depth.bids.len() + depth.asks.len();
     let mut deltas = Vec::with_capacity(total_levels + 1);
 
-    // REST snapshots carry no event time; use ts_init for both timestamps.
+    // REST snapshots carry no event time; use the caller's best venue-time estimate.
     deltas.push(OrderBookDelta::clear(
         instrument_id,
         sequence,
-        ts_init,
+        ts_event,
         ts_init,
     ));
 
@@ -1120,7 +1163,7 @@ fn parse_spot_depth_snapshot(
             order,
             flags,
             sequence,
-            ts_init,
+            ts_event,
             ts_init,
         ));
     }
@@ -1150,7 +1193,7 @@ fn parse_spot_depth_snapshot(
             order,
             flags,
             sequence,
-            ts_init,
+            ts_event,
             ts_init,
         ));
     }
@@ -1997,14 +2040,23 @@ mod tests {
             vec![price_level(10_100, 2_000)],
         );
 
-        let deltas = parse_spot_depth_snapshot(&depth, instrument_id, 2, 3, UnixNanos::from(1))
-            .unwrap()
-            .unwrap();
+        let deltas = parse_spot_depth_snapshot(
+            &depth,
+            instrument_id,
+            2,
+            3,
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        )
+        .unwrap()
+        .unwrap();
 
         assert_eq!(deltas.deltas.len(), 3);
         assert_eq!(deltas.deltas[0].sequence, 123);
         assert_eq!(deltas.deltas[1].sequence, 123);
         assert_eq!(deltas.deltas[2].sequence, 123);
+        assert_eq!(deltas.ts_event, UnixNanos::from(1));
+        assert_eq!(deltas.ts_init, UnixNanos::from(2));
         assert_eq!(deltas.deltas[1].order.price.as_decimal(), dec!(100.00));
         assert_eq!(deltas.deltas[1].order.size.as_decimal(), dec!(1.000));
         assert_eq!(deltas.deltas[1].flags, 0);
@@ -2016,9 +2068,16 @@ mod tests {
         let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
         let depth = depth_snapshot(vec![price_level(10_000, 1_000)], vec![]);
 
-        let deltas = parse_spot_depth_snapshot(&depth, instrument_id, 2, 3, UnixNanos::from(1))
-            .unwrap()
-            .unwrap();
+        let deltas = parse_spot_depth_snapshot(
+            &depth,
+            instrument_id,
+            2,
+            3,
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        )
+        .unwrap()
+        .unwrap();
 
         assert_eq!(deltas.deltas.len(), 2);
         assert_eq!(deltas.deltas[1].flags, RecordFlag::F_LAST as u8);
@@ -2029,8 +2088,15 @@ mod tests {
         let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
         let depth = depth_snapshot(vec![], vec![]);
 
-        let deltas =
-            parse_spot_depth_snapshot(&depth, instrument_id, 2, 3, UnixNanos::from(1)).unwrap();
+        let deltas = parse_spot_depth_snapshot(
+            &depth,
+            instrument_id,
+            2,
+            3,
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        )
+        .unwrap();
 
         assert!(deltas.is_none());
     }
@@ -2046,7 +2112,14 @@ mod tests {
             asks: vec![],
         };
 
-        let result = parse_spot_depth_snapshot(&depth, instrument_id, 2, 3, UnixNanos::from(1));
+        let result = parse_spot_depth_snapshot(
+            &depth,
+            instrument_id,
+            2,
+            3,
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        );
 
         assert!(result.is_err());
     }
@@ -2062,7 +2135,14 @@ mod tests {
             asks: vec![],
         };
 
-        let result = parse_spot_depth_snapshot(&depth, instrument_id, 2, 3, UnixNanos::from(1));
+        let result = parse_spot_depth_snapshot(
+            &depth,
+            instrument_id,
+            2,
+            3,
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        );
 
         assert!(result.is_err());
     }

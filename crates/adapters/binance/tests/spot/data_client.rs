@@ -15,7 +15,16 @@
 
 //! Integration tests for the Binance Spot data client.
 
-use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, time::Duration};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    num::NonZeroUsize,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use axum::{
     Router,
@@ -69,11 +78,14 @@ const SYMBOL_BLOCK_LENGTH: u16 = 19;
 const PRICE_FILTER_TEMPLATE_ID: u16 = 1;
 const LOT_SIZE_FILTER_TEMPLATE_ID: u16 = 4;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct DataTestServerConfig {
     depth_diff_first_update_id: i64,
     depth_diff_last_update_id: i64,
     depth_diff_repetitions: usize,
+    depth_diff_delay: Duration,
+    depth_snapshot_last_update_ids: Vec<i64>,
+    depth_requests: Arc<AtomicUsize>,
 }
 
 impl Default for DataTestServerConfig {
@@ -82,6 +94,9 @@ impl Default for DataTestServerConfig {
             depth_diff_first_update_id: 101,
             depth_diff_last_update_id: 101,
             depth_diff_repetitions: 1,
+            depth_diff_delay: Duration::from_millis(50),
+            depth_snapshot_last_update_ids: vec![100],
+            depth_requests: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
@@ -440,13 +455,14 @@ async fn handle_ws_connection(mut socket: WebSocket, config: DataTestServerConfi
                                 let symbol =
                                     stream.split('@').next().unwrap_or("BTCUSDT").to_uppercase();
                                 if stream.ends_with("@depth") {
-                                    for _ in 0..config.depth_diff_repetitions {
+                                    for index in 0..config.depth_diff_repetitions {
+                                        let update_offset = index as i64;
                                         let data = build_sbe_depth_diff_stream_event(
                                             &symbol,
-                                            config.depth_diff_first_update_id,
-                                            config.depth_diff_last_update_id,
+                                            config.depth_diff_first_update_id + update_offset,
+                                            config.depth_diff_last_update_id + update_offset,
                                         );
-                                        tokio::time::sleep(Duration::from_millis(50)).await;
+                                        tokio::time::sleep(config.depth_diff_delay).await;
                                         let _result =
                                             socket.send(Message::Binary(data.into())).await;
                                     }
@@ -467,6 +483,20 @@ async fn handle_ws_connection(mut socket: WebSocket, config: DataTestServerConfi
     }
 }
 
+async fn handle_depth(State(config): State<DataTestServerConfig>) -> Response {
+    let request = config.depth_requests.fetch_add(1, Ordering::Relaxed);
+    let last_update_id = config
+        .depth_snapshot_last_update_ids
+        .get(request)
+        .copied()
+        .or_else(|| config.depth_snapshot_last_update_ids.last().copied())
+        .unwrap_or(100);
+
+    let bids = vec![(4_200_000, 100_000)];
+    let asks = vec![(4_200_100, 200_000)];
+    sbe_response(build_depth_response(last_update_id, &bids, &asks)).into_response()
+}
+
 fn create_data_test_router(config: DataTestServerConfig) -> Router {
     Router::new()
         .route(
@@ -480,14 +510,7 @@ fn create_data_test_router(config: DataTestServerConfig) -> Router {
                 sbe_response(build_exchange_info_response(&symbols)).into_response()
             }),
         )
-        .route(
-            "/api/v3/depth",
-            get(|| async {
-                let bids = vec![(4_200_000, 100_000)];
-                let asks = vec![(4_200_100, 200_000)];
-                sbe_response(build_depth_response(100, &bids, &asks)).into_response()
-            }),
-        )
+        .route("/api/v3/depth", get(handle_depth))
         .route("/ws", get(handle_ws))
         .with_state(config)
 }
@@ -828,6 +851,7 @@ async fn test_subscribe_book_deltas_full_depth_replays_buffered_diff_after_snaps
     };
 
     assert_eq!(snapshot.sequence, 100);
+    assert_eq!(snapshot.ts_event, replayed.ts_event);
     assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
     assert_eq!(snapshot.deltas[1].action, BookAction::Add);
     assert_eq!(snapshot.deltas[1].order.side, OrderSide::Buy);
@@ -848,11 +872,167 @@ async fn test_subscribe_book_deltas_full_depth_replays_buffered_diff_after_snaps
 
 #[rstest]
 #[tokio::test]
+async fn test_subscribe_book_deltas_full_depth_waits_for_first_diff_before_snapshot() {
+    let config = DataTestServerConfig {
+        depth_diff_delay: Duration::from_millis(500),
+        ..Default::default()
+    };
+    let depth_requests = config.depth_requests.clone();
+    let addr = start_data_test_server_with_config(config).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, mut rx) = create_test_data_client(base_url_http, base_url_ws);
+
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+    let cmd = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        None,
+        false,
+        None,
+        None,
+    );
+
+    client.subscribe_book_deltas(cmd).unwrap();
+
+    assert!(
+        recv_data(&mut rx, Duration::from_millis(150))
+            .await
+            .is_none()
+    );
+    assert_eq!(depth_requests.load(Ordering::Relaxed), 0);
+
+    wait_until_async(
+        || {
+            let request_count = depth_requests.load(Ordering::Relaxed);
+            async move { request_count >= 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let snapshot = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected REST depth snapshot data after first diff");
+    let Data::Deltas(snapshot) = snapshot else {
+        panic!("expected order book deltas");
+    };
+
+    let replayed = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected replayed depth diff data after first diff");
+    let Data::Deltas(replayed) = replayed else {
+        panic!("expected order book deltas");
+    };
+
+    assert_eq!(snapshot.sequence, 100);
+    assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
+    assert_eq!(replayed.sequence, 101);
+    assert_eq!(replayed.deltas[0].action, BookAction::Update);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_book_deltas_full_depth_keeps_buffered_diffs_across_overlap_retry() {
+    let config = DataTestServerConfig {
+        depth_snapshot_last_update_ids: vec![99, 100],
+        ..Default::default()
+    };
+    let depth_requests = config.depth_requests.clone();
+    let addr = start_data_test_server_with_config(config).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, mut rx) = create_test_data_client(base_url_http, base_url_ws);
+
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+    let cmd = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        None,
+        false,
+        None,
+        None,
+    );
+
+    client.subscribe_book_deltas(cmd).unwrap();
+
+    wait_until_async(
+        || {
+            let request_count = depth_requests.load(Ordering::Relaxed);
+            async move { request_count >= 2 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let snapshot = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected REST depth snapshot data after overlap retry");
+    let Data::Deltas(snapshot) = snapshot else {
+        panic!("expected order book deltas");
+    };
+
+    let replayed = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected retained replayed depth diff data");
+    let Data::Deltas(replayed) = replayed else {
+        panic!("expected order book deltas");
+    };
+
+    assert_eq!(snapshot.sequence, 100);
+    assert_eq!(replayed.sequence, 101);
+    assert_eq!(replayed.deltas[0].action, BookAction::Update);
+    assert_eq!(depth_requests.load(Ordering::Relaxed), 2);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_subscribe_book_deltas_full_depth_rejects_non_overlapping_first_diff() {
     let addr = start_data_test_server_with_config(DataTestServerConfig {
         depth_diff_first_update_id: 103,
         depth_diff_last_update_id: 103,
         depth_diff_repetitions: 4,
+        ..Default::default()
     })
     .await;
     let base_url_http = format!("http://{addr}");
