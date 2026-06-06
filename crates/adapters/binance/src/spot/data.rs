@@ -92,6 +92,10 @@ use crate::{
     },
 };
 
+const MAX_SNAPSHOT_RETRIES: u32 = 5;
+const SNAPSHOT_RETRY_BACKOFF_BASE_MS: u64 = 250;
+const SNAPSHOT_RETRY_BACKOFF_CAP_MS: u64 = 3_000;
+
 #[derive(Debug, Clone)]
 struct BufferedDepthUpdate {
     deltas: OrderBookDeltas,
@@ -568,7 +572,6 @@ impl BinanceSpotDataClient {
         clock: &'static AtomicTime,
         retry_count: u32,
     ) {
-        const MAX_RETRIES: u32 = 3;
         const SNAPSHOT_DEPTH: u32 = 5000;
 
         let params = DepthParams {
@@ -636,7 +639,7 @@ impl BinanceSpotDataClient {
                 let target = last_update_id + 1;
                 if !spot_overlap_valid(first.first_update_id, first.final_update_id, last_update_id)
                 {
-                    if retry_count < MAX_RETRIES {
+                    if retry_count < MAX_SNAPSHOT_RETRIES {
                         log::warn!(
                             "OrderBook overlap validation failed for {instrument_id}: \
                             lastUpdateId={last_update_id}, first_update_id={}, \
@@ -646,10 +649,11 @@ impl BinanceSpotDataClient {
                             first.final_update_id,
                             target,
                             retry_count + 1,
-                            MAX_RETRIES
+                            MAX_SNAPSHOT_RETRIES
                         );
 
                         Self::reset_book_sync_buffer(&buffers, instrument_id, epoch);
+                        tokio::time::sleep(spot_snapshot_retry_backoff(retry_count)).await;
 
                         Box::pin(Self::fetch_and_emit_snapshot_inner(
                             http,
@@ -667,8 +671,8 @@ impl BinanceSpotDataClient {
 
                     log::error!(
                         "OrderBook overlap validation failed for {instrument_id} after \
-                        {MAX_RETRIES} retries; no deltas will be emitted until resubscribe \
-                        or reconnect"
+                        {MAX_SNAPSHOT_RETRIES} retries; no deltas will be emitted until \
+                        resubscribe or reconnect"
                     );
                     Self::mark_book_sync_failed(&buffers, instrument_id, epoch);
                     return;
@@ -691,17 +695,18 @@ impl BinanceSpotDataClient {
                     }
 
                     if !spot_continuity_ok(is_first, update.first_update_id, last_final_update_id) {
-                        if retry_count < MAX_RETRIES {
+                        if retry_count < MAX_SNAPSHOT_RETRIES {
                             log::warn!(
                                 "OrderBook continuity break for {instrument_id}: \
                                 expected U={}, was U={}, triggering resync (attempt {}/{})",
                                 last_final_update_id + 1,
                                 update.first_update_id,
                                 retry_count + 1,
-                                MAX_RETRIES
+                                MAX_SNAPSHOT_RETRIES
                             );
 
                             Self::reset_book_sync_buffer(&buffers, instrument_id, epoch);
+                            tokio::time::sleep(spot_snapshot_retry_backoff(retry_count)).await;
 
                             Box::pin(Self::fetch_and_emit_snapshot_inner(
                                 http,
@@ -718,8 +723,9 @@ impl BinanceSpotDataClient {
                         }
 
                         log::error!(
-                            "OrderBook continuity break for {instrument_id} after {MAX_RETRIES} \
-                            retries; no deltas will be emitted until resubscribe or reconnect"
+                            "OrderBook continuity break for {instrument_id} after \
+                            {MAX_SNAPSHOT_RETRIES} retries; no deltas will be emitted until \
+                            resubscribe or reconnect"
                         );
                         Self::mark_book_sync_failed(&buffers, instrument_id, epoch);
                         return;
@@ -740,15 +746,16 @@ impl BinanceSpotDataClient {
                 ) {
                     Ok(Some(deltas)) => deltas,
                     Ok(None) => {
-                        if retry_count < MAX_RETRIES {
+                        if retry_count < MAX_SNAPSHOT_RETRIES {
                             log::warn!(
                                 "OrderBook snapshot for {instrument_id} contained no levels; \
                                 retrying snapshot (attempt {}/{})",
                                 retry_count + 1,
-                                MAX_RETRIES
+                                MAX_SNAPSHOT_RETRIES
                             );
 
                             Self::reset_book_sync_buffer(&buffers, instrument_id, epoch);
+                            tokio::time::sleep(spot_snapshot_retry_backoff(retry_count)).await;
 
                             Box::pin(Self::fetch_and_emit_snapshot_inner(
                                 http,
@@ -766,22 +773,23 @@ impl BinanceSpotDataClient {
 
                         log::error!(
                             "OrderBook snapshot for {instrument_id} contained no levels after \
-                            {MAX_RETRIES} retries; no deltas will be emitted until resubscribe \
-                            or reconnect"
+                            {MAX_SNAPSHOT_RETRIES} retries; no deltas will be emitted until \
+                            resubscribe or reconnect"
                         );
                         Self::mark_book_sync_failed(&buffers, instrument_id, epoch);
                         return;
                     }
                     Err(e) => {
-                        if retry_count < MAX_RETRIES {
+                        if retry_count < MAX_SNAPSHOT_RETRIES {
                             log::warn!(
                                 "Failed to parse order book snapshot for {instrument_id}: {e}; \
                                 retrying snapshot (attempt {}/{})",
                                 retry_count + 1,
-                                MAX_RETRIES
+                                MAX_SNAPSHOT_RETRIES
                             );
 
                             Self::reset_book_sync_buffer(&buffers, instrument_id, epoch);
+                            tokio::time::sleep(spot_snapshot_retry_backoff(retry_count)).await;
 
                             Box::pin(Self::fetch_and_emit_snapshot_inner(
                                 http,
@@ -799,8 +807,8 @@ impl BinanceSpotDataClient {
 
                         log::error!(
                             "Failed to parse order book snapshot for {instrument_id} after \
-                            {MAX_RETRIES} retries: {e}; no deltas will be emitted until \
-                            resubscribe or reconnect"
+                            {MAX_SNAPSHOT_RETRIES} retries: {e}; no deltas will be emitted \
+                            until resubscribe or reconnect"
                         );
                         Self::mark_book_sync_failed(&buffers, instrument_id, epoch);
                         return;
@@ -834,17 +842,18 @@ impl BinanceSpotDataClient {
                             update.first_update_id,
                             last_final_update_id,
                         ) {
-                            if retry_count < MAX_RETRIES {
+                            if retry_count < MAX_SNAPSHOT_RETRIES {
                                 log::warn!(
                                     "OrderBook continuity break for {instrument_id}: \
                                     expected U={}, was U={}, triggering resync (attempt {}/{})",
                                     last_final_update_id + 1,
                                     update.first_update_id,
                                     retry_count + 1,
-                                    MAX_RETRIES
+                                    MAX_SNAPSHOT_RETRIES
                                 );
 
                                 Self::reset_book_sync_buffer(&buffers, instrument_id, epoch);
+                                tokio::time::sleep(spot_snapshot_retry_backoff(retry_count)).await;
 
                                 Box::pin(Self::fetch_and_emit_snapshot_inner(
                                     http,
@@ -861,8 +870,8 @@ impl BinanceSpotDataClient {
                             }
                             log::error!(
                                 "OrderBook continuity break for {instrument_id} after \
-                                {MAX_RETRIES} retries; no deltas will be emitted until \
-                                resubscribe or reconnect"
+                                {MAX_SNAPSHOT_RETRIES} retries; no deltas will be emitted \
+                                until resubscribe or reconnect"
                             );
                             Self::mark_book_sync_failed(&buffers, instrument_id, epoch);
                             return;
@@ -886,16 +895,16 @@ impl BinanceSpotDataClient {
                 );
             }
             Err(e) => {
-                if retry_count < MAX_RETRIES {
+                if retry_count < MAX_SNAPSHOT_RETRIES {
                     log::warn!(
                         "Failed to request order book snapshot for {instrument_id}: {e}; \
                         retrying snapshot (attempt {}/{})",
                         retry_count + 1,
-                        MAX_RETRIES
+                        MAX_SNAPSHOT_RETRIES
                     );
 
                     Self::reset_book_sync_buffer(&buffers, instrument_id, epoch);
-                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    tokio::time::sleep(spot_snapshot_retry_backoff(retry_count)).await;
 
                     Box::pin(Self::fetch_and_emit_snapshot_inner(
                         http,
@@ -913,8 +922,8 @@ impl BinanceSpotDataClient {
 
                 log::error!(
                     "Failed to request order book snapshot for {instrument_id} after \
-                    {MAX_RETRIES} retries: {e}; no deltas will be emitted until resubscribe \
-                    or reconnect"
+                    {MAX_SNAPSHOT_RETRIES} retries: {e}; no deltas will be emitted until \
+                    resubscribe or reconnect"
                 );
                 Self::mark_book_sync_failed(&buffers, instrument_id, epoch);
             }
@@ -1047,6 +1056,14 @@ fn spot_overlap_valid(first_update_id: u64, final_update_id: u64, last_update_id
 // After the first applied diff, each spot update must satisfy `U == previous u + 1`.
 fn spot_continuity_ok(is_first: bool, first_update_id: u64, prev_final_update_id: u64) -> bool {
     is_first || first_update_id == prev_final_update_id + 1
+}
+
+fn spot_snapshot_retry_backoff(retry_count: u32) -> Duration {
+    let multiplier = 1_u64 << retry_count.min(4);
+    let millis = SNAPSHOT_RETRY_BACKOFF_BASE_MS
+        .saturating_mul(multiplier)
+        .min(SNAPSHOT_RETRY_BACKOFF_CAP_MS);
+    Duration::from_millis(millis)
 }
 
 fn first_applicable_spot_update(
@@ -1900,6 +1917,8 @@ impl DataClient for BinanceSpotDataClient {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
         data::{BookOrder, OrderBookDelta, OrderBookDeltas},
@@ -1913,7 +1932,7 @@ mod tests {
     use super::{
         BinanceDepth, BinanceEnvironment, BinanceSpotMarketDataMode, BufferedDepthUpdate,
         first_applicable_spot_update, parse_spot_depth_snapshot, resolve_spot_json_ws_url,
-        spot_continuity_ok, spot_overlap_valid,
+        spot_continuity_ok, spot_overlap_valid, spot_snapshot_retry_backoff,
     };
     use crate::{common::consts::BINANCE_SPOT_WS_URL, spot::http::BinancePriceLevel};
 
@@ -1936,6 +1955,23 @@ mod tests {
         assert!(spot_continuity_ok(false, 101, 100));
         assert!(!spot_continuity_ok(false, 102, 100));
         assert!(!spot_continuity_ok(false, 100, 100));
+    }
+
+    #[rstest]
+    #[case(0, 250)]
+    #[case(1, 500)]
+    #[case(2, 1_000)]
+    #[case(3, 2_000)]
+    #[case(4, 3_000)]
+    #[case(5, 3_000)]
+    fn snapshot_retry_backoff_exponentially_increases_then_caps(
+        #[case] retry_count: u32,
+        #[case] expected_ms: u64,
+    ) {
+        assert_eq!(
+            spot_snapshot_retry_backoff(retry_count),
+            Duration::from_millis(expected_ms)
+        );
     }
 
     #[rstest]

@@ -15,12 +15,22 @@
 
 //! Integration tests for the Binance Futures data client.
 
-use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    num::NonZeroUsize,
+    str::FromStr,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use axum::{
     Router,
     extract::{
-        RawQuery,
+        RawQuery, State,
         ws::{Message, WebSocket},
     },
     http::StatusCode,
@@ -57,13 +67,31 @@ use nautilus_common::{
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{CustomData, Data, DataType},
-    enums::BookType,
+    enums::{BookAction, BookType, OrderSide, RecordFlag},
     identifiers::InstrumentId,
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde_json::json;
+
+#[derive(Clone)]
+struct DataTestServerState {
+    depth_failures_before_success: usize,
+    depth_requests: Arc<AtomicUsize>,
+    depth_update_delay: Duration,
+}
+
+impl Default for DataTestServerState {
+    fn default() -> Self {
+        Self {
+            depth_failures_before_success: 0,
+            depth_requests: Arc::new(AtomicUsize::new(0)),
+            depth_update_delay: Duration::from_millis(50),
+        }
+    }
+}
 
 fn liquidation_data_type_for_instrument(instrument_id: InstrumentId) -> DataType {
     let mut metadata = Params::new();
@@ -120,11 +148,14 @@ fn json_response(body: &serde_json::Value) -> Response {
         .into_response()
 }
 
-async fn handle_ws(ws: axum::extract::WebSocketUpgrade) -> Response {
-    ws.on_upgrade(handle_ws_connection)
+async fn handle_ws(
+    State(state): State<DataTestServerState>,
+    ws: axum::extract::WebSocketUpgrade,
+) -> Response {
+    ws.on_upgrade(move |socket| handle_ws_connection(socket, state))
 }
 
-async fn handle_ws_connection(mut socket: WebSocket) {
+async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState) {
     while let Some(Ok(msg)) = socket.recv().await {
         if let Message::Text(text) = msg
             && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text)
@@ -176,13 +207,13 @@ async fn handle_ws_connection(mut socket: WebSocket) {
                                     "E": 1700000000000_i64,
                                     "T": 1700000000000_i64,
                                     "s": "BTCUSDT",
-                                    "U": 1027024,
+                                    "U": 1027025,
                                     "u": 1027025,
-                                    "pu": 1027023,
+                                    "pu": 1027024,
                                     "b": [["50000.00", "1.000"], ["49999.00", "2.000"]],
                                     "a": [["50001.00", "0.500"], ["50002.00", "1.500"]]
                                 });
-                                tokio::time::sleep(Duration::from_millis(50)).await;
+                                tokio::time::sleep(state.depth_update_delay).await;
                                 let _result = socket
                                     .send(Message::Text(depth_update.to_string().into()))
                                     .await;
@@ -240,6 +271,26 @@ async fn handle_ws_connection(mut socket: WebSocket) {
             }
         }
     }
+}
+
+async fn handle_depth(State(state): State<DataTestServerState>) -> Response {
+    let request = state.depth_requests.fetch_add(1, Ordering::Relaxed);
+    if request < state.depth_failures_before_success {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            [("content-type", "application/json")],
+            json!({"code": -1000, "msg": "Transient depth failure"}).to_string(),
+        )
+            .into_response();
+    }
+
+    json_response(&json!({
+        "lastUpdateId": 1027024,
+        "E": 1700000000000_i64,
+        "T": 1700000000000_i64,
+        "bids": [["50000.00", "1.000"], ["49999.00", "2.000"]],
+        "asks": [["50001.00", "0.500"], ["50002.00", "1.500"]]
+    }))
 }
 
 async fn handle_open_interest() -> Response {
@@ -317,7 +368,7 @@ async fn handle_open_interest_hist(raw_query: RawQuery) -> Response {
         .into_response()
 }
 
-fn create_data_test_router() -> Router {
+fn create_data_test_router(state: DataTestServerState) -> Router {
     Router::new()
         .route("/fapi/v1/ping", get(|| async { json_response(&json!({})) }))
         .route(
@@ -358,26 +409,20 @@ fn create_data_test_router() -> Router {
                 }))
             }),
         )
-        .route(
-            "/fapi/v1/depth",
-            get(|| async {
-                json_response(&json!({
-                    "lastUpdateId": 1027024,
-                    "E": 1700000000000_i64,
-                    "T": 1700000000000_i64,
-                    "bids": [["50000.00", "1.000"], ["49999.00", "2.000"]],
-                    "asks": [["50001.00", "0.500"], ["50002.00", "1.500"]]
-                }))
-            }),
-        )
+        .route("/fapi/v1/depth", get(handle_depth))
         .route("/fapi/v1/openInterest", get(handle_open_interest))
         .route("/dapi/v1/openInterest", get(handle_open_interest_coinm))
         .route("/futures/data/openInterestHist", get(handle_open_interest_hist))
         .route("/ws", get(handle_ws))
+        .with_state(state)
 }
 
 async fn start_data_test_server() -> SocketAddr {
-    let router = create_data_test_router();
+    start_data_test_server_with_state(DataTestServerState::default()).await
+}
+
+async fn start_data_test_server_with_state(state: DataTestServerState) -> SocketAddr {
+    let router = create_data_test_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -401,6 +446,22 @@ async fn start_data_test_server() -> SocketAddr {
     .await;
 
     addr
+}
+
+async fn recv_data(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    timeout: Duration,
+) -> Option<Data> {
+    let deadline = tokio::time::Instant::now() + timeout;
+
+    loop {
+        let remaining = deadline.checked_duration_since(tokio::time::Instant::now())?;
+        match tokio::time::timeout(remaining, rx.recv()).await {
+            Ok(Some(DataEvent::Data(data))) => return Some(data),
+            Ok(Some(_)) => {}
+            Ok(None) | Err(_) => return None,
+        }
+    }
 }
 
 fn create_test_data_client(
@@ -914,14 +975,111 @@ async fn test_subscribe_book_deltas() {
 
     client.subscribe_book_deltas(cmd).unwrap();
 
+    let snapshot = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected REST depth snapshot data");
+    let Data::Deltas(snapshot) = snapshot else {
+        panic!("expected order book deltas");
+    };
+
+    let replayed = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected replayed depth diff data");
+    let Data::Deltas(replayed) = replayed else {
+        panic!("expected order book deltas");
+    };
+
+    assert_eq!(snapshot.sequence, 1027024);
+    assert_eq!(snapshot.deltas.len(), 5);
+    assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
+    assert_eq!(snapshot.deltas[1].action, BookAction::Add);
+    assert_eq!(snapshot.deltas[1].order.side, OrderSide::Buy);
+    assert_eq!(snapshot.deltas[1].order.price.as_decimal(), dec!(50000.00));
+    assert_eq!(snapshot.deltas[1].order.size.as_decimal(), dec!(1.000));
+    assert_eq!(snapshot.deltas[4].action, BookAction::Add);
+    assert_eq!(snapshot.deltas[4].order.side, OrderSide::Sell);
+    assert_eq!(snapshot.deltas[4].order.price.as_decimal(), dec!(50002.00));
+    assert_eq!(snapshot.deltas[4].order.size.as_decimal(), dec!(1.500));
+    assert_eq!(snapshot.deltas[4].flags, RecordFlag::F_LAST as u8);
+
+    assert_eq!(replayed.sequence, 1027025);
+    assert_eq!(replayed.deltas.len(), 4);
+    assert_eq!(replayed.deltas[0].action, BookAction::Update);
+    assert_eq!(replayed.deltas[0].order.side, OrderSide::Buy);
+    assert_eq!(replayed.deltas[0].order.price.as_decimal(), dec!(50000.00));
+    assert_eq!(replayed.deltas[0].order.size.as_decimal(), dec!(1.000));
+    assert_eq!(replayed.deltas[3].action, BookAction::Update);
+    assert_eq!(replayed.deltas[3].order.side, OrderSide::Sell);
+    assert_eq!(replayed.deltas[3].order.price.as_decimal(), dec!(50002.00));
+    assert_eq!(replayed.deltas[3].order.size.as_decimal(), dec!(1.500));
+    assert_eq!(replayed.deltas[3].flags, RecordFlag::F_LAST as u8);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_book_deltas_retries_transient_depth_snapshot_failure() {
+    let state = DataTestServerState {
+        depth_failures_before_success: 1,
+        depth_update_delay: Duration::from_millis(500),
+        ..Default::default()
+    };
+    let depth_requests = state.depth_requests.clone();
+    let addr = start_data_test_server_with_state(state).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, mut rx) = create_test_data_client(base_url_http, base_url_ws);
+
+    client.connect().await.unwrap();
+
     wait_until_async(
         || {
-            let found = rx.try_recv().is_ok_and(|e| matches!(e, DataEvent::Data(_)));
+            let found = rx
+                .try_recv()
+                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
             async move { found }
         },
         Duration::from_secs(5),
     )
     .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    let cmd = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        None,
+        false,
+        None,
+        None,
+    );
+
+    client.subscribe_book_deltas(cmd).unwrap();
+
+    let snapshot = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected REST depth snapshot data after retry");
+    let Data::Deltas(snapshot) = snapshot else {
+        panic!("expected order book deltas");
+    };
+
+    let replayed = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected replayed depth diff data after retry");
+    let Data::Deltas(replayed) = replayed else {
+        panic!("expected order book deltas");
+    };
+
+    assert_eq!(snapshot.sequence, 1027024);
+    assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
+    assert_eq!(replayed.sequence, 1027025);
+    assert_eq!(replayed.deltas[0].action, BookAction::Update);
+    assert_eq!(depth_requests.load(Ordering::Relaxed), 2);
 }
 
 #[rstest]
