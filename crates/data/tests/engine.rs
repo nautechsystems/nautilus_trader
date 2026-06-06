@@ -2975,7 +2975,7 @@ fn test_subscribe_continuous_future_bars_dispatches_child_trade_subscription(
     let sub = SubscribeBars::new(
         target_bar_type,
         Some(client_id),
-        Some(Venue::from("GLBX")),
+        Some(Venue::from("XNAS")),
         parent_id,
         UnixNanos::default(),
         None,
@@ -2994,6 +2994,7 @@ fn test_subscribe_continuous_future_bars_dispatches_child_trade_subscription(
         );
     };
     assert_eq!(child.instrument_id, pre_id);
+    assert_eq!(child.venue, Some(Venue::from("GLBX")));
     assert_eq!(child.correlation_id, Some(parent_id));
     let child_params = child.params.as_ref().unwrap();
     assert!(!child_params.contains_key("continuous_future_transitions"));
@@ -3160,7 +3161,7 @@ fn test_unsubscribe_continuous_future_bars_tears_down_subscription(
     let sub = SubscribeBars::new(
         target_bar_type,
         Some(client_id),
-        Some(Venue::from("GLBX")),
+        Some(Venue::from("XNAS")),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -3174,7 +3175,7 @@ fn test_unsubscribe_continuous_future_bars_tears_down_subscription(
     let unsub = UnsubscribeBars::new(
         target_bar_type,
         Some(client_id),
-        Some(Venue::from("GLBX")),
+        Some(Venue::from("XNAS")),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -3193,6 +3194,7 @@ fn test_unsubscribe_continuous_future_bars_tears_down_subscription(
         );
     };
     assert_eq!(child.instrument_id, pre_id);
+    assert_eq!(child.venue, Some(Venue::from("GLBX")));
 
     let leftover_roll_timers = test_clock
         .borrow()
@@ -6018,26 +6020,31 @@ fn test_catalog_start_ns_prefill_skips_internal_bars(
 
     let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
     let _catalog_dir = register_bar_catalog(&mut data_engine, bar_type, 4_000);
+    let command_id = UUID4::new();
 
     let sub = SubscribeBars::new(
         bar_type,
         Some(client_id),
         Some(venue),
-        UUID4::new(),
+        command_id,
         UnixNanos::default(),
         None,
         None,
     );
     data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
 
-    let SubscribeCommand::Bars(recorded) = recorded_subscribe_command(&recorder) else {
-        panic!("expected bars subscribe");
+    let SubscribeCommand::Trades(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, command_id)
+    else {
+        panic!("expected source trades subscribe");
     };
-    assert!(
+    assert_eq!(recorded.instrument_id, bar_type.instrument_id());
+    assert_eq!(
         recorded
             .params
             .as_ref()
-            .is_none_or(|params| !params.contains_key("start_ns"))
+            .and_then(|params| params.get("start_ns")),
+        Some(&json!(null))
     );
 }
 
@@ -6320,6 +6327,12 @@ fn test_subscribe_spread_quotes_default_interval_publishes_on_timer(
         get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("spread-quotes-timer")));
     let spread_topic = switchboard::get_quotes_topic(spread_id);
     msgbus::subscribe_quotes(spread_topic.into(), handler, None);
+    let (exchange_handler, exchange_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("spread-exchange-timer")));
+    msgbus::register_quote_endpoint(
+        format!("SimulatedExchange.process_new_quote.{}", spread_id.venue).into(),
+        exchange_handler,
+    );
 
     let sub = SubscribeQuotes::new(
         spread_id,
@@ -6376,6 +6389,10 @@ fn test_subscribe_spread_quotes_default_interval_publishes_on_timer(
     assert_eq!(spread_quotes[0].bid_size, Quantity::from(5));
     assert_eq!(spread_quotes[0].ask_size, Quantity::from(6));
     assert_eq!(spread_quotes[0].ts_event, UnixNanos::from(1_000_000_000));
+
+    let exchange_quotes = exchange_saver.get_messages();
+    assert_eq!(exchange_quotes.len(), 1);
+    assert_eq!(exchange_quotes[0], spread_quotes[0]);
 }
 
 #[rstest]
@@ -6408,6 +6425,12 @@ fn test_subscribe_spread_quotes_with_zero_interval_publishes_spread_quote(
         get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("spread-quotes")));
     let spread_topic = switchboard::get_quotes_topic(spread_id);
     msgbus::subscribe_quotes(spread_topic.into(), handler, None);
+    let (exchange_handler, exchange_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("spread-exchange")));
+    msgbus::register_quote_endpoint(
+        format!("SimulatedExchange.process_new_quote.{}", spread_id.venue).into(),
+        exchange_handler,
+    );
 
     let sub = SubscribeQuotes::new(
         spread_id,
@@ -6460,6 +6483,10 @@ fn test_subscribe_spread_quotes_with_zero_interval_publishes_spread_quote(
     assert_eq!(spread_quotes[0].ask_price, Price::from("3.00"));
     assert_eq!(spread_quotes[0].bid_size, Quantity::from(5));
     assert_eq!(spread_quotes[0].ask_size, Quantity::from(6));
+
+    let exchange_quotes = exchange_saver.get_messages();
+    assert_eq!(exchange_quotes.len(), 1);
+    assert_eq!(exchange_quotes[0], spread_quotes[0]);
 }
 
 #[rstest]
@@ -6906,7 +6933,7 @@ fn test_unsubscribe_trades_ignores_wildcard_observers(
 }
 
 #[rstest]
-fn test_execute_subscribe_bars(
+fn test_execute_subscribe_internal_bars_stays_local(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<TestClock>>,
@@ -6930,43 +6957,64 @@ fn test_execute_subscribe_bars(
     data_engine.process(&inst_any as &dyn Any);
 
     let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
+    let trade_topic = switchboard::get_trades_topic(bar_type.instrument_id());
+    let subscribe_command_id = UUID4::new();
 
     let sub = SubscribeBars::new(
         bar_type,
         Some(client_id),
         Some(venue),
-        UUID4::new(),
+        subscribe_command_id,
         UnixNanos::default(),
         None,
         None,
     );
     let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Bars(sub));
-    data_engine.execute(sub_cmd.clone());
+    data_engine.execute(sub_cmd);
 
-    assert!(data_engine.subscribed_bars().contains(&bar_type));
+    assert_eq!(msgbus::exact_subscriber_count_trades(trade_topic), 1);
     {
-        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+        let recorded = recorder.borrow();
+        assert_eq!(recorded.len(), 1);
+        match &recorded[0] {
+            DataCommand::Subscribe(SubscribeCommand::Trades(cmd)) => {
+                assert_eq!(cmd.instrument_id, bar_type.instrument_id());
+                assert_eq!(cmd.correlation_id, Some(subscribe_command_id));
+            }
+            other => panic!("expected source trade subscription, was {other:?}"),
+        }
     }
 
+    let unsubscribe_command_id = UUID4::new();
     let unsub = UnsubscribeBars::new(
         bar_type,
         Some(client_id),
         Some(venue),
-        UUID4::new(),
+        unsubscribe_command_id,
         UnixNanos::default(),
         None,
         None,
     );
     let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Bars(unsub));
-    data_engine.execute(unsub_cmd.clone());
+    data_engine.execute(unsub_cmd);
 
     assert_eq!(audusd_sim.id(), bar_type.instrument_id());
-    assert!(!data_engine.subscribed_bars().contains(&bar_type));
-    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+    assert_eq!(msgbus::exact_subscriber_count_trades(trade_topic), 0);
+    {
+        let recorded = recorder.borrow();
+        assert_eq!(recorded.len(), 2);
+        match &recorded[1] {
+            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(cmd)) => {
+                assert_eq!(cmd.instrument_id, bar_type.instrument_id());
+                assert_eq!(cmd.correlation_id, Some(unsubscribe_command_id));
+            }
+            other => panic!("expected source trade unsubscription, was {other:?}"),
+        }
+    }
 }
 
 #[rstest]
-fn test_unsubscribe_bars_forwards_to_client_with_remaining_exact_subscribers(
+fn test_unsubscribe_internal_bars_stays_local_with_remaining_exact_subscribers(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<TestClock>>,
@@ -6974,7 +7022,8 @@ fn test_unsubscribe_bars_forwards_to_client_with_remaining_exact_subscribers(
     client_id: ClientId,
     venue: Venue,
 ) {
-    // Bars excluded from the gate; venue unsubscribe must forward even with exact subscribers
+    // Matches the Cython DataEngine: internal aggregation is local to the engine,
+    // and exact subscribers keep the aggregator active without forwarding to the client.
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
@@ -6994,31 +7043,116 @@ fn test_unsubscribe_bars_forwards_to_client_with_remaining_exact_subscribers(
     let bar_topic = switchboard::get_bars_topic(bar_type);
     let (handler, _saver) =
         get_typed_message_saving_handler::<Bar>(Some(Ustr::from("exact-bar-subscriber")));
-    msgbus::subscribe_bars(bar_topic.into(), handler, None);
+    msgbus::subscribe_bars(bar_topic.into(), handler.clone(), None);
 
+    let subscribe_command_id = UUID4::new();
     let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Bars(SubscribeBars::new(
         bar_type,
         Some(client_id),
         Some(venue),
-        UUID4::new(),
+        subscribe_command_id,
         UnixNanos::default(),
         None,
         None,
     )));
-    data_engine.execute(sub_cmd.clone());
+    data_engine.execute(sub_cmd);
 
+    let unsubscribe_command_id = UUID4::new();
     let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Bars(UnsubscribeBars::new(
         bar_type,
         Some(client_id),
         Some(venue),
-        UUID4::new(),
+        unsubscribe_command_id,
         UnixNanos::default(),
         None,
         None,
     )));
-    data_engine.execute(unsub_cmd.clone());
+    data_engine.execute(unsub_cmd);
 
-    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+    {
+        let recorded = recorder.borrow();
+        assert_eq!(recorded.len(), 1);
+        match &recorded[0] {
+            DataCommand::Subscribe(SubscribeCommand::Trades(cmd)) => {
+                assert_eq!(cmd.instrument_id, bar_type.instrument_id());
+                assert_eq!(cmd.correlation_id, Some(subscribe_command_id));
+            }
+            other => panic!("expected source trade subscription, was {other:?}"),
+        }
+    }
+
+    msgbus::unsubscribe_bars(bar_topic.into(), &handler);
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(
+        UnsubscribeBars::new(
+            bar_type,
+            Some(client_id),
+            Some(venue),
+            unsubscribe_command_id,
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    {
+        let recorded = recorder.borrow();
+        assert_eq!(recorded.len(), 2);
+        assert!(matches!(
+            &recorded[1],
+            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(_))
+        ));
+    }
+}
+
+#[rstest]
+fn test_external_client_internal_bar_subscription_skips_local_aggregator(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    cache.borrow_mut().add_instrument(instrument).unwrap();
+
+    let config = DataEngineConfig {
+        external_clients: Some(vec![client_id]),
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
+    let trade_topic = switchboard::get_trades_topic(bar_type.instrument_id());
+
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(
+        SubscribeBars::new(
+            bar_type,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    assert_eq!(msgbus::exact_subscriber_count_trades(trade_topic), 0);
+    assert_eq!(recorder.borrow().as_slice(), &[]);
 }
 
 #[rstest]
