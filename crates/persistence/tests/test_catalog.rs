@@ -3145,6 +3145,41 @@ fn test_query_directory_based_registration() {
 }
 
 #[rstest]
+fn test_query_directory_based_registration_preserves_equal_timestamp_order() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+    catalog
+        .write_to_parquet(
+            create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 1000, 1),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    catalog
+        .write_to_parquet(
+            create_quote_ticks_for_instrument("AUD/USD.SIM", 1000, 1),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+    let result = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    let instrument_ids: Vec<String> = result
+        .map(|data| match data {
+            Data::Quote(quote) => quote.instrument_id.to_string(),
+            _ => panic!("Invalid test"),
+        })
+        .collect();
+
+    assert_eq!(instrument_ids, vec!["AUD/USD.SIM", "ETH/USDT.BINANCE"]);
+}
+
+#[rstest]
 fn test_query_file_based_registration() {
     // Test that file-based registration (optimize_file_loading=false) only reads specified files
     let temp_dir = TempDir::new().unwrap();
