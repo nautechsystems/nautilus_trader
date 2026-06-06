@@ -50,7 +50,7 @@ use super::{SocketConfig, TcpMessageHandler, TcpReader, TcpWriter, WriterCommand
 use crate::{
     backoff::ExponentialBackoff,
     dst,
-    error::SendError,
+    error::{SendError, is_connection_drop_io_error},
     logging::{log_task_aborted, log_task_started, log_task_stopped},
     mode::ConnectionMode,
     net::TcpStream,
@@ -356,7 +356,7 @@ impl SocketClientInner {
                     .map(tokio::io::split)
             }
             Err(e) => {
-                log::error!("TCP connection failed to {socket_addr}: {e:?}");
+                log::warn!("TCP connection failed to {socket_addr}: {e:?}");
                 Err(Error::Io(e))
             }
         }
@@ -603,10 +603,17 @@ impl SocketClientInner {
             combined_msg.extend_from_slice(suffix);
 
             if let Err(e) = writer.write_all(&combined_msg).await {
-                log::error!(
-                    "Failed to send buffered message with suffix after reconnection: {e}, {} messages remain in buffer",
-                    buffer.len()
-                );
+                if is_connection_drop_io_error(&e) {
+                    log::warn!(
+                        "Failed to send buffered message with suffix after reconnection: {e}, {} messages remain in buffer",
+                        buffer.len()
+                    );
+                } else {
+                    log::error!(
+                        "Failed to send buffered message with suffix after reconnection: {e}, {} messages remain in buffer",
+                        buffer.len()
+                    );
+                }
                 send_error_occurred = true;
                 break;
             }
@@ -700,7 +707,11 @@ impl SocketClientInner {
                                 write_buf.extend_from_slice(&suffix);
 
                                 if let Err(e) = active_writer.write_all(&write_buf).await {
-                                    log::error!("Failed to send message: {e}");
+                                    if is_connection_drop_io_error(&e) {
+                                        log::warn!("Failed to send message: {e}");
+                                    } else {
+                                        log::error!("Failed to send message: {e}");
+                                    }
                                     log::warn!("Writer triggering reconnect");
 
                                     reconnect_buffer.push_back(msg);

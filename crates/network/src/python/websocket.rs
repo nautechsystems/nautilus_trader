@@ -313,7 +313,7 @@ impl WebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if !ConnectionMode::from_atomic(&mode).is_active() {
                 let msg = "Cannot send data: connection not active".to_string();
-                log::error!("{msg}");
+                log::warn!("{msg}");
                 return Err(to_websocket_pyerr(TransportError::Io(std::io::Error::new(
                     std::io::ErrorKind::NotConnected,
                     msg,
