@@ -4416,19 +4416,36 @@ fn test_process_yearly_bar_not_skipped(instrument_eth_usdt: InstrumentAny) {
 }
 
 // Regression: quartering bar volume at `FIXED_PRECISION` scale produced synthesized
-// tick sizes whose raw values were not multiples of `10^(FIXED_PRECISION - precision)`,
-// which silently failed `quantity_matches_precision` downstream and caused
-// `normalize_fill_quantity` to skip fills. See the new `quarter_bar_volume` helper.
+// tick sizes whose raw values were not multiples of `10^(FIXED_PRECISION - precision)`.
+// Those fills were skipped by `normalize_fill_quantity`.
 #[rstest]
-fn test_process_trade_bar_with_volume_not_divisible_by_four(instrument_eth_usdt: InstrumentAny) {
+fn test_process_trade_bar_fills_order_with_volume_not_divisible_by_four(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
     let instrument = crypto_perpetual_with_size_precision(instrument_eth_usdt, 2, "0.01");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
     let config = OrderMatchingEngineConfig {
         bar_execution: true,
         ..Default::default()
     };
-    let mut engine = get_order_matching_engine(instrument, None, None, Some(config), None);
+    let mut engine =
+        get_order_matching_engine(instrument.clone(), Some(cache), None, Some(config), None);
 
-    // Volume = 0.05 at size_precision=2 → 5 units, quarter=1, remainder=1.
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1490.00"))
+        .quantity(Quantity::from("0.01"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut limit_order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    // Volume = 0.05 at size_precision=2: 5 units, quarter=1, remainder=1.
     // Pre-fix the synthesized close size would have raw = 5*FIXED_SCALAR/4, not
     // aligned to 10^(FIXED_PRECISION-2), and any submitted order would have its
     // fill silently dropped by `normalize_fill_quantity`.
@@ -4445,6 +4462,19 @@ fn test_process_trade_bar_with_volume_not_divisible_by_four(instrument_eth_usdt:
 
     engine.process_bar(&bar);
 
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<&OrderFilled> = saved_messages
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].client_order_id, client_order_id);
+    assert_eq!(fills[0].last_qty, Quantity::from("0.01"));
+    assert_eq!(fills[0].last_px, Price::from("1490.00"));
     assert_eq!(
         engine.get_core().last,
         Some(Price::from("1505.00")),
@@ -4453,17 +4483,33 @@ fn test_process_trade_bar_with_volume_not_divisible_by_four(instrument_eth_usdt:
 }
 
 #[rstest]
-fn test_process_trade_bar_with_units_less_than_four(instrument_eth_usdt: InstrumentAny) {
+fn test_process_trade_bar_with_units_less_than_four_does_not_overfill(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
     let instrument = crypto_perpetual_with_size_precision(instrument_eth_usdt, 0, "1");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
     let config = OrderMatchingEngineConfig {
         bar_execution: true,
         ..Default::default()
     };
-    let mut engine = get_order_matching_engine(instrument, None, None, Some(config), None);
+    let mut engine =
+        get_order_matching_engine(instrument.clone(), Some(cache), None, Some(config), None);
 
-    // Volume = 3 at size_precision=0 → quarter_units=0; the entire volume coalesces
-    // onto the close tick, and the open/high/low ticks carry zero size. Should still
-    // advance the engine through the O→H→L→C sequence without panicking.
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1510.00"))
+        .quantity(Quantity::from("6"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut limit_order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    // Volume = 3 at size_precision=0: one unit funds each open/high/low path tick.
     let bar = Bar {
         bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
         open: Price::from("1500.00"),
@@ -4477,11 +4523,159 @@ fn test_process_trade_bar_with_units_less_than_four(instrument_eth_usdt: Instrum
 
     engine.process_bar(&bar);
 
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<&OrderFilled> = saved_messages
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+    let total_qty = fills
+        .iter()
+        .map(|fill| fill.last_qty.as_decimal())
+        .sum::<rust_decimal::Decimal>();
+
+    assert_eq!(total_qty, dec!(3));
+    assert!(
+        fills
+            .iter()
+            .all(|fill| fill.client_order_id == client_order_id)
+    );
     assert_eq!(
         engine.get_core().last,
         Some(Price::from("1505.00")),
         "Low-volume bar should still advance market state through to the close tick",
     );
+}
+
+#[rstest]
+fn test_process_trade_bar_with_two_units_fills_orders_at_high_and_low(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let instrument = crypto_perpetual_with_size_precision(instrument_eth_usdt, 0, "1");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine(instrument.clone(), Some(cache), None, Some(config), None);
+
+    let sell_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let buy_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut sell_limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .price(Price::from("1510.00"))
+        .quantity(Quantity::from("1"))
+        .client_order_id(sell_client_order_id)
+        .submit(true)
+        .build();
+    let mut buy_limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1490.00"))
+        .quantity(Quantity::from("1"))
+        .client_order_id(buy_client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut sell_limit_order, account_id);
+    engine.process_order(&mut buy_limit_order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+        open: Price::from("1500.00"),
+        high: Price::from("1510.00"),
+        low: Price::from("1490.00"),
+        close: Price::from("1505.00"),
+        volume: Quantity::from("2"),
+        ts_event: UnixNanos::from(1_000_000_000),
+        ts_init: UnixNanos::from(1_000_000_000),
+    };
+
+    engine.process_bar(&bar);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<&OrderFilled> = saved_messages
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+    let sell_fill = fills
+        .iter()
+        .find(|fill| fill.client_order_id == sell_client_order_id)
+        .expect("expected sell order fill at bar high");
+    let buy_fill = fills
+        .iter()
+        .find(|fill| fill.client_order_id == buy_client_order_id)
+        .expect("expected buy order fill at bar low");
+
+    assert_eq!(fills.len(), 2);
+    assert_eq!(sell_fill.last_qty, Quantity::from("1"));
+    assert_eq!(sell_fill.last_px, Price::from("1510.00"));
+    assert_eq!(buy_fill.last_qty, Quantity::from("1"));
+    assert_eq!(buy_fill.last_px, Price::from("1490.00"));
+}
+
+#[rstest]
+fn test_process_trade_bar_with_three_units_fills_order_at_high(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let instrument = crypto_perpetual_with_size_precision(instrument_eth_usdt, 0, "1");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine(instrument.clone(), Some(cache), None, Some(config), None);
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .price(Price::from("1508.00"))
+        .quantity(Quantity::from("1"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut limit_order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+        open: Price::from("1500.00"),
+        high: Price::from("1510.00"),
+        low: Price::from("1490.00"),
+        close: Price::from("1505.00"),
+        volume: Quantity::from("3"),
+        ts_event: UnixNanos::from(1_000_000_000),
+        ts_init: UnixNanos::from(1_000_000_000),
+    };
+
+    engine.process_bar(&bar);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<&OrderFilled> = saved_messages
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].client_order_id, client_order_id);
+    assert_eq!(fills[0].last_qty, Quantity::from("1"));
+    assert_eq!(fills[0].last_px, Price::from("1508.00"));
 }
 
 #[rstest]
@@ -4518,12 +4712,335 @@ fn test_process_quote_bar_with_volume_not_divisible_by_four(instrument_eth_usdt:
     };
 
     // The bug pattern: pre-fix, the synthesized bid/ask quote sizes had unaligned
-    // raw values that would cause `QuoteTick` construction or downstream precision
-    // checks to fail. After the fix `quarter_bar_volume` floors each output to
-    // `size_increment` and aligns to the volume's precision scale, so this call
-    // must complete without panicking.
+    // raw values that could fail downstream precision checks.
     engine.process_bar(&bid_bar);
     engine.process_bar(&ask_bar);
+}
+
+#[rstest]
+fn test_process_quote_bar_with_one_unit_updates_close(instrument_eth_usdt: InstrumentAny) {
+    let instrument = crypto_perpetual_with_size_precision(instrument_eth_usdt, 0, "1");
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(instrument, None, None, Some(config), None);
+
+    let ts = UnixNanos::from(1_000_000_000);
+    let bid_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-BID-EXTERNAL"),
+        open: Price::from("1500.00"),
+        high: Price::from("1510.00"),
+        low: Price::from("1490.00"),
+        close: Price::from("1505.00"),
+        volume: Quantity::from("1"),
+        ts_event: ts,
+        ts_init: ts,
+    };
+    let ask_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-ASK-EXTERNAL"),
+        open: Price::from("1501.00"),
+        high: Price::from("1511.00"),
+        low: Price::from("1491.00"),
+        close: Price::from("1506.00"),
+        volume: Quantity::from("1"),
+        ts_event: ts,
+        ts_init: ts,
+    };
+
+    engine.process_bar(&bid_bar);
+    engine.process_bar(&ask_bar);
+
+    assert_eq!(engine.get_core().bid, Some(Price::from("1505.00")));
+    assert_eq!(engine.get_core().ask, Some(Price::from("1506.00")));
+}
+
+#[rstest]
+fn test_process_quote_bar_with_asymmetric_units_updates_positive_sides(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let instrument = crypto_perpetual_with_size_precision(instrument_eth_usdt, 0, "1");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine(instrument.clone(), Some(cache), None, Some(config), None);
+
+    let sell_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let buy_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut sell_limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .price(Price::from("1510.00"))
+        .quantity(Quantity::from("1"))
+        .client_order_id(sell_client_order_id)
+        .submit(true)
+        .build();
+    let mut buy_limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1506.00"))
+        .quantity(Quantity::from("1"))
+        .client_order_id(buy_client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut sell_limit_order, account_id);
+    engine.process_order(&mut buy_limit_order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let ts = UnixNanos::from(1_000_000_000);
+    let bid_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-BID-EXTERNAL"),
+        open: Price::from("1500.00"),
+        high: Price::from("1510.00"),
+        low: Price::from("1490.00"),
+        close: Price::from("1505.00"),
+        volume: Quantity::from("3"),
+        ts_event: ts,
+        ts_init: ts,
+    };
+    let ask_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-ASK-EXTERNAL"),
+        open: Price::from("1501.00"),
+        high: Price::from("1511.00"),
+        low: Price::from("1491.00"),
+        close: Price::from("1506.00"),
+        volume: Quantity::from("1"),
+        ts_event: ts,
+        ts_init: ts,
+    };
+
+    engine.process_bar(&bid_bar);
+    engine.process_bar(&ask_bar);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<&OrderFilled> = saved_messages
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+    let sell_fill = fills
+        .iter()
+        .find(|fill| fill.client_order_id == sell_client_order_id)
+        .expect("expected sell order fill at bar high bid");
+    let buy_fill = fills
+        .iter()
+        .find(|fill| fill.client_order_id == buy_client_order_id)
+        .expect("expected buy order fill at bar close ask");
+
+    assert_eq!(fills.len(), 2);
+    assert_eq!(sell_fill.last_qty, Quantity::from("1"));
+    assert_eq!(sell_fill.last_px, Price::from("1510.00"));
+    assert_eq!(buy_fill.last_qty, Quantity::from("1"));
+    assert_eq!(buy_fill.last_px, Price::from("1506.00"));
+    assert_eq!(engine.get_core().bid, Some(Price::from("1490.00")));
+    assert_eq!(engine.get_core().ask, Some(Price::from("1506.00")));
+}
+
+#[rstest]
+fn test_process_quote_bar_with_zero_ask_volume_clears_previous_ask(
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let instrument = crypto_perpetual_with_size_precision(instrument_eth_usdt, 0, "1");
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(instrument, None, None, Some(config), None);
+
+    let first_ts = UnixNanos::from(1_000_000_000);
+    let first_bid_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-BID-EXTERNAL"),
+        open: Price::from("1498.00"),
+        high: Price::from("1500.00"),
+        low: Price::from("1497.00"),
+        close: Price::from("1499.00"),
+        volume: Quantity::from("1"),
+        ts_event: first_ts,
+        ts_init: first_ts,
+    };
+    let first_ask_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-ASK-EXTERNAL"),
+        open: Price::from("1499.00"),
+        high: Price::from("1501.00"),
+        low: Price::from("1498.00"),
+        close: Price::from("1500.00"),
+        volume: Quantity::from("1"),
+        ts_event: first_ts,
+        ts_init: first_ts,
+    };
+
+    engine.process_bar(&first_bid_bar);
+    engine.process_bar(&first_ask_bar);
+
+    assert_eq!(engine.best_bid_price(), Some(Price::from("1499.00")));
+    assert_eq!(engine.best_ask_price(), Some(Price::from("1500.00")));
+
+    let second_ts = UnixNanos::from(2_000_000_000);
+    let second_bid_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-BID-EXTERNAL"),
+        open: Price::from("1600.00"),
+        high: Price::from("1610.00"),
+        low: Price::from("1590.00"),
+        close: Price::from("1605.00"),
+        volume: Quantity::from("3"),
+        ts_event: second_ts,
+        ts_init: second_ts,
+    };
+    let second_ask_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-ASK-EXTERNAL"),
+        open: Price::from("1601.00"),
+        high: Price::from("1611.00"),
+        low: Price::from("1591.00"),
+        close: Price::from("1606.00"),
+        volume: Quantity::from("0"),
+        ts_event: second_ts,
+        ts_init: second_ts,
+    };
+
+    engine.process_bar(&second_bid_bar);
+    engine.process_bar(&second_ask_bar);
+
+    assert_eq!(engine.best_bid_price(), Some(Price::from("1590.00")));
+    assert_eq!(engine.best_ask_price(), None);
+    assert_eq!(engine.get_core().bid, Some(Price::from("1590.00")));
+    assert_eq!(engine.get_core().ask, None);
+}
+
+#[rstest]
+fn test_process_quote_bar_with_zero_close_side_does_not_cross_book(
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let instrument = crypto_perpetual_with_size_precision(instrument_eth_usdt, 0, "1");
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(instrument, None, None, Some(config), None);
+
+    let ts = UnixNanos::from(1_000_000_000);
+    let bid_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-BID-EXTERNAL"),
+        open: Price::from("1500.00"),
+        high: Price::from("1510.00"),
+        low: Price::from("1490.00"),
+        close: Price::from("1505.00"),
+        volume: Quantity::from("8"),
+        ts_event: ts,
+        ts_init: ts,
+    };
+    let ask_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-ASK-EXTERNAL"),
+        open: Price::from("1501.00"),
+        high: Price::from("1511.00"),
+        low: Price::from("1491.00"),
+        close: Price::from("1506.00"),
+        volume: Quantity::from("3"),
+        ts_event: ts,
+        ts_init: ts,
+    };
+
+    engine.process_bar(&bid_bar);
+    engine.process_bar(&ask_bar);
+
+    assert_eq!(engine.best_bid_price(), Some(Price::from("1505.00")));
+    assert_eq!(engine.best_ask_price(), None);
+    assert_eq!(engine.get_core().bid, Some(Price::from("1505.00")));
+    assert_eq!(engine.get_core().ask, None);
+}
+
+#[rstest]
+fn test_process_quote_bar_with_two_units_fills_orders_at_high_and_low(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let instrument = crypto_perpetual_with_size_precision(instrument_eth_usdt, 0, "1");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine(instrument.clone(), Some(cache), None, Some(config), None);
+
+    let sell_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let buy_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut sell_limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .price(Price::from("1510.00"))
+        .quantity(Quantity::from("1"))
+        .client_order_id(sell_client_order_id)
+        .submit(true)
+        .build();
+    let mut buy_limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1491.00"))
+        .quantity(Quantity::from("1"))
+        .client_order_id(buy_client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut sell_limit_order, account_id);
+    engine.process_order(&mut buy_limit_order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let ts = UnixNanos::from(1_000_000_000);
+    let bid_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-BID-EXTERNAL"),
+        open: Price::from("1500.00"),
+        high: Price::from("1510.00"),
+        low: Price::from("1490.00"),
+        close: Price::from("1505.00"),
+        volume: Quantity::from("2"),
+        ts_event: ts,
+        ts_init: ts,
+    };
+    let ask_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-ASK-EXTERNAL"),
+        open: Price::from("1501.00"),
+        high: Price::from("1511.00"),
+        low: Price::from("1491.00"),
+        close: Price::from("1506.00"),
+        volume: Quantity::from("2"),
+        ts_event: ts,
+        ts_init: ts,
+    };
+
+    engine.process_bar(&bid_bar);
+    engine.process_bar(&ask_bar);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<&OrderFilled> = saved_messages
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+    let sell_fill = fills
+        .iter()
+        .find(|fill| fill.client_order_id == sell_client_order_id)
+        .expect("expected sell order fill at bar high bid");
+    let buy_fill = fills
+        .iter()
+        .find(|fill| fill.client_order_id == buy_client_order_id)
+        .expect("expected buy order fill at bar low ask");
+
+    assert_eq!(fills.len(), 2);
+    assert_eq!(sell_fill.last_qty, Quantity::from("1"));
+    assert_eq!(sell_fill.last_px, Price::from("1510.00"));
+    assert_eq!(buy_fill.last_qty, Quantity::from("1"));
+    assert_eq!(buy_fill.last_px, Price::from("1491.00"));
+    assert_eq!(engine.get_core().bid, Some(Price::from("1490.00")));
+    assert_eq!(engine.get_core().ask, Some(Price::from("1491.00")));
 }
 
 #[rstest]
