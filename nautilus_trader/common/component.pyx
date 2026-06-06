@@ -3170,9 +3170,11 @@ cdef class Throttler:
         cdef int64_t delta_next
         while self._buffer:
             delta_next = self._delta_next()
-            msg = self._buffer.pop()
 
             if delta_next <= 0:
+                # Only remove from the buffer once cleared to send, otherwise the
+                # message would be dropped when re-arming the timer below
+                msg = self._buffer.pop()
                 self._send_msg(msg)
             else:
                 self._set_timer(self._process)

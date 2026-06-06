@@ -187,6 +187,33 @@ class TestBufferingThrottler:
         assert self.throttler.recv_count == 7
         assert self.throttler.sent_count == 7
 
+    def test_buffered_burst_delivers_all_messages_in_order(self):
+        # Regression test: in buffer mode (no `output_drop`) a burst far exceeding
+        # the rate must be fully delivered in order. Previously `_process` popped a
+        # message before the rate check and, when re-arming the timer, returned
+        # without sending or restoring it, silently dropping one buffered message
+        # per refill.
+
+        # Arrange: distinct messages so completeness and order are both verifiable
+        messages = [f"MESSAGE-{i}" for i in range(20)]
+
+        # Act: Send a burst of 20 (limit is 5 per interval)
+        for message in messages:
+            self.throttler.send(message)
+
+        # Drain the buffer one interval at a time until empty
+        while self.throttler.qsize > 0:
+            events = self.clock.advance_time(self.clock.timestamp_ns() + 1_000_000_000)
+            for event in events:
+                event.handle()
+
+        # Assert: Every message delivered exactly once, in order, none dropped
+        assert self.handler == messages
+        assert self.throttler.qsize == 0
+        assert self.throttler.is_limiting is False
+        assert self.throttler.recv_count == 20
+        assert self.throttler.sent_count == 20
+
 
 class TestDroppingThrottler:
     def setup(self):
