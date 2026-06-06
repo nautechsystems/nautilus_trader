@@ -5405,6 +5405,7 @@ dependencies = [
  "pyo3-stub-gen",
  "rstest",
  "rust_decimal",
+ "serde",
  "serde_json",
  "tempfile",
  "ustr",

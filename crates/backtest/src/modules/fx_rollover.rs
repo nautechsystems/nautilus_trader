@@ -29,6 +29,7 @@ use nautilus_model::{
     types::{Currency, Money},
 };
 use rust_decimal::prelude::ToPrimitive;
+use serde::Serialize;
 
 use super::{ExchangeContext, SimulationModule};
 
@@ -49,7 +50,7 @@ const LOCATION_CURRENCY_MAP: &[(&str, &str)] = &[
 ];
 
 /// A single interest rate data entry.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", from_py_object)
@@ -343,6 +344,7 @@ fn nanos_to_utc_datetime(ts: UnixNanos) -> NaiveDateTime {
 mod tests {
     use nautilus_model::identifiers::InstrumentId;
     use rstest::rstest;
+    use serde_json::json;
 
     use super::*;
 
@@ -369,6 +371,26 @@ mod tests {
                 value: 1.55,
             },
         ]
+    }
+
+    #[rstest]
+    fn test_interest_rate_record_serializes_to_json() {
+        let record = InterestRateRecord {
+            location: "AUS".into(),
+            time: "2020-Q1".into(),
+            value: 0.75,
+        };
+
+        let value = serde_json::to_value(&record).unwrap();
+
+        assert_eq!(
+            value,
+            json!({
+                "location": "AUS",
+                "time": "2020-Q1",
+                "value": 0.75,
+            })
+        );
     }
 
     #[rstest]
