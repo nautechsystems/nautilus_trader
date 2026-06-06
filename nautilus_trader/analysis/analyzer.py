@@ -47,6 +47,7 @@ class PortfolioAnalyzer:
         self._account_balances: dict[Currency, Money] = {}
         self._positions: list[Position] = []
         self._realized_pnls: dict[Currency, pd.Series] = {}
+        self._recorded_realized_pnls: dict[Currency, pd.Series] = {}
         self._position_returns: pd.Series = self._empty_returns()
         self._portfolio_returns: pd.Series = self._empty_returns()
         self._returns: pd.Series = self._empty_returns()
@@ -88,6 +89,7 @@ class PortfolioAnalyzer:
         self._account_balances = {}
         self._positions = []
         self._realized_pnls = {}
+        self._recorded_realized_pnls = {}
         self._position_returns = self._empty_returns()
         self._portfolio_returns = self._empty_returns()
         self._returns = self._empty_returns()
@@ -224,6 +226,23 @@ class PortfolioAnalyzer:
         realized_pnls.loc[position_id.value] = realized_pnl.as_double()
         self._realized_pnls[currency] = realized_pnls
 
+    def record_trade(self, position_id: PositionId, realized_pnl: Money) -> None:
+        """
+        Record realized PnL observed during portfolio processing.
+
+        Parameters
+        ----------
+        position_id : PositionId
+            The position ID for the trade.
+        realized_pnl : Money
+            The realized PnL for the trade.
+
+        """
+        currency = realized_pnl.currency
+        realized_pnls = self._recorded_realized_pnls.get(currency, pd.Series(dtype=float64))
+        realized_pnls.loc[position_id.value] = realized_pnl.as_double()
+        self._recorded_realized_pnls[currency] = realized_pnls
+
     def add_position_return(self, timestamp: datetime, value: float) -> None:
         """
         Add position return data to the analyzer.
@@ -273,20 +292,35 @@ class PortfolioAnalyzer:
         -------
         pd.Series or ``None``
 
-        Raises
-        ------
-        ValueError
-            If `currency` is ``None`` when analyzing multi-currency portfolios.
+        Returns ``None`` when no unambiguous currency can be selected.
 
         """
-        if not self._realized_pnls:
+        if not self._realized_pnls and not self._recorded_realized_pnls:
             return None
         if currency is None:
-            if len(self._account_balances) > 1:
-                raise ValueError("`currency` was `None` for multi-currency portfolio")
-            currency = next(iter(self._account_balances.keys()))
+            if len(self._account_balances) == 1:
+                currency = next(iter(self._account_balances.keys()))
+            else:
+                currencies = set(self._realized_pnls) | set(self._recorded_realized_pnls)
+                if len(currencies) != 1:
+                    return None
 
-        return self._realized_pnls.get(currency)
+                currency = next(iter(currencies))
+
+        realized_pnls = self._realized_pnls.get(currency)
+        recorded_realized_pnls = self._recorded_realized_pnls.get(currency)
+
+        if realized_pnls is None:
+            return recorded_realized_pnls
+
+        if recorded_realized_pnls is None:
+            return realized_pnls
+
+        output = realized_pnls.copy()
+        for position_id, pnl in recorded_realized_pnls.items():
+            output.loc[position_id] = pnl
+
+        return output
 
     def total_pnl(
         self,

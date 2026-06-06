@@ -32,6 +32,7 @@ from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
@@ -109,6 +110,17 @@ class TestPortfolioAnalyzer:
         # Assert
         assert result is None
 
+    def test_get_realized_pnls_without_currency_when_currency_ambiguous_returns_none(self):
+        # Arrange
+        self.analyzer.add_trade(PositionId("P-1"), Money(10.0, USD))
+        self.analyzer.add_trade(PositionId("P-2"), Money(20.0, EUR))
+
+        # Act
+        result = self.analyzer.realized_pnls()
+
+        # Assert
+        assert result is None
+
     def test_is_pyo3_statistic_matches_exact_module(self):
         # Arrange
         stat = _FakePyo3Statistic()
@@ -142,6 +154,33 @@ class TestPortfolioAnalyzer:
         # Assert
         assert stats[stat.name] == 1.0
         assert stat.last_realized_pnls_input == [10.0]
+
+    def test_calculate_statistics_preserves_recorded_realized_pnls(self):
+        # Arrange
+        stat = _RecordingPyo3Statistic()
+        account = _create_cash_account([("2024-01-01", 1_000.0)], currency=EUR)
+        positions = [
+            _create_closed_position(
+                position_id="P-1",
+                realized_pnl=100.0,
+                realized_return=0.10,
+                ts_closed="2024-01-31",
+            ),
+        ]
+        self.analyzer.register_statistic(stat)
+        self.analyzer.record_trade(PositionId("P-1"), Money(90, EUR))
+
+        # Act
+        self.analyzer.calculate_statistics(account, positions)
+        native_pnls = self.analyzer.realized_pnls(USD)
+        recorded_pnls = self.analyzer.realized_pnls(EUR)
+        stats = self.analyzer.get_performance_stats_pnls(currency=EUR)
+
+        # Assert
+        assert native_pnls["P-1"] == 100.0
+        assert recorded_pnls["P-1"] == 90.0
+        assert stats[stat.name] == 1.0
+        assert stat.last_realized_pnls_input == [90.0]
 
     def test_get_performance_stats_returns_converts_pyo3_statistics_input(self):
         # Arrange
@@ -336,6 +375,51 @@ class TestPortfolioAnalyzer:
         assert portfolio_returns.loc[pd.Timestamp("2024-01-11", tz="UTC")] == pytest.approx(0.0)
         pd.testing.assert_series_equal(self.analyzer.returns(), portfolio_returns)
 
+    def test_calculate_statistics_uses_recorded_account_currency_realized_pnls(self):
+        # Arrange
+        stat = _RecordingPyo3Statistic()
+        self.analyzer.register_statistic(stat)
+        account = _create_cash_account(
+            [
+                ("2024-01-01", 1_000.0),
+                ("2024-01-31", 1_090.0),
+                ("2024-02-01", 1_045.0),
+            ],
+            currency=EUR,
+        )
+        positions = [
+            _create_closed_position(
+                position_id="P-1",
+                realized_pnl=100.0,
+                realized_return=0.10,
+                ts_closed="2024-01-31",
+                currency=USD,
+            ),
+            _create_closed_position(
+                position_id="P-2",
+                realized_pnl=-50.0,
+                realized_return=-0.05,
+                ts_closed="2024-02-01",
+                currency=USD,
+            ),
+        ]
+        self.analyzer.record_trade(PositionId("P-1"), Money(90.0, EUR))
+        self.analyzer.record_trade(PositionId("P-2"), Money(-45.0, EUR))
+
+        # Act
+        self.analyzer.calculate_statistics(account, positions)
+        native_pnls = self.analyzer.realized_pnls(USD)
+        recorded_pnls = self.analyzer.realized_pnls(EUR)
+        stats = self.analyzer.get_performance_stats_pnls(currency=EUR)
+
+        # Assert
+        assert native_pnls["P-1"] == 100.0
+        assert native_pnls["P-2"] == -50.0
+        assert recorded_pnls["P-1"] == 90.0
+        assert recorded_pnls["P-2"] == -45.0
+        assert stats["PnL (total)"] == 45.0
+        assert stat.last_realized_pnls_input == [90.0, -45.0]
+
     def test_get_performance_stats_returns_prefers_portfolio_returns(self):
         # Arrange
         self.analyzer.register_statistic(ReturnsAverage())
@@ -451,7 +535,7 @@ class TestPortfolioAnalyzer:
         assert portfolio_returns.loc[pd.Timestamp("2024-01-31", tz="UTC")] == pytest.approx(0.05)
 
 
-def _create_cash_account(events: list[tuple[str, float]]) -> CashAccount:
+def _create_cash_account(events: list[tuple[str, float]], currency=USD) -> CashAccount:
     account_id = TestIdStubs.account_id()
     first_date, first_total = events[0]
     account = CashAccount(
@@ -459,6 +543,7 @@ def _create_cash_account(events: list[tuple[str, float]]) -> CashAccount:
             account_id=account_id,
             total=first_total,
             ts_event=pd.Timestamp(first_date, tz="UTC").value,
+            currency=currency,
         ),
         calculate_account_state=False,
     )
@@ -469,6 +554,7 @@ def _create_cash_account(events: list[tuple[str, float]]) -> CashAccount:
                 account_id=account_id,
                 total=total,
                 ts_event=pd.Timestamp(date_str, tz="UTC").value,
+                currency=currency,
             ),
         )
 
@@ -479,17 +565,18 @@ def _create_cash_account_state(
     account_id,
     total: float,
     ts_event: int,
+    currency=USD,
 ) -> AccountState:
     return AccountState(
         account_id=account_id,
         account_type=AccountType.CASH,
-        base_currency=USD,
+        base_currency=currency,
         reported=True,
         balances=[
             AccountBalance(
-                Money(total, USD),
-                Money(0, USD),
-                Money(total, USD),
+                Money(total, currency),
+                Money(0, currency),
+                Money(total, currency),
             ),
         ],
         margins=[],
@@ -505,10 +592,11 @@ def _create_closed_position(
     realized_pnl: float,
     realized_return: float,
     ts_closed: str,
+    currency=USD,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         id=PositionId(position_id),
-        realized_pnl=Money(realized_pnl, USD),
+        realized_pnl=Money(realized_pnl, currency),
         realized_return=realized_return,
         ts_closed=pd.Timestamp(ts_closed, tz="UTC").value,
     )
