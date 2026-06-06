@@ -122,6 +122,7 @@ pub struct PolymarketDataClientConfig {
     pub instrument_config: Option<PolymarketInstrumentProviderConfig>,
     pub base_url_http: Option<String>,
     pub base_url_ws: Option<String>,
+    pub base_url_rtds: Option<String>,
     pub base_url_gamma: Option<String>,
     pub base_url_data_api: Option<String>,
     /// HTTP timeout in seconds.
@@ -214,6 +215,13 @@ impl PolymarketDataClientConfig {
         self.base_url_ws
             .clone()
             .unwrap_or_else(|| urls::clob_ws_url().to_string())
+    }
+
+    #[must_use]
+    pub fn rtds_url(&self) -> String {
+        self.base_url_rtds
+            .clone()
+            .unwrap_or_else(|| urls::rtds_ws_url().to_string())
     }
 
     #[must_use]

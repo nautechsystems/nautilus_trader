@@ -83,12 +83,13 @@ impl PolymarketDataClientConfig {
     /// and are skipped during serialization; they default to empty/`None` and must be
     /// installed programmatically after deserialization.
     #[new]
-    #[pyo3(signature = (instrument_config=None, base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=PY_OPTION_U64_MISSING_SENTINEL, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None, new_market_fetch_max_concurrency=None, resolve_poll_enabled=None, resolve_poll_interval_secs=None, resolve_poll_grace_secs=None, resolve_poll_max_wait_secs=None))]
+    #[pyo3(signature = (instrument_config=None, base_url_http=None, base_url_ws=None, base_url_rtds=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=PY_OPTION_U64_MISSING_SENTINEL, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None, new_market_fetch_max_concurrency=None, resolve_poll_enabled=None, resolve_poll_interval_secs=None, resolve_poll_grace_secs=None, resolve_poll_max_wait_secs=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         instrument_config: Option<PolymarketInstrumentProviderConfig>,
         base_url_http: Option<String>,
         base_url_ws: Option<String>,
+        base_url_rtds: Option<String>,
         base_url_gamma: Option<String>,
         base_url_data_api: Option<String>,
         http_timeout_secs: Option<u64>,
@@ -113,6 +114,7 @@ impl PolymarketDataClientConfig {
             instrument_config,
             base_url_http,
             base_url_ws,
+            base_url_rtds,
             base_url_gamma,
             base_url_data_api,
             http_timeout_secs: http_timeout_secs.unwrap_or(default.http_timeout_secs),
@@ -287,6 +289,7 @@ mod tests {
                     py.None(),
                     py.None(),
                     py.None(),
+                    py.None(),
                 ],
             )
             .expect("args");
@@ -309,6 +312,24 @@ mod tests {
             let config = construct_data_client_config(py, None, Some(&kwargs));
 
             assert_eq!(config.new_market_fetch_max_concurrency, 23);
+        });
+    }
+
+    #[rstest]
+    fn direct_pyo3_constructor_sets_base_url_rtds() {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item("base_url_rtds", "wss://ws-live-data.example")
+                .unwrap();
+
+            let config = construct_data_client_config(py, None, Some(&kwargs));
+
+            assert_eq!(
+                config.base_url_rtds.as_deref(),
+                Some("wss://ws-live-data.example")
+            );
         });
     }
 }
