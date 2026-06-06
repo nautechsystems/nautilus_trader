@@ -52,6 +52,16 @@ def test_logger_methods_and_name():
     logger.flush()
 
 
+def test_logger_methods_accept_omitted_color():
+    logger = Logger("TestLogger")
+
+    for method_name in ["trace", "debug", "info", "warning", "error", "exception"]:
+        getattr(logger, method_name)(method_name)
+
+    logger._log(LogLevel.INFO, message="log")
+    logger.flush()
+
+
 def test_logging_raw_functions():
     logger_log(LogLevel.INFO, LogColor.NORMAL, "CommonTests", "hello")
     log_header(TraderId("TRADER-001"), "machine", UUID4(), "CommonTests")
