@@ -886,7 +886,7 @@ impl BlockchainCache {
         pool_identifier: &PoolIdentifier,
     ) -> anyhow::Result<Option<u64>> {
         if let Some(database) = &self.database {
-            let (swaps_last_block, liquidity_last_block, collect_last_block) = tokio::try_join!(
+            let (swaps_last_block, liquidity_last_block, collect_last_block, flash_last_block) = tokio::try_join!(
                 database.get_table_last_block(
                     self.chain.chain_id,
                     "pool_swap_event",
@@ -902,12 +902,22 @@ impl BlockchainCache {
                     "pool_collect_event",
                     pool_identifier
                 ),
+                database.get_table_last_block(
+                    self.chain.chain_id,
+                    "pool_flash_event",
+                    pool_identifier
+                ),
             )?;
 
-            let max_block = [swaps_last_block, liquidity_last_block, collect_last_block]
-                .into_iter()
-                .flatten()
-                .max();
+            let max_block = [
+                swaps_last_block,
+                liquidity_last_block,
+                collect_last_block,
+                flash_last_block,
+            ]
+            .into_iter()
+            .flatten()
+            .max();
             Ok(max_block)
         } else {
             Ok(None)

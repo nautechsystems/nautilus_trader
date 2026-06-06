@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added BSC chain support to blockchain adapter with `UniswapV3` and `PancakeSwapV3` DEX registrations
 - Added Aerodrome Slipstream pool-event signatures and parsers for bootstrap and replay on Base
+- Added Blockchain adapter `analyze-pools` CLI for batch DeFi pool snapshot hydration
 - Added structured `PoolProfilerError` carrying pool id, block, transaction/log index, and event kind
 - Added DeFi data (`DefiData`) replay through the data and backtest engines as a first-class `Data` variant
 - Added `BacktestEngine.add_defi_data` for replaying DeFi block, pool, and pool-event data in backtests
@@ -130,6 +131,7 @@ Released on TBD (UTC).
 - Fixed BitMEX mark/index price updates on altcoin perps (#4147), thanks @filipmacek
 - Fixed Blockchain adapter `analyze-pool --to-block` bounds during snapshot replay
 - Fixed Blockchain adapter caching a half-initialized `PoolProfiler` when `initialize` returns `InitialTickMismatch`
+- Fixed Blockchain adapter Multicall validation chunking and flash-event resume bounds
 - Fixed Coinbase book snapshot deltas missing `F_SNAPSHOT` flag in REST and WebSocket parsers
 - Fixed Deribit `DeribitExecutionClient` not forwarding config credentials to the WebSocket client
 - Fixed dYdX rate limiter being skipped due to missing keys (#4091), thanks @filipmacek

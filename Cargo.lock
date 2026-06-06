@@ -5646,6 +5646,8 @@ dependencies = [
  "nautilus-core",
  "nautilus-infrastructure",
  "nautilus-model",
+ "rstest",
+ "serde_json",
  "tokio",
  "tokio-util",
  "ustr",
