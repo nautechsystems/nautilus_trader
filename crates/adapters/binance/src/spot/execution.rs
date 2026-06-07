@@ -73,7 +73,8 @@ use crate::{
     common::{
         consts::{
             BINANCE_GTX_ORDER_REJECT_CODE, BINANCE_NAUTILUS_SPOT_BROKER_ID,
-            BINANCE_NEW_ORDER_REJECTED_CODE, BINANCE_SPOT_POST_ONLY_REJECT_MSG, BINANCE_VENUE,
+            BINANCE_NEW_ORDER_REJECTED_CODE, BINANCE_SPOT_POST_ONLY_REJECT_MSG,
+            BINANCE_STATUS_UNKNOWN_CODE, BINANCE_UNEXPECTED_RESPONSE_CODE, BINANCE_VENUE,
         },
         credential::resolve_credentials,
         dispatch::{
@@ -325,7 +326,13 @@ impl BinanceSpotExecutionClient {
                         event_emitter.send_order_event(OrderEventAny::Accepted(accepted));
                     }
                     Err(e) => {
-                        if is_structured_venue_rejection(&e) || is_local_command_failure(&e) {
+                        if is_ambiguous_submit_error(&e) {
+                            log::error!(
+                                "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {e}"
+                            );
+                        } else if is_structured_venue_rejection(&e)
+                            || is_local_command_failure(&e)
+                        {
                             let due_post_only = e
                                 .downcast_ref::<BinanceSpotHttpError>()
                                 .is_some_and(is_spot_post_only_rejection);
@@ -1307,6 +1314,18 @@ fn dispatch_ws_trading_message(
         } => {
             log::debug!("WS order rejected: request_id={request_id}, code={code}, msg={msg}");
             if let Some((_, pending)) = dispatch_state.pending_requests.remove(&request_id) {
+                let code_i64 = i64::from(code);
+                if matches!(
+                    code_i64,
+                    BINANCE_UNEXPECTED_RESPONSE_CODE | BINANCE_STATUS_UNKNOWN_CODE
+                ) {
+                    log::error!(
+                        "Ambiguous WS submit failure for {}, awaiting reconciliation: code={code}, msg={msg}",
+                        pending.client_order_id,
+                    );
+                    return;
+                }
+
                 // Clone to drop the DashMap read guard before cleanup_terminal
                 let identity = dispatch_state
                     .order_identities
@@ -1314,7 +1333,6 @@ fn dispatch_ws_trading_message(
                     .map(|r| r.clone());
 
                 if let Some(identity) = identity {
-                    let code_i64 = i64::from(code);
                     let due_post_only = code_i64 == BINANCE_GTX_ORDER_REJECT_CODE
                         || (code_i64 == BINANCE_NEW_ORDER_REJECTED_CODE
                             && msg == BINANCE_SPOT_POST_ONLY_REJECT_MSG);
@@ -2094,6 +2112,19 @@ fn is_structured_venue_rejection(err: &anyhow::Error) -> bool {
         .is_some_and(|be| matches!(be, BinanceSpotHttpError::BinanceError { .. }))
 }
 
+fn is_ambiguous_submit_error(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<BinanceSpotHttpError>()
+        .is_some_and(|be| {
+            matches!(
+                be,
+                BinanceSpotHttpError::BinanceError {
+                    code: BINANCE_UNEXPECTED_RESPONSE_CODE | BINANCE_STATUS_UNKNOWN_CODE,
+                    ..
+                }
+            )
+        })
+}
+
 fn is_local_command_failure(err: &anyhow::Error) -> bool {
     err.downcast_ref::<BinanceSpotHttpError>()
         .is_some_and(is_local_http_command_failure)
@@ -2167,6 +2198,119 @@ mod tests {
                 assert!(event.reason.as_str().contains("code=-2011"));
             }
             other => panic!("Expected CancelRejected event, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case(
+        BINANCE_UNEXPECTED_RESPONSE_CODE,
+        "An unexpected response was received from the message bus"
+    )]
+    #[case(
+        BINANCE_STATUS_UNKNOWN_CODE,
+        "Timeout waiting for response from backend server"
+    )]
+    fn test_dispatch_ws_trading_message_unknown_status_keeps_order_registered(
+        #[case] code: i64,
+        #[case] msg: &str,
+    ) {
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let client_order_id = ClientOrderId::from("TEST");
+        let dispatch_state =
+            create_tracked_dispatch_state(client_order_id, InstrumentId::from("BTCUSDT.BINANCE"));
+        let ws_authenticated = tokio::sync::Notify::new();
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+
+        dispatch_state.pending_requests.insert(
+            "req-submit".to_string(),
+            PendingRequest {
+                client_order_id,
+                venue_order_id: None,
+                operation: PendingOperation::Place,
+            },
+        );
+
+        dispatch_ws_trading_message(
+            BinanceSpotWsTradingMessage::OrderRejected {
+                request_id: "req-submit".to_string(),
+                code: code as i32,
+                msg: msg.to_string(),
+            },
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            clock,
+            &dispatch_state,
+            &ws_authenticated,
+            &seen_trade_ids,
+        );
+
+        assert!(dispatch_state.pending_requests.get("req-submit").is_none());
+        assert!(
+            dispatch_state
+                .order_identities
+                .get(&client_order_id)
+                .is_some()
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_dispatch_ws_trading_message_definite_submit_rejection_emits_order_rejected() {
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let client_order_id = ClientOrderId::from("TEST");
+        let dispatch_state =
+            create_tracked_dispatch_state(client_order_id, InstrumentId::from("BTCUSDT.BINANCE"));
+        let ws_authenticated = tokio::sync::Notify::new();
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+
+        dispatch_state.pending_requests.insert(
+            "req-submit".to_string(),
+            PendingRequest {
+                client_order_id,
+                venue_order_id: None,
+                operation: PendingOperation::Place,
+            },
+        );
+
+        dispatch_ws_trading_message(
+            BinanceSpotWsTradingMessage::OrderRejected {
+                request_id: "req-submit".to_string(),
+                code: BINANCE_NEW_ORDER_REJECTED_CODE as i32,
+                msg: BINANCE_SPOT_POST_ONLY_REJECT_MSG.to_string(),
+            },
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            clock,
+            &dispatch_state,
+            &ws_authenticated,
+            &seen_trade_ids,
+        );
+
+        assert!(dispatch_state.pending_requests.get("req-submit").is_none());
+        assert!(
+            dispatch_state
+                .order_identities
+                .get(&client_order_id)
+                .is_none()
+        );
+
+        match rx
+            .try_recv()
+            .expect("OrderRejected event should be emitted")
+        {
+            ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(event.account_id, AccountId::from("BINANCE-001"));
+                assert!(event.reason.as_str().contains("code=-2010"));
+                assert!(event.due_post_only);
+            }
+            other => panic!("Expected OrderRejected event, was {other:?}"),
         }
     }
 
@@ -2310,6 +2454,28 @@ mod tests {
         #[case] expected: bool,
     ) {
         assert_eq!(is_spot_post_only_rejection(&error), expected);
+    }
+
+    #[rstest]
+    #[case(BINANCE_UNEXPECTED_RESPONSE_CODE)]
+    #[case(BINANCE_STATUS_UNKNOWN_CODE)]
+    fn test_unknown_status_submit_error_is_ambiguous(#[case] code: i64) {
+        let err = anyhow::Error::new(BinanceSpotHttpError::BinanceError {
+            code,
+            message: "test error".to_string(),
+        });
+        assert!(is_ambiguous_submit_error(&err));
+        assert!(is_structured_venue_rejection(&err));
+    }
+
+    #[rstest]
+    fn test_other_structured_submit_error_is_not_ambiguous() {
+        let err = anyhow::Error::new(BinanceSpotHttpError::BinanceError {
+            code: BINANCE_GTX_ORDER_REJECT_CODE,
+            message: "test error".to_string(),
+        });
+        assert!(!is_ambiguous_submit_error(&err));
+        assert!(is_structured_venue_rejection(&err));
     }
 
     #[rstest]

@@ -138,6 +138,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot full-depth books to seed diffs from REST snapshots
 - Fixed Binance Spot JSON full-depth books to use REST-synced diff streams (#4181), thanks @graceyangfan
 - Fixed Binance Spot SBE numeric parsing to reject invalid price and quantity values
+- Fixed Binance status-unknown submits emitting phantom rejections (#4215), thanks for reporting @Centaur-pub
 - Fixed BitMEX startup handling for crypto futures spreads, duplicate subscriptions, `USYC` margins, and account ID discovery
 - Fixed BitMEX order submission to deny unsupported GTD time-in-force locally
 - Fixed BitMEX mark/index price updates on altcoin perps (#4147), thanks @filipmacek
