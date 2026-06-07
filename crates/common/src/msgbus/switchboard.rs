@@ -13,6 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Built-in message bus endpoint, topic, and pattern names.
+//!
+//! The `DataEngine`, `ExecEngine`, and `RiskEngine` command endpoints use a queued entry point
+//! plus a direct dispatch endpoint:
+//!
+//! - `*.queue_execute` is the normal entry point for runtime command producers. It routes through
+//!   the current runner queue or channel before the engine sees the command.
+//! - `*.execute` is the lower-level dispatch point used by runner drains and internal paths that
+//!   intentionally bypass the queue.
+//!
+//! Prefer queued endpoints for runtime command producers unless the caller owns the ordering and
+//! re-entrancy implications of direct dispatch. The risk and execution queued endpoints can fall
+//! back to direct dispatch when no trading command sender is installed.
+
 use std::{num::NonZeroUsize, sync::OnceLock};
 
 use ahash::AHashMap;
@@ -98,12 +112,15 @@ macro_rules! define_switchboard {
 
         impl MessagingSwitchboard {
             // Static endpoints
+
+            /// Queued entry point for `DataEngine` commands.
             #[inline]
             #[must_use]
             pub fn data_engine_queue_execute() -> MStr<Endpoint> {
                 *DATA_QUEUE_COMMAND_ENDPOINT.get_or_init(|| "DataEngine.queue_execute".into())
             }
 
+            /// Direct dispatch endpoint for `DataEngine` commands.
             #[inline]
             #[must_use]
             pub fn data_engine_execute() -> MStr<Endpoint> {
@@ -149,12 +166,14 @@ macro_rules! define_switchboard {
                 *TIME_EVENT_TOPIC_MSTR.get_or_init(|| TIME_EVENT_TOPIC.into())
             }
 
+            /// Direct dispatch endpoint for `ExecEngine` commands.
             #[inline]
             #[must_use]
             pub fn exec_engine_execute() -> MStr<Endpoint> {
                 *EXEC_EXECUTE_ENDPOINT.get_or_init(|| "ExecEngine.execute".into())
             }
 
+            /// Queued entry point for `ExecEngine` commands.
             #[inline]
             #[must_use]
             pub fn exec_engine_queue_execute() -> MStr<Endpoint> {
@@ -173,15 +192,14 @@ macro_rules! define_switchboard {
                 *EXEC_RECONCILE_REPORT_ENDPOINT.get_or_init(|| "ExecEngine.reconcile_execution_report".into())
             }
 
+            /// Direct dispatch endpoint for `RiskEngine` commands.
             #[inline]
             #[must_use]
             pub fn risk_engine_execute() -> MStr<Endpoint> {
                 *RISK_EXECUTE_ENDPOINT.get_or_init(|| "RiskEngine.execute".into())
             }
 
-            /// Queued endpoint for deferred command execution (re-entrancy safe).
-            /// Falls back to direct endpoint when no `TradingCommandSender` is
-            /// available (backtest / test environments).
+            /// Queued entry point for `RiskEngine` commands.
             #[inline]
             #[must_use]
             pub fn risk_engine_queue_execute() -> MStr<Endpoint> {

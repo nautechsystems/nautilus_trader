@@ -911,6 +911,11 @@ impl DataEngine {
 
     /// Executes a `DataCommand` by delegating to subscribe, unsubscribe, or request handlers.
     ///
+    /// This is the final synchronous dispatch point for data commands. Runtime command producers
+    /// should send to `DataEngine.queue_execute`, which lets the runner sequence command execution
+    /// before this method runs. The engine also calls this method for child commands generated while
+    /// processing a parent command, where immediate in-engine ordering matters.
+    ///
     /// Errors during execution are logged.
     pub fn execute(&mut self, cmd: DataCommand) {
         match &cmd {
