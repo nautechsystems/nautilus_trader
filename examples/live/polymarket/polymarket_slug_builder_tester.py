@@ -14,12 +14,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Example TradingNode script demonstrating the event_slug_builder feature.
+Legacy TradingNode script demonstrating the Python adapter event_slug_builder feature.
 
-This script shows how to efficiently load niche Polymarket markets using
-dynamically generated event slugs instead of downloading all 151k+ markets.
+This script uses the legacy Python Polymarket provider. The Rust Python v2
+adapter keeps provider logic in Rust and uses PolymarketUpDownEventSlugConfig
+for Up/Down event slug generation.
 
-The event_slug_builder takes a fully qualified path to a callable that returns
+The legacy event_slug_builder takes a fully qualified path to a callable that returns
 a list of event slugs. The provider fetches only those specific events from
 the Gamma API.
 

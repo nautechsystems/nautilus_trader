@@ -15,7 +15,12 @@
 
 //! Configuration structures for the Polymarket adapter.
 
-use std::{collections::HashMap, fmt::Debug, sync::Arc};
+use std::{
+    collections::HashMap,
+    fmt::Debug,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use nautilus_model::identifiers::{AccountId, InstrumentId, TraderId};
 use nautilus_network::websocket::TransportBackend;
@@ -25,6 +30,124 @@ use crate::{
     common::{enums::SignatureType, urls},
     filters::InstrumentFilter,
 };
+
+const DEFAULT_UPDOWN_INTERVAL_MINS: u64 = 5;
+const DEFAULT_UPDOWN_PERIODS: u64 = 3;
+
+fn default_updown_assets() -> Vec<String> {
+    vec!["btc".to_string()]
+}
+
+/// Rust-backed event slug builder for Polymarket Up/Down markets.
+///
+/// Up/Down event slugs follow the pattern
+/// `{asset}-updown-{interval_mins}m-{unix_timestamp}`, where the timestamp is
+/// aligned to the start of the interval. The builder emits slugs for each
+/// configured asset and period.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.polymarket",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")
+)]
+pub struct PolymarketUpDownEventSlugConfig {
+    /// Asset codes used in the slug prefix.
+    #[builder(default = default_updown_assets())]
+    pub assets: Vec<String>,
+    /// Up/Down interval in minutes.
+    #[builder(default = DEFAULT_UPDOWN_INTERVAL_MINS)]
+    pub interval_mins: u64,
+    /// Number of periods to generate.
+    #[builder(default = DEFAULT_UPDOWN_PERIODS)]
+    pub periods: u64,
+    /// Offset from the current aligned period.
+    #[builder(default)]
+    pub start_offset_periods: i64,
+}
+
+impl Default for PolymarketUpDownEventSlugConfig {
+    fn default() -> Self {
+        Self::builder().build()
+    }
+}
+
+impl PolymarketUpDownEventSlugConfig {
+    /// Builds event slugs using the current system time.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the interval or period count is zero, all assets are
+    /// blank, or the configured offset resolves before the Unix epoch.
+    pub fn build_event_slugs(&self) -> anyhow::Result<Vec<String>> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| anyhow::anyhow!("system clock before Unix epoch: {e}"))?
+            .as_secs();
+        self.build_event_slugs_at_unix_secs(now)
+    }
+
+    fn build_event_slugs_at_unix_secs(&self, unix_secs: u64) -> anyhow::Result<Vec<String>> {
+        if self.interval_mins == 0 {
+            anyhow::bail!("event_slug_builder.interval_mins must be positive");
+        }
+
+        if self.periods == 0 {
+            anyhow::bail!("event_slug_builder.periods must be positive");
+        }
+
+        let assets = self.normalized_assets();
+        if assets.is_empty() {
+            anyhow::bail!("event_slug_builder.assets must include at least one non-empty asset");
+        }
+
+        let period_secs = self
+            .interval_mins
+            .checked_mul(60)
+            .ok_or_else(|| anyhow::anyhow!("event_slug_builder.interval_mins is too large"))?;
+        let period_start = (unix_secs / period_secs) * period_secs;
+        let period_secs = i128::from(period_secs);
+        let period_start = i128::from(period_start);
+        let mut slugs = Vec::new();
+
+        for period in 0..self.periods {
+            let period_offset = i128::from(self.start_offset_periods) + i128::from(period);
+            let timestamp = period_start + period_offset * period_secs;
+            if timestamp < 0 {
+                anyhow::bail!("event_slug_builder offset resolves before the Unix epoch");
+            }
+
+            for asset in &assets {
+                slugs.push(format!(
+                    "{asset}-updown-{}m-{timestamp}",
+                    self.interval_mins
+                ));
+            }
+        }
+
+        Ok(slugs)
+    }
+
+    fn normalized_assets(&self) -> Vec<String> {
+        let mut assets = Vec::new();
+
+        for asset in &self.assets {
+            let asset = asset.trim().to_ascii_lowercase();
+            if asset.is_empty() || assets.contains(&asset) {
+                continue;
+            }
+            assets.push(asset);
+        }
+
+        assets
+    }
+}
 
 /// Configuration for the Polymarket instrument provider.
 ///
@@ -55,12 +178,8 @@ pub struct PolymarketInstrumentProviderConfig {
     pub event_slugs: Option<Vec<String>>,
     /// Optional static market slugs to load directly during bootstrap.
     pub market_slugs: Option<Vec<String>>,
-    /// Optional fully qualified Python callable path returning event slugs.
-    ///
-    /// This is provided for pyO3 compatibility with the Python Polymarket
-    /// adapter. When used from Rust/pyO3, the callable is resolved and invoked
-    /// from the Python runtime at bootstrap time.
-    pub event_slug_builder: Option<String>,
+    /// Optional Rust-backed Up/Down event slug builder.
+    pub event_slug_builder: Option<PolymarketUpDownEventSlugConfig>,
     /// Whether provider warnings should be logged.
     #[builder(default = true)]
     pub log_warnings: bool,
@@ -86,10 +205,7 @@ impl PolymarketInstrumentProviderConfig {
     #[must_use]
     pub fn should_load_all(&self) -> bool {
         self.load_all
-            || self
-                .event_slug_builder
-                .as_deref()
-                .is_some_and(|s| !s.trim().is_empty())
+            || self.event_slug_builder.is_some()
             || self.event_slugs.as_ref().is_some_and(|s| !s.is_empty())
             || self.market_slugs.as_ref().is_some_and(|s| !s.is_empty())
     }
@@ -357,6 +473,52 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn updown_event_slug_config_builds_aligned_slugs() {
+        let config = PolymarketUpDownEventSlugConfig {
+            assets: vec![
+                "BTC".to_string(),
+                " eth ".to_string(),
+                String::new(),
+                "btc".to_string(),
+            ],
+            interval_mins: 5,
+            periods: 2,
+            start_offset_periods: -1,
+        };
+
+        let slugs = config
+            .build_event_slugs_at_unix_secs(1_700_000_123)
+            .expect("event slugs should build");
+
+        assert_eq!(
+            slugs,
+            [
+                "btc-updown-5m-1699999800",
+                "eth-updown-5m-1699999800",
+                "btc-updown-5m-1700000100",
+                "eth-updown-5m-1700000100",
+            ]
+        );
+    }
+
+    #[rstest]
+    fn updown_event_slug_config_rejects_zero_interval() {
+        let config = PolymarketUpDownEventSlugConfig {
+            interval_mins: 0,
+            ..PolymarketUpDownEventSlugConfig::default()
+        };
+
+        let err = config
+            .build_event_slugs_at_unix_secs(1_700_000_123)
+            .expect_err("zero interval should fail");
+
+        assert!(
+            err.to_string()
+                .contains("event_slug_builder.interval_mins must be positive")
+        );
+    }
 
     #[rstest]
     fn test_data_config_toml_minimal() {

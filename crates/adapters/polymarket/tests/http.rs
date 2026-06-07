@@ -36,11 +36,11 @@ use axum::{
     routing::{delete, get, post},
 };
 use nautilus_common::{providers::InstrumentProvider, testing::wait_until_async};
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_model::{identifiers::InstrumentId, instruments::Instrument};
 use nautilus_network::{http::HttpClient, retry::RetryConfig};
 use nautilus_polymarket::{
     common::{credential::Credential, enums::PolymarketOrderType},
-    config::PolymarketInstrumentProviderConfig,
+    config::{PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig},
     filters::{
         EventParamsFilter, EventSlugFilter, GammaQueryFilter, MarketSlugFilter, SearchFilter,
         TagFilter,
@@ -1313,6 +1313,53 @@ async fn test_provider_initialize_uses_instrument_config_event_slugs() {
 
     assert_eq!(provider.store().count(), 4);
     assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_fetch_configured_instruments_uses_rust_event_slug_builder_result() {
+    let event_slug_builder = PolymarketUpDownEventSlugConfig {
+        assets: vec!["btc".to_string()],
+        interval_mins: 5,
+        periods: 2,
+        start_offset_periods: 0,
+    };
+    let event_slugs = event_slug_builder
+        .build_event_slugs()
+        .expect("event slugs should build");
+    let state = TestServerState::default();
+    let market = gamma_market_with_slug(
+        "builder-event-market",
+        "0xcondition_builder_evt",
+        ["61200000000000000001", "61200000000000000002"],
+    );
+    let mut event_responses = state.gamma_event_slug_responses.lock().await;
+
+    for event_slug in event_slugs {
+        let event = gamma_event_with_markets(&event_slug, std::slice::from_ref(&market));
+        event_responses.insert(event_slug, json!([event]));
+    }
+    drop(event_responses);
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        event_slug_builder: Some(event_slug_builder),
+        load_all: true,
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+    let instruments =
+        nautilus_polymarket::providers::fetch_configured_instruments(&http_client, &config, &[])
+            .await
+            .expect("builder result should fetch instruments");
+
+    assert_eq!(instruments.len(), 2);
+    assert!(instruments.iter().all(|instrument| {
+        instrument
+            .id()
+            .to_string()
+            .contains("0xcondition_builder_evt")
+    }));
 }
 
 #[rstest]

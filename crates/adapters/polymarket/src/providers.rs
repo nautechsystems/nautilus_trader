@@ -239,11 +239,7 @@ impl PolymarketInstrumentProvider {
     }
 
     async fn load_scoped_all(&mut self) -> anyhow::Result<()> {
-        let has_explicit_slug_scope = self
-            .config
-            .event_slug_builder
-            .as_deref()
-            .is_some_and(|slug| !slug.trim().is_empty())
+        let has_explicit_slug_scope = self.config.event_slug_builder.is_some()
             || self
                 .config
                 .event_slugs
@@ -281,10 +277,8 @@ impl PolymarketInstrumentProvider {
     }
 
     fn resolve_event_slugs(&self) -> anyhow::Result<Vec<String>> {
-        if let Some(builder) = self.config.event_slug_builder.as_deref()
-            && !builder.trim().is_empty()
-        {
-            return resolve_python_event_slug_builder(builder);
+        if let Some(builder) = self.config.event_slug_builder.as_ref() {
+            return builder.build_event_slugs();
         }
 
         Ok(self
@@ -302,41 +296,6 @@ impl PolymarketInstrumentProvider {
     async fn load_filtered(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         fetch_instruments(&self.http_client, &self.filters).await
     }
-}
-
-#[cfg(feature = "python")]
-fn resolve_python_event_slug_builder(builder: &str) -> anyhow::Result<Vec<String>> {
-    use pyo3::{prelude::*, types::PyModule};
-
-    let (module_name, function_name) = builder.rsplit_once(':').ok_or_else(|| {
-        anyhow::anyhow!(
-            "Invalid event_slug_builder '{builder}': expected 'module.path:function_name'"
-        )
-    })?;
-
-    Python::attach(|py| -> anyhow::Result<Vec<String>> {
-        let module = PyModule::import(py, module_name)
-            .map_err(|e| anyhow::anyhow!("Failed to import builder module '{module_name}': {e}"))?;
-        let callable = module.getattr(function_name).map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to resolve builder function '{function_name}' from '{module_name}': {e}"
-            )
-        })?;
-        let result = callable.call0().map_err(|e| {
-            anyhow::anyhow!("event_slug_builder '{builder}' raised an exception: {e}")
-        })?;
-        result.extract::<Vec<String>>().map_err(|e| {
-            anyhow::anyhow!("event_slug_builder '{builder}' must return list[str]: {e}")
-        })
-    })
-}
-
-#[cfg(not(feature = "python"))]
-fn resolve_python_event_slug_builder(builder: &str) -> anyhow::Result<Vec<String>> {
-    anyhow::bail!(
-        "event_slug_builder '{}' requires the Polymarket adapter to be built with the 'python' feature",
-        builder
-    )
 }
 
 /// Fetches instruments from the Gamma API, respecting any configured filters.
@@ -411,10 +370,7 @@ pub async fn fetch_configured_instruments(
     let mut instruments = Vec::new();
 
     if config.should_load_all() {
-        let has_explicit_slug_scope = config
-            .event_slug_builder
-            .as_deref()
-            .is_some_and(|slug| !slug.trim().is_empty())
+        let has_explicit_slug_scope = config.event_slug_builder.is_some()
             || config
                 .event_slugs
                 .as_ref()
@@ -423,10 +379,8 @@ pub async fn fetch_configured_instruments(
                 .market_slugs
                 .as_ref()
                 .is_some_and(|slugs| !slugs.is_empty());
-        let event_slugs = if let Some(builder) = config.event_slug_builder.as_deref()
-            && !builder.trim().is_empty()
-        {
-            resolve_python_event_slug_builder(builder)?
+        let event_slugs = if let Some(builder) = config.event_slug_builder.as_ref() {
+            builder.build_event_slugs()?
         } else {
             config
                 .event_slugs

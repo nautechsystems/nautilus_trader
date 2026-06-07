@@ -631,7 +631,8 @@ demand so that strategies can subscribe to markets that are not in the cache:
 
 The feature is enabled by default. Disable it by setting `auto_load_missing_instruments=False` on
 `PolymarketDataClientConfig`. To preload a known set of markets at startup instead, supply
-`load_ids` or `event_slug_builder` on `PolymarketInstrumentProviderConfig`.
+`load_ids`, `event_slugs`, `market_slugs`, or `event_slug_builder` on
+`PolymarketInstrumentProviderConfig`.
 
 Newly-minted markets pass through a CLOB hydration window of several minutes during which Gamma
 reports `active=true` but `GET /markets/{cid}` returns either a 404 or a 200 with empty
@@ -967,46 +968,40 @@ single-order path still retries on transient failures.
 
 The instrument provider config is passed via the `instrument_config` parameter on the data client config.
 
-| Option               | Default | Description                                                                                    |
-|----------------------|---------|------------------------------------------------------------------------------------------------|
-| `load_all`           | `False` | Load all venue instruments on start. Auto‑set to `True` when `event_slug_builder` is provided. |
-| `event_slug_builder` | `None`  | Fully qualified path to a callable returning event slugs (e.g., `"mymodule:build_slugs"`).     |
+| Option               | Default | Description                                                                                 |
+|----------------------|---------|---------------------------------------------------------------------------------------------|
+| `load_all`           | `False` | Load all venue instruments on start. Auto‑set to `True` when slug scopes are provided.      |
+| `event_slugs`        | `None`  | Static event slugs to resolve through Gamma events.                                        |
+| `market_slugs`       | `None`  | Static market slugs to load directly through Gamma markets.                                |
+| `event_slug_builder` | `None`  | Rust‑backed `PolymarketUpDownEventSlugConfig` for predictable Up/Down event slug windows.  |
 
 #### Event slug builder
 
-The `event_slug_builder` feature enables efficient loading of niche markets without downloading
-the full venue catalogue. Instead of loading everything, you provide a function that returns
-event slugs for the specific markets you need.
+The Rust Python v2 adapter treats Python as a configuration, factory, and user strategy boundary.
+Provider, data, and execution operations run in Rust. `event_slug_builder` therefore accepts a
+Rust-backed `PolymarketUpDownEventSlugConfig`; it does not accept Python callable paths.
+
+Use this for predictable Polymarket Up/Down event slugs without downloading the full venue
+catalogue. The builder emits slugs with the pattern
+`{asset}-updown-{interval_mins}m-{unix_timestamp}` for the configured window of aligned periods.
 
 ```python
-from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProviderConfig
+from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConfig
+from nautilus_trader.adapters.polymarket import PolymarketUpDownEventSlugConfig
 
-# Configure with a slug builder function
 instrument_config = PolymarketInstrumentProviderConfig(
-    event_slug_builder="myproject.slugs:build_temperature_slugs",
+    event_slug_builder=PolymarketUpDownEventSlugConfig(
+        assets=["btc"],
+        interval_mins=5,
+        periods=3,
+        start_offset_periods=0,
+    ),
 )
 ```
 
-The callable must have signature `() -> list[str]` and return a list of event slugs:
-
-```python
-# myproject/slugs.py
-from datetime import UTC, datetime, timedelta
-
-def build_temperature_slugs() -> list[str]:
-    """Build slugs for NYC temperature markets."""
-    slugs = []
-    today = datetime.now(tz=UTC).date()
-
-    for i in range(7):
-        date = today + timedelta(days=i)
-        slug = f"highest-temperature-in-nyc-on-{date.strftime('%B-%d').lower()}"
-        slugs.append(slug)
-
-    return slugs
-```
-
-See `examples/live/polymarket/slug_builders.py` for more examples including crypto UpDown markets.
+For custom event patterns, pass explicit `event_slugs`, pass direct `market_slugs`, or add a Rust
+filter or builder. The Rust v2 adapter rejects Python callable `event_slug_builder` values so adapter
+operations do not cross into Python during live trading.
 
 ## Historical data loading
 
