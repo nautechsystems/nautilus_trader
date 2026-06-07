@@ -77,6 +77,7 @@ use crate::{
                 messages::BinanceSpotPublicWsMessage,
                 parse::{
                     parse_book_ticker as parse_json_book_ticker,
+                    parse_depth_diff as parse_json_depth_diff,
                     parse_depth_snapshot as parse_json_depth_snapshot,
                     parse_kline as parse_json_kline, parse_trade as parse_json_trade,
                 },
@@ -371,36 +372,16 @@ impl BinanceSpotDataClient {
                 if let Some(instrument) = cache.get(&symbol)
                     && let Some(deltas) = parse_depth_diff(event, instrument)
                 {
-                    let instrument_id = deltas.instrument_id;
                     let first_update_id = event.first_book_update_id as u64;
                     let final_update_id = event.last_book_update_id as u64;
 
-                    // Full-book diffs must wait behind the REST seed.
-                    if book_buffers.contains_key(&instrument_id) {
-                        let mut handled_by_sync = false;
-                        book_buffers.rcu(|m| {
-                            handled_by_sync = false;
-
-                            if let Some(buffer) = m.get_mut(&instrument_id) {
-                                handled_by_sync = true;
-
-                                if buffer.status == BookSyncStatus::Buffering {
-                                    buffer.updates.push(BufferedDepthUpdate {
-                                        deltas: deltas.clone(),
-                                        first_update_id,
-                                        final_update_id,
-                                    });
-                                    trim_buffered_depth_updates(&mut buffer.updates);
-                                }
-                            }
-                        });
-
-                        if handled_by_sync {
-                            return;
-                        }
-                    }
-
-                    Self::send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+                    Self::route_depth_diff(
+                        data_sender,
+                        book_buffers,
+                        deltas,
+                        first_update_id,
+                        final_update_id,
+                    );
                 }
             }
             BinanceSpotWsMessage::ServerShutdown(ref msg) => {
@@ -421,56 +402,29 @@ impl BinanceSpotDataClient {
             BinanceSpotWsMessage::Reconnected => {
                 log::info!("WebSocket reconnected, rebuilding order book snapshots");
 
-                let epoch = {
-                    let mut guard = book_epoch.write().expect(MUTEX_POISONED);
-                    *guard = guard.wrapping_add(1);
-                    *guard
-                };
-
-                let subs: Vec<(InstrumentId, u32)> = {
-                    let guard = book_subscriptions.load();
-                    guard.iter().map(|(k, v)| (*k, *v)).collect()
-                };
-
-                for (instrument_id, depth) in subs {
-                    // Depth 0 means full book and needs a REST re-seed.
-                    if depth != 0 {
-                        continue;
-                    }
-
-                    book_buffers.insert(instrument_id, BookBuffer::new(epoch));
-
-                    log::info!(
-                        "OrderBook snapshot rebuild for {instrument_id} starting \
-                        (reconnect, epoch={epoch})"
-                    );
-
-                    let http = http_client.clone();
-                    let sender = data_sender.clone();
-                    let buffers = book_buffers.clone();
-                    let insts = instruments.clone();
-
-                    get_runtime().spawn(async move {
-                        Self::fetch_and_emit_snapshot(
-                            http,
-                            sender,
-                            buffers,
-                            insts,
-                            instrument_id,
-                            epoch,
-                            clock,
-                        )
-                        .await;
-                    });
-                }
+                Self::rebuild_full_depth_books(
+                    data_sender,
+                    instruments,
+                    book_buffers,
+                    book_subscriptions,
+                    book_epoch,
+                    http_client,
+                    clock,
+                );
             }
         }
     }
 
+    #[expect(clippy::too_many_arguments)]
     fn handle_public_json_ws_message(
         msg: BinanceSpotPublicWsMessage,
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         ws_instruments: &Arc<AtomicMap<Ustr, InstrumentAny>>,
+        book_buffers: &Arc<AtomicMap<InstrumentId, BookBuffer>>,
+        book_subscriptions: &Arc<AtomicMap<InstrumentId, u32>>,
+        book_epoch: &Arc<RwLock<u64>>,
+        http_client: &BinanceSpotHttpClient,
         clock: &'static AtomicTime,
     ) {
         let ts_init = clock.get_time_ns();
@@ -505,6 +459,23 @@ impl BinanceSpotDataClient {
                     Self::send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
                 }
             }
+            BinanceSpotPublicWsMessage::DepthDiff(ref event) => {
+                let symbol = event.symbol;
+                let cache = ws_instruments.load();
+                if let Some(instrument) = cache.get(&symbol) {
+                    match parse_json_depth_diff(event, instrument, ts_init) {
+                        Ok(Some(deltas)) => Self::route_depth_diff(
+                            data_sender,
+                            book_buffers,
+                            deltas,
+                            event.first_update_id,
+                            event.final_update_id,
+                        ),
+                        Ok(None) => {}
+                        Err(e) => log::warn!("Failed to parse Spot JSON depth update: {e}"),
+                    }
+                }
+            }
             BinanceSpotPublicWsMessage::Kline(ref event) => {
                 let symbol = event.symbol;
                 let cache = ws_instruments.load();
@@ -529,8 +500,106 @@ impl BinanceSpotDataClient {
                 log::error!("Spot JSON WebSocket error: code={}, msg={}", e.code, e.msg);
             }
             BinanceSpotPublicWsMessage::Reconnected => {
-                log::info!("Spot JSON WebSocket reconnected");
+                log::info!("Spot JSON WebSocket reconnected, rebuilding order book snapshots");
+
+                Self::rebuild_full_depth_books(
+                    data_sender,
+                    instruments,
+                    book_buffers,
+                    book_subscriptions,
+                    book_epoch,
+                    http_client,
+                    clock,
+                );
             }
+        }
+    }
+
+    fn route_depth_diff(
+        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        book_buffers: &Arc<AtomicMap<InstrumentId, BookBuffer>>,
+        deltas: OrderBookDeltas,
+        first_update_id: u64,
+        final_update_id: u64,
+    ) {
+        let instrument_id = deltas.instrument_id;
+
+        if book_buffers.contains_key(&instrument_id) {
+            let mut handled_by_sync = false;
+            book_buffers.rcu(|m| {
+                handled_by_sync = false;
+
+                if let Some(buffer) = m.get_mut(&instrument_id) {
+                    handled_by_sync = true;
+
+                    if buffer.status == BookSyncStatus::Buffering {
+                        buffer.updates.push(BufferedDepthUpdate {
+                            deltas: deltas.clone(),
+                            first_update_id,
+                            final_update_id,
+                        });
+                        trim_buffered_depth_updates(&mut buffer.updates);
+                    }
+                }
+            });
+
+            if handled_by_sync {
+                return;
+            }
+        }
+
+        Self::send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+    }
+
+    fn rebuild_full_depth_books(
+        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+        book_buffers: &Arc<AtomicMap<InstrumentId, BookBuffer>>,
+        book_subscriptions: &Arc<AtomicMap<InstrumentId, u32>>,
+        book_epoch: &Arc<RwLock<u64>>,
+        http_client: &BinanceSpotHttpClient,
+        clock: &'static AtomicTime,
+    ) {
+        let epoch = {
+            let mut guard = book_epoch.write().expect(MUTEX_POISONED);
+            *guard = guard.wrapping_add(1);
+            *guard
+        };
+
+        let subs: Vec<(InstrumentId, u32)> = {
+            let guard = book_subscriptions.load();
+            guard.iter().map(|(k, v)| (*k, *v)).collect()
+        };
+
+        for (instrument_id, depth) in subs {
+            if depth != 0 {
+                continue;
+            }
+
+            book_buffers.insert(instrument_id, BookBuffer::new(epoch));
+
+            log::info!(
+                "OrderBook snapshot rebuild for {instrument_id} starting \
+                (reconnect, epoch={epoch})"
+            );
+
+            let http = http_client.clone();
+            let sender = data_sender.clone();
+            let buffers = book_buffers.clone();
+            let insts = instruments.clone();
+
+            get_runtime().spawn(async move {
+                Self::fetch_and_emit_snapshot(
+                    http,
+                    sender,
+                    buffers,
+                    insts,
+                    instrument_id,
+                    epoch,
+                    clock,
+                )
+                .await;
+            });
         }
     }
 
@@ -1380,7 +1449,12 @@ impl DataClient for BinanceSpotDataClient {
 
                 let stream = ws_client.stream();
                 let sender = self.data_sender.clone();
+                let insts = self.instruments.clone();
                 let ws_insts = ws_client.instruments_cache();
+                let buffers = self.book_buffers.clone();
+                let book_subs = self.book_subscriptions.clone();
+                let book_epoch = self.book_epoch.clone();
+                let http = self.http_client.clone();
                 let clock = self.clock;
                 let cancel = self.cancellation_token.clone();
 
@@ -1390,7 +1464,17 @@ impl DataClient for BinanceSpotDataClient {
                     loop {
                         tokio::select! {
                             Some(message) = stream.next() => {
-                                Self::handle_public_json_ws_message(message, &sender, &ws_insts, clock);
+                                Self::handle_public_json_ws_message(
+                                    message,
+                                    &sender,
+                                    &insts,
+                                    &ws_insts,
+                                    &buffers,
+                                    &book_subs,
+                                    &book_epoch,
+                                    &http,
+                                    clock,
+                                );
                             }
                             () = cancel.cancelled() => {
                                 log::debug!("Spot JSON WebSocket stream task cancelled");
@@ -1523,10 +1607,9 @@ impl DataClient for BinanceSpotDataClient {
         let ws = self.ws_client.clone();
         let symbol_lower = instrument_id.symbol.as_str().to_lowercase();
 
-        if self.spot_market_data_mode == BinanceSpotMarketDataMode::Json {
-            // Spot public JSON exposes partial-book streams only (no diff stream),
-            // so each @depth{level} message is a self-contained snapshot; the REST
-            // snapshot + diff buffering path used for SBE does not apply here.
+        if self.spot_market_data_mode == BinanceSpotMarketDataMode::Json && cmd.depth.is_some() {
+            // Explicit depth requests use partial-book streams. Full-depth JSON
+            // subscriptions fall through to the REST snapshot + @depth diff path.
             let depth_level = match cmd.depth.map(|d| d.get()) {
                 Some(1..=5) => 5,
                 Some(6..=10) => 10,

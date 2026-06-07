@@ -39,7 +39,7 @@ use axum::{
 };
 use nautilus_binance::{
     common::consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
-    config::BinanceDataClientConfig,
+    config::{BinanceDataClientConfig, BinanceSpotMarketDataMode},
     spot::{
         BinanceSpotDataClient,
         sbe::{
@@ -66,7 +66,7 @@ use nautilus_model::{
     enums::{BookAction, BookType, OrderSide, RecordFlag},
     identifiers::InstrumentId,
 };
-use nautilus_network::http::HttpClient;
+use nautilus_network::{RECONNECTED, http::HttpClient};
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::json;
@@ -86,6 +86,8 @@ struct DataTestServerConfig {
     depth_diff_delay: Duration,
     depth_snapshot_last_update_ids: Vec<i64>,
     depth_requests: Arc<AtomicUsize>,
+    json_ws_streams: bool,
+    reconnect_signals_remaining: Arc<AtomicUsize>,
 }
 
 impl Default for DataTestServerConfig {
@@ -97,6 +99,8 @@ impl Default for DataTestServerConfig {
             depth_diff_delay: Duration::from_millis(50),
             depth_snapshot_last_update_ids: vec![100],
             depth_requests: Arc::new(AtomicUsize::new(0)),
+            json_ws_streams: false,
+            reconnect_signals_remaining: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
@@ -389,6 +393,35 @@ fn build_sbe_depth_diff_stream_event(
     buf
 }
 
+fn build_json_depth_diff_stream_event(
+    symbol: &str,
+    first_update_id: i64,
+    last_update_id: i64,
+) -> String {
+    json!({
+        "e": "depthUpdate",
+        "E": 1_001,
+        "s": symbol,
+        "U": first_update_id,
+        "u": last_update_id,
+        "b": [["41999.00", "1.25000"]],
+        "a": [],
+    })
+    .to_string()
+}
+
+fn build_json_partial_depth_stream_event(symbol: &str) -> String {
+    json!({
+        "stream": format!("{}@depth20", symbol.to_lowercase()),
+        "data": {
+            "lastUpdateId": 99_999,
+            "bids": [["42000.00", "1.00000"]],
+            "asks": [["42001.00", "0.50000"]],
+        },
+    })
+    .to_string()
+}
+
 fn build_sbe_best_bid_ask_stream_event(symbol: &str) -> Vec<u8> {
     let body_size = 50 + 1 + symbol.len();
     let mut buf = vec![0u8; 8 + body_size];
@@ -457,19 +490,50 @@ async fn handle_ws_connection(mut socket: WebSocket, config: DataTestServerConfi
                                 if stream.ends_with("@depth") {
                                     for index in 0..config.depth_diff_repetitions {
                                         let update_offset = index as i64;
-                                        let data = build_sbe_depth_diff_stream_event(
-                                            &symbol,
-                                            config.depth_diff_first_update_id + update_offset,
-                                            config.depth_diff_last_update_id + update_offset,
-                                        );
                                         tokio::time::sleep(config.depth_diff_delay).await;
+                                        if config.json_ws_streams {
+                                            let data = build_json_depth_diff_stream_event(
+                                                &symbol,
+                                                config.depth_diff_first_update_id + update_offset,
+                                                config.depth_diff_last_update_id + update_offset,
+                                            );
+                                            let _result =
+                                                socket.send(Message::Text(data.into())).await;
+                                        } else {
+                                            let data = build_sbe_depth_diff_stream_event(
+                                                &symbol,
+                                                config.depth_diff_first_update_id + update_offset,
+                                                config.depth_diff_last_update_id + update_offset,
+                                            );
+                                            let _result =
+                                                socket.send(Message::Binary(data.into())).await;
+                                        }
+                                    }
+
+                                    if config
+                                        .reconnect_signals_remaining
+                                        .fetch_update(
+                                            Ordering::Relaxed,
+                                            Ordering::Relaxed,
+                                            |remaining| remaining.checked_sub(1),
+                                        )
+                                        .is_ok()
+                                    {
+                                        tokio::time::sleep(Duration::from_millis(500)).await;
+                                        let _result =
+                                            socket.send(Message::Text(RECONNECTED.into())).await;
+                                    }
+                                } else {
+                                    tokio::time::sleep(Duration::from_millis(50)).await;
+
+                                    if config.json_ws_streams {
+                                        let data = build_json_partial_depth_stream_event(&symbol);
+                                        let _result = socket.send(Message::Text(data.into())).await;
+                                    } else {
+                                        let data = build_sbe_depth_snapshot_stream_event(&symbol);
                                         let _result =
                                             socket.send(Message::Binary(data.into())).await;
                                     }
-                                } else {
-                                    let data = build_sbe_depth_snapshot_stream_event(&symbol);
-                                    tokio::time::sleep(Duration::from_millis(50)).await;
-                                    let _result = socket.send(Message::Binary(data.into())).await;
                                 }
                             }
                         }
@@ -512,6 +576,7 @@ fn create_data_test_router(config: DataTestServerConfig) -> Router {
         )
         .route("/api/v3/depth", get(handle_depth))
         .route("/ws", get(handle_ws))
+        .route("/stream", get(handle_ws))
         .with_state(config)
 }
 
@@ -553,6 +618,17 @@ fn create_test_data_client(
     BinanceSpotDataClient,
     tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
 ) {
+    create_test_data_client_with_mode(base_url_http, base_url_ws, BinanceSpotMarketDataMode::Sbe)
+}
+
+fn create_test_data_client_with_mode(
+    base_url_http: String,
+    base_url_ws: String,
+    spot_market_data_mode: BinanceSpotMarketDataMode,
+) -> (
+    BinanceSpotDataClient,
+    tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     set_data_event_sender(tx);
 
@@ -563,6 +639,7 @@ fn create_test_data_client(
         api_secret: Some(
             "MC4CAQAwBQYDK2VwBCIEIJ1hsZ3v/VpguoRK9JLsLMREScVpezJpGXA7rAMcrn9g".to_string(),
         ),
+        spot_market_data_mode,
         ..Default::default()
     };
 
@@ -868,6 +945,167 @@ async fn test_subscribe_book_deltas_full_depth_replays_buffered_diff_after_snaps
     assert_eq!(replayed.deltas[0].order.price.as_decimal(), dec!(41999.00));
     assert_eq!(replayed.deltas[0].order.size.as_decimal(), dec!(1.25000));
     assert_eq!(replayed.deltas[0].flags, RecordFlag::F_LAST as u8);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_book_deltas_json_full_depth_replays_buffered_diff_after_snapshot() {
+    let config = DataTestServerConfig {
+        json_ws_streams: true,
+        ..Default::default()
+    };
+    let addr = start_data_test_server_with_config(config).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, mut rx) = create_test_data_client_with_mode(
+        base_url_http,
+        base_url_ws,
+        BinanceSpotMarketDataMode::Json,
+    );
+
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+    let cmd = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        None,
+        false,
+        None,
+        None,
+    );
+
+    client.subscribe_book_deltas(cmd).unwrap();
+
+    let snapshot = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected REST depth snapshot data");
+    let Data::Deltas(snapshot) = snapshot else {
+        panic!("expected order book deltas");
+    };
+
+    let replayed = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected replayed JSON depth diff data");
+    let Data::Deltas(replayed) = replayed else {
+        panic!("expected order book deltas");
+    };
+
+    assert_eq!(snapshot.sequence, 100);
+    assert_eq!(snapshot.ts_event, replayed.ts_event);
+    assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
+    assert_eq!(snapshot.deltas[1].order.price.as_decimal(), dec!(42000.00));
+    assert_eq!(snapshot.deltas[1].order.size.as_decimal(), dec!(1.00000));
+    assert_eq!(replayed.sequence, 101);
+    assert_eq!(replayed.deltas[0].action, BookAction::Update);
+    assert_eq!(replayed.deltas[0].order.side, OrderSide::Buy);
+    assert_eq!(replayed.deltas[0].order.price.as_decimal(), dec!(41999.00));
+    assert_eq!(replayed.deltas[0].order.size.as_decimal(), dec!(1.25000));
+    assert_eq!(replayed.deltas[0].flags, RecordFlag::F_LAST as u8);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_book_deltas_json_full_depth_rebuilds_after_reconnect() {
+    let config = DataTestServerConfig {
+        depth_snapshot_last_update_ids: vec![100, 100],
+        json_ws_streams: true,
+        reconnect_signals_remaining: Arc::new(AtomicUsize::new(1)),
+        ..Default::default()
+    };
+    let depth_requests = config.depth_requests.clone();
+    let addr = start_data_test_server_with_config(config).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, mut rx) = create_test_data_client_with_mode(
+        base_url_http,
+        base_url_ws,
+        BinanceSpotMarketDataMode::Json,
+    );
+
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+    let cmd = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        None,
+        false,
+        None,
+        None,
+    );
+
+    client.subscribe_book_deltas(cmd).unwrap();
+
+    let first_snapshot = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected initial REST depth snapshot data");
+    let Data::Deltas(first_snapshot) = first_snapshot else {
+        panic!("expected order book deltas");
+    };
+
+    let first_replayed = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected initial replayed JSON depth diff data");
+    let Data::Deltas(first_replayed) = first_replayed else {
+        panic!("expected order book deltas");
+    };
+
+    let second_snapshot = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected reconnect REST depth snapshot data");
+    let Data::Deltas(second_snapshot) = second_snapshot else {
+        panic!("expected order book deltas");
+    };
+
+    let second_replayed = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected reconnect replayed JSON depth diff data");
+    let Data::Deltas(second_replayed) = second_replayed else {
+        panic!("expected order book deltas");
+    };
+
+    assert_eq!(first_snapshot.sequence, 100);
+    assert_eq!(first_replayed.sequence, 101);
+    assert_eq!(second_snapshot.sequence, 100);
+    assert_eq!(second_replayed.sequence, 101);
+    assert_eq!(depth_requests.load(Ordering::Relaxed), 2);
 }
 
 #[rstest]

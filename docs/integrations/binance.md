@@ -454,9 +454,9 @@ The sequence of events is as follows:
 - Remaining deltas are sent to the `DataEngine`.
 
 :::note
-This snapshot-and-buffer sequence applies to Futures and the Spot `Sbe` mode.
-The Spot `Json` mode delivers self-contained partial-book snapshots with no diff
-buffering. See [Spot market data mode](#spot-market-data-mode).
+This snapshot-and-buffer sequence applies to Futures and Spot `BookDeltas`
+subscriptions without an explicit depth. Spot partial-depth subscriptions deliver
+self-contained top-N snapshots. See [Spot market data mode](#spot-market-data-mode).
 :::
 
 ## Binance data differences
@@ -819,8 +819,9 @@ transport. It affects Spot only; Futures is unchanged.
 
 `Sbe` (default) uses Binance Simple Binary Encoding streams and requires Ed25519
 keys (see [Key types](#key-types)); the client refuses to connect without them.
-`Json` uses public streams with no credentials, and delivers order books as
-partial-book snapshots rather than buffered diffs (see [Order books](#order-books)).
+`Json` uses public streams with no credentials. Full Spot `BookDeltas`
+subscriptions use public JSON diff-depth streams with REST snapshot synchronization;
+explicit depth subscriptions use partial-book snapshots (see [Order books](#order-books)).
 
 :::note
 Exposed to Python as `BinanceSpotMarketDataMode` on

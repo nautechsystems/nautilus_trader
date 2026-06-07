@@ -127,6 +127,7 @@ Released on TBD (UTC).
 - Fixed Binance Futures full-depth book startup after snapshot retries
 - Fixed Binance Spot full-depth book startup after snapshot retries (#4181), thanks for reporting @graceyangfan
 - Fixed Binance Spot full-depth books to seed diffs from REST snapshots
+- Fixed Binance Spot JSON full-depth books to use REST-synced diff streams (#4181), thanks @graceyangfan
 - Fixed Binance Spot SBE numeric parsing to reject invalid price and quantity values
 - Fixed BitMEX startup handling for crypto futures spreads, duplicate subscriptions, `USYC` margins, and account ID discovery
 - Fixed BitMEX order submission to deny unsupported GTD time-in-force locally
