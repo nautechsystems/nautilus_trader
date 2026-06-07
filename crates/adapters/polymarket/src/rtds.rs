@@ -762,9 +762,6 @@ impl ParsedSubscription {
                 wire: RtdsWireSubscription {
                     topic: RtdsTopic::CryptoPrices.as_str(),
                     msg_type: "update",
-                    // The live RTDS service currently accepts JSON filter objects here
-                    // (for example `{"symbol":"BTCUSDT"}`) and rejects plain/comma
-                    // separated symbol strings with HTTP 400.
                     filters: Some(format!(
                         r#"{{"symbol":"{}"}}"#,
                         symbol_lower.to_ascii_uppercase()
@@ -776,7 +773,6 @@ impl ParsedSubscription {
                 wire: RtdsWireSubscription {
                     topic: RtdsTopic::EquityPrices.as_str(),
                     msg_type: "update",
-                    // The live RTDS service currently accepts JSON filter objects here.
                     filters: Some(format!(
                         r#"{{"symbol":"{}"}}"#,
                         symbol_lower.to_ascii_uppercase()
@@ -967,9 +963,6 @@ mod tests {
         feed.track_subscribe(data_type.clone())
             .expect("track subscribe");
 
-        // No live `equity_prices` payloads were emitted during the 2026-06-06
-        // off-hours probe, so this fixture preserves the currently observed
-        // schema shape until an active-market capture can replace it.
         feed.handle_text_for_test(
             r#"{
                 "topic":"equity_prices",
@@ -1013,9 +1006,6 @@ mod tests {
         feed.track_subscribe(data_type.clone())
             .expect("track subscribe");
 
-        // No live `equity_prices` payloads were emitted during the 2026-06-06
-        // off-hours probe, so this fixture preserves the currently observed
-        // schema shape until an active-market capture can replace it.
         feed.handle_text_for_test(
             r#"{
                 "topic":"equity_prices",
