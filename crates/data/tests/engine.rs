@@ -56,7 +56,7 @@ use nautilus_common::{
         UnsubscribeTrades,
     },
     msgbus::{
-        self, MStr, MessageBus, Topic, TypedHandler, TypedIntoHandler,
+        self, BusTap, Endpoint, MStr, MessageBus, Topic, TypedHandler, TypedIntoHandler,
         stubs::{get_any_saving_handler, get_typed_message_saving_handler},
         switchboard::{self, MessagingSwitchboard},
     },
@@ -6297,6 +6297,25 @@ fn test_catalog_start_ns_prefill_custom_data_preserves_command_metadata(
     );
 }
 
+#[derive(Default)]
+struct RecordingSendTap {
+    endpoints: Rc<RefCell<Vec<String>>>,
+}
+
+impl RecordingSendTap {
+    fn send_endpoints(&self) -> Vec<String> {
+        self.endpoints.borrow().clone()
+    }
+}
+
+impl BusTap for RecordingSendTap {
+    fn on_publish(&self, _topic: MStr<Topic>, _message: &dyn Any) {}
+
+    fn on_send(&self, endpoint: MStr<Endpoint>, _message: &dyn Any) {
+        self.endpoints.borrow_mut().push(endpoint.to_string());
+    }
+}
+
 #[rstest]
 fn test_subscribe_spread_quotes_default_interval_publishes_on_timer(
     clock: Rc<RefCell<TestClock>>,
@@ -6487,6 +6506,90 @@ fn test_subscribe_spread_quotes_with_zero_interval_publishes_spread_quote(
     let exchange_quotes = exchange_saver.get_messages();
     assert_eq!(exchange_quotes.len(), 1);
     assert_eq!(exchange_quotes[0], spread_quotes[0]);
+}
+
+#[rstest]
+fn test_subscribe_spread_quotes_without_exchange_endpoint_publishes_spread_quote(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let spread = generic_futures_spread();
+    let spread_id = spread.id();
+    let (leg_a, leg_b) = generic_futures_spread_legs();
+    let spread_any = InstrumentAny::FuturesSpread(spread);
+    data_engine.process(&spread_any as &dyn Any);
+
+    let (handler, saver) = get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from(
+        "spread-quotes-no-exchange",
+    )));
+    let spread_topic = switchboard::get_quotes_topic(spread_id);
+    msgbus::subscribe_quotes(spread_topic.into(), handler, None);
+
+    let exchange_endpoint = format!("SimulatedExchange.process_new_quote.{}", spread_id.venue);
+    assert!(!msgbus::has_quote_endpoint(
+        exchange_endpoint.as_str().into()
+    ));
+
+    let sub = SubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(spread_quote_zero_interval_params()),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let tap = Rc::new(RecordingSendTap::default());
+    msgbus::set_bus_tap(tap.clone());
+
+    let quote_a = QuoteTick::new(
+        leg_a,
+        Price::from("101.00"),
+        Price::from("102.00"),
+        Quantity::from(5),
+        Quantity::from(6),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    let quote_b = QuoteTick::new(
+        leg_b,
+        Price::from("99.00"),
+        Price::from("100.00"),
+        Quantity::from(7),
+        Quantity::from(8),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    data_engine.process_data(Data::Quote(quote_a));
+    data_engine.process_data(Data::Quote(quote_b));
+
+    msgbus::clear_bus_tap();
+
+    let spread_quotes = saver.get_messages();
+    assert_eq!(spread_quotes.len(), 1);
+    assert_eq!(spread_quotes[0].instrument_id, spread_id);
+    assert_eq!(spread_quotes[0].bid_price, Price::from("1.00"));
+    assert_eq!(spread_quotes[0].ask_price, Price::from("3.00"));
+    assert_eq!(spread_quotes[0].bid_size, Quantity::from(5));
+    assert_eq!(spread_quotes[0].ask_size, Quantity::from(6));
+    assert!(tap.send_endpoints().is_empty());
 }
 
 #[rstest]

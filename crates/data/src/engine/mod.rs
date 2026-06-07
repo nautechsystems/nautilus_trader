@@ -3113,7 +3113,10 @@ impl DataEngine {
                 "SimulatedExchange.process_new_quote.{}",
                 quote.instrument_id.venue
             );
-            msgbus::send_quote(exchange_endpoint.into(), &quote);
+            let exchange_endpoint = exchange_endpoint.into();
+            if msgbus::has_quote_endpoint(exchange_endpoint) {
+                msgbus::send_quote(exchange_endpoint, &quote);
+            }
 
             if let Err(e) = cache.borrow_mut().add_quote(quote) {
                 log_error_on_cache_insert(&e);
