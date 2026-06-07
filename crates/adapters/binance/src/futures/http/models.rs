@@ -994,6 +994,7 @@ pub struct BinanceFuturesOrder {
     /// Executed quantity.
     pub executed_qty: String,
     /// Cumulative quote asset transacted.
+    #[serde(default = "zero_decimal_string")]
     pub cum_quote: String,
     /// Original limit price.
     pub price: String,
@@ -1054,6 +1055,10 @@ pub struct BinanceFuturesOrder {
     /// Working order ID for tracking.
     #[serde(default)]
     pub working_type_id: Option<i64>,
+}
+
+fn zero_decimal_string() -> String {
+    "0".to_string()
 }
 
 impl BinanceFuturesOrder {
@@ -1729,6 +1734,22 @@ mod tests {
             order.self_trade_prevention_mode,
             Some(BinanceSelfTradePreventionMode::None)
         );
+    }
+
+    #[rstest]
+    fn test_parse_order_defaults_missing_cum_quote_to_zero() {
+        let json = load_fixture_string("futures/http_json/order_response.json");
+        let mut value: Value = serde_json::from_str(&json).expect("Failed to parse order fixture");
+
+        value
+            .as_object_mut()
+            .expect("Order fixture should be a JSON object")
+            .remove("cumQuote");
+
+        let order: BinanceFuturesOrder =
+            serde_json::from_value(value).expect("Failed to parse order");
+
+        assert_eq!(order.cum_quote, "0");
     }
 
     #[rstest]
