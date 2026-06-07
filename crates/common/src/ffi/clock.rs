@@ -98,7 +98,7 @@ pub unsafe extern "C" fn test_clock_register_default_handler(
     let callback = Python::attach(|py| unsafe {
         Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
     });
-    let callback = TimeEventCallback::from(callback);
+    let callback = TimeEventCallback::from_python_legacy_capsule(callback);
 
     clock.register_default_handler(callback);
 }
@@ -179,7 +179,7 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
         let callback = Python::attach(|py| unsafe {
             Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
         });
-        Some(TimeEventCallback::from(callback))
+        Some(TimeEventCallback::from_python_legacy_capsule(callback))
     };
 
     clock
@@ -225,7 +225,7 @@ pub unsafe extern "C" fn test_clock_set_timer(
         let callback = Python::attach(|py| unsafe {
             Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
         });
-        Some(TimeEventCallback::from(callback))
+        Some(TimeEventCallback::from_python_legacy_capsule(callback))
     };
 
     clock
@@ -371,7 +371,7 @@ pub unsafe extern "C" fn live_clock_register_default_handler(
     let callback = Python::attach(|py| unsafe {
         Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
     });
-    let callback = TimeEventCallback::from(callback);
+    let callback = TimeEventCallback::from_python_legacy_capsule(callback);
 
     clock.register_default_handler(callback);
 }
@@ -449,7 +449,7 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
         let callback = Python::attach(|py| unsafe {
             Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
         });
-        Some(TimeEventCallback::from(callback))
+        Some(TimeEventCallback::from_python_legacy_capsule(callback))
     };
 
     clock
@@ -497,7 +497,7 @@ pub unsafe extern "C" fn live_clock_set_timer(
         let callback = Python::attach(|py| unsafe {
             Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
         });
-        Some(TimeEventCallback::from(callback))
+        Some(TimeEventCallback::from_python_legacy_capsule(callback))
     };
 
     clock
@@ -540,4 +540,131 @@ pub unsafe extern "C" fn live_clock_cancel_timer(
 #[unsafe(no_mangle)]
 pub extern "C" fn live_clock_cancel_timers(clock: &mut LiveClock_API) {
     clock.cancel_timers();
+}
+
+#[cfg(all(test, feature = "python"))]
+mod tests {
+    use std::ffi::CString;
+
+    use nautilus_core::UUID4;
+    use pyo3::{
+        Bound, Py, PyAny, PyResult, Python,
+        types::{
+            PyAnyMethods, PyCFunction, PyDict, PyList, PyListMethods, PyTuple, PyTupleMethods,
+            PyTypeMethods,
+        },
+    };
+    use rstest::rstest;
+    use ustr::Ustr;
+
+    use super::*;
+
+    #[rstest]
+    fn test_clock_ffi_python_callbacks_use_legacy_capsules() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let seen = PyList::empty(py);
+            let callback = record_arg_type_callback(py, &seen);
+            let callback_ptr = callback.as_ptr();
+
+            let mut test_clock = test_clock_new();
+            unsafe { test_clock_register_default_handler(&mut test_clock, callback_ptr) };
+            test_clock.get_handler(time_event("test-default")).run();
+
+            let test_alert_name = CString::new("test-alert").unwrap();
+            unsafe {
+                test_clock_set_time_alert(
+                    &mut test_clock,
+                    test_alert_name.as_ptr(),
+                    UnixNanos::from(1_000),
+                    callback_ptr,
+                    1,
+                );
+            }
+            test_clock.get_handler(time_event("test-alert")).run();
+
+            let test_timer_name = CString::new("test-timer").unwrap();
+            unsafe {
+                test_clock_set_timer(
+                    &mut test_clock,
+                    test_timer_name.as_ptr(),
+                    1_000,
+                    UnixNanos::from(1_000),
+                    UnixNanos::from(0),
+                    callback_ptr,
+                    1,
+                    0,
+                );
+            }
+            test_clock.get_handler(time_event("test-timer")).run();
+
+            let mut live_clock = live_clock_new();
+            unsafe { live_clock_register_default_handler(&mut live_clock, callback_ptr) };
+            live_clock.get_handler(time_event("live-default")).run();
+
+            let live_now = live_clock_timestamp_ns(&mut live_clock);
+            let live_alert_name = CString::new("live-alert").unwrap();
+            unsafe {
+                live_clock_set_time_alert(
+                    &mut live_clock,
+                    live_alert_name.as_ptr(),
+                    UnixNanos::from(live_now + 10_000_000_000),
+                    callback_ptr,
+                    0,
+                );
+            }
+            live_clock.get_handler(time_event("live-alert")).run();
+
+            let live_timer_name = CString::new("live-timer").unwrap();
+            unsafe {
+                live_clock_set_timer(
+                    &mut live_clock,
+                    live_timer_name.as_ptr(),
+                    10_000_000_000,
+                    UnixNanos::from(0),
+                    UnixNanos::from(0),
+                    callback_ptr,
+                    1,
+                    0,
+                );
+            }
+            live_clock.get_handler(time_event("live-timer")).run();
+            live_clock.cancel_timers();
+
+            let seen_types = seen
+                .iter()
+                .map(|item| item.extract::<String>().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(seen_types, vec!["PyCapsule".to_string(); 6]);
+        });
+    }
+
+    fn record_arg_type_callback(py: Python<'_>, seen: &Bound<'_, PyList>) -> Py<PyAny> {
+        let seen_obj = seen.clone().unbind().into_any();
+
+        PyCFunction::new_closure(
+            py,
+            None,
+            None,
+            move |args: &Bound<'_, PyTuple>, _kwargs: Option<&Bound<'_, PyDict>>| -> PyResult<()> {
+                let arg = args.get_item(0)?;
+                let type_name = arg.get_type().name()?.to_string();
+                seen_obj.call_method1(args.py(), "append", (type_name,))?;
+                Ok(())
+            },
+        )
+        .expect("callback should create")
+        .into_any()
+        .unbind()
+    }
+
+    fn time_event(name: &str) -> TimeEvent {
+        TimeEvent::new(
+            Ustr::from(name),
+            UUID4::from("00000000-0000-4000-8000-000000000011"),
+            UnixNanos::from(100),
+            UnixNanos::from(99),
+        )
+    }
 }

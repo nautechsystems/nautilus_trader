@@ -512,7 +512,7 @@ mod tests {
         }
     }
 
-    // Test helper to create AsyncRunner with manual channels.
+    // Test fixture to create AsyncRunner with manual channels.
     // Sender halves are dummies (not connected to the test receivers) since
     // these tests exercise the event loop, not TLS binding.
     fn create_test_runner(
@@ -1257,14 +1257,14 @@ mod tests {
         // Get handle before moving runner
         let handle = runner.handle();
 
-        let runner_task = tokio::spawn(async move {
+        let runner_handle = tokio::spawn(async move {
             runner.run().await;
         });
 
         // Use handle to stop
         handle.stop();
 
-        let result = tokio::time::timeout(Duration::from_millis(100), runner_task).await;
+        let result = tokio::time::timeout(Duration::from_millis(100), runner_handle).await;
         assert!(result.is_ok(), "Runner should stop via handle");
     }
 
@@ -1309,7 +1309,7 @@ mod tests {
                 .unwrap();
         }
 
-        let runner_task = tokio::spawn(async move {
+        let runner_handle = tokio::spawn(async move {
             runner.run().await;
         });
 
@@ -1317,7 +1317,7 @@ mod tests {
         tokio::task::yield_now().await;
         handle.stop();
 
-        let result = tokio::time::timeout(Duration::from_millis(200), runner_task).await;
+        let result = tokio::time::timeout(Duration::from_millis(200), runner_handle).await;
         assert!(result.is_ok(), "Runner should process events and stop");
     }
 

@@ -114,6 +114,7 @@ Released on TBD (UTC).
 - Fixed `LiveNode` signal handling during startup connection wait (#4102), thanks @filipmacek
 - Fixed `NautilusKernelConfig.timeout_connection` default at 60 seconds (#4179), thanks for reporting @triyys
 - Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
+- Fixed Python v2 live trading deadlocks from timer callbacks and kept Polymarket instrument refreshes Rust-only
 - Fixed Python v2 order-book wranglers writing raw fixed-point bytes in big-endian (needed little-endian) (#4111), thanks for reporting @fabz1
 - Fixed Python v2 type stub generation failing to locate `libpython` under uv-managed interpreters
 - Fixed Betfair adapter snapshot book deltas emitting zero-volume `Add` entries (Rust)
