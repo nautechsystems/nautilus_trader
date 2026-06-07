@@ -4380,9 +4380,18 @@ mod turmoil_tests {
     use super::*;
     use crate::websocket::types::channel_message_handler;
 
+    const AUTH_BUFFER_WAIT_SEED: u64 = 0xA17B_0001;
+    const AUTH_BUFFER_DISCARD_SEED: u64 = 0xA17B_0002;
+
+    fn seeded_turmoil_builder(seed: u64) -> Builder {
+        let mut builder = Builder::new();
+        builder.rng_seed(seed);
+        builder
+    }
+
     #[rstest]
     fn test_turmoil_reconnect_buffer_waits_for_auth() {
-        let mut sim = Builder::new().build();
+        let mut sim = seeded_turmoil_builder(AUTH_BUFFER_WAIT_SEED).build();
         let messages = Arc::new(tokio::sync::Mutex::new(Vec::new()));
         let server_messages = Arc::clone(&messages);
 
@@ -4453,7 +4462,7 @@ mod turmoil_tests {
 
     #[rstest]
     fn test_turmoil_reconnect_buffer_discards_after_auth_failure() {
-        let mut sim = Builder::new().build();
+        let mut sim = seeded_turmoil_builder(AUTH_BUFFER_DISCARD_SEED).build();
         let messages = Arc::new(tokio::sync::Mutex::new(Vec::new()));
         let server_messages = Arc::clone(&messages);
 

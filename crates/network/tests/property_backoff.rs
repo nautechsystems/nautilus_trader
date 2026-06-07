@@ -143,8 +143,8 @@ proptest! {
             .expect("Valid backoff parameters");
 
         for i in 0..iterations {
-            let delay = backoff.next_duration();
             let base_delay = backoff.current_delay();
+            let delay = backoff.next_duration();
 
             // Skip immediate-first case
             if immediate_first && i == 0 {
@@ -152,11 +152,17 @@ proptest! {
             }
 
             // Jitter should be between 0 and jitter_ms
-            let actual_jitter = delay.saturating_sub(base_delay);
             prop_assert!(
-                actual_jitter <= Duration::from_millis(jitter_ms),
-                "Actual jitter {} should not exceed maximum jitter {}",
-                actual_jitter.as_millis(),
+                delay >= base_delay,
+                "Delay {} should be at least base delay {}",
+                delay.as_millis(),
+                base_delay.as_millis()
+            );
+            prop_assert!(
+                delay <= (base_delay + Duration::from_millis(jitter_ms)).min(max),
+                "Delay {} should not exceed base delay {} plus jitter {}",
+                delay.as_millis(),
+                base_delay.as_millis(),
                 jitter_ms
             );
         }

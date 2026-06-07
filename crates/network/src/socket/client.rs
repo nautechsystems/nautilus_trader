@@ -1215,6 +1215,7 @@ impl Drop for SocketClient {
 
 #[cfg(test)]
 #[cfg(feature = "python")]
+#[cfg(not(feature = "turmoil"))]
 #[cfg(not(all(feature = "simulation", madsim)))] // transport-layer I/O not simulated
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {

@@ -179,6 +179,40 @@ The hook applies to the 16 workspace crates in the transitive closure of `nautil
 Adapter crates and infrastructure crates (Redis, Postgres) are out of scope. Their DST
 suitability requires a separate audit before they enter the DST path.
 
+## Network seed soaks
+
+The `nautilus-network` Turmoil tests use two layers:
+
+- Fixed-seed tests run in the nightly test suite. These cover connect, reconnect, partition,
+  close during reconnect, close during backoff, and repeated server-drop scenarios with
+  reproducible seeds.
+- An ignored reconnect soak sweeps Turmoil seeds until stopped, or until
+  `NAUTILUS_TURMOIL_SOAK_COUNT` seeds have run. Each seed runs the Tungstenite WebSocket backend
+  first and the Sockudo backend second when `transport-sockudo` is enabled, so both backends see
+  the same schedule search path.
+
+Run the continuous soak with:
+
+```bash
+scripts/soak-network-turmoil.sh
+```
+
+Run a bounded soak with:
+
+```bash
+env NAUTILUS_TURMOIL_SOAK_COUNT=100 scripts/soak-network-turmoil.sh
+```
+
+The soak uses deterministic seed sweep, random node order, randomized link latency, repeated
+server-side drops, reconnect state cycling, and exact application-message order checks. It does
+not enable Turmoil `fail_rate`: for TCP, that breaks links without a retransmit model, which
+would overstate the client delivery contract for an order-preservation test.
+
+These Turmoil tests run against the simulated network and are not gated to Linux. Several real
+localhost socket and WebSocket unit tests use `target_os = "linux"` for CI stability, so macOS
+local runs do not exercise that host TCP coverage. Use macOS for the Turmoil seed sweep and use
+Linux CI, or a Linux workstation, before treating the full network test set as covered.
+
 ## Implementation notes
 
 Concrete changes the DST audit produced in this repository. Use this as the starting point

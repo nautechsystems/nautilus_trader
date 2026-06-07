@@ -429,6 +429,7 @@ async fn poll_until_closed(mode: &Arc<AtomicU8>) {
 }
 
 #[cfg(test)]
+#[cfg(not(feature = "turmoil"))]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
     use std::ffi::CString;

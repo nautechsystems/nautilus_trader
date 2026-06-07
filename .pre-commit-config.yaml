@@ -285,6 +285,15 @@ repos:
         types: [file]
         pass_filenames: false
 
+      - id: cargo-clippy-network-turmoil-non-linux
+        name: cargo clippy network turmoil (non-Linux)
+        description: Run the network Turmoil Clippy check on non-Linux hosts
+        entry: bash .pre-commit-hooks/cargo_clippy_network_turmoil_non_linux.sh
+        language: system
+        files: "^(crates/network/|Cargo\\.toml$|clippy\\.toml$|rust-toolchain\\.toml$|\\.cargo/)"
+        types: [file]
+        pass_filenames: false
+
       - id: cargo-doc
         name: cargo doc
         description: Check documentation builds on changed crates

@@ -48,6 +48,20 @@ cargo nextest run -p nautilus-network --features turmoil
 The turmoil tests simulate various network conditions (reconnections, partitions, etc.) in a deterministic way,
 allowing reliable testing of network failure scenarios without flakiness.
 
+Some real localhost socket and WebSocket unit tests are Linux-only for CI stability. On macOS,
+use the Turmoil tests and soak for deterministic reconnect/path-search coverage, and rely on a
+Linux run for host TCP unit coverage.
+
+To sweep Turmoil reconnect seeds continuously:
+
+```bash
+scripts/soak-network-turmoil.sh
+```
+
+Set `NAUTILUS_TURMOIL_SOAK_COUNT` for a bounded run. The soak alternates the
+Tungstenite and Sockudo WebSocket backends on the same seed when
+`transport-sockudo` is enabled.
+
 ## Documentation
 
 See [the docs](https://docs.rs/nautilus-network) for more detailed usage.
