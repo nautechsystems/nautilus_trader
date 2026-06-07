@@ -3170,9 +3170,11 @@ cdef class Throttler:
         cdef int64_t delta_next
         while self._buffer:
             delta_next = self._delta_next()
-            msg = self._buffer.pop()
 
             if delta_next <= 0:
+                # Keep the buffer entry until the rate check passes, otherwise
+                # re-arming the timer would drop it.
+                msg = self._buffer.pop()
                 self._send_msg(msg)
             else:
                 self._set_timer(self._process)

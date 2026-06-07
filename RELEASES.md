@@ -94,6 +94,7 @@ Released on TBD (UTC).
 - Fixed `OrderMatchingEngine` panicking on `PriceType::Mark` bars during bar execution, now logs a warning and skips the bar (Rust)
 - Fixed `PRICE_RAW_MAX`/`MIN`, `QUANTITY_RAW_MAX`, and `MONEY_RAW_MAX`/`MIN` computed with lossy `f64` scaling, which rounded the bound below the representable maximum and could panic `from_raw` at the limits (Rust)
 - Fixed unbounded Cache `VecDeque` memory leak (Rust) (#4107), thanks @filipmacek
+- Fixed `Throttler` silently dropping buffered messages in buffer mode (Python v1) (#4221), thanks @santatic
 - Fixed `Cache.reset` clearing FX rate lookup for retained instruments (#4159), thanks for reporting @dfjmax
 - Fixed `BacktestEngine` option positions remaining open when data stops before expiry
 - Fixed `BacktestEngine` losing latency-deferred commands at shutdown (Rust) (#4062), thanks for reporting @zhanghaoda
