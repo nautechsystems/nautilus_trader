@@ -684,17 +684,29 @@ mod connection_error_tests {
     #[case(TransportError::ConnectionClosed, true)]
     #[case(TransportError::ConnectionReset, true)]
     #[case(TransportError::ClosedByPeer(Some(CloseFrame::new(1000, "bye"))), true)]
+    #[case(TransportError::ClosedByPeer(None), true)]
+    #[case(TransportError::Io(io::Error::from(io::ErrorKind::BrokenPipe)), true)]
     #[case(
         TransportError::Io(io::Error::from(io::ErrorKind::ConnectionReset)),
+        true
+    )]
+    #[case(TransportError::Io(io::Error::from(io::ErrorKind::TimedOut)), true)]
+    #[case(
+        TransportError::Io(io::Error::from(io::ErrorKind::UnexpectedEof)),
         true
     )]
     #[case(
         TransportError::Io(io::Error::from(io::ErrorKind::InvalidInput)),
         false
     )]
+    #[case(TransportError::InvalidUrl("http://example.com".into()), false)]
     #[case(TransportError::Handshake("bad".into()), false)]
     #[case(TransportError::Protocol("bad opcode".into()), false)]
+    #[case(TransportError::Tls("bad certificate".into()), false)]
+    #[case(TransportError::MessageTooLarge, false)]
+    #[case(TransportError::FrameTooLarge, false)]
     #[case(TransportError::InvalidUtf8, false)]
+    #[case(TransportError::Other("backend protocol mismatch".into()), false)]
     fn connection_drop_transport_error_classification(
         #[case] err: TransportError,
         #[case] expected: bool,

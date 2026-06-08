@@ -45,6 +45,10 @@ fn to_websocket_pyerr(e: TransportError) -> PyErr {
     PyErr::new::<WebSocketClientError, _>(e.to_string())
 }
 
+fn is_python_reconnect_control_message(msg: &Message) -> bool {
+    matches!(msg, Message::Text(text) if text.as_ref() == RECONNECTED.as_bytes())
+}
+
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl WebSocketConfig {
@@ -151,7 +155,7 @@ impl WebSocketClient {
         let handler_clone = clone_py_object(&handler);
 
         let message_handler: MessageHandler = Arc::new(move |msg: Message| {
-            if matches!(msg, Message::Text(ref text) if text.as_ref() == RECONNECTED.as_bytes()) {
+            if is_python_reconnect_control_message(&msg) {
                 return;
             }
 
@@ -412,6 +416,24 @@ impl WebSocketClient {
                 .send(WriterCommand::Send(msg))
                 .map_err(to_pyruntime_err)
         })
+    }
+}
+
+#[cfg(test)]
+mod control_filter_tests {
+    use bytes::Bytes;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::reconnected_control(Message::text(RECONNECTED), true)]
+    #[case::application_text(Message::text("application"), false)]
+    #[case::reconnected_prefix(Message::text(format!("{RECONNECTED}:payload")), false)]
+    #[case::reconnected_binary(Message::Binary(Bytes::from_static(RECONNECTED.as_bytes())), false)]
+    #[case::ping(Message::ping(Bytes::new()), false)]
+    fn python_reconnect_control_filter(#[case] msg: Message, #[case] expected: bool) {
+        assert_eq!(is_python_reconnect_control_message(&msg), expected);
     }
 }
 
