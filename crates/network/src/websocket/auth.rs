@@ -1163,7 +1163,207 @@ mod proptest_tests {
 
     use super::*;
 
+    const AUTH_FAILED: &str = "model auth failed";
+    const AUTH_SUPERSEDED: &str = "Authentication attempt superseded";
+
+    #[derive(Debug, Clone)]
+    enum AuthTraceOp {
+        Begin,
+        Succeed,
+        Fail,
+        Invalidate,
+        WaitForAuthenticated,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum ExpectedAuthResult {
+        Success,
+        Failed(&'static str),
+    }
+
+    #[derive(Debug)]
+    struct AuthTraceModel {
+        state: AuthState,
+        pending_receiver: Option<usize>,
+        expected_results: Vec<Option<ExpectedAuthResult>>,
+    }
+
+    impl AuthTraceModel {
+        fn new() -> Self {
+            Self {
+                state: AuthState::Unauthenticated,
+                pending_receiver: None,
+                expected_results: Vec::new(),
+            }
+        }
+
+        fn begin(&mut self) {
+            if let Some(receiver_index) = self.pending_receiver.take() {
+                self.expected_results[receiver_index] =
+                    Some(ExpectedAuthResult::Failed(AUTH_SUPERSEDED));
+            }
+
+            self.pending_receiver = Some(self.expected_results.len());
+            self.expected_results.push(None);
+            self.state = AuthState::Unauthenticated;
+        }
+
+        fn succeed(&mut self) {
+            self.state = AuthState::Authenticated;
+
+            if let Some(receiver_index) = self.pending_receiver.take() {
+                self.expected_results[receiver_index] = Some(ExpectedAuthResult::Success);
+            }
+        }
+
+        fn fail(&mut self) {
+            self.state = AuthState::Failed;
+
+            if let Some(receiver_index) = self.pending_receiver.take() {
+                self.expected_results[receiver_index] =
+                    Some(ExpectedAuthResult::Failed(AUTH_FAILED));
+            }
+        }
+
+        fn invalidate(&mut self) {
+            self.state = AuthState::Unauthenticated;
+        }
+    }
+
+    fn auth_trace_op_strategy() -> impl Strategy<Value = AuthTraceOp> {
+        prop_oneof![
+            Just(AuthTraceOp::Begin),
+            Just(AuthTraceOp::Succeed),
+            Just(AuthTraceOp::Fail),
+            Just(AuthTraceOp::Invalidate),
+            Just(AuthTraceOp::WaitForAuthenticated),
+        ]
+    }
+
+    fn assert_auth_receivers_match_model(
+        receivers: &mut [Option<AuthResultReceiver>],
+        model: &AuthTraceModel,
+        step: usize,
+    ) -> Result<(), TestCaseError> {
+        for (receiver_index, receiver_slot) in receivers.iter_mut().enumerate() {
+            let Some(receiver) = receiver_slot.as_mut() else {
+                continue;
+            };
+
+            let mut clear_receiver = false;
+
+            match &model.expected_results[receiver_index] {
+                Some(ExpectedAuthResult::Success) => {
+                    match receiver.try_recv() {
+                        Ok(Ok(())) => {}
+                        actual => prop_assert!(
+                            false,
+                            "receiver {} should succeed at step {}, was {:?}",
+                            receiver_index,
+                            step,
+                            actual
+                        ),
+                    }
+                    clear_receiver = true;
+                }
+                Some(ExpectedAuthResult::Failed(expected)) => {
+                    match receiver.try_recv() {
+                        Ok(Err(actual)) => prop_assert_eq!(
+                            actual,
+                            *expected,
+                            "receiver {} should fail at step {}",
+                            receiver_index,
+                            step
+                        ),
+                        actual => prop_assert!(
+                            false,
+                            "receiver {} should fail at step {}, was {:?}",
+                            receiver_index,
+                            step,
+                            actual
+                        ),
+                    }
+                    clear_receiver = true;
+                }
+                None => {
+                    prop_assert_eq!(
+                        receiver.try_recv(),
+                        Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+                        "receiver {} should stay pending at step {}",
+                        receiver_index,
+                        step
+                    );
+                }
+            }
+
+            if clear_receiver {
+                *receiver_slot = None;
+            }
+        }
+
+        Ok(())
+    }
+
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        /// Property: auth attempt traces match the cycle model for success,
+        /// failure, superseded stale receivers, invalidation, and auth waits.
+        #[rstest]
+        fn test_auth_tracker_trace_matches_cycle_model(
+            ops in proptest::collection::vec(auth_trace_op_strategy(), 1..80)
+        ) {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
+            let tracker = AuthTracker::new();
+            let mut model = AuthTraceModel::new();
+            let mut receivers: Vec<Option<AuthResultReceiver>> = Vec::new();
+
+            for (step, op) in ops.iter().enumerate() {
+                match op {
+                    AuthTraceOp::Begin => {
+                        receivers.push(Some(tracker.begin()));
+                        model.begin();
+                    }
+                    AuthTraceOp::Succeed => {
+                        tracker.succeed();
+                        model.succeed();
+                    }
+                    AuthTraceOp::Fail => {
+                        tracker.fail(AUTH_FAILED);
+                        model.fail();
+                    }
+                    AuthTraceOp::Invalidate => {
+                        tracker.invalidate();
+                        model.invalidate();
+                    }
+                    AuthTraceOp::WaitForAuthenticated => {
+                        let actual = runtime
+                            .block_on(tracker.wait_for_authenticated(Duration::from_millis(0)));
+                        let expected = model.state == AuthState::Authenticated;
+                        prop_assert_eq!(
+                            actual,
+                            expected,
+                            "wait_for_authenticated mismatch at step {}, op {:?}",
+                            step,
+                            op
+                        );
+                    }
+                }
+
+                prop_assert_eq!(
+                    tracker.auth_state(),
+                    model.state,
+                    "auth state mismatch at step {}, op {:?}",
+                    step,
+                    op
+                );
+                assert_auth_receivers_match_model(&mut receivers, &model, step)?;
+            }
+        }
+
         /// Verifies that any sequence of begin/succeed/fail/invalidate calls
         /// leaves the tracker in a consistent state where `is_authenticated`
         /// agrees with the last state-setting call.

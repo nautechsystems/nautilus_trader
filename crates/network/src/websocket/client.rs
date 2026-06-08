@@ -4367,6 +4367,525 @@ mod rust_tests {
 }
 
 #[cfg(test)]
+mod property_tests {
+    use std::{
+        collections::{HashSet, VecDeque},
+        sync::{Arc, OnceLock, atomic::AtomicBool},
+    };
+
+    use proptest::prelude::*;
+    use rstest::rstest;
+
+    use super::{super::auth::AuthResultReceiver, *};
+
+    const AUTH_FAILED: &str = "model auth failed";
+
+    #[derive(Debug, Clone)]
+    enum ReconnectBufferTraceOp {
+        BeginAuth,
+        AuthSucceeds,
+        AuthFails,
+        AuthInvalidates,
+        ReconnectStarts,
+        ReconnectCompletes,
+        BufferedMessage(u8),
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum ModelConnectionMode {
+        Active,
+        Reconnect,
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum ExpectedReconnectBufferAction {
+        Drain,
+        Wait,
+        Discard,
+    }
+
+    #[derive(Debug)]
+    struct ReconnectBufferModel {
+        mode: ModelConnectionMode,
+        auth_state: AuthState,
+        buffer: VecDeque<String>,
+        released: Vec<String>,
+        discarded: Vec<String>,
+        live_sent: Vec<String>,
+        handler_controls: Vec<&'static str>,
+        next_message_index: usize,
+    }
+
+    impl ReconnectBufferModel {
+        fn new() -> Self {
+            Self {
+                mode: ModelConnectionMode::Active,
+                auth_state: AuthState::Unauthenticated,
+                buffer: VecDeque::new(),
+                released: Vec::new(),
+                discarded: Vec::new(),
+                live_sent: Vec::new(),
+                handler_controls: Vec::new(),
+                next_message_index: 0,
+            }
+        }
+
+        fn next_payload(&mut self, raw: u8) -> String {
+            let payload = format!("message-{}-{raw}", self.next_message_index);
+            self.next_message_index += 1;
+            payload
+        }
+
+        fn expected_action(&self, waits_for_auth: bool) -> ExpectedReconnectBufferAction {
+            if !waits_for_auth {
+                return ExpectedReconnectBufferAction::Drain;
+            }
+
+            match self.auth_state {
+                AuthState::Authenticated => ExpectedReconnectBufferAction::Drain,
+                AuthState::Failed => ExpectedReconnectBufferAction::Discard,
+                AuthState::Unauthenticated => ExpectedReconnectBufferAction::Wait,
+            }
+        }
+    }
+
+    fn reconnect_buffer_trace_op_strategy() -> impl Strategy<Value = ReconnectBufferTraceOp> {
+        prop_oneof![
+            Just(ReconnectBufferTraceOp::BeginAuth),
+            Just(ReconnectBufferTraceOp::AuthSucceeds),
+            Just(ReconnectBufferTraceOp::AuthFails),
+            Just(ReconnectBufferTraceOp::AuthInvalidates),
+            Just(ReconnectBufferTraceOp::ReconnectStarts),
+            Just(ReconnectBufferTraceOp::ReconnectCompletes),
+            any::<u8>().prop_map(ReconnectBufferTraceOp::BufferedMessage),
+        ]
+    }
+
+    fn reconnect_buffer_actions_match(
+        actual: ReconnectBufferAction,
+        expected: ExpectedReconnectBufferAction,
+    ) -> bool {
+        matches!(
+            (actual, expected),
+            (
+                ReconnectBufferAction::Drain,
+                ExpectedReconnectBufferAction::Drain
+            ) | (
+                ReconnectBufferAction::Wait,
+                ExpectedReconnectBufferAction::Wait
+            ) | (
+                ReconnectBufferAction::Discard,
+                ExpectedReconnectBufferAction::Discard
+            )
+        )
+    }
+
+    fn apply_ready_reconnect_buffer_action(
+        model: &mut ReconnectBufferModel,
+        reconnect_buffer_waits_for_auth: &AtomicBool,
+        auth_tracker: &Arc<OnceLock<AuthTracker>>,
+        waits_for_auth: bool,
+        step: usize,
+        op: &ReconnectBufferTraceOp,
+    ) -> Result<(), TestCaseError> {
+        if model.mode != ModelConnectionMode::Active || model.buffer.is_empty() {
+            return Ok(());
+        }
+
+        let expected = model.expected_action(waits_for_auth);
+        let actual = WebSocketClientInner::can_drain_reconnect_buffer(
+            reconnect_buffer_waits_for_auth,
+            auth_tracker,
+        );
+
+        prop_assert!(
+            reconnect_buffer_actions_match(actual, expected),
+            "reconnect buffer action mismatch at step {}, op {:?}, waits_for_auth={}, auth_state={:?}",
+            step,
+            op,
+            waits_for_auth,
+            model.auth_state
+        );
+
+        match expected {
+            ExpectedReconnectBufferAction::Drain => {
+                model.released.extend(model.buffer.drain(..));
+            }
+            ExpectedReconnectBufferAction::Wait => {}
+            ExpectedReconnectBufferAction::Discard => {
+                model.discarded.extend(model.buffer.drain(..));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn assert_reconnected_control_stays_separate(
+        model: &ReconnectBufferModel,
+        step: usize,
+    ) -> Result<(), TestCaseError> {
+        prop_assert!(
+            model
+                .handler_controls
+                .iter()
+                .all(|message| *message == RECONNECTED),
+            "handler control stream contained a non-RECONNECTED message at step {}",
+            step
+        );
+        prop_assert!(
+            !model.buffer.iter().any(|message| message == RECONNECTED),
+            "RECONNECTED control message entered reconnect buffer at step {}",
+            step
+        );
+        prop_assert!(
+            !model.released.iter().any(|message| message == RECONNECTED),
+            "RECONNECTED control message entered replayed messages at step {}",
+            step
+        );
+        prop_assert!(
+            !model.discarded.iter().any(|message| message == RECONNECTED),
+            "RECONNECTED control message entered discarded messages at step {}",
+            step
+        );
+        prop_assert!(
+            !model.live_sent.iter().any(|message| message == RECONNECTED),
+            "RECONNECTED control message entered application sends at step {}",
+            step
+        );
+
+        Ok(())
+    }
+
+    fn assert_messages_accounted_once(
+        model: &ReconnectBufferModel,
+        step: usize,
+    ) -> Result<(), TestCaseError> {
+        let mut seen = HashSet::new();
+
+        for message in model
+            .released
+            .iter()
+            .chain(model.discarded.iter())
+            .chain(model.buffer.iter())
+            .chain(model.live_sent.iter())
+        {
+            prop_assert!(
+                seen.insert(message.as_str()),
+                "message {} appeared more than once at step {}",
+                message,
+                step
+            );
+        }
+
+        Ok(())
+    }
+
+    fn apply_reconnect_buffer_trace_op(
+        model: &mut ReconnectBufferModel,
+        tracker: &AuthTracker,
+        auth_receivers: &mut Vec<AuthResultReceiver>,
+        op: &ReconnectBufferTraceOp,
+    ) -> Result<(), TestCaseError> {
+        match op {
+            ReconnectBufferTraceOp::BeginAuth => {
+                auth_receivers.push(tracker.begin());
+                model.auth_state = AuthState::Unauthenticated;
+            }
+            ReconnectBufferTraceOp::AuthSucceeds => {
+                tracker.succeed();
+                model.auth_state = AuthState::Authenticated;
+            }
+            ReconnectBufferTraceOp::AuthFails => {
+                tracker.fail(AUTH_FAILED);
+                model.auth_state = AuthState::Failed;
+            }
+            ReconnectBufferTraceOp::AuthInvalidates => {
+                tracker.invalidate();
+                model.auth_state = AuthState::Unauthenticated;
+            }
+            ReconnectBufferTraceOp::ReconnectStarts => {
+                tracker.invalidate();
+                model.auth_state = AuthState::Unauthenticated;
+                model.mode = ModelConnectionMode::Reconnect;
+            }
+            ReconnectBufferTraceOp::ReconnectCompletes => {
+                model.mode = ModelConnectionMode::Active;
+                model.handler_controls.push(RECONNECTED);
+            }
+            ReconnectBufferTraceOp::BufferedMessage(raw) => {
+                let payload = model.next_payload(*raw);
+                prop_assert_ne!(payload.as_str(), RECONNECTED);
+
+                if model.mode == ModelConnectionMode::Reconnect {
+                    model.buffer.push_back(payload);
+                } else {
+                    model.live_sent.push(payload);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        /// Property: reconnect-buffer traces match the auth-gated release and
+        /// discard model, and `RECONNECTED` remains a separate control signal.
+        #[rstest]
+        fn test_reconnect_buffer_trace_matches_auth_gate_model(
+            waits_for_auth in any::<bool>(),
+            ops in proptest::collection::vec(reconnect_buffer_trace_op_strategy(), 1..100)
+        ) {
+            let auth_tracker = Arc::new(OnceLock::new());
+            let reconnect_buffer_waits_for_auth = AtomicBool::new(waits_for_auth);
+            let tracker = AuthTracker::new();
+            auth_tracker.set(tracker.clone()).unwrap();
+            let mut auth_receivers = Vec::new();
+            let mut model = ReconnectBufferModel::new();
+
+            for (step, op) in ops.iter().enumerate() {
+                apply_reconnect_buffer_trace_op(
+                    &mut model,
+                    &tracker,
+                    &mut auth_receivers,
+                    op,
+                )?;
+
+                prop_assert_eq!(
+                    tracker.auth_state(),
+                    model.auth_state,
+                    "auth state mismatch at step {}, op {:?}",
+                    step,
+                    op
+                );
+
+                apply_ready_reconnect_buffer_action(
+                    &mut model,
+                    &reconnect_buffer_waits_for_auth,
+                    &auth_tracker,
+                    waits_for_auth,
+                    step,
+                    op,
+                )?;
+                assert_reconnected_control_stays_separate(&model, step)?;
+                prop_assert_eq!(
+                    model.handler_controls.len(),
+                    ops[..=step]
+                        .iter()
+                        .filter(|op| matches!(op, ReconnectBufferTraceOp::ReconnectCompletes))
+                        .count(),
+                    "handler control count mismatch at step {}",
+                    step
+                );
+                assert_messages_accounted_once(&model, step)?;
+            }
+        }
+
+        /// Property: successful re-authentication releases buffered messages
+        /// exactly once when replay is configured to wait for auth.
+        #[rstest]
+        fn test_reconnect_buffer_releases_after_auth_success_once(
+            payloads in proptest::collection::vec(any::<u8>(), 1..32),
+            extra_success_ticks in 0usize..16
+        ) {
+            let auth_tracker = Arc::new(OnceLock::new());
+            let reconnect_buffer_waits_for_auth = AtomicBool::new(true);
+            let tracker = AuthTracker::new();
+            auth_tracker.set(tracker.clone()).unwrap();
+            let mut auth_receivers = Vec::new();
+            let mut model = ReconnectBufferModel::new();
+
+            apply_reconnect_buffer_trace_op(
+                &mut model,
+                &tracker,
+                &mut auth_receivers,
+                &ReconnectBufferTraceOp::ReconnectStarts,
+            )?;
+            apply_reconnect_buffer_trace_op(
+                &mut model,
+                &tracker,
+                &mut auth_receivers,
+                &ReconnectBufferTraceOp::BeginAuth,
+            )?;
+
+            for payload in payloads {
+                apply_reconnect_buffer_trace_op(
+                    &mut model,
+                    &tracker,
+                    &mut auth_receivers,
+                    &ReconnectBufferTraceOp::BufferedMessage(payload),
+                )?;
+            }
+
+            let buffered_len = model.buffer.len();
+            apply_reconnect_buffer_trace_op(
+                &mut model,
+                &tracker,
+                &mut auth_receivers,
+                &ReconnectBufferTraceOp::ReconnectCompletes,
+            )?;
+            apply_ready_reconnect_buffer_action(
+                &mut model,
+                &reconnect_buffer_waits_for_auth,
+                &auth_tracker,
+                true,
+                0,
+                &ReconnectBufferTraceOp::ReconnectCompletes,
+            )?;
+
+            prop_assert_eq!(model.released.len(), 0);
+            prop_assert_eq!(model.buffer.len(), buffered_len);
+
+            apply_reconnect_buffer_trace_op(
+                &mut model,
+                &tracker,
+                &mut auth_receivers,
+                &ReconnectBufferTraceOp::AuthSucceeds,
+            )?;
+            apply_ready_reconnect_buffer_action(
+                &mut model,
+                &reconnect_buffer_waits_for_auth,
+                &auth_tracker,
+                true,
+                1,
+                &ReconnectBufferTraceOp::AuthSucceeds,
+            )?;
+
+            prop_assert_eq!(model.released.len(), buffered_len);
+            prop_assert!(model.buffer.is_empty());
+            assert_messages_accounted_once(&model, 1)?;
+
+            for tick in 0..extra_success_ticks {
+                apply_reconnect_buffer_trace_op(
+                    &mut model,
+                    &tracker,
+                    &mut auth_receivers,
+                    &ReconnectBufferTraceOp::AuthSucceeds,
+                )?;
+                apply_ready_reconnect_buffer_action(
+                    &mut model,
+                    &reconnect_buffer_waits_for_auth,
+                    &auth_tracker,
+                    true,
+                    tick + 2,
+                    &ReconnectBufferTraceOp::AuthSucceeds,
+                )?;
+                prop_assert_eq!(
+                    model.released.len(),
+                    buffered_len,
+                    "buffered messages replayed more than once at tick {}",
+                    tick
+                );
+            }
+        }
+
+        /// Property: auth failure discards messages buffered before or after
+        /// that failure, and later auth success does not replay discarded data.
+        #[rstest]
+        fn test_reconnect_buffer_discards_after_auth_failure(
+            before_failure_payloads in proptest::collection::vec(any::<u8>(), 0..16),
+            after_failure_payloads in proptest::collection::vec(any::<u8>(), 1..16),
+            later_success_ticks in 0usize..16
+        ) {
+            let auth_tracker = Arc::new(OnceLock::new());
+            let reconnect_buffer_waits_for_auth = AtomicBool::new(true);
+            let tracker = AuthTracker::new();
+            auth_tracker.set(tracker.clone()).unwrap();
+            let mut auth_receivers = Vec::new();
+            let mut model = ReconnectBufferModel::new();
+
+            apply_reconnect_buffer_trace_op(
+                &mut model,
+                &tracker,
+                &mut auth_receivers,
+                &ReconnectBufferTraceOp::ReconnectStarts,
+            )?;
+            apply_reconnect_buffer_trace_op(
+                &mut model,
+                &tracker,
+                &mut auth_receivers,
+                &ReconnectBufferTraceOp::BeginAuth,
+            )?;
+
+            for payload in before_failure_payloads {
+                apply_reconnect_buffer_trace_op(
+                    &mut model,
+                    &tracker,
+                    &mut auth_receivers,
+                    &ReconnectBufferTraceOp::BufferedMessage(payload),
+                )?;
+            }
+
+            apply_reconnect_buffer_trace_op(
+                &mut model,
+                &tracker,
+                &mut auth_receivers,
+                &ReconnectBufferTraceOp::AuthFails,
+            )?;
+
+            for payload in after_failure_payloads {
+                apply_reconnect_buffer_trace_op(
+                    &mut model,
+                    &tracker,
+                    &mut auth_receivers,
+                    &ReconnectBufferTraceOp::BufferedMessage(payload),
+                )?;
+            }
+
+            let buffered_len = model.buffer.len();
+            apply_reconnect_buffer_trace_op(
+                &mut model,
+                &tracker,
+                &mut auth_receivers,
+                &ReconnectBufferTraceOp::ReconnectCompletes,
+            )?;
+            apply_ready_reconnect_buffer_action(
+                &mut model,
+                &reconnect_buffer_waits_for_auth,
+                &auth_tracker,
+                true,
+                0,
+                &ReconnectBufferTraceOp::ReconnectCompletes,
+            )?;
+
+            prop_assert_eq!(model.discarded.len(), buffered_len);
+            prop_assert!(model.released.is_empty());
+            prop_assert!(model.buffer.is_empty());
+            assert_messages_accounted_once(&model, 0)?;
+
+            for tick in 0..later_success_ticks {
+                apply_reconnect_buffer_trace_op(
+                    &mut model,
+                    &tracker,
+                    &mut auth_receivers,
+                    &ReconnectBufferTraceOp::BeginAuth,
+                )?;
+                apply_reconnect_buffer_trace_op(
+                    &mut model,
+                    &tracker,
+                    &mut auth_receivers,
+                    &ReconnectBufferTraceOp::AuthSucceeds,
+                )?;
+                apply_ready_reconnect_buffer_action(
+                    &mut model,
+                    &reconnect_buffer_waits_for_auth,
+                    &auth_tracker,
+                    true,
+                    tick + 1,
+                    &ReconnectBufferTraceOp::AuthSucceeds,
+                )?;
+                prop_assert!(
+                    model.released.is_empty(),
+                    "discarded messages replayed after later auth success at tick {}",
+                    tick
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 #[cfg(feature = "turmoil")]
 mod turmoil_tests {
     use std::{sync::Arc, time::Duration};
