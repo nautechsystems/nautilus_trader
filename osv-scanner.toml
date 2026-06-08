@@ -20,10 +20,6 @@ id = "RUSTSEC-2024-0388"
 reason = "derivative crate is unmaintained, transitive dependency with no available fix"
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2023-0071"
-reason = "rsa timing sidechannel (Marvin Attack), transitive via sqlx-mysql, no fix available"
-
-[[IgnoredVulns]]
 id = "RUSTSEC-2025-0143"
 reason = "capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix"
 
@@ -54,6 +50,10 @@ reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool on
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0141"
 reason = "bincode unmaintained, transitive via hypersync-client (not a security vulnerability)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0173"
+reason = "proc-macro-error2 unmaintained via alloy and tabled_derive; no patch available"
 
 [[IgnoredVulns]]
 id = "GHSA-7gcm-g887-7qv7"

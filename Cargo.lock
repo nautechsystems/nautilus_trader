@@ -6842,6 +6842,11 @@ dependencies = [
 [[package]]
 name = "nautilus-trader"
 version = "0.58.0"
+dependencies = [
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
+]
 
 [[package]]
 name = "nautilus-trading"

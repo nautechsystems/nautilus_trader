@@ -47,8 +47,13 @@ ignore = [
   # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for capnp update
   { id = "RUSTSEC-2025-0143", reason = "capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix" },
 
-  # NOTE: cargo-audit also flags RUSTSEC-2024-0388 (derivative) and RUSTSEC-2023-0071 (rsa)
-  # which cargo-deny does not surface; those are listed only in .cargo/audit.toml.
+  # proc-macro-error2 unmaintained, transitive via alloy and tabled_derive.
+  # No patched version is available; not a vulnerability.
+  # TODO: Monitor upstream alloy and tabled releases for migration away from proc-macro-error2
+  { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2 unmaintained via alloy and tabled_derive; no patch" },
+
+  # NOTE: cargo-audit also flags RUSTSEC-2024-0388 (derivative), which cargo-deny
+  # does not surface; it is listed only in .cargo/audit.toml.
 ]
 
 # =============================================================================

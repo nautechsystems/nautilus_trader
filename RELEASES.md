@@ -1,6 +1,6 @@
 # NautilusTrader 1.228.0 Beta
 
-Released on TBD (UTC).
+Released on 8th June 2026 (UTC).
 
 ### Enhancements
 - Added BSC chain support to blockchain adapter with `UniswapV3` and `PancakeSwapV3` DEX registrations
@@ -151,6 +151,7 @@ Released on TBD (UTC).
 - Fixed Deribit `DeribitExecutionClient` not forwarding config credentials to the WebSocket client
 - Fixed dYdX rate limiter being skipped due to missing keys (#4091), thanks @filipmacek
 - Fixed Hyperliquid `Alo` limit order status reports being parsed as trigger orders
+- Fixed Hyperliquid account balances for zeroed perp summaries (#4207), thanks @jungsooyun
 - Fixed Hyperliquid balances preserving negative `totalRawUsd` (#4177), thanks for reporting @jzheng2017
 - Fixed Hyperliquid cancel-replace modify overfill on an in-flight fill (#4154), thanks for reporting @AlphaTraderK
 - Fixed Interactive Brokers order submit to guard on client readiness (#4100), thanks @honvl
