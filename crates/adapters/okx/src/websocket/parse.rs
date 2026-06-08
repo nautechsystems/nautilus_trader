@@ -64,7 +64,7 @@ use crate::{
         parse::{
             determine_order_type_with_alt, is_market_price, okx_channel_to_bar_spec,
             okx_status_to_market_action, parse_client_order_id, parse_fee, parse_fee_currency,
-            parse_funding_rate_msg, parse_instrument_any, parse_message_vec,
+            parse_funding_rate_msg, parse_instrument_any, parse_instrument_id, parse_message_vec,
             parse_millisecond_timestamp, parse_price, parse_quantity,
             parse_spread_order_status_report as parse_common_spread_order_status_report,
         },
@@ -2289,14 +2289,27 @@ pub fn parse_ws_message_data(
     match channel {
         OKXWsChannel::Instruments => {
             if let Ok(msg) = serde_json::from_value::<OKXInstrument>(data) {
-                // Look up cached instrument to extract existing fees
-                let (margin_init, margin_maint, maker_fee, taker_fee) =
-                    instruments_cache.get(&Ustr::from(&msg.inst_id)).map_or(
-                        (None, None, None, None),
-                        extract_fees_from_cached_instrument,
-                    );
+                let inst_key = Ustr::from(&msg.inst_id);
+                let cached_instrument = instruments_cache.get(&inst_key);
+                let (margin_init, margin_maint, maker_fee, taker_fee) = cached_instrument.map_or(
+                    (None, None, None, None),
+                    extract_fees_from_cached_instrument,
+                );
+                let instrument_id =
+                    cached_instrument.map_or_else(|| parse_instrument_id(inst_key), |i| i.id());
 
                 let status_action = okx_status_to_market_action(msg.state);
+                let status = InstrumentStatus::new(
+                    instrument_id,
+                    status_action,
+                    ts_init,
+                    ts_init,
+                    None,
+                    None,
+                    Some(matches!(msg.state, OKXInstrumentStatus::Live)),
+                    None,
+                    None,
+                );
 
                 match parse_instrument_any(
                     &msg,
@@ -2305,27 +2318,18 @@ pub fn parse_ws_message_data(
                     maker_fee,
                     taker_fee,
                     ts_init,
-                )? {
-                    Some(inst_any) => {
-                        let status = InstrumentStatus::new(
-                            inst_any.id(),
-                            status_action,
-                            ts_init,
-                            ts_init,
-                            None,
-                            None,
-                            Some(matches!(msg.state, OKXInstrumentStatus::Live)),
-                            None,
-                            None,
-                        );
-                        Ok(Some(NautilusWsMessage::Instrument(
-                            Box::new(inst_any),
-                            Some(status),
-                        )))
-                    }
-                    None => {
+                ) {
+                    Ok(Some(inst_any)) => Ok(Some(NautilusWsMessage::Instrument(
+                        Box::new(inst_any),
+                        Some(status),
+                    ))),
+                    Ok(None) => {
                         log::warn!("Empty instrument payload: {msg:?}");
-                        Ok(None)
+                        Ok(Some(NautilusWsMessage::InstrumentStatus(status)))
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to parse instrument {inst_key}: {e}");
+                        Ok(Some(NautilusWsMessage::InstrumentStatus(status)))
                     }
                 }
             } else {
@@ -6965,6 +6969,67 @@ mod tests {
                 assert_eq!(status.is_trading, Some(true));
             }
             other => panic!("Expected Instrument with status, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_instruments_channel_returns_status_when_definition_invalid() {
+        use nautilus_model::{enums::MarketStatusAction, identifiers::InstrumentId};
+
+        let ts_init = UnixNanos::default();
+        let ws_data = serde_json::json!({
+            "instType": "SPOT",
+            "instId": "USDG-SGD",
+            "baseCcy": "USDG",
+            "quoteCcy": "SGD",
+            "settleCcy": "",
+            "ctVal": "",
+            "ctMult": "",
+            "ctValCcy": "",
+            "optType": "",
+            "stk": "",
+            "listTime": "1733454000000",
+            "expTime": "",
+            "lever": "",
+            "tickSz": "",
+            "lotSz": "0.00000001",
+            "minSz": "0.00001",
+            "ctType": "",
+            "state": "live",
+            "ruleType": "normal",
+            "maxLmtSz": "9999999999",
+            "maxMktSz": "1000000",
+            "maxLmtAmt": "20000000",
+            "maxMktAmt": "1000000",
+            "maxTwapSz": "9999999999",
+            "maxIcebergSz": "9999999999",
+            "maxTriggerSz": "9999999999",
+            "maxStopSz": "1000000",
+            "uly": "",
+            "instFamily": ""
+        });
+
+        let mut funding_cache = AHashMap::new();
+        let instruments_cache = AHashMap::new();
+        let result = parse_ws_message_data(
+            &OKXWsChannel::Instruments,
+            ws_data,
+            &InstrumentId::from("BTC-USD.OKX"),
+            2,
+            8,
+            ts_init,
+            &mut funding_cache,
+            &instruments_cache,
+        )
+        .expect("Failed to parse instruments channel");
+
+        match result {
+            Some(NautilusWsMessage::InstrumentStatus(status)) => {
+                assert_eq!(status.instrument_id, InstrumentId::from("USDG-SGD.OKX"));
+                assert_eq!(status.action, MarketStatusAction::Trading);
+                assert_eq!(status.is_trading, Some(true));
+            }
+            other => panic!("Expected InstrumentStatus, was {other:?}"),
         }
     }
 

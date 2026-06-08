@@ -74,7 +74,10 @@ use crate::{
         },
     },
     config::OKXDataClientConfig,
-    http::{client::OKXHttpClient, query::GetSpreadsParams},
+    http::{
+        client::{OKXHttpClient, OKXInstrumentDefinitionError},
+        query::GetSpreadsParams,
+    },
     websocket::{
         client::OKXWebSocketClient,
         enums::OKXWsChannel,
@@ -572,7 +575,7 @@ impl OKXDataClient {
                             );
                         }
                         Err(e) => {
-                            log::error!("Failed to parse instrument: {e}");
+                            log::warn!("Failed to parse instrument {}: {e}", okx_inst.inst_id);
                             let instrument_id = instruments_by_symbol
                                 .get(&inst_key)
                                 .map_or_else(|| parse_instrument_id(inst_key), |i| i.id());
@@ -639,6 +642,11 @@ fn dispatch_parsed_data(
             if let Some(status) = status
                 && let Err(e) = data_sender.send(DataEvent::InstrumentStatus(status))
             {
+                log::error!("Failed to emit instrument status event: {e}");
+            }
+        }
+        NautilusWsMessage::InstrumentStatus(status) => {
+            if let Err(e) = data_sender.send(DataEvent::InstrumentStatus(status)) {
                 log::error!("Failed to emit instrument status event: {e}");
             }
         }
@@ -1799,6 +1807,9 @@ impl DataClient for OKXDataClient {
                         log::error!("Failed to send instrument response: {e}");
                     }
                 }
+                Err(e) if e.downcast_ref::<OKXInstrumentDefinitionError>().is_some() => {
+                    log::warn!("Instrument request skipped: {e:?}");
+                }
                 Err(e) => log::error!("Instrument request failed: {e:?}"),
             }
         });
@@ -2029,6 +2040,8 @@ impl DataClient for OKXDataClient {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use rstest::rstest;
     use serde_json::json;
 
@@ -2040,6 +2053,38 @@ mod tests {
 
     fn only(greeks_type: OKXGreeksType) -> AHashSet<OKXGreeksType> {
         [greeks_type].into_iter().collect()
+    }
+
+    #[rstest]
+    fn dispatch_parsed_data_emits_instrument_status() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let instruments = Arc::new(AtomicMap::new());
+        let mut instruments_by_symbol = AHashMap::new();
+        let status = InstrumentStatus::new(
+            InstrumentId::from("USDG-SGD.OKX"),
+            MarketStatusAction::Trading,
+            UnixNanos::from(1u64),
+            UnixNanos::from(2u64),
+            None,
+            None,
+            Some(true),
+            None,
+            None,
+        );
+
+        dispatch_parsed_data(
+            NautilusWsMessage::InstrumentStatus(status),
+            &sender,
+            &instruments,
+            &mut instruments_by_symbol,
+        );
+
+        match receiver.try_recv().expect("instrument status event") {
+            DataEvent::InstrumentStatus(received) => assert_eq!(received, status),
+            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+        }
+        assert!(instruments_by_symbol.is_empty());
+        assert!(instruments.load().is_empty());
     }
 
     #[rstest]

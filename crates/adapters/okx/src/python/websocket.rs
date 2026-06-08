@@ -82,7 +82,8 @@ use crate::{
         models::OKXInstrument,
         parse::{
             okx_status_to_market_action, parse_account_state, parse_instrument_any,
-            parse_millisecond_timestamp, parse_position_status_report, parse_price, parse_quantity,
+            parse_instrument_id, parse_millisecond_timestamp, parse_position_status_report,
+            parse_price, parse_quantity,
         },
     },
     http::models::{OKXAccount, OKXPosition, OKXSpreadOrder},
@@ -1911,7 +1912,7 @@ fn handle_instruments(
         let status_action = okx_status_to_market_action(okx_inst.state);
         let is_live = matches!(okx_inst.state, OKXInstrumentStatus::Live);
 
-        if let Ok(Some(inst_any)) = parse_instrument_any(
+        match parse_instrument_any(
             &okx_inst,
             margin_init,
             margin_maint,
@@ -1919,23 +1920,60 @@ fn handle_instruments(
             taker_fee,
             ts_init,
         ) {
-            let instrument_id = inst_any.id();
-            instruments_by_symbol.insert(inst_any.symbol().inner(), inst_any.clone());
-            call_python_with_data(call_soon, callback, |py| {
-                instrument_any_to_pyobject(py, inst_any)
-            });
-            let status = InstrumentStatus::new(
-                instrument_id,
-                status_action,
-                ts_init,
-                ts_init,
-                None,
-                None,
-                Some(is_live),
-                None,
-                None,
-            );
-            call_python_with_data(call_soon, callback, |py| status.into_py_any(py));
+            Ok(Some(inst_any)) => {
+                let instrument_id = inst_any.id();
+                instruments_by_symbol.insert(inst_any.symbol().inner(), inst_any.clone());
+                call_python_with_data(call_soon, callback, |py| {
+                    instrument_any_to_pyobject(py, inst_any)
+                });
+                let status = InstrumentStatus::new(
+                    instrument_id,
+                    status_action,
+                    ts_init,
+                    ts_init,
+                    None,
+                    None,
+                    Some(is_live),
+                    None,
+                    None,
+                );
+                call_python_with_data(call_soon, callback, |py| status.into_py_any(py));
+            }
+            Ok(None) => {
+                let instrument_id = instruments_by_symbol
+                    .get(&inst_key)
+                    .map_or_else(|| parse_instrument_id(inst_key), |i| i.id());
+                let status = InstrumentStatus::new(
+                    instrument_id,
+                    status_action,
+                    ts_init,
+                    ts_init,
+                    None,
+                    None,
+                    Some(is_live),
+                    None,
+                    None,
+                );
+                call_python_with_data(call_soon, callback, |py| status.into_py_any(py));
+            }
+            Err(e) => {
+                log::warn!("Failed to parse instrument {}: {e}", okx_inst.inst_id);
+                let instrument_id = instruments_by_symbol
+                    .get(&inst_key)
+                    .map_or_else(|| parse_instrument_id(inst_key), |i| i.id());
+                let status = InstrumentStatus::new(
+                    instrument_id,
+                    status_action,
+                    ts_init,
+                    ts_init,
+                    None,
+                    None,
+                    Some(is_live),
+                    None,
+                    None,
+                );
+                call_python_with_data(call_soon, callback, |py| status.into_py_any(py));
+            }
         }
     }
 }
@@ -2371,6 +2409,9 @@ fn dispatch_nautilus_ws_msg_to_python(
             if let Some(status) = status {
                 call_python_with_data(call_soon, callback, |py| status.into_py_any(py));
             }
+        }
+        NautilusWsMessage::InstrumentStatus(status) => {
+            call_python_with_data(call_soon, callback, |py| status.into_py_any(py));
         }
         NautilusWsMessage::Raw(data) => {
             dispatch_json_value_to_python(&data, call_soon, callback);

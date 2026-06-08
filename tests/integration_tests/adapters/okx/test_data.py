@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -23,6 +24,7 @@ import pytest
 from nautilus_trader.adapters.okx.config import OKXDataClientConfig
 from nautilus_trader.adapters.okx.constants import OKX_VENUE
 from nautilus_trader.adapters.okx.data import OKXDataClient
+from nautilus_trader.adapters.okx.data import _is_instrument_definition_error
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.core import nautilus_pyo3
@@ -97,6 +99,20 @@ def data_client_builder(
         return client, public_ws, business_ws, mock_http_client, mock_instrument_provider
 
     return builder
+
+
+def request_instrument_message(instrument_id: InstrumentId, ts_init: int = 0) -> RequestInstrument:
+    return RequestInstrument(
+        instrument_id=instrument_id,
+        start=None,
+        end=None,
+        client_id=ClientId(OKX_VENUE.value),
+        venue=OKX_VENUE,
+        callback=lambda x: None,
+        request_id=UUID4(),
+        ts_init=ts_init,
+        params=None,
+    )
 
 
 @pytest.mark.asyncio
@@ -420,6 +436,73 @@ async def test_request_instrument_receives_single_instrument(
     finally:
         data_engine.stop()
         await client._disconnect()
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (Exception("Failed to parse instrument USDG-SGD: `tick_sz` is empty"), True),
+        (Exception("instrument is in pre-open state"), True),
+        (Exception("unsupported instrument type"), True),
+        (Exception("Instrument USDG-SGD not found"), False),
+        (Exception("network timeout"), False),
+    ],
+)
+def test_is_instrument_definition_error_classifies_expected_messages(error, expected) -> None:
+    # Act
+    result = _is_instrument_definition_error(error)
+
+    # Assert
+    assert result is expected
+
+
+@pytest.mark.asyncio
+async def test_request_instrument_warns_when_definition_invalid() -> None:
+    # Arrange
+    client = SimpleNamespace(
+        _http_client=SimpleNamespace(
+            request_instrument=AsyncMock(
+                side_effect=Exception("Failed to parse instrument USDG-SGD: `tick_sz` is empty"),
+            ),
+        ),
+        _log=MagicMock(),
+    )
+    instrument_id = InstrumentId(Symbol("USDG-SGD"), OKX_VENUE)
+    request = request_instrument_message(instrument_id)
+
+    # Act
+    await OKXDataClient._request_instrument(cast(OKXDataClient, client), request)
+
+    # Assert
+    client._http_client.request_instrument.assert_awaited_once()
+    client._log.warning.assert_called_once_with(
+        "Failed to request instrument USDG-SGD.OKX: "
+        "Failed to parse instrument USDG-SGD: `tick_sz` is empty",
+    )
+    client._log.error.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_request_instrument_errors_when_request_fails() -> None:
+    # Arrange
+    client = SimpleNamespace(
+        _http_client=SimpleNamespace(
+            request_instrument=AsyncMock(side_effect=Exception("network timeout")),
+        ),
+        _log=MagicMock(),
+    )
+    instrument_id = InstrumentId(Symbol("USDG-SGD"), OKX_VENUE)
+    request = request_instrument_message(instrument_id)
+
+    # Act
+    await OKXDataClient._request_instrument(cast(OKXDataClient, client), request)
+
+    # Assert
+    client._http_client.request_instrument.assert_awaited_once()
+    client._log.warning.assert_not_called()
+    client._log.error.assert_called_once_with(
+        "Failed to request instrument USDG-SGD.OKX: network timeout",
+    )
 
 
 @pytest.mark.asyncio

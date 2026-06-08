@@ -75,6 +75,7 @@ use nautilus_network::{
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -139,6 +140,23 @@ use crate::{
 
 const OKX_SUCCESS_CODE: &str = "0";
 
+#[derive(Debug, Error)]
+#[error("Failed to parse instrument {symbol}: {source}")]
+pub(crate) struct OKXInstrumentDefinitionError {
+    symbol: String,
+    #[source]
+    source: anyhow::Error,
+}
+
+impl OKXInstrumentDefinitionError {
+    fn new(symbol: &str, source: anyhow::Error) -> Self {
+        Self {
+            symbol: symbol.to_string(),
+            source,
+        }
+    }
+}
+
 /// Ranks a spot instrument's quote currency for deterministic tie-breaking
 /// when multiple pairs share the same base. Matches OKX's dominant-quote
 /// ordering so spot-margin position reports stay on a stable instrument id
@@ -197,9 +215,23 @@ fn deserialize_okx_response<T: DeserializeOwned>(
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Context;
     use rstest::rstest;
 
-    use super::resolve_okx_error_message;
+    use super::{OKXInstrumentDefinitionError, resolve_okx_error_message};
+
+    #[rstest]
+    fn test_instrument_definition_error_survives_anyhow_context_downcast() {
+        let result: anyhow::Result<()> = Err(OKXInstrumentDefinitionError::new(
+            "USDG-SGD",
+            anyhow::anyhow!("`tick_sz` is empty"),
+        )
+        .into());
+
+        let err = result.context("fetch instrument from API").unwrap_err();
+
+        assert!(err.downcast_ref::<OKXInstrumentDefinitionError>().is_some());
+    }
 
     #[rstest]
     fn test_resolve_okx_error_message_prefers_detailed_s_msg_over_generic_top_level() {
@@ -2151,7 +2183,11 @@ impl OKXHttpClient {
 
         // Skip pre-open instruments which have incomplete/empty field values
         if raw_inst.state == OKXInstrumentStatus::Preopen {
-            anyhow::bail!("Instrument {symbol} is in pre-open state");
+            return Err(OKXInstrumentDefinitionError::new(
+                symbol,
+                anyhow::anyhow!("instrument is in pre-open state"),
+            )
+            .into());
         }
 
         let fee_rate_opt = {
@@ -2202,8 +2238,16 @@ impl OKXHttpClient {
         };
 
         let ts_init = self.generate_ts_init();
-        let instrument = parse_instrument_any(raw_inst, None, None, maker_fee, taker_fee, ts_init)?
-            .ok_or_else(|| anyhow::anyhow!("Unsupported instrument type for {symbol}"))?;
+        let Some(instrument) =
+            parse_instrument_any(raw_inst, None, None, maker_fee, taker_fee, ts_init)
+                .map_err(|e| OKXInstrumentDefinitionError::new(symbol, e))?
+        else {
+            return Err(OKXInstrumentDefinitionError::new(
+                symbol,
+                anyhow::anyhow!("unsupported instrument type"),
+            )
+            .into());
+        };
 
         self.cache_instrument(instrument.clone());
 
@@ -2226,6 +2270,7 @@ impl OKXHttpClient {
         let ts_init = self.generate_ts_init();
 
         parse_spread_instrument(raw_spread, None, None, None, None, ts_init)
+            .map_err(|e| OKXInstrumentDefinitionError::new(symbol, e).into())
     }
 
     /// Requests event contract series metadata from OKX.
