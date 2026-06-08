@@ -99,9 +99,9 @@ use nautilus_core::{
 use nautilus_model::defi::DefiData;
 use nautilus_model::{
     data::{
-        Bar, BarType, CustomData, Data, DataType, FundingRateUpdate, HasTsInit, IndexPriceUpdate,
-        InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BarType, BinaryOptionScopeSlice, CustomData, Data, DataType, FundingRateUpdate,
+        HasTsInit, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         option_chain::{OptionGreeks, StrikeRange},
     },
     enums::{
@@ -2696,6 +2696,14 @@ impl DataEngine {
 
     fn handle_custom_data(&self, custom: &CustomData) {
         log::debug!("Processing custom data: {}", custom.data.type_name());
+        if let Some(slice) = custom
+            .data
+            .as_any()
+            .downcast_ref::<BinaryOptionScopeSlice>()
+        {
+            let scope_topic = switchboard::get_binary_option_scope_topic(slice.scope_id);
+            msgbus::publish_binary_option_scope(scope_topic, slice);
+        }
         let topic = switchboard::get_custom_topic(&custom.data_type);
         msgbus::publish_any(topic, custom);
     }
@@ -2826,6 +2834,14 @@ impl DataEngine {
 
     fn handle_custom_data_pipeline(&self, custom: &CustomData) {
         log::debug!("Pipeline custom data: {}", custom.data.type_name());
+        if let Some(slice) = custom
+            .data
+            .as_any()
+            .downcast_ref::<BinaryOptionScopeSlice>()
+        {
+            let scope_topic = switchboard::get_binary_option_scope_topic(slice.scope_id);
+            msgbus::publish_binary_option_scope(scope_topic, slice);
+        }
         let topic = switchboard::get_pipeline_custom_topic(&custom.data_type);
         msgbus::publish_any(topic, custom);
     }

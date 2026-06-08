@@ -66,6 +66,13 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 
 
+_model_mod = nautilus_pyo3.model  # type: ignore[attr-defined]
+
+BinaryOptionScope = _model_mod.BinaryOptionScope
+BinaryOptionScopeSlice = _model_mod.BinaryOptionScopeSlice
+BinaryOptionScopeStreams = _model_mod.BinaryOptionScopeStreams
+
+
 # Defines all order book data types (capable of updating an L2_MBP and L3_MBO book)
 BOOK_DATA_TYPES: set[type] = {
     OrderBookDelta,
@@ -84,7 +91,7 @@ NAUTILUS_PYO3_DATA_TYPES: tuple[type, ...] = (
 
 # Convert the given value into the raw integer representation based on the given precision
 # and currently compiled precision mode (128-bit for HIGH_PRECISION or 64-bit).
-def convert_to_raw_int(value, precision: int) -> int:
+def convert_to_raw_int(value: object, precision: int) -> int:
     # Use Decimal for exact decimal arithmetic to avoid platform-specific
     # floating-point rounding differences.
     decimal_value = Decimal(str(value))
@@ -98,6 +105,9 @@ __all__ = [
     "Bar",
     "BarSpecification",
     "BarType",
+    "BinaryOptionScope",
+    "BinaryOptionScopeSlice",
+    "BinaryOptionScopeStreams",
     "BookLevel",
     "BookOrder",
     "ClientId",

@@ -17,7 +17,7 @@ use std::num::NonZeroUsize;
 
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
-    data::{BarType, DataType},
+    data::{BarType, BinaryOptionScope, DataType},
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
 };
 use serde::{Deserialize, Serialize};
@@ -556,6 +556,35 @@ pub struct UnsubscribeOptionChain {
     pub ts_init: UnixNanos,
     pub client_id: Option<ClientId>,
     pub venue: Option<Venue>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UnsubscribeBinaryOptionScope {
+    pub scope: BinaryOptionScope,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub client_id: Option<ClientId>,
+    pub venue: Option<Venue>,
+}
+
+impl UnsubscribeBinaryOptionScope {
+    /// Creates a new [`UnsubscribeBinaryOptionScope`] instance.
+    pub fn new(
+        scope: BinaryOptionScope,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        client_id: Option<ClientId>,
+        venue: Option<Venue>,
+    ) -> Self {
+        check_client_id_or_venue(&client_id, &venue);
+        Self {
+            scope,
+            command_id,
+            ts_init,
+            client_id,
+            venue,
+        }
+    }
 }
 
 impl UnsubscribeOptionChain {

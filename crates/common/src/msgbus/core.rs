@@ -96,8 +96,8 @@ use indexmap::IndexMap;
 use nautilus_core::{UUID4, correctness::FAILED};
 use nautilus_model::{
     data::{
-        Bar, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BinaryOptionScopeSlice, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate,
+        MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
     events::{AccountState, OrderEventAny, PortfolioSnapshot, PositionEvent},
@@ -244,6 +244,7 @@ pub struct MessageBus {
     pub(crate) router_greeks: TopicRouter<GreeksData>,
     pub(crate) router_option_greeks: TopicRouter<OptionGreeks>,
     pub(crate) router_option_chain: TopicRouter<OptionChainSlice>,
+    pub(crate) router_binary_option_scope: TopicRouter<BinaryOptionScopeSlice>,
     pub(crate) router_instruments: TopicRouter<InstrumentAny>,
     #[cfg(feature = "defi")]
     pub(crate) router_defi_blocks: TopicRouter<nautilus_model::defi::Block>, // nautilus-import-ok
@@ -321,6 +322,7 @@ impl MessageBus {
             router_greeks: TopicRouter::new(),
             router_option_greeks: TopicRouter::new(),
             router_option_chain: TopicRouter::new(),
+            router_binary_option_scope: TopicRouter::new(),
             router_instruments: TopicRouter::new(),
             #[cfg(feature = "defi")]
             router_defi_blocks: TopicRouter::new(),
@@ -414,6 +416,7 @@ impl MessageBus {
         self.router_greeks.clear();
         self.router_option_greeks.clear();
         self.router_option_chain.clear();
+        self.router_binary_option_scope.clear();
         self.router_instruments.clear();
 
         #[cfg(feature = "defi")]

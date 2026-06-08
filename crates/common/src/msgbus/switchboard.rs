@@ -34,6 +34,7 @@ use nautilus_model::{
     data::{BarType, DataType},
     identifiers::{ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId, Venue},
 };
+use ustr::Ustr;
 
 use super::mstr::{Endpoint, MStr, Pattern, Topic};
 use crate::msgbus::get_message_bus;
@@ -413,6 +414,10 @@ define_switchboard! {
     get_option_chain_topic(series_id: OptionSeriesId) -> series_id,
     "data.option_chain.{}", series_id;
 
+    binary_option_scope_topics: Ustr,
+    get_binary_option_scope_topic(scope_id: Ustr) -> scope_id,
+    "data.binary_option_scope.{}", scope_id;
+
     order_fills_topics: InstrumentId,
     get_order_fills_topic(instrument_id: InstrumentId) -> instrument_id,
     "events.fills.{}", instrument_id;
@@ -614,6 +619,7 @@ define_wrappers! {
     get_instrument_close_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_option_greeks_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_option_chain_topic(series_id: OptionSeriesId) -> MStr<Topic>,
+    get_binary_option_scope_topic(scope_id: Ustr) -> MStr<Topic>,
     get_pipeline_custom_topic(data_type: &DataType) -> MStr<Topic>,
     get_pipeline_book_deltas_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_book_depth10_topic(instrument_id: InstrumentId) -> MStr<Topic>,

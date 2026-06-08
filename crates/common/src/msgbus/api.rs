@@ -32,8 +32,8 @@ use nautilus_model::defi::{
 };
 use nautilus_model::{
     data::{
-        Bar, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BinaryOptionScopeSlice, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate,
+        MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
     events::{AccountState, OrderEventAny, PortfolioSnapshot, PositionEvent},
@@ -46,11 +46,11 @@ use smallvec::SmallVec;
 use ustr::Ustr;
 
 use super::{
-    ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BOOK_HANDLERS, DELTAS_HANDLERS,
-    DEPTH10_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP,
-    INDEX_PRICE_HANDLERS, INSTRUMENT_HANDLERS, MARK_PRICE_HANDLERS, OPTION_CHAIN_HANDLERS,
-    OPTION_GREEKS_HANDLERS, ORDER_EVENT_HANDLERS, PORTFOLIO_SNAPSHOT_HANDLERS,
-    POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, TRADE_HANDLERS,
+    ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BINARY_OPTION_SCOPE_HANDLERS,
+    BOOK_HANDLERS, DELTAS_HANDLERS, DEPTH10_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS,
+    HANDLER_BUFFER_CAP, INDEX_PRICE_HANDLERS, INSTRUMENT_HANDLERS, MARK_PRICE_HANDLERS,
+    OPTION_CHAIN_HANDLERS, OPTION_GREEKS_HANDLERS, ORDER_EVENT_HANDLERS,
+    PORTFOLIO_SNAPSHOT_HANDLERS, POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, TRADE_HANDLERS,
     core::{MessageBus, Subscription},
     dispatch_tap_publish, dispatch_tap_response, dispatch_tap_send, get_message_bus,
     matching::is_matching_backtracking,
@@ -427,6 +427,18 @@ pub fn subscribe_option_chain(
         .subscribe(pattern, handler, priority.unwrap_or(0));
 }
 
+/// Subscribes a handler to binary option scope slice updates matching a pattern.
+pub fn subscribe_binary_option_scope(
+    pattern: MStr<Pattern>,
+    handler: TypedHandler<BinaryOptionScopeSlice>,
+    priority: Option<u32>,
+) {
+    get_message_bus()
+        .borrow_mut()
+        .router_binary_option_scope
+        .subscribe(pattern, handler, priority.unwrap_or(0));
+}
+
 /// Subscribes a handler to order events matching a pattern.
 pub fn subscribe_order_events(
     pattern: MStr<Pattern>,
@@ -747,6 +759,17 @@ pub fn unsubscribe_option_chain(pattern: MStr<Pattern>, handler: &TypedHandler<O
     get_message_bus()
         .borrow_mut()
         .router_option_chain
+        .unsubscribe(pattern, handler);
+}
+
+/// Unsubscribes a handler from binary option scope slice updates.
+pub fn unsubscribe_binary_option_scope(
+    pattern: MStr<Pattern>,
+    handler: &TypedHandler<BinaryOptionScopeSlice>,
+) {
+    get_message_bus()
+        .borrow_mut()
+        .router_binary_option_scope
         .unsubscribe(pattern, handler);
 }
 
@@ -1114,6 +1137,19 @@ pub fn publish_option_chain(topic: MStr<Topic>, slice: &OptionChainSlice) {
         topic,
         &OPTION_CHAIN_HANDLERS,
         |bus, h| bus.router_option_chain.fill_matching_handlers(topic, h),
+        slice,
+    );
+}
+
+/// Publishes a binary option scope slice to subscribers on a topic.
+pub fn publish_binary_option_scope(topic: MStr<Topic>, slice: &BinaryOptionScopeSlice) {
+    publish_typed(
+        topic,
+        &BINARY_OPTION_SCOPE_HANDLERS,
+        |bus, h| {
+            bus.router_binary_option_scope
+                .fill_matching_handlers(topic, h);
+        },
         slice,
     );
 }

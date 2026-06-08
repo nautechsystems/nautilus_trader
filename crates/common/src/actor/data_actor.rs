@@ -34,7 +34,8 @@ use nautilus_model::defi::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
+        Bar, BarType, BinaryOptionScope, BinaryOptionScopeSlice, BinaryOptionScopeStreams,
+        CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
         MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         close::InstrumentClose,
         option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
@@ -88,12 +89,13 @@ use crate::{
     msgbus::{
         self, MStr, Pattern, ShareableMessageHandler, Topic, TypedHandler, get_message_bus,
         switchboard::{
-            MessagingSwitchboard, get_bars_topic, get_book_deltas_pattern, get_book_deltas_topic,
-            get_book_snapshots_topic, get_custom_topic, get_funding_rate_topic,
-            get_index_price_topic, get_instrument_close_topic, get_instrument_status_topic,
-            get_instrument_topic, get_instruments_pattern, get_mark_price_topic,
-            get_option_chain_topic, get_option_greeks_topic, get_order_cancels_topic,
-            get_order_fills_topic, get_quotes_topic, get_signal_pattern, get_trades_topic,
+            MessagingSwitchboard, get_bars_topic, get_binary_option_scope_topic,
+            get_book_deltas_pattern, get_book_deltas_topic, get_book_snapshots_topic,
+            get_custom_topic, get_funding_rate_topic, get_index_price_topic,
+            get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
+            get_instruments_pattern, get_mark_price_topic, get_option_chain_topic,
+            get_option_greeks_topic, get_order_cancels_topic, get_order_fills_topic,
+            get_quotes_topic, get_signal_pattern, get_trades_topic,
         },
     },
     signal::Signal,
@@ -398,6 +400,16 @@ pub trait DataActor:
     /// Returns an error if handling the option chain slice fails.
     #[allow(unused_variables)]
     fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Actions to be performed when receiving a binary option scope slice snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the binary option scope slice fails.
+    #[allow(unused_variables)]
+    fn on_binary_option_scope(&mut self, slice: &BinaryOptionScopeSlice) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -795,6 +807,20 @@ pub trait DataActor:
         }
 
         if let Err(e) = self.on_option_chain(slice) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received binary option scope slice snapshot.
+    fn handle_binary_option_scope(&mut self, slice: &BinaryOptionScopeSlice) {
+        log_received(&slice);
+
+        if self.not_running() {
+            log_not_running(&slice);
+            return;
+        }
+
+        if let Err(e) = self.on_binary_option_scope(slice) {
             log_error(&e);
         }
     }
@@ -1495,6 +1521,32 @@ pub trait DataActor:
         );
     }
 
+    /// Subscribe to streaming [`BinaryOptionScopeSlice`] snapshots for the `scope`.
+    fn subscribe_binary_option_scope(
+        &mut self,
+        scope: BinaryOptionScope,
+        streams: BinaryOptionScopeStreams,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_binary_option_scope_topic(scope.scope_id());
+
+        let handler = TypedHandler::from(move |slice: &BinaryOptionScopeSlice| {
+            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                actor.handle_binary_option_scope(slice);
+            } else {
+                log::error!("Actor {actor_id} not found for binary option scope handling");
+            }
+        });
+
+        DataActorCore::subscribe_binary_option_scope(
+            self, topic, handler, scope, streams, client_id, params,
+        );
+    }
+
     /// Subscribe to [`OrderFilled`] events for the `instrument_id`.
     fn subscribe_order_fills(&mut self, instrument_id: InstrumentId)
     where
@@ -1859,6 +1911,17 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_option_chain(self, series_id, client_id);
+    }
+
+    /// Unsubscribe from streaming [`BinaryOptionScopeSlice`] snapshots for the `scope`.
+    fn unsubscribe_binary_option_scope(
+        &mut self,
+        scope: BinaryOptionScope,
+        client_id: Option<ClientId>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_binary_option_scope(self, scope, client_id);
     }
 
     /// Unsubscribe from [`OrderFilled`] events for the `instrument_id`.
@@ -2380,6 +2443,7 @@ pub struct DataActorCore {
     funding_rate_handlers: AHashMap<MStr<Topic>, TypedHandler<FundingRateUpdate>>,
     option_greeks_handlers: AHashMap<MStr<Topic>, TypedHandler<OptionGreeks>>,
     option_chain_handlers: AHashMap<MStr<Topic>, TypedHandler<OptionChainSlice>>,
+    binary_option_scope_handlers: AHashMap<MStr<Topic>, TypedHandler<BinaryOptionScopeSlice>>,
     order_event_handlers: AHashMap<MStr<Topic>, TypedHandler<OrderEventAny>>,
     #[cfg(feature = "defi")]
     block_handlers: AHashMap<MStr<Topic>, TypedHandler<Block>>,
@@ -2768,6 +2832,29 @@ impl DataActorCore {
         }
     }
 
+    pub(crate) fn add_binary_option_scope_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: TypedHandler<BinaryOptionScopeSlice>,
+    ) {
+        if self.binary_option_scope_handlers.contains_key(&topic) {
+            log::warn!(
+                "Actor {} attempted duplicate binary option scope subscription to '{topic}'",
+                self.actor_id
+            );
+            return;
+        }
+        self.binary_option_scope_handlers
+            .insert(topic, handler.clone());
+        msgbus::subscribe_binary_option_scope(topic.into(), handler, None);
+    }
+
+    pub(crate) fn remove_binary_option_scope_subscription(&mut self, topic: MStr<Topic>) {
+        if let Some(handler) = self.binary_option_scope_handlers.remove(&topic) {
+            msgbus::unsubscribe_binary_option_scope(topic.into(), &handler);
+        }
+    }
+
     #[cfg(feature = "defi")]
     pub(crate) fn add_block_subscription(
         &mut self,
@@ -2944,6 +3031,7 @@ impl DataActorCore {
             funding_rate_handlers: AHashMap::new(),
             option_greeks_handlers: AHashMap::new(),
             option_chain_handlers: AHashMap::new(),
+            binary_option_scope_handlers: AHashMap::new(),
             order_event_handlers: AHashMap::new(),
             #[cfg(feature = "defi")]
             block_handlers: AHashMap::new(),
@@ -3712,6 +3800,36 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
+    /// Helper method for subscribing to binary option scope snapshots from the trait.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn subscribe_binary_option_scope(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: TypedHandler<BinaryOptionScopeSlice>,
+        scope: BinaryOptionScope,
+        streams: BinaryOptionScopeStreams,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) {
+        self.check_registered();
+
+        self.add_binary_option_scope_subscription(topic, handler);
+
+        let command = SubscribeCommand::BinaryOptionScope(
+            crate::messages::data::SubscribeBinaryOptionScope::new(
+                scope.clone(),
+                streams,
+                UUID4::new(),
+                self.timestamp_ns(),
+                client_id,
+                Some(scope.venue()),
+                params,
+            ),
+        );
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
     /// Helper method for registering order fills subscriptions from the trait.
     pub fn subscribe_order_fills(
         &mut self,
@@ -4128,6 +4246,31 @@ impl DataActorCore {
             client_id,
             Some(series_id.venue),
         ));
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    /// Helper method for unsubscribing from binary option scope snapshots.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn unsubscribe_binary_option_scope(
+        &mut self,
+        scope: BinaryOptionScope,
+        client_id: Option<ClientId>,
+    ) {
+        self.check_registered();
+
+        let topic = get_binary_option_scope_topic(scope.scope_id());
+        self.remove_binary_option_scope_subscription(topic);
+
+        let command = UnsubscribeCommand::BinaryOptionScope(
+            crate::messages::data::UnsubscribeBinaryOptionScope::new(
+                scope.clone(),
+                UUID4::new(),
+                self.timestamp_ns(),
+                client_id,
+                Some(scope.venue()),
+            ),
+        );
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }

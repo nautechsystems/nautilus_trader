@@ -22,14 +22,14 @@ use super::log_not_implemented;
 use crate::messages::data::{
     RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
     RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
-    RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-    SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-    SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-    SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-    UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates,
-    UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
-    UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
-    UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+    RequestQuotes, RequestTrades, SubscribeBars, SubscribeBinaryOptionScope, SubscribeBookDeltas,
+    SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+    SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+    SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+    UnsubscribeBinaryOptionScope, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+    UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+    UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+    UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
 };
 #[cfg(feature = "defi")]
 use crate::messages::defi::{
@@ -254,6 +254,19 @@ pub trait DataClient {
         Ok(())
     }
 
+    /// Subscribes to a binary-option logical scope.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscribe operation fails.
+    fn subscribe_binary_option_scope(
+        &mut self,
+        cmd: SubscribeBinaryOptionScope,
+    ) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
     #[cfg(feature = "defi")]
     /// Subscribes to blocks for a specified blockchain.
     ///
@@ -466,6 +479,19 @@ pub trait DataClient {
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
         log_not_implemented(&cmd);
+        Ok(())
+    }
+
+    /// Unsubscribes from a binary-option logical scope.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe operation fails.
+    fn unsubscribe_binary_option_scope(
+        &mut self,
+        cmd: &UnsubscribeBinaryOptionScope,
+    ) -> anyhow::Result<()> {
+        log_not_implemented(cmd);
         Ok(())
     }
 

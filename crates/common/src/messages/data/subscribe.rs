@@ -17,7 +17,9 @@ use std::num::NonZeroUsize;
 
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
-    data::{BarType, DataType, option_chain::StrikeRange},
+    data::{
+        BarType, BinaryOptionScope, BinaryOptionScopeStreams, DataType, option_chain::StrikeRange,
+    },
     enums::BookType,
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
 };
@@ -586,6 +588,41 @@ pub struct SubscribeOptionChain {
     pub client_id: Option<ClientId>,
     pub venue: Option<Venue>,
     pub params: Option<Params>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SubscribeBinaryOptionScope {
+    pub scope: BinaryOptionScope,
+    pub streams: BinaryOptionScopeStreams,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub client_id: Option<ClientId>,
+    pub venue: Option<Venue>,
+    pub params: Option<Params>,
+}
+
+impl SubscribeBinaryOptionScope {
+    /// Creates a new [`SubscribeBinaryOptionScope`] instance.
+    pub fn new(
+        scope: BinaryOptionScope,
+        streams: BinaryOptionScopeStreams,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        client_id: Option<ClientId>,
+        venue: Option<Venue>,
+        params: Option<Params>,
+    ) -> Self {
+        check_client_id_or_venue(&client_id, &venue);
+        Self {
+            scope,
+            streams,
+            command_id,
+            ts_init,
+            client_id,
+            venue,
+            params,
+        }
+    }
 }
 
 impl SubscribeOptionChain {

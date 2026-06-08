@@ -17,6 +17,7 @@
 
 pub mod bar;
 pub mod bet;
+pub mod binary_option_scope;
 pub mod black_scholes;
 pub mod close;
 pub mod custom;
@@ -52,6 +53,9 @@ use crate::defi::DefiData;
 // Re-exports
 #[rustfmt::skip]  // Keep these grouped
 pub use bar::{Bar, BarSpecification, BarType};
+pub use binary_option_scope::{
+    BinaryOptionScope, BinaryOptionScopeMember, BinaryOptionScopeSlice, BinaryOptionScopeStreams,
+};
 pub use black_scholes::Greeks;
 pub use close::InstrumentClose;
 #[cfg(feature = "python")]

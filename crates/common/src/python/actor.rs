@@ -34,7 +34,8 @@ use nautilus_model::defi::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
+        Bar, BarType, BinaryOptionScope, BinaryOptionScopeSlice, BinaryOptionScopeStreams,
+        CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
         MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick,
         close::InstrumentClose,
         option_chain::{OptionChainSlice, OptionGreeks},
@@ -363,6 +364,19 @@ impl PyDataActorInner {
         Ok(())
     }
 
+    fn dispatch_on_binary_option_scope(&mut self, slice: BinaryOptionScopeSlice) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(
+                    py,
+                    "on_binary_option_scope",
+                    (slice.into_py_any_unwrap(py),),
+                )
+            })?;
+        }
+        Ok(())
+    }
+
     fn dispatch_on_historical_data(&mut self, data: Py<PyAny>) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| py_self.call_method1(py, "on_historical_data", (data,)))?;
@@ -577,6 +591,30 @@ impl PyDataActor {
     #[allow(unsafe_code, clippy::mut_from_ref)]
     pub(crate) fn inner_mut(&self) -> &mut PyDataActorInner {
         unsafe { &mut *self.inner.get() }
+    }
+
+    pub fn subscribe_binary_option_scope_rust(
+        &self,
+        scope: BinaryOptionScope,
+        streams: BinaryOptionScopeStreams,
+        client_id: Option<ClientId>,
+        params: Option<nautilus_core::Params>,
+    ) {
+        DataActor::subscribe_binary_option_scope(
+            self.inner_mut(),
+            scope,
+            streams,
+            client_id,
+            params,
+        );
+    }
+
+    pub fn unsubscribe_binary_option_scope_rust(
+        &self,
+        scope: BinaryOptionScope,
+        client_id: Option<ClientId>,
+    ) {
+        DataActor::unsubscribe_binary_option_scope(self.inner_mut(), scope, client_id);
     }
 }
 
@@ -830,6 +868,11 @@ impl DataActor for PyDataActorInner {
     fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
         self.dispatch_on_option_chain(slice.clone())
             .map_err(|e| anyhow::anyhow!("Python on_option_chain failed: {e}"))
+    }
+
+    fn on_binary_option_scope(&mut self, slice: &BinaryOptionScopeSlice) -> anyhow::Result<()> {
+        self.dispatch_on_binary_option_scope(slice.clone())
+            .map_err(|e| anyhow::anyhow!("Python on_binary_option_scope failed: {e}"))
     }
 
     #[cfg(feature = "defi")]
@@ -1177,6 +1220,10 @@ impl PyDataActor {
     #[pyo3(name = "on_option_chain")]
     fn py_on_option_chain(&mut self, slice: OptionChainSlice) {}
 
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_binary_option_scope")]
+    fn py_on_binary_option_scope(&mut self, slice: BinaryOptionScopeSlice) {}
+
     #[pyo3(name = "subscribe_data")]
     #[pyo3(signature = (data_type, client_id=None, params=None))]
     fn py_subscribe_data(
@@ -1431,6 +1478,27 @@ impl PyDataActor {
         Ok(())
     }
 
+    #[pyo3(name = "subscribe_binary_option_scope")]
+    #[pyo3(signature = (scope, streams=None, client_id=None, params=None))]
+    fn py_subscribe_binary_option_scope(
+        &mut self,
+        py: Python<'_>,
+        scope: BinaryOptionScope,
+        streams: Option<BinaryOptionScopeStreams>,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::subscribe_binary_option_scope(
+            self.inner_mut(),
+            scope,
+            streams.unwrap_or_default(),
+            client_id,
+            params,
+        );
+        Ok(())
+    }
+
     #[pyo3(name = "subscribe_order_fills")]
     #[pyo3(signature = (instrument_id))]
     fn py_subscribe_order_fills(&mut self, instrument_id: InstrumentId) {
@@ -1668,6 +1736,16 @@ impl PyDataActor {
         client_id: Option<ClientId>,
     ) {
         DataActor::unsubscribe_option_chain(self.inner_mut(), series_id, client_id);
+    }
+
+    #[pyo3(name = "unsubscribe_binary_option_scope")]
+    #[pyo3(signature = (scope, client_id=None))]
+    fn py_unsubscribe_binary_option_scope(
+        &mut self,
+        scope: BinaryOptionScope,
+        client_id: Option<ClientId>,
+    ) {
+        DataActor::unsubscribe_binary_option_scope(self.inner_mut(), scope, client_id);
     }
 
     #[pyo3(name = "unsubscribe_order_fills")]
@@ -2183,9 +2261,9 @@ mod tests {
     };
     use nautilus_model::{
         data::{
-            Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate,
-            InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, QuoteTick,
-            TradeTick,
+            Bar, BarType, BinaryOptionScopeMember, BinaryOptionScopeSlice, CustomData, DataType,
+            FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDelta,
+            OrderBookDeltas, QuoteTick, TradeTick,
             close::InstrumentClose,
             greeks::OptionGreekValues,
             option_chain::{OptionChainSlice, OptionGreeks},
@@ -2194,7 +2272,7 @@ mod tests {
         enums::{
             AggressorSide, BookType, GreeksConvention, InstrumentCloseType, MarketStatusAction,
         },
-        identifiers::{ClientId, OptionSeriesId, TradeId, TraderId, Venue},
+        identifiers::{ClientId, InstrumentId, OptionSeriesId, TradeId, TraderId, Venue},
         instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
         orderbook::OrderBook,
         types::{Price, Quantity},
@@ -3042,6 +3120,22 @@ class CapturingActor:
         }
     }
 
+    fn sample_binary_option_scope() -> BinaryOptionScopeSlice {
+        BinaryOptionScopeSlice {
+            scope_id: Ustr::from("POLYMARKET.UPDOWN.BTC.5m"),
+            venue: Venue::from("POLYMARKET"),
+            members: vec![BinaryOptionScopeMember {
+                instrument_id: InstrumentId::from("BTC-UPDOWN-YES.POLYMARKET"),
+                outcome: Some(Ustr::from("YES")),
+                expiration_ns: UnixNanos::from(1_711_036_800_000_000_000u64),
+            }],
+            window_start_ns: UnixNanos::from(1_711_036_500_000_000_000u64),
+            window_end_ns: UnixNanos::from(1_711_036_800_000_000_000u64),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
+        }
+    }
+
     #[cfg(feature = "defi")]
     fn sample_block() -> Block {
         Block::new(
@@ -3250,6 +3344,7 @@ class TrackingActor:
         "on_instrument_close",
         "on_option_greeks",
         "on_option_chain",
+        "on_binary_option_scope",
         "on_historical_data",
         "on_historical_quotes",
         "on_historical_trades",
@@ -3376,6 +3471,7 @@ class TrackingActor:
     #[case("on_instrument_close")]
     #[case("on_option_greeks")]
     #[case("on_option_chain")]
+    #[case("on_binary_option_scope")]
     fn test_python_dispatch_typed_callback_matrix(
         clock: Rc<RefCell<TestClock>>,
         cache: Rc<RefCell<Cache>>,
@@ -3449,6 +3545,10 @@ class TrackingActor:
                     "on_option_chain" => {
                         let chain = sample_option_chain();
                         rust_actor.inner_mut().on_option_chain(&chain)
+                    }
+                    "on_binary_option_scope" => {
+                        let slice = sample_binary_option_scope();
+                        rust_actor.inner_mut().on_binary_option_scope(&slice)
                     }
                     _ => unreachable!("unhandled typed callback case: {method_name}"),
                 }

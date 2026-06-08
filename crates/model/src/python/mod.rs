@@ -79,6 +79,10 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::data::bar::Bar>()?;
     m.add_class::<crate::data::bet::Bet>()?;
     m.add_class::<crate::data::bet::BetPosition>()?;
+    m.add_class::<crate::data::binary_option_scope::BinaryOptionScope>()?;
+    m.add_class::<crate::data::binary_option_scope::BinaryOptionScopeStreams>()?;
+    m.add_class::<crate::data::binary_option_scope::BinaryOptionScopeMember>()?;
+    m.add_class::<crate::data::binary_option_scope::BinaryOptionScopeSlice>()?;
     m.add_class::<crate::data::order::BookOrder>()?;
     m.add_class::<crate::data::prices::MarkPriceUpdate>()?;
     m.add_class::<crate::data::prices::IndexPriceUpdate>()?;

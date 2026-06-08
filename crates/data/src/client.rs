@@ -29,11 +29,12 @@ use nautilus_common::{
     messages::data::{
         RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
         RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
-        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-        SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
-        SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
-        SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
-        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBinaryOptionScope,
+        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCommand, SubscribeCustomData,
+        SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+        UnsubscribeBinaryOptionScope, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
         UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
         UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
         UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
@@ -43,7 +44,7 @@ use nautilus_common::{
 #[cfg(feature = "defi")]
 use nautilus_model::defi::Blockchain;
 use nautilus_model::{
-    data::{BarType, DataType},
+    data::{BarType, BinaryOptionScope, DataType},
     identifiers::{ClientId, InstrumentId, Venue},
 };
 
@@ -72,6 +73,7 @@ pub struct DataClientAdapter {
     pub subscriptions_index_prices: AHashSet<InstrumentId>,
     pub subscriptions_funding_rates: AHashSet<InstrumentId>,
     pub subscriptions_option_greeks: AHashSet<InstrumentId>,
+    pub subscriptions_binary_option_scope: AHashSet<BinaryOptionScope>,
     #[cfg(feature = "defi")]
     pub subscriptions_blocks: AHashSet<Blockchain>,
     #[cfg(feature = "defi")]
@@ -149,6 +151,7 @@ impl DataClientAdapter {
             subscriptions_index_prices: AHashSet::new(),
             subscriptions_funding_rates: AHashSet::new(),
             subscriptions_option_greeks: AHashSet::new(),
+            subscriptions_binary_option_scope: AHashSet::new(),
             subscriptions_bars: AHashSet::new(),
             subscriptions_instrument_status: AHashSet::new(),
             subscriptions_instrument_close: AHashSet::new(),
@@ -213,6 +216,7 @@ impl DataClientAdapter {
             SubscribeCommand::InstrumentClose(cmd) => self.subscribe_instrument_close(cmd),
             SubscribeCommand::OptionGreeks(cmd) => self.subscribe_option_greeks(cmd),
             SubscribeCommand::OptionChain(_) => Ok(()), // Handled internally by engine
+            SubscribeCommand::BinaryOptionScope(cmd) => self.subscribe_binary_option_scope(cmd),
         } {
             log_command_error(&cmd_debug, &e);
         }
@@ -237,6 +241,7 @@ impl DataClientAdapter {
             UnsubscribeCommand::InstrumentClose(cmd) => self.unsubscribe_instrument_close(cmd),
             UnsubscribeCommand::OptionGreeks(cmd) => self.unsubscribe_option_greeks(cmd),
             UnsubscribeCommand::OptionChain(_) => Ok(()), // Handled internally by engine
+            UnsubscribeCommand::BinaryOptionScope(cmd) => self.unsubscribe_binary_option_scope(cmd),
         } {
             log_command_error(&cmd, &e);
         }
@@ -270,6 +275,21 @@ impl DataClientAdapter {
         Ok(())
     }
 
+    /// Unsubscribes from binary option scope snapshots, forwarding to the client when active.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client unsubscribe operation fails.
+    pub fn unsubscribe_binary_option_scope(
+        &mut self,
+        cmd: &UnsubscribeBinaryOptionScope,
+    ) -> anyhow::Result<()> {
+        if self.subscriptions_binary_option_scope.remove(&cmd.scope) {
+            self.client.unsubscribe_binary_option_scope(cmd)?;
+        }
+        Ok(())
+    }
+
     /// Subscribes to instrument definitions for a venue, updating internal state and forwarding to the client.
     ///
     /// # Errors
@@ -279,6 +299,20 @@ impl DataClientAdapter {
         if !self.subscriptions_instrument_venue.contains(&cmd.venue) {
             self.subscriptions_instrument_venue.insert(cmd.venue);
             self.client.subscribe_instruments(cmd)?;
+        }
+
+        Ok(())
+    }
+
+    fn subscribe_binary_option_scope(
+        &mut self,
+        cmd: SubscribeBinaryOptionScope,
+    ) -> anyhow::Result<()> {
+        if self
+            .subscriptions_binary_option_scope
+            .insert(cmd.scope.clone())
+        {
+            self.client.subscribe_binary_option_scope(cmd)?;
         }
 
         Ok(())

@@ -51,17 +51,18 @@ pub use response::{
     QuotesResponse, TradesResponse,
 };
 pub use subscribe::{
-    SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-    SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-    SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-    SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+    SubscribeBars, SubscribeBinaryOptionScope, SubscribeBookDeltas, SubscribeBookDepth10,
+    SubscribeBookSnapshots, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+    SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+    SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
+    SubscribeTrades,
 };
 pub use unsubscribe::{
-    UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-    UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-    UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
-    UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
-    UnsubscribeTrades,
+    UnsubscribeBars, UnsubscribeBinaryOptionScope, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+    UnsubscribeBookSnapshots, UnsubscribeCustomData, UnsubscribeFundingRates,
+    UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
+    UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
+    UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
 };
 
 #[cfg(feature = "defi")]
@@ -106,6 +107,7 @@ pub enum SubscribeCommand {
     InstrumentClose(SubscribeInstrumentClose),
     OptionGreeks(SubscribeOptionGreeks),
     OptionChain(SubscribeOptionChain),
+    BinaryOptionScope(SubscribeBinaryOptionScope),
 }
 
 impl PartialEq for SubscribeCommand {
@@ -138,6 +140,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.command_id,
             Self::OptionGreeks(cmd) => cmd.command_id,
             Self::OptionChain(cmd) => cmd.command_id,
+            Self::BinaryOptionScope(cmd) => cmd.command_id,
         }
     }
 
@@ -159,6 +162,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.client_id.as_ref(),
             Self::OptionGreeks(cmd) => cmd.client_id.as_ref(),
             Self::OptionChain(cmd) => cmd.client_id.as_ref(),
+            Self::BinaryOptionScope(cmd) => cmd.client_id.as_ref(),
         }
     }
 
@@ -180,6 +184,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.venue.as_ref(),
             Self::OptionGreeks(cmd) => cmd.venue.as_ref(),
             Self::OptionChain(cmd) => cmd.venue.as_ref(),
+            Self::BinaryOptionScope(cmd) => cmd.venue.as_ref(),
         }
     }
 
@@ -201,6 +206,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.ts_init,
             Self::OptionGreeks(cmd) => cmd.ts_init,
             Self::OptionChain(cmd) => cmd.ts_init,
+            Self::BinaryOptionScope(cmd) => cmd.ts_init,
         }
     }
 
@@ -222,6 +228,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.correlation_id,
             Self::OptionGreeks(cmd) => cmd.correlation_id,
             Self::OptionChain(_) => None,
+            Self::BinaryOptionScope(_) => None,
         }
     }
 
@@ -243,6 +250,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.params.as_ref(),
             Self::OptionGreeks(cmd) => cmd.params.as_ref(),
             Self::OptionChain(cmd) => cmd.params.as_ref(),
+            Self::BinaryOptionScope(cmd) => cmd.params.as_ref(),
         }
     }
 }
@@ -265,6 +273,7 @@ pub enum UnsubscribeCommand {
     InstrumentClose(UnsubscribeInstrumentClose),
     OptionGreeks(UnsubscribeOptionGreeks),
     OptionChain(UnsubscribeOptionChain),
+    BinaryOptionScope(UnsubscribeBinaryOptionScope),
 }
 
 impl PartialEq for UnsubscribeCommand {
@@ -297,6 +306,7 @@ impl UnsubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.command_id,
             Self::OptionGreeks(cmd) => cmd.command_id,
             Self::OptionChain(cmd) => cmd.command_id,
+            Self::BinaryOptionScope(cmd) => cmd.command_id,
         }
     }
 
@@ -318,6 +328,7 @@ impl UnsubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.client_id.as_ref(),
             Self::OptionGreeks(cmd) => cmd.client_id.as_ref(),
             Self::OptionChain(cmd) => cmd.client_id.as_ref(),
+            Self::BinaryOptionScope(cmd) => cmd.client_id.as_ref(),
         }
     }
 
@@ -339,6 +350,7 @@ impl UnsubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.venue.as_ref(),
             Self::OptionGreeks(cmd) => cmd.venue.as_ref(),
             Self::OptionChain(cmd) => cmd.venue.as_ref(),
+            Self::BinaryOptionScope(cmd) => cmd.venue.as_ref(),
         }
     }
 
@@ -360,6 +372,7 @@ impl UnsubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.ts_init,
             Self::OptionGreeks(cmd) => cmd.ts_init,
             Self::OptionChain(cmd) => cmd.ts_init,
+            Self::BinaryOptionScope(cmd) => cmd.ts_init,
         }
     }
 
@@ -381,6 +394,7 @@ impl UnsubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.correlation_id,
             Self::OptionGreeks(cmd) => cmd.correlation_id,
             Self::OptionChain(_) => None,
+            Self::BinaryOptionScope(_) => None,
         }
     }
 }

@@ -55,8 +55,8 @@ use nautilus_core::UUID4;
 use nautilus_model::defi::{Block, Pool, PoolFeeCollect, PoolFlash, PoolLiquidityUpdate, PoolSwap};
 use nautilus_model::{
     data::{
-        Bar, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BinaryOptionScopeSlice, FundingRateUpdate, GreeksData, IndexPriceUpdate,
+        MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
     events::{AccountState, OrderEventAny, PortfolioSnapshot, PositionEvent},
@@ -120,6 +120,8 @@ thread_local! {
     pub(super) static OPTION_GREEKS_HANDLERS: RefCell<SmallVec<[TypedHandler<OptionGreeks>; HANDLER_BUFFER_CAP]>> =
         RefCell::new(SmallVec::new());
     pub(super) static OPTION_CHAIN_HANDLERS: RefCell<SmallVec<[TypedHandler<OptionChainSlice>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static BINARY_OPTION_SCOPE_HANDLERS: RefCell<SmallVec<[TypedHandler<BinaryOptionScopeSlice>; HANDLER_BUFFER_CAP]>> =
         RefCell::new(SmallVec::new());
     pub(super) static ACCOUNT_STATE_HANDLERS: RefCell<SmallVec<[TypedHandler<AccountState>; HANDLER_BUFFER_CAP]>> =
         RefCell::new(SmallVec::new());
