@@ -26,10 +26,10 @@ use anyhow::Context;
 use nautilus_common::{live::get_runtime, messages::DataEvent};
 use nautilus_core::{UnixNanos, time::AtomicTime};
 use nautilus_model::data::{CustomData, Data as NautilusData, DataType, custom::CustomDataTrait};
+use nautilus_model::types::Price;
 use nautilus_network::websocket::{
     TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
 };
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use tokio_tungstenite::tungstenite::Message;
@@ -555,7 +555,7 @@ impl PolymarketRtdsFeed {
             return;
         }
 
-        let value = match decimal_from_json_number("value", &payload.value) {
+        let value = match price_from_json_number("value", &payload.value) {
             Ok(value) => value,
             Err(e) => {
                 log::error!("Failed to parse RTDS crypto price value: {e}");
@@ -593,7 +593,7 @@ impl PolymarketRtdsFeed {
         }
 
         for point in payload.data {
-            let value = match decimal_from_json_number("value", &point.value) {
+            let value = match price_from_json_number("value", &point.value) {
                 Ok(value) => value,
                 Err(e) => {
                     log::error!("Failed to parse RTDS crypto subscribe value: {e}");
@@ -631,7 +631,7 @@ impl PolymarketRtdsFeed {
             return;
         }
 
-        let value = match decimal_from_json_number("value", &payload.value) {
+        let value = match price_from_json_number("value", &payload.value) {
             Ok(value) => value,
             Err(e) => {
                 log::error!("Failed to parse RTDS equity price value: {e}");
@@ -639,13 +639,14 @@ impl PolymarketRtdsFeed {
             }
         };
 
-        let full_accuracy_value = match Decimal::from_str(payload.full_accuracy_value.as_str()) {
-            Ok(value) => value,
-            Err(e) => {
-                log::error!("Failed to parse RTDS equity full_accuracy_value: {e}");
-                return;
-            }
-        };
+        let full_accuracy_value =
+            match price_from_str("full_accuracy_value", payload.full_accuracy_value.as_str()) {
+                Ok(value) => value,
+                Err(e) => {
+                    log::error!("Failed to parse RTDS equity full_accuracy_value: {e}");
+                    return;
+                }
+            };
 
         let ts_event = UnixNanos::from_millis(payload.timestamp);
         let ts_init = self.inner.clock.get_time_ns();
@@ -680,7 +681,7 @@ impl PolymarketRtdsFeed {
         }
 
         for point in payload.data {
-            let value = match decimal_from_json_number("value", &point.value) {
+            let value = match price_from_json_number("value", &point.value) {
                 Ok(value) => value,
                 Err(e) => {
                     log::error!("Failed to parse RTDS equity subscribe value: {e}");
@@ -788,9 +789,15 @@ fn tracked_key(topic: &str, symbol_lower: &str) -> String {
     format!("{topic}:{symbol_lower}")
 }
 
-fn decimal_from_json_number(field: &str, number: &Number) -> anyhow::Result<Decimal> {
-    Decimal::from_str(number.to_string().as_str())
-        .with_context(|| format!("invalid decimal for {field}: {number}"))
+fn price_from_json_number(field: &str, number: &Number) -> anyhow::Result<Price> {
+    let value = number.to_string();
+    price_from_str(field, &value)
+}
+
+fn price_from_str(field: &str, value: &str) -> anyhow::Result<Price> {
+    Price::from_str(value)
+        .map_err(anyhow::Error::msg)
+        .with_context(|| format!("invalid price for {field}: {value}"))
 }
 
 #[cfg(test)]
@@ -901,7 +908,7 @@ mod tests {
 
         assert_eq!(custom.data_type, data_type);
         assert_eq!(payload.symbol, "btcusdt");
-        assert_eq!(payload.value, Decimal::from_str("61035.86").unwrap());
+        assert_eq!(payload.value, Price::from("61035.86"));
         assert_eq!(payload.price_timestamp_ms, 1780730269000);
         assert_eq!(payload.message_timestamp_ms, 1780730269142);
     }
@@ -950,7 +957,7 @@ mod tests {
 
             assert_eq!(custom.data_type, data_type);
             assert_eq!(payload.symbol, "btcusdt");
-            assert_eq!(payload.value, Decimal::from_str(expected_value).unwrap());
+            assert_eq!(payload.value, Price::from(expected_value));
             assert_eq!(payload.price_timestamp_ms, expected_ts);
             assert_eq!(payload.message_timestamp_ms, 1780726213178);
         }
@@ -990,11 +997,8 @@ mod tests {
 
         assert_eq!(custom.data_type, data_type);
         assert_eq!(payload.symbol, "aapl");
-        assert_eq!(payload.value, Decimal::from_str("198.45").unwrap());
-        assert_eq!(
-            payload.full_accuracy_value,
-            Decimal::from_str("198.4523").unwrap()
-        );
+        assert_eq!(payload.value, Price::from("198.45"));
+        assert_eq!(payload.full_accuracy_value, Price::from("198.4523"));
         assert_eq!(payload.received_at_ms, Some(1711382400005));
         assert!(!payload.is_carried_forward);
     }
@@ -1042,11 +1046,8 @@ mod tests {
 
             assert_eq!(custom.data_type, data_type);
             assert_eq!(payload.symbol, "aapl");
-            assert_eq!(payload.value, Decimal::from_str(expected_value).unwrap());
-            assert_eq!(
-                payload.full_accuracy_value,
-                Decimal::from_str(expected_value).unwrap()
-            );
+            assert_eq!(payload.value, Price::from(expected_value));
+            assert_eq!(payload.full_accuracy_value, Price::from(expected_value));
             assert_eq!(payload.price_timestamp_ms, expected_ts);
             assert_eq!(payload.message_timestamp_ms, 1780907896598);
             assert_eq!(payload.received_at_ms, None);

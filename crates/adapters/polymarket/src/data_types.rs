@@ -19,8 +19,8 @@
 //! [`CustomData`](nautilus_model::data::CustomData).
 
 use nautilus_core::UnixNanos;
+use nautilus_model::types::Price;
 use nautilus_persistence_macros::custom_data;
-use rust_decimal::Decimal;
 
 /// Polymarket RTDS crypto price sample from the `crypto_prices` topic.
 ///
@@ -32,7 +32,7 @@ pub struct PolymarketRtdsCryptoPrice {
     pub symbol: String,
     /// Current spot price.
     #[custom_data_field(serde)]
-    pub value: Decimal,
+    pub value: Price,
     /// Price measurement timestamp in Unix milliseconds.
     pub price_timestamp_ms: u64,
     /// RTDS envelope timestamp in Unix milliseconds.
@@ -53,10 +53,10 @@ pub struct PolymarketRtdsEquityPrice {
     pub symbol: String,
     /// Spot price rounded to the venue's float payload precision.
     #[custom_data_field(serde)]
-    pub value: Decimal,
+    pub value: Price,
     /// Full-precision spot price emitted by the venue.
     #[custom_data_field(serde)]
-    pub full_accuracy_value: Decimal,
+    pub full_accuracy_value: Price,
     /// Price measurement timestamp in Unix milliseconds.
     pub price_timestamp_ms: u64,
     /// RTDS envelope timestamp in Unix milliseconds.

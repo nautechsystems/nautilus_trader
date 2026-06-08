@@ -393,17 +393,17 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(all(test, feature = "python"))]
 mod tests {
-    use std::{str::FromStr, sync::Arc};
+    use std::sync::Arc;
 
     use nautilus_core::Params;
     use nautilus_model::{
         data::custom::CustomDataTrait,
         data::ensure_rust_extractor_registered,
         data::{CustomData, DataType},
+        types::Price,
     };
     use pyo3::{prelude::*, types::PyDict};
     use rstest::rstest;
-    use rust_decimal::Decimal;
     use serde_json::json;
 
     use super::extract_data_config_from_pyobject;
@@ -564,7 +564,7 @@ mod tests {
             metadata.insert("symbol".to_string(), json!("btcusdt"));
             let payload = Arc::new(PolymarketRtdsCryptoPrice::new(
                 "btcusdt".to_string(),
-                Decimal::from_str("67234.50").unwrap(),
+                Price::from("67234.50"),
                 1_753_314_088_395,
                 1_753_314_088_421,
                 nautilus_core::UnixNanos::from_millis(1_753_314_088_395),
