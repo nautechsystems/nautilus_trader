@@ -33,34 +33,34 @@ pub const MARKET_SCHEMA_ID: u16 = 1;
 pub const MARKET_SCHEMA_VERSION: u16 = 0;
 
 pub(super) mod data_any_variant {
-    pub const ORDER_BOOK_DELTA: u16 = 0;
-    pub const ORDER_BOOK_DELTAS: u16 = 1;
-    pub const ORDER_BOOK_DEPTH10: u16 = 2;
-    pub const QUOTE: u16 = 3;
-    pub const TRADE: u16 = 4;
-    pub const BAR: u16 = 5;
-    pub const MARK_PRICE: u16 = 6;
-    pub const INDEX_PRICE: u16 = 7;
-    pub const FUNDING_RATE: u16 = 8;
-    pub const INSTRUMENT_STATUS: u16 = 9;
-    pub const INSTRUMENT_CLOSE: u16 = 10;
+    pub(crate) const ORDER_BOOK_DELTA: u16 = 0;
+    pub(crate) const ORDER_BOOK_DELTAS: u16 = 1;
+    pub(crate) const ORDER_BOOK_DEPTH10: u16 = 2;
+    pub(crate) const QUOTE: u16 = 3;
+    pub(crate) const TRADE: u16 = 4;
+    pub(crate) const BAR: u16 = 5;
+    pub(crate) const MARK_PRICE: u16 = 6;
+    pub(crate) const INDEX_PRICE: u16 = 7;
+    pub(crate) const FUNDING_RATE: u16 = 8;
+    pub(crate) const INSTRUMENT_STATUS: u16 = 9;
+    pub(crate) const INSTRUMENT_CLOSE: u16 = 10;
 }
 
 pub(super) mod template_id {
-    pub const BOOK_ORDER: u16 = 30_001;
-    pub const ORDER_BOOK_DELTA: u16 = 30_002;
-    pub const ORDER_BOOK_DELTAS: u16 = 30_003;
-    pub const ORDER_BOOK_DEPTH10: u16 = 30_004;
-    pub const QUOTE_TICK: u16 = 30_005;
-    pub const TRADE_TICK: u16 = 30_006;
-    pub const BAR_TYPE: u16 = 30_007;
-    pub const BAR: u16 = 30_008;
-    pub const MARK_PRICE_UPDATE: u16 = 30_009;
-    pub const INDEX_PRICE_UPDATE: u16 = 30_010;
-    pub const FUNDING_RATE_UPDATE: u16 = 30_011;
-    pub const INSTRUMENT_STATUS: u16 = 30_012;
-    pub const INSTRUMENT_CLOSE: u16 = 30_013;
-    pub const DATA_ANY: u16 = 30_014;
+    pub(crate) const BOOK_ORDER: u16 = 30_001;
+    pub(crate) const ORDER_BOOK_DELTA: u16 = 30_002;
+    pub(crate) const ORDER_BOOK_DELTAS: u16 = 30_003;
+    pub(crate) const ORDER_BOOK_DEPTH10: u16 = 30_004;
+    pub(crate) const QUOTE_TICK: u16 = 30_005;
+    pub(crate) const TRADE_TICK: u16 = 30_006;
+    pub(crate) const BAR_TYPE: u16 = 30_007;
+    pub(crate) const BAR: u16 = 30_008;
+    pub(crate) const MARK_PRICE_UPDATE: u16 = 30_009;
+    pub(crate) const INDEX_PRICE_UPDATE: u16 = 30_010;
+    pub(crate) const FUNDING_RATE_UPDATE: u16 = 30_011;
+    pub(crate) const INSTRUMENT_STATUS: u16 = 30_012;
+    pub(crate) const INSTRUMENT_CLOSE: u16 = 30_013;
+    pub(crate) const DATA_ANY: u16 = 30_014;
 }
 
 #[expect(clippy::large_enum_variant)]

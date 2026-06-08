@@ -36,23 +36,27 @@ use nautilus_common::messages::defi::{
 };
 use nautilus_common::{
     cache::Cache,
+    clients::DataClient,
     clock::{Clock, TestClock},
     messages::data::{
-        CustomDataResponse, DataCommand, DataResponse, InstrumentResponse, PARAMS_IS_PARENT,
-        RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCommand, RequestCustomData,
-        RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
-        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-        SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
-        SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
-        SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
-        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-        UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
-        UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeMarkPrices,
-        UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+        BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
+        DataCommand, DataResponse, ForwardPricesResponse, FundingRatesResponse, InstrumentResponse,
+        InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse, RequestBars, RequestBookDeltas,
+        RequestBookDepth, RequestBookSnapshot, RequestCommand, RequestCustomData,
+        RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
+        RequestJoin, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+        SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
+        SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeOptionChain,
+        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
+        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
+        UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
+        UnsubscribeTrades,
     },
     msgbus::{
-        self, MStr, MessageBus, Topic, TypedHandler, TypedIntoHandler,
+        self, BusTap, Endpoint, MStr, MessageBus, Topic, TypedHandler, TypedIntoHandler,
         stubs::{get_any_saving_handler, get_typed_message_saving_handler},
         switchboard::{self, MessagingSwitchboard},
     },
@@ -70,13 +74,19 @@ use nautilus_model::defi::{AmmType, Dex, DexType, chain::chains};
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{
     Block, Blockchain, DefiData, Pool, PoolIdentifier, PoolLiquidityUpdate,
-    PoolLiquidityUpdateType, PoolProfiler, PoolSwap, Token, data::PoolFeeCollect, data::PoolFlash,
+    PoolLiquidityUpdateType, PoolProfiler, PoolSwap, Token,
+    data::PoolFeeCollect,
+    data::PoolFlash,
+    data::block::BlockPosition,
+    pool_analysis::snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
 };
+#[cfg(feature = "streaming")]
+use nautilus_model::enums::{BookAction, OrderSide};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataType, FundingRateUpdate,
-        IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDeltas,
-        OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
+        IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta,
+        OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
         greeks::OptionGreekValues,
         option_chain::{OptionGreeks, StrikeRange},
         stubs::{
@@ -85,7 +95,7 @@ use nautilus_model::{
     },
     enums::{
         AggressorSide, AssetClass, BookType, GreeksConvention, InstrumentClass,
-        InstrumentCloseType, MarketStatusAction, OptionKind, PriceType,
+        InstrumentCloseType, MarketStatusAction, OptionKind, PriceType, RecordFlag,
     },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, TradeId, TraderId, Venue},
     instruments::{
@@ -99,8 +109,12 @@ use nautilus_model::{
 };
 #[cfg(feature = "streaming")]
 use nautilus_persistence::backend::catalog::{ParquetDataCatalog, timestamps_to_filename};
+#[cfg(feature = "streaming")]
+use nautilus_persistence::test_data::RustTestCustomData;
+#[cfg(feature = "streaming")]
+use nautilus_serialization::ensure_custom_data_registered;
 use rstest::*;
-use serde_json::json;
+use serde_json::{Value, json};
 use ustr::Ustr;
 
 #[fixture]
@@ -176,6 +190,72 @@ fn register_mock_client(
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
     data_engine.register_client(adapter, routing);
+}
+
+struct FailingRequestDataClient {
+    client_id: ClientId,
+    venue: Option<Venue>,
+    error_message: String,
+}
+
+impl FailingRequestDataClient {
+    fn new(client_id: ClientId, venue: Option<Venue>, error_message: impl Into<String>) -> Self {
+        Self {
+            client_id,
+            venue,
+            error_message: error_message.into(),
+        }
+    }
+}
+
+impl DataClient for FailingRequestDataClient {
+    fn client_id(&self) -> ClientId {
+        self.client_id
+    }
+
+    fn venue(&self) -> Option<Venue> {
+        self.venue
+    }
+
+    fn start(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn stop(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn reset(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn is_connected(&self) -> bool {
+        true
+    }
+
+    fn is_disconnected(&self) -> bool {
+        false
+    }
+
+    fn request_quotes(&self, _request: RequestQuotes) -> anyhow::Result<()> {
+        anyhow::bail!("{}", self.error_message)
+    }
+
+    fn request_trades(&self, _request: RequestTrades) -> anyhow::Result<()> {
+        anyhow::bail!("{}", self.error_message)
+    }
+
+    fn request_bars(&self, _request: RequestBars) -> anyhow::Result<()> {
+        anyhow::bail!("{}", self.error_message)
+    }
+
+    fn request_book_deltas(&self, _request: RequestBookDeltas) -> anyhow::Result<()> {
+        anyhow::bail!("{}", self.error_message)
+    }
 }
 
 fn parent_params() -> Params {
@@ -1203,6 +1283,2767 @@ fn test_aggregator_emitted_bar_drops_out_of_sequence(
 }
 
 #[rstest]
+fn test_request_scoped_bar_aggregator_runs_alongside_live_subscription(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let bar_type = BarType::from(format!("{instrument_id}-1-TICK-LAST-INTERNAL").as_str());
+    let live_subscribe = DataCommand::Subscribe(SubscribeCommand::Bars(SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(live_subscribe);
+
+    let make_trade = |ts: u64, trade_id: &str| {
+        TradeTick::new(
+            instrument_id,
+            Price::from("0.65000"),
+            Quantity::from("1000"),
+            AggressorSide::Buyer,
+            TradeId::new(trade_id),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+
+    data_engine.process_data(Data::Trade(make_trade(1_000, "live-1")));
+    assert_eq!(
+        cache.borrow().bar(&bar_type).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(1_000)),
+    );
+
+    let request_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({
+        "bar_types": [bar_type.to_string()],
+        "update_subscriptions": false,
+    }))
+    .unwrap();
+    let request = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::default(),
+        Some(params.clone()),
+    );
+    data_engine.execute(DataCommand::Request(RequestCommand::Trades(
+        request.clone(),
+    )));
+
+    assert_eq!(
+        recorder.borrow().last(),
+        Some(&DataCommand::Request(RequestCommand::Trades(request))),
+    );
+
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![make_trade(2_000, "historical-1")],
+        None,
+        None,
+        UnixNanos::from(2_000),
+        Some(params),
+    )));
+
+    assert_eq!(
+        cache.borrow().bar(&bar_type).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(2_000)),
+        "request-scoped aggregator must process the historical response",
+    );
+
+    data_engine.process_data(Data::Trade(make_trade(3_000, "live-2")));
+
+    assert_eq!(
+        cache.borrow().bar(&bar_type).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(3_000)),
+        "live aggregator must remain subscribed after request cleanup",
+    );
+}
+
+#[rstest]
+fn test_request_scoped_quote_bar_aggregators_handle_multiple_bar_types(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let one_tick = BarType::from(format!("{instrument_id}-1-TICK-BID-INTERNAL").as_str());
+    let two_tick = BarType::from(format!("{instrument_id}-2-TICK-BID-INTERNAL").as_str());
+    let request_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({
+        "bar_types": [one_tick.to_string(), two_tick.to_string()],
+        "update_subscriptions": false,
+    }))
+    .unwrap();
+    let request = RequestQuotes::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::default(),
+        Some(params.clone()),
+    );
+    data_engine.execute(DataCommand::Request(RequestCommand::Quotes(request)));
+
+    let make_quote = |ts: u64, bid: &str| {
+        QuoteTick::new(
+            instrument_id,
+            Price::from(bid),
+            Price::from("0.65010"),
+            Quantity::from("1000"),
+            Quantity::from("1000"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    data_engine.response(DataResponse::Quotes(QuotesResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![make_quote(1_000, "0.65000"), make_quote(2_000, "0.65001")],
+        None,
+        None,
+        UnixNanos::from(2_000),
+        Some(params),
+    )));
+
+    assert_eq!(
+        cache.borrow().bar(&one_tick).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(2_000)),
+    );
+    assert_eq!(
+        cache.borrow().bar(&two_tick).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(2_000)),
+    );
+}
+
+#[rstest]
+fn test_request_scoped_bar_aggregation_deduplicates_bar_types(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let bar_type = BarType::from(format!("{instrument_id}-3-TICK-BID-INTERNAL").as_str());
+    let params = || -> Params {
+        serde_json::from_value(json!({
+        "bar_types": [bar_type.to_string(), bar_type.to_string()],
+        "update_subscriptions": false,
+        }))
+        .unwrap()
+    };
+    let request_id = UUID4::new();
+    let request = RequestQuotes::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::default(),
+        Some(params()),
+    );
+    data_engine.execute(DataCommand::Request(RequestCommand::Quotes(request)));
+
+    let make_quote = |ts: u64, bid: &str| {
+        QuoteTick::new(
+            instrument_id,
+            Price::from(bid),
+            Price::from("0.65010"),
+            Quantity::from("1000"),
+            Quantity::from("1000"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    data_engine.response(DataResponse::Quotes(QuotesResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![make_quote(1_000, "0.65000"), make_quote(2_000, "0.65001")],
+        None,
+        None,
+        UnixNanos::from(2_000),
+        Some(params()),
+    )));
+
+    assert_eq!(cache.borrow().bar(&bar_type), None);
+
+    let request_id = UUID4::new();
+    let request = RequestQuotes::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::default(),
+        Some(params()),
+    );
+    data_engine.execute(DataCommand::Request(RequestCommand::Quotes(request)));
+
+    data_engine.response(DataResponse::Quotes(QuotesResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![
+            make_quote(1_000, "0.65000"),
+            make_quote(2_000, "0.65001"),
+            make_quote(3_000, "0.65002"),
+        ],
+        None,
+        None,
+        UnixNanos::from(3_000),
+        Some(params()),
+    )));
+
+    assert_eq!(
+        cache.borrow().bar(&bar_type).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(3_000)),
+    );
+}
+
+#[rstest]
+fn test_request_scoped_bar_aggregation_does_not_publish_to_live_topic(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let bar_type = BarType::from(format!("{instrument_id}-1-TICK-LAST-INTERNAL").as_str());
+    let (handler, saver) = get_typed_message_saving_handler::<Bar>(None);
+    let topic = switchboard::get_bars_topic(bar_type);
+    msgbus::subscribe_bars(topic.into(), handler, None);
+
+    let request_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({
+        "bar_types": [bar_type.to_string()],
+        "update_subscriptions": false,
+    }))
+    .unwrap();
+    let request = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::default(),
+        Some(params.clone()),
+    );
+    data_engine.execute(DataCommand::Request(RequestCommand::Trades(request)));
+
+    let trade = TradeTick::new(
+        instrument_id,
+        Price::from("0.65000"),
+        Quantity::from("1000"),
+        AggressorSide::Buyer,
+        TradeId::new("historical-1"),
+        UnixNanos::from(1_000),
+        UnixNanos::from(1_000),
+    );
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![trade],
+        None,
+        None,
+        UnixNanos::from(1_000),
+        Some(params),
+    )));
+
+    assert_eq!(
+        cache.borrow().bar(&bar_type).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(1_000)),
+    );
+    assert!(saver.get_messages().is_empty());
+}
+
+#[rstest]
+fn test_request_scoped_time_bar_aggregation_handles_trade_response(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let bar_type = BarType::from(format!("{instrument_id}-1-SECOND-LAST-INTERNAL").as_str());
+    let (handler, saver) = get_typed_message_saving_handler::<Bar>(None);
+    let topic = switchboard::get_bars_topic(bar_type);
+    msgbus::subscribe_bars(topic.into(), handler, None);
+
+    let request_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({
+        "bar_types": [bar_type.to_string()],
+        "update_subscriptions": false,
+    }))
+    .unwrap();
+    let request = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::default(),
+        Some(params.clone()),
+    );
+    data_engine.execute(DataCommand::Request(RequestCommand::Trades(request)));
+
+    let make_trade = |ts: u64, trade_id: &str| {
+        TradeTick::new(
+            instrument_id,
+            Price::from("0.65000"),
+            Quantity::from("1000"),
+            AggressorSide::Buyer,
+            TradeId::new(trade_id),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![
+            make_trade(0, "historical-1"),
+            make_trade(1_000_000_000, "historical-2"),
+        ],
+        None,
+        None,
+        UnixNanos::from(1_000_000_000),
+        Some(params),
+    )));
+
+    assert_eq!(
+        cache.borrow().bar(&bar_type).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(1_000_000_000)),
+    );
+    assert!(saver.get_messages().is_empty());
+}
+
+#[rstest]
+fn test_request_scoped_composite_bar_aggregator_handles_bar_response(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite =
+        BarType::from(format!("{instrument_id}-1-TICK-LAST-INTERNAL@1-TICK-EXTERNAL").as_str());
+    let source = composite.composite();
+    let request_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({
+        "bar_types": [composite.to_string()],
+        "update_subscriptions": false,
+    }))
+    .unwrap();
+    let request = RequestBars::new(
+        source,
+        None,
+        None,
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::default(),
+        Some(params.clone()),
+    );
+    data_engine.execute(DataCommand::Request(RequestCommand::Bars(request)));
+
+    let bar = Bar::new(
+        source,
+        Price::from("0.65000"),
+        Price::from("0.65000"),
+        Price::from("0.65000"),
+        Price::from("0.65000"),
+        Quantity::from("1000"),
+        UnixNanos::from(1_000),
+        UnixNanos::from(1_000),
+    );
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        request_id,
+        client_id,
+        source,
+        vec![bar],
+        None,
+        None,
+        UnixNanos::from(1_000),
+        Some(params),
+    )));
+
+    assert_eq!(
+        cache.borrow().bar(&composite).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(1_000)),
+    );
+}
+
+fn add_es_contract(cache: &Rc<RefCell<Cache>>, instrument_id: &str, symbol: &str) -> InstrumentId {
+    let instrument = make_es_future(instrument_id, symbol);
+    let instrument_id = instrument.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(instrument))
+        .unwrap();
+    instrument_id
+}
+
+fn params_from_json(value: Value) -> Params {
+    serde_json::from_value(value).unwrap()
+}
+
+fn make_bar(
+    bar_type: BarType,
+    open: &str,
+    high: &str,
+    low: &str,
+    close: &str,
+    volume: u64,
+    ts: u64,
+) -> Bar {
+    Bar::new(
+        bar_type,
+        Price::from(open),
+        Price::from(high),
+        Price::from(low),
+        Price::from(close),
+        Quantity::from(volume),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+fn make_trade(
+    instrument_id: InstrumentId,
+    price: &str,
+    size: u64,
+    trade_id: &str,
+    ts: u64,
+) -> TradeTick {
+    TradeTick::new(
+        instrument_id,
+        Price::from(price),
+        Quantity::from(size),
+        AggressorSide::Buyer,
+        TradeId::new(trade_id),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+fn make_quote(instrument_id: InstrumentId, bid: &str, ask: &str, ts: u64) -> QuoteTick {
+    QuoteTick::new(
+        instrument_id,
+        Price::from(bid),
+        Price::from(ask),
+        Quantity::from(1),
+        Quantity::from(1),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+fn recorded_bars_request(recorder: &Rc<RefCell<Vec<DataCommand>>>, index: usize) -> RequestBars {
+    match recorder.borrow()[index].clone() {
+        DataCommand::Request(RequestCommand::Bars(request)) => request,
+        other => panic!("Expected child bar request, was {other:?}"),
+    }
+}
+
+fn recorded_trades_request(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+    index: usize,
+) -> RequestTrades {
+    match recorder.borrow()[index].clone() {
+        DataCommand::Request(RequestCommand::Trades(request)) => request,
+        other => panic!("Expected child trade request, was {other:?}"),
+    }
+}
+
+fn recorded_quotes_request(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+    index: usize,
+) -> RequestQuotes {
+    match recorder.borrow()[index].clone() {
+        DataCommand::Request(RequestCommand::Quotes(request)) => request,
+        other => panic!("Expected child quote request, was {other:?}"),
+    }
+}
+
+fn response_data_count(response: &BarsResponse) -> Option<u64> {
+    response
+        .params
+        .as_ref()
+        .and_then(|params| params.get("data_count"))
+        .and_then(Value::as_u64)
+}
+
+fn data_engine_clock_at(now: u64) -> Rc<RefCell<dyn Clock>> {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    clock
+        .borrow_mut()
+        .as_any_mut()
+        .downcast_mut::<TestClock>()
+        .unwrap()
+        .advance_time(UnixNanos::from(now), true);
+    clock
+}
+
+#[rstest]
+fn test_continuous_future_request_adjusts_external_bars_across_transitions(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let minute = |value: u64| value * 60_000_000_000;
+    let clock = data_engine_clock_at(minute(3));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let esh = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+    let esu = add_es_contract(&cache, "ESU24.GLBX", "ESU24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let target_bar_type = BarType::from("ES.GLBX-1-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL");
+    let parent_id = UUID4::new();
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": minute(2),
+                "pre_instrument_id": esh.to_string(),
+                "post_instrument_id": esm.to_string(),
+                "pre_price": "100.00",
+                "post_price": "95.00"
+            },
+            {
+                "transition_time_ns": minute(3),
+                "pre_instrument_id": esm.to_string(),
+                "post_instrument_id": esu.to_string(),
+                "pre_price": "110.00",
+                "post_price": "105.00"
+            }
+        ]
+    }));
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-external-bars")));
+    msgbus::register_response_handler(&parent_id, response_handler);
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(minute(1)).to_datetime_utc()),
+        Some(UnixNanos::from(minute(3)).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let child = recorded_bars_request(&recorder, 0);
+    let parent_id_str = parent_id.to_string();
+    assert_eq!(
+        child.bar_type,
+        BarType::from("ESH24.GLBX-1-MINUTE-LAST-EXTERNAL")
+    );
+    assert_eq!(
+        child
+            .params
+            .as_ref()
+            .and_then(|params| params.get_str("continuous_future_parent_request_id")),
+        Some(parent_id_str.as_str()),
+    );
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        child.request_id,
+        client_id,
+        child.bar_type,
+        vec![make_bar(
+            child.bar_type,
+            "100.00",
+            "101.00",
+            "99.00",
+            "100.50",
+            1,
+            minute(1),
+        )],
+        None,
+        None,
+        UnixNanos::from(minute(1)),
+        child.params,
+    )));
+    assert_eq!(
+        cache
+            .borrow()
+            .bar(&target_bar_type.standard())
+            .map(|bar| bar.open),
+        Some(Price::from("90.00"))
+    );
+
+    let child = recorded_bars_request(&recorder, 1);
+    assert_eq!(
+        child.bar_type,
+        BarType::from("ESM24.GLBX-1-MINUTE-LAST-EXTERNAL")
+    );
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        child.request_id,
+        client_id,
+        child.bar_type,
+        vec![make_bar(
+            child.bar_type,
+            "96.00",
+            "97.00",
+            "95.50",
+            "96.50",
+            2,
+            minute(2),
+        )],
+        None,
+        None,
+        UnixNanos::from(minute(2)),
+        child.params,
+    )));
+    assert_eq!(
+        cache
+            .borrow()
+            .bar(&target_bar_type.standard())
+            .map(|bar| bar.open),
+        Some(Price::from("91.00"))
+    );
+
+    let child = recorded_bars_request(&recorder, 2);
+    assert_eq!(
+        child.bar_type,
+        BarType::from("ESU24.GLBX-1-MINUTE-LAST-EXTERNAL")
+    );
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        child.request_id,
+        client_id,
+        child.bar_type,
+        vec![make_bar(
+            child.bar_type,
+            "106.00",
+            "107.00",
+            "105.50",
+            "106.50",
+            3,
+            minute(3),
+        )],
+        None,
+        None,
+        UnixNanos::from(minute(3)),
+        child.params,
+    )));
+
+    let cached_bar = cache
+        .borrow()
+        .bar(&target_bar_type.standard())
+        .copied()
+        .unwrap();
+    assert_eq!(cached_bar.open, Price::from("106.00"));
+    assert_eq!(cached_bar.high, Price::from("107.00"));
+    assert_eq!(cached_bar.low, Price::from("105.50"));
+    assert_eq!(cached_bar.close, Price::from("106.50"));
+    assert_eq!(cached_bar.volume, Quantity::from(3));
+    let responses = response_saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(response_data_count(&responses[0]), Some(3));
+}
+
+#[rstest]
+fn test_continuous_future_request_applies_ratio_to_external_bars(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let minute = |value: u64| value * 60_000_000_000;
+    let clock = data_engine_clock_at(minute(2));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let esh = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let target_bar_type = BarType::from("ES.GLBX-1-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL");
+    let parent_id = UUID4::new();
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_RATIO",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": minute(2),
+                "pre_instrument_id": esh.to_string(),
+                "post_instrument_id": esm.to_string(),
+                "pre_price": "100.00",
+                "post_price": "50.00"
+            }
+        ]
+    }));
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-ratio-bars")));
+    msgbus::register_response_handler(&parent_id, response_handler);
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(minute(1)).to_datetime_utc()),
+        Some(UnixNanos::from(minute(2)).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let child = recorded_bars_request(&recorder, 0);
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        child.request_id,
+        client_id,
+        child.bar_type,
+        vec![make_bar(
+            child.bar_type,
+            "100.00",
+            "101.00",
+            "99.00",
+            "100.50",
+            1,
+            minute(1),
+        )],
+        None,
+        None,
+        UnixNanos::from(minute(1)),
+        child.params,
+    )));
+    assert_eq!(
+        cache
+            .borrow()
+            .bar(&target_bar_type.standard())
+            .map(|bar| bar.open),
+        Some(Price::from("50.00"))
+    );
+
+    let child = recorded_bars_request(&recorder, 1);
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        child.request_id,
+        client_id,
+        child.bar_type,
+        vec![make_bar(
+            child.bar_type,
+            "55.00",
+            "56.00",
+            "54.50",
+            "55.50",
+            2,
+            minute(2),
+        )],
+        None,
+        None,
+        UnixNanos::from(minute(2)),
+        child.params,
+    )));
+
+    let cached_bar = cache
+        .borrow()
+        .bar(&target_bar_type.standard())
+        .copied()
+        .unwrap();
+    assert_eq!(cached_bar.open, Price::from("55.00"));
+    assert_eq!(cached_bar.close, Price::from("55.50"));
+    let responses = response_saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(response_data_count(&responses[0]), Some(2));
+}
+
+#[rstest]
+fn test_continuous_future_request_preserves_bar_type_chain(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock = data_engine_clock_at(80);
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let esh = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let bar_type_1 = BarType::from("ES.GLBX-2-TICK-LAST-INTERNAL@1-TICK-EXTERNAL");
+    let bar_type_2 = BarType::from("ES.GLBX-4-TICK-LAST-INTERNAL@2-TICK-INTERNAL");
+    let parent_id = UUID4::new();
+    let params = params_from_json(json!({
+        "bar_types": [bar_type_1.to_string(), bar_type_2.to_string()],
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": 50,
+                "pre_instrument_id": esh.to_string(),
+                "post_instrument_id": esm.to_string(),
+                "pre_price": "103.00",
+                "post_price": "95.00"
+            }
+        ]
+    }));
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-chain-bars")));
+    msgbus::register_response_handler(&parent_id, response_handler);
+
+    let request = RequestBars::new(
+        bar_type_2,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(80).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let child = recorded_bars_request(&recorder, 0);
+    assert_eq!(
+        child.bar_type,
+        BarType::from("ESH24.GLBX-1-TICK-LAST-EXTERNAL")
+    );
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        child.request_id,
+        client_id,
+        child.bar_type,
+        vec![
+            make_bar(child.bar_type, "100.00", "100.00", "100.00", "100.00", 1, 1),
+            make_bar(child.bar_type, "101.00", "101.00", "101.00", "101.00", 1, 2),
+            make_bar(child.bar_type, "102.00", "102.00", "102.00", "102.00", 1, 3),
+            make_bar(child.bar_type, "103.00", "103.00", "103.00", "103.00", 1, 4),
+        ],
+        None,
+        None,
+        UnixNanos::from(4),
+        child.params,
+    )));
+
+    let child = recorded_bars_request(&recorder, 1);
+    assert_eq!(
+        child.bar_type,
+        BarType::from("ESM24.GLBX-1-TICK-LAST-EXTERNAL")
+    );
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        child.request_id,
+        client_id,
+        child.bar_type,
+        vec![
+            make_bar(child.bar_type, "95.00", "95.00", "95.00", "95.00", 1, 51),
+            make_bar(child.bar_type, "96.00", "96.00", "96.00", "96.00", 1, 52),
+            make_bar(child.bar_type, "97.00", "97.00", "97.00", "97.00", 1, 53),
+            make_bar(child.bar_type, "98.00", "98.00", "98.00", "98.00", 1, 54),
+        ],
+        None,
+        None,
+        UnixNanos::from(54),
+        child.params,
+    )));
+
+    let first_level = cache.borrow().bar(&bar_type_1).copied().unwrap();
+    assert_eq!(first_level.open, Price::from("97.00"));
+    assert_eq!(first_level.close, Price::from("98.00"));
+    assert_eq!(first_level.volume, Quantity::from(2));
+    let second_level = cache.borrow().bar(&bar_type_2).copied().unwrap();
+    assert_eq!(second_level.open, Price::from("92.00"));
+    assert_eq!(second_level.high, Price::from("98.00"));
+    assert_eq!(second_level.low, Price::from("92.00"));
+    assert_eq!(second_level.close, Price::from("98.00"));
+    assert_eq!(second_level.volume, Quantity::from(8));
+    let responses = response_saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(response_data_count(&responses[0]), Some(8));
+}
+
+#[rstest]
+fn test_continuous_future_request_uses_quote_tick_source(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock = data_engine_clock_at(20);
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let esh = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let target_bar_type = BarType::from("ES.GLBX-2-TICK-BID-INTERNAL");
+    let parent_id = UUID4::new();
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": 10,
+                "pre_instrument_id": esh.to_string(),
+                "post_instrument_id": esm.to_string(),
+                "pre_price": "100.00",
+                "post_price": "110.00"
+            }
+        ]
+    }));
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-quote-bars")));
+    msgbus::register_response_handler(&parent_id, response_handler);
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(20).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let child = recorded_quotes_request(&recorder, 0);
+    let parent_id_str = parent_id.to_string();
+    assert_eq!(child.instrument_id, esh);
+    assert_eq!(
+        child
+            .params
+            .as_ref()
+            .and_then(|params| params.get_str("continuous_future_parent_request_id")),
+        Some(parent_id_str.as_str()),
+    );
+    data_engine.response(DataResponse::Quotes(QuotesResponse::new(
+        child.request_id,
+        client_id,
+        child.instrument_id,
+        vec![make_quote(child.instrument_id, "100.00", "100.25", 1)],
+        None,
+        None,
+        UnixNanos::from(1),
+        child.params,
+    )));
+
+    let child = recorded_quotes_request(&recorder, 1);
+    assert_eq!(child.instrument_id, esm);
+    data_engine.response(DataResponse::Quotes(QuotesResponse::new(
+        child.request_id,
+        client_id,
+        child.instrument_id,
+        vec![make_quote(child.instrument_id, "111.00", "111.25", 11)],
+        None,
+        None,
+        UnixNanos::from(11),
+        child.params,
+    )));
+
+    let cached_bar = cache.borrow().bar(&target_bar_type).copied().unwrap();
+    assert_eq!(cached_bar.open, Price::from("110.00"));
+    assert_eq!(cached_bar.close, Price::from("111.00"));
+    assert_eq!(cached_bar.volume, Quantity::from(2));
+    let responses = response_saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(response_data_count(&responses[0]), Some(2));
+}
+
+#[rstest]
+fn test_continuous_future_request_start_after_end_emits_empty_parent_response(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock = data_engine_clock_at(20);
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_instrument_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_instrument_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let parent_id = UUID4::new();
+    let target_bar_type = BarType::from("ES.GLBX-2-TICK-LAST-INTERNAL");
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": 10,
+                "pre_instrument_id": pre_instrument_id.to_string(),
+                "post_instrument_id": post_instrument_id.to_string(),
+                "pre_price": "100.00",
+                "post_price": "110.00"
+            }
+        ]
+    }));
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-empty-bounds")));
+    msgbus::register_response_handler(&parent_id, response_handler);
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(20).to_datetime_utc()),
+        Some(UnixNanos::from(10).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let responses = response_saver.get_messages();
+    assert!(recorder.borrow().is_empty());
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].correlation_id, parent_id);
+    assert!(responses[0].data.is_empty());
+    assert_eq!(responses[0].start, Some(UnixNanos::from(20)));
+    assert_eq!(responses[0].end, Some(UnixNanos::from(10)));
+    assert_eq!(response_data_count(&responses[0]), None);
+}
+
+#[rstest]
+fn test_continuous_future_request_walks_segments_and_applies_adjustments(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    clock
+        .borrow_mut()
+        .as_any_mut()
+        .downcast_mut::<TestClock>()
+        .unwrap()
+        .advance_time(UnixNanos::from(20), true);
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let pre_instrument = make_es_future("ESH24.GLBX", "ESH24");
+    let post_instrument = make_es_future("ESM24.GLBX", "ESM24");
+    let pre_instrument_id = pre_instrument.id;
+    let post_instrument_id = post_instrument.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(pre_instrument))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(post_instrument))
+        .unwrap();
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let parent_id = UUID4::new();
+    let target_bar_type = BarType::from("ES.GLBX-2-TICK-LAST-INTERNAL");
+    let params = || -> Params {
+        serde_json::from_value(json!({
+            "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+            "continuous_future_transitions": [
+                {
+                    "transition_time_ns": 10,
+                    "pre_instrument_id": pre_instrument_id.to_string(),
+                    "post_instrument_id": post_instrument_id.to_string(),
+                    "pre_price": "100.00",
+                    "post_price": "110.00"
+                }
+            ]
+        }))
+        .unwrap()
+    };
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-future-response")));
+    msgbus::register_response_handler(&parent_id, response_handler);
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(20).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params()),
+    );
+
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let first_child = recorded_trades_request(&recorder, 0);
+    assert_eq!(first_child.instrument_id, pre_instrument_id);
+    assert_eq!(
+        first_child
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap()),
+        Some(0)
+    );
+    assert_eq!(
+        first_child.end.map(|dt| dt.timestamp_nanos_opt().unwrap()),
+        Some(9)
+    );
+    let first_child_params_ref = first_child.params.as_ref().unwrap();
+    let parent_id_str = parent_id.to_string();
+    assert_eq!(
+        first_child_params_ref.get_str("continuous_future_parent_request_id"),
+        Some(parent_id_str.as_str()),
+    );
+    assert!(!first_child_params_ref.contains_key("continuous_future_transitions"));
+    assert!(!first_child_params_ref.contains_key("bar_types"));
+    let mut first_response_params = first_child.params.clone().unwrap();
+    first_response_params.insert("data_count".to_string(), json!(7));
+
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        first_child.request_id,
+        client_id,
+        pre_instrument_id,
+        vec![make_trade(pre_instrument_id, "100.00", 1, "pre-1", 1)],
+        Some(UnixNanos::from(0)),
+        Some(UnixNanos::from(9)),
+        UnixNanos::from(1),
+        Some(first_response_params),
+    )));
+
+    assert!(response_saver.get_messages().is_empty());
+    assert_eq!(recorder.borrow().len(), 2);
+
+    let second_child = recorded_trades_request(&recorder, 1);
+    assert_eq!(second_child.instrument_id, post_instrument_id);
+    assert_eq!(
+        second_child
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap()),
+        Some(10)
+    );
+    assert_eq!(
+        second_child.end.map(|dt| dt.timestamp_nanos_opt().unwrap()),
+        Some(20)
+    );
+    let mut second_response_params = second_child.params.clone().unwrap();
+    second_response_params.insert("data_count".to_string(), json!(8));
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        second_child.request_id,
+        client_id,
+        post_instrument_id,
+        vec![make_trade(post_instrument_id, "111.00", 1, "post-1", 11)],
+        Some(UnixNanos::from(10)),
+        Some(UnixNanos::from(20)),
+        UnixNanos::from(11),
+        Some(second_response_params),
+    )));
+
+    let cached_bar = cache.borrow().bar(&target_bar_type).copied().unwrap();
+    assert_eq!(cached_bar.open, Price::from("110.00"));
+    assert_eq!(cached_bar.close, Price::from("111.00"));
+    assert_eq!(cached_bar.volume, Quantity::from(2));
+    let target_instrument = cache
+        .borrow()
+        .instrument(&target_bar_type.instrument_id())
+        .cloned()
+        .unwrap();
+    let InstrumentAny::FuturesContract(target_instrument) = target_instrument else {
+        panic!("Expected synthesized futures contract");
+    };
+    assert_eq!(target_instrument.id, target_bar_type.instrument_id());
+    assert_eq!(
+        target_instrument.raw_symbol,
+        target_bar_type.instrument_id().symbol
+    );
+    assert_eq!(target_instrument.activation_ns, UnixNanos::default());
+    assert_eq!(target_instrument.expiration_ns, UnixNanos::default());
+
+    let responses = response_saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].correlation_id, parent_id);
+    assert!(responses[0].data.is_empty());
+    assert_eq!(response_data_count(&responses[0]), Some(15));
+
+    let second_parent_id = UUID4::new();
+    let second_request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(20).to_datetime_utc()),
+        None,
+        Some(client_id),
+        second_parent_id,
+        UnixNanos::default(),
+        Some(params()),
+    );
+
+    data_engine
+        .execute_request(RequestCommand::Bars(second_request))
+        .unwrap();
+
+    assert_eq!(recorder.borrow().len(), 3);
+    match recorder.borrow()[2].clone() {
+        DataCommand::Request(RequestCommand::Trades(request)) => {
+            assert_eq!(request.instrument_id, pre_instrument_id);
+        }
+        other => panic!("Expected repeated continuous future child request, was {other:?}"),
+    }
+}
+
+#[rstest]
+fn test_continuous_future_request_cleans_up_after_first_dispatch_error(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock = data_engine_clock_at(20);
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_instrument_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_instrument_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let failing_client =
+        FailingRequestDataClient::new(client_id, Some(venue), "request dispatch failed");
+    let adapter =
+        DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(failing_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let target_bar_type = BarType::from("ES.GLBX-2-TICK-LAST-INTERNAL");
+    let params = || {
+        params_from_json(json!({
+            "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+            "continuous_future_transitions": [
+                {
+                    "transition_time_ns": 10,
+                    "pre_instrument_id": pre_instrument_id.to_string(),
+                    "post_instrument_id": post_instrument_id.to_string(),
+                    "pre_price": "100.00",
+                    "post_price": "110.00"
+                }
+            ]
+        }))
+    };
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(20).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params()),
+    );
+    let result = data_engine.execute_request(RequestCommand::Bars(request));
+
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("request dispatch failed")
+    );
+
+    data_engine.deregister_client(&client_id);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let retry = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(20).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params()),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(retry))
+        .unwrap();
+
+    let child = recorded_trades_request(&recorder, 0);
+    assert_eq!(recorder.borrow().len(), 1);
+    assert_eq!(child.instrument_id, pre_instrument_id);
+}
+
+#[rstest]
+fn test_continuous_future_request_emits_parent_response_on_later_dispatch_error(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock = data_engine_clock_at(20);
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_instrument_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_instrument_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        Rc::new(RefCell::new(Cache::default())),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let parent_id = UUID4::new();
+    let target_bar_type = BarType::from("ES.GLBX-2-TICK-LAST-INTERNAL");
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": 10,
+                "pre_instrument_id": pre_instrument_id.to_string(),
+                "post_instrument_id": post_instrument_id.to_string(),
+                "pre_price": "100.00",
+                "post_price": "110.00"
+            }
+        ]
+    }));
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-dispatch-error")));
+    msgbus::register_response_handler(&parent_id, response_handler);
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(20).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let child = recorded_trades_request(&recorder, 0);
+    data_engine.deregister_client(&client_id);
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        child.request_id,
+        client_id,
+        child.instrument_id,
+        vec![make_trade(child.instrument_id, "100.00", 1, "pre-1", 1)],
+        Some(UnixNanos::from(0)),
+        Some(UnixNanos::from(9)),
+        UnixNanos::from(1),
+        child.params,
+    )));
+
+    let responses = response_saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].correlation_id, parent_id);
+    assert!(responses[0].data.is_empty());
+    assert_eq!(response_data_count(&responses[0]), Some(1));
+    assert_eq!(recorder.borrow().len(), 1);
+}
+
+#[rstest]
+fn test_continuous_future_params_require_request_bars(
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+) {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let params: Params = serde_json::from_value(json!({
+        "continuous_future_transitions": []
+    }))
+    .unwrap();
+    let request = RequestTrades::new(
+        audusd_sim.id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(params),
+    );
+
+    let result = data_engine.execute_request(RequestCommand::Trades(request));
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("RequestBars"));
+}
+
+fn continuous_future_transitions_params(
+    transition_time_ns: u64,
+    pre_id: InstrumentId,
+    post_id: InstrumentId,
+) -> Params {
+    params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": transition_time_ns,
+                "pre_instrument_id": pre_id.to_string(),
+                "post_instrument_id": post_id.to_string(),
+                "pre_price": "100.00",
+                "post_price": "105.00"
+            }
+        ]
+    }))
+}
+
+#[allow(clippy::type_complexity)]
+fn register_continuous_future_subscription_engine(
+    cache: Rc<RefCell<Cache>>,
+    initial_ns: u64,
+) -> (
+    Rc<RefCell<DataEngine>>,
+    Rc<RefCell<TestClock>>,
+    Rc<RefCell<Vec<DataCommand>>>,
+) {
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(initial_ns), true);
+    let engine_clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    let data_engine = Rc::new(RefCell::new(DataEngine::new(
+        engine_clock,
+        cache.clone(),
+        None,
+    )));
+    DataEngine::register_msgbus_handlers(&data_engine);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let client_id = ClientId::test_default();
+    let venue = Venue::from("GLBX");
+    let client = MockDataClient::new_with_recorder(
+        test_clock.clone(),
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
+    data_engine.borrow_mut().register_client(adapter, None);
+
+    (data_engine, test_clock, recorder)
+}
+
+#[rstest]
+fn test_subscribe_continuous_future_bars_dispatches_child_trade_subscription(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache.clone(), 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let parent_id = UUID4::new();
+    let params = continuous_future_transitions_params(10, pre_id, post_id);
+
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("XNAS")),
+        parent_id,
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    assert_eq!(recorder.borrow().len(), 1);
+    let DataCommand::Subscribe(SubscribeCommand::Trades(child)) = recorder.borrow()[0].clone()
+    else {
+        panic!(
+            "expected child SubscribeTrades, was {:?}",
+            recorder.borrow()[0]
+        );
+    };
+    assert_eq!(child.instrument_id, pre_id);
+    assert_eq!(child.venue, Some(Venue::from("GLBX")));
+    assert_eq!(child.correlation_id, Some(parent_id));
+    let child_params = child.params.as_ref().unwrap();
+    assert!(!child_params.contains_key("continuous_future_transitions"));
+    assert!(!child_params.contains_key("continuous_future_adjustment_mode"));
+    assert!(!child_params.contains_key("bar_types"));
+
+    // Continuous instrument was synthesized into the cache
+    assert!(
+        cache
+            .borrow()
+            .instrument(&target_bar_type.instrument_id())
+            .is_some()
+    );
+
+    // Timer scheduled for the upcoming transition
+    let timer_names: Vec<String> = test_clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    assert!(
+        timer_names
+            .iter()
+            .any(|name| name.starts_with("continuous-future-roll:")),
+        "expected continuous-future-roll timer, found {timer_names:?}"
+    );
+}
+
+#[rstest]
+fn test_subscribe_continuous_future_bars_external_uses_bar_source(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, _test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache, 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL");
+    let params = continuous_future_transitions_params(10, pre_id, post_id);
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    assert_eq!(recorder.borrow().len(), 1);
+    let DataCommand::Subscribe(SubscribeCommand::Bars(child)) = recorder.borrow()[0].clone() else {
+        panic!(
+            "expected child SubscribeBars, was {:?}",
+            recorder.borrow()[0]
+        );
+    };
+    assert_eq!(
+        child.bar_type,
+        BarType::from("ESH24.GLBX-1-MINUTE-LAST-EXTERNAL")
+    );
+}
+
+#[rstest]
+fn test_continuous_future_subscription_transition_swaps_source(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache.clone(), 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let transition_ns = 10u64;
+    let params = continuous_future_transitions_params(transition_ns, pre_id, post_id);
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+    assert_eq!(recorder.borrow().len(), 1);
+
+    // Trade in the pre segment publishes a bar adjusted by the BACKWARD_SPREAD offset,
+    // post_price - pre_price = +5.
+    data_engine
+        .borrow_mut()
+        .process_data(Data::Trade(make_trade(pre_id, "100.00", 1, "pre-1", 1)));
+    let pre_bar = cache
+        .borrow()
+        .bar(&target_bar_type)
+        .copied()
+        .expect("expected pre-transition bar in cache");
+    assert_eq!(pre_bar.open, Price::from("105.00"));
+
+    let events = test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(transition_ns), true);
+    let handlers = test_clock.borrow().match_handlers(events);
+    for handler in handlers {
+        handler.callback.call(handler.event);
+    }
+
+    // Recorder now has unsub(pre) and sub(post)
+    assert_eq!(recorder.borrow().len(), 3);
+    let DataCommand::Unsubscribe(UnsubscribeCommand::Trades(unsub)) = recorder.borrow()[1].clone()
+    else {
+        panic!(
+            "expected child UnsubscribeTrades, was {:?}",
+            recorder.borrow()[1]
+        );
+    };
+    assert_eq!(unsub.instrument_id, pre_id);
+    let DataCommand::Subscribe(SubscribeCommand::Trades(sub2)) = recorder.borrow()[2].clone()
+    else {
+        panic!(
+            "expected child SubscribeTrades, was {:?}",
+            recorder.borrow()[2]
+        );
+    };
+    assert_eq!(sub2.instrument_id, post_id);
+
+    // Trade in the post segment now publishes a bar with no adjustment for the final
+    // segment, BACKWARD_SPREAD cumulative offset is zero.
+    data_engine
+        .borrow_mut()
+        .process_data(Data::Trade(make_trade(post_id, "110.00", 1, "post-1", 11)));
+    let post_bar = cache.borrow().bar(&target_bar_type).copied().unwrap();
+    assert_eq!(post_bar.open, Price::from("110.00"));
+}
+
+#[rstest]
+fn test_unsubscribe_continuous_future_bars_tears_down_subscription(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache, 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let params = continuous_future_transitions_params(10, pre_id, post_id);
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("XNAS")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params.clone()),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+    assert_eq!(recorder.borrow().len(), 1);
+
+    let unsub = UnsubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("XNAS")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(unsub)));
+
+    assert_eq!(recorder.borrow().len(), 2);
+    let DataCommand::Unsubscribe(UnsubscribeCommand::Trades(child)) = recorder.borrow()[1].clone()
+    else {
+        panic!(
+            "expected child UnsubscribeTrades, was {:?}",
+            recorder.borrow()[1]
+        );
+    };
+    assert_eq!(child.instrument_id, pre_id);
+    assert_eq!(child.venue, Some(Venue::from("GLBX")));
+
+    let leftover_roll_timers = test_clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .filter(|name| name.starts_with("continuous-future-roll:"))
+        .count();
+    assert_eq!(leftover_roll_timers, 0);
+}
+
+#[rstest]
+fn test_continuous_future_subscription_idempotent_resubscribe(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, _test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache, 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let params = continuous_future_transitions_params(10, pre_id, post_id);
+    let venue = Venue::from("GLBX");
+
+    let subscribe = || {
+        let sub = SubscribeBars::new(
+            target_bar_type,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            Some(params.clone()),
+        );
+        data_engine
+            .borrow_mut()
+            .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+    };
+    let unsubscribe = || {
+        let unsub = UnsubscribeBars::new(
+            target_bar_type,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            Some(params.clone()),
+        );
+        data_engine
+            .borrow_mut()
+            .execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(unsub)));
+    };
+
+    subscribe();
+    unsubscribe();
+    subscribe();
+
+    assert_eq!(recorder.borrow().len(), 3);
+    let kinds: Vec<&'static str> = recorder
+        .borrow()
+        .iter()
+        .map(|cmd| match cmd {
+            DataCommand::Subscribe(SubscribeCommand::Trades(_)) => "sub-trades",
+            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(_)) => "unsub-trades",
+            other => panic!("unexpected child command {other:?}"),
+        })
+        .collect();
+    assert_eq!(kinds, vec!["sub-trades", "unsub-trades", "sub-trades"]);
+}
+
+#[rstest]
+fn test_continuous_future_subscription_rejects_bar_types_param(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache, 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": 10,
+                "pre_instrument_id": pre_id.to_string(),
+                "post_instrument_id": post_id.to_string(),
+                "pre_price": "100.00",
+                "post_price": "105.00"
+            }
+        ],
+        "bar_types": ["ES.GLBX-1-TICK-LAST-INTERNAL"],
+    }));
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    assert!(recorder.borrow().is_empty());
+    let roll_timers = test_clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .filter(|name| name.starts_with("continuous-future-roll:"))
+        .count();
+    assert_eq!(roll_timers, 0);
+}
+
+#[rstest]
+fn test_continuous_future_subscription_walks_multiple_transitions(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let esh = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+    let esu = add_es_contract(&cache, "ESU24.GLBX", "ESU24");
+
+    let (data_engine, test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache, 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": 10,
+                "pre_instrument_id": esh.to_string(),
+                "post_instrument_id": esm.to_string(),
+                "pre_price": "100.00",
+                "post_price": "105.00"
+            },
+            {
+                "transition_time_ns": 20,
+                "pre_instrument_id": esm.to_string(),
+                "post_instrument_id": esu.to_string(),
+                "pre_price": "110.00",
+                "post_price": "115.00"
+            }
+        ]
+    }));
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    let fire_timers = |clock: &Rc<RefCell<TestClock>>, to_ns: u64| {
+        let events = clock
+            .borrow_mut()
+            .advance_time(UnixNanos::from(to_ns), true);
+        let handlers = clock.borrow().match_handlers(events);
+        for handler in handlers {
+            handler.callback.call(handler.event);
+        }
+    };
+
+    fire_timers(&test_clock, 10);
+    fire_timers(&test_clock, 20);
+
+    let kinds: Vec<&'static str> = recorder
+        .borrow()
+        .iter()
+        .map(|cmd| match cmd {
+            DataCommand::Subscribe(SubscribeCommand::Trades(_)) => "sub",
+            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(_)) => "unsub",
+            other => panic!("unexpected child command {other:?}"),
+        })
+        .collect();
+    assert_eq!(kinds, vec!["sub", "unsub", "sub", "unsub", "sub"]);
+
+    let ids: Vec<InstrumentId> = recorder
+        .borrow()
+        .iter()
+        .map(|cmd| match cmd {
+            DataCommand::Subscribe(SubscribeCommand::Trades(c)) => c.instrument_id,
+            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(c)) => c.instrument_id,
+            _ => unreachable!(),
+        })
+        .collect();
+    assert_eq!(ids, vec![esh, esh, esm, esm, esu]);
+
+    // No more transition timers remain after the last roll
+    let leftover_roll_timers = test_clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .filter(|name| name.starts_with("continuous-future-roll:"))
+        .count();
+    assert_eq!(leftover_roll_timers, 0);
+}
+
+#[rstest]
+fn test_continuous_future_subscription_warns_on_unknown_unsubscribe(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let _ = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let _ = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, _test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache, 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let unsub = UnsubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(unsub)));
+
+    // Standard bar unsubscribe path is taken; no continuous-future subscription state
+    // existed so no child unsubscribe-trades is recorded.
+    assert!(
+        !recorder
+            .borrow()
+            .iter()
+            .any(|cmd| matches!(cmd, DataCommand::Unsubscribe(UnsubscribeCommand::Trades(_))))
+    );
+}
+
+#[rstest]
+fn test_continuous_future_subscription_uses_quote_source_for_non_last_price_type(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, _test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache, 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-BID-INTERNAL");
+    let params = continuous_future_transitions_params(10, pre_id, post_id);
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    assert_eq!(recorder.borrow().len(), 1);
+    let DataCommand::Subscribe(SubscribeCommand::Quotes(child)) = recorder.borrow()[0].clone()
+    else {
+        panic!(
+            "expected child SubscribeQuotes, was {:?}",
+            recorder.borrow()[0]
+        );
+    };
+    assert_eq!(child.instrument_id, pre_id);
+}
+
+#[rstest]
+fn test_continuous_future_subscription_rejected_when_roller_missing(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let engine_clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    let mut data_engine = DataEngine::new(engine_clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let venue = Venue::from("GLBX");
+    register_mock_client(
+        test_clock.clone(),
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let params = continuous_future_transitions_params(10, pre_id, post_id);
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    let result = data_engine.execute_subscribe(SubscribeCommand::Bars(sub));
+
+    let err = result.expect_err("expected subscribe to fail without a roller");
+    assert!(
+        err.to_string().contains("roller is not initialized"),
+        "unexpected error: {err}"
+    );
+    assert!(recorder.borrow().is_empty());
+
+    let roll_timers = test_clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .filter(|name| name.starts_with("continuous-future-roll:"))
+        .count();
+    assert_eq!(roll_timers, 0);
+}
+
+#[rstest]
+fn test_update_subscriptions_request_aggregator_can_be_started_live_after_response(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let bar_type = BarType::from(format!("{instrument_id}-1-TICK-LAST-INTERNAL").as_str());
+    let (handler, saver) = get_typed_message_saving_handler::<Bar>(None);
+    let topic = switchboard::get_bars_topic(bar_type);
+    msgbus::subscribe_bars(topic.into(), handler, None);
+
+    let request_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({
+        "bar_types": [bar_type.to_string()],
+        "update_subscriptions": true,
+    }))
+    .unwrap();
+    let request = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::default(),
+        Some(params.clone()),
+    );
+    data_engine.execute(DataCommand::Request(RequestCommand::Trades(request)));
+
+    let make_trade = |ts: u64, trade_id: &str| {
+        TradeTick::new(
+            instrument_id,
+            Price::from("0.65000"),
+            Quantity::from("1000"),
+            AggressorSide::Buyer,
+            TradeId::new(trade_id),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![make_trade(1_000, "historical-1")],
+        None,
+        None,
+        UnixNanos::from(1_000),
+        Some(params),
+    )));
+
+    assert!(saver.get_messages().is_empty());
+
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(
+        SubscribeBars::new(
+            bar_type,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+    data_engine.process_data(Data::Trade(make_trade(2_000, "live-1")));
+
+    assert_eq!(
+        cache.borrow().bar(&bar_type).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(2_000)),
+    );
+    let messages = saver.get_messages();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].ts_event, UnixNanos::from(2_000));
+}
+
+#[rstest]
+fn test_update_subscriptions_request_aggregator_can_subscribe_before_response(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let bar_type = BarType::from(format!("{instrument_id}-1-TICK-LAST-INTERNAL").as_str());
+    let (handler, saver) = get_typed_message_saving_handler::<Bar>(None);
+    let topic = switchboard::get_bars_topic(bar_type);
+    msgbus::subscribe_bars(topic.into(), handler, None);
+
+    let request_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({
+        "bar_types": [bar_type.to_string()],
+        "update_subscriptions": true,
+    }))
+    .unwrap();
+    let request = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::default(),
+        Some(params.clone()),
+    );
+    data_engine.execute(DataCommand::Request(RequestCommand::Trades(request)));
+
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(
+        SubscribeBars::new(
+            bar_type,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    let make_trade = |ts: u64, trade_id: &str| {
+        TradeTick::new(
+            instrument_id,
+            Price::from("0.65000"),
+            Quantity::from("1000"),
+            AggressorSide::Buyer,
+            TradeId::new(trade_id),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![make_trade(1_000, "historical-1")],
+        None,
+        None,
+        UnixNanos::from(1_000),
+        Some(params),
+    )));
+
+    assert_eq!(
+        cache.borrow().bar(&bar_type).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(1_000)),
+    );
+    assert!(saver.get_messages().is_empty());
+
+    data_engine.process_data(Data::Trade(make_trade(2_000, "live-1")));
+
+    assert_eq!(
+        cache.borrow().bar(&bar_type).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(2_000)),
+    );
+    let messages = saver.get_messages();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].ts_event, UnixNanos::from(2_000));
+}
+
+#[rstest]
+fn test_request_bar_aggregation_rejects_running_update_subscription_aggregator(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let bar_type = BarType::from(format!("{instrument_id}-1-TICK-LAST-INTERNAL").as_str());
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(
+        SubscribeBars::new(
+            bar_type,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    let params: Params = serde_json::from_value(json!({
+        "bar_types": [bar_type.to_string()],
+        "update_subscriptions": true,
+    }))
+    .unwrap();
+    let request = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(params),
+    );
+
+    let result = data_engine.execute_request(RequestCommand::Trades(request));
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("already running"));
+}
+
+#[rstest]
+fn test_request_bar_aggregation_rejects_external_bar_type(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let bar_type = BarType::from(format!("{instrument_id}-1-TICK-LAST-EXTERNAL").as_str());
+    let params: Params = serde_json::from_value(json!({
+        "bar_types": [bar_type.to_string()],
+    }))
+    .unwrap();
+    let request = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(params),
+    );
+
+    let result = data_engine.execute_request(RequestCommand::Trades(request));
+
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("must be internally aggregated")
+    );
+}
+
+#[rstest]
+fn test_request_bar_aggregation_cleans_up_after_dispatch_failure(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let bar_type = BarType::from(format!("{instrument_id}-1-TICK-LAST-INTERNAL").as_str());
+    let request_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({
+        "bar_types": [bar_type.to_string()],
+        "update_subscriptions": false,
+    }))
+    .unwrap();
+    let request = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::default(),
+        Some(params.clone()),
+    );
+
+    let result = data_engine.execute_request(RequestCommand::Trades(request.clone()));
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("no client found"));
+
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    data_engine
+        .execute_request(RequestCommand::Trades(request))
+        .unwrap();
+
+    let trade = TradeTick::new(
+        instrument_id,
+        Price::from("0.65000"),
+        Quantity::from("1000"),
+        AggressorSide::Buyer,
+        TradeId::new("historical-1"),
+        UnixNanos::from(1_000),
+        UnixNanos::from(1_000),
+    );
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![trade],
+        None,
+        None,
+        UnixNanos::from(1_000),
+        Some(params),
+    )));
+
+    assert_eq!(
+        cache.borrow().bar(&bar_type).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(1_000)),
+    );
+}
+
+#[rstest]
+fn test_request_bar_aggregation_reset_clears_pending_aggregators(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let bar_type = BarType::from(format!("{instrument_id}-1-TICK-LAST-INTERNAL").as_str());
+    let params = || -> Params {
+        serde_json::from_value(json!({
+            "bar_types": [bar_type.to_string()],
+            "update_subscriptions": false,
+        }))
+        .unwrap()
+    };
+    let request = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(params()),
+    );
+    data_engine
+        .execute_request(RequestCommand::Trades(request))
+        .unwrap();
+
+    data_engine.reset();
+
+    let request_id = UUID4::new();
+    let request = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::default(),
+        Some(params()),
+    );
+    data_engine
+        .execute_request(RequestCommand::Trades(request))
+        .unwrap();
+
+    let trade = TradeTick::new(
+        instrument_id,
+        Price::from("0.65000"),
+        Quantity::from("1000"),
+        AggressorSide::Buyer,
+        TradeId::new("historical-1"),
+        UnixNanos::from(1_000),
+        UnixNanos::from(1_000),
+    );
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![trade],
+        None,
+        None,
+        UnixNanos::from(1_000),
+        Some(params()),
+    )));
+
+    assert_eq!(
+        cache.borrow().bar(&bar_type).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(1_000)),
+    );
+}
+
+#[rstest]
 fn test_subscribe_book_deltas_composite_creates_books_per_underlying(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
@@ -2184,7 +5025,7 @@ fn test_parent_subscribe_with_unparsable_id_returns_error(
     }
     assert!(
         !data_engine.subscribed_book_deltas().contains(&runner),
-        "rejected parent subscribe must NOT leave the id in book_deltas_subs",
+        "rejected parent subscribe must NOT leave the id in book delta state",
     );
 
     // Retrying without the parent flag on the same id must succeed; the
@@ -3179,26 +6020,31 @@ fn test_catalog_start_ns_prefill_skips_internal_bars(
 
     let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
     let _catalog_dir = register_bar_catalog(&mut data_engine, bar_type, 4_000);
+    let command_id = UUID4::new();
 
     let sub = SubscribeBars::new(
         bar_type,
         Some(client_id),
         Some(venue),
-        UUID4::new(),
+        command_id,
         UnixNanos::default(),
         None,
         None,
     );
     data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
 
-    let SubscribeCommand::Bars(recorded) = recorded_subscribe_command(&recorder) else {
-        panic!("expected bars subscribe");
+    let SubscribeCommand::Trades(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, command_id)
+    else {
+        panic!("expected source trades subscribe");
     };
-    assert!(
+    assert_eq!(recorded.instrument_id, bar_type.instrument_id());
+    assert_eq!(
         recorded
             .params
             .as_ref()
-            .is_none_or(|params| !params.contains_key("start_ns"))
+            .and_then(|params| params.get("start_ns")),
+        Some(&json!(null))
     );
 }
 
@@ -3451,6 +6297,25 @@ fn test_catalog_start_ns_prefill_custom_data_preserves_command_metadata(
     );
 }
 
+#[derive(Default)]
+struct RecordingSendTap {
+    endpoints: Rc<RefCell<Vec<String>>>,
+}
+
+impl RecordingSendTap {
+    fn send_endpoints(&self) -> Vec<String> {
+        self.endpoints.borrow().clone()
+    }
+}
+
+impl BusTap for RecordingSendTap {
+    fn on_publish(&self, _topic: MStr<Topic>, _message: &dyn Any) {}
+
+    fn on_send(&self, endpoint: MStr<Endpoint>, _message: &dyn Any) {
+        self.endpoints.borrow_mut().push(endpoint.to_string());
+    }
+}
+
 #[rstest]
 fn test_subscribe_spread_quotes_default_interval_publishes_on_timer(
     clock: Rc<RefCell<TestClock>>,
@@ -3481,6 +6346,12 @@ fn test_subscribe_spread_quotes_default_interval_publishes_on_timer(
         get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("spread-quotes-timer")));
     let spread_topic = switchboard::get_quotes_topic(spread_id);
     msgbus::subscribe_quotes(spread_topic.into(), handler, None);
+    let (exchange_handler, exchange_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("spread-exchange-timer")));
+    msgbus::register_quote_endpoint(
+        format!("SimulatedExchange.process_new_quote.{}", spread_id.venue).into(),
+        exchange_handler,
+    );
 
     let sub = SubscribeQuotes::new(
         spread_id,
@@ -3537,6 +6408,10 @@ fn test_subscribe_spread_quotes_default_interval_publishes_on_timer(
     assert_eq!(spread_quotes[0].bid_size, Quantity::from(5));
     assert_eq!(spread_quotes[0].ask_size, Quantity::from(6));
     assert_eq!(spread_quotes[0].ts_event, UnixNanos::from(1_000_000_000));
+
+    let exchange_quotes = exchange_saver.get_messages();
+    assert_eq!(exchange_quotes.len(), 1);
+    assert_eq!(exchange_quotes[0], spread_quotes[0]);
 }
 
 #[rstest]
@@ -3569,6 +6444,12 @@ fn test_subscribe_spread_quotes_with_zero_interval_publishes_spread_quote(
         get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("spread-quotes")));
     let spread_topic = switchboard::get_quotes_topic(spread_id);
     msgbus::subscribe_quotes(spread_topic.into(), handler, None);
+    let (exchange_handler, exchange_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("spread-exchange")));
+    msgbus::register_quote_endpoint(
+        format!("SimulatedExchange.process_new_quote.{}", spread_id.venue).into(),
+        exchange_handler,
+    );
 
     let sub = SubscribeQuotes::new(
         spread_id,
@@ -3621,6 +6502,94 @@ fn test_subscribe_spread_quotes_with_zero_interval_publishes_spread_quote(
     assert_eq!(spread_quotes[0].ask_price, Price::from("3.00"));
     assert_eq!(spread_quotes[0].bid_size, Quantity::from(5));
     assert_eq!(spread_quotes[0].ask_size, Quantity::from(6));
+
+    let exchange_quotes = exchange_saver.get_messages();
+    assert_eq!(exchange_quotes.len(), 1);
+    assert_eq!(exchange_quotes[0], spread_quotes[0]);
+}
+
+#[rstest]
+fn test_subscribe_spread_quotes_without_exchange_endpoint_publishes_spread_quote(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let spread = generic_futures_spread();
+    let spread_id = spread.id();
+    let (leg_a, leg_b) = generic_futures_spread_legs();
+    let spread_any = InstrumentAny::FuturesSpread(spread);
+    data_engine.process(&spread_any as &dyn Any);
+
+    let (handler, saver) = get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from(
+        "spread-quotes-no-exchange",
+    )));
+    let spread_topic = switchboard::get_quotes_topic(spread_id);
+    msgbus::subscribe_quotes(spread_topic.into(), handler, None);
+
+    let exchange_endpoint = format!("SimulatedExchange.process_new_quote.{}", spread_id.venue);
+    assert!(!msgbus::has_quote_endpoint(
+        exchange_endpoint.as_str().into()
+    ));
+
+    let sub = SubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(spread_quote_zero_interval_params()),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let tap = Rc::new(RecordingSendTap::default());
+    msgbus::set_bus_tap(tap.clone());
+
+    let quote_a = QuoteTick::new(
+        leg_a,
+        Price::from("101.00"),
+        Price::from("102.00"),
+        Quantity::from(5),
+        Quantity::from(6),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    let quote_b = QuoteTick::new(
+        leg_b,
+        Price::from("99.00"),
+        Price::from("100.00"),
+        Quantity::from(7),
+        Quantity::from(8),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    data_engine.process_data(Data::Quote(quote_a));
+    data_engine.process_data(Data::Quote(quote_b));
+
+    msgbus::clear_bus_tap();
+
+    let spread_quotes = saver.get_messages();
+    assert_eq!(spread_quotes.len(), 1);
+    assert_eq!(spread_quotes[0].instrument_id, spread_id);
+    assert_eq!(spread_quotes[0].bid_price, Price::from("1.00"));
+    assert_eq!(spread_quotes[0].ask_price, Price::from("3.00"));
+    assert_eq!(spread_quotes[0].bid_size, Quantity::from(5));
+    assert_eq!(spread_quotes[0].ask_size, Quantity::from(6));
+    assert!(tap.send_endpoints().is_empty());
 }
 
 #[rstest]
@@ -4067,7 +7036,7 @@ fn test_unsubscribe_trades_ignores_wildcard_observers(
 }
 
 #[rstest]
-fn test_execute_subscribe_bars(
+fn test_execute_subscribe_internal_bars_stays_local(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<TestClock>>,
@@ -4091,43 +7060,64 @@ fn test_execute_subscribe_bars(
     data_engine.process(&inst_any as &dyn Any);
 
     let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
+    let trade_topic = switchboard::get_trades_topic(bar_type.instrument_id());
+    let subscribe_command_id = UUID4::new();
 
     let sub = SubscribeBars::new(
         bar_type,
         Some(client_id),
         Some(venue),
-        UUID4::new(),
+        subscribe_command_id,
         UnixNanos::default(),
         None,
         None,
     );
     let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Bars(sub));
-    data_engine.execute(sub_cmd.clone());
+    data_engine.execute(sub_cmd);
 
-    assert!(data_engine.subscribed_bars().contains(&bar_type));
+    assert_eq!(msgbus::exact_subscriber_count_trades(trade_topic), 1);
     {
-        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+        let recorded = recorder.borrow();
+        assert_eq!(recorded.len(), 1);
+        match &recorded[0] {
+            DataCommand::Subscribe(SubscribeCommand::Trades(cmd)) => {
+                assert_eq!(cmd.instrument_id, bar_type.instrument_id());
+                assert_eq!(cmd.correlation_id, Some(subscribe_command_id));
+            }
+            other => panic!("expected source trade subscription, was {other:?}"),
+        }
     }
 
+    let unsubscribe_command_id = UUID4::new();
     let unsub = UnsubscribeBars::new(
         bar_type,
         Some(client_id),
         Some(venue),
-        UUID4::new(),
+        unsubscribe_command_id,
         UnixNanos::default(),
         None,
         None,
     );
     let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Bars(unsub));
-    data_engine.execute(unsub_cmd.clone());
+    data_engine.execute(unsub_cmd);
 
     assert_eq!(audusd_sim.id(), bar_type.instrument_id());
-    assert!(!data_engine.subscribed_bars().contains(&bar_type));
-    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+    assert_eq!(msgbus::exact_subscriber_count_trades(trade_topic), 0);
+    {
+        let recorded = recorder.borrow();
+        assert_eq!(recorded.len(), 2);
+        match &recorded[1] {
+            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(cmd)) => {
+                assert_eq!(cmd.instrument_id, bar_type.instrument_id());
+                assert_eq!(cmd.correlation_id, Some(unsubscribe_command_id));
+            }
+            other => panic!("expected source trade unsubscription, was {other:?}"),
+        }
+    }
 }
 
 #[rstest]
-fn test_unsubscribe_bars_forwards_to_client_with_remaining_exact_subscribers(
+fn test_unsubscribe_internal_bars_stays_local_with_remaining_exact_subscribers(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<TestClock>>,
@@ -4135,7 +7125,8 @@ fn test_unsubscribe_bars_forwards_to_client_with_remaining_exact_subscribers(
     client_id: ClientId,
     venue: Venue,
 ) {
-    // Bars excluded from the gate; venue unsubscribe must forward even with exact subscribers
+    // Matches the Cython DataEngine: internal aggregation is local to the engine,
+    // and exact subscribers keep the aggregator active without forwarding to the client.
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
@@ -4155,31 +7146,116 @@ fn test_unsubscribe_bars_forwards_to_client_with_remaining_exact_subscribers(
     let bar_topic = switchboard::get_bars_topic(bar_type);
     let (handler, _saver) =
         get_typed_message_saving_handler::<Bar>(Some(Ustr::from("exact-bar-subscriber")));
-    msgbus::subscribe_bars(bar_topic.into(), handler, None);
+    msgbus::subscribe_bars(bar_topic.into(), handler.clone(), None);
 
+    let subscribe_command_id = UUID4::new();
     let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Bars(SubscribeBars::new(
         bar_type,
         Some(client_id),
         Some(venue),
-        UUID4::new(),
+        subscribe_command_id,
         UnixNanos::default(),
         None,
         None,
     )));
-    data_engine.execute(sub_cmd.clone());
+    data_engine.execute(sub_cmd);
 
+    let unsubscribe_command_id = UUID4::new();
     let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Bars(UnsubscribeBars::new(
         bar_type,
         Some(client_id),
         Some(venue),
-        UUID4::new(),
+        unsubscribe_command_id,
         UnixNanos::default(),
         None,
         None,
     )));
-    data_engine.execute(unsub_cmd.clone());
+    data_engine.execute(unsub_cmd);
 
-    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+    {
+        let recorded = recorder.borrow();
+        assert_eq!(recorded.len(), 1);
+        match &recorded[0] {
+            DataCommand::Subscribe(SubscribeCommand::Trades(cmd)) => {
+                assert_eq!(cmd.instrument_id, bar_type.instrument_id());
+                assert_eq!(cmd.correlation_id, Some(subscribe_command_id));
+            }
+            other => panic!("expected source trade subscription, was {other:?}"),
+        }
+    }
+
+    msgbus::unsubscribe_bars(bar_topic.into(), &handler);
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(
+        UnsubscribeBars::new(
+            bar_type,
+            Some(client_id),
+            Some(venue),
+            unsubscribe_command_id,
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    {
+        let recorded = recorder.borrow();
+        assert_eq!(recorded.len(), 2);
+        assert!(matches!(
+            &recorded[1],
+            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(_))
+        ));
+    }
+}
+
+#[rstest]
+fn test_external_client_internal_bar_subscription_skips_local_aggregator(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    cache.borrow_mut().add_instrument(instrument).unwrap();
+
+    let config = DataEngineConfig {
+        external_clients: Some(vec![client_id]),
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
+    let trade_topic = switchboard::get_trades_topic(bar_type.instrument_id());
+
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(
+        SubscribeBars::new(
+            bar_type,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    assert_eq!(msgbus::exact_subscriber_count_trades(trade_topic), 0);
+    assert_eq!(recorder.borrow().as_slice(), &[]);
 }
 
 #[rstest]
@@ -6331,6 +9407,55 @@ fn test_process_funding_rate(
 }
 
 #[rstest]
+fn test_process_funding_rate_data_variant(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let venue = data_client.venue;
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    let sub = SubscribeFundingRates::new(
+        audusd_sim.id,
+        Some(client_id),
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let cmd = DataCommand::Subscribe(SubscribeCommand::FundingRates(sub));
+
+    data_engine.borrow_mut().execute(cmd);
+
+    let funding_rate = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0001".parse().unwrap(),
+        None,
+        None,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let (typed_handler, saving_handler) =
+        get_typed_message_saving_handler::<FundingRateUpdate>(None);
+    let topic = switchboard::get_funding_rate_topic(funding_rate.instrument_id);
+    msgbus::subscribe_funding_rates(topic.into(), typed_handler, None);
+
+    let mut data_engine = data_engine.borrow_mut();
+    data_engine.process_data(Data::FundingRateUpdate(funding_rate));
+    let cache = &data_engine.get_cache();
+    let messages = saving_handler.get_messages();
+
+    assert_eq!(
+        cache.funding_rate(&funding_rate.instrument_id),
+        Some(&funding_rate)
+    );
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0], funding_rate);
+}
+
+#[rstest]
 fn test_process_funding_rate_updates_existing(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
@@ -6809,7 +9934,8 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         "0x123".to_string(),
         0,
         0,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
         Address::from([0x12; 20]),
         Address::from([0x12; 20]),
         I256::from_str("1000000000000000000").unwrap(),
@@ -7174,7 +10300,8 @@ fn test_process_pool_liquidity_update(
         U256::from(2000000u128),
         -100,
         100,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
     let sub = DefiSubscribeCommand::PoolLiquidityUpdates(SubscribePoolLiquidityUpdates {
@@ -7277,7 +10404,8 @@ fn test_process_pool_fee_collect(
         300000u128,
         -100,
         100,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
     let sub = DefiSubscribeCommand::PoolFeeCollects(SubscribePoolFeeCollects {
@@ -7371,7 +10499,8 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
         "0x123".to_string(),
         0,
         0,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
         Address::from([0x12; 20]),
         Address::from([0x34; 20]),
         U256::from(1000000u128),
@@ -7464,7 +10593,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
     let shared_pool = Arc::new(pool.clone());
     cache.borrow_mut().add_pool(pool).unwrap();
     let mut profiler = PoolProfiler::new(shared_pool);
-    profiler.initialize(initial_price);
+    profiler.initialize(initial_price).unwrap();
 
     // Add liquidity so swaps can be processed
     let mint = PoolLiquidityUpdate::new(
@@ -7484,7 +10613,8 @@ fn test_pool_updater_processes_swap_updates_profiler(
         U256::from(2000000u128),
         -1000, // Wide range
         1000,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
     profiler.process_mint(&mint).unwrap();
     cache.borrow_mut().add_pool_profiler(profiler).unwrap();
@@ -7537,7 +10667,8 @@ fn test_pool_updater_processes_swap_updates_profiler(
         "0x123".to_string(),
         0,
         0,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
         Address::from([0x12; 20]),
         Address::from([0x12; 20]),
         I256::from_str("1000000000000000000").unwrap(),
@@ -7635,7 +10766,7 @@ fn test_pool_updater_processes_mint_updates_profiler(
     let shared_pool = Arc::new(pool.clone());
     cache.borrow_mut().add_pool(pool).unwrap();
     let mut profiler = PoolProfiler::new(shared_pool);
-    profiler.initialize(initial_price);
+    profiler.initialize(initial_price).unwrap();
     cache.borrow_mut().add_pool_profiler(profiler).unwrap();
 
     // Capture initial profiler tick state
@@ -7675,7 +10806,8 @@ fn test_pool_updater_processes_mint_updates_profiler(
         U256::from(200000u128),
         -100, // tick_lower
         100,  // tick_upper
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
     let mut data_engine = data_engine.borrow_mut();
@@ -7754,7 +10886,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
     let shared_pool = Arc::new(pool.clone());
     cache.borrow_mut().add_pool(pool).unwrap();
     let mut profiler = PoolProfiler::new(shared_pool);
-    profiler.initialize(initial_price);
+    profiler.initialize(initial_price).unwrap();
 
     // First mint some liquidity
     let owner = Address::from([0xAB; 20]);
@@ -7775,7 +10907,8 @@ fn test_pool_updater_processes_burn_updates_profiler(
         U256::from(200000u128),
         -100,
         100,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
     profiler.process_mint(&mint).unwrap();
     cache.borrow_mut().add_pool_profiler(profiler).unwrap();
@@ -7817,7 +10950,8 @@ fn test_pool_updater_processes_burn_updates_profiler(
         U256::from(100000u128),
         -100,
         100,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
     data_engine
@@ -7897,7 +11031,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
     let shared_pool = Arc::new(pool.clone());
     cache.borrow_mut().add_pool(pool).unwrap();
     let mut profiler = PoolProfiler::new(shared_pool);
-    profiler.initialize(initial_price);
+    profiler.initialize(initial_price).unwrap();
     cache.borrow_mut().add_pool_profiler(profiler).unwrap();
 
     // Subscribe to pool fee collects
@@ -7927,7 +11061,8 @@ fn test_pool_updater_processes_collect_updates_profiler(
         30000u128, // amount1
         -100,      // tick_lower
         100,       // tick_upper
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
     let mut data_engine = data_engine.borrow_mut();
@@ -8005,7 +11140,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
     let shared_pool = Arc::new(pool.clone());
     cache.borrow_mut().add_pool(pool).unwrap();
     let mut profiler = PoolProfiler::new(shared_pool);
-    profiler.initialize(initial_price);
+    profiler.initialize(initial_price).unwrap();
     cache.borrow_mut().add_pool_profiler(profiler).unwrap();
 
     // Subscribe to pool flash events
@@ -8031,7 +11166,8 @@ fn test_pool_updater_processes_flash_updates_profiler(
         "0x123".to_string(),
         0,
         0,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
         initiator,
         recipient,
         U256::from(1000000u128), // amount0
@@ -8253,6 +11389,330 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
 
     // The single command should be the subscription
     assert_eq!(recorded[0], cmd);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_setup_pool_updater_does_not_cache_profiler_on_initialize_failure(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let chain = Arc::new(chains::ARBITRUM.clone());
+    let dex = Arc::new(Dex::new(
+        chains::ARBITRUM.clone(),
+        DexType::UniswapV3,
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+        "Collect",
+    ));
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x22; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let mut pool = Pool::new(
+        chain,
+        dex,
+        Address::from([0x99; 20]),
+        PoolIdentifier::from_address(Address::from([0x99; 20])),
+        0u64,
+        token0,
+        token1,
+        Some(500u32),
+        Some(10u32),
+        UnixNanos::from(1),
+    );
+
+    // Construct a pool whose stored initial_tick disagrees with the tick derived
+    // from its sqrt price. setup_pool_updater calls PoolProfiler::initialize which
+    // must return InitialTickMismatch and must not cache the half-initialized profiler.
+    // Pool::initialize asserts consistency, so set the fields directly.
+    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
+    let real_tick = get_tick_at_sqrt_ratio(initial_price);
+    pool.initial_sqrt_price_x96 = Some(initial_price);
+    pool.initial_tick = Some(real_tick + 100);
+    let instrument_id = pool.instrument_id;
+
+    data_engine.cache_rc().borrow_mut().add_pool(pool).unwrap();
+    assert!(
+        data_engine
+            .cache_rc()
+            .borrow()
+            .pool_profiler(&instrument_id)
+            .is_none()
+    );
+
+    let subscribe_pool = SubscribePool::new(
+        instrument_id,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool));
+    data_engine.execute(cmd);
+
+    assert!(
+        data_engine
+            .cache_rc()
+            .borrow()
+            .pool_profiler(&instrument_id)
+            .is_none(),
+        "profiler must not be cached when initialize fails"
+    );
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_arrival_with_snapshot_pending_does_not_create_profiler(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let chain = Arc::new(chains::ARBITRUM.clone());
+    let dex = Arc::new(Dex::new(
+        chains::ARBITRUM.clone(),
+        DexType::UniswapV3,
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+        "Collect",
+    ));
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x22; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let mut pool = Pool::new(
+        chain,
+        dex,
+        Address::from([0xAA; 20]),
+        PoolIdentifier::from_address(Address::from([0xAA; 20])),
+        12_345_678u64,
+        token0,
+        token1,
+        Some(500u32),
+        Some(10u32),
+        UnixNanos::from(1),
+    );
+
+    let initial_price = U160::from(79228162514264337593543950336u128);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
+    let instrument_id = pool.instrument_id;
+
+    // Subscribe with no pool in cache: triggers RequestPoolSnapshot and arms both pending flags.
+    let subscribe_pool = SubscribePool::new(
+        instrument_id,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool));
+    data_engine.execute(cmd);
+
+    {
+        let recorded = recorder.borrow();
+        assert_eq!(
+            recorded.len(),
+            2,
+            "Expected SubscribePool + RequestPoolSnapshot before Pool arrives"
+        );
+        assert!(matches!(
+            recorded[1],
+            DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(_))
+        ));
+    }
+
+    // Pool definition arrives while the snapshot is still in flight.
+    data_engine.process_defi_data(DefiData::Pool(pool.clone()));
+
+    assert!(
+        data_engine
+            .cache_rc()
+            .borrow()
+            .pool(&instrument_id)
+            .is_some(),
+        "pool must be added to cache when Pool data arrives"
+    );
+    assert!(
+        data_engine
+            .cache_rc()
+            .borrow()
+            .pool_profiler(&instrument_id)
+            .is_none(),
+        "profiler must not be eager-created while a snapshot is pending"
+    );
+    assert_eq!(
+        recorder.borrow().len(),
+        2,
+        "Pool arrival must not trigger a second snapshot request"
+    );
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_snapshot_handler_refuses_empty_stub_at_creation_block(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let chain = Arc::new(chains::ARBITRUM.clone());
+    let dex = Arc::new(Dex::new(
+        chains::ARBITRUM.clone(),
+        DexType::UniswapV3,
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+        "Collect",
+    ));
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x22; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let creation_block: u64 = 12_345_678;
+    let mut pool = Pool::new(
+        chain,
+        dex,
+        Address::from([0xBB; 20]),
+        PoolIdentifier::from_address(Address::from([0xBB; 20])),
+        creation_block,
+        token0,
+        token1,
+        Some(500u32),
+        Some(10u32),
+        UnixNanos::from(1),
+    );
+
+    let initial_price = U160::from(79228162514264337593543950336u128);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
+    let instrument_id = pool.instrument_id;
+
+    let subscribe_pool = SubscribePool::new(
+        instrument_id,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool));
+    data_engine.execute(cmd);
+
+    data_engine.process_defi_data(DefiData::Pool(pool.clone()));
+
+    // Stub snapshot: empty positions, empty ticks, block matches pool.creation_block.
+    let stub = PoolSnapshot::new(
+        instrument_id,
+        PoolState::default(),
+        Vec::new(),
+        Vec::new(),
+        PoolAnalytics::default(),
+        BlockPosition::new(creation_block, "0x0".to_string(), 0, 0),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    data_engine.process_defi_data(DefiData::PoolSnapshot(stub));
+
+    assert!(
+        data_engine
+            .cache_rc()
+            .borrow()
+            .pool_profiler(&instrument_id)
+            .is_none(),
+        "stub snapshot must not result in an installed profiler"
+    );
+    assert!(
+        data_engine
+            .cache_rc()
+            .borrow()
+            .pool(&instrument_id)
+            .is_some(),
+        "pool entry must be preserved even when its stub snapshot is refused"
+    );
 }
 
 #[cfg(feature = "defi")]
@@ -8859,6 +12319,12 @@ fn test_unsubscribe_book_deltas_keeps_snapshot_subscriptions_active(
             deltas_cmd,
         )));
 
+    assert_eq!(
+        book_deltas_subscribe_count(&recorder.borrow(), audusd_sim.id),
+        1,
+        "snapshot and direct book-delta subscribers must share one physical deltas feed",
+    );
+
     let unsubscribe_cmd = UnsubscribeBookDeltas::new(
         audusd_sim.id,
         Some(client_id),
@@ -8884,6 +12350,257 @@ fn test_unsubscribe_book_deltas_keeps_snapshot_subscriptions_active(
 
     assert_eq!(saver.get_messages().len(), 1);
     assert_eq!(saver.get_messages()[0].instrument_id, audusd_sim.id);
+}
+
+#[rstest]
+fn test_duplicate_book_deltas_unsubscribe_keeps_remaining_subscription_active(
+    audusd_sim: CurrencyPair,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let _ = cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()));
+
+    execute_book_delta_subscribe(&data_engine, audusd_sim.id, client_id, venue);
+    execute_book_delta_subscribe(&data_engine, audusd_sim.id, client_id, venue);
+
+    assert_eq!(
+        book_deltas_subscribe_count(&recorder.borrow(), audusd_sim.id),
+        1,
+        "duplicate logical book-delta subscribers must share one physical deltas feed",
+    );
+
+    execute_book_delta_unsubscribe(&data_engine, audusd_sim.id, client_id, venue);
+
+    assert_eq!(
+        book_deltas_unsubscribe_count(&recorder.borrow(), audusd_sim.id),
+        0,
+        "unsubscribing one logical book-delta owner must keep the physical feed active",
+    );
+
+    process_book_delta(&data_engine, audusd_sim.id);
+    let update_count = cache
+        .borrow()
+        .order_book(&audusd_sim.id)
+        .expect("book must exist while one logical subscriber remains")
+        .update_count;
+
+    execute_book_delta_unsubscribe(&data_engine, audusd_sim.id, client_id, venue);
+
+    assert_eq!(
+        book_deltas_unsubscribe_count(&recorder.borrow(), audusd_sim.id),
+        1,
+        "the physical deltas feed should unsubscribe after the last logical owner leaves",
+    );
+
+    process_book_delta(&data_engine, audusd_sim.id);
+
+    assert_eq!(
+        cache
+            .borrow()
+            .order_book(&audusd_sim.id)
+            .expect("book remains in cache after updater teardown")
+            .update_count,
+        update_count,
+        "deltas published after the last unsubscribe must not reach the torn-down updater",
+    );
+}
+
+#[rstest]
+fn test_distinct_book_deltas_keys_share_physical_subscription(
+    audusd_sim: CurrencyPair,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let _ = cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()));
+
+    execute_book_delta_subscribe_for_route(
+        &data_engine,
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+    );
+    execute_book_delta_subscribe_for_route(&data_engine, audusd_sim.id, None, Some(venue));
+
+    assert_eq!(
+        book_deltas_subscribe_count(&recorder.borrow(), audusd_sim.id),
+        1,
+        "distinct logical book-delta keys routed to one client must share the physical feed",
+    );
+
+    execute_book_delta_unsubscribe_for_route(
+        &data_engine,
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+    );
+
+    assert_eq!(
+        book_deltas_unsubscribe_count(&recorder.borrow(), audusd_sim.id),
+        0,
+        "unsubscribing one routed book-delta key must keep the shared physical feed active",
+    );
+
+    process_book_delta(&data_engine, audusd_sim.id);
+    let update_count = cache
+        .borrow()
+        .order_book(&audusd_sim.id)
+        .expect("book must exist while one routed subscriber remains")
+        .update_count;
+
+    execute_book_delta_unsubscribe_for_route(&data_engine, audusd_sim.id, None, Some(venue));
+
+    assert_eq!(
+        book_deltas_unsubscribe_count(&recorder.borrow(), audusd_sim.id),
+        1,
+        "the shared physical feed should unsubscribe after all routed keys leave",
+    );
+
+    process_book_delta(&data_engine, audusd_sim.id);
+
+    assert_eq!(
+        cache
+            .borrow()
+            .order_book(&audusd_sim.id)
+            .expect("book remains in cache after updater teardown")
+            .update_count,
+        update_count,
+        "deltas published after all routed keys leave must not reach the torn-down updater",
+    );
+}
+
+fn book_deltas_subscribe_count(recorded: &[DataCommand], instrument_id: InstrumentId) -> usize {
+    recorded
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                DataCommand::Subscribe(SubscribeCommand::BookDeltas(cmd))
+                    if cmd.instrument_id == instrument_id
+            )
+        })
+        .count()
+}
+
+fn book_deltas_unsubscribe_count(recorded: &[DataCommand], instrument_id: InstrumentId) -> usize {
+    recorded
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(cmd))
+                    if cmd.instrument_id == instrument_id
+            )
+        })
+        .count()
+}
+
+fn execute_book_delta_subscribe(
+    data_engine: &Rc<RefCell<DataEngine>>,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    execute_book_delta_subscribe_for_route(
+        data_engine,
+        instrument_id,
+        Some(client_id),
+        Some(venue),
+    );
+}
+
+fn execute_book_delta_subscribe_for_route(
+    data_engine: &Rc<RefCell<DataEngine>>,
+    instrument_id: InstrumentId,
+    client_id: Option<ClientId>,
+    venue: Option<Venue>,
+) {
+    let subscribe = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        client_id,
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    );
+
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+            subscribe,
+        )));
+}
+
+fn execute_book_delta_unsubscribe(
+    data_engine: &Rc<RefCell<DataEngine>>,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    execute_book_delta_unsubscribe_for_route(
+        data_engine,
+        instrument_id,
+        Some(client_id),
+        Some(venue),
+    );
+}
+
+fn execute_book_delta_unsubscribe_for_route(
+    data_engine: &Rc<RefCell<DataEngine>>,
+    instrument_id: InstrumentId,
+    client_id: Option<ClientId>,
+    venue: Option<Venue>,
+) {
+    let unsubscribe = UnsubscribeBookDeltas::new(
+        instrument_id,
+        client_id,
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(
+            unsubscribe,
+        )));
 }
 
 fn execute_book_snapshot_subscribe(
@@ -10362,12 +14079,13 @@ fn test_process_defi_data_increments_data_count(
     assert_eq!(data_engine.data_count(), 1);
 }
 
-fn historical_topic_of(live: &str) -> String {
-    format!("historical.{live}")
+fn pipeline_topic_of(live: &str) -> String {
+    let suffix = live.strip_prefix("data.").unwrap_or(live);
+    format!("data.pipeline.{suffix}")
 }
 
 #[rstest]
-fn test_process_historical_quote_publishes_on_historical_topic_only(
+fn test_process_pipeline_quote_publishes_on_pipeline_topic_only(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10378,30 +14096,30 @@ fn test_process_historical_quote_publishes_on_historical_topic_only(
     let mut data_engine = DataEngine::new(clock, cache, None);
 
     let live_topic = switchboard::get_quotes_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
     let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("historical-test-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("historical-test-hist")));
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("pipeline-test-live")));
+    let (pipeline_handler, pipeline_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("pipeline-test-pipeline")));
     msgbus::subscribe_quotes(live_topic.into(), live_handler, None);
-    msgbus::subscribe_quotes(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_quotes(pipeline_topic.into(), pipeline_handler, None);
 
     let quote = quote_tick(instrument_id, "1.00000", "1.00010", 1);
-    data_engine.process_historical(Data::Quote(quote));
+    data_engine.process_pipeline(Data::Quote(quote));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical quote must not publish on the live topic",
+        "pipeline quote must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], quote);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], quote);
 }
 
 #[rstest]
-fn test_process_historical_quote_writes_cache_by_default(
+fn test_process_pipeline_quote_writes_cache_by_default(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10412,13 +14130,13 @@ fn test_process_historical_quote_writes_cache_by_default(
     let mut data_engine = DataEngine::new(clock, cache.clone(), None);
 
     let quote = quote_tick(instrument_id, "1.00000", "1.00010", 1);
-    data_engine.process_historical(Data::Quote(quote));
+    data_engine.process_pipeline(Data::Quote(quote));
 
     assert_eq!(cache.borrow().quote(&instrument_id), Some(&quote));
 }
 
 #[rstest]
-fn test_process_historical_skips_cache_when_disabled(
+fn test_process_pipeline_skips_cache_when_disabled(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10432,31 +14150,31 @@ fn test_process_historical_skips_cache_when_disabled(
     };
     let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
 
-    let historical_topic_str =
-        historical_topic_of(switchboard::get_quotes_topic(instrument_id).as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("hist-cache-disabled")));
-    msgbus::subscribe_quotes(historical_topic.into(), hist_handler, None);
+    let pipeline_topic_str =
+        pipeline_topic_of(switchboard::get_quotes_topic(instrument_id).as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
+    let (pipeline_handler, pipeline_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("pipeline-cache-disabled")));
+    msgbus::subscribe_quotes(pipeline_topic.into(), pipeline_handler, None);
 
     let quote = quote_tick(instrument_id, "1.00000", "1.00010", 1);
-    data_engine.process_historical(Data::Quote(quote));
+    data_engine.process_pipeline(Data::Quote(quote));
 
     assert_eq!(
         cache.borrow().quote(&instrument_id),
         None,
         "disable_historical_cache must suppress cache write",
     );
-    let hist_messages = hist_saver.get_messages();
+    let pipeline_messages = pipeline_saver.get_messages();
     assert_eq!(
-        hist_messages.len(),
+        pipeline_messages.len(),
         1,
-        "historical publish must still occur with cache disabled",
+        "pipeline publish must still occur with cache disabled",
     );
 }
 
 #[rstest]
-fn test_process_historical_bar_publishes_on_historical_topic(stub_msgbus: Rc<RefCell<MessageBus>>) {
+fn test_process_pipeline_bar_publishes_on_pipeline_topic(stub_msgbus: Rc<RefCell<MessageBus>>) {
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
@@ -10464,34 +14182,34 @@ fn test_process_historical_bar_publishes_on_historical_topic(stub_msgbus: Rc<Ref
 
     let bar = Bar::default();
     let live_topic = switchboard::get_bars_topic(bar.bar_type);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
     let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("hist-bar-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("hist-bar-hist")));
+        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("pipeline-bar-live")));
+    let (pipeline_handler, pipeline_saver) =
+        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("pipeline-bar-pipeline")));
     msgbus::subscribe_bars(live_topic.into(), live_handler, None);
-    msgbus::subscribe_bars(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_bars(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_historical(Data::Bar(bar));
+    data_engine.process_pipeline(Data::Bar(bar));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical bar must not publish on the live topic",
+        "pipeline bar must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], bar);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], bar);
     assert_eq!(
         cache.borrow().bar(&bar.bar_type),
         Some(&bar),
-        "historical bar must populate the cache by default",
+        "pipeline bar must populate the cache by default",
     );
 }
 
 #[rstest]
-fn test_process_historical_increments_data_count(
+fn test_process_pipeline_increments_data_count(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10504,17 +14222,17 @@ fn test_process_historical_increments_data_count(
     let bar = Bar::default();
 
     assert_eq!(data_engine.data_count(), 0);
-    data_engine.process_historical(Data::Quote(quote));
-    data_engine.process_historical(Data::Bar(bar));
+    data_engine.process_pipeline(Data::Quote(quote));
+    data_engine.process_pipeline(Data::Bar(bar));
     assert_eq!(
         data_engine.data_count(),
         2,
-        "process_historical must increment data_count like process_data",
+        "process_pipeline must increment data_count like process_data",
     );
 }
 
 #[rstest]
-fn test_process_historical_trade_publishes_on_historical_topic_only(
+fn test_process_pipeline_trade_publishes_on_pipeline_topic_only(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10525,35 +14243,35 @@ fn test_process_historical_trade_publishes_on_historical_topic_only(
     let mut data_engine = DataEngine::new(clock, cache.clone(), None);
 
     let live_topic = switchboard::get_trades_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
     let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("hist-trade-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("hist-trade-hist")));
+        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("pipeline-trade-live")));
+    let (pipeline_handler, pipeline_saver) =
+        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("pipeline-trade-pipeline")));
     msgbus::subscribe_trades(live_topic.into(), live_handler, None);
-    msgbus::subscribe_trades(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_trades(pipeline_topic.into(), pipeline_handler, None);
 
     let trade = trade_tick(instrument_id, "1.00000", "T-1", 1);
-    data_engine.process_historical(Data::Trade(trade));
+    data_engine.process_pipeline(Data::Trade(trade));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical trade must not publish on the live topic",
+        "pipeline trade must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], trade);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], trade);
     assert_eq!(
         cache.borrow().trade(&instrument_id),
         Some(&trade),
-        "historical trade must populate the cache by default",
+        "pipeline trade must populate the cache by default",
     );
 }
 
 #[rstest]
-fn test_process_historical_mark_price_publishes_on_historical_topic_only(
+fn test_process_pipeline_mark_price_publishes_on_pipeline_topic_only(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10564,15 +14282,16 @@ fn test_process_historical_mark_price_publishes_on_historical_topic_only(
     let mut data_engine = DataEngine::new(clock, cache.clone(), None);
 
     let live_topic = switchboard::get_mark_price_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
     let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("hist-mark-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("hist-mark-hist")));
+        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("pipeline-mark-live")));
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<MarkPriceUpdate>(
+        Some(Ustr::from("pipeline-mark-pipeline")),
+    );
     msgbus::subscribe_mark_prices(live_topic.into(), live_handler, None);
-    msgbus::subscribe_mark_prices(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_mark_prices(pipeline_topic.into(), pipeline_handler, None);
 
     let mark_price = MarkPriceUpdate::new(
         instrument_id,
@@ -10580,24 +14299,24 @@ fn test_process_historical_mark_price_publishes_on_historical_topic_only(
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
-    data_engine.process_historical(Data::MarkPriceUpdate(mark_price));
+    data_engine.process_pipeline(Data::MarkPriceUpdate(mark_price));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical mark price must not publish on the live topic",
+        "pipeline mark price must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], mark_price);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], mark_price);
     assert_eq!(
         cache.borrow().mark_price(&instrument_id),
         Some(&mark_price),
-        "historical mark price must populate the cache by default",
+        "pipeline mark price must populate the cache by default",
     );
 }
 
 #[rstest]
-fn test_process_historical_index_price_publishes_on_historical_topic_only(
+fn test_process_pipeline_index_price_publishes_on_pipeline_topic_only(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10608,15 +14327,17 @@ fn test_process_historical_index_price_publishes_on_historical_topic_only(
     let mut data_engine = DataEngine::new(clock, cache.clone(), None);
 
     let live_topic = switchboard::get_index_price_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
-    let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<IndexPriceUpdate>(Some(Ustr::from("hist-index-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<IndexPriceUpdate>(Some(Ustr::from("hist-index-hist")));
+    let (live_handler, live_saver) = get_typed_message_saving_handler::<IndexPriceUpdate>(Some(
+        Ustr::from("pipeline-index-live"),
+    ));
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<IndexPriceUpdate>(
+        Some(Ustr::from("pipeline-index-pipeline")),
+    );
     msgbus::subscribe_index_prices(live_topic.into(), live_handler, None);
-    msgbus::subscribe_index_prices(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_index_prices(pipeline_topic.into(), pipeline_handler, None);
 
     let index_price = IndexPriceUpdate::new(
         instrument_id,
@@ -10624,24 +14345,24 @@ fn test_process_historical_index_price_publishes_on_historical_topic_only(
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
-    data_engine.process_historical(Data::IndexPriceUpdate(index_price));
+    data_engine.process_pipeline(Data::IndexPriceUpdate(index_price));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical index price must not publish on the live topic",
+        "pipeline index price must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], index_price);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], index_price);
     assert_eq!(
         cache.borrow().index_price(&instrument_id),
         Some(&index_price),
-        "historical index price must populate the cache by default",
+        "pipeline index price must populate the cache by default",
     );
 }
 
 #[rstest]
-fn test_process_historical_instrument_status_publishes_on_historical_topic_only(
+fn test_process_pipeline_instrument_status_publishes_on_pipeline_topic_only(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10652,15 +14373,15 @@ fn test_process_historical_instrument_status_publishes_on_historical_topic_only(
     let mut data_engine = DataEngine::new(clock, cache.clone(), None);
 
     let live_topic = switchboard::get_instrument_status_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
     let (live_handler, live_saver) =
-        get_any_saving_handler::<InstrumentStatus>(Some(Ustr::from("hist-status-live")));
-    let (hist_handler, hist_saver) =
-        get_any_saving_handler::<InstrumentStatus>(Some(Ustr::from("hist-status-hist")));
+        get_any_saving_handler::<InstrumentStatus>(Some(Ustr::from("pipeline-status-live")));
+    let (pipeline_handler, pipeline_saver) =
+        get_any_saving_handler::<InstrumentStatus>(Some(Ustr::from("pipeline-status-pipeline")));
     msgbus::subscribe_any(live_topic.into(), live_handler, None);
-    msgbus::subscribe_any(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_any(pipeline_topic.into(), pipeline_handler, None);
 
     let status = InstrumentStatus::new(
         instrument_id,
@@ -10673,24 +14394,24 @@ fn test_process_historical_instrument_status_publishes_on_historical_topic_only(
         Some(true),
         None,
     );
-    data_engine.process_historical(Data::InstrumentStatus(status));
+    data_engine.process_pipeline(Data::InstrumentStatus(status));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical instrument status must not publish on the live topic",
+        "pipeline instrument status must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], status);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], status);
     assert_eq!(
         cache.borrow().instrument_status(&instrument_id),
         Some(&status),
-        "historical instrument status must populate the cache by default",
+        "pipeline instrument status must populate the cache by default",
     );
 }
 
 #[rstest]
-fn test_process_historical_instrument_close_publishes_on_historical_topic_only(
+fn test_process_pipeline_instrument_close_publishes_on_pipeline_topic_only(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10701,15 +14422,15 @@ fn test_process_historical_instrument_close_publishes_on_historical_topic_only(
     let mut data_engine = DataEngine::new(clock, cache, None);
 
     let live_topic = switchboard::get_instrument_close_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
     let (live_handler, live_saver) =
-        get_any_saving_handler::<InstrumentClose>(Some(Ustr::from("hist-close-live")));
-    let (hist_handler, hist_saver) =
-        get_any_saving_handler::<InstrumentClose>(Some(Ustr::from("hist-close-hist")));
+        get_any_saving_handler::<InstrumentClose>(Some(Ustr::from("pipeline-close-live")));
+    let (pipeline_handler, pipeline_saver) =
+        get_any_saving_handler::<InstrumentClose>(Some(Ustr::from("pipeline-close-pipeline")));
     msgbus::subscribe_any(live_topic.into(), live_handler, None);
-    msgbus::subscribe_any(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_any(pipeline_topic.into(), pipeline_handler, None);
 
     let close = InstrumentClose::new(
         instrument_id,
@@ -10718,19 +14439,19 @@ fn test_process_historical_instrument_close_publishes_on_historical_topic_only(
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
-    data_engine.process_historical(Data::InstrumentClose(close));
+    data_engine.process_pipeline(Data::InstrumentClose(close));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical instrument close must not publish on the live topic",
+        "pipeline instrument close must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], close);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], close);
 }
 
 #[rstest]
-fn test_process_historical_delta_publishes_on_historical_topic_only(
+fn test_process_pipeline_delta_publishes_on_pipeline_topic_only(
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
     let _ = stub_msgbus;
@@ -10741,31 +14462,33 @@ fn test_process_historical_delta_publishes_on_historical_topic_only(
     let delta = stub_delta();
     let instrument_id = delta.instrument_id;
     let live_topic = switchboard::get_book_deltas_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
-    let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-delta-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-delta-hist")));
+    let (live_handler, live_saver) = get_typed_message_saving_handler::<OrderBookDeltas>(Some(
+        Ustr::from("pipeline-delta-live"),
+    ));
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDeltas>(
+        Some(Ustr::from("pipeline-delta-pipeline")),
+    );
     msgbus::subscribe_book_deltas(live_topic.into(), live_handler, None);
-    msgbus::subscribe_book_deltas(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_book_deltas(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_historical(Data::Delta(delta));
+    data_engine.process_pipeline(Data::Delta(delta));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical delta must not publish on the live topic",
+        "pipeline delta must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0].instrument_id, instrument_id);
-    assert_eq!(hist_messages[0].deltas.len(), 1);
-    assert_eq!(hist_messages[0].deltas[0], delta);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0].instrument_id, instrument_id);
+    assert_eq!(pipeline_messages[0].deltas.len(), 1);
+    assert_eq!(pipeline_messages[0].deltas[0], delta);
 }
 
 #[rstest]
-fn test_process_historical_deltas_publishes_on_historical_topic_only(
+fn test_process_pipeline_deltas_publishes_on_pipeline_topic_only(
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
     let _ = stub_msgbus;
@@ -10776,29 +14499,31 @@ fn test_process_historical_deltas_publishes_on_historical_topic_only(
     let deltas = stub_deltas();
     let instrument_id = deltas.instrument_id;
     let live_topic = switchboard::get_book_deltas_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
-    let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-deltas-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-deltas-hist")));
+    let (live_handler, live_saver) = get_typed_message_saving_handler::<OrderBookDeltas>(Some(
+        Ustr::from("pipeline-deltas-live"),
+    ));
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDeltas>(
+        Some(Ustr::from("pipeline-deltas-pipeline")),
+    );
     msgbus::subscribe_book_deltas(live_topic.into(), live_handler, None);
-    msgbus::subscribe_book_deltas(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_book_deltas(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_historical(Data::Deltas(OrderBookDeltas_API::new(deltas.clone())));
+    data_engine.process_pipeline(Data::Deltas(OrderBookDeltas_API::new(deltas.clone())));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical deltas must not publish on the live topic",
+        "pipeline deltas must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], deltas);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], deltas);
 }
 
 #[rstest]
-fn test_process_historical_depth10_publishes_on_historical_topic_only(
+fn test_process_pipeline_depth10_publishes_on_pipeline_topic_only(
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
     let _ = stub_msgbus;
@@ -10809,29 +14534,31 @@ fn test_process_historical_depth10_publishes_on_historical_topic_only(
     let depth = stub_depth10();
     let instrument_id = depth.instrument_id;
     let live_topic = switchboard::get_book_depth10_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
-    let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<OrderBookDepth10>(Some(Ustr::from("hist-depth-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<OrderBookDepth10>(Some(Ustr::from("hist-depth-hist")));
+    let (live_handler, live_saver) = get_typed_message_saving_handler::<OrderBookDepth10>(Some(
+        Ustr::from("pipeline-depth-live"),
+    ));
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDepth10>(
+        Some(Ustr::from("pipeline-depth-pipeline")),
+    );
     msgbus::subscribe_book_depth10(live_topic.into(), live_handler, None);
-    msgbus::subscribe_book_depth10(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_book_depth10(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_historical(Data::Depth10(Box::new(depth)));
+    data_engine.process_pipeline(Data::Depth10(Box::new(depth)));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical depth10 must not publish on the live topic",
+        "pipeline depth10 must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], depth);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], depth);
 }
 
 #[rstest]
-fn test_process_historical_custom_data_publishes_on_historical_topic_only(
+fn test_process_pipeline_custom_data_publishes_on_pipeline_topic_only(
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
     let _ = stub_msgbus;
@@ -10846,29 +14573,29 @@ fn test_process_historical_custom_data_publishes_on_historical_topic_only(
         Some("SIM//CUSTOM".to_string()),
     );
     let live_topic = switchboard::get_custom_topic(&custom.data_type);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
     let (live_handler, live_saver) =
-        get_any_saving_handler::<CustomData>(Some(Ustr::from("hist-custom-live")));
-    let (hist_handler, hist_saver) =
-        get_any_saving_handler::<CustomData>(Some(Ustr::from("hist-custom-hist")));
+        get_any_saving_handler::<CustomData>(Some(Ustr::from("pipeline-custom-live")));
+    let (pipeline_handler, pipeline_saver) =
+        get_any_saving_handler::<CustomData>(Some(Ustr::from("pipeline-custom-pipeline")));
     msgbus::subscribe_any(live_topic.into(), live_handler, None);
-    msgbus::subscribe_any(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_any(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_historical(Data::Custom(custom.clone()));
+    data_engine.process_pipeline(Data::Custom(custom.clone()));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical custom data must not publish on the live topic",
+        "pipeline custom data must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], custom);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], custom);
 }
 
 #[rstest]
-fn test_process_historical_bar_drops_out_of_sequence(stub_msgbus: Rc<RefCell<MessageBus>>) {
+fn test_process_pipeline_bar_drops_out_of_sequence(stub_msgbus: Rc<RefCell<MessageBus>>) {
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
@@ -10897,8 +14624,8 @@ fn test_process_historical_bar_drops_out_of_sequence(stub_msgbus: Rc<RefCell<Mes
     let first = make_bar(2_000);
     let second = make_bar(1_000); // regresses on both ts_event and ts_init
 
-    data_engine.process_historical(Data::Bar(first));
-    data_engine.process_historical(Data::Bar(second));
+    data_engine.process_pipeline(Data::Bar(first));
+    data_engine.process_pipeline(Data::Bar(second));
 
     assert_eq!(
         cache.borrow().bar(&bar_type),
@@ -10908,7 +14635,7 @@ fn test_process_historical_bar_drops_out_of_sequence(stub_msgbus: Rc<RefCell<Mes
 }
 
 #[rstest]
-fn test_process_historical_skips_synthetic_quote_republish(stub_msgbus: Rc<RefCell<MessageBus>>) {
+fn test_process_pipeline_skips_synthetic_quote_republish(stub_msgbus: Rc<RefCell<MessageBus>>) {
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
@@ -10919,7 +14646,7 @@ fn test_process_historical_skips_synthetic_quote_republish(stub_msgbus: Rc<RefCe
     cache.borrow_mut().add_synthetic(synthetic).unwrap();
 
     let (handler, saver) =
-        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("hist-synth-quote")));
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("pipeline-synth-quote")));
     let topic = switchboard::get_quotes_topic(synthetic_id);
     msgbus::subscribe_quotes(topic.into(), handler, None);
 
@@ -10932,7 +14659,7 @@ fn test_process_historical_skips_synthetic_quote_republish(stub_msgbus: Rc<RefCe
             .contains(&synthetic_id),
     );
 
-    // Seed one component live so the synthetic calc could produce a quote.
+    // Seed one component live so the synthetic calc could produce a quote
     let quote_a = quote_tick(component_a, "100.00", "102.00", 1);
     data_engine.process_data(Data::Quote(quote_a));
     assert!(saver.get_messages().is_empty()); // both components required
@@ -10940,7 +14667,7 @@ fn test_process_historical_skips_synthetic_quote_republish(stub_msgbus: Rc<RefCe
     // Now drive the other component through the pipeline path. The live path
     // would publish a synthetic quote here; the pipeline path must not.
     let quote_b = quote_tick(component_b, "200.00", "204.00", 2);
-    data_engine.process_historical(Data::Quote(quote_b));
+    data_engine.process_pipeline(Data::Quote(quote_b));
 
     assert!(
         saver.get_messages().is_empty(),
@@ -10949,7 +14676,7 @@ fn test_process_historical_skips_synthetic_quote_republish(stub_msgbus: Rc<RefCe
 }
 
 #[rstest]
-fn test_process_historical_skips_synthetic_trade_republish(stub_msgbus: Rc<RefCell<MessageBus>>) {
+fn test_process_pipeline_skips_synthetic_trade_republish(stub_msgbus: Rc<RefCell<MessageBus>>) {
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
@@ -10960,7 +14687,7 @@ fn test_process_historical_skips_synthetic_trade_republish(stub_msgbus: Rc<RefCe
     cache.borrow_mut().add_synthetic(synthetic).unwrap();
 
     let (handler, saver) =
-        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("hist-synth-trade")));
+        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("pipeline-synth-trade")));
     let topic = switchboard::get_trades_topic(synthetic_id);
     msgbus::subscribe_trades(topic.into(), handler, None);
 
@@ -10971,7 +14698,7 @@ fn test_process_historical_skips_synthetic_trade_republish(stub_msgbus: Rc<RefCe
     assert!(saver.get_messages().is_empty()); // both components required
 
     let trade_b = trade_tick(component_b, "200.00", "T-b", 2);
-    data_engine.process_historical(Data::Trade(trade_b));
+    data_engine.process_pipeline(Data::Trade(trade_b));
 
     assert!(
         saver.get_messages().is_empty(),
@@ -10980,14 +14707,14 @@ fn test_process_historical_skips_synthetic_trade_republish(stub_msgbus: Rc<RefCe
 }
 
 #[rstest]
-fn test_process_historical_depth10_skips_derived_quote_emission(
+fn test_process_pipeline_depth10_skips_derived_quote_emission(
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
 
-    // Live path would derive a quote from depth top-of-book with this flag.
+    // Live path would derive a quote from depth top-of-book with this flag
     let config = DataEngineConfig {
         emit_quotes_from_book_depths: true,
         ..DataEngineConfig::default()
@@ -10998,11 +14725,11 @@ fn test_process_historical_depth10_skips_derived_quote_emission(
     let instrument_id = depth.instrument_id;
 
     let (handler, saver) =
-        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("hist-depth-derived")));
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("pipeline-depth-derived")));
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_historical(Data::Depth10(Box::new(depth)));
+    data_engine.process_pipeline(Data::Depth10(Box::new(depth)));
 
     assert!(
         saver.get_messages().is_empty(),
@@ -11015,7 +14742,7 @@ fn test_process_historical_depth10_skips_derived_quote_emission(
 }
 
 #[rstest]
-fn test_process_historical_instrument_status_skips_option_chain_expiry(
+fn test_process_pipeline_instrument_status_skips_option_chain_expiry(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -11068,7 +14795,7 @@ fn test_process_historical_instrument_status_skips_option_chain_expiry(
     );
     data_engine
         .borrow_mut()
-        .process_historical(Data::InstrumentStatus(status));
+        .process_pipeline(Data::InstrumentStatus(status));
 
     let unsubs: Vec<_> = recorder
         .borrow()
@@ -11083,5 +14810,6375 @@ fn test_process_historical_instrument_status_skips_option_chain_expiry(
     assert!(
         data_engine.borrow().has_option_chain_manager(&series_id),
         "option chain manager must remain intact after pipeline status",
+    );
+}
+
+fn quote_at(instrument_id: InstrumentId, ts: u64) -> QuoteTick {
+    QuoteTick::new(
+        instrument_id,
+        Price::from("1.00000"),
+        Price::from("1.00010"),
+        Quantity::from("1"),
+        Quantity::from("1"),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+fn book_depth_at(instrument_id: InstrumentId, ts: u64) -> OrderBookDepth10 {
+    let mut depth = stub_depth10();
+    depth.instrument_id = instrument_id;
+    depth.ts_event = UnixNanos::from(ts);
+    depth.ts_init = UnixNanos::from(ts);
+    depth
+}
+
+fn quotes_response(
+    instrument_id: InstrumentId,
+    data: Vec<QuoteTick>,
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+) -> DataResponse {
+    DataResponse::Quotes(QuotesResponse::new(
+        UUID4::new(),
+        ClientId::test_default(),
+        instrument_id,
+        data,
+        start,
+        end,
+        UnixNanos::default(),
+        None,
+    ))
+}
+
+#[rstest]
+fn test_trim_to_bounds_drops_trailing_entries(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 1_000),
+            quote_at(instrument_id, 2_000),
+            quote_at(instrument_id, 3_000),
+        ],
+        None,
+        Some(UnixNanos::from(2_000)),
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    let ts_inits: Vec<u64> = quotes.data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+}
+
+#[rstest]
+fn test_trim_to_bounds_drops_leading_entries(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 1_000),
+            quote_at(instrument_id, 2_000),
+            quote_at(instrument_id, 3_000),
+        ],
+        Some(UnixNanos::from(2_000)),
+        None,
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    let ts_inits: Vec<u64> = quotes.data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![2_000, 3_000]);
+}
+
+#[rstest]
+fn test_trim_to_bounds_trims_book_depth(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = DataResponse::BookDepth(BookDepthResponse::new(
+        UUID4::new(),
+        ClientId::test_default(),
+        instrument_id,
+        vec![
+            book_depth_at(instrument_id, 1_000),
+            book_depth_at(instrument_id, 2_000),
+            book_depth_at(instrument_id, 3_000),
+        ],
+        Some(UnixNanos::from(1_500)),
+        Some(UnixNanos::from(2_500)),
+        UnixNanos::default(),
+        None,
+    ));
+
+    resp.trim_to_bounds();
+
+    let DataResponse::BookDepth(depths) = resp else {
+        panic!("expected BookDepth variant");
+    };
+    let ts_inits: Vec<u64> = depths.data.iter().map(|d| d.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![2_000]);
+}
+
+#[rstest]
+fn test_trim_to_bounds_short_circuits_on_empty(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![],
+        Some(UnixNanos::from(1_000)),
+        Some(UnixNanos::from(2_000)),
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    assert!(quotes.data.is_empty());
+}
+
+#[rstest]
+fn test_trim_to_bounds_passes_through_when_unbounded(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 1_000),
+            quote_at(instrument_id, 2_000),
+            quote_at(instrument_id, 3_000),
+        ],
+        None,
+        None,
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    let ts_inits: Vec<u64> = quotes.data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000, 3_000]);
+}
+
+#[rstest]
+fn test_trim_to_bounds_keeps_already_windowed_data(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 1_000),
+            quote_at(instrument_id, 2_000),
+            quote_at(instrument_id, 3_000),
+        ],
+        Some(UnixNanos::from(1_000)),
+        Some(UnixNanos::from(3_000)),
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    let ts_inits: Vec<u64> = quotes.data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000, 3_000]);
+}
+
+#[rstest]
+fn test_trim_to_bounds_trims_instruments(audusd_sim: CurrencyPair, venue: Venue) {
+    let mut earlier = audusd_sim.clone();
+    earlier.ts_init = UnixNanos::from(1_000);
+    let mut middle = audusd_sim.clone();
+    middle.ts_init = UnixNanos::from(2_000);
+    let mut later = audusd_sim;
+    later.ts_init = UnixNanos::from(3_000);
+
+    let mut resp = DataResponse::Instruments(InstrumentsResponse::new(
+        UUID4::new(),
+        ClientId::test_default(),
+        venue,
+        vec![
+            InstrumentAny::CurrencyPair(earlier),
+            InstrumentAny::CurrencyPair(middle),
+            InstrumentAny::CurrencyPair(later),
+        ],
+        Some(UnixNanos::from(2_000)),
+        Some(UnixNanos::from(2_000)),
+        UnixNanos::default(),
+        None,
+    ));
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Instruments(instruments) = resp else {
+        panic!("expected Instruments variant");
+    };
+    let ts_inits: Vec<u64> = instruments
+        .data
+        .iter()
+        .map(|i| Instrument::ts_init(i).as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![2_000]);
+}
+
+#[rstest]
+fn test_trim_to_bounds_clears_when_start_after_all_entries(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 1_000),
+            quote_at(instrument_id, 2_000),
+        ],
+        Some(UnixNanos::from(5_000)),
+        None,
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    assert!(quotes.data.is_empty());
+}
+
+#[rstest]
+fn test_trim_to_bounds_clears_when_end_before_all_entries(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 5_000),
+            quote_at(instrument_id, 6_000),
+        ],
+        None,
+        Some(UnixNanos::from(1_000)),
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    assert!(quotes.data.is_empty());
+}
+
+#[rstest]
+fn test_trim_to_bounds_trims_trades(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let make_trade = |ts: u64, trade_id: &str| {
+        TradeTick::new(
+            instrument_id,
+            Price::from("1.00000"),
+            Quantity::from("1"),
+            AggressorSide::Buyer,
+            TradeId::new(trade_id),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    let mut resp = DataResponse::Trades(TradesResponse::new(
+        UUID4::new(),
+        ClientId::test_default(),
+        instrument_id,
+        vec![
+            make_trade(1_000, "t1"),
+            make_trade(2_000, "t2"),
+            make_trade(3_000, "t3"),
+        ],
+        Some(UnixNanos::from(2_000)),
+        Some(UnixNanos::from(2_000)),
+        UnixNanos::default(),
+        None,
+    ));
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Trades(trades) = resp else {
+        panic!("expected Trades variant");
+    };
+    let ts_inits: Vec<u64> = trades.data.iter().map(|t| t.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![2_000]);
+}
+
+#[rstest]
+fn test_trim_to_bounds_trims_bars(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let bar_type = BarType::from(format!("{instrument_id}-1-MINUTE-LAST-INTERNAL").as_str());
+    let make_bar = |ts: u64| {
+        Bar::new(
+            bar_type,
+            Price::from("1.00000"),
+            Price::from("1.00010"),
+            Price::from("0.99990"),
+            Price::from("1.00005"),
+            Quantity::from("1"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    let mut resp = DataResponse::Bars(BarsResponse::new(
+        UUID4::new(),
+        ClientId::test_default(),
+        bar_type,
+        vec![make_bar(1_000), make_bar(2_000), make_bar(3_000)],
+        Some(UnixNanos::from(2_000)),
+        Some(UnixNanos::from(3_000)),
+        UnixNanos::default(),
+        None,
+    ));
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Bars(bars) = resp else {
+        panic!("expected Bars variant");
+    };
+    let ts_inits: Vec<u64> = bars.data.iter().map(|b| b.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![2_000, 3_000]);
+}
+
+#[rstest]
+fn test_trim_to_bounds_trims_funding_rates(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let make_rate = |ts: u64| {
+        FundingRateUpdate::new(
+            instrument_id,
+            "0.0001".parse().unwrap(),
+            None,
+            None,
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    let mut resp = DataResponse::FundingRates(FundingRatesResponse::new(
+        UUID4::new(),
+        ClientId::test_default(),
+        instrument_id,
+        vec![make_rate(1_000), make_rate(2_000), make_rate(3_000)],
+        Some(UnixNanos::from(1_500)),
+        Some(UnixNanos::from(2_500)),
+        UnixNanos::default(),
+        None,
+    ));
+
+    resp.trim_to_bounds();
+
+    let DataResponse::FundingRates(rates) = resp else {
+        panic!("expected FundingRates variant");
+    };
+    let ts_inits: Vec<u64> = rates.data.iter().map(|r| r.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![2_000]);
+}
+
+fn pipeline_quote(instrument_id: InstrumentId, ts: u64) -> QuoteTick {
+    QuoteTick::new(
+        instrument_id,
+        Price::from("1.00000"),
+        Price::from("1.00010"),
+        Quantity::from("1"),
+        Quantity::from("1"),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+fn leg_quotes_response(
+    request_id: UUID4,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    quotes: Vec<QuoteTick>,
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+) -> DataResponse {
+    DataResponse::Quotes(QuotesResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        quotes,
+        start,
+        end,
+        UnixNanos::default(),
+        None,
+    ))
+}
+
+fn time_range_quote_response(
+    request: &RequestQuotes,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    data_count: u64,
+    quotes: Vec<QuoteTick>,
+) -> DataResponse {
+    DataResponse::Quotes(QuotesResponse::new(
+        request.request_id,
+        client_id,
+        instrument_id,
+        quotes,
+        request.start.map(datetime_to_unix_nanos_for_test),
+        request.end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        Some(time_range_data_count_params(data_count)),
+    ))
+}
+
+fn time_range_trade_response(
+    request: &RequestTrades,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    data_count: u64,
+    trades: Vec<TradeTick>,
+) -> DataResponse {
+    DataResponse::Trades(TradesResponse::new(
+        request.request_id,
+        client_id,
+        instrument_id,
+        trades,
+        request.start.map(datetime_to_unix_nanos_for_test),
+        request.end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        Some(time_range_data_count_params(data_count)),
+    ))
+}
+
+fn time_range_bar_response(
+    request: &RequestBars,
+    client_id: ClientId,
+    data_count: u64,
+    bars: Vec<Bar>,
+) -> DataResponse {
+    DataResponse::Bars(BarsResponse::new(
+        request.request_id,
+        client_id,
+        request.bar_type,
+        bars,
+        request.start.map(datetime_to_unix_nanos_for_test),
+        request.end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        Some(time_range_data_count_params(data_count)),
+    ))
+}
+
+fn time_range_book_deltas_response(
+    request: &RequestBookDeltas,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    data_count: u64,
+    deltas: Vec<OrderBookDelta>,
+) -> DataResponse {
+    DataResponse::BookDeltas(BookDeltasResponse::new(
+        request.request_id,
+        client_id,
+        instrument_id,
+        deltas,
+        request.start.map(datetime_to_unix_nanos_for_test),
+        request.end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        Some(time_range_data_count_params(data_count)),
+    ))
+}
+
+fn time_range_book_depth_response(
+    request: &RequestBookDepth,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    data_count: u64,
+    depths: Vec<OrderBookDepth10>,
+) -> DataResponse {
+    DataResponse::BookDepth(BookDepthResponse::new(
+        request.request_id,
+        client_id,
+        instrument_id,
+        depths,
+        request.start.map(datetime_to_unix_nanos_for_test),
+        request.end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        Some(time_range_data_count_params(data_count)),
+    ))
+}
+
+fn time_range_funding_rates_response(
+    request: &RequestFundingRates,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    data_count: u64,
+    rates: Vec<FundingRateUpdate>,
+) -> DataResponse {
+    DataResponse::FundingRates(FundingRatesResponse::new(
+        request.request_id,
+        client_id,
+        instrument_id,
+        rates,
+        request.start.map(datetime_to_unix_nanos_for_test),
+        request.end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        Some(time_range_data_count_params(data_count)),
+    ))
+}
+
+fn time_range_data_count_params(data_count: u64) -> Params {
+    serde_json::from_value(json!({"data_count": data_count})).unwrap()
+}
+
+fn recorded_time_range_request_quotes(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestQuotes> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::Quotes(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn recorded_time_range_request_trades(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestTrades> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::Trades(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn recorded_time_range_request_bars(recorder: &Rc<RefCell<Vec<DataCommand>>>) -> Vec<RequestBars> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::Bars(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn recorded_time_range_request_book_deltas(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestBookDeltas> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::BookDeltas(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn recorded_time_range_request_book_depth(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestBookDepth> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::BookDepth(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn recorded_time_range_request_funding_rates(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestFundingRates> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::FundingRates(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn datetime_to_unix_nanos_for_test(dt: chrono::DateTime<chrono::Utc>) -> UnixNanos {
+    UnixNanos::from(u64::try_from(dt.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+}
+
+fn advance_test_clock_to(clock: &Rc<RefCell<dyn Clock>>, ns: u64) {
+    clock
+        .borrow_mut()
+        .as_any_mut()
+        .downcast_mut::<TestClock>()
+        .unwrap()
+        .advance_time(UnixNanos::from(ns), true);
+}
+
+fn register_time_range_recorder(
+    data_engine: &mut DataEngine,
+    clock: Rc<RefCell<dyn Clock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) -> Rc<RefCell<Vec<DataCommand>>> {
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+    recorder
+}
+
+fn pipeline_bar(bar_type: BarType, ts: u64) -> Bar {
+    Bar::new(
+        bar_type,
+        Price::from("1.0000"),
+        Price::from("1.0001"),
+        Price::from("0.9999"),
+        Price::from("1.0000"),
+        Quantity::from(1),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+fn pipeline_funding_rate(instrument_id: InstrumentId, ts: u64) -> FundingRateUpdate {
+    FundingRateUpdate::new(
+        instrument_id,
+        "0.0001".parse().unwrap(),
+        None,
+        None,
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+fn leg_bars_response(
+    request_id: UUID4,
+    bar_type: BarType,
+    client_id: ClientId,
+    bars: Vec<Bar>,
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+) -> DataResponse {
+    DataResponse::Bars(BarsResponse::new(
+        request_id,
+        client_id,
+        bar_type,
+        bars,
+        start,
+        end,
+        UnixNanos::default(),
+        None,
+    ))
+}
+
+#[rstest]
+fn test_time_range_pipeline_issues_one_child_at_a_time(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let parent_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [2],
+    }))
+    .unwrap();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(5_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_time_range_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_ne!(recorded[0].request_id, parent_id);
+    assert_eq!(
+        recorded[0]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(1_000_000_000)
+    );
+    assert_eq!(
+        recorded[0]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(3_000_000_000)
+    );
+    assert_eq!(data_engine.time_range_pipeline_count(), 1);
+
+    data_engine.response(time_range_quote_response(
+        &recorded[0],
+        instrument_id,
+        client_id,
+        1,
+        vec![pipeline_quote(instrument_id, 2_000_000_000)],
+    ));
+
+    let recorded = recorded_time_range_request_quotes(&recorder);
+    assert_eq!(
+        recorded.len(),
+        2,
+        "second child should be issued only after the first response"
+    );
+    assert_eq!(
+        recorded[1]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(3_000_000_001)
+    );
+    assert_eq!(
+        recorded[1]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(5_000_000_000)
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_uses_data_count_feedback(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [1, 3],
+    }))
+    .unwrap();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(8_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let first = recorded_time_range_request_quotes(&recorder)[0].clone();
+    data_engine.response(time_range_quote_response(
+        &first,
+        instrument_id,
+        client_id,
+        0,
+        Vec::new(),
+    ));
+
+    let recorded = recorded_time_range_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 2);
+    assert_eq!(
+        recorded[1]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(2_000_000_001)
+    );
+    assert_eq!(
+        recorded[1]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(5_000_000_000)
+    );
+
+    data_engine.response(time_range_quote_response(
+        &recorded[1],
+        instrument_id,
+        client_id,
+        4,
+        Vec::new(),
+    ));
+
+    let recorded = recorded_time_range_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 3);
+    assert_eq!(
+        recorded[2]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(5_000_000_001)
+    );
+    assert_eq!(
+        recorded[2]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(6_000_000_000)
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_point_data_uses_single_point_windows(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("time-range-point-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [2],
+        "point_data": true,
+    }))
+    .unwrap();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(6_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let first = recorded_time_range_request_quotes(&recorder)[0].clone();
+    assert_eq!(
+        first.start.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(1_000_000_000)
+    );
+    assert_eq!(
+        first.end.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(1_000_000_000)
+    );
+
+    data_engine.response(time_range_quote_response(
+        &first,
+        instrument_id,
+        client_id,
+        1,
+        vec![pipeline_quote(instrument_id, 1_000_000_000)],
+    ));
+
+    let recorded = recorded_time_range_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 2);
+    assert_eq!(
+        recorded[1]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(3_000_000_000)
+    );
+    assert_eq!(
+        recorded[1]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(3_000_000_000)
+    );
+
+    data_engine.response(time_range_quote_response(
+        &recorded[1],
+        instrument_id,
+        client_id,
+        1,
+        vec![pipeline_quote(instrument_id, 3_000_000_000)],
+    ));
+
+    let recorded = recorded_time_range_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 3);
+    assert_eq!(
+        recorded[2]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(5_000_000_000)
+    );
+    assert_eq!(
+        recorded[2]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(5_000_000_000)
+    );
+
+    data_engine.response(time_range_quote_response(
+        &recorded[2],
+        instrument_id,
+        client_id,
+        1,
+        vec![pipeline_quote(instrument_id, 5_000_000_000)],
+    ));
+
+    let recorded = recorded_time_range_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 4);
+    assert_eq!(
+        recorded[3]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(6_000_000_000)
+    );
+    assert_eq!(
+        recorded[3]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(6_000_000_000)
+    );
+
+    data_engine.response(time_range_quote_response(
+        &recorded[3],
+        instrument_id,
+        client_id,
+        1,
+        vec![pipeline_quote(instrument_id, 6_000_000_000)],
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(recorded_time_range_request_quotes(&recorder).len(), 4);
+    assert_eq!(data_engine.time_range_pipeline_count(), 0);
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(4)
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_updates_parent_request_bar_aggregation(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder =
+        register_time_range_recorder(&mut data_engine, clock, cache.clone(), client_id, venue);
+
+    let bar_type = BarType::from(format!("{instrument_id}-1-SECOND-LAST-INTERNAL").as_str());
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<TradesResponse>(Some(Ustr::from("time-range-agg-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "bar_types": [bar_type.to_string()],
+        "update_subscriptions": false,
+    }))
+    .unwrap();
+    let req = RequestCommand::Trades(RequestTrades::new(
+        instrument_id,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(2_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let child = recorded_time_range_request_trades(&recorder)[0].clone();
+    let child_params = child.params.as_ref().expect("child params must be present");
+    assert!(!child_params.contains_key("time_range_generator"));
+    assert!(!child_params.contains_key("bar_types"));
+
+    data_engine.response(time_range_trade_response(
+        &child,
+        instrument_id,
+        client_id,
+        2,
+        vec![
+            make_trade(instrument_id, "0.65000", 1000, "time-range-1", 0),
+            make_trade(
+                instrument_id,
+                "0.65010",
+                1000,
+                "time-range-2",
+                1_000_000_000,
+            ),
+        ],
+    ));
+
+    assert_eq!(
+        cache.borrow().bar(&bar_type).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(1_000_000_000)),
+        "parent request aggregator must consume time-range child trade data"
+    );
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(2)
+    );
+
+    let follow_up_params: Params = serde_json::from_value(json!({
+        "bar_types": [bar_type.to_string()],
+        "update_subscriptions": false,
+    }))
+    .unwrap();
+    let follow_up = RequestCommand::Trades(RequestTrades::new(
+        instrument_id,
+        Some(UnixNanos::from(3_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(4_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(follow_up_params),
+    ));
+    data_engine
+        .execute_request(follow_up)
+        .expect("empty parent response must clean up parent request aggregators");
+}
+
+#[rstest]
+fn test_time_range_pipeline_emits_empty_parent_response(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("time-range-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({"time_range_generator": ""})).unwrap();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let child = recorded_time_range_request_quotes(&recorder)[0].clone();
+    data_engine.response(time_range_quote_response(
+        &child,
+        instrument_id,
+        client_id,
+        2,
+        Vec::new(),
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(2)
+    );
+    assert_eq!(data_engine.time_range_pipeline_count(), 0);
+}
+
+#[rstest]
+fn test_reset_clears_time_range_pipeline_state(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("time-range-reset-parent")));
+    msgbus::register_response_handler(&parent_id, parent_handler);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [2],
+    }))
+    .unwrap();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(5_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let child = recorded_time_range_request_quotes(&recorder)[0].clone();
+    let (child_handler, child_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("time-range-reset-child")));
+    msgbus::register_response_handler(&child.request_id, child_handler);
+
+    assert_eq!(data_engine.time_range_pipeline_count(), 1);
+    data_engine.reset();
+    assert_eq!(data_engine.time_range_pipeline_count(), 0);
+
+    data_engine.response(time_range_quote_response(
+        &child,
+        instrument_id,
+        client_id,
+        1,
+        vec![pipeline_quote(instrument_id, 2_000_000_000)],
+    ));
+
+    assert!(
+        parent_saver.get_messages().is_empty(),
+        "reset must clear time-range child mappings so no parent response fires",
+    );
+    assert_eq!(child_saver.get_messages().len(), 1);
+    assert_eq!(
+        child_saver.get_messages()[0].correlation_id,
+        child.request_id
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_request_join_runs_end_to_end(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("time-range-join-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [2],
+    }))
+    .unwrap();
+    let join = RequestJoin::new(
+        vec![leg_a, leg_b],
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(5_000_000_000).to_datetime_utc()),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+        None,
+    );
+    data_engine
+        .execute_request(RequestCommand::Join(join))
+        .unwrap();
+
+    assert_eq!(data_engine.time_range_pipeline_count(), 1);
+    assert_eq!(data_engine.pending_join_request_count(), 1);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_500_000_000)],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 2_500_000_000)],
+        None,
+        None,
+    ));
+
+    assert_eq!(data_engine.time_range_pipeline_count(), 1);
+    assert_eq!(data_engine.pending_join_request_count(), 1);
+    assert!(
+        saver.get_messages().is_empty(),
+        "parent callback must wait for the final empty response"
+    );
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 3_500_000_000)],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 4_500_000_000)],
+        None,
+        None,
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(4)
+    );
+    assert_eq!(data_engine.time_range_pipeline_count(), 0);
+    assert_eq!(data_engine.pending_join_request_count(), 0);
+    assert_eq!(
+        cache
+            .borrow()
+            .quote(&instrument_id)
+            .map(|quote| quote.ts_init),
+        Some(UnixNanos::from(4_500_000_000))
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_request_join_rejects_empty_window(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [2],
+    }))
+    .unwrap();
+    let join = RequestJoin::new(
+        vec![UUID4::new()],
+        Some(UnixNanos::from(5_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(params),
+        None,
+    );
+
+    let err = data_engine
+        .execute_request(RequestCommand::Join(join))
+        .expect_err("empty-window time-range RequestJoin must fail fast");
+    let err_message = err.to_string();
+    assert!(
+        err_message.contains("without a child window"),
+        "error must explain why the Join cannot complete, was {err_message}"
+    );
+    assert_eq!(data_engine.time_range_pipeline_count(), 0);
+    assert_eq!(data_engine.pending_join_request_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_time_range_pipeline_child_uses_catalog_client_fanin(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_quote_catalog_with_quotes(
+        &mut data_engine,
+        "time-range-split-quotes",
+        vec![split_quote(instrument_id, 1_500_000_000)],
+        Some((1_000_000_000, 1_500_000_000)),
+    );
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("time-range-split-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [2],
+    }))
+    .unwrap();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(5_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_quotes(&recorder);
+    assert_eq!(
+        recorded.len(),
+        1,
+        "first time-range child should split into one client leg"
+    );
+    assert_eq!(data_engine.request_pipeline_count(), 1);
+    assert_eq!(data_engine.time_range_pipeline_count(), 1);
+
+    data_engine.response(time_range_quote_response(
+        &recorded[0],
+        instrument_id,
+        client_id,
+        1,
+        vec![split_quote(instrument_id, 2_500_000_000)],
+    ));
+
+    let recorded = recorded_request_quotes(&recorder);
+    assert_eq!(
+        recorded.len(),
+        2,
+        "next time-range child should be issued after catalog/client fan-in"
+    );
+    assert_eq!(
+        recorded[1]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(3_000_000_001)
+    );
+    assert_eq!(
+        recorded[1]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(5_000_000_000)
+    );
+
+    data_engine.response(time_range_quote_response(
+        &recorded[1],
+        instrument_id,
+        client_id,
+        0,
+        Vec::new(),
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(2)
+    );
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+    assert_eq!(data_engine.time_range_pipeline_count(), 0);
+}
+
+#[rstest]
+fn test_time_range_pipeline_supports_bars_variant(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", audusd_sim.id).as_str());
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder =
+        register_time_range_recorder(&mut data_engine, clock, cache.clone(), client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("time-range-bars-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({"time_range_generator": ""})).unwrap();
+    let req = RequestCommand::Bars(RequestBars::new(
+        bar_type,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let child = recorded_time_range_request_bars(&recorder)[0].clone();
+    let bar = pipeline_bar(bar_type, 1_500_000_000);
+    data_engine.response(time_range_bar_response(&child, client_id, 1, vec![bar]));
+
+    let received = saver.get_messages();
+    assert_eq!(cache.borrow().bar(&bar_type), Some(&bar));
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].bar_type, bar_type);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(1)
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_supports_book_deltas_variant(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("time-range-deltas-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+    let live_topic = switchboard::get_book_deltas_topic(instrument_id);
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDeltas>(
+        Some(Ustr::from("time-range-deltas-payload")),
+    );
+    msgbus::subscribe_book_deltas(pipeline_topic.into(), pipeline_handler, None);
+
+    let params: Params = serde_json::from_value(json!({"time_range_generator": ""})).unwrap();
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let child = recorded_time_range_request_book_deltas(&recorder)[0].clone();
+    let delta = split_delta(instrument_id, 1_500_000_000);
+    data_engine.response(time_range_book_deltas_response(
+        &child,
+        instrument_id,
+        client_id,
+        1,
+        vec![delta],
+    ));
+
+    let pipeline_messages = pipeline_saver.get_messages();
+    let received = saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0].instrument_id, instrument_id);
+    assert_eq!(pipeline_messages[0].deltas.len(), 1);
+    assert_eq!(pipeline_messages[0].deltas[0], delta);
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].instrument_id, instrument_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(1)
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_supports_book_depth_variant(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDepthResponse>(Some(Ustr::from("time-range-depth-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+    let live_topic = switchboard::get_book_depth10_topic(instrument_id);
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDepth10>(
+        Some(Ustr::from("time-range-depth-payload")),
+    );
+    msgbus::subscribe_book_depth10(pipeline_topic.into(), pipeline_handler, None);
+
+    let params: Params = serde_json::from_value(json!({"time_range_generator": ""})).unwrap();
+    let depth = NonZeroUsize::new(10).unwrap();
+    let req = RequestCommand::BookDepth(RequestBookDepth::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000_000_000).to_datetime_utc()),
+        None,
+        Some(depth),
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let child = recorded_time_range_request_book_depth(&recorder)[0].clone();
+    assert_eq!(child.depth, Some(depth));
+    let depth_msg = book_depth_at(instrument_id, 1_500_000_000);
+    data_engine.response(time_range_book_depth_response(
+        &child,
+        instrument_id,
+        client_id,
+        1,
+        vec![depth_msg],
+    ));
+
+    let pipeline_messages = pipeline_saver.get_messages();
+    let received = saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], depth_msg);
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].instrument_id, instrument_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(1)
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_supports_funding_rates_variant(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder =
+        register_time_range_recorder(&mut data_engine, clock, cache.clone(), client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) = get_any_saving_handler::<FundingRatesResponse>(Some(Ustr::from(
+        "time-range-funding-parent",
+    )));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({"time_range_generator": ""})).unwrap();
+    let req = RequestCommand::FundingRates(RequestFundingRates::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let child = recorded_time_range_request_funding_rates(&recorder)[0].clone();
+    let rate = pipeline_funding_rate(instrument_id, 1_500_000_000);
+    data_engine.response(time_range_funding_rates_response(
+        &child,
+        instrument_id,
+        client_id,
+        1,
+        vec![rate],
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(cache.borrow().funding_rate(&instrument_id), Some(&rate));
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].instrument_id, instrument_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(1)
+    );
+}
+
+#[rstest]
+fn test_pipeline_single_response_passes_through(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let request_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("pipeline-single")));
+    msgbus::register_response_handler(&request_id, handler);
+
+    data_engine.response(leg_quotes_response(
+        request_id,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_000)],
+        None,
+        None,
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, request_id);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|q| q.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_000]);
+}
+
+#[rstest]
+fn test_pipeline_two_legs_emits_one_rebuilt_response(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+
+    let parent_request = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, 2);
+    data_engine.register_request_pipeline_leg(leg_a, parent_id);
+    data_engine.register_request_pipeline_leg(leg_b, parent_id);
+
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("pipeline-two")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 2_000)],
+        None,
+        None,
+    ));
+    assert!(
+        saver.get_messages().is_empty(),
+        "parent response must not emit before all legs arrive",
+    );
+
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_000)],
+        None,
+        None,
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let rebuilt = &received[0];
+    assert_eq!(rebuilt.correlation_id, parent_id);
+    let ts_inits: Vec<u64> = rebuilt.data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+}
+
+#[rstest]
+fn test_pipeline_three_legs_fires_on_third_arrival(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let legs = [UUID4::new(), UUID4::new(), UUID4::new()];
+
+    let parent_request = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, legs.len());
+    for leg_id in &legs {
+        data_engine.register_request_pipeline_leg(*leg_id, parent_id);
+    }
+
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("pipeline-three")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    for (i, leg_id) in legs.iter().enumerate() {
+        data_engine.response(leg_quotes_response(
+            *leg_id,
+            instrument_id,
+            client_id,
+            vec![pipeline_quote(instrument_id, (i as u64 + 1) * 1_000)],
+            None,
+            None,
+        ));
+    }
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].data.len(), 3);
+}
+
+#[rstest]
+fn test_pipeline_trims_bounds_on_each_leg(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+
+    let parent_request = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, 2);
+    data_engine.register_request_pipeline_leg(leg_a, parent_id);
+    data_engine.register_request_pipeline_leg(leg_b, parent_id);
+
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("pipeline-trim")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 1_000),
+            pipeline_quote(instrument_id, 2_000),
+            pipeline_quote(instrument_id, 3_000),
+        ],
+        None,
+        Some(UnixNanos::from(2_000)),
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 4_000),
+            pipeline_quote(instrument_id, 5_000),
+            pipeline_quote(instrument_id, 6_000),
+        ],
+        Some(UnixNanos::from(5_000)),
+        None,
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|q| q.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000, 5_000, 6_000]);
+}
+
+#[rstest]
+fn test_request_join_two_phase_emits_parent_response(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    // Advance the test clock past the leg ts_init values so the join's
+    // `_bound_dates` clamping does not collapse the parent window to 0.
+    clock
+        .borrow_mut()
+        .as_any_mut()
+        .downcast_mut::<TestClock>()
+        .unwrap()
+        .advance_time(UnixNanos::from(10_000_000_000_u64), true);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let join_id = UUID4::new();
+
+    let join = RequestJoin::new(
+        vec![leg_a, leg_b],
+        None,
+        None,
+        join_id,
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine
+        .execute_request(RequestCommand::Join(join))
+        .unwrap();
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("join-parent")));
+    msgbus::register_response_handler(&join_id, parent_handler);
+    let (leg_a_handler, leg_a_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("join-leg-a")));
+    msgbus::register_response_handler(&leg_a, leg_a_handler);
+    let (leg_b_handler, leg_b_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("join-leg-b")));
+    msgbus::register_response_handler(&leg_b, leg_b_handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_000)],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 2_000)],
+        None,
+        None,
+    ));
+
+    let parent = parent_saver.get_messages();
+    assert_eq!(parent.len(), 1, "expected one final join response");
+    assert_eq!(parent[0].correlation_id, join_id);
+    let ts_inits: Vec<u64> = parent[0].data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+
+    assert_eq!(leg_a_saver.get_messages().len(), 1);
+    assert!(leg_a_saver.get_messages()[0].data.is_empty());
+    assert_eq!(leg_b_saver.get_messages().len(), 1);
+    assert!(leg_b_saver.get_messages()[0].data.is_empty());
+
+    // Joined data must reach the cache via the normal per-variant handler
+    // path; the final response routes through `response()` after the
+    // pipeline + join gates are cleared. The cache keeps the latest quote,
+    // so we expect the leg with the higher ts_init.
+    let cached = cache
+        .borrow()
+        .quote(&instrument_id)
+        .copied()
+        .expect("joined quote data must reach the cache");
+    assert_eq!(cached.ts_init, UnixNanos::from(2_000));
+}
+
+#[rstest]
+fn test_request_join_trims_to_parent_window(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    clock
+        .borrow_mut()
+        .as_any_mut()
+        .downcast_mut::<TestClock>()
+        .unwrap()
+        .advance_time(UnixNanos::from(10_000_000_000_u64), true);
+    let mut data_engine = DataEngine::new(clock.clone(), cache, None);
+
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let join_id = UUID4::new();
+
+    let join_start = UnixNanos::from(2_000).to_datetime_utc();
+    let join_end = UnixNanos::from(4_000).to_datetime_utc();
+    let join = RequestJoin::new(
+        vec![leg_a, leg_b],
+        Some(join_start),
+        Some(join_end),
+        join_id,
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine
+        .execute_request(RequestCommand::Join(join))
+        .unwrap();
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("join-window")));
+    msgbus::register_response_handler(&join_id, parent_handler);
+
+    // Legs return wider data than the parent join window; only entries in
+    // `[2_000, 4_000]` should survive the final response.
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 1_000),
+            pipeline_quote(instrument_id, 2_500),
+        ],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 3_500),
+            pipeline_quote(instrument_id, 5_000),
+        ],
+        None,
+        None,
+    ));
+
+    let parent = parent_saver.get_messages();
+    assert_eq!(parent.len(), 1);
+    let ts_inits: Vec<u64> = parent[0].data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![2_500, 3_500]);
+}
+
+#[rstest]
+fn test_pipeline_two_legs_trims_against_parent_window(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+
+    let parent_request = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        Some(UnixNanos::from(4_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, 2);
+    data_engine.register_request_pipeline_leg(leg_a, parent_id);
+    data_engine.register_request_pipeline_leg(leg_b, parent_id);
+
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("pipeline-parent-window-trim")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 1_000),
+            pipeline_quote(instrument_id, 2_500),
+        ],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 3_500),
+            pipeline_quote(instrument_id, 5_000),
+        ],
+        None,
+        None,
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|q| q.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![2_500, 3_500]);
+}
+
+#[rstest]
+fn test_pipeline_two_legs_inherits_parent_bars_window(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", audusd_sim.id).as_str());
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+
+    let parent_request = RequestCommand::Bars(RequestBars::new(
+        bar_type,
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        Some(UnixNanos::from(4_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, 2);
+    data_engine.register_request_pipeline_leg(leg_a, parent_id);
+    data_engine.register_request_pipeline_leg(leg_b, parent_id);
+
+    let (handler, saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("pipeline-parent-bars-window")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    data_engine.response(leg_bars_response(
+        leg_a,
+        bar_type,
+        client_id,
+        vec![pipeline_bar(bar_type, 1_000), pipeline_bar(bar_type, 2_500)],
+        None,
+        None,
+    ));
+    data_engine.response(leg_bars_response(
+        leg_b,
+        bar_type,
+        client_id,
+        vec![pipeline_bar(bar_type, 3_500), pipeline_bar(bar_type, 5_000)],
+        None,
+        None,
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|b| b.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![2_500, 3_500]);
+}
+
+#[rstest]
+fn test_pipeline_two_legs_with_no_parent_window_preserves_leg_bounds(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+
+    let parent_request = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, 2);
+    data_engine.register_request_pipeline_leg(leg_a, parent_id);
+    data_engine.register_request_pipeline_leg(leg_b, parent_id);
+
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("pipeline-no-parent-window")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_500)],
+        Some(UnixNanos::from(1_000)),
+        Some(UnixNanos::from(2_000)),
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 3_500)],
+        Some(UnixNanos::from(3_000)),
+        Some(UnixNanos::from(4_000)),
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].start, Some(UnixNanos::from(1_000)));
+    assert_eq!(received[0].end, Some(UnixNanos::from(2_000)));
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|q| q.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_500, 3_500]);
+}
+
+#[rstest]
+fn test_pipeline_trims_when_only_parent_start_is_set(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+
+    let parent_request = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, 2);
+    data_engine.register_request_pipeline_leg(leg_a, parent_id);
+    data_engine.register_request_pipeline_leg(leg_b, parent_id);
+
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("pipeline-trim-start-only")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 1_000),
+            pipeline_quote(instrument_id, 2_500),
+        ],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 3_500)],
+        None,
+        None,
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|q| q.ts_init.as_u64())
+        .collect();
+    assert_eq!(
+        ts_inits,
+        vec![2_500, 3_500],
+        "start-only parent window drops only the pre-start entries"
+    );
+}
+
+#[rstest]
+fn test_pipeline_trims_when_only_parent_end_is_set(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+
+    let parent_request = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        None,
+        Some(UnixNanos::from(2_500).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, 2);
+    data_engine.register_request_pipeline_leg(leg_a, parent_id);
+    data_engine.register_request_pipeline_leg(leg_b, parent_id);
+
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("pipeline-trim-end-only")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_000)],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 2_500),
+            pipeline_quote(instrument_id, 3_500),
+        ],
+        None,
+        None,
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|q| q.ts_init.as_u64())
+        .collect();
+    assert_eq!(
+        ts_inits,
+        vec![1_000, 2_500],
+        "end-only parent window drops only the post-end entries"
+    );
+}
+
+#[rstest]
+fn test_reset_clears_pipeline_and_join_state(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let join_id = UUID4::new();
+
+    let join = RequestJoin::new(
+        vec![leg_a, leg_b],
+        None,
+        None,
+        join_id,
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine
+        .execute_request(RequestCommand::Join(join))
+        .unwrap();
+
+    assert_eq!(data_engine.request_pipeline_count(), 1);
+    assert_eq!(data_engine.pending_join_request_count(), 1);
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("reset-parent")));
+    msgbus::register_response_handler(&join_id, parent_handler);
+
+    data_engine.reset();
+
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+    assert_eq!(data_engine.pending_join_request_count(), 0);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_000)],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 2_000)],
+        None,
+        None,
+    ));
+
+    assert!(
+        parent_saver.get_messages().is_empty(),
+        "reset must clear pipeline state so no rebuilt parent fires",
+    );
+}
+
+#[rstest]
+fn test_pipeline_unsupported_variant_drops_response(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let _ = audusd_sim;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let leg_id = UUID4::new();
+
+    let parent_request = RequestCommand::ForwardPrices(RequestForwardPrices::new(
+        venue,
+        Ustr::from("ES"),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, 1);
+    data_engine.register_request_pipeline_leg(leg_id, parent_id);
+
+    let (parent_handler, parent_saver) = get_any_saving_handler::<ForwardPricesResponse>(Some(
+        Ustr::from("pipeline-unsupported-parent"),
+    ));
+    msgbus::register_response_handler(&parent_id, parent_handler);
+    let (leg_handler, leg_saver) = get_any_saving_handler::<ForwardPricesResponse>(Some(
+        Ustr::from("pipeline-unsupported-leg"),
+    ));
+    msgbus::register_response_handler(&leg_id, leg_handler);
+
+    data_engine.response(DataResponse::ForwardPrices(ForwardPricesResponse::new(
+        leg_id,
+        client_id,
+        venue,
+        Vec::new(),
+        UnixNanos::default(),
+        None,
+    )));
+
+    assert!(
+        parent_saver.get_messages().is_empty(),
+        "unsupported pipeline variant must not emit a parent-keyed response",
+    );
+    assert!(
+        leg_saver.get_messages().is_empty(),
+        "unsupported pipeline variant must not leak the leg response unchanged",
+    );
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[rstest]
+fn test_request_join_new_panics_on_empty_request_ids() {
+    let result = std::panic::catch_unwind(|| {
+        RequestJoin::new(
+            Vec::new(),
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    });
+    let err = result.expect_err("RequestJoin::new must panic on empty request_ids");
+    let msg = err
+        .downcast_ref::<&'static str>()
+        .map(|s| (*s).to_string())
+        .or_else(|| err.downcast_ref::<String>().cloned())
+        .unwrap_or_default();
+    assert!(
+        msg.contains("request_ids must not be empty"),
+        "unexpected panic message: {msg}",
+    );
+}
+
+#[rstest]
+fn test_request_join_with_dates_inherits_originals() {
+    let original_id = UUID4::new();
+    let request_ids = vec![UUID4::new(), UUID4::new()];
+    let params: Params = serde_json::from_value(json!({"flag": "value"})).unwrap();
+    let original = RequestJoin::new(
+        request_ids.clone(),
+        None,
+        None,
+        original_id,
+        UnixNanos::default(),
+        Some(params.clone()),
+        None,
+    );
+
+    let new_start = UnixNanos::from(1_000).to_datetime_utc();
+    let new_end = UnixNanos::from(5_000).to_datetime_utc();
+    let dated = original.with_dates(Some(new_start), Some(new_end), UnixNanos::from(42));
+
+    assert_eq!(dated.request_ids, request_ids);
+    assert_eq!(dated.start, Some(new_start));
+    assert_eq!(dated.end, Some(new_end));
+    assert_eq!(dated.ts_init, UnixNanos::from(42));
+    assert_eq!(dated.correlation_id, Some(original_id));
+    assert_ne!(dated.request_id, original_id);
+    assert_eq!(dated.params, Some(params));
+}
+
+#[rstest]
+fn test_trim_to_bounds_clears_when_start_after_end(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 1_000),
+            quote_at(instrument_id, 2_000),
+            quote_at(instrument_id, 3_000),
+        ],
+        Some(UnixNanos::from(3_000)),
+        Some(UnixNanos::from(1_000)),
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    assert!(quotes.data.is_empty());
+}
+
+#[rstest]
+fn test_trim_to_bounds_single_point_window(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 1_000),
+            quote_at(instrument_id, 2_000),
+            quote_at(instrument_id, 3_000),
+        ],
+        Some(UnixNanos::from(2_000)),
+        Some(UnixNanos::from(2_000)),
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    let ts_inits: Vec<u64> = quotes.data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![2_000]);
+}
+
+#[rstest]
+fn test_response_trims_before_cache_write(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    // Send a bounded response with out-of-window leading and trailing rows.
+    // Only the row at ts_init=2_000 should reach the cache.
+    data_engine.response(leg_quotes_response(
+        UUID4::new(),
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 1_000),
+            pipeline_quote(instrument_id, 2_000),
+            pipeline_quote(instrument_id, 3_000),
+        ],
+        Some(UnixNanos::from(2_000)),
+        Some(UnixNanos::from(2_000)),
+    ));
+
+    let cached = cache
+        .borrow()
+        .quotes(&instrument_id)
+        .expect("cache must contain the trimmed quote");
+    let ts_inits: Vec<u64> = cached.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![2_000]);
+}
+
+#[rstest]
+fn test_pipeline_reset_mid_buffer_clears_partial_state(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+
+    let parent_request = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, 2);
+    data_engine.register_request_pipeline_leg(leg_a, parent_id);
+    data_engine.register_request_pipeline_leg(leg_b, parent_id);
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("mid-reset-parent")));
+    msgbus::register_response_handler(&parent_id, parent_handler);
+    let (leg_b_handler, leg_b_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("mid-reset-leg-b")));
+    msgbus::register_response_handler(&leg_b, leg_b_handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_000)],
+        None,
+        None,
+    ));
+    assert_eq!(data_engine.request_pipeline_count(), 1);
+
+    data_engine.reset();
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+
+    // After reset, the second leg is no longer registered with any pipeline,
+    // so it must propagate to msgbus under its own correlation_id.
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 2_000)],
+        None,
+        None,
+    ));
+
+    assert!(
+        parent_saver.get_messages().is_empty(),
+        "no rebuilt parent must fire after mid-buffer reset",
+    );
+    assert_eq!(leg_b_saver.get_messages().len(), 1);
+    assert_eq!(leg_b_saver.get_messages()[0].correlation_id, leg_b);
+}
+
+#[rstest]
+fn test_request_join_single_leg_fires_immediately(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    clock
+        .borrow_mut()
+        .as_any_mut()
+        .downcast_mut::<TestClock>()
+        .unwrap()
+        .advance_time(UnixNanos::from(10_000_000_000_u64), true);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let leg = UUID4::new();
+    let join_id = UUID4::new();
+
+    let join = RequestJoin::new(
+        vec![leg],
+        None,
+        None,
+        join_id,
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine
+        .execute_request(RequestCommand::Join(join))
+        .unwrap();
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("single-leg-parent")));
+    msgbus::register_response_handler(&join_id, parent_handler);
+    let (leg_handler, leg_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("single-leg-leg")));
+    msgbus::register_response_handler(&leg, leg_handler);
+
+    data_engine.response(leg_quotes_response(
+        leg,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_000)],
+        None,
+        None,
+    ));
+
+    let parent = parent_saver.get_messages();
+    assert_eq!(parent.len(), 1);
+    assert_eq!(parent[0].correlation_id, join_id);
+    let ts_inits: Vec<u64> = parent[0].data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_000]);
+
+    assert_eq!(leg_saver.get_messages().len(), 1);
+    assert!(leg_saver.get_messages()[0].data.is_empty());
+
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+    assert_eq!(data_engine.pending_join_request_count(), 0);
+}
+
+#[rstest]
+fn test_request_join_mixed_variants_cleans_up_join_staging(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let join_id = UUID4::new();
+
+    let join = RequestJoin::new(
+        vec![leg_a, leg_b],
+        None,
+        None,
+        join_id,
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine
+        .execute_request(RequestCommand::Join(join))
+        .unwrap();
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("mixed-variant-parent")));
+    msgbus::register_response_handler(&join_id, parent_handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_000)],
+        None,
+        None,
+    ));
+
+    let make_trade = |ts: u64| {
+        TradeTick::new(
+            instrument_id,
+            Price::from("1.00000"),
+            Quantity::from("1"),
+            AggressorSide::Buyer,
+            TradeId::new(format!("t-{ts}")),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        leg_b,
+        client_id,
+        instrument_id,
+        vec![make_trade(2_000)],
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    )));
+
+    assert!(
+        parent_saver.get_messages().is_empty(),
+        "mixed-variant rebuild must not emit a parent response",
+    );
+    assert_eq!(
+        data_engine.request_pipeline_count(),
+        0,
+        "pipeline state must be cleared after a failed rebuild",
+    );
+    assert_eq!(
+        data_engine.pending_join_request_count(),
+        0,
+        "pending join must be cleared after a failed rebuild to prevent leaks",
+    );
+}
+
+#[rstest]
+fn test_pipeline_one_empty_leg_still_emits_parent(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+
+    let parent_request = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, 2);
+    data_engine.register_request_pipeline_leg(leg_a, parent_id);
+    data_engine.register_request_pipeline_leg(leg_b, parent_id);
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("empty-leg-parent")));
+    msgbus::register_response_handler(&parent_id, parent_handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 1_000),
+            pipeline_quote(instrument_id, 2_000),
+        ],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        Vec::new(),
+        None,
+        None,
+    ));
+
+    let received = parent_saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|q| q.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+}
+
+#[rstest]
+fn test_request_join_all_empty_legs_emits_empty_parent(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let join_id = UUID4::new();
+
+    let join = RequestJoin::new(
+        vec![leg_a, leg_b],
+        None,
+        None,
+        join_id,
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine
+        .execute_request(RequestCommand::Join(join))
+        .unwrap();
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("all-empty-parent")));
+    msgbus::register_response_handler(&join_id, parent_handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        Vec::new(),
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        Vec::new(),
+        None,
+        None,
+    ));
+
+    let received = parent_saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, join_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(data_engine.pending_join_request_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+fn register_quote_catalog_with_quotes(
+    data_engine: &mut DataEngine,
+    label: &str,
+    quotes: Vec<QuoteTick>,
+    interval: Option<(u64, u64)>,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new(label);
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let (start, end) = match interval {
+        Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
+        None => (None, None),
+    };
+    catalog.write_to_parquet(quotes, start, end, None).unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn register_trade_catalog_with_trades(
+    data_engine: &mut DataEngine,
+    label: &str,
+    trades: Vec<TradeTick>,
+    interval: Option<(u64, u64)>,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new(label);
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let (start, end) = match interval {
+        Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
+        None => (None, None),
+    };
+    catalog.write_to_parquet(trades, start, end, None).unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn register_bar_catalog_with_bars(
+    data_engine: &mut DataEngine,
+    label: &str,
+    bars: Vec<Bar>,
+    interval: Option<(u64, u64)>,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new(label);
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let (start, end) = match interval {
+        Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
+        None => (None, None),
+    };
+    catalog.write_to_parquet(bars, start, end, None).unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn advance_clock_to(clock: &Rc<RefCell<dyn Clock>>, ns: u64) {
+    clock
+        .borrow_mut()
+        .as_any_mut()
+        .downcast_mut::<TestClock>()
+        .unwrap()
+        .advance_time(UnixNanos::from(ns), true);
+}
+
+#[cfg(feature = "streaming")]
+fn split_quote(instrument_id: InstrumentId, ts: u64) -> QuoteTick {
+    make_quote(instrument_id, "1.0000", "1.0001", ts)
+}
+
+#[cfg(feature = "streaming")]
+fn split_trade(instrument_id: InstrumentId, ts: u64, trade_id: &str) -> TradeTick {
+    make_trade(instrument_id, "1.0000", 1, trade_id, ts)
+}
+
+#[cfg(feature = "streaming")]
+fn split_bar(bar_type: BarType, ts: u64) -> Bar {
+    make_bar(bar_type, "1.0000", "1.0001", "0.9999", "1.0000", 1, ts)
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_request_quotes(recorder: &Rc<RefCell<Vec<DataCommand>>>) -> Vec<RequestQuotes> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::Quotes(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_request_trades(recorder: &Rc<RefCell<Vec<DataCommand>>>) -> Vec<RequestTrades> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::Trades(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_request_funding_rates(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestFundingRates> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::FundingRates(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_request_data(recorder: &Rc<RefCell<Vec<DataCommand>>>) -> Vec<RequestCustomData> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::Data(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_request_instrument(recorder: &Rc<RefCell<Vec<DataCommand>>>) -> Vec<RequestInstrument> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::Instrument(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_request_instruments(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestInstruments> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::Instruments(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
+fn split_funding_rate(instrument_id: InstrumentId, ts: u64, rate: &str) -> FundingRateUpdate {
+    FundingRateUpdate::new(
+        instrument_id,
+        rate.parse().unwrap(),
+        None,
+        None,
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+#[cfg(feature = "streaming")]
+fn register_funding_catalog_with_rates(
+    data_engine: &mut DataEngine,
+    label: &str,
+    rates: Vec<FundingRateUpdate>,
+    interval: Option<(u64, u64)>,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new(label);
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let (start, end) = match interval {
+        Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
+        None => (None, None),
+    };
+    catalog.write_to_parquet(rates, start, end, None).unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn ensure_engine_custom_data_registered() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        ensure_custom_data_registered::<RustTestCustomData>();
+    });
+}
+
+#[cfg(feature = "streaming")]
+fn rust_test_custom_data_type(identifier: &str) -> DataType {
+    DataType::new(
+        "RustTestCustomData",
+        Some(serde_json::from_value(json!({"source": "catalog-test"})).unwrap()),
+        Some(identifier.to_string()),
+    )
+}
+
+#[cfg(feature = "streaming")]
+fn split_custom(
+    data_type: DataType,
+    instrument_id: InstrumentId,
+    ts: u64,
+    value: f64,
+) -> CustomData {
+    CustomData::new(
+        std::sync::Arc::new(RustTestCustomData {
+            instrument_id,
+            value,
+            flag: value > 1.0,
+            ts_event: UnixNanos::from(ts),
+            ts_init: UnixNanos::from(ts),
+        }),
+        data_type,
+    )
+}
+
+#[cfg(feature = "streaming")]
+fn register_custom_catalog_with_data(
+    data_engine: &mut DataEngine,
+    label: &str,
+    data: Vec<CustomData>,
+    interval: Option<(u64, u64)>,
+) -> CatalogTempDir {
+    ensure_engine_custom_data_registered();
+    let catalog_dir = CatalogTempDir::new(label);
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let (start, end) = match interval {
+        Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
+        None => (None, None),
+    };
+    catalog
+        .write_custom_data_batch(data, start, end, None)
+        .unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn custom_response_payload(resp: &CustomDataResponse) -> Vec<CustomData> {
+    resp.data
+        .as_ref()
+        .downcast_ref::<Vec<CustomData>>()
+        .expect("custom response payload should be Vec<CustomData>")
+        .clone()
+}
+
+#[cfg(feature = "streaming")]
+fn custom_values(data: &[CustomData]) -> Vec<f64> {
+    data.iter()
+        .map(|custom| {
+            custom
+                .data
+                .as_any()
+                .downcast_ref::<RustTestCustomData>()
+                .expect("custom payload should be RustTestCustomData")
+                .value
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
+fn register_instrument_catalog_with_instruments(
+    data_engine: &mut DataEngine,
+    label: &str,
+    instruments: Vec<InstrumentAny>,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new(label);
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    catalog.write_instruments(instruments).unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_quotes_catalog_only_serves_from_disk(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_quote_catalog_with_quotes(
+        &mut data_engine,
+        "catalog-only",
+        vec![
+            split_quote(instrument_id, 1_000),
+            split_quote(instrument_id, 2_000),
+        ],
+        Some((1_000, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("catalog-only")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|q| q.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_quotes_client_only_when_catalog_has_no_data(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "empty-quotes-only");
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(
+        recorded[0]
+            .start
+            .map(|d| d.timestamp_nanos_opt().unwrap_or(0)),
+        Some(1_000)
+    );
+    assert_eq!(
+        recorded[0]
+            .end
+            .map(|d| d.timestamp_nanos_opt().unwrap_or(0)),
+        Some(3_000)
+    );
+    assert_eq!(data_engine.request_pipeline_count(), 1);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_quotes_catalog_plus_client_split(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_quote_catalog_with_quotes(
+        &mut data_engine,
+        "split-quotes",
+        vec![split_quote(instrument_id, 1_500)],
+        Some((1_000, 1_500)),
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("split-quotes-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let parent_limit = NonZeroUsize::new(50).unwrap();
+    let sentinel_params: Params = serde_json::from_value(json!({"feed_tag": "alpha"})).unwrap();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        Some(parent_limit),
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(sentinel_params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_quotes(&recorder);
+    assert_eq!(
+        recorded.len(),
+        1,
+        "expected one client leg for the missing interval"
+    );
+    let client_start = recorded[0]
+        .start
+        .map_or(0, |d| d.timestamp_nanos_opt().unwrap_or(0));
+    let client_end = recorded[0]
+        .end
+        .map_or(0, |d| d.timestamp_nanos_opt().unwrap_or(0));
+    assert!(
+        client_start > 1_500,
+        "client leg should start after the catalog coverage ends (was {client_start})"
+    );
+    assert_eq!(client_end, 3_000);
+    assert_eq!(
+        recorded[0].limit,
+        Some(parent_limit),
+        "with_dates_for_pipeline must carry the parent limit to each leg"
+    );
+    assert_eq!(
+        recorded[0]
+            .params
+            .as_ref()
+            .and_then(|p| p.get("feed_tag"))
+            .and_then(Value::as_str),
+        Some("alpha"),
+        "with_dates_for_pipeline must carry parent params to each leg"
+    );
+
+    let leg_request_id = recorded[0].request_id;
+    data_engine.response(leg_quotes_response(
+        leg_request_id,
+        instrument_id,
+        client_id,
+        vec![split_quote(instrument_id, 2_500)],
+        recorded[0].start.map(|d| {
+            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+        }),
+        recorded[0].end.map(|d| {
+            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+        }),
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|q| q.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_500, 2_500]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_quotes_skip_catalog_data_param_honored(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_quote_catalog_with_quotes(
+        &mut data_engine,
+        "skip-catalog",
+        vec![split_quote(instrument_id, 1_500)],
+        Some((1_000, 1_500)),
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let params: Params = serde_json::from_value(json!({"skip_catalog_data": true})).unwrap();
+    let parent_id = UUID4::new();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 1, "skip flag should bypass catalog leg");
+    assert_eq!(
+        recorded[0]
+            .start
+            .map(|d| d.timestamp_nanos_opt().unwrap_or(0)),
+        Some(1_000),
+        "client leg should cover the full parent window when catalog is skipped"
+    );
+    assert_eq!(
+        recorded[0]
+            .end
+            .map(|d| d.timestamp_nanos_opt().unwrap_or(0)),
+        Some(3_000)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_quotes_no_client_and_no_catalog_data_emits_empty(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "empty-no-client");
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("empty-no-client")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_bars_catalog_lookup_uses_bar_type_identifier(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", audusd_sim.id).as_str());
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_bar_catalog_with_bars(
+        &mut data_engine,
+        "bars-by-bar-type",
+        vec![split_bar(bar_type, 2_000)],
+        Some((1_000, 3_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("bars-by-bar-type")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Bars(RequestBars::new(
+        bar_type,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].bar_type, bar_type);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|b| b.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![2_000]);
+    assert_eq!(received[0].data[0].bar_type, bar_type);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_trades_catalog_plus_client_split(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_trade_catalog_with_trades(
+        &mut data_engine,
+        "split-trades",
+        vec![split_trade(instrument_id, 1_500, "T-1")],
+        Some((1_000, 1_500)),
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<TradesResponse>(Some(Ustr::from("split-trades-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Trades(RequestTrades::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_trades(&recorder);
+    assert_eq!(
+        recorded.len(),
+        1,
+        "expected one client leg for trades split"
+    );
+    let leg_request_id = recorded[0].request_id;
+
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        leg_request_id,
+        client_id,
+        instrument_id,
+        vec![split_trade(instrument_id, 2_500, "T-2")],
+        recorded[0].start.map(|d| {
+            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+        }),
+        recorded[0].end.map(|d| {
+            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+        }),
+        UnixNanos::default(),
+        None,
+    )));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|t| t.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_500, 2_500]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_quotes_dispatches_straight_to_client_with_no_catalog_registered(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let original_start = UnixNanos::from(1_000).to_datetime_utc();
+    let original_end = UnixNanos::from(3_000).to_datetime_utc();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(original_start),
+        Some(original_end),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_quotes(&recorder);
+    assert_eq!(
+        recorded.len(),
+        1,
+        "no-catalog path must dispatch a single direct client request"
+    );
+    assert_eq!(
+        recorded[0].request_id, parent_id,
+        "no-catalog path must preserve the parent request id (no pipeline rebinding)"
+    );
+    assert_eq!(recorded[0].start, Some(original_start));
+    assert_eq!(recorded[0].end, Some(original_end));
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_pipeline_count_resets_after_catalog_split_fanin(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_quote_catalog_with_quotes(
+        &mut data_engine,
+        "pipeline-reset",
+        vec![split_quote(instrument_id, 1_500)],
+        Some((1_000, 1_500)),
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 1);
+
+    data_engine.response(leg_quotes_response(
+        recorded[0].request_id,
+        instrument_id,
+        client_id,
+        vec![split_quote(instrument_id, 2_500)],
+        recorded[0].start.map(|d| {
+            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+        }),
+        recorded[0].end.map(|d| {
+            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+        }),
+    ));
+
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+    assert_eq!(data_engine.pending_join_request_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_quotes_dispatch_failure_aborts_pipeline(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_quote_catalog_with_quotes(
+        &mut data_engine,
+        "abort-pipeline",
+        vec![split_quote(instrument_id, 1_500)],
+        Some((1_000, 1_500)),
+    );
+
+    let failing = FailingRequestDataClient::new(client_id, Some(venue), "client refused");
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(failing));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("abort-pipeline-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    let err = data_engine
+        .execute_request(req)
+        .expect_err("client leg dispatch failure must propagate to the caller");
+    let err_message = format!("{err:#}");
+    assert!(
+        err_message.contains("client refused"),
+        "error must originate in the failing client (was: {err_message})"
+    );
+    assert_eq!(
+        data_engine.request_pipeline_count(),
+        0,
+        "abort_request_pipeline must drain pipeline state on dispatch failure"
+    );
+    assert!(
+        saver.get_messages().is_empty(),
+        "no rebuilt response must reach the parent handler when dispatch fails"
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_trades_with_bar_types_param_sets_up_aggregation_through_streaming_path(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let _catalog_dir = register_trade_catalog_with_trades(
+        &mut data_engine,
+        "agg-trades",
+        vec![split_trade(instrument_id, 2_000, "agg-1")],
+        Some((1_000, 2_000)),
+    );
+
+    let bar_type = BarType::from(format!("{instrument_id}-1-TICK-LAST-INTERNAL").as_str());
+    let params: Params = serde_json::from_value(json!({
+        "bar_types": [bar_type.to_string()],
+        "update_subscriptions": false,
+    }))
+    .unwrap();
+
+    let parent_id = UUID4::new();
+    let req = RequestCommand::Trades(RequestTrades::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    assert_eq!(
+        cache.borrow().bar(&bar_type).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(2_000)),
+        "request-scoped aggregator must consume the catalog-sourced trade",
+    );
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_bars_catalog_plus_client_split(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", audusd_sim.id).as_str());
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_bar_catalog_with_bars(
+        &mut data_engine,
+        "bars-split",
+        vec![split_bar(bar_type, 1_500)],
+        Some((1_000, 1_500)),
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("bars-split-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Bars(RequestBars::new(
+        bar_type,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded: Vec<RequestBars> = recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::Bars(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(
+        recorded[0].bar_type, bar_type,
+        "client leg must preserve the parent bar_type"
+    );
+
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        recorded[0].request_id,
+        client_id,
+        bar_type,
+        vec![split_bar(bar_type, 2_500)],
+        recorded[0].start.map(|d| {
+            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+        }),
+        recorded[0].end.map(|d| {
+            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+        }),
+        UnixNanos::default(),
+        None,
+    )));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].bar_type, bar_type);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|b| b.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_500, 2_500]);
+    assert_eq!(received[0].data[0].bar_type, bar_type);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_funding_rates_catalog_only_serves_from_disk(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_funding_catalog_with_rates(
+        &mut data_engine,
+        "funding-catalog-only",
+        vec![
+            split_funding_rate(instrument_id, 1_000, "0.0001"),
+            split_funding_rate(instrument_id, 2_000, "0.0002"),
+        ],
+        Some((1_000, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<FundingRatesResponse>(Some(Ustr::from("funding-catalog-only")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::FundingRates(RequestFundingRates::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|rate| rate.ts_init.as_u64())
+        .collect();
+
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_funding_rates_catalog_plus_client_split(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_funding_catalog_with_rates(
+        &mut data_engine,
+        "funding-split",
+        vec![split_funding_rate(instrument_id, 1_500, "0.0001")],
+        Some((1_000, 1_500)),
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<FundingRatesResponse>(Some(Ustr::from("funding-split-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::FundingRates(RequestFundingRates::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_funding_rates(&recorder);
+    assert_eq!(
+        recorded.len(),
+        1,
+        "expected one client leg for the missing interval"
+    );
+
+    data_engine.response(DataResponse::FundingRates(FundingRatesResponse::new(
+        recorded[0].request_id,
+        client_id,
+        instrument_id,
+        vec![split_funding_rate(instrument_id, 2_500, "0.0002")],
+        recorded[0].start.map(datetime_to_unix_nanos_for_test),
+        recorded[0].end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        None,
+    )));
+
+    let received = saver.get_messages();
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|rate| rate.ts_init.as_u64())
+        .collect();
+
+    assert_eq!(received.len(), 1);
+    assert_eq!(ts_inits, vec![1_500, 2_500]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_funding_rates_no_client_no_catalog_emits_empty(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "funding-empty");
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<FundingRatesResponse>(Some(Ustr::from("funding-empty")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::FundingRates(RequestFundingRates::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_funding_rates_dispatches_straight_to_client_with_no_catalog_registered(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let req = RequestCommand::FundingRates(RequestFundingRates::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_funding_rates(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].request_id, parent_id);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_custom_data_catalog_only_serves_from_disk(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = InstrumentId::from("RUST.TEST");
+    let data_type = rust_test_custom_data_type("RUST.TEST");
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_custom_catalog_with_data(
+        &mut data_engine,
+        "custom-catalog-only",
+        vec![
+            split_custom(data_type.clone(), instrument_id, 1_000, 1.0),
+            split_custom(data_type.clone(), instrument_id, 2_000, 2.0),
+        ],
+        Some((1_000, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<CustomDataResponse>(Some(Ustr::from("custom-catalog-only")));
+    msgbus::register_response_handler(&parent_id, handler);
+    let params: Params = serde_json::from_value(json!({"source": "params"})).unwrap();
+
+    let req = RequestCommand::Data(RequestCustomData::new(
+        client_id,
+        data_type.clone(),
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        None,
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    let data = custom_response_payload(&received[0]);
+
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].data_type, data_type);
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get_bool("update_catalog")),
+        Some(false)
+    );
+    assert_eq!(custom_values(&data), vec![1.0, 2.0]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_custom_data_without_identifier_catalog_only_serves_from_disk(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = InstrumentId::from("RUST.TEST");
+    let data_type = DataType::new(
+        "RustTestCustomData",
+        Some(serde_json::from_value(json!({"source": "catalog-test"})).unwrap()),
+        None,
+    );
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_custom_catalog_with_data(
+        &mut data_engine,
+        "custom-catalog-no-identifier",
+        vec![
+            split_custom(data_type.clone(), instrument_id, 1_000, 1.0),
+            split_custom(data_type.clone(), instrument_id, 2_000, 2.0),
+        ],
+        Some((1_000, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) = get_any_saving_handler::<CustomDataResponse>(Some(Ustr::from(
+        "custom-catalog-no-identifier",
+    )));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Data(RequestCustomData::new(
+        client_id,
+        data_type.clone(),
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        None,
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    let data = custom_response_payload(&received[0]);
+
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].data_type, data_type);
+    assert_eq!(custom_values(&data), vec![1.0, 2.0]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_custom_data_catalog_plus_client_split(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = InstrumentId::from("RUST.TEST");
+    let data_type = rust_test_custom_data_type("RUST.TEST");
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_custom_catalog_with_data(
+        &mut data_engine,
+        "custom-split",
+        vec![split_custom(data_type.clone(), instrument_id, 1_500, 1.5)],
+        Some((1_000, 1_500)),
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<CustomDataResponse>(Some(Ustr::from("custom-split-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Data(RequestCustomData::new(
+        client_id,
+        data_type.clone(),
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_data(&recorder);
+    assert_eq!(
+        recorded.len(),
+        1,
+        "expected one client leg for the missing interval"
+    );
+
+    data_engine.response(DataResponse::Data(CustomDataResponse::new(
+        recorded[0].request_id,
+        client_id,
+        Some(venue),
+        data_type.clone(),
+        split_custom(data_type, instrument_id, 2_500, 2.5),
+        recorded[0].start.map(datetime_to_unix_nanos_for_test),
+        recorded[0].end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        None,
+    )));
+
+    let received = saver.get_messages();
+    let data = custom_response_payload(&received[0]);
+
+    assert_eq!(received.len(), 1);
+    assert_eq!(custom_values(&data), vec![1.5, 2.5]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_custom_data_no_client_no_catalog_emits_empty(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let data_type = rust_test_custom_data_type("RUST.TEST");
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "custom-empty");
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<CustomDataResponse>(Some(Ustr::from("custom-empty")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Data(RequestCustomData::new(
+        client_id,
+        data_type,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    let data = custom_response_payload(&received[0]);
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(data.is_empty());
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_custom_data_dispatches_straight_to_client_with_no_catalog_registered(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let data_type = rust_test_custom_data_type("RUST.TEST");
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let req = RequestCommand::Data(RequestCustomData::new(
+        client_id,
+        data_type,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_data(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].request_id, parent_id);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instruments_no_client_no_catalog_emits_empty(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "instruments-empty");
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<InstrumentsResponse>(Some(Ustr::from("instruments-empty")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Instruments(RequestInstruments::new(
+        None,
+        None,
+        Some(client_id),
+        Some(venue),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instrument_catalog_uses_latest_record(
+    mut audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let mut earlier = audusd_sim.clone();
+    earlier.ts_init = UnixNanos::from(1_000);
+    audusd_sim.ts_init = UnixNanos::from(2_000);
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_instrument_catalog_with_instruments(
+        &mut data_engine,
+        "instrument-latest",
+        vec![
+            InstrumentAny::CurrencyPair(earlier),
+            InstrumentAny::CurrencyPair(audusd_sim),
+        ],
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<InstrumentResponse>(Some(Ustr::from("instrument-latest")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Instrument(RequestInstrument::new(
+        instrument_id,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].instrument_id, instrument_id);
+    assert_eq!(received[0].data.ts_init(), UnixNanos::from(2_000));
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instruments_catalog_applies_only_last(
+    mut audusd_sim: CurrencyPair,
+    mut gbpusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let mut audusd_earlier = audusd_sim.clone();
+    audusd_earlier.ts_init = UnixNanos::from(1_000);
+    audusd_sim.ts_init = UnixNanos::from(2_000);
+    gbpusd_sim.ts_init = UnixNanos::from(3_000);
+    let audusd_id = audusd_sim.id;
+    let gbpusd_id = gbpusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_instrument_catalog_with_instruments(
+        &mut data_engine,
+        "instruments-only-last",
+        vec![
+            InstrumentAny::CurrencyPair(audusd_earlier),
+            InstrumentAny::CurrencyPair(audusd_sim),
+            InstrumentAny::CurrencyPair(gbpusd_sim),
+        ],
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<InstrumentsResponse>(Some(Ustr::from("instruments-only-last")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Instruments(RequestInstruments::new(
+        None,
+        None,
+        Some(client_id),
+        Some(venue),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    let mut ids_and_timestamps: Vec<(InstrumentId, u64)> = received[0]
+        .data
+        .iter()
+        .map(|instrument| (instrument.id(), instrument.ts_init().as_u64()))
+        .collect();
+    ids_and_timestamps.sort_by_key(|(id, _)| id.to_string());
+
+    assert_eq!(received.len(), 1);
+    assert_eq!(
+        ids_and_timestamps,
+        vec![(audusd_id, 2_000), (gbpusd_id, 3_000)]
+    );
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instrument_dispatches_straight_to_client_with_no_catalog_registered(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let req = RequestCommand::Instrument(RequestInstrument::new(
+        instrument_id,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_instrument(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].request_id, parent_id);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instruments_dispatches_straight_to_client_with_no_catalog_registered(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let req = RequestCommand::Instruments(RequestInstruments::new(
+        None,
+        None,
+        Some(client_id),
+        Some(venue),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_instruments(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].request_id, parent_id);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instrument_force_update_dispatches_to_client_with_catalog_registered(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_instrument_catalog_with_instruments(
+        &mut data_engine,
+        "instrument-force-update",
+        vec![InstrumentAny::CurrencyPair(audusd_sim)],
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let params: Params = serde_json::from_value(json!({"force_instrument_update": true})).unwrap();
+    let parent_id = UUID4::new();
+    let req = RequestCommand::Instrument(RequestInstrument::new(
+        instrument_id,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_instrument(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].request_id, parent_id);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instruments_update_catalog_dispatches_to_client_with_catalog_registered(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_instrument_catalog_with_instruments(
+        &mut data_engine,
+        "instruments-update-catalog",
+        vec![InstrumentAny::CurrencyPair(audusd_sim)],
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let params: Params = serde_json::from_value(json!({"update_catalog": true})).unwrap();
+    let parent_id = UUID4::new();
+    let req = RequestCommand::Instruments(RequestInstruments::new(
+        None,
+        None,
+        Some(client_id),
+        Some(venue),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_instruments(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].request_id, parent_id);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_subscription_name_param_disables_now_clamping(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    // Clock at 1_000; the request asks for data up to 5_000. Without the
+    // subscription_name bypass, bound_request_dates clamps end to 1_000.
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 1_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "subscription-name");
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let params: Params = serde_json::from_value(json!({"subscription_name": "feed-a"})).unwrap();
+    let parent_id = UUID4::new();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        Some(UnixNanos::from(5_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(
+        recorded[0]
+            .start
+            .map(|d| d.timestamp_nanos_opt().unwrap_or(0)),
+        Some(2_000),
+        "subscription_name must bypass start clamping"
+    );
+    assert_eq!(
+        recorded[0]
+            .end
+            .map(|d| d.timestamp_nanos_opt().unwrap_or(0)),
+        Some(5_000),
+        "subscription_name must bypass end clamping"
+    );
+}
+
+fn book_response_for(
+    request_id: UUID4,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    book: OrderBook,
+) -> DataResponse {
+    DataResponse::Book(BookResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        book,
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    ))
+}
+
+#[rstest]
+fn test_book_response_skips_cache_write_when_subscription_active(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let mock_client = MockDataClient::new(clock, cache.clone(), client_id, Some(venue));
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let sub = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L3_MBO,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
+
+    let live_delta = OrderBookDeltaTestBuilder::new(instrument_id).build();
+    data_engine.process_data(Data::Delta(live_delta));
+
+    let maintained_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("subscription must seed a cache book")
+        .update_count;
+    assert!(
+        maintained_count > 0,
+        "live delta must have advanced the cache book"
+    );
+
+    let fresh_book = OrderBook::new(instrument_id, BookType::L3_MBO);
+    data_engine.response(book_response_for(
+        UUID4::new(),
+        instrument_id,
+        client_id,
+        fresh_book,
+    ));
+
+    let after_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("cache book must remain after a book response")
+        .update_count;
+    assert_eq!(
+        after_count, maintained_count,
+        "book response must not clobber a book owned by a live subscription"
+    );
+}
+
+#[rstest]
+fn test_book_response_writes_to_cache_when_no_active_subscription(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    assert!(cache.borrow().order_book(&instrument_id).is_none());
+
+    let fresh_book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    data_engine.response(book_response_for(
+        UUID4::new(),
+        instrument_id,
+        client_id,
+        fresh_book,
+    ));
+
+    assert!(
+        cache.borrow().order_book(&instrument_id).is_some(),
+        "without an active subscription the book response must populate the cache"
+    );
+}
+
+#[rstest]
+fn test_book_response_writes_to_cache_with_unmanaged_subscription(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let mock_client = MockDataClient::new(clock, cache.clone(), client_id, Some(venue));
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let sub = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L3_MBO,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        false, // unmanaged
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
+
+    assert!(
+        cache.borrow().order_book(&instrument_id).is_none(),
+        "unmanaged subscriptions do not install a BookUpdater or seed the cache",
+    );
+
+    let fresh_book = OrderBook::new(instrument_id, BookType::L3_MBO);
+    data_engine.response(book_response_for(
+        UUID4::new(),
+        instrument_id,
+        client_id,
+        fresh_book,
+    ));
+
+    assert!(
+        cache.borrow().order_book(&instrument_id).is_some(),
+        "unmanaged subscriptions must not gate snapshot population of the cache"
+    );
+}
+
+#[rstest]
+fn test_book_response_always_delivers_to_requester(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let mock_client = MockDataClient::new(clock, cache, client_id, Some(venue));
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let sub = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L3_MBO,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
+
+    let request_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookResponse>(Some(Ustr::from("book-response-delivery")));
+    msgbus::register_response_handler(&request_id, handler);
+
+    let fresh_book = OrderBook::new(instrument_id, BookType::L3_MBO);
+    data_engine.response(book_response_for(
+        request_id,
+        instrument_id,
+        client_id,
+        fresh_book,
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(
+        received.len(),
+        1,
+        "requester must receive the snapshot even when cache write is skipped"
+    );
+    assert_eq!(received[0].correlation_id, request_id);
+}
+
+fn split_delta(instrument_id: InstrumentId, ts: u64) -> OrderBookDelta {
+    OrderBookDeltaTestBuilder::new(instrument_id)
+        .ts_event(UnixNanos::from(ts))
+        .ts_init(UnixNanos::from(ts))
+        .build()
+}
+
+#[cfg(feature = "streaming")]
+fn register_deltas_catalog_with_deltas(
+    data_engine: &mut DataEngine,
+    label: &str,
+    deltas: Vec<OrderBookDelta>,
+    interval: Option<(u64, u64)>,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new(label);
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let (start, end) = match interval {
+        Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
+        None => (None, None),
+    };
+    catalog.write_to_parquet(deltas, start, end, None).unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_request_book_deltas(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestBookDeltas> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::BookDeltas(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
+fn register_depth_catalog_with_depths(
+    data_engine: &mut DataEngine,
+    label: &str,
+    depths: Vec<OrderBookDepth10>,
+    interval: Option<(u64, u64)>,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new(label);
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let (start, end) = match interval {
+        Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
+        None => (None, None),
+    };
+    catalog.write_to_parquet(depths, start, end, None).unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_request_book_depth(recorder: &Rc<RefCell<Vec<DataCommand>>>) -> Vec<RequestBookDepth> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::BookDepth(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_book_deltas_catalog_only_serves_from_disk(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-catalog-only",
+        vec![
+            split_delta(instrument_id, 1_000),
+            split_delta(instrument_id, 2_000),
+        ],
+        Some((1_000, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-catalog-only")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|d| d.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_book_deltas_catalog_plus_client_split(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-split",
+        vec![split_delta(instrument_id, 1_500)],
+        Some((1_000, 1_500)),
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-split-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_book_deltas(&recorder);
+    assert_eq!(
+        recorded.len(),
+        1,
+        "expected one client leg for the missing interval"
+    );
+    assert_eq!(recorded[0].instrument_id, instrument_id);
+
+    let leg_request_id = recorded[0].request_id;
+    data_engine.response(DataResponse::BookDeltas(BookDeltasResponse::new(
+        leg_request_id,
+        client_id,
+        instrument_id,
+        vec![split_delta(instrument_id, 2_500)],
+        recorded[0].start.map(|d| {
+            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+        }),
+        recorded[0].end.map(|d| {
+            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+        }),
+        UnixNanos::default(),
+        None,
+    )));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|d| d.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_500, 2_500]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[rstest]
+fn test_book_deltas_response_skips_cache_write_when_subscription_active(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let mock_client = MockDataClient::new(clock, cache.clone(), client_id, Some(venue));
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let sub = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L3_MBO,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
+
+    let live_delta = OrderBookDeltaTestBuilder::new(instrument_id).build();
+    data_engine.process_data(Data::Delta(live_delta));
+    let maintained_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("managed sub must seed a cache book")
+        .update_count;
+
+    let request_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-response-skip")));
+    msgbus::register_response_handler(&request_id, handler);
+
+    data_engine.response(DataResponse::BookDeltas(BookDeltasResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![split_delta(instrument_id, 1_500)],
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    )));
+
+    let after_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("cache book remains under active subscription")
+        .update_count;
+    assert_eq!(
+        after_count, maintained_count,
+        "historical deltas must not mutate a cache book owned by a live subscription"
+    );
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1, "requester still receives the response");
+    assert_eq!(received[0].correlation_id, request_id);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_book_deltas_no_client_no_catalog_emits_empty(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "deltas-empty");
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-empty")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_book_depth_catalog_only_serves_from_disk(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_depth_catalog_with_depths(
+        &mut data_engine,
+        "depth-catalog-only",
+        vec![
+            book_depth_at(instrument_id, 1_000),
+            book_depth_at(instrument_id, 2_000),
+        ],
+        Some((1_000, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDepthResponse>(Some(Ustr::from("depth-catalog-only")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDepth(RequestBookDepth::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|d| d.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_book_depth_catalog_plus_client_split(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_depth_catalog_with_depths(
+        &mut data_engine,
+        "depth-split",
+        vec![book_depth_at(instrument_id, 1_500)],
+        Some((1_000, 1_500)),
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDepthResponse>(Some(Ustr::from("depth-split-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let parent_depth = NonZeroUsize::new(10).unwrap();
+    let req = RequestCommand::BookDepth(RequestBookDepth::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(parent_depth),
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_book_depth(&recorder);
+    assert_eq!(
+        recorded.len(),
+        1,
+        "expected one client leg for the missing interval"
+    );
+    assert_eq!(recorded[0].instrument_id, instrument_id);
+    assert_eq!(
+        recorded[0].depth,
+        Some(parent_depth),
+        "with_dates_for_pipeline must carry the parent depth to each leg"
+    );
+
+    let leg_request_id = recorded[0].request_id;
+    data_engine.response(DataResponse::BookDepth(BookDepthResponse::new(
+        leg_request_id,
+        client_id,
+        instrument_id,
+        vec![book_depth_at(instrument_id, 2_500)],
+        recorded[0].start.map(|d| {
+            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+        }),
+        recorded[0].end.map(|d| {
+            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+        }),
+        UnixNanos::default(),
+        None,
+    )));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|d| d.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_500, 2_500]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_book_depth_no_client_no_catalog_emits_empty(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "depth-empty");
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDepthResponse>(Some(Ustr::from("depth-empty")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDepth(RequestBookDepth::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[rstest]
+fn test_book_depth_response_publishes_pipeline_depths(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let pipeline_topic =
+        switchboard::MessagingSwitchboard::default().get_pipeline_book_depth10_topic(instrument_id);
+    let (handler, saver) =
+        get_typed_message_saving_handler::<OrderBookDepth10>(Some(Ustr::from("depth-response")));
+    msgbus::subscribe_book_depth10(pipeline_topic.into(), handler, None);
+
+    data_engine.response(DataResponse::BookDepth(BookDepthResponse::new(
+        UUID4::new(),
+        client_id,
+        instrument_id,
+        vec![
+            book_depth_at(instrument_id, 1_000),
+            book_depth_at(instrument_id, 2_000),
+        ],
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    )));
+
+    let depths = saver.get_messages();
+    assert_eq!(depths.len(), 2);
+    let ts_inits: Vec<u64> = depths.iter().map(|d| d.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+}
+
+fn delta_with_flag(instrument_id: InstrumentId, ts: u64, flags: u8) -> OrderBookDelta {
+    OrderBookDeltaTestBuilder::new(instrument_id)
+        .flags(flags)
+        .ts_event(UnixNanos::from(ts))
+        .ts_init(UnixNanos::from(ts))
+        .build()
+}
+
+#[rstest]
+fn test_book_deltas_response_publishes_frames_by_f_last(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let pipeline_topic =
+        switchboard::MessagingSwitchboard::default().get_pipeline_book_deltas_topic(instrument_id);
+    let (handler, saver) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("deltas-by-f-last")));
+    msgbus::subscribe_book_deltas(pipeline_topic.into(), handler, None);
+
+    let f_last = RecordFlag::F_LAST as u8;
+    let payload = vec![
+        delta_with_flag(instrument_id, 1_000, 0),
+        delta_with_flag(instrument_id, 2_000, f_last),
+        delta_with_flag(instrument_id, 3_000, 0),
+        delta_with_flag(instrument_id, 4_000, f_last),
+        delta_with_flag(instrument_id, 5_000, 0),
+    ];
+
+    data_engine.response(DataResponse::BookDeltas(BookDeltasResponse::new(
+        UUID4::new(),
+        client_id,
+        instrument_id,
+        payload,
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    )));
+
+    let batches = saver.get_messages();
+    assert_eq!(
+        batches.len(),
+        3,
+        "two F_LAST-terminated frames plus a trailing partial must publish as three batches"
+    );
+    let frame_sizes: Vec<usize> = batches.iter().map(|b| b.deltas.len()).collect();
+    assert_eq!(frame_sizes, vec![2, 2, 1]);
+    let frame_end_ts: Vec<u64> = batches
+        .iter()
+        .map(|b| b.deltas.last().unwrap().ts_event.as_u64())
+        .collect();
+    assert_eq!(
+        frame_end_ts,
+        vec![2_000, 4_000, 5_000],
+        "each batch must close on the F_LAST delta of its frame (or the trailing delta)"
+    );
+}
+
+#[rstest]
+fn test_book_deltas_response_applies_to_cache_when_no_subscription_but_book_exists(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_order_book(OrderBook::new(instrument_id, BookType::L3_MBO))
+        .unwrap();
+    let before_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("seeded book")
+        .update_count;
+
+    data_engine.response(DataResponse::BookDeltas(BookDeltasResponse::new(
+        UUID4::new(),
+        client_id,
+        instrument_id,
+        vec![
+            split_delta(instrument_id, 1_000),
+            split_delta(instrument_id, 2_000),
+        ],
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    )));
+
+    let after_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("book still present")
+        .update_count;
+    assert!(
+        after_count > before_count,
+        "historical deltas must apply to a cache book when no live subscription owns it (was {before_count}, now {after_count})"
+    );
+}
+
+#[cfg(feature = "streaming")]
+fn book_replay_delta(
+    instrument_id: InstrumentId,
+    ts: u64,
+    flags: u8,
+    price: &str,
+    order_id: u64,
+) -> OrderBookDelta {
+    OrderBookDeltaTestBuilder::new(instrument_id)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from(price),
+            Quantity::from("1"),
+            order_id,
+        ))
+        .flags(flags)
+        .sequence(order_id)
+        .ts_event(UnixNanos::from(ts))
+        .ts_init(UnixNanos::from(ts))
+        .build()
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_request_replays_day_start_snapshot(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-assemble",
+        vec![
+            book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 500, 0, "1.00010", 2),
+            book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 3),
+            book_replay_delta(instrument_id, 2_000, f_last, "1.00030", 4),
+        ],
+        Some((0, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-assemble")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let data = &received[0].data;
+
+    // Pre-start deltas (ts 0, 500, 1500) collapse into one synthesized snapshot keyed at the
+    // crossing delta (ts 1500); the post-start delta (ts 2000) is forwarded unchanged.
+    let ts_inits: Vec<u64> = data.iter().map(|d| d.ts_init.as_u64()).collect();
+    assert!(
+        ts_inits.iter().all(|&t| t >= 1_000),
+        "no pre-start deltas survive the replay, was {ts_inits:?}"
+    );
+    assert_eq!(
+        ts_inits[0], 1_500,
+        "snapshot keyed at the crossing delta ts"
+    );
+    assert_eq!(*ts_inits.last().unwrap(), 2_000);
+    assert_eq!(
+        data[0].action,
+        BookAction::Clear,
+        "snapshot opens with a clear"
+    );
+    assert!(
+        RecordFlag::F_SNAPSHOT.matches(data[1].flags),
+        "synthesized adds carry F_SNAPSHOT"
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_request_skips_replay_without_snapshot_flag(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let f_last = RecordFlag::F_LAST as u8;
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-noflag",
+        vec![
+            book_replay_delta(instrument_id, 0, 0, "1.00000", 1),
+            book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
+            book_replay_delta(instrument_id, 2_000, f_last, "1.00030", 3),
+        ],
+        Some((0, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-noflag")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let data = &received[0].data;
+
+    // First delta lacks F_SNAPSHOT, so no replay: data is forwarded and trimmed to [start, end].
+    let ts_inits: Vec<u64> = data.iter().map(|d| d.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_500, 2_000]);
+    assert_ne!(
+        data[0].action,
+        BookAction::Clear,
+        "no snapshot was synthesized"
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_request_skips_replay_when_snapshot_not_on_day_boundary(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    // The first snapshot delta sits at ts 500, not a UTC day boundary, so replay must bail.
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-offboundary",
+        vec![
+            book_replay_delta(instrument_id, 500, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
+            book_replay_delta(instrument_id, 2_000, f_last, "1.00030", 3),
+        ],
+        Some((0, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-offboundary")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let data = &received[0].data;
+
+    let ts_inits: Vec<u64> = data.iter().map(|d| d.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_500, 2_000]);
+    assert_ne!(
+        data[0].action,
+        BookAction::Clear,
+        "no snapshot was synthesized"
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_request_skips_replay_when_start_at_day_boundary(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-atboundary",
+        vec![
+            book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
+        ],
+        Some((0, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-atboundary")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    // Request starts exactly on the day boundary, so there is nothing to fast-forward.
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let data = &received[0].data;
+
+    let ts_inits: Vec<u64> = data.iter().map(|d| d.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![0, 1_500]);
+    assert_eq!(
+        data[0].action,
+        BookAction::Add,
+        "original day-start snapshot delta is preserved, not re-synthesized"
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_request_replays_end_snapshot_when_exhausted(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-exhausted",
+        vec![
+            book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 500, f_last, "1.00010", 2),
+        ],
+        Some((0, 500)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-exhausted")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    // All catalog deltas precede the original start, so the end-state snapshot is keyed at it.
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let data = &received[0].data;
+
+    let ts_inits: Vec<u64> = data.iter().map(|d| d.ts_init.as_u64()).collect();
+    assert!(
+        ts_inits.iter().all(|&t| t == 1_000),
+        "the synthesized end-state snapshot is keyed at the original start, was {ts_inits:?}"
+    );
+    assert_eq!(data[0].action, BookAction::Clear);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_request_from_day_start_false_skips_floor(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-nofloor",
+        vec![
+            book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
+            book_replay_delta(instrument_id, 2_000, f_last, "1.00030", 3),
+        ],
+        Some((0, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-nofloor")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({ "from_day_start": false })).unwrap();
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let data = &received[0].data;
+
+    // Without the day-start floor the catalog read never returns the ts-0 snapshot frame, so the
+    // first in-window delta lacks F_SNAPSHOT and no replay occurs.
+    let ts_inits: Vec<u64> = data.iter().map(|d| d.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_500, 2_000]);
+    assert_ne!(data[0].action, BookAction::Clear);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_replay_writes_assembled_snapshot_to_cache(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order_book(OrderBook::new(instrument_id, BookType::L2_MBP))
+        .unwrap();
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-cache",
+        vec![
+            book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
+        ],
+        Some((0, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, _saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-cache")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    // No live subscription owns the book, so the assembled snapshot is applied to the cache.
+    let cache_ref = cache.borrow();
+    let book = cache_ref
+        .order_book(&instrument_id)
+        .expect("seeded book present");
+    assert!(
+        book.update_count > 0,
+        "replayed snapshot must mutate the cache book"
+    );
+    assert!(
+        book.best_ask_price().is_some(),
+        "snapshot levels reach the cache book"
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_replay_respects_cache_ownership(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let mock_client = MockDataClient::new(clock, cache.clone(), client_id, Some(venue));
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let sub = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L3_MBO,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
+
+    let live_delta = OrderBookDeltaTestBuilder::new(instrument_id).build();
+    data_engine.process_data(Data::Delta(live_delta));
+    let owned_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("managed sub seeds a cache book")
+        .update_count;
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-owned",
+        vec![
+            book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
+        ],
+        Some((0, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, _saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-owned")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let after_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("cache book remains under active subscription")
+        .update_count;
+    assert_eq!(
+        after_count, owned_count,
+        "replayed snapshot must not mutate a cache book owned by a live subscription"
     );
 }

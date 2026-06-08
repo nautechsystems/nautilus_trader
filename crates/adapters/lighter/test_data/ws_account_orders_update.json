@@ -1,0 +1,49 @@
+{
+  "type": "update/account_orders",
+  "channel": "account_orders:0:1234",
+  "account": 1234,
+  "nonce": 9182390020,
+  "orders": {
+    "0": [
+      {
+        "order_index": 281476929510110,
+        "client_order_index": 42,
+        "order_id": "281476929510110",
+        "client_order_id": "42",
+        "market_index": 0,
+        "owner_account_index": 1234,
+        "initial_base_amount": "0.0050",
+        "price": "2352.74",
+        "nonce": 9182390020,
+        "remaining_base_amount": "0.0030",
+        "is_ask": true,
+        "base_size": 50,
+        "base_price": 235274,
+        "filled_base_amount": "0.0020",
+        "filled_quote_amount": "4.705480",
+        "side": "sell",
+        "type": "limit",
+        "time_in_force": "good-till-time",
+        "reduce_only": false,
+        "trigger_price": "0.00",
+        "order_expiry": 1780360584479,
+        "status": "open",
+        "trigger_status": "na",
+        "trigger_time": 0,
+        "parent_order_index": 0,
+        "parent_order_id": "0",
+        "to_trigger_order_id_0": "0",
+        "to_trigger_order_id_1": "0",
+        "to_cancel_order_id_0": "0",
+        "integrator_fee_collector_index": "0",
+        "integrator_taker_fee": "0",
+        "integrator_maker_fee": "0",
+        "block_height": 227535532,
+        "timestamp": 1777941383576,
+        "created_at": 1777941383576,
+        "updated_at": 1777941383900,
+        "transaction_time": 1777941383576735
+      }
+    ]
+  }
+}

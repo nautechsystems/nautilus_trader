@@ -1,0 +1,36 @@
+{
+    "result": "success",
+    "instruments": [
+        {
+            "symbol": "PF_ETHUSD",
+            "type": "flexible_futures",
+            "tickSize": 0.1,
+            "contractSize": 1,
+            "tradeable": true,
+            "impactMidSize": 1.5,
+            "maxPositionSize": 16000.0,
+            "openingDate": "2022-03-22T13:18:45Z",
+            "marginLevels": [
+                {
+                    "numNonContractUnits": 0.0,
+                    "initialMargin": 0.02,
+                    "maintenanceMargin": 0.01
+                },
+                {
+                    "numNonContractUnits": 2000000.0,
+                    "initialMargin": 0.04,
+                    "maintenanceMargin": 0.02
+                }
+            ],
+            "fundingRateCoefficient": 24,
+            "maxRelativeFundingRate": 0.0025,
+            "isin": "GB00BQ84K502",
+            "contractValueTradePrecision": 3,
+            "postOnly": false,
+            "mtf": true,
+            "base": "ETH",
+            "quote": "USD",
+            "pair": "ETH:USD"
+        }
+    ]
+}

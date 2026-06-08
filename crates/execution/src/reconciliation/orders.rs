@@ -63,7 +63,16 @@ pub fn generate_reconciliation_order_events(
     let mut events: Vec<OrderEventAny> = Vec::new();
 
     if should_accept_before_reconciliation(&working, report) {
-        let accepted = create_reconciliation_accepted(&working, report, ts_now);
+        let Some(accepted) = create_reconciliation_accepted(&working, report, ts_now) else {
+            log::warn!(
+                "Cannot create reconciliation acceptance for {}: missing account_id",
+                order.client_order_id(),
+            );
+            return reconcile_order_report(order, report, instrument, ts_now)
+                .into_iter()
+                .collect();
+        };
+
         if let Err(e) = working.apply(accepted.clone()) {
             log::warn!(
                 "Failed to pre-apply reconciliation acceptance for {}: {e}",
@@ -148,7 +157,7 @@ pub fn reconcile_order_report(
             {
                 return Some(create_reconciliation_updated(order, report, ts_now));
             }
-            Some(create_reconciliation_accepted(order, report, ts_now))
+            create_reconciliation_accepted(order, report, ts_now)
         }
         OrderStatus::Rejected => {
             create_reconciliation_rejected(order, report.cancel_reason.as_deref(), ts_now)
@@ -262,18 +271,19 @@ pub fn generate_external_order_status_events(
         }
         OrderStatus::Rejected => {
             // Rejected goes directly to terminal state without acceptance
+            let reason = report.cancel_reason.as_deref().unwrap_or("UNKNOWN");
             vec![OrderEventAny::Rejected(OrderRejected::new(
                 order.trader_id(),
                 order.strategy_id(),
                 order.instrument_id(),
                 order.client_order_id(),
                 *account_id,
-                Ustr::from(report.cancel_reason.as_deref().unwrap_or("UNKNOWN")),
+                Ustr::from(reason),
                 UUID4::new(),
                 report.ts_last,
                 ts_now,
                 true, // reconciliation
-                false,
+                reason_indicates_post_only_rejection(reason),
             ))]
         }
         _ => {
@@ -400,30 +410,26 @@ pub fn should_reconciliation_update(order: &OrderAny, report: &OrderStatusReport
 }
 
 /// Creates an `OrderAccepted` event for reconciliation.
-///
-/// # Panics
-///
-/// Panics if the order does not have an `account_id` set.
 #[must_use]
-pub fn create_reconciliation_accepted(
+pub(super) fn create_reconciliation_accepted(
     order: &OrderAny,
     report: &OrderStatusReport,
     ts_now: UnixNanos,
-) -> OrderEventAny {
-    OrderEventAny::Accepted(OrderAccepted::new(
+) -> Option<OrderEventAny> {
+    let account_id = order.account_id()?;
+
+    Some(OrderEventAny::Accepted(OrderAccepted::new(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
         order.venue_order_id().unwrap_or(report.venue_order_id),
-        order
-            .account_id()
-            .expect("Order should have account_id for reconciliation"),
+        account_id,
         UUID4::new(),
         report.ts_accepted,
         ts_now,
         true, // reconciliation
-    ))
+    )))
 }
 
 /// Creates an `OrderRejected` event for reconciliation.
@@ -446,9 +452,24 @@ pub fn create_reconciliation_rejected(
         UUID4::new(),
         ts_now,
         ts_now,
-        true,  // reconciliation
-        false, // due_post_only
+        true, // reconciliation
+        reason_indicates_post_only_rejection(reason),
     )))
+}
+
+fn reason_indicates_post_only_rejection(reason: &str) -> bool {
+    let normalized: String = reason
+        .chars()
+        .filter_map(|ch| {
+            if ch == '-' || ch == '_' || ch.is_whitespace() {
+                None
+            } else {
+                Some(ch.to_ascii_lowercase())
+            }
+        })
+        .collect();
+
+    normalized.contains("postonly") || normalized.contains("postwouldexecute")
 }
 
 /// Creates an `OrderTriggered` event for reconciliation.
@@ -474,7 +495,7 @@ pub fn create_reconciliation_triggered(
 
 /// Creates an `OrderCanceled` event for reconciliation.
 #[must_use]
-pub fn create_reconciliation_canceled(
+pub(super) fn create_reconciliation_canceled(
     order: &OrderAny,
     report: &OrderStatusReport,
     ts_now: UnixNanos,
@@ -495,7 +516,7 @@ pub fn create_reconciliation_canceled(
 
 /// Creates an `OrderExpired` event for reconciliation.
 #[must_use]
-pub fn create_reconciliation_expired(
+pub(super) fn create_reconciliation_expired(
     order: &OrderAny,
     report: &OrderStatusReport,
     ts_now: UnixNanos,
@@ -516,7 +537,7 @@ pub fn create_reconciliation_expired(
 
 /// Creates an `OrderUpdated` event for reconciliation.
 #[must_use]
-pub fn create_reconciliation_updated(
+pub(super) fn create_reconciliation_updated(
     order: &OrderAny,
     report: &OrderStatusReport,
     ts_now: UnixNanos,
@@ -557,7 +578,7 @@ pub fn create_reconciliation_updated(
 }
 
 /// Creates an inferred fill event for reconciliation when fill reports are missing.
-pub fn create_inferred_fill(
+pub(super) fn create_inferred_fill(
     order: &OrderAny,
     report: &OrderStatusReport,
     account_id: AccountId,

@@ -28,8 +28,9 @@ use nautilus_bitmex::{
     factories::{BitmexDataClientFactory, BitmexExecFactoryConfig, BitmexExecutionClientFactory},
 };
 use nautilus_common::enums::Environment;
-use nautilus_live::node::LiveNode;
+use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
 use nautilus_model::{
+    enums::TimeInForce,
     identifiers::{InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
@@ -59,14 +60,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_factory = BitmexDataClientFactory::new();
     let exec_factory = BitmexExecutionClientFactory::new();
+    let exec_engine_config = LiveExecEngineConfig {
+        reconciliation_instrument_ids: Some(vec![instrument_id.to_string()]),
+        filter_unclaimed_external_orders: true,
+        open_check_interval_secs: Some(10.0),
+        position_check_interval_secs: Some(30.0),
+        ..Default::default()
+    };
 
     let mut node = LiveNode::builder(trader_id, environment)?
+        .with_exec_engine_config(exec_engine_config)
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
         .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .with_reconciliation(true)
         .with_reconciliation_lookback_mins(2880)
         .with_delay_post_stop_secs(5)
         .build()?;
+
+    let order_qty = Quantity::from("100");
 
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
@@ -76,8 +87,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .instrument_id(instrument_id)
         .client_id(*BITMEX_CLIENT_ID)
-        .order_qty(Quantity::from("100"))
+        .order_qty(order_qty)
         .use_post_only(true)
+        .open_position_on_start_qty(order_qty.as_decimal())
+        .open_position_time_in_force(TimeInForce::Ioc)
+        .close_positions_time_in_force(TimeInForce::Ioc)
         .log_data(false)
         .build();
 

@@ -46,7 +46,7 @@ use nautilus_hyperliquid::{
     },
 };
 use nautilus_model::{
-    enums::{OrderStatus, PositionSideSpecified},
+    enums::{OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
     identifiers::{AccountId, ClientOrderId},
 };
 use nautilus_network::http::{HttpClient, Method};
@@ -931,7 +931,7 @@ async fn test_request_spot_position_status_reports_resolves_outcome_side_token()
     let usdc = Currency::from("USDC");
 
     let outcome = BinaryOption::new(
-        InstrumentId::from("+10.HYPERLIQUID"),
+        InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"),
         Symbol::new("#10"),
         AssetClass::Alternative,
         usdc,
@@ -966,7 +966,7 @@ async fn test_request_spot_position_status_reports_resolves_outcome_side_token()
 
     let outcome_report = reports
         .iter()
-        .find(|r| r.instrument_id == InstrumentId::from("+10.HYPERLIQUID"))
+        .find(|r| r.instrument_id == InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"))
         .expect("outcome side token must surface as a position report");
     assert_eq!(outcome_report.position_side, PositionSideSpecified::Long);
     assert_eq!(outcome_report.quantity.as_f64(), 25.0);
@@ -996,7 +996,7 @@ async fn test_request_position_status_reports_skips_perp_fetch_for_outcome_filte
     let usdc = Currency::from("USDC");
 
     let outcome = BinaryOption::new(
-        InstrumentId::from("+10.HYPERLIQUID"),
+        InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"),
         Symbol::new("#10"),
         AssetClass::Alternative,
         usdc,
@@ -1027,7 +1027,7 @@ async fn test_request_position_status_reports_skips_perp_fetch_for_outcome_filte
     let reports = client
         .request_position_status_reports(
             "0x1234567890123456789012345678901234567890",
-            Some("+10.HYPERLIQUID".into()),
+            Some("1-YES-OUTCOME.HYPERLIQUID".into()),
         )
         .await
         .unwrap();
@@ -1035,7 +1035,7 @@ async fn test_request_position_status_reports_skips_perp_fetch_for_outcome_filte
     assert_eq!(reports.len(), 1);
     assert_eq!(
         reports[0].instrument_id,
-        InstrumentId::from("+10.HYPERLIQUID")
+        InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID")
     );
 
     // Request count guards against fetching perp first then spot
@@ -1051,6 +1051,144 @@ async fn test_request_position_status_reports_skips_perp_fetch_for_outcome_filte
         1,
         "outcome filter must issue exactly one info request"
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_resolves_outcome_response_instrument() {
+    // Regression test: after the venue accepts an outcome order, the
+    // response-report builder must resolve the cached BinaryOption via
+    // `cache_alias_for_symbol` (token form `+<encoding>` for outcomes), not
+    // via the leading symbol segment (which would be the literal outcome
+    // index, e.g. "123", and miss the cache).
+    use nautilus_model::{
+        enums::OrderSide,
+        identifiers::InstrumentId,
+        types::{Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let mut client = HyperliquidHttpClient::from_credentials(
+        "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        None,
+        HyperliquidEnvironment::Mainnet,
+        60,
+        None,
+    )
+    .unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    client.set_account_id(AccountId::new("HYPERLIQUID-001"));
+
+    // Populate asset_indices and the instrument cache from the mocked
+    // `outcomeMeta`, which lists outcome 123 with both sides.
+    let instruments = client.request_instruments().await.unwrap();
+    for inst in &instruments {
+        client.cache_instrument(inst);
+    }
+
+    let outcome_id = InstrumentId::from("123-YES-OUTCOME.HYPERLIQUID");
+    let cloid = ClientOrderId::new("O-OUTCOME-SUBMIT-001");
+
+    let report = client
+        .submit_order(
+            outcome_id,
+            cloid,
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("100"),
+            TimeInForce::Gtc,
+            Some(Price::from("0.5000")),
+            None,
+            false,
+            false,
+        )
+        .await
+        .expect("submit_order must succeed and resolve the outcome instrument");
+
+    assert_eq!(report.instrument_id, outcome_id);
+    assert_eq!(report.venue_order_id.as_str(), "12345");
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.client_order_id, Some(cloid));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_orders_resolves_outcome_response_instrument() {
+    // Mirror of `test_submit_order_resolves_outcome_response_instrument` for
+    // the batch path. `submit_orders` runs the same alias derivation in a
+    // loop, so a separate regression test guards against the two call sites
+    // drifting apart.
+    use nautilus_model::{
+        enums::{ContingencyType, OrderSide},
+        identifiers::{InstrumentId, StrategyId, TraderId},
+        orders::{LimitOrder, OrderAny},
+        types::{Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let mut client = HyperliquidHttpClient::from_credentials(
+        "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        None,
+        HyperliquidEnvironment::Mainnet,
+        60,
+        None,
+    )
+    .unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    client.set_account_id(AccountId::new("HYPERLIQUID-001"));
+
+    let instruments = client.request_instruments().await.unwrap();
+    for inst in &instruments {
+        client.cache_instrument(inst);
+    }
+
+    let outcome_id = InstrumentId::from("123-YES-OUTCOME.HYPERLIQUID");
+    let cloid = ClientOrderId::new("O-OUTCOME-BATCH-001");
+
+    let order = OrderAny::Limit(LimitOrder::new(
+        TraderId::from("TESTER-001"),
+        StrategyId::from("S-001"),
+        outcome_id,
+        cloid,
+        OrderSide::Buy,
+        Quantity::from("100"),
+        Price::from("0.5000"),
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        false,
+        None,
+        None,
+        None,
+        Some(ContingencyType::NoContingency),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Default::default(),
+        Default::default(),
+    ));
+
+    let reports = client
+        .submit_orders(&[&order])
+        .await
+        .expect("submit_orders must succeed and resolve outcome instruments");
+
+    assert_eq!(reports.len(), 1);
+    let report = &reports[0];
+    assert_eq!(report.instrument_id, outcome_id);
+    assert_eq!(report.venue_order_id.as_str(), "12345");
+    assert_eq!(report.order_status, OrderStatus::Accepted);
 }
 
 #[rstest]
@@ -1346,7 +1484,12 @@ async fn test_request_order_status_report_open_order() {
         "oid": 12345,
         "timestamp": 1700000000000u64,
         "origSz": "0.1",
-        "cloid": "0xaabbccdd00112233aabbccdd00112233"
+        "cloid": "0xaabbccdd00112233aabbccdd00112233",
+        "isTrigger": false,
+        "triggerCondition": "N/A",
+        "triggerPx": "0.0",
+        "tif": "Alo",
+        "reduceOnly": true
     }]));
 
     let addr = start_mock_server(state).await;
@@ -1362,7 +1505,16 @@ async fn test_request_order_status_report_open_order() {
     // Status stays Accepted (matching bulk path) because we lack avg_px
     // for safe PartiallyFilled reconciliation. Real fills arrive via WebSocket.
     assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.order_type, OrderType::Limit);
+    assert_eq!(report.time_in_force, TimeInForce::Gtc);
+    assert!(report.post_only);
+    assert!(report.reduce_only);
     assert!(report.price.is_some(), "open order retains limit price");
+    assert!(
+        report.trigger_price.is_none(),
+        "non-conditional limit order must not carry Hyperliquid's placeholder trigger price"
+    );
+    assert!(report.trigger_type.is_none());
     assert_eq!(report.filled_qty.as_f64(), 0.05);
     assert_eq!(report.quantity.as_f64(), 0.1);
 }
@@ -1504,7 +1656,8 @@ async fn test_request_order_status_report_not_found() {
 #[tokio::test]
 async fn test_request_order_status_report_by_client_order_id_matches_cloid() {
     let coid = ClientOrderId::new("O-20240101-000001");
-    let cloid_hex = Cloid::from_client_order_id(coid).to_hex();
+    let cloid = Cloid::from_client_order_id(coid);
+    let cloid_hex = cloid.to_hex();
 
     let state = TestServerState::default();
     *state.frontend_open_orders_response.lock().await = Some(json!([{
@@ -1526,14 +1679,52 @@ async fn test_request_order_status_report_by_client_order_id_matches_cloid() {
         .request_order_status_report_by_client_order_id("0xuser", &coid)
         .await
         .unwrap()
-        .expect("should match by cloid hash");
+        .expect("should match by deterministic cloid");
 
     assert_eq!(
         report.client_order_id,
         Some(coid),
-        "should return original client_order_id, not cloid hash"
+        "should return original client_order_id, not venue cloid"
     );
     assert_eq!(report.order_status, OrderStatus::Accepted);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_by_client_order_id_matches_legacy_cloid() {
+    let coid = ClientOrderId::new("O-20240101-000002");
+    let legacy_cloid = Cloid::from_legacy_client_order_id(coid);
+    let cloid_hex = legacy_cloid.to_hex();
+
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "0.1",
+        "oid": 77778,
+        "timestamp": 1700000000000u64,
+        "origSz": "0.1",
+        "cloid": cloid_hex
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report_by_client_order_id("0xuser", &coid)
+        .await
+        .unwrap()
+        .expect("should match by legacy cloid");
+
+    assert_eq!(report.client_order_id, Some(coid));
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(
+        client.cached_client_order_id_cloid(&coid),
+        Some(legacy_cloid),
+        "legacy lookup should retain cancel-by-cloid recovery",
+    );
 }
 
 #[rstest]
@@ -1557,6 +1748,7 @@ async fn test_request_order_status_report_by_client_order_id_no_match() {
     cache_btc_instrument(&client);
 
     let coid = ClientOrderId::new("O-20240101-999999");
+    client.cache_client_order_id_cloid(coid, Cloid::from_client_order_id(coid));
     let report = client
         .request_order_status_report_by_client_order_id("0xuser", &coid)
         .await

@@ -41,12 +41,14 @@ pub const PARAMS_IS_PARENT: &str = "is_parent";
 
 // Re-exports
 pub use request::{
-    RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestForwardPrices,
-    RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
+    RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
+    RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments, RequestJoin,
+    RequestQuotes, RequestTrades,
 };
 pub use response::{
-    BarsResponse, BookResponse, CustomDataResponse, ForwardPricesResponse, FundingRatesResponse,
-    InstrumentResponse, InstrumentsResponse, QuotesResponse, TradesResponse,
+    BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
+    ForwardPricesResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
+    QuotesResponse, TradesResponse,
 };
 pub use subscribe::{
     SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
@@ -400,12 +402,14 @@ pub enum RequestCommand {
     Instrument(RequestInstrument),
     Instruments(RequestInstruments),
     BookSnapshot(RequestBookSnapshot),
+    BookDeltas(RequestBookDeltas),
     BookDepth(RequestBookDepth),
     Quotes(RequestQuotes),
     Trades(RequestTrades),
     FundingRates(RequestFundingRates),
     ForwardPrices(RequestForwardPrices),
     Bars(RequestBars),
+    Join(RequestJoin),
 }
 
 impl PartialEq for RequestCommand {
@@ -426,12 +430,14 @@ impl RequestCommand {
             Self::Instrument(cmd) => &cmd.request_id,
             Self::Instruments(cmd) => &cmd.request_id,
             Self::BookSnapshot(cmd) => &cmd.request_id,
+            Self::BookDeltas(cmd) => &cmd.request_id,
             Self::BookDepth(cmd) => &cmd.request_id,
             Self::Quotes(cmd) => &cmd.request_id,
             Self::Trades(cmd) => &cmd.request_id,
             Self::FundingRates(cmd) => &cmd.request_id,
             Self::ForwardPrices(cmd) => &cmd.request_id,
             Self::Bars(cmd) => &cmd.request_id,
+            Self::Join(cmd) => &cmd.request_id,
         }
     }
 
@@ -441,12 +447,14 @@ impl RequestCommand {
             Self::Instrument(cmd) => cmd.client_id.as_ref(),
             Self::Instruments(cmd) => cmd.client_id.as_ref(),
             Self::BookSnapshot(cmd) => cmd.client_id.as_ref(),
+            Self::BookDeltas(cmd) => cmd.client_id.as_ref(),
             Self::BookDepth(cmd) => cmd.client_id.as_ref(),
             Self::Quotes(cmd) => cmd.client_id.as_ref(),
             Self::Trades(cmd) => cmd.client_id.as_ref(),
             Self::FundingRates(cmd) => cmd.client_id.as_ref(),
             Self::ForwardPrices(cmd) => cmd.client_id.as_ref(),
             Self::Bars(cmd) => cmd.client_id.as_ref(),
+            Self::Join(_) => None,
         }
     }
 
@@ -456,6 +464,7 @@ impl RequestCommand {
             Self::Instrument(cmd) => Some(&cmd.instrument_id.venue),
             Self::Instruments(cmd) => cmd.venue.as_ref(),
             Self::BookSnapshot(cmd) => Some(&cmd.instrument_id.venue),
+            Self::BookDeltas(cmd) => Some(&cmd.instrument_id.venue),
             Self::BookDepth(cmd) => Some(&cmd.instrument_id.venue),
             Self::Quotes(cmd) => Some(&cmd.instrument_id.venue),
             Self::Trades(cmd) => Some(&cmd.instrument_id.venue),
@@ -466,6 +475,7 @@ impl RequestCommand {
                 BarType::Standard { instrument_id, .. } => Some(&instrument_id.venue),
                 BarType::Composite { instrument_id, .. } => Some(&instrument_id.venue),
             },
+            Self::Join(_) => None,
         }
     }
 
@@ -475,12 +485,14 @@ impl RequestCommand {
             Self::Instrument(cmd) => cmd.ts_init,
             Self::Instruments(cmd) => cmd.ts_init,
             Self::BookSnapshot(cmd) => cmd.ts_init,
+            Self::BookDeltas(cmd) => cmd.ts_init,
             Self::BookDepth(cmd) => cmd.ts_init,
             Self::Quotes(cmd) => cmd.ts_init,
             Self::Trades(cmd) => cmd.ts_init,
             Self::FundingRates(cmd) => cmd.ts_init,
             Self::ForwardPrices(cmd) => cmd.ts_init,
             Self::Bars(cmd) => cmd.ts_init,
+            Self::Join(cmd) => cmd.ts_init,
         }
     }
 }
@@ -491,6 +503,8 @@ pub enum DataResponse {
     Instrument(Box<InstrumentResponse>),
     Instruments(InstrumentsResponse),
     Book(BookResponse),
+    BookDeltas(BookDeltasResponse),
+    BookDepth(BookDepthResponse),
     Quotes(QuotesResponse),
     Trades(TradesResponse),
     FundingRates(FundingRatesResponse),
@@ -510,6 +524,8 @@ impl DataResponse {
             Self::Instrument(resp) => &resp.correlation_id,
             Self::Instruments(resp) => &resp.correlation_id,
             Self::Book(resp) => &resp.correlation_id,
+            Self::BookDeltas(resp) => &resp.correlation_id,
+            Self::BookDepth(resp) => &resp.correlation_id,
             Self::Quotes(resp) => &resp.correlation_id,
             Self::Trades(resp) => &resp.correlation_id,
             Self::FundingRates(resp) => &resp.correlation_id,
@@ -526,6 +542,8 @@ impl DataResponse {
             Self::Instrument(_) => "Instrument",
             Self::Instruments(_) => "Instruments",
             Self::Book(_) => "Book",
+            Self::BookDeltas(_) => "BookDeltas",
+            Self::BookDepth(_) => "BookDepth",
             Self::Quotes(_) => "Quotes",
             Self::Trades(_) => "Trades",
             Self::FundingRates(_) => "FundingRates",
@@ -543,11 +561,34 @@ impl DataResponse {
         match self {
             Self::Data(_) | Self::Instrument(_) | Self::Book(_) => None,
             Self::Instruments(resp) => Some(resp.data.len()),
+            Self::BookDeltas(resp) => Some(resp.data.len()),
+            Self::BookDepth(resp) => Some(resp.data.len()),
             Self::Quotes(resp) => Some(resp.data.len()),
             Self::Trades(resp) => Some(resp.data.len()),
             Self::FundingRates(resp) => Some(resp.data.len()),
             Self::ForwardPrices(resp) => Some(resp.data.len()),
             Self::Bars(resp) => Some(resp.data.len()),
+        }
+    }
+
+    /// Trims vector payloads to the inclusive `[start, end]` window on `ts_init`.
+    ///
+    /// Applies to variants whose payload elements implement `HasTsInit`
+    /// (`BookDeltas`, `BookDepth`, `Quotes`, `Trades`, `FundingRates`,
+    /// `Bars`, `Instruments`). Other variants are untouched: singular payloads
+    /// (`Instrument`, `Book`),
+    /// `ForwardPrices` (no per-item `ts_init`), and the opaque custom
+    /// `Data` variant.
+    pub fn trim_to_bounds(&mut self) {
+        match self {
+            Self::Quotes(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::Trades(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::FundingRates(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::Bars(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::Instruments(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::BookDeltas(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::BookDepth(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::Data(_) | Self::Instrument(_) | Self::Book(_) | Self::ForwardPrices(_) => {}
         }
     }
 }

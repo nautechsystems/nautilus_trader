@@ -49,6 +49,11 @@ examples = [
   "nautilus-trading/examples",
 ]
 
+[package.metadata.cargo-machete]
+ignored = [
+  "nautilus-system",
+] # Optional dep activated only via the python feature
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
@@ -127,3 +132,8 @@ name = "coinbase-exec-tester"
 path = "examples/node_exec_tester.rs"
 required-features = ["examples"]
 doc = false
+
+[[test]]
+name = "python"
+path = "tests/python.rs"
+required-features = ["python"]

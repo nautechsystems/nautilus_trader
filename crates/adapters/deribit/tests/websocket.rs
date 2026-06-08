@@ -19,7 +19,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -41,17 +41,21 @@ use nautilus_deribit::{
     common::{consts::DERIBIT_VENUE, enums::DeribitEnvironment},
     data_types::DeribitVolatilityIndex,
     websocket::{
-        auth::DERIBIT_DATA_SESSION_NAME, client::DeribitWebSocketClient,
-        enums::DeribitUpdateInterval, messages::NautilusWsMessage,
+        auth::DERIBIT_DATA_SESSION_NAME,
+        client::DeribitWebSocketClient,
+        enums::DeribitUpdateInterval,
+        handler::{DeribitWsFeedHandler, HandlerCommand},
+        messages::{DeribitOrderParams, NautilusWsMessage},
     },
 };
 use nautilus_model::{
     data::Data,
-    identifiers::{InstrumentId, Symbol},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId},
     instruments::{CryptoPerpetual, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
-use nautilus_network::websocket::TransportBackend;
+use nautilus_network::websocket::{AuthTracker, SubscriptionState, TransportBackend};
+use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
 // ------------------------------------------------------------------------------------------------
@@ -571,7 +575,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                 }
             }
             // Inner if consumes `data`, cannot hoist into a match guard
-            #[expect(clippy::collapsible_match)]
+            #[allow(clippy::collapsible_match)]
             Message::Ping(data) => {
                 if socket.send(Message::Pong(data)).await.is_err() {
                     break;
@@ -682,6 +686,69 @@ async fn test_wait_until_active_timeout() {
 
     let result = client.wait_until_active(0.1).await;
     assert!(result.is_err(), "expected timeout error");
+}
+
+#[tokio::test]
+async fn test_order_command_send_failure_does_not_emit_rejection() {
+    let signal = Arc::new(AtomicBool::new(false));
+    let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut handler = DeribitWsFeedHandler::new(
+        signal.clone(),
+        cmd_rx,
+        raw_rx,
+        out_tx,
+        AuthTracker::new(),
+        SubscriptionState::new('.'),
+        Arc::new(AtomicSet::new()),
+        Arc::new(AtomicSet::new()),
+        Arc::new(AtomicSet::new()),
+        Some(AccountId::from("DERIBIT-001")),
+        true,
+        Arc::new(Mutex::new(Vec::new())),
+    );
+
+    let handle = tokio::spawn(async move { handler.next().await });
+    cmd_tx
+        .send(HandlerCommand::Buy {
+            params: DeribitOrderParams {
+                instrument_name: "BTC-PERPETUAL".to_string(),
+                amount: Decimal::new(1, 0),
+                order_type: "limit".to_string(),
+                label: Some("ws-send-fail-test-001".to_string()),
+                price: Some(Decimal::new(50_000, 0)),
+                time_in_force: Some("good_til_cancelled".to_string()),
+                post_only: Some(true),
+                reject_post_only: Some(true),
+                reduce_only: None,
+                trigger_price: None,
+                trigger: None,
+                max_show: None,
+                valid_until: None,
+            },
+            client_order_id: ClientOrderId::new("ws-send-fail-test-001"),
+            trader_id: TraderId::from("TESTER-001"),
+            strategy_id: StrategyId::from("S-001"),
+            instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+        })
+        .unwrap();
+
+    let message = tokio::time::timeout(Duration::from_millis(300), out_rx.recv()).await;
+    if let Ok(Some(message)) = message {
+        assert!(
+            !matches!(
+                message,
+                NautilusWsMessage::OrderRejected(_)
+                    | NautilusWsMessage::OrderCancelRejected(_)
+                    | NautilusWsMessage::OrderModifyRejected(_)
+            ),
+            "send failure emitted rejection: {message:?}"
+        );
+    }
+
+    signal.store(true, Ordering::Relaxed);
+    assert!(handle.await.unwrap().is_none());
 }
 
 #[tokio::test]

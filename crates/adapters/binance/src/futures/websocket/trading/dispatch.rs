@@ -29,7 +29,13 @@ use nautilus_model::{
 };
 
 use super::messages::BinanceFuturesWsTradingMessage;
-use crate::common::{consts::BINANCE_GTX_ORDER_REJECT_CODE, dispatch::WsDispatchState};
+use crate::common::{
+    consts::{
+        BINANCE_GTX_ORDER_REJECT_CODE, BINANCE_STATUS_UNKNOWN_CODE,
+        BINANCE_UNEXPECTED_RESPONSE_CODE,
+    },
+    dispatch::WsDispatchState,
+};
 
 pub(crate) fn dispatch_ws_trading_message(
     msg: BinanceFuturesWsTradingMessage,
@@ -58,6 +64,18 @@ pub(crate) fn dispatch_ws_trading_message(
             log::debug!("WS order rejected: request_id={request_id}, code={code}, msg={msg}");
 
             if let Some((_, pending)) = dispatch_state.pending_requests.remove(&request_id) {
+                let code_i64 = i64::from(code);
+                if matches!(
+                    code_i64,
+                    BINANCE_UNEXPECTED_RESPONSE_CODE | BINANCE_STATUS_UNKNOWN_CODE
+                ) {
+                    log::error!(
+                        "Ambiguous WS submit failure for {}, awaiting reconciliation: code={code}, msg={msg}",
+                        pending.client_order_id,
+                    );
+                    return;
+                }
+
                 // Clone to drop the DashMap read guard before cleanup_terminal
                 let identity = dispatch_state
                     .order_identities
@@ -65,7 +83,7 @@ pub(crate) fn dispatch_ws_trading_message(
                     .map(|r| r.clone());
 
                 if let Some(identity) = identity {
-                    let due_post_only = i64::from(code) == BINANCE_GTX_ORDER_REJECT_CODE;
+                    let due_post_only = code_i64 == BINANCE_GTX_ORDER_REJECT_CODE;
                     let ts_now = clock.get_time_ns();
                     let rejected = OrderRejected::new(
                         emitter.trader_id(),
@@ -172,6 +190,12 @@ pub(crate) fn dispatch_ws_trading_message(
                 emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
             }
         }
+        BinanceFuturesWsTradingMessage::RequestFailed { request_id, msg } => {
+            dispatch_state.pending_requests.remove(&request_id);
+            log::error!(
+                "WS trading request failed without structured venue response: request_id={request_id}, {msg}"
+            );
+        }
         BinanceFuturesWsTradingMessage::Connected => {
             log::info!("WS trading API connected");
         }
@@ -240,6 +264,109 @@ mod tests {
             }
             other => panic!("Expected CancelRejected event, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn test_dispatch_ws_trading_message_definite_submit_rejection_emits_order_rejected() {
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let client_order_id = ClientOrderId::from("TEST");
+        let dispatch_state = create_tracked_dispatch_state(
+            client_order_id,
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+        );
+        dispatch_state.pending_requests.insert(
+            "req-submit".to_string(),
+            PendingRequest {
+                client_order_id,
+                venue_order_id: None,
+                operation: PendingOperation::Place,
+            },
+        );
+
+        dispatch_ws_trading_message(
+            BinanceFuturesWsTradingMessage::OrderRejected {
+                request_id: "req-submit".to_string(),
+                code: BINANCE_GTX_ORDER_REJECT_CODE as i32,
+                msg: "Post only order will be rejected".to_string(),
+            },
+            &emitter,
+            AccountId::from("BINANCE-001"),
+            clock,
+            &dispatch_state,
+        );
+
+        assert!(dispatch_state.pending_requests.get("req-submit").is_none());
+        assert!(
+            dispatch_state
+                .order_identities
+                .get(&client_order_id)
+                .is_none()
+        );
+
+        match rx
+            .try_recv()
+            .expect("OrderRejected event should be emitted")
+        {
+            ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(event.account_id, AccountId::from("BINANCE-001"));
+                assert!(event.reason.as_str().contains("code=-5022"));
+                assert!(event.due_post_only);
+            }
+            other => panic!("Expected OrderRejected event, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case(
+        BINANCE_UNEXPECTED_RESPONSE_CODE,
+        "An unexpected response was received from the message bus"
+    )]
+    #[case(
+        BINANCE_STATUS_UNKNOWN_CODE,
+        "Timeout waiting for response from backend server"
+    )]
+    fn test_dispatch_ws_trading_message_unknown_status_keeps_order_registered(
+        #[case] code: i64,
+        #[case] msg: &str,
+    ) {
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let client_order_id = ClientOrderId::from("TEST");
+        let dispatch_state = create_tracked_dispatch_state(
+            client_order_id,
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+        );
+        dispatch_state.pending_requests.insert(
+            "req-submit".to_string(),
+            PendingRequest {
+                client_order_id,
+                venue_order_id: None,
+                operation: PendingOperation::Place,
+            },
+        );
+
+        dispatch_ws_trading_message(
+            BinanceFuturesWsTradingMessage::OrderRejected {
+                request_id: "req-submit".to_string(),
+                code: code as i32,
+                msg: msg.to_string(),
+            },
+            &emitter,
+            AccountId::from("BINANCE-001"),
+            clock,
+            &dispatch_state,
+        );
+
+        assert!(dispatch_state.pending_requests.get("req-submit").is_none());
+        assert!(
+            dispatch_state
+                .order_identities
+                .get(&client_order_id)
+                .is_some()
+        );
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]

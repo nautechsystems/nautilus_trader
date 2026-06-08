@@ -40,7 +40,7 @@ fn format_raw(raw: &str) -> String {
 /// top-10 bid price levels (descending). Within each price level orders are sorted
 /// by insertion sequence (FIFO queue priority). Each order contributes
 /// `format_raw(price_raw) + format_raw(size_raw)` to the string.
-pub fn build_checksum_string(open_orders: &AHashMap<u64, CachedL3Order>) -> String {
+pub(crate) fn build_checksum_string(open_orders: &AHashMap<u64, CachedL3Order>) -> String {
     let mut asks: Vec<(f64, u64, &str, &str)> = open_orders
         .iter()
         .filter(|(_, v)| v.side == OrderSide::Sell)
@@ -64,7 +64,7 @@ pub fn build_checksum_string(open_orders: &AHashMap<u64, CachedL3Order>) -> Stri
 }
 
 /// Computes the Kraken `level3` CRC32 checksum from the open-order cache.
-pub fn compute_checksum(open_orders: &AHashMap<u64, CachedL3Order>) -> u32 {
+pub(crate) fn compute_checksum(open_orders: &AHashMap<u64, CachedL3Order>) -> u32 {
     let s = build_checksum_string(open_orders);
     crc32_ieee(s.as_bytes())
 }

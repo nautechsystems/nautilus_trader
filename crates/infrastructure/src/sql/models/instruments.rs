@@ -24,9 +24,10 @@ use nautilus_model::{
     enums::{AssetClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
     instruments::{
-        BettingInstrument, BinaryOption, Cfd, Commodity, CryptoFuture, CryptoOption,
-        CryptoPerpetual, CurrencyPair, Equity, FuturesContract, FuturesSpread, IndexInstrument,
-        InstrumentAny, OptionContract, OptionSpread, PerpetualContract, TokenizedAsset,
+        BettingInstrument, BinaryOption, Cfd, Commodity, CryptoFuture, CryptoFuturesSpread,
+        CryptoOption, CryptoOptionSpread, CryptoPerpetual, CurrencyPair, Equity, FuturesContract,
+        FuturesSpread, IndexInstrument, InstrumentAny, OptionContract, OptionSpread,
+        PerpetualContract, TokenizedAsset,
     },
     types::{Currency, Money, Price, Quantity},
 };
@@ -85,6 +86,12 @@ pub struct PerpetualContractModel(pub PerpetualContract);
 pub struct OptionSpreadModel(pub OptionSpread);
 
 #[derive(Debug)]
+pub struct CryptoFuturesSpreadModel(pub CryptoFuturesSpread);
+
+#[derive(Debug)]
+pub struct CryptoOptionSpreadModel(pub CryptoOptionSpread);
+
+#[derive(Debug)]
 pub struct TokenizedAssetModel(pub TokenizedAsset);
 
 impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
@@ -102,9 +109,17 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
             Ok(Self(InstrumentAny::CryptoFuture(
                 CryptoFutureModel::from_row(row).unwrap().0,
             )))
+        } else if kind == "CRYPTO_FUTURES_SPREAD" {
+            Ok(Self(InstrumentAny::CryptoFuturesSpread(
+                CryptoFuturesSpreadModel::from_row(row).unwrap().0,
+            )))
         } else if kind == "CRYPTO_OPTION" {
             Ok(Self(InstrumentAny::CryptoOption(
                 CryptoOptionModel::from_row(row).unwrap().0,
+            )))
+        } else if kind == "CRYPTO_OPTION_SPREAD" {
+            Ok(Self(InstrumentAny::CryptoOptionSpread(
+                CryptoOptionSpreadModel::from_row(row).unwrap().0,
             )))
         } else if kind == "CRYPTO_PERPETUAL" {
             Ok(Self(InstrumentAny::CryptoPerpetual(
@@ -1404,6 +1419,222 @@ impl<'r> FromRow<'r, PgRow> for PerpetualContractModel {
 impl<'r> FromRow<'r, PgRow> for OptionSpreadModel {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!("Implement FromRow for OptionSpread")
+    }
+}
+
+impl<'r> FromRow<'r, PgRow> for CryptoFuturesSpreadModel {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
+        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
+        let underlying = row.try_get::<String, _>("underlying").map(Currency::from)?;
+        let quote_currency = row
+            .try_get::<String, _>("quote_currency")
+            .map(Currency::from)?;
+        let settlement_currency = row
+            .try_get::<String, _>("settlement_currency")
+            .map(Currency::from)?;
+        let is_inverse = row.try_get::<bool, _>("is_inverse")?;
+        let strategy_type = row
+            .try_get::<String, _>("strategy_type")
+            .map(|res| Ustr::from(res.as_str()))?;
+        let activation_ns = row
+            .try_get::<String, _>("activation_ns")
+            .map(UnixNanos::from)?;
+        let expiration_ns = row
+            .try_get::<String, _>("expiration_ns")
+            .map(UnixNanos::from)?;
+        let price_precision = row.try_get::<i32, _>("price_precision")?;
+        let size_precision = row.try_get::<i32, _>("size_precision")?;
+        let price_increment = row
+            .try_get::<String, _>("price_increment")
+            .map(|res| Price::from_str(res.as_str()).unwrap())?;
+        let size_increment = row
+            .try_get::<String, _>("size_increment")
+            .map(|res| Quantity::from_str(res.as_str()).unwrap())?;
+        let multiplier = row
+            .try_get::<String, _>("multiplier")
+            .map(|res| Quantity::from(res.as_str()))?;
+        let lot_size = row
+            .try_get::<String, _>("lot_size")
+            .map(|res| Quantity::from(res.as_str()))?;
+        let max_quantity = row
+            .try_get::<Option<String>, _>("max_quantity")
+            .ok()
+            .and_then(|res| res.map(|value| Quantity::from(value.as_str())));
+        let min_quantity = row
+            .try_get::<Option<String>, _>("min_quantity")
+            .ok()
+            .and_then(|res| res.map(|value| Quantity::from(value.as_str())));
+        let max_notional = row
+            .try_get::<Option<String>, _>("max_notional")
+            .ok()
+            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+        let min_notional = row
+            .try_get::<Option<String>, _>("min_notional")
+            .ok()
+            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+        let max_price = row
+            .try_get::<Option<String>, _>("max_price")
+            .ok()
+            .and_then(|res| res.map(|value| Price::from(value.as_str())));
+        let min_price = row
+            .try_get::<Option<String>, _>("min_price")
+            .ok()
+            .and_then(|res| res.map(|value| Price::from(value.as_str())));
+        let margin_init = row
+            .try_get::<String, _>("margin_init")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let margin_maint = row
+            .try_get::<String, _>("margin_maint")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let maker_fee = row
+            .try_get::<String, _>("maker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let taker_fee = row
+            .try_get::<String, _>("taker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
+
+        let inst = CryptoFuturesSpread::new(
+            id,
+            raw_symbol,
+            underlying,
+            quote_currency,
+            settlement_currency,
+            is_inverse,
+            strategy_type,
+            activation_ns,
+            expiration_ns,
+            price_precision as u8,
+            size_precision as u8,
+            price_increment,
+            size_increment,
+            Some(multiplier),
+            Some(lot_size),
+            max_quantity,
+            min_quantity,
+            max_notional,
+            min_notional,
+            max_price,
+            min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            None,
+            ts_event,
+            ts_init,
+        );
+        Ok(Self(inst))
+    }
+}
+
+impl<'r> FromRow<'r, PgRow> for CryptoOptionSpreadModel {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
+        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
+        let underlying = row.try_get::<String, _>("underlying").map(Currency::from)?;
+        let quote_currency = row
+            .try_get::<String, _>("quote_currency")
+            .map(Currency::from)?;
+        let settlement_currency = row
+            .try_get::<String, _>("settlement_currency")
+            .map(Currency::from)?;
+        let is_inverse = row.try_get::<bool, _>("is_inverse")?;
+        let strategy_type = row
+            .try_get::<String, _>("strategy_type")
+            .map(|res| Ustr::from(res.as_str()))?;
+        let activation_ns = row
+            .try_get::<String, _>("activation_ns")
+            .map(UnixNanos::from)?;
+        let expiration_ns = row
+            .try_get::<String, _>("expiration_ns")
+            .map(UnixNanos::from)?;
+        let price_precision = row.try_get::<i32, _>("price_precision")?;
+        let size_precision = row.try_get::<i32, _>("size_precision")?;
+        let price_increment = row
+            .try_get::<String, _>("price_increment")
+            .map(|res| Price::from_str(res.as_str()).unwrap())?;
+        let size_increment = row
+            .try_get::<String, _>("size_increment")
+            .map(|res| Quantity::from_str(res.as_str()).unwrap())?;
+        let multiplier = row
+            .try_get::<String, _>("multiplier")
+            .map(|res| Quantity::from(res.as_str()))?;
+        let lot_size = row
+            .try_get::<String, _>("lot_size")
+            .map(|res| Quantity::from(res.as_str()))?;
+        let max_quantity = row
+            .try_get::<Option<String>, _>("max_quantity")
+            .ok()
+            .and_then(|res| res.map(|value| Quantity::from(value.as_str())));
+        let min_quantity = row
+            .try_get::<Option<String>, _>("min_quantity")
+            .ok()
+            .and_then(|res| res.map(|value| Quantity::from(value.as_str())));
+        let max_notional = row
+            .try_get::<Option<String>, _>("max_notional")
+            .ok()
+            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+        let min_notional = row
+            .try_get::<Option<String>, _>("min_notional")
+            .ok()
+            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+        let max_price = row
+            .try_get::<Option<String>, _>("max_price")
+            .ok()
+            .and_then(|res| res.map(|value| Price::from(value.as_str())));
+        let min_price = row
+            .try_get::<Option<String>, _>("min_price")
+            .ok()
+            .and_then(|res| res.map(|value| Price::from(value.as_str())));
+        let margin_init = row
+            .try_get::<String, _>("margin_init")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let margin_maint = row
+            .try_get::<String, _>("margin_maint")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let maker_fee = row
+            .try_get::<String, _>("maker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let taker_fee = row
+            .try_get::<String, _>("taker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
+
+        let inst = CryptoOptionSpread::new(
+            id,
+            raw_symbol,
+            underlying,
+            quote_currency,
+            settlement_currency,
+            is_inverse,
+            strategy_type,
+            activation_ns,
+            expiration_ns,
+            price_precision as u8,
+            size_precision as u8,
+            price_increment,
+            size_increment,
+            Some(multiplier),
+            Some(lot_size),
+            max_quantity,
+            min_quantity,
+            max_notional,
+            min_notional,
+            max_price,
+            min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            None,
+            ts_event,
+            ts_init,
+        );
+        Ok(Self(inst))
     }
 }
 

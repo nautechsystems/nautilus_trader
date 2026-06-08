@@ -18,7 +18,6 @@ import asyncio
 from decimal import Decimal
 
 from nautilus_trader.adapters.binance import BINANCE
-from nautilus_trader.adapters.binance import BINANCE_VENUE
 from nautilus_trader.adapters.binance import BinanceAccountType
 from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
@@ -91,7 +90,7 @@ async def main():
         },
         exec_clients={
             BINANCE: SandboxExecutionClientConfig(
-                venue=BINANCE_VENUE,
+                venue=BINANCE,
                 starting_balances=["10_000 USDT", "10 ETH"],
             ),
         },

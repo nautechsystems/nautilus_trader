@@ -94,7 +94,7 @@ impl MintEvent {
         chain: SharedChain,
         dex: SharedDex,
         instrument_id: InstrumentId,
-        timestamp: Option<UnixNanos>,
+        timestamp: UnixNanos,
     ) -> PoolLiquidityUpdate {
         PoolLiquidityUpdate::new(
             chain,
@@ -113,7 +113,8 @@ impl MintEvent {
             self.amount1,
             self.tick_lower,
             self.tick_upper,
-            timestamp,
+            timestamp, // ts_event
+            timestamp, // ts_init (same block timestamp)
         )
     }
 }

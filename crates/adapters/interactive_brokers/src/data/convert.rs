@@ -49,7 +49,7 @@ pub fn bar_type_to_ib_bar_size(bar_type: &BarType) -> anyhow::Result<HistoricalB
         (BarAggregation::Minute, 2) => HistoricalBarSize::Min2,
         (BarAggregation::Minute, 3) => HistoricalBarSize::Min3,
         (BarAggregation::Minute, 5) => HistoricalBarSize::Min5,
-        (BarAggregation::Minute, 10) => HistoricalBarSize::Min15, // IB doesn't have 10-min, closest is 15
+        (BarAggregation::Minute, 10) => HistoricalBarSize::Min10,
         (BarAggregation::Minute, 15) => HistoricalBarSize::Min15,
         (BarAggregation::Minute, 20) => HistoricalBarSize::Min20,
         (BarAggregation::Minute, 30) => HistoricalBarSize::Min30,
@@ -82,6 +82,32 @@ pub fn price_type_to_ib_what_to_show(price_type: PriceType) -> HistoricalWhatToS
         PriceType::Ask => HistoricalWhatToShow::Ask,
         PriceType::Mid => HistoricalWhatToShow::MidPoint,
         _ => HistoricalWhatToShow::Trades, // Default to trades
+    }
+}
+
+#[must_use]
+pub fn apply_price_magnifier(price: f64, price_magnifier: i32) -> f64 {
+    if price_magnifier > 0 {
+        price / f64::from(price_magnifier)
+    } else {
+        price
+    }
+}
+
+#[must_use]
+pub fn apply_bar_price_magnifier(
+    ib_bar: &ibapi::market_data::historical::Bar,
+    price_magnifier: i32,
+) -> ibapi::market_data::historical::Bar {
+    ibapi::market_data::historical::Bar {
+        date: ib_bar.date,
+        open: apply_price_magnifier(ib_bar.open, price_magnifier),
+        high: apply_price_magnifier(ib_bar.high, price_magnifier),
+        low: apply_price_magnifier(ib_bar.low, price_magnifier),
+        close: apply_price_magnifier(ib_bar.close, price_magnifier),
+        volume: ib_bar.volume,
+        wap: apply_price_magnifier(ib_bar.wap, price_magnifier),
+        count: ib_bar.count,
     }
 }
 

@@ -34,14 +34,19 @@ use axum::{
     routing::get,
 };
 use nautilus_binance::{
-    common::enums::{BinanceFuturesOrderType, BinanceSide, BinanceTimeInForce},
+    common::{
+        credential::SigningCredential,
+        enums::{BinanceFuturesOrderType, BinanceSide, BinanceTimeInForce},
+    },
     futures::{
         http::query::{
             BinanceCancelOrderParamsBuilder, BinanceModifyOrderParamsBuilder,
             BinanceNewOrderParamsBuilder,
         },
         websocket::trading::{
-            client::BinanceFuturesWsTradingClient, messages::BinanceFuturesWsTradingMessage,
+            client::BinanceFuturesWsTradingClient,
+            handler::BinanceFuturesWsTradingHandler,
+            messages::{BinanceFuturesWsTradingCommand, BinanceFuturesWsTradingMessage},
         },
     },
 };
@@ -69,6 +74,13 @@ impl Default for TestServerState {
             ping_count: Arc::new(AtomicUsize::new(0)),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum WsCommandKind {
+    Place,
+    Cancel,
+    Modify,
 }
 
 impl TestServerState {
@@ -341,6 +353,100 @@ async fn test_connection_failure_invalid_url() {
 
     let result = client.connect().await;
     assert!(result.is_err());
+}
+
+#[rstest]
+#[case(WsCommandKind::Place)]
+#[case(WsCommandKind::Cancel)]
+#[case(WsCommandKind::Modify)]
+#[tokio::test]
+async fn test_command_send_failure_emits_request_failed_not_rejection(
+    #[case] command_kind: WsCommandKind,
+) {
+    let signal = Arc::new(AtomicBool::new(false));
+    let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+    let credential = Arc::new(SigningCredential::new(
+        "test-api-key".to_string(),
+        "test-api-secret".to_string(),
+    ));
+    let mut handler =
+        BinanceFuturesWsTradingHandler::new(signal.clone(), cmd_rx, raw_rx, out_tx, credential);
+
+    let handle = tokio::spawn(async move { handler.run().await });
+
+    let (expected_request_id, command) = match command_kind {
+        WsCommandKind::Place => {
+            let params = BinanceNewOrderParamsBuilder::default()
+                .symbol("BTCUSDT")
+                .side(BinanceSide::Buy)
+                .order_type(BinanceFuturesOrderType::Limit)
+                .time_in_force(BinanceTimeInForce::Gtc)
+                .quantity("0.001")
+                .price("50000.00")
+                .build()
+                .unwrap();
+            (
+                "req-place-send-fail",
+                BinanceFuturesWsTradingCommand::PlaceOrder {
+                    id: "req-place-send-fail".to_string(),
+                    params,
+                },
+            )
+        }
+        WsCommandKind::Cancel => {
+            let params = BinanceCancelOrderParamsBuilder::default()
+                .symbol("BTCUSDT")
+                .order_id(12345_i64)
+                .build()
+                .unwrap();
+            (
+                "req-cancel-send-fail",
+                BinanceFuturesWsTradingCommand::CancelOrder {
+                    id: "req-cancel-send-fail".to_string(),
+                    params,
+                },
+            )
+        }
+        WsCommandKind::Modify => {
+            let params = BinanceModifyOrderParamsBuilder::default()
+                .symbol("BTCUSDT")
+                .order_id(12345_i64)
+                .side(BinanceSide::Buy)
+                .quantity("0.002")
+                .price("51000.00")
+                .build()
+                .unwrap();
+            (
+                "req-modify-send-fail",
+                BinanceFuturesWsTradingCommand::ModifyOrder {
+                    id: "req-modify-send-fail".to_string(),
+                    params,
+                },
+            )
+        }
+    };
+
+    cmd_tx.send(command).unwrap();
+
+    let msg = tokio::time::timeout(Duration::from_secs(5), out_rx.recv())
+        .await
+        .expect("Timed out waiting for handler message");
+
+    match msg {
+        Some(BinanceFuturesWsTradingMessage::RequestFailed { request_id, msg }) => {
+            assert_eq!(request_id, expected_request_id);
+            assert!(msg.contains("WebSocket not connected"));
+        }
+        other => panic!("Expected RequestFailed, was {other:?}"),
+    }
+
+    cmd_tx
+        .send(BinanceFuturesWsTradingCommand::Disconnect)
+        .unwrap();
+    handle.await.unwrap();
+    signal.store(true, Ordering::Relaxed);
 }
 
 #[rstest]

@@ -1,30 +1,37 @@
 # Tardis
 
-Tardis provides granular data for cryptocurrency markets including tick-by-tick order book snapshots & updates,
-trades, open interest, funding rates, options chains and liquidations data for leading crypto exchanges.
+Tardis provides granular data for cryptocurrency markets including tick-by-tick order book snapshots and
+updates, trades, open interest, funding rates, option summaries, and liquidations data for leading
+crypto exchanges.
 
-NautilusTrader provides an integration with the Tardis API and data formats, enabling access.
-The capabilities of this adapter include:
+NautilusTrader integrates with the Tardis API, Tardis Machine WebSocket server, and Tardis CSV
+formats. The capabilities of this adapter include:
 
-- `TardisCSVDataLoader`: Reads Tardis-format CSV files and converts them into Nautilus data, with support for both bulk loading and memory-efficient streaming.
-- `TardisMachineClient`: Supports live streaming and historical replay of data from the Tardis Machine WebSocket server - converting messages into Nautilus data.
-- `TardisHttpClient`: Requests instrument definition metadata from the Tardis HTTP API, parsing it into Nautilus instrument definitions.
-- `TardisDataClient`: Provides a live data client for subscribing to data streams from a Tardis Machine WebSocket server.
-- `TardisInstrumentProvider`: Provides instrument definitions from Tardis through the HTTP instrument metadata API.
-- **Data pipeline functions**: Enables replay of historical data from Tardis Machine and writes it to the Nautilus Parquet format, including direct catalog integration for data management (see below).
+- `TardisCSVDataLoader`: reads Tardis-format CSV files into Nautilus data, with bulk and
+  memory-efficient streaming paths.
+- `TardisMachineClient`: streams live or historical replay data from Tardis Machine and converts
+  messages into Nautilus data.
+- `TardisHttpClient`: requests instrument metadata from the Tardis HTTP API and parses it into
+  Nautilus instrument definitions.
+- `TardisDataClient`: provides a live data client for Tardis Machine streams.
+- `TardisInstrumentProvider`: loads instrument definitions from the Tardis metadata API.
+- **Data pipeline functions**: replay historical data from Tardis Machine and write Nautilus
+  Parquet catalog files.
 
 :::info
-A Tardis API key is required for the adapter to operate correctly. See also [environment variables](#environment-variables).
+A `TARDIS_API_KEY` is required for Nautilus instrument metadata calls. Tardis Machine uses
+`TM_API_KEY` for historical dates outside the free first day of each month. See also
+[environment variables](#environment-variables).
 :::
 
 ## Overview
 
-This adapter is implemented in Rust, with optional Python bindings for ease of use in Python-based workflows.
+This adapter is implemented in Rust, with optional Python bindings.
 It does not require any external Tardis client library dependencies.
 
 :::info
 There is **no** need for additional installation steps for `tardis`.
-The core components of the adapter are compiled as static libraries and automatically linked during the build process.
+The core components of the adapter are compiled as static libraries and linked during the build.
 :::
 
 ## Tardis documentation
@@ -34,63 +41,72 @@ We recommend also referring to the Tardis documentation in conjunction with this
 
 ## Supported formats
 
-Tardis provides *normalized* market data, a unified format consistent across all supported exchanges.
-This normalization is highly valuable because it allows a single parser to handle data from any [Tardis-supported exchange](#venues), reducing development time and complexity.
-As a result, NautilusTrader will not support exchange-native market data formats, as it would be inefficient to implement separate parsers for each exchange at this stage.
+Tardis provides *normalized* market data, a unified format consistent across supported exchanges.
+This normalization lets one parser handle data from any [Tardis-supported exchange](#venues).
+NautilusTrader does not support exchange-native Tardis market data formats in this adapter.
 
-The following normalized Tardis formats are supported by NautilusTrader:
+The following normalized Tardis Machine formats are supported by NautilusTrader. See the official
+[Tardis data type reference](https://docs.tardis.dev/tardis-machine/data-types) for field schemas.
 
-| Tardis format                                                                                                               | Nautilus data type                                                   |
-|:----------------------------------------------------------------------------------------------------------------------------|:---------------------------------------------------------------------|
-| [book_change](https://docs.tardis.dev/api/tardis-machine#book_change)                                                       | `OrderBookDelta`                                                     |
-| [book_snapshot_*](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit) | `OrderBookDepth10` or `OrderBookDeltas` (see [book snapshot output](#book-snapshot-output)) |
-| [quote](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit)           | `QuoteTick`                                                          |
-| [quote_10s](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit)       | `QuoteTick`                                                          |
-| [trade](https://docs.tardis.dev/api/tardis-machine#trade)                                                                   | `Trade`                                                              |
-| [trade_bar_*](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix)                            | `Bar`                                                                |
-| [instrument](https://docs.tardis.dev/api/instruments-metadata-api)                                                          | `CurrencyPair`, `CryptoFuture`, `CryptoPerpetual`, `OptionContract` |
-| [derivative_ticker](https://docs.tardis.dev/api/tardis-machine#derivative_ticker)                                           | `FundingRateUpdate`                                                  |
-| [disconnect](https://docs.tardis.dev/api/tardis-machine#disconnect)                                                         | *Not applicable*                                                     |
+| Tardis format       | Nautilus data type                                                |
+|:--------------------|:------------------------------------------------------------------|
+| `book_change`       | `OrderBookDelta`                                                  |
+| `book_snapshot_*`   | `OrderBookDepth10` or `OrderBookDeltas`                           |
+| `quote`             | `QuoteTick`                                                       |
+| `quote_10s`         | `QuoteTick`                                                       |
+| `trade`             | `Trade`                                                           |
+| `trade_bar_*`       | `Bar`                                                             |
+| `instrument`        | `CurrencyPair`, `CryptoFuture`, `CryptoPerpetual`, `CryptoOption` |
+| `derivative_ticker` | `FundingRateUpdate`                                               |
+| `option_summary`    | `OptionGreeks`; optional `QuoteTick` from BBO fields              |
+| `disconnect`        | *Not applicable*                                                  |
 
 **Notes:**
 
-- [quote](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit) is an alias for [book_snapshot_1_0ms](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit).
-- [quote_10s](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit) is an alias for [book_snapshot_1_10s](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit).
-- Both quote, quote\_10s, and one-level snapshots are parsed as `QuoteTick`.
+- Tardis documents `quote` as an alias for `book_snapshot_1_0ms`.
+- Tardis documents `quote_10s` as an alias for `book_snapshot_1_10s`.
+- `quote`, `quote_10s`, and one-level snapshots are parsed as `QuoteTick`.
+- The Rust data client also emits mark and index price updates from `derivative_ticker` messages
+  when those values change.
+- Tardis `option_summary` messages include best bid/offer fields. Nautilus always maps this feed to
+  `OptionGreeks`; set `extract_bbo_as_quotes` to `true` to also emit `QuoteTick` from those BBO
+  fields.
 
 :::info
-See also the Tardis [normalized market data APIs](https://docs.tardis.dev/api/tardis-machine#normalized-market-data-apis).
+See also the Tardis [Tardis Machine quickstart](https://docs.tardis.dev/tardis-machine/quickstart).
 :::
 
 ## Bars
 
-The adapter will automatically convert [Tardis trade bar interval and suffix](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) to Nautilus `BarType`s.
+The adapter converts Tardis trade bar intervals and suffixes to Nautilus `BarType`s.
 This includes the following:
 
-| Tardis suffix                                                                                                | Nautilus bar aggregation    |
-|:-------------------------------------------------------------------------------------------------------------|:----------------------------|
-| [ms](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - milliseconds       | `MILLISECOND`               |
-| [s](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - seconds             | `SECOND`                    |
-| [m](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - minutes             | `MINUTE`                    |
-| [ticks](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - number of ticks | `TICK`                      |
-| [vol](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - volume size       | `VOLUME`                    |
+| Tardis suffix | Meaning         | Nautilus bar aggregation |
+|:--------------|:----------------|:-------------------------|
+| `ms`          | Milliseconds    | `MILLISECOND`            |
+| `s`           | Seconds         | `SECOND`                 |
+| `m`           | Minutes         | `MINUTE`                 |
+| `ticks`       | Number of ticks | `TICK`                   |
+| `vol`         | Volume size     | `VOLUME`                 |
 
 ## Symbology and normalization
 
-The Tardis integration ensures compatibility with NautilusTrader’s crypto exchange adapters
-by consistently normalizing symbols. Typically, NautilusTrader uses the native exchange naming conventions
-provided by Tardis. However, for certain exchanges, raw symbols are adjusted to adhere to the Nautilus symbology normalization, as outlined below:
+The Tardis integration ensures compatibility with NautilusTrader's crypto exchange adapters
+by consistently normalizing symbols. Typically, NautilusTrader uses the native exchange naming
+conventions provided by Tardis. For certain exchanges, raw symbols are adjusted to adhere to
+Nautilus symbology normalization, as outlined below:
 
 ### Common rules
 
 - All symbols are converted to uppercase.
-- Market type suffixes are appended with a hyphen for some exchanges (see [exchange-specific normalizations](#exchange-specific-normalizations)).
+- Market type suffixes are appended with a hyphen for some exchanges.
 - Original exchange symbols are preserved in the Nautilus instrument definitions `raw_symbol` field.
 
 ### Exchange-specific normalizations
 
 - **Binance**: Nautilus appends the suffix `-PERP` to all perpetual symbols.
-- **Bybit**: Nautilus uses specific product category suffixes, including `-SPOT`, `-LINEAR`, `-INVERSE`, `-OPTION`.
+- **Bybit**: Nautilus uses product category suffixes, including `-SPOT`, `-LINEAR`,
+  `-INVERSE`, and `-OPTION`.
 - **dYdX**: Nautilus appends the suffix `-PERP` to all perpetual symbols.
 - **Gate.io**: Nautilus appends the suffix `-PERP` to all perpetual symbols.
 
@@ -103,12 +119,12 @@ For detailed symbology documentation per exchange:
 ## Venues
 
 Some exchanges on Tardis are partitioned into multiple venues.
-The table below outlines the mappings between Nautilus venues and corresponding Tardis exchanges, as well as the exchanges that Tardis supports:
+The table below outlines the mappings between Nautilus venues and corresponding Tardis exchanges:
 
 | Nautilus venue          | Tardis exchange(s)                                    |
 |:------------------------|:------------------------------------------------------|
 | `ASCENDEX`              | `ascendex`                                            |
-| `BINANCE`               | `binance`, `binance-dex`, `binance-european-options`, `binance-futures`, `binance-jersey`, `binance-options` |
+| `BINANCE`               | `binance`, `binance-dex`, `binance-futures`, `binance-options` |
 | `BINANCE_DELIVERY`      | `binance-delivery` (*COIN‑margined contracts*)        |
 | `BINANCE_US`            | `binance-us`                                          |
 | `BITFINEX`              | `bitfinex`, `bitfinex-derivatives`                    |
@@ -147,52 +163,64 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | `UPBIT`                 | `upbit`                                               |
 | `WOO_X`                 | `woo-x`                                               |
 
+Tardis also exposes legacy Binance exchanges such as `binance-european-options` and
+`binance-jersey`.
+
 ## Environment variables
 
 The following environment variables are used by Tardis and NautilusTrader.
 
 - `TM_API_KEY`: API key for the Tardis Machine.
 - `TARDIS_API_KEY`: API key for NautilusTrader Tardis clients.
-- `TARDIS_MACHINE_WS_URL` (optional): WebSocket URL for the `TardisMachineClient` in NautilusTrader.
+- `TARDIS_MACHINE_WS_URL` (optional): WebSocket URL for the `TardisMachineClient`.
 - `TARDIS_BASE_URL` (optional): Base URL for the `TardisHttpClient` in NautilusTrader.
-- `NAUTILUS_PATH` (optional): Parent directory containing the `catalog/` subdirectory for writing replay data in the Nautilus catalog format.
+- `NAUTILUS_PATH` (optional): Parent directory containing the `catalog/` subdirectory for
+  replay output.
+
+The Tardis instruments metadata API requires bearer-token authorization and is available to active
+pro and business Tardis subscriptions.
 
 ## Running Tardis Machine historical replays
 
-The [Tardis Machine Server](https://docs.tardis.dev/api/tardis-machine) is a locally runnable server
-with built-in data caching, providing both tick-level historical and consolidated real-time cryptocurrency market data through HTTP and WebSocket APIs.
+The [Tardis Machine Server](https://docs.tardis.dev/tardis-machine/quickstart) is a locally
+runnable server with built-in data caching. It provides tick-level historical and consolidated
+real-time cryptocurrency market data through HTTP and WebSocket APIs.
 
 You can perform complete Tardis Machine WebSocket replays of historical data and output the results
 in Nautilus Parquet format, using either Python or Rust. Since the function is implemented in Rust,
-performance is consistent whether run from Python or Rust, letting you choose based on your preferred workflow.
+performance is consistent whether run from Python or Rust.
 
-The end-to-end `run_tardis_machine_replay` data pipeline function uses a specified [configuration](#configuration) to execute the following steps:
+The end-to-end `run_tardis_machine_replay` data pipeline function uses a specified
+[configuration](#configuration) to execute the following steps:
 
 - Connect to the Tardis Machine server.
-- Request and parse all necessary instrument definitions from the [Tardis instruments metadata](https://docs.tardis.dev/api/instruments-metadata-api) HTTP API.
-- Stream all requested instruments and data types for the specified time ranges from the Tardis Machine server.
-- For each instrument, data type and date (UTC), generate a `.parquet` file in the catalog-compatible format.
+- Request and parse all necessary instrument definitions from the Tardis instruments metadata API.
+- Stream all requested instruments and data types for the specified time ranges from Tardis Machine.
+- For each instrument, data type and date (UTC), generate a catalog-compatible `.parquet` file.
 - Disconnect from the Tardis Machine server, and terminate the program.
 
-**File Naming Convention**
+**File naming convention**
 
-Files are written one per day, per instrument, using ISO 8601 timestamp ranges that clearly indicate the exact time span of data:
+Files are written one per day, per instrument, using ISO 8601 timestamp ranges:
 
 - **Format**: `{start_timestamp}_{end_timestamp}.parquet`
 - **Example**: `2023-10-01T00-00-00-000000000Z_2023-10-01T23-59-59-999999999Z.parquet`
 - **Structure**: `data/{data_type}/{instrument_id}/{filename}`
 
-This format is fully compatible with the Nautilus data catalog, enabling querying, consolidation, and data management operations.
+This format is compatible with Nautilus data catalog queries, consolidation, and management.
 
 :::note
-You can request data for the first day of each month without an API key. For all other dates, a Tardis Machine API key is required.
+You can request data for the first day of each month without a Tardis Machine API key. Other
+dates require `TM_API_KEY`.
 :::
 
 This process is optimized for direct output to a Nautilus Parquet data catalog.
-Ensure that the `NAUTILUS_PATH` environment variable is set to the parent directory containing the `catalog/` subdirectory.
-Parquet files will then be organized under `<NAUTILUS_PATH>/catalog/data/` in the expected subdirectories corresponding to data type and instrument.
+Set `NAUTILUS_PATH` to the parent directory that contains the `catalog/` subdirectory. Parquet
+files are written under `<NAUTILUS_PATH>/catalog/data/` in subdirectories by data type and
+instrument.
 
-If no `output_path` is specified in the configuration file and the `NAUTILUS_PATH` environment variable is unset, the system will default to the current working directory.
+If no `output_path` is specified and `NAUTILUS_PATH` is unset, output defaults to the current
+working directory.
 
 ### Procedure
 
@@ -202,26 +230,30 @@ First, ensure the `tardis-machine` docker container is running. Use the followin
 docker run -p 8000:8000 -p 8001:8001 -e "TM_API_KEY=YOUR_API_KEY" -d tardisdev/tardis-machine
 ```
 
-This command starts the `tardis-machine` server without a persistent local cache, which may affect performance.
-For improved performance, consider running the server with a persistent volume. Refer to the [Tardis Docker documentation](https://docs.tardis.dev/api/tardis-machine#docker) for details.
+This command starts the `tardis-machine` server without a persistent local cache, which may affect
+performance. For better replay performance, run it with a persistent volume.
 
 ### Configuration
 
 Next, ensure you have a configuration JSON file available.
 
-**Configuration JSON format**
+**Configuration JSON fields**
 
-| Field                  | Type              | Description                                                                         | Default                                                        |
-|:-----------------------|:------------------|:------------------------------------------------------------------------------------|:---------------------------------------------------------------|
-| `tardis_ws_url`        | string (optional) | The Tardis Machine WebSocket URL.                                                   | Uses `TARDIS_MACHINE_WS_URL` when `null`.                      |
-| `normalize_symbols`    | bool (optional)   | If Nautilus [symbol normalization](#symbology-and-normalization) should be applied. | Defaults to `true` when `null`.                                |
-| `output_path`          | string (optional) | The output directory path to write Nautilus Parquet data to.                        | Uses `NAUTILUS_PATH` when set, otherwise current working dir.   |
-| `book_snapshot_output` | string (optional) | Output format for `book_snapshot_*` data: `"deltas"` or `"depth10"`.                | Defaults to `"deltas"` when `null`.                            |
-| `compression`          | string (optional) | Compression for written data files: `"zstd"`, `"snappy"`, or `"uncompressed"`.      | Defaults to `"zstd"` level 3 when `null`.                      |
-| `proxy_url`            | string (optional) | Optional proxy URL for the Tardis HTTP API client.                                  | No proxy when `null`.                                          |
-| `options`              | JSON[]            | Replay normalized request option objects.                                           | Required.                                                      |
+- `tardis_ws_url` (`str | null`): Tardis Machine WebSocket URL. Defaults to
+  `TARDIS_MACHINE_WS_URL`.
+- `normalize_symbols` (`bool | null`): applies Nautilus symbol normalization. Defaults to `true`.
+- `output_path` (`str | null`): output directory for Parquet data. Defaults to `NAUTILUS_PATH`,
+  then the current working directory.
+- `book_snapshot_output` (`"deltas" | "depth10" | null`): output format for snapshots. Defaults
+  to `"deltas"`.
+- `extract_bbo_as_quotes` (`bool | null`): also writes `QuoteTick` data from best bid/offer fields
+  in Tardis Machine `option_summary` messages. Defaults to `false`.
+- `compression` (`"zstd" | "snappy" | "uncompressed" | null`): Parquet compression codec.
+  Defaults to `"zstd"` level 3.
+- `proxy_url` (`str | null`): proxy URL for Tardis HTTP requests. Defaults to no proxy.
+- `options` (`JSON[]`): required replay request option objects.
 
-An example configuration file, `example_config.json`, is available [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_config.json):
+An example configuration file is available at `crates/adapters/tardis/bin/example_config.json`:
 
 ```json
 {
@@ -246,21 +278,26 @@ An example configuration file, `example_config.json`, is available [here](https:
 
 ### Book snapshot output
 
-The `book_snapshot_output` configuration option controls how Tardis `book_snapshot_*` messages (e.g., `book_snapshot_5_100ms`, `book_snapshot_10_1s`) are converted and stored.
+The `book_snapshot_output` configuration option controls how Tardis `book_snapshot_*` messages are
+converted and stored.
 
-| Value     | Nautilus Type       | Output Directory      | Description                                                 |
-|:----------|:--------------------|:----------------------|:------------------------------------------------------------|
-| `deltas`  | `OrderBookDeltas`   | `order_book_deltas/`  | Individual price level updates with snapshot flag set (default) |
-| `depth10` | `OrderBookDepth10`  | `order_book_depths/`  | Periodic depth snapshots with up to 10 price levels        |
+| Value     | Nautilus type      | Output directory     | Description                           |
+|:----------|:-------------------|:---------------------|:--------------------------------------|
+| `deltas`  | `OrderBookDeltas`  | `order_book_deltas/` | Price level updates.                  |
+| `depth10` | `OrderBookDepth10` | `order_book_depths/` | Snapshots with up to 10 price levels. |
 
 **When to use each format:**
 
-- **`deltas` (default)**: Best when you need to reconstruct the full order book state or when working with `book_change` data. Each price level becomes a separate delta record.
-- **`depth10`**: Best for strategies that need periodic order book snapshots. More memory-efficient as each snapshot is a single record containing all levels. Snapshots with more than 10 levels will have only the first 10 preserved.
+- **`deltas` (default)**: use when you need to reconstruct book state or combine snapshots with
+  `book_change` data. Each price level becomes a separate delta record.
+- **`depth10`**: use when a strategy needs periodic depth snapshots. Each snapshot is a single
+  record, and snapshots with more than 10 levels keep only the first 10.
 
 **Avoiding file overwrites:**
 
-When downloading both `book_snapshot_*` and `book_change` data for the same instrument and date range, using `depth10` format ensures they are written to separate directories (`order_book_depths/` vs `order_book_deltas/`), preventing file overwrites.
+When downloading both `book_snapshot_*` and `book_change` data for the same instrument and date
+range, `depth10` writes snapshots to `order_book_depths/` and avoids overwriting
+`order_book_deltas/`.
 
 Example configuration with explicit format:
 
@@ -280,12 +317,39 @@ Example configuration with explicit format:
 }
 ```
 
-### Python Replays
+### Option summary BBO extraction
+
+Set `extract_bbo_as_quotes` to `true` when requesting Tardis Machine `option_summary` data and the
+backtest also needs option BBO quotes. Nautilus still writes `OptionGreeks` from every
+`option_summary` message. When all best bid/offer fields are present and sizes are valid, it also
+writes a `QuoteTick` for the same instrument and timestamps.
+
+This option only applies to Tardis Machine `option_summary` replay and stream messages. It does not
+change Tardis CSV loading.
+
+```json
+{
+  "tardis_ws_url": "ws://localhost:8001",
+  "extract_bbo_as_quotes": true,
+  "options": [
+    {
+      "exchange": "deribit",
+      "symbols": ["BTC-28JUN24-70000-C"],
+      "data_types": ["option_summary"],
+      "from": "2024-01-01",
+      "to": "2024-01-02"
+    }
+  ]
+}
+```
+
+### Python replays
 
 To run a replay in Python, create a script similar to the following:
 
 ```python
 import asyncio
+from pathlib import Path
 
 from nautilus_trader.core import nautilus_pyo3
 
@@ -299,7 +363,7 @@ if __name__ == "__main__":
     asyncio.run(run())
 ```
 
-### Rust Replays
+### Rust replays
 
 To run a replay in Rust, create a binary similar to the following:
 
@@ -323,7 +387,7 @@ Logging defaults to INFO level. To enable debug logging, export the following en
 export NAUTILUS_LOG=debug
 ```
 
-A working example binary can be found [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_replay.rs).
+A working example binary is available at `crates/adapters/tardis/bin/example_replay.rs`.
 
 This can also be run using cargo:
 
@@ -331,27 +395,59 @@ This can also be run using cargo:
 cargo run --bin tardis-replay <path_to_your_config>
 ```
 
+### Option-chain backtest catalog
+
+An option-chain backtest starts after the Tardis replay has written data to the Nautilus
+catalog. The backtest loader does not request missing Tardis data during a run, so the
+catalog must contain:
+
+- Option instruments from the Tardis instrument metadata API.
+- `QuoteTick` data from one-level option book snapshots, quote data, or `option_summary` BBO
+  extraction.
+- `OptionGreeks` data from Tardis `option_summary` messages.
+
+Use both `QuoteTick` and `OptionGreeks` in the `BacktestDataConfig` list for the same
+option instrument IDs. The option-chain manager aggregates the replayed BBO and Greeks
+into `OptionChainSlice` snapshots. Use `snapshot_interval_ms=None` for raw publishing,
+or set an interval in milliseconds to publish thinned snapshots.
+
+Strategies can select contracts by moneyness with ATM-relative or ATM-percent strike
+ranges, by delta with `StrikeRange.delta(target, tolerance)`, or by fixed strike with
+`StrikeRange.fixed([...])`. Option order matching in backtests is quote-driven:
+marketable orders fill as takers against the opposing BBO, while passive limits can
+fill as makers when later BBO updates trade through the limit.
+
+Configure option fees explicitly on the simulated venue with structural fee models such
+as `CappedOptionFeeModel` or `TieredNotionalOptionFeeModel`. There is no automatic
+Tardis exchange to fee model mapping.
+
 ## Loading Tardis CSV data
 
 Tardis-format CSV data can be loaded using either Python or Rust. The loader reads the CSV text data
-from disk and parses it into Nautilus data. Since the loader is implemented in Rust, performance remains
-consistent regardless of whether you run it from Python or Rust, allowing you to choose based on your preferred workflow.
+from disk and parses it into Nautilus data. Since the loader is implemented in Rust, performance
+remains consistent regardless of whether you run it from Python or Rust.
 
-You can also optionally specify a `limit` parameter for the `load_*` functions/methods to control the maximum number of rows loaded.
+You can also specify a `limit` parameter for the `load_*` functions and methods to control the
+maximum number of rows loaded.
 
 :::note
-Loading mixed-instrument CSV files is challenging due to precision requirements and is not recommended. Use single-instrument CSV files instead (see below).
+Loading mixed-instrument CSV files is challenging due to precision requirements and is not
+recommended. Use single-instrument CSV files instead.
 :::
 
-### Loading CSV Data in Python
+### Loading CSV data in Python
 
 You can load Tardis-format CSV data in Python using the `TardisCSVDataLoader`.
-When loading data, you can optionally specify the instrument ID but must specify both the price precision, and size precision.
-Providing the instrument ID improves loading performance, while specifying the precisions is required, as they cannot be inferred from the text data alone.
+When loading data, you can optionally specify the instrument ID, price precision, and size
+precision. Providing the instrument ID improves loading performance. Price and size precision are
+inferred from the CSV when omitted, but explicit values are recommended for deterministic output,
+especially with large files.
 
 To load the data, create a script similar to the following:
 
 ```python
+from pathlib import Path
+
 from nautilus_trader.adapters.tardis import TardisCSVDataLoader
 from nautilus_trader.model import InstrumentId
 
@@ -366,16 +462,18 @@ loader = TardisCSVDataLoader(
 filepath = Path("YOUR_CSV_DATA_PATH")
 limit = None
 
-deltas = loader.load_deltas(filepath, limit)
+deltas = loader.load_deltas(filepath, limit=limit)
 ```
 
-### Loading CSV Data in Rust
+### Loading CSV data in Rust
 
-You can load Tardis-format CSV data in Rust using the loading functions found [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/src/csv/mod.rs).
-When loading data, you can optionally specify the instrument ID but must specify both the price precision and size precision.
-Providing the instrument ID improves loading performance, while specifying the precisions is required, as they cannot be inferred from the text data alone.
+You can load Tardis-format CSV data in Rust using the loading functions in
+`crates/adapters/tardis/src/csv/mod.rs`. When loading data, you can optionally specify the
+instrument ID, price precision, and size precision. Providing the instrument ID improves loading
+performance. Price and size precision are inferred from the CSV when omitted, but explicit values
+are recommended for deterministic output.
 
-For a complete example, see the [example binary here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_csv.rs).
+For a complete example, see `crates/adapters/tardis/bin/example_csv.rs`.
 
 To load the data, you can use code similar to the following:
 
@@ -387,9 +485,9 @@ use nautilus_model::identifiers::InstrumentId;
 
 #[tokio::main]
 async fn main() {
-    // You must specify precisions and the CSV filepath
-    let price_precision = 1;
-    let size_precision = 0;
+    // Optionally specify precisions and the CSV filepath
+    let price_precision = Some(1);
+    let size_precision = Some(0);
     let filepath = Path::new("YOUR_CSV_DATA_PATH");
 
     // Optionally specify an instrument ID and/or limit
@@ -408,20 +506,25 @@ async fn main() {
 }
 ```
 
-## Streaming Tardis CSV Data
+## Streaming Tardis CSV data
 
-For memory-efficient processing of large CSV files, the Tardis integration provides streaming capabilities that load and process data in configurable chunks rather than loading entire files into memory at once. This is particularly useful for processing multi-gigabyte CSV files without exhausting system memory.
+For memory-efficient processing of large CSV files, the Tardis integration can load and process
+data in configurable chunks rather than loading entire files into memory at once. This is useful for
+processing multi-gigabyte CSV files without exhausting system memory.
 
-The streaming functionality is available for all supported Tardis data types:
+The Python streaming functionality is available for the high-volume CSV types:
 
 - Order book deltas (`stream_deltas`).
 - Quote ticks (`stream_quotes`).
 - Trade ticks (`stream_trades`).
 - Order book depth snapshots (`stream_depth10`).
 
-### Streaming CSV Data in Python
+Rust also exposes streaming functions for batched deltas and funding rates.
 
-The `TardisCSVDataLoader` provides streaming methods that yield chunks of data as iterators. Each method accepts a `chunk_size` parameter that controls how many records are read from the CSV file per chunk:
+### Streaming CSV data in Python
+
+The `TardisCSVDataLoader` provides streaming methods that yield chunks of data as iterators. Each
+method accepts a `chunk_size` parameter that controls how many records are read per chunk:
 
 ```python
 from nautilus_trader.adapters.tardis import TardisCSVDataLoader
@@ -446,7 +549,7 @@ for chunk in loader.stream_trades(filepath, chunk_size):
         pass
 ```
 
-### Streaming Order Book Data
+### Streaming order book data
 
 For order book data, streaming is available for both deltas and depth snapshots:
 
@@ -462,7 +565,7 @@ for chunk in loader.stream_depth10(filepath, levels=5):
     # Process depth chunk
 ```
 
-### Streaming Quote Data
+### Streaming quote data
 
 Quote data can be streamed similarly:
 
@@ -473,27 +576,30 @@ for chunk in loader.stream_quotes(filepath):
     # Process quote chunk
 ```
 
-### Memory Efficiency Benefits
+### Memory efficiency benefits
 
 The streaming approach provides significant memory efficiency advantages:
 
 - **Controlled Memory Usage**: Only one chunk is loaded in memory at a time.
 - **Scalable Processing**: Can process files larger than available RAM.
-- **Configurable Chunk Sizes**: Tune `chunk_size` based on your system's memory and performance requirements (default 100,000).
+- **Configurable Chunk Sizes**: Tune `chunk_size` based on your system's memory and performance
+  requirements (default 100,000).
 
 :::warning
-When using streaming with precision inference (not providing explicit precisions), the inferred precision may differ from bulk loading the entire file.
-This is because precision inference works within chunk boundaries, and different chunks may contain values with different precision requirements.
-For deterministic precision behavior, provide explicit `price_precision` and `size_precision` parameters when calling streaming methods.
+When using streaming with precision inference, the inferred precision may differ from bulk loading
+the entire file. Precision inference works within chunk boundaries, and different chunks may contain
+values with different precision requirements. For deterministic precision behavior, provide
+explicit `price_precision` and `size_precision` parameters.
 :::
 
-### Streaming CSV Data in Rust
+### Streaming CSV data in Rust
 
 The underlying streaming functionality is implemented in Rust and can be used directly:
 
 ```rust
 use std::path::Path;
-use nautilus_adapters::tardis::csv::{stream_trades, stream_deltas};
+
+use nautilus_adapters::tardis::csv::stream_trades;
 use nautilus_model::identifiers::InstrumentId;
 
 #[tokio::main]
@@ -531,18 +637,21 @@ async fn main() {
 ## Requesting instrument definitions
 
 You can request instrument definitions in both Python and Rust using the `TardisHttpClient`.
-This client interacts with the [Tardis instruments metadata API](https://docs.tardis.dev/api/instruments-metadata-api) to request and parse instrument metadata into Nautilus instruments.
+This client interacts with the
+[Tardis instruments metadata API](https://docs.tardis.dev/api/instruments-metadata-api) to request
+and parse instrument metadata into Nautilus instruments.
 
-The `TardisHttpClient` constructor accepts optional parameters for `api_key`, `base_url`, and `timeout_secs` (default is 60 seconds).
+The `TardisHttpClient` constructor accepts optional parameters for `api_key`, `base_url`,
+`timeout_secs`, `normalize_symbols`, and `proxy_url`.
 
-The client provides methods to retrieve either a specific `instrument`, or all `instruments` available on a particular exchange.
-Ensure that you use Tardis’s lower-kebab casing convention when referring to a [Tardis-supported exchange](https://api.tardis.dev/v1/exchanges).
+The client provides methods to retrieve either a specific `instrument`, or all `instruments`
+available on a particular exchange. Use Tardis lower-kebab exchange IDs such as `binance-futures`.
 
 :::note
-A Tardis API key is required to access the instruments metadata API.
+A `TARDIS_API_KEY` with access to the instruments metadata API is required.
 :::
 
-### Requesting Instruments in Python
+### Requesting instruments in Python
 
 To request instrument definitions in Python, create a script similar to the following:
 
@@ -566,10 +675,10 @@ if __name__ == "__main__":
     asyncio.run(run())
 ```
 
-### Requesting Instruments in Rust
+### Requesting instruments in Rust
 
 To request instrument definitions in Rust, use code similar to the following.
-For a complete example, see the [example binary here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_http.rs).
+For a complete example, see `crates/adapters/tardis/bin/example_http.rs`.
 
 ```rust
 use nautilus_tardis::{
@@ -581,7 +690,7 @@ use nautilus_tardis::{
 async fn main() {
     nautilus_common::logging::ensure_logging_initialized();
 
-    let client = TardisHttpClient::new(None, None, None, true).unwrap();
+    let client = TardisHttpClient::new(None, None, None, true, None).unwrap();
 
     // Tardis instrument definitions
     let resp = client
@@ -591,7 +700,16 @@ async fn main() {
 
     // Nautilus instrument definitions
     let resp = client
-        .instruments(TardisExchange::Bitmex, Some("XBTUSD"), None, None, None, None, None, None)
+        .instruments(
+            TardisExchange::Bitmex,
+            Some("XBTUSD"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await;
     println!("Received: {resp:?}");
 }
@@ -599,7 +717,8 @@ async fn main() {
 
 ## Instrument provider
 
-The `TardisInstrumentProvider` requests and parses instrument definitions from Tardis through the HTTP instrument metadata API.
+The `TardisInstrumentProvider` requests and parses instrument definitions from Tardis through the
+HTTP instrument metadata API.
 Since there are multiple [Tardis-supported exchanges](#venues), when loading all instruments,
 you must filter for the desired venues using an `InstrumentProviderConfig`:
 
@@ -618,15 +737,17 @@ You can also load specific instrument definitions in the usual way:
 from nautilus_trader.config import InstrumentProviderConfig
 
 instrument_ids = [
-    InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),  # Will use the 'binance-futures' exchange
-    InstrumentId.from_str("BTCUSDT.BINANCE"),  # Will use the 'binance' exchange
+    InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),  # Uses the 'binance-futures' exchange
+    InstrumentId.from_str("BTCUSDT.BINANCE"),  # Uses the 'binance' exchange
 ]
 instrument_provider_config = InstrumentProviderConfig(load_ids=instrument_ids)
 ```
 
 ### Option exchange filtering
 
-The instrument provider automatically filters out option-specific exchanges (such as `binance-options`, `binance-european-options`, `bybit-options`, `okex-options`, and `huobi-dm-options`) when the `instrument_type` filter is not provided or does not include `"option"`.
+The instrument provider filters out option-specific exchanges, such as `binance-options`,
+`binance-european-options`, `bybit-options`, `okex-options`, and `huobi-dm-options`, when the
+`instrument_type` filter is not provided or does not include `"option"`.
 
 To explicitly load option instruments, include `"option"` in the `instrument_type` filter:
 
@@ -641,7 +762,7 @@ filters = {
 instrument_provider_config = InstrumentProviderConfig(load_all=True, filters=filters)
 ```
 
-This filtering mechanism prevents unnecessary API calls to option exchanges when they are not needed, improving performance and reducing API usage.
+This filtering prevents unnecessary API calls to option exchanges when they are not needed.
 
 :::note
 Instruments must be available in the cache for all subscriptions.
@@ -650,36 +771,38 @@ For simplicity, it's recommended to load all instruments for the venues you inte
 
 ## Live data client
 
-The `TardisDataClient` enables integration of a Tardis Machine with a running NautilusTrader system.
-It supports subscriptions to the following data types:
+The `TardisDataClient` integrates Tardis Machine with a running NautilusTrader system.
+The Python live data client translates standard subscriptions into Tardis Machine streams for:
 
-- `OrderBookDelta` (L2 granularity from Tardis, includes all changes or full-depth snapshots)
-- `OrderBookDepth10` (L2 granularity from Tardis, provides snapshots up to 10 levels)
+- `OrderBookDelta` (L2 granularity from Tardis, including changes or full-depth snapshots)
 - `QuoteTick`
 - `TradeTick`
 - `Bar` (trade bars with [Tardis-supported bar aggregations](#bars))
 - `FundingRateUpdate` (from derivative_ticker messages)
 
+Configured Tardis Machine replay/stream options can also emit `OrderBookDepth10` when
+`book_snapshot_output` is `depth10`. `OptionGreeks` from `option_summary` is supported by the
+Tardis Machine replay path and catalog writer. Set `extract_bbo_as_quotes` to also emit
+`QuoteTick` from the best bid/offer fields in those `option_summary` messages.
+
 ### Data WebSockets
 
-The main `TardisMachineClient` data WebSocket manages all stream subscriptions received during the initial connection phase,
-up to the duration specified by `ws_connection_delay_secs`. For any additional subscriptions made
-after this period, a new `TardisMachineClient` is created. This approach optimizes performance by
-allowing the main WebSocket to handle potentially hundreds of subscriptions in a single stream if
-they are provided at startup.
+The main `TardisMachineClient` data WebSocket manages all stream subscriptions received during the
+initial connection phase, up to the duration specified by `ws_connection_delay_secs`. For any
+additional subscriptions made after this period, a new `TardisMachineClient` is created. This lets
+the main WebSocket handle many startup subscriptions in a single stream.
 
-When an initial subscription delay is set with `ws_connection_delay_secs`, unsubscribing from any
-of these streams will not actually remove the subscription from the Tardis Machine stream, as selective
-unsubscription is not supported by Tardis. However, the component will still unsubscribe from message
-bus publishing as expected.
+When an initial subscription delay is set with `ws_connection_delay_secs`, unsubscribing from any of
+these streams does not remove the subscription from the Tardis Machine stream because Tardis does
+not support selective unsubscription. The component still unsubscribes from message bus publishing.
 
-All subscriptions made after any initial delay will behave normally, fully unsubscribing from the
+All subscriptions made after any initial delay behave normally, fully unsubscribing from the
 Tardis Machine stream when requested.
 
 :::tip
-If you anticipate frequent subscription and unsubscription of data, it is recommended to set
-`ws_connection_delay_secs` to zero. This will create a new client for each initial subscription,
-allowing them to be later closed individually upon unsubscription.
+If you anticipate frequent subscription and unsubscription of data, set `ws_connection_delay_secs`
+to zero. This creates a new client for each initial subscription, allowing each to close
+individually on unsubscription.
 :::
 
 ## Trade ID derivation
@@ -695,7 +818,9 @@ downstream dedup intact.
 
 The following limitations and considerations are currently known:
 
-- Historical data requests are not supported, as each would require a minimum one-day replay from the Tardis Machine, potentially with a filter. This approach is neither practical nor efficient.
+- Historical quote and trade requests are not supported by `TardisDataClient`. Historical external
+  `Bar` requests use Tardis Machine replay and require date-based replay windows. For catalog
+  workflows, prefer `run_tardis_machine_replay`.
 
 ## Contributing
 

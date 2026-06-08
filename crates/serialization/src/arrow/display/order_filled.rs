@@ -143,13 +143,10 @@ mod tests {
         array::{Array, BooleanArray, Float64Array, StringArray, TimestampNanosecondArray},
         datatypes::{DataType, TimeUnit},
     };
-    use nautilus_core::UUID4;
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderType},
-        identifiers::{
-            AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
-            VenueOrderId,
-        },
+        enums::{LiquiditySide, OrderType},
+        events::order::spec::OrderFilledSpec,
+        identifiers::{ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
         types::{Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
@@ -157,27 +154,20 @@ mod tests {
     use super::*;
 
     fn make_fill(instrument_id: &str, commission: Option<Money>, ts: u64) -> OrderFilled {
-        OrderFilled {
-            trader_id: TraderId::from("TESTER-001"),
-            strategy_id: StrategyId::from("S-001"),
-            instrument_id: InstrumentId::from(instrument_id),
-            client_order_id: ClientOrderId::from("O-001"),
-            venue_order_id: VenueOrderId::from("V-001"),
-            account_id: AccountId::from("SIM-001"),
-            trade_id: TradeId::new("T-001"),
-            order_side: OrderSide::Buy,
-            order_type: OrderType::Limit,
-            last_qty: Quantity::from(100),
-            last_px: Price::from("50.25"),
-            currency: Currency::USD(),
-            liquidity_side: LiquiditySide::Maker,
-            event_id: UUID4::default(),
-            ts_event: ts.into(),
-            ts_init: (ts + 1).into(),
-            reconciliation: false,
-            position_id: Some(PositionId::from("P-001")),
-            commission,
-        }
+        OrderFilledSpec::builder()
+            .instrument_id(InstrumentId::from(instrument_id))
+            .client_order_id(ClientOrderId::from("O-001"))
+            .venue_order_id(VenueOrderId::from("V-001"))
+            .trade_id(TradeId::new("T-001"))
+            .order_type(OrderType::Limit)
+            .last_qty(Quantity::from(100))
+            .last_px(Price::from("50.25"))
+            .liquidity_side(LiquiditySide::Maker)
+            .ts_event(ts.into())
+            .ts_init((ts + 1).into())
+            .position_id(PositionId::from("P-001"))
+            .maybe_commission(commission)
+            .build()
     }
 
     #[rstest]

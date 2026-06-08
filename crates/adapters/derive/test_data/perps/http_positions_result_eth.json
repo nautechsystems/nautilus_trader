@@ -1,0 +1,29 @@
+{
+  "positions": [
+    {
+      "amount": "1",
+      "average_price": "3500",
+      "creation_timestamp": 1700000000000,
+      "cumulative_funding": "0",
+      "delta": "1",
+      "gamma": "0",
+      "index_price": "3500",
+      "initial_margin": "100",
+      "instrument_name": "ETH-PERP",
+      "instrument_type": "perp",
+      "leverage": null,
+      "liquidation_price": null,
+      "maintenance_margin": "60",
+      "mark_price": "3500",
+      "mark_value": "3500",
+      "net_settlements": "0",
+      "open_orders_margin": "0",
+      "pending_funding": "0",
+      "realized_pnl": "0",
+      "theta": "0",
+      "unrealized_pnl": "0",
+      "vega": "0"
+    }
+  ],
+  "subaccount_id": 42
+}

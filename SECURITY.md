@@ -68,6 +68,12 @@ do our best to properly recognize and credit your contributions.
 NautilusTrader employs multiple layers of security across the development and
 release lifecycle:
 
+### Public posture
+
+- **OpenSSF Scorecard**: The repository publishes Scorecard results for the public badge and API,
+  and uploads SARIF to GitHub code scanning. Scorecard is an automated repository-health signal
+  that complements manual review and security audits.
+
 ### Source and review controls
 
 - **CODEOWNERS**: Critical infrastructure files, dependency manifests, and lock files require Core
@@ -109,6 +115,8 @@ release lifecycle:
   and OSV Scanner (Rust), pip-audit (Python), and Zizmor (GitHub Actions).
 - **Supply chain provenance**: cargo-vet verifies Rust dependency provenance by importing trusted
   audit data from organizations including Bytecode Alliance, Google, Mozilla, and Embark Studios.
+- **Fuzzing**: cargo-fuzz targets cover selected adapter and signing surfaces, including Derive
+  wire-model/signing internals and Lighter cryptographic/signing internals.
 - **Code scanning**: CodeQL static analysis covers Python and Rust code on PRs to `master`,
   pushes to `nightly`, and manual dispatch. The scheduled security audit also uploads Zizmor SARIF
   results for GitHub Actions workflow findings when token permissions allow it.

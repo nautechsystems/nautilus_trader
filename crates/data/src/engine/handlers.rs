@@ -25,13 +25,16 @@ use ustr::Ustr;
 
 use crate::aggregation::{BarAggregator, SpreadQuoteAggregator};
 
+// Between built-in handlers (10) and default user handlers (0)
+pub(super) const BAR_AGGREGATOR_PRIORITY: u32 = 5;
+
 /// Message handler for processing quote ticks through bar aggregators.
 ///
 /// This handler receives quote tick messages and forwards them to the underlying
 /// bar aggregator for processing. It's used as part of the data engine's message
 /// routing infrastructure to build bars from incoming quote data.
 #[derive(Debug)]
-pub struct BarQuoteHandler {
+pub(super) struct BarQuoteHandler {
     aggregator: WeakCell<Box<dyn BarAggregator>>,
     bar_type: BarType,
 }
@@ -63,7 +66,7 @@ impl Handler<QuoteTick> for BarQuoteHandler {
 /// bar aggregator for processing. It's used as part of the data engine's message
 /// routing infrastructure to build bars from incoming trade data.
 #[derive(Debug)]
-pub struct BarTradeHandler {
+pub(super) struct BarTradeHandler {
     aggregator: WeakCell<Box<dyn BarAggregator>>,
     bar_type: BarType,
 }
@@ -96,7 +99,7 @@ impl Handler<TradeTick> for BarTradeHandler {
 /// bars from existing bars, such as creating higher timeframe bars from
 /// lower timeframe bars.
 #[derive(Debug)]
-pub struct BarBarHandler {
+pub(super) struct BarBarHandler {
     aggregator: WeakCell<Box<dyn BarAggregator>>,
     bar_type: BarType,
 }
@@ -124,7 +127,7 @@ impl Handler<Bar> for BarBarHandler {
 
 /// Message handler for processing leg quotes through spread quote aggregators.
 #[derive(Debug)]
-pub struct SpreadQuoteHandler {
+pub(super) struct SpreadQuoteHandler {
     aggregator: WeakCell<SpreadQuoteAggregator>,
     spread_instrument_id: InstrumentId,
     leg_instrument_id: InstrumentId,

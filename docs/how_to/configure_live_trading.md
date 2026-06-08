@@ -73,7 +73,7 @@ config = TradingNodeConfig(
 |--------------------------|--------------|---------------------------------------------|
 | `trader_id`              | "TRADER-001" | Unique trader identifier (name‑tag format). |
 | `instance_id`            | `None`       | Optional unique instance identifier.        |
-| `timeout_connection`     | 30.0         | Connection timeout in seconds.              |
+| `timeout_connection`     | 60.0         | Connection timeout in seconds.              |
 | `timeout_reconciliation` | 10.0         | Reconciliation timeout in seconds.          |
 | `timeout_portfolio`      | 10.0         | Portfolio initialization timeout.           |
 | `timeout_disconnection`  | 10.0         | Disconnection timeout.                      |
@@ -197,89 +197,21 @@ When `filter_unclaimed_external_orders` is enabled, only `VENUE`-tagged orders a
 
 ### Continuous reconciliation
 
-A background loop starts after startup reconciliation completes. It:
-
-- Monitors in-flight orders for delays exceeding a configured threshold.
-- Reconciles open orders with the venue at configurable intervals.
-- Audits internal *own* order books against the venue's public books.
-
-The loop waits for startup reconciliation to finish before starting periodic checks.
-The `reconciliation_startup_delay_secs` parameter adds a further delay *after* startup
-reconciliation completes, giving the system time to stabilize.
-
-When retries are exhausted, the engine resolves the order as follows:
-
-**In-flight order timeout resolution** (venue does not respond after max retries):
-
-| Current status   | Resolved to | Rationale                                  |
-|------------------|-------------|--------------------------------------------|
-| `SUBMITTED`      | `REJECTED`  | No confirmation received from venue.       |
-| `PENDING_UPDATE` | `CANCELED`  | Modification remains unacknowledged.       |
-| `PENDING_CANCEL` | `CANCELED`  | Venue never confirmed the cancellation.    |
-
-**Order consistency checks** (when cache state differs from venue state):
-
-| Cache status       | Venue status | Resolution  | Rationale                                                           |
-|--------------------|--------------|-------------|---------------------------------------------------------------------|
-| `SUBMITTED`        | Not found    | `REJECTED`  | Order never confirmed by venue (e.g., lost during network error).   |
-| `ACCEPTED`         | Not found    | `REJECTED`  | Order doesn't exist at venue, likely was never successfully placed. |
-| `ACCEPTED`         | `CANCELED`   | `CANCELED`  | Venue canceled the order (user action or venue‑initiated).          |
-| `ACCEPTED`         | `EXPIRED`    | `EXPIRED`   | Order reached GTD expiration at venue.                              |
-| `ACCEPTED`         | `REJECTED`   | `REJECTED`  | Venue rejected after initial acceptance (rare but possible).        |
-| `PARTIALLY_FILLED` | `CANCELED`   | `CANCELED`  | Order canceled at venue with fills preserved.                       |
-| `PARTIALLY_FILLED` | Not found    | `CANCELED`  | Order doesn't exist but had fills (reconciles fill history).        |
-
-:::note
-**Reconciliation caveats:**
-
-- **"Not found" resolutions** only apply in full-history mode (`open_check_open_only=False`).
-  Open-only mode (the default) skips these checks because venue "open orders" endpoints
-  exclude closed orders by design, making it impossible to distinguish missing orders from
-  recently closed ones.
-- **Recent order protection**: the engine skips reconciliation for orders whose last event
-  falls within the `open_check_threshold_ms` window (default 5s). This prevents false
-  positives from race conditions where the venue is still processing.
-- **Targeted query safeguard**: before marking an order `REJECTED` or `CANCELED` when
-  "not found", the engine issues a single-order query to the venue.
-  This catches false negatives from bulk query limitations or timing delays.
-- **`FILLED` orders** that are "not found" at the venue are silently ignored. Venues
-  commonly drop completed orders from their query results.
-
-:::
-
-### Retry coordination and lookback behavior
-
-The inflight loop and open-order loop share a single retry counter
-(`_recon_check_retries`), bounded by `inflight_check_retries` and
-`open_check_missing_retries` respectively. The stricter limit wins,
-and avoids duplicate venue queries for the same order state.
-
-When the open-order loop exhausts retries, the engine issues one targeted
-`GenerateOrderStatusReport` probe before applying a terminal state. If the
-venue returns the order, reconciliation proceeds and the retry counter resets.
-
-**Single-order query protection**: the engine caps single-order queries per
-cycle via `max_single_order_queries_per_cycle` (default: 10). Remaining
-orders are deferred to the next cycle. A configurable delay
-(`single_order_query_delay_ms`, default: 100ms) spaces out consecutive
-queries to avoid rate limits. This handles bulk query failures across hundreds of orders
-without overwhelming the venue API.
-
-Orders older than `open_check_lookback_mins` rely on this targeted probe.
-Keep the lookback generous for venues with short history windows. Increase
-`open_check_threshold_ms` if venue timestamps lag the local clock, so
-recently updated orders are not marked missing prematurely.
+Continuous reconciliation keeps runtime order state aligned after startup by checking
+in‑flight orders, polling open orders, and auditing own order books. Configure the loop
+with these settings. For runtime state‑transition rules, retry coordination, and caveats, see
+[Runtime checks](../concepts/live.md#runtime-checks).
 
 | Setting                              | Default        | Description                                                                                      |
 |--------------------------------------|----------------|--------------------------------------------------------------------------------------------------|
 | `inflight_check_interval_ms`         | 2,000&nbsp;ms  | How often to check in‑flight order status. Set to 0 to disable.                                  |
 | `inflight_check_threshold_ms`        | 5,000&nbsp;ms  | Time before an in‑flight order triggers a venue status check. Lower if colocated.                |
 | `inflight_check_retries`             | 5&nbsp;retries | Retry attempts to verify an in‑flight order with the venue.                                      |
-| `open_check_interval_secs`           | None           | How often (seconds) to check open orders at the venue. None or 0.0 disables. Recommended: 5-10s.|
+| `open_check_interval_secs`           | None           | How often (seconds) to check open orders at the venue. None or 0.0 disables. Recommended: 5-10s. |
 | `open_check_open_only`               | True           | When true, query only open orders; when false, fetch full history (resource‑intensive).          |
 | `open_check_lookback_mins`           | 60&nbsp;min    | Lookback window (minutes) for order status polling. Only orders modified within this window.     |
 | `open_check_threshold_ms`            | 5,000&nbsp;ms  | Minimum time since last cached event before acting on venue discrepancies.                       |
-| `open_check_missing_retries`         | 5&nbsp;retries | Max retries before resolving an order open in cache but not found at venue.                      |
+| `open_check_missing_retries`         | 5&nbsp;retries | Max retries before targeted not‑found resolution for eligible orders.                            |
 | `max_single_order_queries_per_cycle` | 10             | Cap on single‑order queries per cycle. Prevents rate‑limit exhaustion.                           |
 | `single_order_query_delay_ms`        | 100&nbsp;ms    | Delay (ms) between single‑order queries to avoid rate limits.                                    |
 | `reconciliation_startup_delay_secs`  | 10.0&nbsp;s    | Delay (seconds) *after* startup reconciliation before continuous checks begin.                   |
@@ -293,6 +225,8 @@ recently updated orders are not marked missing prematurely.
 
 - **`open_check_lookback_mins`**: do not reduce below 60 minutes. A short window
   triggers false "missing order" resolutions because orders fall outside the query range.
+- **`open_check_threshold_ms`**: increase if venue timestamps lag the local clock, so
+  recently updated orders are not marked missing prematurely.
 - **`reconciliation_startup_delay_secs`**: do not reduce below 10 seconds in production.
   The delay lets the system stabilize after startup reconciliation before continuous
   checks begin.
@@ -303,7 +237,7 @@ recently updated orders are not marked missing prematurely.
 
 | Setting                            | Default | Description                                                                                     |
 |------------------------------------|---------|-------------------------------------------------------------------------------------------------|
-| `allow_overfills`                  | False   | Allow fills exceeding order quantity (logs warning). Useful when reconciliation races fills.     |
+| `allow_overfills`                  | False   | Allow fills exceeding order quantity (logs warning). Useful when reconciliation races fills.    |
 | `generate_missing_orders`          | True    | Generate LIMIT orders during reconciliation to align position discrepancies (strategy `EXTERNAL`, tag `RECONCILIATION`). |
 | `snapshot_orders`                  | False   | Take order snapshots on order events.                                                           |
 | `snapshot_positions`               | False   | Take position snapshots on position events.                                                     |
@@ -351,13 +285,13 @@ For a complete parameter list see the `StrategyConfig`
 
 ### Order management
 
-| Setting                     | Default | Description                                                                                |
-|-----------------------------|---------|--------------------------------------------------------------------------------------------|
-| `oms_type`                  | None    | [OMS type](../concepts/execution#oms-configuration) for position ID and order processing.  |
-| `use_uuid_client_order_ids` | False   | Use UUID4 values for client order IDs.                                                     |
-| `external_order_claims`     | None    | Instrument IDs whose external orders this strategy claims.                                 |
-| `manage_contingent_orders`  | False   | Automatically manage OTO, OCO, and OUO contingent orders.                                  |
-| `manage_gtd_expiry`         | False   | Manage GTD expirations for orders.                                                         |
+| Setting                     | Default | Description                                                                               |
+|-----------------------------|---------|-------------------------------------------------------------------------------------------|
+| `oms_type`                  | None    | [OMS type](../concepts/execution#oms-configuration) for position ID and order processing. |
+| `use_uuid_client_order_ids` | False   | Use UUID4 values for client order IDs.                                                    |
+| `external_order_claims`     | None    | Instrument IDs whose external orders and reconciliation activity this strategy claims.    |
+| `manage_contingent_orders`  | False   | Automatically manage OTO, OCO, and OUO contingent orders.                                 |
+| `manage_gtd_expiry`         | False   | Manage GTD expirations for orders.                                                        |
 
 ## Windows signal handling
 

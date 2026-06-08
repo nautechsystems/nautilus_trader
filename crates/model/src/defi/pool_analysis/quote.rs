@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy_primitives::{Address, I256, U160, U256};
+use nautilus_core::UnixNanos;
 
 use crate::{
     defi::{
@@ -269,12 +270,15 @@ impl SwapQuote {
     /// # Returns
     /// A [`PoolSwap`] event containing both the quote data and provided metadata
     #[must_use]
+    #[expect(clippy::too_many_arguments)]
     pub fn to_swap_event(
         &self,
         chain: SharedChain,
         dex: SharedDex,
         pool_identifier: PoolIdentifier,
         block: BlockPosition,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
         sender: Address,
         recipient: Address,
     ) -> PoolSwap {
@@ -288,7 +292,8 @@ impl SwapQuote {
             block.transaction_hash,
             block.transaction_index,
             block.log_index,
-            None, // timestamp
+            ts_event,
+            ts_init,
             sender,
             recipient,
             self.amount0,

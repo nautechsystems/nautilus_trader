@@ -109,13 +109,13 @@ impl AxMarketDataLevel {
     }
 }
 
-/// Loaded as `nautilus_pyo3.architect`.
+/// Loaded as `nautilus_pyo3.architect_ax`.
 ///
 /// # Errors
 ///
 /// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
-pub fn architect(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn architect_ax(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<AxEnvironment>()?;
     m.add_class::<AxMarketDataLevel>()?;
     m.add_class::<crate::config::AxDataClientConfig>()?;

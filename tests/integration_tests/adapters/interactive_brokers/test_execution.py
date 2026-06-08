@@ -26,6 +26,8 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveExecClientFactory,
 )
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import timestring_to_timestamp
+from nautilus_trader.execution.messages import BatchCancelOrders
+from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.model.enums import AssetClass
@@ -341,6 +343,42 @@ async def test_submit_order(
 
 
 @pytest.mark.asyncio
+async def test_submit_order_rejects_when_ib_client_not_ready(
+    mocker,
+    exec_client,
+    cache,
+    instrument,
+    contract_details,
+    client_order_id,
+):
+    # Arrange
+    instrument_setup(
+        exec_client=exec_client,
+        cache=cache,
+        instrument=instrument,
+        contract_details=contract_details,
+    )
+    exec_client._set_connected(True)
+    exec_client._client._is_client_ready.clear()
+    place_order = mocker.patch.object(exec_client._client, "place_order")
+
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        client_order_id=client_order_id,
+    )
+    cache.add_order(order, None)
+    command = TestCommandStubs.submit_order_command(order=order)
+
+    # Act
+    exec_client.submit_order(command=command)
+    await asyncio.sleep(0)
+
+    # Assert
+    place_order.assert_not_called()
+    assert cache.order(client_order_id).status == OrderStatus.REJECTED
+
+
+@pytest.mark.asyncio
 async def test_submit_order_what_if(
     mocker,
     exec_client,
@@ -634,6 +672,7 @@ async def test_modify_order_child_before_parent_acceptance_skips_parent_id(
     )
     cache.add_order(parent_order, None)
     cache.add_order(child_order, None)
+    exec_client._client._is_client_ready.set()
 
     place_order = mocker.patch.object(exec_client._client, "place_order")
 
@@ -648,6 +687,56 @@ async def test_modify_order_child_before_parent_acceptance_skips_parent_id(
     assert ib_order.orderId == 9102
     assert ib_order.parentId == 0
     assert ib_order.totalQuantity == 150.0
+
+
+@pytest.mark.asyncio
+async def test_modify_order_rejects_when_ib_client_not_ready(
+    mocker,
+    exec_client,
+    cache,
+    instrument,
+    contract_details,
+    client_order_id,
+    venue_order_id,
+):
+    # Arrange
+    instrument_setup(
+        exec_client=exec_client,
+        cache=cache,
+        instrument=instrument,
+        contract_details=contract_details,
+    )
+    exec_client._set_connected(True)
+    exec_client._client._is_client_ready.clear()
+    place_order = mocker.patch.object(exec_client._client, "place_order")
+    generate_order_modify_rejected = mocker.patch.object(
+        exec_client,
+        "generate_order_modify_rejected",
+    )
+
+    order = order_setup(
+        exec_client=exec_client,
+        instrument=instrument,
+        client_order_id=client_order_id,
+        venue_order_id=venue_order_id,
+        status=OrderStatus.ACCEPTED,
+    )
+    command = TestCommandStubs.modify_order_command(
+        price=Price.from_int(95),
+        order=order,
+    )
+
+    # Act
+    exec_client.modify_order(command=command)
+    await asyncio.sleep(0)
+
+    # Assert
+    place_order.assert_not_called()
+    generate_order_modify_rejected.assert_called_once()
+    assert (
+        generate_order_modify_rejected.call_args.kwargs["reason"]
+        == "Interactive Brokers client is not ready; refusing to modify order"
+    )
 
 
 @pytest.mark.asyncio
@@ -699,6 +788,161 @@ async def test_cancel_order(
 
     # Assert
     assert cache.order(client_order_id).status == OrderStatus.CANCELED
+
+
+@pytest.mark.asyncio
+async def test_cancel_order_rejects_when_ib_client_not_ready(
+    mocker,
+    exec_client,
+    cache,
+    instrument,
+    contract_details,
+    client_order_id,
+    venue_order_id,
+):
+    # Arrange
+    instrument_setup(
+        exec_client=exec_client,
+        cache=cache,
+        instrument=instrument,
+        contract_details=contract_details,
+    )
+    exec_client._set_connected(True)
+    exec_client._client._is_client_ready.clear()
+    cancel_order = mocker.patch.object(exec_client._client, "cancel_order")
+    generate_order_cancel_rejected = mocker.patch.object(
+        exec_client,
+        "generate_order_cancel_rejected",
+    )
+
+    order = order_setup(
+        exec_client=exec_client,
+        instrument=instrument,
+        client_order_id=client_order_id,
+        venue_order_id=venue_order_id,
+        status=OrderStatus.ACCEPTED,
+    )
+    command = TestCommandStubs.cancel_order_command(order=order)
+
+    # Act
+    exec_client.cancel_order(command=command)
+    await asyncio.sleep(0)
+
+    # Assert
+    cancel_order.assert_not_called()
+    generate_order_cancel_rejected.assert_called_once()
+    assert (
+        generate_order_cancel_rejected.call_args.kwargs["reason"]
+        == "Interactive Brokers client is not ready; refusing to cancel order"
+    )
+
+
+@pytest.mark.asyncio
+async def test_batch_cancel_orders_rejects_when_ib_client_not_ready(
+    mocker,
+    exec_client,
+    cache,
+    instrument,
+    contract_details,
+    client_order_id,
+    venue_order_id,
+):
+    # Arrange
+    instrument_setup(
+        exec_client=exec_client,
+        cache=cache,
+        instrument=instrument,
+        contract_details=contract_details,
+    )
+    exec_client._set_connected(True)
+    exec_client._client._is_client_ready.clear()
+    cancel_order = mocker.patch.object(exec_client._client, "cancel_order")
+    generate_order_cancel_rejected = mocker.patch.object(
+        exec_client,
+        "generate_order_cancel_rejected",
+    )
+
+    order = order_setup(
+        exec_client=exec_client,
+        instrument=instrument,
+        client_order_id=client_order_id,
+        venue_order_id=venue_order_id,
+        status=OrderStatus.ACCEPTED,
+    )
+    cancel = TestCommandStubs.cancel_order_command(order=order)
+    command = BatchCancelOrders(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        cancels=[cancel],
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    await exec_client._batch_cancel_orders(command)
+
+    # Assert
+    cancel_order.assert_not_called()
+    generate_order_cancel_rejected.assert_called_once()
+    assert (
+        generate_order_cancel_rejected.call_args.kwargs["reason"]
+        == "Interactive Brokers client is not ready; refusing to cancel order"
+    )
+
+
+@pytest.mark.asyncio
+async def test_cancel_all_orders_rejects_when_ib_client_not_ready(
+    mocker,
+    exec_client,
+    cache,
+    instrument,
+    contract_details,
+    client_order_id,
+    venue_order_id,
+):
+    # Arrange
+    instrument_setup(
+        exec_client=exec_client,
+        cache=cache,
+        instrument=instrument,
+        contract_details=contract_details,
+    )
+    exec_client._set_connected(True)
+    exec_client._client._is_client_ready.clear()
+    cancel_order = mocker.patch.object(exec_client._client, "cancel_order")
+    generate_order_cancel_rejected = mocker.patch.object(
+        exec_client,
+        "generate_order_cancel_rejected",
+    )
+
+    order = order_setup(
+        exec_client=exec_client,
+        instrument=instrument,
+        client_order_id=client_order_id,
+        venue_order_id=venue_order_id,
+        status=OrderStatus.ACCEPTED,
+    )
+    cache.update_order(order)
+    command = CancelAllOrders(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        order_side=OrderSide.NO_ORDER_SIDE,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    await exec_client._cancel_all_orders(command)
+
+    # Assert
+    cancel_order.assert_not_called()
+    generate_order_cancel_rejected.assert_called_once()
+    assert (
+        generate_order_cancel_rejected.call_args.kwargs["reason"]
+        == "Interactive Brokers client is not ready; refusing to cancel orders"
+    )
 
 
 @pytest.mark.asyncio

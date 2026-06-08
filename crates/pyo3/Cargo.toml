@@ -28,12 +28,18 @@ arrow = [
   "nautilus-hyperliquid/arrow",
   "nautilus-serialization/arrow",
 ]
+betfair = ["dep:nautilus-betfair", "nautilus-betfair/python"]
 cython-compat = []
-defi = ["dep:nautilus-blockchain", "nautilus-blockchain/python"]
+defi = [
+  "dep:nautilus-blockchain",
+  "nautilus-backtest/defi",
+  "nautilus-blockchain/python",
+]
 extension-module = [
   "nautilus-analysis/extension-module",
   "nautilus-architect-ax/extension-module",
   "nautilus-backtest/extension-module",
+  "nautilus-betfair?/extension-module",
   "nautilus-binance/extension-module",
   "nautilus-bitmex/extension-module",
   "nautilus-coinbase/extension-module",
@@ -45,6 +51,7 @@ extension-module = [
   "nautilus-data/extension-module",
   "nautilus-databento/extension-module",
   "nautilus-deribit/extension-module",
+  "nautilus-derive/extension-module",
   "nautilus-dydx/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-hyperliquid/extension-module",
@@ -52,9 +59,11 @@ extension-module = [
   "nautilus-infrastructure/extension-module",
   "nautilus-interactive-brokers/extension-module",
   "nautilus-kraken/extension-module",
+  "nautilus-lighter/extension-module",
   "nautilus-live/extension-module",
   "nautilus-model/extension-module",
   "nautilus-okx/extension-module",
+  "nautilus-portfolio/extension-module",
   "nautilus-polymarket/extension-module",
   "nautilus-sandbox/extension-module",
   "nautilus-persistence/extension-module",
@@ -74,21 +83,24 @@ ffi = [
 high-precision = [
   "nautilus-model/high-precision",
   "nautilus-serialization/high-precision",
+  "nautilus-betfair?/high-precision",
   "nautilus-binance/high-precision",
   "nautilus-bitmex/high-precision",
   "nautilus-coinbase/high-precision",
   "nautilus-bybit/high-precision",
   "nautilus-databento/high-precision",
   "nautilus-deribit/high-precision",
+  "nautilus-derive/high-precision",
   "nautilus-dydx/high-precision",
   "nautilus-hyperliquid/high-precision",
   "nautilus-kraken/high-precision",
+  "nautilus-lighter/high-precision",
   "nautilus-okx/high-precision",
   "nautilus-polymarket/high-precision",
   "nautilus-sandbox/high-precision",
   "nautilus-tardis/high-precision",
 ]
-hypersync = ["nautilus-blockchain/hypersync"]
+hypersync = ["defi", "nautilus-blockchain/hypersync"]
 postgres = ["nautilus-infrastructure/postgres"]
 redis = ["nautilus-infrastructure/redis"]
 tracing-bridge = ["nautilus-common/tracing-bridge"]
@@ -107,13 +119,18 @@ nautilus-data = { workspace = true, features = ["python"] }
 nautilus-execution = { workspace = true, features = ["python"] }
 nautilus-indicators = { workspace = true, features = ["python"] }
 nautilus-infrastructure = { workspace = true, features = ["python"] }
-nautilus-live = { workspace = true, features = ["python", "examples"] }
+nautilus-live = { workspace = true, features = [
+  "python",
+  "examples",
+  "plugin",
+] }
 nautilus-model = { workspace = true, features = ["python"] }
 nautilus-network = { workspace = true, features = [
   "python",
   "transport-sockudo",
 ] }
 nautilus-persistence = { workspace = true, features = ["python"] }
+nautilus-portfolio = { workspace = true, features = ["python"] }
 nautilus-risk = { workspace = true, features = ["python"] }
 nautilus-serialization = { workspace = true, features = ["python"] }
 nautilus-testkit = { workspace = true, features = ["python"] }
@@ -121,6 +138,7 @@ nautilus-trading = { workspace = true, features = ["python"] }
 
 # Adapters
 nautilus-architect-ax = { workspace = true, features = ["python"] }
+nautilus-betfair = { workspace = true, optional = true }
 nautilus-binance = { workspace = true, features = ["python"] }
 nautilus-bitmex = { workspace = true, features = ["python"] }
 nautilus-blockchain = { workspace = true, features = [
@@ -130,10 +148,12 @@ nautilus-bybit = { workspace = true, features = ["python"] }
 nautilus-coinbase = { workspace = true, features = ["python"] }
 nautilus-databento = { workspace = true, features = ["python", "live"] }
 nautilus-deribit = { workspace = true, features = ["python"] }
+nautilus-derive = { workspace = true, features = ["python"] }
 nautilus-dydx = { workspace = true, features = ["python"] }
 nautilus-hyperliquid = { workspace = true, features = ["python"] }
 nautilus-interactive-brokers = { workspace = true, features = ["python"] }
 nautilus-kraken = { workspace = true, features = ["python"] }
+nautilus-lighter = { workspace = true, features = ["python"] }
 nautilus-okx = { workspace = true, features = ["python"] }
 nautilus-polymarket = { workspace = true, features = ["python"] }
 nautilus-sandbox = { workspace = true, features = ["python"] }

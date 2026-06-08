@@ -79,7 +79,7 @@ impl DataClientFactory for InteractiveBrokersDataClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        _cache: CacheView,
+        cache: CacheView,
         _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn DataClient>> {
         let ib_config = config
@@ -95,6 +95,7 @@ impl DataClientFactory for InteractiveBrokersDataClientFactory {
         let instrument_provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
             ib_config.instrument_provider.clone(),
         ));
+        seed_provider_from_cache(&instrument_provider, &cache);
         let client = InteractiveBrokersDataClient::new(
             ClientId::from(name),
             ib_config,
@@ -161,6 +162,11 @@ impl ExecutionClientFactory for InteractiveBrokersExecutionClientFactory {
         };
         ib_config.account_id = Some(account_id.to_string());
 
+        let instrument_provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
+            ib_config.instrument_provider.clone(),
+        ));
+        seed_provider_from_cache(&instrument_provider, &cache);
+
         let core = ExecutionClientCore::new(
             self.trader_id,
             ClientId::from(name),
@@ -172,9 +178,6 @@ impl ExecutionClientFactory for InteractiveBrokersExecutionClientFactory {
             cache,
         );
 
-        let instrument_provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
-            ib_config.instrument_provider.clone(),
-        ));
         let client = InteractiveBrokersExecutionClient::new(core, ib_config, instrument_provider)?;
         Ok(Box::new(client))
     }
@@ -197,6 +200,28 @@ fn resolve_account_id(name: &str, account_id: &str) -> anyhow::Result<AccountId>
     let issuer = if name.is_empty() { IB } else { name };
     AccountId::new_checked(format!("{issuer}-{account_id}"))
         .map_err(|e| anyhow::anyhow!("Invalid Interactive Brokers account_id: {e}"))
+}
+
+fn seed_provider_from_cache(
+    instrument_provider: &InteractiveBrokersInstrumentProvider,
+    cache: &CacheView,
+) {
+    let instruments = {
+        let cache = cache.borrow();
+        cache
+            .instrument_ids(None)
+            .into_iter()
+            .filter_map(|instrument_id| cache.instrument(instrument_id).cloned())
+            .collect::<Vec<_>>()
+    };
+
+    let count = instrument_provider.add_cached_instruments(instruments);
+    if count > 0 {
+        tracing::debug!(
+            "Seeded Interactive Brokers instrument provider with {} cached instruments",
+            count
+        );
+    }
 }
 
 #[cfg(test)]

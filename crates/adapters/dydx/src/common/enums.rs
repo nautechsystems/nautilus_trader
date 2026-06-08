@@ -124,7 +124,7 @@ pub enum DydxTimeInForce {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.dydx")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.dydx")
 )]
 pub enum DydxOrderSide {
     /// Buy order.
@@ -193,7 +193,7 @@ impl From<DydxOrderSide> for OrderSide {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.dydx")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.dydx")
 )]
 pub enum DydxOrderType {
     /// Limit order with specified price.
@@ -451,6 +451,9 @@ pub enum DydxMarketStatus {
     Initializing,
     /// Market is in final settlement.
     FinalSettlement,
+    /// A status value not modeled by this enum.
+    #[serde(other)]
+    Unknown,
 }
 
 impl From<DydxMarketStatus> for MarketStatusAction {
@@ -462,6 +465,8 @@ impl From<DydxMarketStatus> for MarketStatusAction {
             DydxMarketStatus::PostOnly => Self::Quoting,
             DydxMarketStatus::Initializing => Self::PreOpen,
             DydxMarketStatus::FinalSettlement => Self::Close,
+            // No safe market action for an unmodeled status; emit no change.
+            DydxMarketStatus::Unknown => Self::None,
         }
     }
 }
@@ -493,6 +498,9 @@ pub enum DydxFillType {
     Deleveraged,
     /// Deleveraging (offsetting account).
     Offsetting,
+    /// A fill type not modeled by this enum.
+    #[serde(other)]
+    Unknown,
 }
 
 /// dYdX liquidity side (maker/taker).
@@ -556,6 +564,9 @@ impl From<LiquiditySide> for DydxLiquidity {
 pub enum DydxTickerType {
     /// Perpetual market ticker.
     Perpetual,
+    /// A market type not modeled by this enum.
+    #[serde(other)]
+    Unknown,
 }
 
 /// dYdX trade type.
@@ -589,6 +600,9 @@ pub enum DydxTradeType {
     StopLimit,
     /// Take-profit order (limit).
     TakeProfitLimit,
+    /// A trade type not modeled by this enum.
+    #[serde(other)]
+    Unknown,
 }
 
 /// dYdX transfer types.
@@ -618,7 +632,7 @@ pub enum DydxTradeType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.dydx")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.dydx")
 )]
 pub enum DydxTransferType {
     /// Transfer into the account.
@@ -660,7 +674,7 @@ pub enum DydxTransferType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.dydx")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.dydx")
 )]
 pub enum DydxCandleResolution {
     /// 1 minute candles.
@@ -752,7 +766,7 @@ impl DydxCandleResolution {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.dydx")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.dydx")
 )]
 pub enum DydxNetwork {
     /// dYdX mainnet (dydx-mainnet-1).
@@ -787,6 +801,24 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_reference_enums_tolerate_unmodeled_values() {
+        // Reference/descriptive enums must degrade gracefully on a new venue value
+        // rather than hard-fail deserialization of the whole message.
+        let status: DydxMarketStatus = serde_json::from_str("\"SOME_NEW_STATUS\"").unwrap();
+        let ticker: DydxTickerType = serde_json::from_str("\"SPOT\"").unwrap();
+        let trade: DydxTradeType = serde_json::from_str("\"SOME_NEW_TRADE\"").unwrap();
+        let fill: DydxFillType = serde_json::from_str("\"SOME_NEW_FILL\"").unwrap();
+        assert_eq!(status, DydxMarketStatus::Unknown);
+        assert_eq!(ticker, DydxTickerType::Unknown);
+        assert_eq!(trade, DydxTradeType::Unknown);
+        assert_eq!(fill, DydxFillType::Unknown);
+        assert_eq!(
+            MarketStatusAction::from(DydxMarketStatus::Unknown),
+            MarketStatusAction::None
+        );
+    }
 
     #[rstest]
     fn test_order_status_conversion() {

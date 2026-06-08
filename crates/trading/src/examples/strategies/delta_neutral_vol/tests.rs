@@ -21,9 +21,10 @@ use nautilus_common::{
     clock::{Clock, TestClock},
 };
 use nautilus_model::{
-    data::{greeks::OptionGreekValues, option_chain::OptionGreeks},
+    data::{QuoteTick, greeks::OptionGreekValues, option_chain::OptionGreeks},
     enums::{OrderSide, TimeInForce},
     identifiers::{ClientId, InstrumentId, StrategyId, TraderId},
+    types::{Price, Quantity},
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use rstest::rstest;
@@ -66,6 +67,18 @@ fn create_entry_ready_strategy() -> DeltaNeutralVol {
     s
 }
 
+fn quote_tick(instrument_id: InstrumentId, bid: &str, ask: &str) -> QuoteTick {
+    QuoteTick::new(
+        instrument_id,
+        Price::from(bid),
+        Price::from(ask),
+        Quantity::from("1"),
+        Quantity::from("1"),
+        Default::default(),
+        Default::default(),
+    )
+}
+
 fn register_strategy(strategy: &mut DeltaNeutralVol) {
     let trader_id = TraderId::from("TESTER-001");
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
@@ -100,6 +113,7 @@ fn test_config_defaults() {
     assert_eq!(config.rehedge_delta_threshold, 0.5);
     assert_eq!(config.rehedge_interval_secs, 30);
     assert!(config.expiry_filter.is_none());
+    assert!(config.entry_premium_offset_ticks.is_none());
 }
 
 #[rstest]
@@ -591,10 +605,52 @@ fn test_should_enter_strangle_false_without_greeks_initialized() {
 }
 
 #[rstest]
+fn test_should_enter_strangle_with_premium_mode_waits_for_quotes() {
+    let config = create_config().with_entry_premium_offset_ticks(1);
+    let mut strategy = DeltaNeutralVol::new(config);
+    let call_id = InstrumentId::from("BTC-USD-260327-75000-C.OKX");
+    let put_id = InstrumentId::from("BTC-USD-260327-65000-P.OKX");
+
+    strategy.call_instrument_id = Some(call_id);
+    strategy.put_instrument_id = Some(put_id);
+    strategy.call_delta = 0.20;
+    strategy.put_delta = -0.20;
+    strategy.call_delta_ready = true;
+    strategy.put_delta_ready = true;
+    register_strategy(&mut strategy);
+
+    assert!(!strategy.entry_price_data_ready());
+    assert!(!strategy.should_enter_strangle());
+
+    strategy.call_quote = Some(quote_tick(call_id, "10.0", "10.5"));
+
+    assert!(!strategy.entry_price_data_ready());
+    assert!(!strategy.should_enter_strangle());
+
+    strategy.put_quote = Some(quote_tick(put_id, "8.0", "8.5"));
+
+    assert!(strategy.entry_price_data_ready());
+    assert!(strategy.should_enter_strangle());
+}
+
+#[rstest]
+fn test_should_enter_strangle_false_after_entry_attempted() {
+    let mut strategy = create_entry_ready_strategy();
+    register_strategy(&mut strategy);
+
+    assert!(strategy.should_enter_strangle());
+
+    strategy.entry_attempted = true;
+
+    assert!(!strategy.should_enter_strangle());
+}
+
+#[rstest]
 fn test_config_enter_strangle_default_true() {
     let config = create_config();
     assert!(config.enter_strangle);
     assert_eq!(config.entry_iv_offset, 0.0);
+    assert!(config.entry_premium_offset_ticks.is_none());
 }
 
 #[rstest]
@@ -602,11 +658,13 @@ fn test_config_entry_builder_methods() {
     let config = create_config()
         .with_enter_strangle(false)
         .with_entry_iv_offset(0.05)
-        .with_entry_time_in_force(TimeInForce::Ioc);
+        .with_entry_time_in_force(TimeInForce::Ioc)
+        .with_entry_premium_offset_ticks(2);
 
     assert!(!config.enter_strangle);
     assert_eq!(config.entry_iv_offset, 0.05);
     assert_eq!(config.entry_time_in_force, TimeInForce::Ioc);
+    assert_eq!(config.entry_premium_offset_ticks, Some(2));
 }
 
 #[rstest]

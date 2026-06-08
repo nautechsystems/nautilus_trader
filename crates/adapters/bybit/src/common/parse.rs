@@ -389,6 +389,11 @@ pub fn parse_linear_instrument(
         &definition.price_filter.min_price,
         "priceFilter.minPrice",
     )?);
+    let min_notional = parse_optional_notional(
+        definition.lot_size_filter.min_notional_value.as_deref(),
+        quote_currency,
+        "lotSizeFilter.minNotionalValue",
+    )?;
 
     let maker_fee = parse_decimal(&fee_rate.maker_fee_rate, "makerFeeRate")?;
     let taker_fee = parse_decimal(&fee_rate.taker_fee_rate, "takerFeeRate")?;
@@ -411,7 +416,7 @@ pub fn parse_linear_instrument(
                 max_quantity,
                 min_quantity,
                 None,
-                None,
+                min_notional,
                 max_price,
                 min_price,
                 Some(default_margin()),
@@ -445,7 +450,7 @@ pub fn parse_linear_instrument(
                 max_quantity,
                 min_quantity,
                 None,
-                None,
+                min_notional,
                 max_price,
                 min_price,
                 Some(default_margin()),
@@ -462,6 +467,27 @@ pub fn parse_linear_instrument(
             "unsupported linear contract variant: {other:?}"
         )),
     }
+}
+
+/// Parses Bybit's `minNotionalValue` string (when present) into a `Money` value
+/// denominated in the instrument's quote currency. Returns `Ok(None)` if the
+/// field is absent or an empty string.
+fn parse_optional_notional(
+    raw: Option<&str>,
+    currency: Currency,
+    field: &str,
+) -> anyhow::Result<Option<Money>> {
+    let Some(s) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    let amount: f64 = s
+        .parse()
+        .with_context(|| format!("invalid f64 for {field}: {s:?}"))?;
+
+    if !amount.is_finite() || amount <= 0.0 {
+        return Ok(None);
+    }
+    Ok(Some(Money::new(amount, currency)))
 }
 
 /// Parses an inverse contract definition into a Nautilus instrument.
@@ -517,6 +543,11 @@ pub fn parse_inverse_instrument(
         &definition.price_filter.min_price,
         "priceFilter.minPrice",
     )?);
+    let min_notional = parse_optional_notional(
+        definition.lot_size_filter.min_notional_value.as_deref(),
+        quote_currency,
+        "lotSizeFilter.minNotionalValue",
+    )?;
 
     let maker_fee = parse_decimal(&fee_rate.maker_fee_rate, "makerFeeRate")?;
     let taker_fee = parse_decimal(&fee_rate.taker_fee_rate, "takerFeeRate")?;
@@ -539,7 +570,7 @@ pub fn parse_inverse_instrument(
                 max_quantity,
                 min_quantity,
                 None,
-                None,
+                min_notional,
                 max_price,
                 min_price,
                 Some(default_margin()),
@@ -573,7 +604,7 @@ pub fn parse_inverse_instrument(
                 max_quantity,
                 min_quantity,
                 None,
-                None,
+                min_notional,
                 max_price,
                 min_price,
                 Some(default_margin()),
@@ -1843,6 +1874,7 @@ mod tests {
                 assert!(!perp.is_inverse);
                 assert_eq!(perp.price_increment, Price::from_str("0.5").unwrap());
                 assert_eq!(perp.size_increment, Quantity::from_str("0.001").unwrap());
+                assert_eq!(perp.min_notional, Some(Money::new(5.0, Currency::USDT())),);
             }
             other => panic!("unexpected instrument variant: {other:?}"),
         }
@@ -1862,6 +1894,7 @@ mod tests {
                 assert!(perp.is_inverse);
                 assert_eq!(perp.price_increment, Price::from_str("0.5").unwrap());
                 assert_eq!(perp.size_increment, Quantity::from_str("1").unwrap());
+                assert!(perp.min_notional.is_none());
             }
             other => panic!("unexpected instrument variant: {other:?}"),
         }

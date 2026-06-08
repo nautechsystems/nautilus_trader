@@ -92,25 +92,25 @@ pub type MoneyRaw = i64;
 ///
 /// # Safety
 ///
-/// This value is computed at compile time from `MONEY_MAX` * `FIXED_SCALAR`.
-/// The multiplication is guaranteed not to overflow because `MONEY_MAX` and `FIXED_SCALAR`
-/// are chosen such that their product fits within `MoneyRaw`'s range in both
-/// high-precision (i128) and standard-precision (i64) modes.
+/// `MONEY_MAX` and `FIXED_SCALAR` are cast to `MoneyRaw` before multiplying, so the
+/// scaling uses exact integer arithmetic rather than a lossy `f64` product. The result
+/// fits within `MoneyRaw`'s range in both high-precision (i128) and standard-precision
+/// (i64) modes, so the multiplication cannot overflow.
 #[unsafe(no_mangle)]
 #[allow(unsafe_code)]
-pub static MONEY_RAW_MAX: MoneyRaw = (MONEY_MAX * FIXED_SCALAR) as MoneyRaw;
+pub static MONEY_RAW_MAX: MoneyRaw = (MONEY_MAX as MoneyRaw) * (FIXED_SCALAR as MoneyRaw);
 
 /// The minimum raw money integer value.
 ///
 /// # Safety
 ///
-/// This value is computed at compile time from `MONEY_MIN` * `FIXED_SCALAR`.
-/// The multiplication is guaranteed not to overflow because `MONEY_MIN` and `FIXED_SCALAR`
-/// are chosen such that their product fits within `MoneyRaw`'s range in both
-/// high-precision (i128) and standard-precision (i64) modes.
+/// `MONEY_MIN` and `FIXED_SCALAR` are cast to `MoneyRaw` before multiplying, so the
+/// scaling uses exact integer arithmetic rather than a lossy `f64` product. The result
+/// fits within `MoneyRaw`'s range in both high-precision (i128) and standard-precision
+/// (i64) modes, so the multiplication cannot overflow.
 #[unsafe(no_mangle)]
 #[allow(unsafe_code)]
-pub static MONEY_RAW_MIN: MoneyRaw = (MONEY_MIN * FIXED_SCALAR) as MoneyRaw;
+pub static MONEY_RAW_MIN: MoneyRaw = (MONEY_MIN as MoneyRaw) * (FIXED_SCALAR as MoneyRaw);
 
 // -----------------------------------------------------------------------------
 // MONEY_MAX
@@ -747,6 +747,19 @@ mod tests {
     use super::*;
 
     #[rstest]
+    fn test_extreme_money_round_trips_through_raw() {
+        // Regression: a lossy `f64` scalar previously left `MONEY_RAW_MAX`/`MONEY_RAW_MIN`
+        // beyond the raw produced by `new` at the bounds, causing spurious panics and errors.
+        let max = Money::new(MONEY_MAX, Currency::USD());
+        let min = Money::new(MONEY_MIN, Currency::USD());
+
+        assert_eq!(max.raw, MONEY_RAW_MAX);
+        assert_eq!(min.raw, MONEY_RAW_MIN);
+        assert!(Money::from_raw_checked(max.raw, Currency::USD()).is_ok());
+        assert!(Money::from_raw_checked(min.raw, Currency::USD()).is_ok());
+    }
+
+    #[rstest]
     fn test_debug() {
         let money = Money::new(1010.12, Currency::USD());
         let result = format!("{money:?}");
@@ -896,7 +909,7 @@ mod tests {
 
         // Equality
         let m3 = Money::new(100.0, usd);
-        assert!(m1 == m3);
+        assert_eq!(m1, m3);
     }
 
     #[rstest]

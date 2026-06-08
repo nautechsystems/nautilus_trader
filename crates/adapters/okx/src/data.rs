@@ -37,8 +37,9 @@ use nautilus_common::{
             SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentStatus,
             SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
             SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrumentStatus,
-            UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentStatus, UnsubscribeMarkPrices, UnsubscribeOptionGreeks,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -63,17 +64,17 @@ use crate::{
             OKX_VENUE, OKX_WS_HEARTBEAT_SECS, resolve_book_depth, resolve_instrument_families,
         },
         enums::{
-            OKXBookChannel, OKXContractType, OKXGreeksType, OKXInstrumentStatus, OKXInstrumentType,
-            OKXVipLevel,
+            OKXBookAction, OKXBookChannel, OKXContractType, OKXGreeksType, OKXInstrumentStatus,
+            OKXInstrumentType, OKXVipLevel,
         },
         parse::{
-            extract_inst_family, okx_instrument_type_from_symbol, okx_status_to_market_action,
-            parse_base_quote_from_symbol, parse_instrument_any, parse_instrument_id,
-            parse_millisecond_timestamp, parse_price, parse_quantity,
+            extract_inst_family, is_okx_spread_symbol, okx_instrument_type_from_symbol,
+            okx_status_to_market_action, parse_base_quote_from_symbol, parse_instrument_any,
+            parse_instrument_id, parse_millisecond_timestamp, parse_price, parse_quantity,
         },
     },
     config::OKXDataClientConfig,
-    http::client::OKXHttpClient,
+    http::{client::OKXHttpClient, query::GetSpreadsParams},
     websocket::{
         client::OKXWebSocketClient,
         enums::OKXWsChannel,
@@ -433,7 +434,36 @@ impl OKXDataClient {
                 let size_precision = instrument.size_precision();
                 let ts_init = clock.get_time_ns();
 
-                if matches!(channel, OKXWsChannel::BboTbt) {
+                if matches!(channel, OKXWsChannel::SprdBooks5) {
+                    let msgs: Vec<OKXBookMsg> = match serde_json::from_value(data) {
+                        Ok(m) => m,
+                        Err(e) => {
+                            log::error!("Failed to deserialize spread book data: {e}");
+                            return;
+                        }
+                    };
+
+                    // sprd-books5 pushes a full 5-level snapshot each message.
+                    match parse_book_msg_vec(
+                        msgs,
+                        &instrument_id,
+                        price_precision,
+                        size_precision,
+                        OKXBookAction::Snapshot,
+                        ts_init,
+                    ) {
+                        Ok(data_vec) => {
+                            for d in data_vec {
+                                Self::send_data(data_sender, d);
+                            }
+                        }
+                        Err(e) => log::error!("Failed to parse spread book data: {e}"),
+                    }
+
+                    return;
+                }
+
+                if matches!(channel, OKXWsChannel::BboTbt | OKXWsChannel::SprdBboTbt) {
                     let msgs: Vec<OKXBookMsg> = match serde_json::from_value(data) {
                         Ok(m) => m,
                         Err(e) => {
@@ -558,6 +588,7 @@ impl OKXDataClient {
                 }
             }
             OKXWsMessage::Orders(_)
+            | OKXWsMessage::SpreadOrders(_)
             | OKXWsMessage::AlgoOrders(_)
             | OKXWsMessage::OrderResponse { .. }
             | OKXWsMessage::Account(_)
@@ -795,6 +826,34 @@ impl DataClient for OKXDataClient {
             }
         }
 
+        if self.config.load_spreads {
+            match self
+                .http_client
+                .request_spread_instruments(GetSpreadsParams {
+                    state: Some("live".to_string()),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(mut fetched) => {
+                    fetched
+                        .retain(|instrument| contract_filter_with_config(&self.config, instrument));
+                    self.http_client.cache_instruments(&fetched);
+
+                    self.instruments.rcu(|m| {
+                        for instrument in &fetched {
+                            m.insert(instrument.id(), instrument.clone());
+                        }
+                    });
+
+                    all_instruments.extend(fetched);
+                }
+                Err(e) => {
+                    log::error!("Failed to fetch OKX spread instruments: {e:?}");
+                }
+            }
+        }
+
         for instrument in all_instruments {
             if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
                 log::warn!("Failed to send instrument: {e}");
@@ -1023,6 +1082,22 @@ impl DataClient for OKXDataClient {
             anyhow::bail!("OKX only supports L2_MBP order book deltas");
         }
 
+        if is_okx_spread_symbol(cmd.instrument_id.symbol.as_str()) {
+            // Spreads have no incremental book channel; sprd-books5 pushes a full
+            // 5-level snapshot, emitted as F_SNAPSHOT deltas to feed the book.
+            let instrument_id = cmd.instrument_id;
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_spread_book(instrument_id)
+                        .await
+                        .context("spread book subscription")
+                },
+                "spread book subscription",
+            );
+            return Ok(());
+        }
+
         let raw_depth = cmd.depth.map_or(0, |d| d.get());
         let depth = resolve_book_depth(raw_depth);
         if depth != raw_depth {
@@ -1081,9 +1156,22 @@ impl DataClient for OKXDataClient {
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
 
+        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_spread_quotes(instrument_id)
+                        .await
+                        .context("spread quotes subscription")
+                },
+                "spread quote subscription",
+            );
+            return Ok(());
+        }
+
+        let ws = self.public_ws()?.clone();
         self.spawn_ws(
             async move {
                 ws.subscribe_quotes(instrument_id)
@@ -1096,9 +1184,22 @@ impl DataClient for OKXDataClient {
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
 
+        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_spread_trades(instrument_id)
+                        .await
+                        .context("spread trades subscription")
+                },
+                "spread trade subscription",
+            );
+            return Ok(());
+        }
+
+        let ws = self.public_ws()?.clone();
         self.spawn_ws(
             async move {
                 ws.subscribe_trades(instrument_id, false)
@@ -1243,9 +1344,39 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
+    fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
+        let ws = self.public_ws()?.clone();
+
+        self.spawn_ws(
+            async move {
+                ws.unsubscribe_instrument(instrument_id)
+                    .await
+                    .context("instrument unsubscribe")?;
+                Ok(())
+            },
+            "unsubscribe_instrument",
+        );
+        Ok(())
+    }
+
+    fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+
+        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_spread_book(instrument_id)
+                        .await
+                        .context("spread book unsubscribe")
+                },
+                "spread book unsubscribe",
+            );
+            return Ok(());
+        }
+
+        let ws = self.public_ws()?.clone();
         let channel = self.book_channels.get_cloned(&instrument_id);
         self.book_channels.remove(&instrument_id);
 
@@ -1281,9 +1412,22 @@ impl DataClient for OKXDataClient {
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
 
+        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_spread_quotes(instrument_id)
+                        .await
+                        .context("spread quotes unsubscribe")
+                },
+                "spread quote unsubscribe",
+            );
+            return Ok(());
+        }
+
+        let ws = self.public_ws()?.clone();
         self.spawn_ws(
             async move {
                 ws.unsubscribe_quotes(instrument_id)
@@ -1296,9 +1440,22 @@ impl DataClient for OKXDataClient {
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
 
+        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_spread_trades(instrument_id)
+                        .await
+                        .context("spread trades unsubscribe")
+                },
+                "spread trade unsubscribe",
+            );
+            return Ok(());
+        }
+
+        let ws = self.public_ws()?.clone();
         self.spawn_ws(
             async move {
                 ws.unsubscribe_trades(instrument_id, false) // TODO: Aggregated trades?
@@ -1465,6 +1622,7 @@ impl DataClient for OKXDataClient {
         };
         let contract_types = self.config.contract_types.clone();
         let instrument_families = self.config.instrument_families.clone();
+        let load_spreads = self.config.load_spreads;
 
         get_runtime().spawn(async move {
             let mut all_instruments = Vec::new();
@@ -1524,6 +1682,33 @@ impl DataClient for OKXDataClient {
                 }
             }
 
+            if load_spreads {
+                match http
+                    .request_spread_instruments(GetSpreadsParams {
+                        state: Some("live".to_string()),
+                        ..Default::default()
+                    })
+                    .await
+                {
+                    Ok(instruments) => {
+                        for instrument in instruments {
+                            if !contract_filter_with_config_types(
+                                contract_types.as_ref(),
+                                &instrument,
+                            ) {
+                                continue;
+                            }
+
+                            upsert_instrument(&instruments_cache, instrument.clone());
+                            all_instruments.push(instrument);
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to fetch OKX spread instruments: {e:?}");
+                    }
+                }
+            }
+
             let response = DataResponse::Instruments(InstrumentsResponse::new(
                 request_id,
                 client_id,
@@ -1562,6 +1747,7 @@ impl DataClient for OKXDataClient {
             self.config.instrument_types.clone()
         };
         let contract_types = self.config.contract_types.clone();
+        let load_spreads = self.config.load_spreads;
 
         get_runtime().spawn(async move {
             match http
@@ -1572,12 +1758,21 @@ impl DataClient for OKXDataClient {
                 Ok(instrument) => {
                     let inst_id = instrument.id();
                     let symbol = inst_id.symbol.as_str();
-                    let inst_type = okx_instrument_type_from_symbol(symbol);
-                    if !instrument_types.contains(&inst_type) {
-                        log::error!(
-                            "Instrument {instrument_id} type {inst_type:?} not in configured types {instrument_types:?}"
-                        );
-                        return;
+                    if is_okx_spread_symbol(symbol) {
+                        if !load_spreads {
+                            log::error!(
+                                "Instrument {instrument_id} is a spread but load_spreads is false"
+                            );
+                            return;
+                        }
+                    } else {
+                        let inst_type = okx_instrument_type_from_symbol(symbol);
+                        if !instrument_types.contains(&inst_type) {
+                            log::error!(
+                                "Instrument {instrument_id} type {inst_type:?} not in configured types {instrument_types:?}"
+                            );
+                            return;
+                        }
                     }
 
                     if !contract_filter_with_config_types(contract_types.as_ref(), &instrument) {

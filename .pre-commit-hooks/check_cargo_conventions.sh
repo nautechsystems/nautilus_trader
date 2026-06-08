@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Enforces Cargo.toml conventions:
 # 1. Dependencies within groups (separated by blank lines) must be alphabetically ordered
-# 2. Sections must be in standard order: package, lints, lib, features, package.metadata.docs.rs,
-#    dependencies, dev-dependencies, build-dependencies, bench, bin, example, test
+# 2. Sections must be in standard order: package, lints, lib, features,
+#    package.metadata.cargo-machete, package.metadata.docs.rs, dependencies,
+#    dev-dependencies, build-dependencies, bench, bin, example, test
 # 3. Crates with [lib] or [[bin]] must have [lints] workspace = true
 # 4. All [[bin]] and [[example]] sections must have doc = false; [[bin]] must also have test = false
 # 5. [package] section must have required fields in correct order
@@ -10,6 +11,7 @@
 # 7. All [workspace.dependencies] must be used by at least one crate
 # 8. Related dependency versions must be aligned (e.g., capnp/capnpc)
 # 9. Adapter dependencies section should only contain deps used exclusively by adapters
+# 10. Every name in [package.metadata.cargo-machete] ignored must be a declared dependency
 #
 # Dependency groups are typically organized as:
 # - Internal nautilus-* dependencies
@@ -106,14 +108,15 @@ section_violations=$(rg --files -g "Cargo.toml" --glob "!target/*" crates/ 2> /d
     order_map["lints"] = 2
     order_map["lib"] = 3
     order_map["features"] = 4
-    order_map["package.metadata.docs.rs"] = 5
-    order_map["dependencies"] = 6
-    order_map["dev-dependencies"] = 7
-    order_map["build-dependencies"] = 8
-    order_map["bench"] = 9
-    order_map["bin"] = 10
-    order_map["example"] = 11
-    order_map["test"] = 12
+    order_map["package.metadata.cargo-machete"] = 5
+    order_map["package.metadata.docs.rs"] = 6
+    order_map["dependencies"] = 7
+    order_map["dev-dependencies"] = 8
+    order_map["build-dependencies"] = 9
+    order_map["bench"] = 10
+    order_map["bin"] = 11
+    order_map["example"] = 12
+    order_map["test"] = 13
     prev_section = ""
     prev_idx = 0
   }
@@ -503,12 +506,85 @@ if [[ -f "Cargo.toml" ]]; then
   fi
 fi
 
+# Check 10: cargo-machete ignored entries must reference declared dependencies
+# A stale ignore (dep removed but ignore retained) silently masks future drift; flag at commit time.
+stale_machete_violations=$(rg --files -g "Cargo.toml" --glob "!target/*" crates/ 2> /dev/null | while read -r file; do
+  is_cargo_fuzz_crate "$file" && continue
+
+  awk '
+  BEGIN {
+    in_deps = 0
+    in_machete = 0
+    in_array = 0
+  }
+
+  /^\[(dependencies|dev-dependencies|build-dependencies)\]/ {
+    in_deps = 1
+    in_machete = 0
+    in_array = 0
+    next
+  }
+
+  /^\[package\.metadata\.cargo-machete\]/ {
+    in_machete = 1
+    in_deps = 0
+    in_array = 0
+    next
+  }
+
+  /^\[/ {
+    in_deps = 0
+    in_machete = 0
+    in_array = 0
+    next
+  }
+
+  in_deps && /^[a-zA-Z][a-zA-Z0-9_-]*[[:space:]]*[.=]/ {
+    match($0, /^[a-zA-Z][a-zA-Z0-9_-]*/)
+    declared[substr($0, RSTART, RLENGTH)] = 1
+  }
+
+  in_machete && /^[[:space:]]*ignored[[:space:]]*=[[:space:]]*\[/ {
+    in_array = 1
+  }
+
+  in_array {
+    line = $0
+    sub(/#.*$/, "", line)
+    has_close = (line ~ /\]/)
+    while (match(line, /"[a-zA-Z0-9_-]+"/)) {
+      name = substr(line, RSTART + 1, RLENGTH - 2)
+      ignored_entries[name] = NR
+      line = substr(line, RSTART + RLENGTH)
+    }
+    if (has_close) in_array = 0
+  }
+
+  END {
+    for (name in ignored_entries) {
+      if (!(name in declared)) {
+        printf "  %s:%d [cargo-machete] ignored \047%s\047 is not declared as a dependency\n", FILENAME, ignored_entries[name], name
+      }
+    }
+  }
+  ' "$file"
+done) || true
+
+if [[ -n "$stale_machete_violations" ]]; then
+  echo -e "${RED}Stale cargo-machete ignored entries:${NC}"
+  echo "$stale_machete_violations"
+  echo -e "${YELLOW}Remove the entry, or restore the dependency it was guarding${NC}"
+  echo
+  VIOLATIONS=$((VIOLATIONS + $(echo "$stale_machete_violations" | grep -c . || true)))
+fi
+
 if [[ $VIOLATIONS -gt 0 ]]; then
   echo -e "${RED}Found $VIOLATIONS Cargo.toml convention violation(s)${NC}"
   echo
   echo -e "${YELLOW}To fix:${NC}"
   echo "  - Sort dependencies alphabetically within each group (groups separated by blank lines)"
-  echo "  - Order sections: [package], [lints], [lib], [features], [package.metadata.docs.rs],"
+  echo "  - Order sections: [package], [lints], [lib], [features],"
+  echo "    [package.metadata.cargo-machete], [package.metadata.docs.rs],"
   echo "    [dependencies], [dev-dependencies], [build-dependencies], [[bench]], [[bin]], [[example]]"
   echo "  - Add [lints] workspace = true after [package] for all crates"
   echo "  - Add doc = false to all [[bin]] and [[example]] sections"
@@ -520,6 +596,7 @@ if [[ $VIOLATIONS -gt 0 ]]; then
   echo "  - crate-type must use order: [\"rlib\", \"staticlib\", \"cdylib\"]"
   echo "  - Remove unused dependencies from [workspace.dependencies] in root Cargo.toml"
   echo "  - Ensure related dependencies have matching versions (e.g., capnp and capnpc)"
+  echo "  - Drop [package.metadata.cargo-machete] ignored entries whose dependency was removed"
   exit 1
 fi
 

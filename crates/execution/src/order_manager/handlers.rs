@@ -197,6 +197,7 @@ mod tests {
             None,
             UUID4::new(),
             0.into(),
+            None, // correlation_id
         );
         drop(emulator);
 

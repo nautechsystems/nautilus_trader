@@ -311,6 +311,10 @@ impl Instrument for FuturesSpread {
         None
     }
 
+    fn strategy_type(&self) -> Option<Ustr> {
+        Some(self.strategy_type)
+    }
+
     fn activation_ns(&self) -> Option<UnixNanos> {
         Some(self.activation_ns)
     }
@@ -328,7 +332,7 @@ impl Instrument for FuturesSpread {
     }
 
     fn size_precision(&self) -> u8 {
-        0
+        0 // No fractional units
     }
 
     fn price_increment(&self) -> Price {

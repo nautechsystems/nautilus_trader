@@ -108,7 +108,7 @@ pub struct OrderRequestState {
     /// Cancellation signal that aborts pending timeout tasks on shutdown so
     /// the runtime can drop without waiting for in-flight timers.
     cancellation_token: CancellationToken,
-    /// Clock used to stamp `ts_event` on synthesized timeout-rejection events.
+    /// Clock used to stamp `ts_event` on synthesized timeout events.
     /// Sharing the caller's clock keeps test ts_event values consistent with
     /// the ts_sent_ns the same caller stamped at submit time.
     clock: &'static AtomicTime,
@@ -371,7 +371,9 @@ impl OrderRequestState {
                 self.emit_order_modify_rejected(pending, &response, ts_event_ns);
             }
             PendingOperation::Cancel => {
-                self.emit_order_cancel_rejected(pending, &response, ts_event_ns);
+                log::warn!(
+                    "Kraken WS cancel request timed out req_id={req_id}; awaiting reconciliation"
+                );
             }
             PendingOperation::BatchAdd => {
                 for cl_ord_id in &pending.client_order_ids {
@@ -1395,6 +1397,27 @@ mod tests {
         harness.state.handle_response(&response, 6_000);
 
         assert_eq!(harness.state.pending_len(), 0);
+        assert!(harness.event_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_cancel_timeout_emits_no_order_cancel_rejected() {
+        let mut harness = make_harness(60_000);
+        let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
+        register_default_identity(&harness.dispatch_state, cl_ord_id);
+
+        let pending = PendingRequest {
+            operation: PendingOperation::Cancel,
+            client_order_ids: vec![cl_ord_id],
+            venue_order_ids: vec![Some(VenueOrderId::from(VENUE_ORDER_ID))],
+            ts_sent_ns: 0,
+            new_quantity: None,
+            new_price: None,
+            new_trigger_price: None,
+        };
+
+        harness.state.emit_timeout_rejection(23, &pending, 7_000);
+
         assert!(harness.event_rx.try_recv().is_err());
     }
 

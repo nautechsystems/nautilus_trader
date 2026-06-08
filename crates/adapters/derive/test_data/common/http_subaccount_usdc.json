@@ -1,0 +1,33 @@
+{
+  "collaterals": [
+    {
+      "amount": "1000",
+      "asset_name": "USDC",
+      "asset_type": "erc20",
+      "cumulative_interest": "0",
+      "currency": "USDC",
+      "initial_margin": "1000",
+      "maintenance_margin": "1000",
+      "mark_price": "1",
+      "mark_value": "1000",
+      "pending_interest": "0"
+    }
+  ],
+  "collaterals_initial_margin": "1000",
+  "collaterals_maintenance_margin": "1000",
+  "collaterals_value": "1000",
+  "currency": "USDC",
+  "initial_margin": "0",
+  "is_under_liquidation": false,
+  "label": null,
+  "maintenance_margin": "0",
+  "margin_type": "PM",
+  "open_orders": [],
+  "open_orders_margin": "0",
+  "positions": [],
+  "positions_initial_margin": "0",
+  "positions_maintenance_margin": "0",
+  "positions_value": "0",
+  "subaccount_id": 42,
+  "subaccount_value": "1000"
+}

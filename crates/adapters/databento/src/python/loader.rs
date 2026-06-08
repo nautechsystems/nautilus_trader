@@ -18,17 +18,14 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use databento::dbn;
-use nautilus_core::{
-    ffi::cvec::CVec,
-    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
-};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use nautilus_model::{
     data::{
         Bar, Data, DataFFI, InstrumentStatus, OrderBookDelta, OrderBookDepth10, QuoteTick,
         TradeTick,
     },
     identifiers::{InstrumentId, Symbol, Venue},
-    python::instruments::instrument_any_to_pyobject,
+    python::{data::DataFfiCVec, instruments::instrument_any_to_pyobject},
 };
 use pyo3::{
     prelude::*,
@@ -597,9 +594,14 @@ fn exhaust_data_iter_to_pycapsule(
         .map(DataFFI::try_from)
         .collect::<Result<Vec<_>, _>>()
         .map_err(to_pyvalue_err)?;
-    let cvec: CVec = ffi_data.into();
+    let cvec: DataFfiCVec = ffi_data.into();
     // No destructor: Python must call drop_cvec_pycapsule to take ownership and free.
-    let capsule = PyCapsule::new_with_destructor::<CVec, _>(py, cvec, None, |_, _| {})?;
+    let capsule = PyCapsule::new_with_destructor::<DataFfiCVec, _>(
+        py,
+        cvec,
+        Some(DataFfiCVec::capsule_name()),
+        |_, _| {},
+    )?;
 
     // TODO: Improve error domain. Replace anyhow errors with nautilus
     // errors to unify pyo3 and anyhow errors.

@@ -106,7 +106,7 @@ const ORDER_ACCEPTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::u64("ts_event", false),
     JsonFieldSpec::u64("ts_init", false),
-    JsonFieldSpec::u64("reconciliation", false),
+    JsonFieldSpec::boolean("reconciliation", false),
 ];
 
 const ORDER_REJECTED_FIELDS: &[JsonFieldSpec] = &[
@@ -119,8 +119,8 @@ const ORDER_REJECTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::u64("ts_event", false),
     JsonFieldSpec::u64("ts_init", false),
-    JsonFieldSpec::u64("reconciliation", false),
-    JsonFieldSpec::u64("due_post_only", false),
+    JsonFieldSpec::boolean("reconciliation", false),
+    JsonFieldSpec::boolean("due_post_only", false),
 ];
 
 const ORDER_PENDING_CANCEL_FIELDS: &[JsonFieldSpec] = &[
@@ -132,7 +132,7 @@ const ORDER_PENDING_CANCEL_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::u64("ts_event", false),
     JsonFieldSpec::u64("ts_init", false),
-    JsonFieldSpec::u64("reconciliation", false),
+    JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("venue_order_id", true),
 ];
 
@@ -144,7 +144,7 @@ const ORDER_CANCELED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::u64("ts_event", false),
     JsonFieldSpec::u64("ts_init", false),
-    JsonFieldSpec::u64("reconciliation", false),
+    JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("venue_order_id", true),
     JsonFieldSpec::utf8("account_id", true),
 ];
@@ -158,7 +158,7 @@ const ORDER_CANCEL_REJECTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::u64("ts_event", false),
     JsonFieldSpec::u64("ts_init", false),
-    JsonFieldSpec::u64("reconciliation", false),
+    JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("venue_order_id", true),
     JsonFieldSpec::utf8("account_id", true),
 ];
@@ -171,7 +171,7 @@ const ORDER_EXPIRED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::u64("ts_event", false),
     JsonFieldSpec::u64("ts_init", false),
-    JsonFieldSpec::u64("reconciliation", false),
+    JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("venue_order_id", true),
     JsonFieldSpec::utf8("account_id", true),
 ];
@@ -184,7 +184,7 @@ const ORDER_TRIGGERED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::u64("ts_event", false),
     JsonFieldSpec::u64("ts_init", false),
-    JsonFieldSpec::u64("reconciliation", false),
+    JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("venue_order_id", true),
     JsonFieldSpec::utf8("account_id", true),
 ];
@@ -198,7 +198,7 @@ const ORDER_PENDING_UPDATE_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::u64("ts_event", false),
     JsonFieldSpec::u64("ts_init", false),
-    JsonFieldSpec::u64("reconciliation", false),
+    JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("venue_order_id", true),
 ];
 
@@ -222,7 +222,7 @@ const ORDER_MODIFY_REJECTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::u64("ts_event", false),
     JsonFieldSpec::u64("ts_init", false),
-    JsonFieldSpec::u64("reconciliation", false),
+    JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("venue_order_id", true),
     JsonFieldSpec::utf8("account_id", true),
 ];
@@ -242,7 +242,7 @@ const ORDER_UPDATED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::u64("ts_event", false),
     JsonFieldSpec::u64("ts_init", false),
-    JsonFieldSpec::u64("reconciliation", false),
+    JsonFieldSpec::boolean("reconciliation", false),
 ];
 
 const ORDER_FILLED_FIELDS: &[JsonFieldSpec] = &[

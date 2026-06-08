@@ -33,7 +33,10 @@ use crate::common::{
         CoinbaseProductType, CoinbaseRiskManagedBy, CoinbaseTimeInForce, CoinbaseTriggerStatus,
         CoinbaseWsChannel,
     },
-    parse::deserialize_decimal_from_str,
+    parse::{
+        deserialize_decimal_from_str, deserialize_product_status_or_unknown,
+        deserialize_product_type_or_unknown,
+    },
 };
 
 /// Subscribe or unsubscribe request sent to the WebSocket.
@@ -143,8 +146,8 @@ pub enum CoinbaseWsMessage {
 
     /// System status updates.
     ///
-    /// The feed handler deserializes this channel but ignores it until venue
-    /// status handling is added.
+    /// The feed handler parses each product entry into an `InstrumentStatus`
+    /// event; the data client filters emissions to subscribed instruments.
     #[serde(rename = "status")]
     Status {
         timestamp: String,
@@ -368,6 +371,7 @@ pub struct WsStatusEvent {
 /// Status channel product snapshot.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsStatusProduct {
+    #[serde(deserialize_with = "deserialize_product_type_or_unknown")]
     pub product_type: CoinbaseProductType,
     pub id: Ustr,
     pub base_currency: Ustr,
@@ -375,6 +379,7 @@ pub struct WsStatusProduct {
     pub base_increment: String,
     pub quote_increment: String,
     pub display_name: String,
+    #[serde(deserialize_with = "deserialize_product_status_or_unknown")]
     pub status: CoinbaseProductStatus,
     pub status_message: String,
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
@@ -601,6 +606,87 @@ mod tests {
                 assert_eq!(product.product_type, CoinbaseProductType::Spot);
                 assert_eq!(product.status, CoinbaseProductStatus::Online);
                 assert_eq!(product.min_market_funds, Decimal::ONE);
+            }
+            other => panic!("Expected Status, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_deserialize_status_channel_unknown_status_does_not_fail() {
+        // Coinbase can introduce new product status values; deserialization must
+        // not hard-fail on an unrecognized status (e.g. a future "auction" state).
+        let json = r#"{
+          "channel": "status",
+          "client_id": "",
+          "timestamp": "2023-02-09T20:29:49.753424311Z",
+          "sequence_num": 0,
+          "events": [
+            {
+              "type": "snapshot",
+              "products": [
+                {
+                  "product_type": "SPOT",
+                  "id": "BTC-USD",
+                  "base_currency": "BTC",
+                  "quote_currency": "USD",
+                  "base_increment": "0.00000001",
+                  "quote_increment": "0.01",
+                  "display_name": "BTC/USD",
+                  "status": "auction",
+                  "status_message": "",
+                  "min_market_funds": "1"
+                }
+              ]
+            }
+          ]
+        }"#;
+        let msg: CoinbaseWsMessage = serde_json::from_str(json).unwrap();
+
+        match msg {
+            CoinbaseWsMessage::Status { events, .. } => {
+                assert_eq!(events[0].products[0].status, CoinbaseProductStatus::Unknown);
+            }
+            other => panic!("Expected Status, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_deserialize_status_channel_unknown_product_type_does_not_fail() {
+        // A new product type on the status channel must fall back to Unknown rather
+        // than hard-failing deserialization of the whole status message.
+        let json = r#"{
+          "channel": "status",
+          "client_id": "",
+          "timestamp": "2023-02-09T20:29:49.753424311Z",
+          "sequence_num": 0,
+          "events": [
+            {
+              "type": "snapshot",
+              "products": [
+                {
+                  "product_type": "PERPETUAL",
+                  "id": "BTC-PERP",
+                  "base_currency": "BTC",
+                  "quote_currency": "USD",
+                  "base_increment": "0.00000001",
+                  "quote_increment": "0.01",
+                  "display_name": "BTC-PERP",
+                  "status": "online",
+                  "status_message": "",
+                  "min_market_funds": "1"
+                }
+              ]
+            }
+          ]
+        }"#;
+        let msg: CoinbaseWsMessage = serde_json::from_str(json).unwrap();
+
+        match msg {
+            CoinbaseWsMessage::Status { events, .. } => {
+                assert_eq!(
+                    events[0].products[0].product_type,
+                    CoinbaseProductType::Unknown
+                );
             }
             other => panic!("Expected Status, was {other:?}"),
         }

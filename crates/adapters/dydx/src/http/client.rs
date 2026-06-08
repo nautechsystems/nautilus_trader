@@ -86,6 +86,7 @@ use nautilus_network::{
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
+use ustr::Ustr;
 
 use super::error::DydxHttpError;
 use crate::{
@@ -128,12 +129,18 @@ fn bar_type_to_resolution(bar_type: &BarType) -> anyhow::Result<DydxCandleResolu
 
 /// Default dYdX Indexer REST API rate limit.
 ///
-/// The dYdX Indexer API rate limits are generous for read-only operations:
-/// - General: 100 requests per 10 seconds per IP
-/// - We use a conservative 10 requests per second as the default quota.
+/// The dYdX Indexer API rate limit is 100 requests per 10 seconds per IP.
+/// We use 9 req/s (vs the exact 10) to avoid edge-case 429s from
+/// GCRA vs server sliding-window misalignment at the boundary.
 pub static DYDX_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant")
+    Quota::per_second(NonZeroU32::new(9).expect("non-zero")).expect("valid constant")
 });
+
+static DYDX_RATE_LIMIT_KEY: LazyLock<Ustr> = LazyLock::new(|| Ustr::from("dydx:rest"));
+
+fn rate_limit_keys() -> Vec<Ustr> {
+    vec![*DYDX_RATE_LIMIT_KEY]
+}
 
 /// Represents a dYdX HTTP response wrapper.
 ///
@@ -279,11 +286,11 @@ impl DydxRawHttpClient {
                 .request_with_ustr_keys(
                     method.clone(),
                     url.clone(),
-                    None, // No params
-                    None, // No additional headers
-                    None, // No body for GET requests
-                    None, // Use default timeout
-                    None, // No specific rate limit keys (using global quota)
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(rate_limit_keys()),
                 )
                 .await
                 .map_err(|e| DydxHttpError::HttpClientError(e.to_string()))?;
@@ -371,11 +378,11 @@ impl DydxRawHttpClient {
                 .request_with_ustr_keys(
                     Method::POST,
                     url.clone(),
-                    None, // No params
-                    None, // No additional headers (content-type handled by body)
+                    None,
+                    None,
                     Some(body_bytes.clone()),
-                    None, // Use default timeout
-                    None, // No specific rate limit keys (using global quota)
+                    None,
+                    Some(rate_limit_keys()),
                 )
                 .await
                 .map_err(|e| DydxHttpError::HttpClientError(e.to_string()))?;
@@ -709,7 +716,7 @@ impl DydxRawHttpClient {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.dydx")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.dydx")
 )]
 pub struct DydxHttpClient {
     /// Raw HTTP client wrapped in Arc for efficient cloning.

@@ -36,28 +36,22 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
-            # Docker Hub (pull base images)
             registry-1.docker.io:443
             auth.docker.io:443
             production.cloudflare.docker.com:443
-            # GitHub Container Registry (pull images)
             ghcr.io:443
-            # Debian package mirrors (inside docker build)
             deb.debian.org:443
             security.debian.org:443
-            # Rust toolchain install
             sh.rustup.rs:443
             static.rust-lang.org:443
-            # PyPI for Python packages during image build
             pypi.org:443
             files.pythonhosted.org:443
-            # Cargo crates downloads
             crates.io:443
             static.crates.io:443
 
@@ -155,28 +149,22 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
-            # Docker Hub (pull base images)
             registry-1.docker.io:443
             auth.docker.io:443
             production.cloudflare.docker.com:443
-            # GitHub Container Registry (push images)
             ghcr.io:443
-            # Debian package mirrors (inside docker build)
             deb.debian.org:443
             security.debian.org:443
-            # Rust toolchain install
             sh.rustup.rs:443
             static.rust-lang.org:443
-            # PyPI for Python packages during image build
             pypi.org:443
             files.pythonhosted.org:443
-            # Cargo crates downloads
             crates.io:443
             static.crates.io:443
 
@@ -269,20 +257,18 @@ jobs:
     needs: build-docker-images-nautilus-trader
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
-            # GitHub Container Registry (push manifests, signatures, attestations)
             ghcr.io:443
-            # Sigstore TUF trust root (used by cosign 3.x and actions/attest)
             tuf-repo-cdn.sigstore.dev:443
 
       - name: Checkout repository
-        # Required so the local ./.github/actions/attest-sbom-retry composite
-        # resolves at runtime; merge jobs only download digests otherwise.
+        # Required so local ./.github/actions composites resolve at runtime;
+        # merge jobs only download digests otherwise.
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
@@ -345,12 +331,12 @@ jobs:
           cosign-release: v3.0.6
 
       - name: Sign image with cosign
-        run: |
-          cosign sign --yes \
-            "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
+        run: >-
+          bash ./scripts/ci/cosign-sign-retry.bash
+          "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: ./.github/actions/generate-sbom-retry
         with:
           image: ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}
           output-file: sbom.spdx.json
@@ -366,38 +352,10 @@ jobs:
         timeout-minutes: 15
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}
-          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
-          ISSUER: https://token.actions.githubusercontent.com
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          retry() {
-            local label=$1
-            shift
-            for attempt in 1 2 3; do
-              if "$@"; then
-                return 0
-              fi
-              if [ "$attempt" -eq 3 ]; then
-                echo "::error::${label} failed after 3 attempts"
-                return 1
-              fi
-              echo "::warning::${label} attempt ${attempt} failed, retrying in 30s"
-              sleep 30
-            done
-          }
-
-          retry "cosign verify" \
-            timeout 90 cosign verify "$IMAGE" \
-              --timeout=60s \
-              --certificate-identity "$IDENTITY" \
-              --certificate-oidc-issuer "$ISSUER"
-
-          retry "gh attestation verify" \
-            timeout 90 gh attestation verify "oci://${IMAGE}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --predicate-type "$SPDX_PREDICATE_TYPE" \
-              --cert-identity "$IDENTITY" \
-              --cert-oidc-issuer "$ISSUER"
+        run: bash ./scripts/ci/verify-docker-image-attestations.bash "$IMAGE"
 
   build-docker-images-jupyterlab:
     name: build-docker-images (jupyterlab-${{ matrix.platform }})
@@ -418,28 +376,22 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
-            # Docker Hub (pull base images)
             registry-1.docker.io:443
             auth.docker.io:443
             production.cloudflare.docker.com:443
-            # GitHub Container Registry (push images)
             ghcr.io:443
-            # Debian package mirrors (inside docker build)
             deb.debian.org:443
             security.debian.org:443
-            # Rust toolchain install
             sh.rustup.rs:443
             static.rust-lang.org:443
-            # PyPI for Python packages during image build
             pypi.org:443
             files.pythonhosted.org:443
-            # Cargo crates downloads
             crates.io:443
             static.crates.io:443
 
@@ -543,20 +495,18 @@ jobs:
     needs: build-docker-images-jupyterlab
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
-            # GitHub Container Registry (push manifests, signatures, attestations)
             ghcr.io:443
-            # Sigstore TUF trust root (used by cosign 3.x and actions/attest)
             tuf-repo-cdn.sigstore.dev:443
 
       - name: Checkout repository
-        # Required so the local ./.github/actions/attest-sbom-retry composite
-        # resolves at runtime; merge jobs only download digests otherwise.
+        # Required so local ./.github/actions composites resolve at runtime;
+        # merge jobs only download digests otherwise.
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
@@ -619,12 +569,12 @@ jobs:
           cosign-release: v3.0.6
 
       - name: Sign image with cosign
-        run: |
-          cosign sign --yes \
-            "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
+        run: >-
+          bash ./scripts/ci/cosign-sign-retry.bash
+          "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: ./.github/actions/generate-sbom-retry
         with:
           image: ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}
           output-file: sbom.spdx.json
@@ -640,35 +590,7 @@ jobs:
         timeout-minutes: 15
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}
-          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
-          ISSUER: https://token.actions.githubusercontent.com
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |-
-          retry() {
-            local label=$1
-            shift
-            for attempt in 1 2 3; do
-              if "$@"; then
-                return 0
-              fi
-              if [ "$attempt" -eq 3 ]; then
-                echo "::error::${label} failed after 3 attempts"
-                return 1
-              fi
-              echo "::warning::${label} attempt ${attempt} failed, retrying in 30s"
-              sleep 30
-            done
-          }
-
-          retry "cosign verify" \
-            timeout 90 cosign verify "$IMAGE" \
-              --timeout=60s \
-              --certificate-identity "$IDENTITY" \
-              --certificate-oidc-issuer "$ISSUER"
-
-          retry "gh attestation verify" \
-            timeout 90 gh attestation verify "oci://${IMAGE}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --predicate-type "$SPDX_PREDICATE_TYPE" \
-              --cert-identity "$IDENTITY" \
-              --cert-oidc-issuer "$ISSUER"
+        run: bash ./scripts/ci/verify-docker-image-attestations.bash "$IMAGE"

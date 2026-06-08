@@ -1,0 +1,19 @@
+{
+  "amount_step": "0.01",
+  "base_asset_address": "0xE201fCEfD4852f96810C069f66560dc25B2C7A55",
+  "base_asset_sub_id": "0",
+  "base_currency": "ETH",
+  "base_fee": "0.01",
+  "instrument_name": "ETH-USDC",
+  "instrument_type": "erc20",
+  "is_active": true,
+  "maker_fee_rate": "0.0015",
+  "mark_price_fee_rate_cap": "0",
+  "maximum_amount": "1000",
+  "minimum_amount": "0.1",
+  "quote_currency": "USDC",
+  "scheduled_activation": 1728508925,
+  "scheduled_deactivation": 9223372036854775807,
+  "taker_fee_rate": "0.0015",
+  "tick_size": "0.01"
+}

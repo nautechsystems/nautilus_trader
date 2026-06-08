@@ -1,0 +1,27 @@
+{
+  "amount_step": "0.01",
+  "base_asset_address": "0x0000000000000000000000000000000000000001",
+  "base_asset_sub_id": "42",
+  "base_currency": "ETH",
+  "base_fee": "1",
+  "instrument_name": "ETH-20260627-3500-C",
+  "instrument_type": "option",
+  "is_active": true,
+  "maker_fee_rate": "0",
+  "mark_price_fee_rate_cap": null,
+  "maximum_amount": "100",
+  "minimum_amount": "0.01",
+  "option_details": {
+    "expiry": 1782000000,
+    "index": "ETH-USD",
+    "option_type": "C",
+    "settlement_price": null,
+    "strike": "3500"
+  },
+  "perp_details": null,
+  "quote_currency": "USDC",
+  "scheduled_activation": 1700000000000,
+  "scheduled_deactivation": 0,
+  "taker_fee_rate": "0.001",
+  "tick_size": "1"
+}

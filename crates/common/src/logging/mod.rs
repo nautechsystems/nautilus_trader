@@ -129,6 +129,40 @@ pub fn logging_shutdown() {
     crate::logging::logger::shutdown_graceful();
 }
 
+/// Arms shutdown-on-error handling for the current run.
+pub fn arm_shutdown_on_error(enabled: bool) {
+    crate::logging::logger::arm_shutdown_on_error(enabled);
+}
+
+/// Disarms shutdown-on-error handling.
+pub fn disarm_shutdown_on_error() {
+    crate::logging::logger::disarm_shutdown_on_error();
+}
+
+/// Returns and clears the pending shutdown-on-error trigger, if one was recorded.
+pub fn take_shutdown_on_error_trigger() -> Option<crate::logging::logger::ShutdownOnErrorTrigger> {
+    crate::logging::logger::take_shutdown_on_error_trigger()
+}
+
+/// Conditionally drains the pending shutdown-on-error trigger.
+pub fn try_drain_shutdown_on_error_trigger<F>(drain: F) -> bool
+where
+    F: FnOnce(&crate::logging::logger::ShutdownOnErrorTrigger) -> bool,
+{
+    crate::logging::logger::try_drain_shutdown_on_error_trigger(drain)
+}
+
+/// Flushes and syncs file logs to disk.
+///
+/// This is a no-op when logging is not initialized or file logging is disabled.
+///
+/// # Errors
+///
+/// Returns an error if the sync request cannot be delivered or acknowledged.
+pub fn logging_sync_to_disk() -> anyhow::Result<()> {
+    crate::logging::logger::sync_to_disk()
+}
+
 /// Returns whether the core logger is using ANSI colors.
 pub fn logging_is_colored() -> bool {
     LOGGING_COLORED.load(Ordering::Relaxed)

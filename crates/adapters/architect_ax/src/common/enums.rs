@@ -56,14 +56,14 @@ use super::consts::{
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub enum AxEnvironment {
     /// Sandbox/test environment.
@@ -138,14 +138,14 @@ impl AxEnvironment {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub enum AxInstrumentState {
     /// Instrument is in pre-open state.
@@ -272,14 +272,14 @@ impl From<AxCategory> for AssetClass {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub enum AxOrderSide {
     /// Buy order.
@@ -358,14 +358,14 @@ impl TryFrom<OrderSide> for AxOrderSide {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub enum AxOrderStatus {
     /// Order is pending submission.
@@ -446,14 +446,14 @@ impl From<AxOrderStatus> for OrderStatus {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub enum AxTimeInForce {
     /// Good-Till-Canceled: order remains active until filled or canceled.
@@ -529,14 +529,14 @@ impl TryFrom<TimeInForce> for AxTimeInForce {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub enum AxOrderType {
     /// Market order; execute immediately at best available price.
@@ -608,14 +608,14 @@ impl TryFrom<OrderType> for AxOrderType {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub enum AxMarketDataLevel {
     /// Level 1: best bid/ask only.
@@ -791,14 +791,14 @@ pub enum AxOrderRequestType {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub enum AxMdWsMessageType {
     /// Heartbeat event.
@@ -856,14 +856,14 @@ pub enum AxMdWsMessageType {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub enum AxOrderWsMessageType {
     /// Heartbeat event.
@@ -935,14 +935,14 @@ pub enum AxOrderWsMessageType {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub enum AxCancelReason {
     /// User requested cancellation.
@@ -979,14 +979,14 @@ pub enum AxCancelReason {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub enum AxCancelRejectionReason {
     /// Order not found or already canceled.

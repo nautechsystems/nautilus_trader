@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Multi-stream, time-ordered data iterator for replaying historical market data.
+//! Multi-stream, time-ordered data iterator for replaying historical data.
 
 use std::collections::BinaryHeap;
 
@@ -21,19 +21,58 @@ use ahash::AHashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::data::{Data, HasTsInit};
 
-/// Internal convenience struct to keep heap entries ordered by `(ts_init, priority)`.
+#[cfg(feature = "defi")]
+use crate::defi::replay::replay_position;
+
+// TODO: block_number/transaction_index/log_index/phase are DeFi-only (zero for all other data,
+// even in non-DeFi builds); they exist to order same-block DeFi events in canonical chain order.
+// This leaks DeFi-specific shape into a general key, so it could be cfg-gated or moved behind an
+// opaque secondary key later (non-breaking, no correctness or perf cost).
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+struct ReplayKey {
+    ts: UnixNanos,
+    block_number: u64,
+    transaction_index: u32,
+    log_index: u32,
+    phase: u8,
+}
+
+fn replay_key(data: &Data) -> ReplayKey {
+    match data {
+        #[cfg(feature = "defi")]
+        Data::Defi(defi) => {
+            let (block_number, transaction_index, log_index, phase) = replay_position(defi);
+            ReplayKey {
+                ts: defi.ts_init(),
+                block_number,
+                transaction_index,
+                log_index,
+                phase,
+            }
+        }
+        _ => ReplayKey {
+            ts: data.ts_init(),
+            block_number: 0,
+            transaction_index: 0,
+            log_index: 0,
+            phase: 0,
+        },
+    }
+}
+
+/// Internal convenience struct to keep heap entries ordered by replay key and priority.
 #[derive(Debug, Eq, PartialEq)]
 struct HeapEntry {
-    ts: UnixNanos,
+    key: ReplayKey,
     priority: i32,
     index: usize,
 }
 
 impl Ord for HeapEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // min-heap on ts, then priority sign (+/-) then index
-        self.ts
-            .cmp(&other.ts)
+        // min-heap on replay key, then priority sign (+/-) then index
+        self.key
+            .cmp(&other.key)
             .then_with(|| self.priority.cmp(&other.priority))
             .then_with(|| self.index.cmp(&other.index))
             .reverse() // BinaryHeap is max by default -> reverse for min behaviour
@@ -82,9 +121,12 @@ impl BacktestDataIterator {
             return;
         }
 
-        // Ensure sorted by ts_init
-        data.sort_by_key(HasTsInit::ts_init);
+        data.sort_by_key(replay_key);
 
+        self.add_stream(name, data, append_data);
+    }
+
+    fn add_stream(&mut self, name: &str, data: Vec<Data>, append_data: bool) {
         let priority = if let Some(p) = self.priorities.get(name) {
             // Replace existing stream – remove previous traces then re-insert below.
             *p
@@ -141,9 +183,8 @@ impl BacktestDataIterator {
         self.rebuild_heap();
     }
 
-    /// Returns the next [`Data`] element across all streams in chronological order.
-    #[expect(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> Option<Data> {
+    /// Returns the next backtest data element across all streams in replay order.
+    pub(crate) fn next_item(&mut self) -> Option<Data> {
         // Fast path for single stream
         if let Some(p) = self.single_priority {
             let data = self.streams.get_mut(&p)?;
@@ -166,13 +207,19 @@ impl BacktestDataIterator {
         self.indices.insert(entry.priority, next_index);
         if next_index < stream_vec.len() {
             self.heap.push(HeapEntry {
-                ts: stream_vec[next_index].ts_init(),
+                key: replay_key(&stream_vec[next_index]),
                 priority: entry.priority,
                 index: next_index,
             });
         }
 
         Some(element)
+    }
+
+    /// Returns the next market [`Data`] element across all streams in chronological order.
+    #[expect(clippy::should_implement_trait)]
+    pub fn next(&mut self) -> Option<Data> {
+        self.next_item()
     }
 
     /// Returns whether all streams have been fully consumed.
@@ -204,7 +251,7 @@ impl BacktestDataIterator {
             let idx = *self.indices.get(&priority).unwrap_or(&0);
             if idx < vec.len() {
                 self.heap.push(HeapEntry {
-                    ts: vec[idx].ts_init(),
+                    key: replay_key(&vec[idx]),
                     priority,
                     index: idx,
                 });
@@ -219,6 +266,15 @@ mod tests {
         data::QuoteTick,
         identifiers::InstrumentId,
         types::{Price, Quantity},
+    };
+    #[cfg(feature = "defi")]
+    use nautilus_model::{
+        defi::{
+            DefiData,
+            data::block::BlockPosition,
+            pool_analysis::snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+        },
+        identifiers::{Symbol, Venue},
     };
     use rstest::rstest;
 
@@ -243,6 +299,23 @@ mod tests {
             ts.push(d.ts_init().as_u64());
         }
         ts
+    }
+
+    #[cfg(feature = "defi")]
+    fn defi_snapshot(ts: u64, block: u64, transaction_index: u32, log_index: u32) -> Data {
+        let instrument_id = InstrumentId::new(Symbol::from("ETH/USDC"), Venue::from("UNISWAPV3"));
+        let snapshot = PoolSnapshot::new(
+            instrument_id,
+            PoolState::default(),
+            Vec::new(),
+            Vec::new(),
+            PoolAnalytics::default(),
+            BlockPosition::new(block, format!("0x{block:x}"), transaction_index, log_index),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        );
+
+        Data::Defi(Box::new(DefiData::PoolSnapshot(snapshot)))
     }
 
     #[rstest]
@@ -575,5 +648,27 @@ mod tests {
         assert!(ids.contains(&InstrumentId::from("C.D")));
         assert!(ids.contains(&InstrumentId::from("E.F")));
         assert!(ids.contains(&InstrumentId::from("G.H")));
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_defi_data_orders_equal_timestamps_by_block_position() {
+        let mut it = BacktestDataIterator::new();
+        it.add_data(
+            "defi",
+            vec![
+                defi_snapshot(100, 12, 4, 1),
+                defi_snapshot(100, 11, 9, 9),
+                defi_snapshot(100, 12, 2, 7),
+            ],
+            true,
+        );
+
+        let mut positions = Vec::new();
+        while let Some(Data::Defi(data)) = it.next_item() {
+            positions.push(data.block_position());
+        }
+
+        assert_eq!(positions, vec![(11, 9, 9), (12, 2, 7), (12, 4, 1)]);
     }
 }

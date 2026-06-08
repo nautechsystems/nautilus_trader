@@ -91,6 +91,36 @@ pub fn parse_millis_timestamp(timestamp_ms: u64) -> UnixNanos {
     UnixNanos::from(timestamp_ms * NANOSECONDS_IN_MILLISECOND)
 }
 
+/// Converts a Betfair decimal price into a Nautilus [`Price`].
+///
+/// # Errors
+///
+/// Returns an error if the value cannot be represented at Betfair price precision.
+pub fn parse_betfair_price(price: Decimal) -> anyhow::Result<Price> {
+    Price::from_decimal_dp(price, BETFAIR_PRICE_PRECISION).map_err(Into::into)
+}
+
+/// Normalizes a Betfair price to Nautilus price precision.
+#[must_use]
+pub fn normalize_betfair_price(price: Decimal) -> Decimal {
+    parse_betfair_price(price).map_or(price, |price| price.as_decimal())
+}
+
+/// Converts a Betfair decimal quantity into a Nautilus [`Quantity`].
+///
+/// # Errors
+///
+/// Returns an error if the value cannot be represented at Betfair quantity precision.
+pub fn parse_betfair_quantity(quantity: Decimal) -> anyhow::Result<Quantity> {
+    Quantity::from_decimal_dp(quantity, BETFAIR_QUANTITY_PRECISION).map_err(Into::into)
+}
+
+/// Normalizes a Betfair quantity to Nautilus quantity precision.
+#[must_use]
+pub fn normalize_betfair_quantity(quantity: Decimal) -> Decimal {
+    parse_betfair_quantity(quantity).map_or(quantity, |qty| qty.as_decimal())
+}
+
 /// Truncates a client order ID to a Betfair `customer_order_ref`.
 ///
 /// Takes the last 32 characters to preserve the high-entropy UUID suffix.
@@ -202,8 +232,8 @@ pub fn parse_market_catalogue(
     let fee_rate = market_base_rate / Decimal::ONE_HUNDRED;
 
     let tick = Decimal::new(1, 2); // 0.01
-    let price_increment = Price::from_decimal_dp(tick, BETFAIR_PRICE_PRECISION)?;
-    let size_increment = Quantity::from_decimal_dp(tick, BETFAIR_QUANTITY_PRECISION)?;
+    let price_increment = parse_betfair_price(tick)?;
+    let size_increment = parse_betfair_quantity(tick)?;
 
     let mut instruments = Vec::with_capacity(runners.len());
 
@@ -331,8 +361,8 @@ pub fn parse_market_definition(
         .unwrap_or_default();
 
     let tick = Decimal::new(1, 2); // 0.01
-    let price_increment = Price::from_decimal_dp(tick, BETFAIR_PRICE_PRECISION)?;
-    let size_increment = Quantity::from_decimal_dp(tick, BETFAIR_QUANTITY_PRECISION)?;
+    let price_increment = parse_betfair_price(tick)?;
+    let size_increment = parse_betfair_quantity(tick)?;
 
     let market_id_ustr = Ustr::from(market_id);
 
@@ -527,6 +557,67 @@ mod tests {
     fn test_parse_millis_timestamp() {
         let ts = parse_millis_timestamp(1_471_370_159_007);
         assert_eq!(ts.as_u64(), 1_471_370_159_007 * 1_000_000);
+    }
+
+    #[rstest]
+    #[case(Decimal::new(242, 2), Decimal::new(242, 2))]
+    #[case(Decimal::new(1, 0), Decimal::new(100, 2))]
+    #[case(Decimal::new(4_287_000_000_000_001, 14), Decimal::new(4287, 2))]
+    fn test_parse_betfair_price_uses_betfair_precision(
+        #[case] input: Decimal,
+        #[case] expected: Decimal,
+    ) {
+        let price = parse_betfair_price(input).unwrap();
+
+        assert_eq!(price.as_decimal(), expected);
+        assert_eq!(price.precision, BETFAIR_PRICE_PRECISION);
+    }
+
+    #[rstest]
+    #[case(Decimal::new(100, 0), Decimal::new(10000, 2))]
+    #[case(Decimal::ZERO, Decimal::ZERO)]
+    #[case(Decimal::new(4_287_000_000_000_001, 14), Decimal::new(4287, 2))]
+    fn test_parse_betfair_quantity_uses_betfair_precision(
+        #[case] input: Decimal,
+        #[case] expected: Decimal,
+    ) {
+        let quantity = parse_betfair_quantity(input).unwrap();
+
+        assert_eq!(quantity.as_decimal(), expected);
+        assert_eq!(quantity.precision, BETFAIR_QUANTITY_PRECISION);
+    }
+
+    #[rstest]
+    #[case(Decimal::new(-1, 0))]
+    #[case(Decimal::new(-1, 2))]
+    fn test_parse_betfair_quantity_rejects_negative(#[case] input: Decimal) {
+        let result = parse_betfair_quantity(input);
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case(Decimal::new(4_287_000_000_000_001, 14), Decimal::new(4287, 2))]
+    #[case(Decimal::new(2555, 3), Decimal::new(256, 2))]
+    fn test_normalize_betfair_price_rounds_to_betfair_precision(
+        #[case] input: Decimal,
+        #[case] expected: Decimal,
+    ) {
+        let normalized = normalize_betfair_price(input);
+
+        assert_eq!(normalized, expected);
+    }
+
+    #[rstest]
+    #[case(Decimal::new(4_287_000_000_000_001, 14), Decimal::new(4287, 2))]
+    #[case(Decimal::new(2555, 3), Decimal::new(256, 2))]
+    fn test_normalize_betfair_quantity_rounds_to_betfair_precision(
+        #[case] input: Decimal,
+        #[case] expected: Decimal,
+    ) {
+        let normalized = normalize_betfair_quantity(input);
+
+        assert_eq!(normalized, expected);
     }
 
     #[rstest]

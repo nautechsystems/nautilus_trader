@@ -23,16 +23,12 @@ use std::{
     },
 };
 
-#[cfg(feature = "python")]
-use nautilus_core::consts::NAUTILUS_PREFIX;
 use nautilus_core::{
     UUID4, UnixNanos,
     correctness::{FAILED, check_valid_string_utf8},
     datetime::floor_to_nearest_microsecond,
     time::get_atomic_clock_realtime,
 };
-#[cfg(feature = "python")]
-use pyo3::{Py, PyAny, Python};
 use tokio::{
     task::JoinHandle,
     time::{Duration, Instant},
@@ -142,6 +138,14 @@ impl LiveTimer {
         let event_name = self.name;
         let stop_time_ns = self.stop_time_ns;
         let interval_ns = self.interval_ns.get();
+
+        if self.callback.is_local() {
+            log::debug!(
+                "Timer '{event_name}' uses a RustLocal callback on a live Tokio timer; \
+                 callback registry dispatch is needed to avoid cloning Rc on worker threads"
+            );
+        }
+
         let callback = self.callback.clone();
 
         // Get current time
@@ -216,27 +220,22 @@ impl LiveTimer {
 
                 let event = TimeEvent::new(event_name, UUID4::new(), next_time_ns, now_ns);
 
-                match callback {
+                if let Some(sender) = sender.as_ref() {
+                    // TODO: `RustLocal` still clones an `Rc` on the timer worker.
+                    // Move callbacks into an event-loop registry and send an id instead.
+                    let handler = TimeEventHandler::new(event, callback.clone());
+                    sender.send(handler);
+                } else {
                     #[cfg(feature = "python")]
-                    TimeEventCallback::Python(ref callback) => {
-                        call_python_with_time_event(event, callback);
+                    if matches!(&callback, TimeEventCallback::Python(_)) {
+                        callback.call(event);
+                    } else {
+                        panic!("timer event sender was unset for Rust callback system");
                     }
-                    TimeEventCallback::Rust(_) | TimeEventCallback::RustLocal(_) => {
-                        debug_assert!(
-                            sender.is_some(),
-                            "LiveTimer with Rust callback requires TimeEventSender"
-                        );
-                        let sender = sender
-                            .as_ref()
-                            .expect("timer event sender was unset for Rust callback system");
 
-                        // TODO: This clone happens on a Tokio worker thread. For `RustLocal`
-                        // callbacks containing `Rc`, this violates thread safety (Rc::clone
-                        // is not thread-safe). The callback should be stored separately and
-                        // looked up by timer name on the receiving thread, rather than being
-                        // cloned here. This affects any code using RustLocal with LiveTimer.
-                        let handler = TimeEventHandler::new(event, callback.clone());
-                        sender.send(handler);
+                    #[cfg(not(feature = "python"))]
+                    {
+                        panic!("timer event sender was unset for Rust callback system");
                     }
                 }
 
@@ -280,36 +279,22 @@ impl Timer for LiveTimer {
     }
 }
 
-#[cfg(feature = "python")]
-fn call_python_with_time_event(event: TimeEvent, callback: &Py<PyAny>) {
-    use nautilus_core::python::IntoPyObjectNautilusExt;
-    use pyo3::types::PyCapsule;
-
-    Python::attach(|py| {
-        // Create a new PyCapsule that owns `event` and registers a destructor so
-        // the contained `TimeEvent` is properly freed once the capsule is
-        // garbage-collected by Python. Without the destructor the memory would
-        // leak because the capsule would not know how to drop the Rust value.
-
-        // Register a destructor that simply drops the `TimeEvent` once the
-        // capsule is freed on the Python side.
-        let capsule: Py<PyAny> = PyCapsule::new_with_destructor(py, event, None, |_, _| {})
-            .expect("Error creating `PyCapsule`")
-            .into_py_any_unwrap(py);
-
-        match callback.call1(py, (capsule,)) {
-            Ok(_) => {}
-            Err(e) => eprintln!("{NAUTILUS_PREFIX} Error on callback: {e:?}"),
-        }
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use std::{num::NonZeroU64, sync::Arc};
+    #[cfg(feature = "python")]
+    use std::{
+        sync::{Mutex, mpsc},
+        time::Duration as StdDuration,
+    };
 
     use nautilus_core::{
         UnixNanos, datetime::floor_to_nearest_microsecond, time::get_atomic_clock_realtime,
+    };
+    #[cfg(feature = "python")]
+    use pyo3::{
+        Python,
+        types::{PyAnyMethods, PyList, PyListMethods},
     };
     use rstest::*;
     use ustr::Ustr;
@@ -388,5 +373,58 @@ mod tests {
         assert!(timer.next_time_ns() >= before_floored);
 
         timer.cancel();
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn test_live_timer_with_sender_defers_python_callback_to_handler() {
+        #[derive(Debug)]
+        struct ChannelSender {
+            tx: Mutex<mpsc::Sender<TimeEventHandler>>,
+        }
+
+        impl TimeEventSender for ChannelSender {
+            fn send(&self, handler: TimeEventHandler) {
+                self.tx
+                    .lock()
+                    .expect("sender mutex should lock")
+                    .send(handler)
+                    .expect("handler should send");
+            }
+        }
+
+        Python::initialize();
+
+        Python::attach(|py| {
+            let py_list = PyList::empty(py);
+            let py_append = py_list
+                .getattr("append")
+                .expect("append should exist")
+                .unbind();
+            let callback = TimeEventCallback::from(py_append);
+            let (tx, rx) = mpsc::channel();
+            let sender = Arc::new(ChannelSender { tx: Mutex::new(tx) });
+            let now = get_atomic_clock_realtime().get_time_ns();
+
+            let mut timer = LiveTimer::new(
+                Ustr::from("PY_TIMER"),
+                NonZeroU64::new(1_000_000).unwrap(),
+                now,
+                Some(UnixNanos::from(now.as_u64() + 2_000_000)),
+                callback,
+                true,
+                Some(sender),
+            );
+
+            timer.start();
+            let handler = rx
+                .recv_timeout(StdDuration::from_secs(1))
+                .expect("timer handler should arrive without acquiring the GIL on the worker");
+            timer.cancel();
+
+            assert_eq!(py_list.len(), 0);
+            handler.run();
+            assert_eq!(py_list.len(), 1);
+        });
     }
 }

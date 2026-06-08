@@ -15,4 +15,4 @@
 
 //! Database management and administration utilities.
 
-pub mod postgres;
+pub(crate) mod postgres;

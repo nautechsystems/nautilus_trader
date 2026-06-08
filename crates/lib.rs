@@ -13,9 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Workspace shim crate for NautilusTrader.
+//! Container crate for NautilusTrader.
 //!
-//! This crate does not expose any public API of its own. It exists solely so
-//! that the root `crates/` directory is a valid Cargo crate, which prevents
-//! Cargo from discarding incremental build artefacts when only the dependency
-//! graph changes.
+//! This crate re-exports the core, model, and common component crates as a small
+//! stable entry point. Use the individual `nautilus-*` crates for adapter,
+//! backtest, live, and other crate-specific APIs.
+
+pub use nautilus_common as common;
+pub use nautilus_core as core;
+pub use nautilus_model as model;

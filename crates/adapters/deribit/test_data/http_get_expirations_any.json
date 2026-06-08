@@ -1,0 +1,38 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "option": [
+      "20MAY26",
+      "21MAY26",
+      "22MAY26",
+      "23MAY26",
+      "29MAY26",
+      "5JUN26",
+      "26JUN26",
+      "31JUL26",
+      "25SEP26",
+      "25DEC26",
+      "26MAR27"
+    ],
+    "future": [
+      "20MAY26",
+      "21MAY26",
+      "22MAY26",
+      "23MAY26",
+      "27MAY26",
+      "29MAY26",
+      "5JUN26",
+      "26JUN26",
+      "31JUL26",
+      "25SEP26",
+      "25DEC26",
+      "26MAR27",
+      "PERPETUAL"
+    ]
+  },
+  "usIn": 1779263453953852,
+  "usOut": 1779263453976285,
+  "usDiff": 22433,
+  "testnet": false
+}

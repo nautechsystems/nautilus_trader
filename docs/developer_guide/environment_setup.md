@@ -105,14 +105,21 @@ make install-tools
 This installs:
 
 - **Cargo CLIs** pinned in `Cargo.toml` under `[workspace.metadata.tools]`: `cargo-audit`,
-  `cargo-deny`, `cargo-edit`, `cargo-llvm-cov`, `cargo-machete`, `cargo-nextest`, `cargo-vet`,
-  `lychee`.
+  `cargo-deny`, `cargo-edit`, `cargo-fuzz`, `cargo-llvm-cov`, `cargo-machete`, `cargo-nextest`,
+  `cargo-vet`, `flamegraph`, `lychee`.
 - **Prebuilt binaries** pinned in `tools.toml`: `prek` (pre-commit runner) and `osv-scanner`
   (vulnerability scanner).
 - **uv**, synced to the version required by `pyproject.toml`.
 
 Cap'n Proto is also pinned in `tools.toml` but installs separately; see the [Cap'n Proto](#capn-proto)
 section below.
+
+Fuzz targets also require a Rust nightly toolchain at runtime because `cargo-fuzz` uses
+`libfuzzer-sys` and unstable compiler flags:
+
+```bash
+rustup toolchain install nightly
+```
 
 #### One-off prerequisite: cargo-binstall
 
@@ -128,14 +135,25 @@ This is a one-time step. Subsequent runs of `make install-tools` reuse the insta
 
 #### Single source of truth for versions
 
-Tool versions live in two files:
+The repository manifests are the canonical source for dependency and tool versions. Do not copy
+current version numbers into docs, runner images, or scripts unless there is no manifest-backed way
+to read them.
 
-- `Cargo.toml` under `[workspace.metadata.tools]` for cargo-installable crates.
-- `tools.toml` for everything else (`prek`, `osv-scanner`, `capnp`).
+| Source file or section                       | Defines                                               |
+|----------------------------------------------|-------------------------------------------------------|
+| `rust-toolchain.toml`                        | Rust toolchain.                                       |
+| `Cargo.toml` and `Cargo.lock`                | Rust workspace dependencies and exact resolution.     |
+| `Cargo.toml` `[workspace.metadata.tools]`    | Cargo‑installable development tools.                  |
+| `pyproject.toml` and `python/pyproject.toml` | Python dependencies, supported Python range, and uv.  |
+| `uv.lock` and `python/uv.lock`               | Exact Python dependency resolutions.                  |
+| `tools.toml`                                 | External CLIs and binaries without a native manifest. |
 
-The Makefile reads these via `scripts/cargo-tool-version.sh` and `scripts/tool-version.sh`, so
-bumping a version in the source file is the only change required. To check the pinned cargo tool
-versions against crates.io, run:
+The external tool pins in `tools.toml` include `prek`, `pip-audit`, `pypi-attestations`,
+`maturin`, `osv-scanner`, and `capnp`.
+
+The Makefile reads these via `scripts/cargo-tool-version.sh`, `scripts/tool-version.sh`, and
+`scripts/uv-version.sh`, so bumping a version in the source file is the only required version
+change. To check the pinned cargo tool versions against crates.io, run:
 
 ```bash
 make outdated
@@ -198,10 +216,10 @@ echo "PYTHONHOME: $PYTHONHOME"
 Python dependencies are managed by [uv](https://docs.astral.sh/uv). The `[tool.uv]` section in
 `pyproject.toml` enforces three supply chain safety settings:
 
-- **`required-version = "==0.11.12"`**: all developers and CI use the same uv version. The version
-  is extracted by `scripts/uv-version.sh` for Makefile, CI, and Docker builds. If your local uv
-  drifts off the pin, `uv lock`/`uv sync` will fail with `Required uv version ... does not match the
-  running version ...`. Run `make update-uv` to install the pinned version (or follow uv's own
+- **`required-version`**: all developers and CI use the same uv version. The version is extracted
+  by `scripts/uv-version.sh` for Makefile, CI, and Docker builds. If your local uv drifts off the
+  pin, `uv lock`/`uv sync` will fail with `Required uv version ... does not match the running
+  version ...`. Run `make update-uv` to install the pinned version (or follow uv's own
   `uv self update <version>` hint).
 - **`exclude-newer = "3 days"`**: `uv lock` ignores package versions published within the last
   3 days. This gives the community time to detect and quarantine compromised releases before they

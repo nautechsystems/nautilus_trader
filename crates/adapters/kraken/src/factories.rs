@@ -53,7 +53,7 @@ impl ClientConfig for KrakenDataClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.kraken")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
 )]
 pub struct KrakenDataClientFactory;
 
@@ -128,7 +128,7 @@ impl ClientConfig for KrakenExecClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.kraken")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
 )]
 pub struct KrakenExecutionClientFactory;
 

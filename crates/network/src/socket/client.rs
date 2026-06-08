@@ -50,7 +50,7 @@ use super::{SocketConfig, TcpMessageHandler, TcpReader, TcpWriter, WriterCommand
 use crate::{
     backoff::ExponentialBackoff,
     dst,
-    error::SendError,
+    error::{SendError, is_connection_drop_io_error},
     logging::{log_task_aborted, log_task_started, log_task_stopped},
     mode::ConnectionMode,
     net::TcpStream,
@@ -106,7 +106,7 @@ impl SocketClientInner {
     /// # Errors
     ///
     /// Returns an error if connection fails or configuration is invalid.
-    pub async fn connect_url(config: SocketConfig) -> anyhow::Result<Self> {
+    pub(crate) async fn connect_url(config: SocketConfig) -> anyhow::Result<Self> {
         const CONNECTION_TIMEOUT_SECS: u64 = 10;
 
         install_cryptographic_provider();
@@ -333,7 +333,7 @@ impl SocketClientInner {
     /// # Errors
     ///
     /// Returns an error if the connection cannot be established.
-    pub async fn tls_connect_with_server(
+    pub(crate) async fn tls_connect_with_server(
         url: &str,
         mode: Mode,
         connector: Option<Connector>,
@@ -356,7 +356,7 @@ impl SocketClientInner {
                     .map(tokio::io::split)
             }
             Err(e) => {
-                log::error!("TCP connection failed to {socket_addr}: {e:?}");
+                log::warn!("TCP connection failed to {socket_addr}: {e:?}");
                 Err(Error::Io(e))
             }
         }
@@ -493,7 +493,7 @@ impl SocketClientInner {
     /// client detecting it.
     #[inline]
     #[must_use]
-    pub fn is_alive(&self) -> bool {
+    pub(crate) fn is_alive(&self) -> bool {
         !self.read_task.is_finished() && !self.write_task.is_finished()
     }
 
@@ -603,10 +603,17 @@ impl SocketClientInner {
             combined_msg.extend_from_slice(suffix);
 
             if let Err(e) = writer.write_all(&combined_msg).await {
-                log::error!(
-                    "Failed to send buffered message with suffix after reconnection: {e}, {} messages remain in buffer",
-                    buffer.len()
-                );
+                if is_connection_drop_io_error(&e) {
+                    log::warn!(
+                        "Failed to send buffered message with suffix after reconnection: {e}, {} messages remain in buffer",
+                        buffer.len()
+                    );
+                } else {
+                    log::error!(
+                        "Failed to send buffered message with suffix after reconnection: {e}, {} messages remain in buffer",
+                        buffer.len()
+                    );
+                }
                 send_error_occurred = true;
                 break;
             }
@@ -700,7 +707,11 @@ impl SocketClientInner {
                                 write_buf.extend_from_slice(&suffix);
 
                                 if let Err(e) = active_writer.write_all(&write_buf).await {
-                                    log::error!("Failed to send message: {e}");
+                                    if is_connection_drop_io_error(&e) {
+                                        log::warn!("Failed to send message: {e}");
+                                    } else {
+                                        log::error!("Failed to send message: {e}");
+                                    }
                                     log::warn!("Writer triggering reconnect");
 
                                     reconnect_buffer.push_back(msg);
@@ -1204,6 +1215,7 @@ impl Drop for SocketClient {
 
 #[cfg(test)]
 #[cfg(feature = "python")]
+#[cfg(not(feature = "turmoil"))]
 #[cfg(not(all(feature = "simulation", madsim)))] // transport-layer I/O not simulated
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {

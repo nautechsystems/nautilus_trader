@@ -29,11 +29,24 @@ use nautilus_network::{
 };
 use rstest::{fixture, rstest};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
-use turmoil::{Builder, net};
+use turmoil::net;
+
+mod common;
+
+use common::turmoil::{
+    log_soak_seed, seed_sweep_from_env, seeded_builder, seeded_builder_with_duration,
+    stressed_builder,
+};
 
 // 2-second budget in simulated time, covering reconnect timings across these tests.
 const POLL_ITERS: u32 = 200;
 const POLL_STEP: Duration = Duration::from_millis(10);
+const BASIC_CONNECT_SEED: u64 = 0x57EB_0001;
+const RECONNECTION_SEED: u64 = 0x57EB_0002;
+const NETWORK_PARTITION_SEED: u64 = 0x57EB_0003;
+const DISCONNECT_DURING_RECONNECT_SEED: u64 = 0x57EB_0004;
+const DISCONNECT_DURING_BACKOFF_SEED: u64 = 0x57EB_0005;
+const PROXY_REJECTION_SEED: u64 = 0x57EB_0006;
 
 // Small sleep steps advance turmoil's simulated clock so the receiver drains
 // between ticks instead of relying on a single fixed wait.
@@ -47,6 +60,22 @@ async fn recv_text(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Message>, expec
         tokio::time::sleep(POLL_STEP).await;
     }
     false
+}
+
+async fn recv_application_text(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<Message>,
+) -> Option<String> {
+    for _ in 0..POLL_ITERS {
+        while let Ok(msg) = rx.try_recv() {
+            if let Message::Text(text) = msg
+                && text.as_str() != RECONNECTED
+            {
+                return Some(text.to_string());
+            }
+        }
+        tokio::time::sleep(POLL_STEP).await;
+    }
+    None
 }
 
 async fn wait_for<F>(mut condition: F) -> bool
@@ -65,6 +94,10 @@ where
 /// Default test WebSocket configuration.
 #[fixture]
 fn websocket_config() -> WebSocketConfig {
+    websocket_config_for_backend(TransportBackend::Tungstenite)
+}
+
+fn websocket_config_for_backend(backend: TransportBackend) -> WebSocketConfig {
     WebSocketConfig {
         url: "ws://server:8080".to_string(),
         headers: vec![],
@@ -77,7 +110,7 @@ fn websocket_config() -> WebSocketConfig {
         reconnect_jitter_ms: Some(10),
         reconnect_max_attempts: None,
         idle_timeout_ms: None,
-        backend: TransportBackend::Tungstenite,
+        backend,
         proxy_url: None,
     }
 }
@@ -119,9 +152,39 @@ async fn ws_echo_server() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+async fn ws_echo_once_then_drop_server() -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+
+        tokio::spawn(async move {
+            if let Ok(mut ws_stream) = accept_async(stream).await
+                && let Some(Ok(msg)) = ws_stream.next().await
+            {
+                match msg {
+                    Message::Text(text) => {
+                        let _ = ws_stream.send(Message::Text(text)).await;
+                    }
+                    Message::Binary(data) => {
+                        let _ = ws_stream.send(Message::Binary(data)).await;
+                    }
+                    Message::Ping(ping_data) => {
+                        let _ = ws_stream.send(Message::Pong(ping_data)).await;
+                    }
+                    Message::Close(_) => {
+                        let _ = ws_stream.close(None).await;
+                    }
+                    Message::Pong(_) | Message::Frame(_) => {}
+                }
+            }
+        });
+    }
+}
+
 #[rstest]
 fn test_turmoil_real_websocket_basic_connect(websocket_config: WebSocketConfig) {
-    let mut sim = Builder::new().build();
+    let mut sim = seeded_builder(BASIC_CONNECT_SEED).build();
 
     sim.host("server", ws_echo_server);
 
@@ -159,7 +222,7 @@ fn test_turmoil_real_websocket_reconnection(mut websocket_config: WebSocketConfi
     websocket_config.reconnect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(100);
 
-    let mut sim = Builder::new().build();
+    let mut sim = seeded_builder(RECONNECTION_SEED).build();
 
     // Server that accepts one connection, closes it, then accepts another
     sim.host("server", || async {
@@ -235,7 +298,7 @@ fn test_turmoil_real_websocket_reconnection(mut websocket_config: WebSocketConfi
 fn test_turmoil_real_websocket_network_partition(mut websocket_config: WebSocketConfig) {
     websocket_config.reconnect_timeout_ms = Some(3_000);
 
-    let mut sim = Builder::new().build();
+    let mut sim = seeded_builder(NETWORK_PARTITION_SEED).build();
 
     sim.host("server", ws_echo_server);
 
@@ -291,7 +354,7 @@ fn test_turmoil_real_websocket_disconnect_during_reconnect(mut websocket_config:
     websocket_config.reconnect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(100);
 
-    let mut sim = Builder::new().build();
+    let mut sim = seeded_builder(DISCONNECT_DURING_RECONNECT_SEED).build();
 
     sim.host("server", ws_echo_server);
 
@@ -333,9 +396,9 @@ fn test_turmoil_real_websocket_disconnect_during_backoff(mut websocket_config: W
     websocket_config.reconnect_backoff_factor = Some(1.0);
     websocket_config.reconnect_jitter_ms = Some(0);
 
-    let mut sim = Builder::new()
-        .simulation_duration(Duration::from_secs(30))
-        .build();
+    let mut sim =
+        seeded_builder_with_duration(DISCONNECT_DURING_BACKOFF_SEED, Duration::from_secs(30))
+            .build();
 
     sim.host("server", ws_echo_server);
 
@@ -380,7 +443,7 @@ fn test_turmoil_real_websocket_disconnect_during_backoff(mut websocket_config: W
 fn test_turmoil_websocket_rejects_proxy_url(mut websocket_config: WebSocketConfig) {
     websocket_config.proxy_url = Some("http://proxy:9999".to_string());
 
-    let mut sim = Builder::new().build();
+    let mut sim = seeded_builder(PROXY_REJECTION_SEED).build();
     sim.host("server", ws_echo_server);
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
@@ -397,4 +460,111 @@ fn test_turmoil_websocket_rejects_proxy_url(mut websocket_config: WebSocketConfi
     });
 
     sim.run().unwrap();
+}
+
+#[rstest]
+#[case::seed_a(0x57EB_1001)]
+#[case::seed_b(0x57EB_1002)]
+#[case::seed_c(0x57EB_1003)]
+fn test_turmoil_websocket_repeated_drops_preserve_message_order(
+    websocket_config: WebSocketConfig,
+    #[case] seed: u64,
+) {
+    run_websocket_repeated_drops_preserve_message_order(websocket_config, seed, "tungstenite");
+}
+
+#[rstest]
+#[ignore = "continuous seed sweep; run scripts/soak-network-turmoil.sh"]
+fn test_turmoil_websocket_repeated_drops_backend_pair_soak() {
+    for (iteration, seed) in seed_sweep_from_env() {
+        log_soak_seed("websocket/tungstenite", iteration, seed);
+        run_websocket_repeated_drops_preserve_message_order(
+            websocket_config_for_backend(TransportBackend::Tungstenite),
+            seed,
+            "websocket/tungstenite",
+        );
+
+        #[cfg(feature = "transport-sockudo")]
+        {
+            log_soak_seed("websocket/sockudo", iteration, seed);
+            run_websocket_repeated_drops_preserve_message_order(
+                websocket_config_for_backend(TransportBackend::Sockudo),
+                seed,
+                "websocket/sockudo",
+            );
+        }
+    }
+}
+
+fn run_websocket_repeated_drops_preserve_message_order(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(100);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+
+    let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
+
+    sim.host("server", ws_echo_once_then_drop_server);
+
+    sim.client("client", async move {
+        let (handler, mut rx) = channel_message_handler();
+
+        let client =
+            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+                .await
+                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        let expected = (0..6)
+            .map(|i| format!("drop-reconnect-{i}"))
+            .collect::<Vec<_>>();
+        let mut received = Vec::with_capacity(expected.len());
+
+        for (index, msg) in expected.iter().enumerate() {
+            client
+                .send_text(msg.clone(), None)
+                .await
+                .expect("Should enqueue message");
+
+            let received_msg = recv_application_text(&mut rx)
+                .await
+                .unwrap_or_else(|| panic!("{label} seed {seed:#018x} should receive echoed text"));
+            assert_eq!(
+                &received_msg, msg,
+                "{label} seed {seed:#018x} should receive echoed message {index}"
+            );
+            received.push(received_msg);
+
+            if index + 1 < expected.len() {
+                assert!(
+                    wait_for(|| client.is_reconnecting() || !client.is_active()).await,
+                    "{label} seed {seed:#018x} should observe drop after message {index}"
+                );
+                assert!(
+                    wait_for(|| client.is_active()).await,
+                    "{label} seed {seed:#018x} should reconnect after message {index}"
+                );
+            }
+        }
+
+        assert_eq!(
+            received, expected,
+            "{label} seed {seed:#018x} should preserve message order"
+        );
+
+        client.disconnect().await;
+        assert!(
+            client.is_disconnected(),
+            "{label} seed {seed:#018x} should disconnect after scenario"
+        );
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
 }

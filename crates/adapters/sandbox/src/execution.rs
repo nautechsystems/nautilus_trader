@@ -33,7 +33,10 @@ use nautilus_common::{
             ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
-    msgbus::{self, MStr, MessagingSwitchboard, Pattern, TypedHandler},
+    msgbus::{
+        self, MStr, MessagingSwitchboard, Pattern, TypedHandler,
+        typed_handler::ShareableMessageHandler,
+    },
 };
 use nautilus_core::{UnixNanos, WeakCell};
 use nautilus_execution::{
@@ -46,7 +49,7 @@ use nautilus_execution::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, OrderBookDeltas, QuoteTick, TradeTick},
+    data::{Bar, InstrumentClose, InstrumentStatus, OrderBookDeltas, QuoteTick, TradeTick},
     enums::OmsType,
     events::OrderEventAny,
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
@@ -271,6 +274,44 @@ impl SandboxInner {
             }
         }
     }
+
+    fn process_instrument_status(&mut self, status: &InstrumentStatus) {
+        let instrument_id = status.instrument_id;
+
+        if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+            engine.get_engine_mut().process_status(status.action);
+            return;
+        }
+
+        let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
+        if let Some(instrument) = instrument {
+            self.ensure_matching_engine(&instrument);
+
+            if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+                engine.get_engine_mut().process_status(status.action);
+            }
+        } else {
+            log::warn!(
+                "Ignoring instrument status for {instrument_id}: instrument missing from cache",
+            );
+        }
+    }
+
+    fn process_instrument_close(&mut self, close: &InstrumentClose) {
+        let instrument_id = close.instrument_id;
+
+        // A delayed close belongs to an existing exposure lifecycle. Unlike an
+        // instrument status update, it must not recreate execution state from
+        // cache after rotation/unsubscribe; pending-settlement ownership stays
+        // with the already-initialized matching engine.
+        if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+            engine.get_engine_mut().process_instrument_close(*close);
+        } else {
+            log::warn!(
+                "Ignoring instrument close for {instrument_id}: no existing matching engine",
+            );
+        }
+    }
 }
 
 /// Registered message handlers for later deregistration.
@@ -283,6 +324,10 @@ struct RegisteredHandlers {
     trade_handler: TypedHandler<TradeTick>,
     bar_pattern: MStr<Pattern>,
     bar_handler: TypedHandler<Bar>,
+    status_pattern: MStr<Pattern>,
+    status_handler: ShareableMessageHandler,
+    close_pattern: MStr<Pattern>,
+    close_handler: ShareableMessageHandler,
 }
 
 /// A sandbox execution client for paper trading against live market data.
@@ -435,7 +480,7 @@ impl SandboxExecutionClient {
 
         // Bar handler (topic is data.bars.{bar_type}, filter by venue in handler)
         let bar_handler = {
-            let inner = inner_weak;
+            let inner = inner_weak.clone();
             TypedHandler::from(move |bar: &Bar| {
                 if bar.bar_type.instrument_id().venue == venue
                     && let Some(inner_rc) = inner.upgrade()
@@ -445,16 +490,41 @@ impl SandboxExecutionClient {
             })
         };
 
+        let status_handler = {
+            let inner = inner_weak.clone();
+            ShareableMessageHandler::from_typed(move |status: &InstrumentStatus| {
+                if status.instrument_id.venue == venue
+                    && let Some(inner_rc) = inner.upgrade()
+                {
+                    inner_rc.borrow_mut().process_instrument_status(status);
+                }
+            })
+        };
+
+        let close_handler = {
+            ShareableMessageHandler::from_typed(move |close: &InstrumentClose| {
+                if close.instrument_id.venue == venue
+                    && let Some(inner_rc) = inner_weak.upgrade()
+                {
+                    inner_rc.borrow_mut().process_instrument_close(close);
+                }
+            })
+        };
+
         // Subscribe patterns
         let deltas_pattern: MStr<Pattern> = format!("data.book.deltas.{venue}.*").into();
         let quote_pattern: MStr<Pattern> = format!("data.quotes.{venue}.*").into();
         let trade_pattern: MStr<Pattern> = format!("data.trades.{venue}.*").into();
         let bar_pattern: MStr<Pattern> = "data.bars.*".into();
+        let status_pattern: MStr<Pattern> = format!("data.status.{venue}.*").into();
+        let close_pattern: MStr<Pattern> = format!("data.close.{venue}.*").into();
 
         msgbus::subscribe_book_deltas(deltas_pattern, deltas_handler.clone(), Some(10));
         msgbus::subscribe_quotes(quote_pattern, quote_handler.clone(), Some(10));
         msgbus::subscribe_trades(trade_pattern, trade_handler.clone(), Some(10));
         msgbus::subscribe_bars(bar_pattern, bar_handler.clone(), Some(10));
+        msgbus::subscribe_any(status_pattern, status_handler.clone(), Some(10));
+        msgbus::subscribe_instrument_close(close_pattern, close_handler.clone(), Some(10));
 
         // Store handlers for later deregistration
         *self.handlers.borrow_mut() = Some(RegisteredHandlers {
@@ -466,6 +536,10 @@ impl SandboxExecutionClient {
             trade_handler,
             bar_pattern,
             bar_handler,
+            status_pattern,
+            status_handler,
+            close_pattern,
+            close_handler,
         });
 
         log::info!(
@@ -481,6 +555,8 @@ impl SandboxExecutionClient {
             msgbus::unsubscribe_quotes(handlers.quote_pattern, &handlers.quote_handler);
             msgbus::unsubscribe_trades(handlers.trade_pattern, &handlers.trade_handler);
             msgbus::unsubscribe_bars(handlers.bar_pattern, &handlers.bar_handler);
+            msgbus::unsubscribe_any(handlers.status_pattern, &handlers.status_handler);
+            msgbus::unsubscribe_instrument_close(handlers.close_pattern, &handlers.close_handler);
 
             log::info!(
                 "Sandbox deregistered message handlers for venue={}",
@@ -501,6 +577,23 @@ impl SandboxExecutionClient {
 
         // Fall back to starting balances
         self.get_account_balances()
+    }
+
+    fn sync_cached_account_config(&self) -> anyhow::Result<()> {
+        let Some(mut account) = self.get_account() else {
+            return Ok(());
+        };
+
+        account.set_calculate_account_state(!self.config.frozen_account);
+
+        if let AccountAny::Margin(margin_account) = &mut account {
+            margin_account.set_default_leverage(self.config.default_leverage);
+            for (instrument_id, leverage) in &self.config.leverages {
+                margin_account.set_leverage(*instrument_id, *leverage);
+            }
+        }
+
+        self.cache.borrow_mut().update_account(&account)
     }
 
     /// Processes a quote tick through the matching engine.
@@ -700,6 +793,7 @@ impl ExecutionClient for SandboxExecutionClient {
             .generate_account_state(balances, margins, reported, ts_event, ts_init);
         let endpoint = MessagingSwitchboard::portfolio_update_account();
         msgbus::send_account_state(endpoint, &state);
+        self.sync_cached_account_config()?;
         Ok(())
     }
 

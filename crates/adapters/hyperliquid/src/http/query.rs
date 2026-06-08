@@ -198,6 +198,14 @@ impl InfoRequest {
         }
     }
 
+    /// Creates a request to get the list of perp dexes.
+    pub fn perp_dexs() -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::PerpDexs,
+            params: InfoRequestParams::None,
+        }
+    }
+
     /// Creates a request to get spot metadata (tokens and pairs).
     pub fn spot_meta() -> Self {
         Self {

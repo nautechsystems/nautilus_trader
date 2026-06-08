@@ -70,6 +70,11 @@ impl OrderEventFactory {
         self.account_id
     }
 
+    /// Sets the account ID.
+    pub const fn set_account_id(&mut self, account_id: AccountId) {
+        self.account_id = account_id;
+    }
+
     /// Generates an account state event.
     #[must_use]
     pub fn generate_account_state(

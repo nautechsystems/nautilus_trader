@@ -345,12 +345,12 @@ mod tests {
         assert!(
             matches!(&instruments[0], InstrumentAny::CryptoPerpetual(_)),
             "Expected CryptoPerpetual, was {:?}",
-            &instruments[0]
+            instruments[0]
         );
         assert!(
             matches!(&instruments[1], InstrumentAny::CryptoFuture(_)),
             "Expected CryptoFuture, was {:?}",
-            &instruments[1]
+            instruments[1]
         );
     }
 

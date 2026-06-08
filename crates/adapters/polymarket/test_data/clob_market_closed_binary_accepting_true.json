@@ -1,0 +1,62 @@
+{
+  "accepting_order_timestamp": "2026-04-01T18:22:59Z",
+  "accepting_orders": true,
+  "active": true,
+  "archived": false,
+  "closed": true,
+  "condition_id": "0xd57eed0d44f5b8ca54925d8d6ff440b146b3e6e071da18136ee3ee572d34479e",
+  "description": "This market will resolve to \"Yes\" if there is an official ceasefire agreement, defined as a publicly announced and mutually agreed halt in military engagement, between Russia and Ukraine by December 31, 2027, 11:59 PM ET.\n\nIf the agreement is officially reached before the resolution date, this market will resolve to \"Yes,\" regardless of whether the ceasefire officially starts afterward.\n\nOnly ceasefires which constitute a general pause in the conflict will qualify. Ceasefires which only apply to energy infrastructure, the Black Sea, or other similar agreements will not qualify.\n\nAny form of informal agreement will not be considered an official ceasefire. Humanitarian pauses will not count toward the resolution of this market.\n\nA peace deal or political framework will qualify if it includes a publicly announced and mutually agreed halt in military engagement, effective on a specific date. Frameworks or agreements that outline terms for a future peace but do not include an explicit, dated commitment to stop fighting will not count.\n\nThis market's resolution will be based on official announcements from both Russia and Ukraine; however, a wide consensus of credible media reporting stating an official ceasefire agreement between Russia and Ukraine has been reached will suffice.",
+  "enable_order_book": false,
+  "end_date_iso": "2027-12-31T00:00:00Z",
+  "fpmm": "",
+  "game_start_time": "2026-05-08T20:00:00Z",
+  "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/russia-x-ukraine-ceasefire-in-2025-w2voYOygx80B.jpg",
+  "image": "https://polymarket-upload.s3.us-east-2.amazonaws.com/russia-x-ukraine-ceasefire-in-2025-w2voYOygx80B.jpg",
+  "is_50_50_outcome": false,
+  "maker_base_fee": 0,
+  "market_slug": "russia-x-ukraine-ceasefire-by-end-of-2027",
+  "minimum_order_size": 5,
+  "minimum_tick_size": 0.01,
+  "neg_risk": false,
+  "neg_risk_market_id": "",
+  "neg_risk_request_id": "",
+  "notifications_enabled": true,
+  "question": "Russia x Ukraine ceasefire by end of 2027?",
+  "question_id": "0x52e264bc16a4a0dd202f521e97a3476aea56d1c6120077db1fb9aca2caf7797c",
+  "rewards": {
+    "max_spread": 3.5,
+    "min_size": 200,
+    "rates": [
+      {
+        "asset_address": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
+        "rewards_daily_rate": 30
+      }
+    ]
+  },
+  "seconds_delay": 0,
+  "tags": [
+    "Politics",
+    "Ukraine",
+    "Geopolitics",
+    "Foreign Policy",
+    "World",
+    "Trump-Zelenskyy",
+    "Trump-Zelensky",
+    "Ukraine Peace Deal"
+  ],
+  "taker_base_fee": 0,
+  "tokens": [
+    {
+      "outcome": "Yes",
+      "price": 1,
+      "token_id": "22978793223071892222859460592277435458011604214087068523744633723809814935807",
+      "winner": true
+    },
+    {
+      "outcome": "No",
+      "price": 0,
+      "token_id": "108268928354766371660560153450121076545199284531791348447523752861907448942629",
+      "winner": false
+    }
+  ]
+}

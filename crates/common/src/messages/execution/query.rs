@@ -31,6 +31,11 @@ pub struct QueryAccount {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<Params>,
+    #[builder(default)]
+    pub correlation_id: Option<UUID4>,
+    #[builder(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<UUID4>,
 }
 
 impl QueryAccount {
@@ -43,6 +48,7 @@ impl QueryAccount {
         command_id: UUID4,
         ts_init: UnixNanos,
         params: Option<Params>,
+        correlation_id: Option<UUID4>,
     ) -> Self {
         Self {
             trader_id,
@@ -51,6 +57,8 @@ impl QueryAccount {
             command_id,
             ts_init,
             params,
+            correlation_id,
+            causation_id: None,
         }
     }
 }
@@ -77,6 +85,11 @@ pub struct QueryOrder {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<Params>,
+    #[builder(default)]
+    pub correlation_id: Option<UUID4>,
+    #[builder(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<UUID4>,
 }
 
 impl QueryOrder {
@@ -93,6 +106,7 @@ impl QueryOrder {
         command_id: UUID4,
         ts_init: UnixNanos,
         params: Option<Params>,
+        correlation_id: Option<UUID4>,
     ) -> Self {
         Self {
             trader_id,
@@ -104,6 +118,8 @@ impl QueryOrder {
             command_id,
             ts_init,
             params,
+            correlation_id,
+            causation_id: None,
         }
     }
 }

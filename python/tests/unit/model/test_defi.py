@@ -18,6 +18,7 @@ from nautilus_trader.model import AmmType
 from nautilus_trader.model import Block
 from nautilus_trader.model import Blockchain
 from nautilus_trader.model import Chain
+from nautilus_trader.model import DefiData
 from nautilus_trader.model import Dex
 from nautilus_trader.model import DexType
 from nautilus_trader.model import Pool
@@ -96,6 +97,7 @@ def test_pool_construction_and_properties():
     assert pool.token1.symbol == "WETH"
     assert pool.fee == 500
     assert pool.tick_spacing == 10
+    assert pool.ts_event == 2
     assert pool.ts_init == 2
     assert isinstance(hash(pool), int)
 
@@ -118,17 +120,39 @@ def test_pool_event_types_construction():
     )
     assert swap.sender == "0x0000000000000000000000000000000000000004"
     assert swap.timestamp == 10
+    assert swap.ts_event == 10
+    assert swap.ts_init == 10
     assert liquidity.kind == PoolLiquidityUpdateType.MINT
     assert liquidity.owner == "0x0000000000000000000000000000000000000004"
     assert liquidity.position_liquidity == "10"
     assert liquidity.timestamp == 10
+    assert liquidity.ts_event == 10
+    assert liquidity.ts_init == 10
     assert fee_collect.owner == "0x0000000000000000000000000000000000000004"
     assert fee_collect.amount0 == "1"
     assert fee_collect.amount1 == "2"
+    assert fee_collect.timestamp == 10
+    assert fee_collect.ts_event == 10
+    assert fee_collect.ts_init == 10
     assert flash.sender == "0x0000000000000000000000000000000000000004"
     assert flash.recipient == "0x0000000000000000000000000000000000000005"
     assert flash.paid0 == "3"
     assert flash.paid1 == "4"
+    assert flash.timestamp == 10
+    assert flash.ts_event == 10
+    assert flash.ts_init == 10
+
+    pool_data = DefiData.Pool(pool)
+    swap_data = DefiData.PoolSwap(swap)
+
+    assert pool_data.block_position() == (1, 0, 0)
+    assert pool_data.timestamp == 2
+    assert pool_data.ts_event == 2
+    assert pool_data.ts_init == 2
+    assert swap_data.block_position() == (1, 0, 1)
+    assert swap_data.timestamp == 10
+    assert swap_data.ts_event == 10
+    assert swap_data.ts_init == 10
 
 
 def test_transaction_and_opaque_defi_surfaces():

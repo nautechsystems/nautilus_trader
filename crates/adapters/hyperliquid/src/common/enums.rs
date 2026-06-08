@@ -19,7 +19,7 @@ use nautilus_model::enums::{AggressorSide, OrderSide, OrderStatus, OrderType};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
-use super::consts::HYPERLIQUID_POST_ONLY_WOULD_MATCH;
+use super::{consts::HYPERLIQUID_POST_ONLY_WOULD_MATCH, parse::OUTCOME_SYMBOL_SUFFIX};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum HyperliquidBarInterval {
@@ -226,7 +226,7 @@ pub enum HyperliquidOrderType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.hyperliquid")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.hyperliquid")
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
@@ -265,7 +265,7 @@ pub enum HyperliquidTpSl {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.hyperliquid")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.hyperliquid")
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -341,7 +341,7 @@ impl From<OrderType> for HyperliquidConditionalOrderType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.hyperliquid")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.hyperliquid")
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
@@ -893,6 +893,8 @@ pub enum HyperliquidInfoRequestType {
     ValidatorStats,
     /// Get user fee schedule and effective rates.
     UserFees,
+    /// Get the list of perp dex descriptors.
+    PerpDexs,
     /// Get metadata for all perp dexes (standard + HIP-3).
     AllPerpMetas,
 }
@@ -930,6 +932,7 @@ impl HyperliquidInfoRequestType {
             Self::DelegatorRewards => "delegatorRewards",
             Self::ValidatorStats => "validatorStats",
             Self::UserFees => "userFees",
+            Self::PerpDexs => "perpDexs",
             Self::AllPerpMetas => "allPerpMetas",
         }
     }
@@ -972,7 +975,7 @@ pub enum HyperliquidLeverageType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.hyperliquid")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.hyperliquid")
 )]
 #[serde(rename_all = "UPPERCASE")]
 #[strum(serialize_all = "UPPERCASE")]
@@ -988,15 +991,20 @@ pub enum HyperliquidProductType {
 impl HyperliquidProductType {
     /// Extract product type from an instrument symbol.
     ///
+    /// Accepts both Nautilus instrument symbols (`{BASE}-USD-PERP`,
+    /// `{BASE}-{QUOTE}-SPOT`, `{N}-{YES|NO}-OUTCOME`) and venue wire coin
+    /// names (`#<encoding>` / `+<encoding>` for HIP-4 outcomes). Callers in
+    /// the adapter pass both forms.
+    ///
     /// # Errors
     ///
-    /// Returns error if symbol doesn't match expected format.
+    /// Returns error if symbol doesn't match any expected format.
     pub fn from_symbol(symbol: &str) -> anyhow::Result<Self> {
         if symbol.ends_with("-PERP") {
             Ok(Self::Perp)
         } else if symbol.ends_with("-SPOT") {
             Ok(Self::Spot)
-        } else if is_outcome_wire_symbol(symbol) {
+        } else if symbol.ends_with(OUTCOME_SYMBOL_SUFFIX) || is_outcome_wire_symbol(symbol) {
             Ok(Self::Outcome)
         } else {
             anyhow::bail!("Invalid Hyperliquid symbol format: {symbol}")
@@ -1046,7 +1054,7 @@ fn is_outcome_wire_symbol(symbol: &str) -> bool {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.hyperliquid")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.hyperliquid")
 )]
 pub enum HyperliquidEnvironment {
     /// Mainnet trading environment.
@@ -1676,6 +1684,9 @@ mod tests {
     #[rstest]
     #[case("BTC-USD-PERP", HyperliquidProductType::Perp)]
     #[case("HYPE-USDC-SPOT", HyperliquidProductType::Spot)]
+    #[case("25-YES-OUTCOME", HyperliquidProductType::Outcome)]
+    #[case("25-NO-OUTCOME", HyperliquidProductType::Outcome)]
+    #[case("0-YES-OUTCOME", HyperliquidProductType::Outcome)]
     #[case("#10", HyperliquidProductType::Outcome)]
     #[case("+31", HyperliquidProductType::Outcome)]
     #[case("#0", HyperliquidProductType::Outcome)]
@@ -1699,6 +1710,9 @@ mod tests {
     #[case("@1")]
     #[case("#-1")]
     #[case("+-1")]
+    #[case("25-YES")]
+    #[case("OUTCOME")]
+    #[case("25-YES-outcome")]
     fn test_product_type_from_symbol_rejects_invalid(#[case] symbol: &str) {
         assert!(HyperliquidProductType::from_symbol(symbol).is_err());
     }

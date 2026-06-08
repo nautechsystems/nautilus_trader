@@ -17,6 +17,7 @@
 
 use ahash::AHashMap;
 use alloy_primitives::{Address, I256, U160, U256};
+use nautilus_core::UnixNanos;
 
 use crate::defi::{
     PoolLiquidityUpdate, PoolSwap, SharedPool,
@@ -25,6 +26,9 @@ use crate::defi::{
         flash::PoolFlash,
     },
     pool_analysis::{
+        error::{
+            PoolEventKind, PoolEventLocation, PoolProfilerError, liquidity_error_with_location,
+        },
         position::PoolPosition,
         quote::SwapQuote,
         size_estimator,
@@ -35,7 +39,7 @@ use crate::defi::{
     tick_map::{
         TickMap,
         full_math::{FullMath, Q128},
-        liquidity_math::liquidity_math_add,
+        liquidity_math::{liquidity_math_add, try_liquidity_math_add},
         sqrt_price_math::{get_amount0_delta, get_amount1_delta, get_amounts_for_liquidity},
         tick::{CrossedTick, PoolTick},
         tick_math::{
@@ -83,6 +87,8 @@ pub struct PoolProfiler {
     pub analytics: PoolAnalytics,
     /// The block position of the last processed event.
     pub last_processed_event: Option<BlockPosition>,
+    /// The event timestamp of the last processed event.
+    pub last_processed_ts: Option<UnixNanos>,
     /// Flag indicating whether the pool has been initialized with a starting price.
     pub is_initialized: bool,
     /// Optional progress reporter for tracking event processing.
@@ -107,6 +113,7 @@ impl PoolProfiler {
             state: PoolState::default(),
             analytics: PoolAnalytics::default(),
             last_processed_event: None,
+            last_processed_ts: None,
             is_initialized: false,
             reporter: None,
             last_reported_block: 0,
@@ -115,21 +122,30 @@ impl PoolProfiler {
 
     /// Initializes the pool with a starting price and activates the profiler.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// This function panics if:
-    /// - Pool is already initialized (checked via `is_initialized` flag)
-    /// - Calculated tick from price doesn't match pool's `initial_tick` (if set)
-    pub fn initialize(&mut self, price_sqrt_ratio_x96: U160) {
-        assert!(!self.is_initialized, "Pool already initialized");
+    /// Returns [`PoolProfilerError::AlreadyInitialized`] if the profiler has already been
+    /// initialized, or [`PoolProfilerError::InitialTickMismatch`] if the pool config carries
+    /// an `initial_tick` that disagrees with the tick derived from `price_sqrt_ratio_x96`.
+    pub fn initialize(&mut self, price_sqrt_ratio_x96: U160) -> Result<(), PoolProfilerError> {
+        if self.is_initialized {
+            return Err(PoolProfilerError::AlreadyInitialized {
+                instrument_id: self.pool.instrument_id,
+                pool_identifier: self.pool.pool_identifier,
+            });
+        }
 
         let calculated_tick = get_tick_at_sqrt_ratio(price_sqrt_ratio_x96);
 
-        if let Some(initial_tick) = self.pool.initial_tick {
-            assert_eq!(
-                initial_tick, calculated_tick,
-                "Calculated tick does not match pool initial tick"
-            );
+        if let Some(initial_tick) = self.pool.initial_tick
+            && initial_tick != calculated_tick
+        {
+            return Err(PoolProfilerError::InitialTickMismatch {
+                instrument_id: self.pool.instrument_id,
+                pool_identifier: self.pool.pool_identifier,
+                initial_tick,
+                calculated_tick,
+            });
         }
 
         log::info!(
@@ -139,15 +155,41 @@ impl PoolProfiler {
         self.state.current_tick = calculated_tick;
         self.state.price_sqrt_ratio_x96 = price_sqrt_ratio_x96;
         self.is_initialized = true;
+        Ok(())
     }
 
-    /// Verifies that the pool has been initialized.
+    /// Returns an error if the pool has not been initialized.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the pool hasn't been initialized with a starting price via [`initialize()`](Self::initialize).
-    pub fn check_if_initialized(&self) {
-        assert!(self.is_initialized, "Pool is not initialized");
+    /// Returns [`PoolProfilerError::NotInitialized`] when [`Self::initialize`] or
+    /// [`Self::restore_from_snapshot`] has not been called yet.
+    pub fn check_if_initialized(&self, event_kind: PoolEventKind) -> Result<(), PoolProfilerError> {
+        if !self.is_initialized {
+            return Err(PoolProfilerError::NotInitialized {
+                instrument_id: self.pool.instrument_id,
+                pool_identifier: self.pool.pool_identifier,
+                event_kind,
+            });
+        }
+        Ok(())
+    }
+
+    fn event_location(
+        &self,
+        event_kind: PoolEventKind,
+        block: u64,
+        transaction_index: u32,
+        log_index: u32,
+    ) -> PoolEventLocation {
+        PoolEventLocation {
+            instrument_id: self.pool.instrument_id,
+            pool_identifier: self.pool.pool_identifier,
+            block,
+            transaction_index,
+            log_index,
+            event_kind,
+        }
     }
 
     /// Processes a historical pool event and updates internal state.
@@ -222,7 +264,6 @@ impl PoolProfiler {
         }
     }
 
-    // panics-doc-ok (transitive via check_if_initialized)
     /// Processes a historical swap event from blockchain data.
     ///
     /// Replays the swap by simulating it through [`Self::simulate_swap_through_ticks`],
@@ -242,12 +283,8 @@ impl PoolProfiler {
     /// This function returns an error if:
     /// - Pool initialization checks fail.
     /// - Swap simulation fails (see [`Self::simulate_swap_through_ticks`] errors).
-    ///
-    /// # Panics
-    ///
-    /// Panics if the pool has not been initialized.
     pub fn process_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
-        self.check_if_initialized();
+        self.check_if_initialized(PoolEventKind::Swap)?;
 
         if self.check_if_already_processed(swap.block, swap.transaction_index, swap.log_index) {
             return Ok(());
@@ -262,8 +299,15 @@ impl PoolProfiler {
         // For price limit use the final sqrt price from swap, which is a
         // good proxy to price limit
         let sqrt_price_limit_x96 = swap.sqrt_price_x96;
-        let swap_quote =
-            self.simulate_swap_through_ticks(amount_specified, zero_for_one, sqrt_price_limit_x96)?;
+        let location = self.event_location(
+            PoolEventKind::Swap,
+            swap.block,
+            swap.transaction_index,
+            swap.log_index,
+        );
+        let swap_quote = self
+            .simulate_swap_through_ticks(amount_specified, zero_for_one, sqrt_price_limit_x96)
+            .map_err(|e| Self::wrap_liquidity_error(e, location))?;
         self.apply_swap_quote(&swap_quote);
 
         // Verify simulation against event data - correct with event values if mismatch detected
@@ -287,19 +331,29 @@ impl PoolProfiler {
             self.tick_map.liquidity = swap.liquidity;
         }
 
+        if swap.sqrt_price_x96 != self.state.price_sqrt_ratio_x96 {
+            log::warn!(
+                "Inconsistency in swap processing: Sqrt price mismatch: simulated {}, event {} on block {}",
+                self.state.price_sqrt_ratio_x96,
+                swap.sqrt_price_x96,
+                swap.block
+            );
+            self.state.price_sqrt_ratio_x96 = swap.sqrt_price_x96;
+        }
+
         self.last_processed_event = Some(BlockPosition::new(
             swap.block,
             swap.transaction_hash.clone(),
             swap.transaction_index,
             swap.log_index,
         ));
+        self.last_processed_ts = Some(swap.ts_event);
         self.update_reporter_if_enabled(swap.block);
         self.update_liquidity_analytics();
 
         Ok(())
     }
 
-    // panics-doc-ok (transitive via check_if_initialized)
     /// Executes a new simulated swap and returns the resulting event.
     ///
     /// This is the public API for forward simulation of swap operations. It delegates
@@ -312,12 +366,6 @@ impl PoolProfiler {
     /// - Pool metadata missing or invalid
     /// - Price limit violations
     /// - Arithmetic overflow in fee or liquidity calculations
-    ///
-    /// # Panics
-    ///
-    /// This function panics if:
-    /// - Pool fee is not initialized
-    /// - Pool is not initialized
     pub fn execute_swap(
         &mut self,
         sender: Address,
@@ -327,7 +375,7 @@ impl PoolProfiler {
         amount_specified: I256,
         sqrt_price_limit_x96: U160,
     ) -> anyhow::Result<PoolSwap> {
-        self.check_if_initialized();
+        self.check_if_initialized(PoolEventKind::Swap)?;
         let swap_quote =
             self.simulate_swap_through_ticks(amount_specified, zero_for_one, sqrt_price_limit_x96)?;
         self.apply_swap_quote(&swap_quote);
@@ -341,7 +389,8 @@ impl PoolProfiler {
             block.transaction_hash,
             block.transaction_index,
             block.log_index,
-            None,
+            self.pool.ts_init, // ts_event (simulated; pool init time)
+            self.pool.ts_init, // ts_init
             sender,
             recipient,
             swap_quote.amount0,
@@ -381,7 +430,7 @@ impl PoolProfiler {
     ///
     /// # Panics
     ///
-    /// Panics if pool is not initialized
+    /// Panics if the pool fee has not been initialized.
     pub fn simulate_swap_through_ticks(
         &self,
         amount_specified: I256,
@@ -508,9 +557,9 @@ impl PoolProfiler {
                     if let Some(tick_data) = self.tick_map.get_tick(tick_next) {
                         let liquidity_net = tick_data.liquidity_net;
                         current_active_liquidity = if zero_for_one {
-                            liquidity_math_add(current_active_liquidity, -liquidity_net)
+                            try_liquidity_math_add(current_active_liquidity, -liquidity_net)?
                         } else {
-                            liquidity_math_add(current_active_liquidity, liquidity_net)
+                            try_liquidity_math_add(current_active_liquidity, liquidity_net)?
                         };
                     }
                 }
@@ -559,17 +608,15 @@ impl PoolProfiler {
 
     /// Applies a swap quote to the pool state (mutations only, no simulation).
     ///
-    /// This private method takes a [`SwapQuote`] generated by [`Self::simulate_swap_through_ticks`]
-    /// and applies its state changes to the pool, including:
-    /// - Price and tick updates
-    /// - Fee growth and protocol fee accumulation
-    /// - Tick crossing mutations (updating tick fee accumulators and active liquidity)
+    /// # Panics
+    ///
+    /// Panics if applying a tick-crossing liquidity delta overflows or underflows,
+    /// which indicates internal tick-map inconsistency rather than a recoverable
+    /// replay error.
     pub fn apply_swap_quote(&mut self, swap_quote: &SwapQuote) {
-        // Update price and tick.
         self.state.current_tick = swap_quote.tick_after;
         self.state.price_sqrt_ratio_x96 = swap_quote.sqrt_price_after_x96;
 
-        // Update fee growth and protocol fees based on swap direction.
         if swap_quote.zero_for_one() {
             self.state.fee_growth_global_0 = swap_quote.fee_growth_global_after;
             self.state.protocol_fees_token0 += swap_quote.protocol_fee;
@@ -578,13 +625,11 @@ impl PoolProfiler {
             self.state.protocol_fees_token1 += swap_quote.protocol_fee;
         }
 
-        // Apply tick crossings efficiently - only update crossed ticks
         for crossed in &swap_quote.crossed_ticks {
             let liquidity_net =
                 self.tick_map
                     .cross_tick(crossed.tick, crossed.fee_growth_0, crossed.fee_growth_1);
 
-            // Update active liquidity based on crossing direction
             self.tick_map.liquidity = if crossed.zero_for_one {
                 liquidity_math_add(self.tick_map.liquidity, -liquidity_net)
             } else {
@@ -600,7 +645,17 @@ impl PoolProfiler {
         );
     }
 
-    // panics-doc-ok (transitive via check_if_initialized)
+    /// Wraps a low-level [`LiquidityMathError`](super::error::LiquidityMathError) into a
+    /// [`PoolProfilerError`] carrying the supplied event location, leaving non-liquidity
+    /// errors untouched.
+    #[must_use]
+    pub fn wrap_liquidity_error(err: anyhow::Error, location: PoolEventLocation) -> anyhow::Error {
+        match err.downcast::<super::error::LiquidityMathError>() {
+            Ok(math_err) => anyhow::Error::from(liquidity_error_with_location(math_err, location)),
+            Err(other) => other,
+        }
+    }
+
     /// Returns a swap quote without modifying pool state.
     ///
     /// This method simulates a swap and provides detailed profiling metrics including:
@@ -615,17 +670,13 @@ impl PoolProfiler {
     /// - Pool fee is not configured
     /// - Fee growth arithmetic overflows when scaling by liquidity
     /// - Swap step calculations fail
-    ///
-    /// # Panics
-    ///
-    /// Panics if pool is not initialized.
     pub fn quote_swap(
         &self,
         amount_specified: I256,
         zero_for_one: bool,
         sqrt_price_limit_x96: Option<U160>,
     ) -> anyhow::Result<SwapQuote> {
-        self.check_if_initialized();
+        self.check_if_initialized(PoolEventKind::Swap)?;
 
         if amount_specified.is_zero() {
             anyhow::bail!("Cannot quote swap with zero amount");
@@ -704,7 +755,6 @@ impl PoolProfiler {
         self.quote_swap(I256::MAX, false, Some(sqrt_price_limit_x96))
     }
 
-    // panics-doc-ok (transitive via check_if_initialized)
     /// Finds the maximum trade size that produces a target slippage (including fees).
     ///
     /// Uses binary search to find the largest trade size that results in slippage
@@ -719,10 +769,6 @@ impl PoolProfiler {
     /// - Impact is zero or exceeds 100% (10000 bps)
     /// - Pool is not initialized
     /// - Swap simulations fail
-    ///
-    /// # Panics
-    ///
-    /// Panics if pool is not initialized.
     pub fn size_for_impact_bps(&self, impact_bps: u32, zero_for_one: bool) -> anyhow::Result<U256> {
         let config = size_estimator::EstimationConfig::default();
         size_estimator::size_for_impact_bps(self, impact_bps, zero_for_one, &config)
@@ -788,7 +834,7 @@ impl PoolProfiler {
     /// - Tick range is invalid or not properly spaced.
     /// - Position updates fail.
     pub fn process_mint(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
-        self.check_if_initialized();
+        self.check_if_initialized(PoolEventKind::Mint)?;
 
         if self.check_if_already_processed(update.block, update.transaction_index, update.log_index)
         {
@@ -796,6 +842,12 @@ impl PoolProfiler {
         }
 
         self.validate_ticks(update.tick_lower, update.tick_upper)?;
+        let location = self.event_location(
+            PoolEventKind::Mint,
+            update.block,
+            update.transaction_index,
+            update.log_index,
+        );
         self.add_liquidity(
             &update.owner,
             update.tick_lower,
@@ -803,7 +855,8 @@ impl PoolProfiler {
             update.position_liquidity,
             update.amount0,
             update.amount1,
-        )?;
+        )
+        .map_err(|e| Self::wrap_liquidity_error(e, location))?;
 
         self.analytics.total_mints += 1;
         self.last_processed_event = Some(BlockPosition::new(
@@ -812,6 +865,7 @@ impl PoolProfiler {
             update.transaction_index,
             update.log_index,
         ));
+        self.last_processed_ts = Some(update.ts_event);
         self.update_reporter_if_enabled(update.block);
         self.update_liquidity_analytics();
 
@@ -849,7 +903,6 @@ impl PoolProfiler {
         Ok(())
     }
 
-    // panics-doc-ok (transitive via check_if_initialized)
     /// Executes a simulated mint (liquidity addition) operation.
     ///
     /// Calculates required token amounts for the specified liquidity amount,
@@ -861,10 +914,6 @@ impl PoolProfiler {
     /// - Pool is not initialized.
     /// - Tick range is invalid.
     /// - Amount calculations fail.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the current sqrt price has not been initialized.
     pub fn execute_mint(
         &mut self,
         recipient: Address,
@@ -873,7 +922,7 @@ impl PoolProfiler {
         tick_upper: i32,
         liquidity: u128,
     ) -> anyhow::Result<PoolLiquidityUpdate> {
-        self.check_if_initialized();
+        self.check_if_initialized(PoolEventKind::Mint)?;
         self.validate_ticks(tick_lower, tick_upper)?;
         let (amount0, amount1) = get_amounts_for_liquidity(
             self.state.price_sqrt_ratio_x96,
@@ -904,7 +953,8 @@ impl PoolProfiler {
             amount1,
             tick_lower,
             tick_upper,
-            None,
+            self.pool.ts_init, // ts_event (simulated; pool init time)
+            self.pool.ts_init, // ts_init
         );
 
         Ok(event)
@@ -922,7 +972,7 @@ impl PoolProfiler {
     /// - Tick range is invalid.
     /// - Position updates fail.
     pub fn process_burn(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
-        self.check_if_initialized();
+        self.check_if_initialized(PoolEventKind::Burn)?;
 
         if self.check_if_already_processed(update.block, update.transaction_index, update.log_index)
         {
@@ -934,6 +984,12 @@ impl PoolProfiler {
         let liquidity_delta = i128::try_from(update.position_liquidity).map_err(|_| {
             anyhow::anyhow!("Liquidity {} exceeds i128::MAX", update.position_liquidity)
         })?;
+        let location = self.event_location(
+            PoolEventKind::Burn,
+            update.block,
+            update.transaction_index,
+            update.log_index,
+        );
         self.update_position(
             &update.owner,
             update.tick_lower,
@@ -941,7 +997,8 @@ impl PoolProfiler {
             -liquidity_delta,
             update.amount0,
             update.amount1,
-        )?;
+        )
+        .map_err(|e| Self::wrap_liquidity_error(e, location))?;
 
         self.analytics.total_burns += 1;
         self.last_processed_event = Some(BlockPosition::new(
@@ -950,13 +1007,13 @@ impl PoolProfiler {
             update.transaction_index,
             update.log_index,
         ));
+        self.last_processed_ts = Some(update.ts_event);
         self.update_reporter_if_enabled(update.block);
         self.update_liquidity_analytics();
 
         Ok(())
     }
 
-    // panics-doc-ok (transitive via check_if_initialized)
     /// Executes a simulated burn (liquidity removal) operation.
     ///
     /// Calculates token amounts that would be withdrawn for the specified liquidity,
@@ -969,10 +1026,6 @@ impl PoolProfiler {
     /// - Tick range is invalid.
     /// - Amount calculations fail.
     /// - Insufficient liquidity in position.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the current sqrt price has not been initialized.
     pub fn execute_burn(
         &mut self,
         recipient: Address,
@@ -981,7 +1034,7 @@ impl PoolProfiler {
         tick_upper: i32,
         liquidity: u128,
     ) -> anyhow::Result<PoolLiquidityUpdate> {
-        self.check_if_initialized();
+        self.check_if_initialized(PoolEventKind::Burn)?;
         self.validate_ticks(tick_lower, tick_upper)?;
         let (amount0, amount1) = get_amounts_for_liquidity(
             self.state.price_sqrt_ratio_x96,
@@ -1021,7 +1074,8 @@ impl PoolProfiler {
             amount1,
             tick_lower,
             tick_upper,
-            None,
+            self.pool.ts_init, // ts_event (simulated; pool init time)
+            self.pool.ts_init, // ts_init
         );
 
         Ok(event)
@@ -1040,7 +1094,7 @@ impl PoolProfiler {
     /// This function returns an error if:
     /// - Pool is not initialized.
     pub fn process_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
-        self.check_if_initialized();
+        self.check_if_initialized(PoolEventKind::Collect)?;
 
         if self.check_if_already_processed(
             collect.block,
@@ -1069,13 +1123,13 @@ impl PoolProfiler {
             collect.transaction_index,
             collect.log_index,
         ));
+        self.last_processed_ts = Some(collect.ts_event);
         self.update_reporter_if_enabled(collect.block);
         self.update_liquidity_analytics();
 
         Ok(())
     }
 
-    // panics-doc-ok (transitive via check_if_initialized)
     /// Processes a flash loan event from historical data.
     ///
     /// # Errors
@@ -1083,12 +1137,8 @@ impl PoolProfiler {
     /// Returns an error if:
     /// - Pool has no active liquidity.
     /// - Fee growth arithmetic overflows.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the pool has not been initialized.
     pub fn process_flash(&mut self, flash: &PoolFlash) -> anyhow::Result<()> {
-        self.check_if_initialized();
+        self.check_if_initialized(PoolEventKind::Flash)?;
 
         if self.check_if_already_processed(flash.block, flash.transaction_index, flash.log_index) {
             return Ok(());
@@ -1103,6 +1153,7 @@ impl PoolProfiler {
             flash.transaction_index,
             flash.log_index,
         ));
+        self.last_processed_ts = Some(flash.ts_event);
         self.update_reporter_if_enabled(flash.block);
         self.update_liquidity_analytics();
 
@@ -1120,9 +1171,7 @@ impl PoolProfiler {
     ///
     /// # Panics
     ///
-    /// Panics if:
-    /// - Pool is not initialized
-    /// - Pool fee is not set
+    /// Panics if the pool fee has not been set.
     pub fn execute_flash(
         &mut self,
         sender: Address,
@@ -1131,7 +1180,7 @@ impl PoolProfiler {
         amount0: U256,
         amount1: U256,
     ) -> anyhow::Result<PoolFlash> {
-        self.check_if_initialized();
+        self.check_if_initialized(PoolEventKind::Flash)?;
         let fee_tier = self.pool.fee.expect("Pool fee should be initialized");
 
         // Calculate fees or paid0/paid1
@@ -1159,7 +1208,8 @@ impl PoolProfiler {
             block.transaction_hash,
             block.transaction_index,
             block.log_index,
-            None,
+            self.pool.ts_init, // ts_event (simulated; pool init time)
+            self.pool.ts_init, // ts_init
             sender,
             recipient,
             amount0,
@@ -1256,6 +1306,17 @@ impl PoolProfiler {
             }
         }
 
+        // Pre-validate so an over/underflow error returns before mutating tick map
+        // or position state.
+        let new_active_liquidity = if tick_lower <= current_tick && current_tick < tick_upper {
+            Some(try_liquidity_math_add(
+                self.tick_map.liquidity,
+                liquidity_delta,
+            )?)
+        } else {
+            None
+        };
+
         // Update tickmaps.
         let flipped_lower = self.tick_map.update(
             tick_lower,
@@ -1285,9 +1346,8 @@ impl PoolProfiler {
         position.update_fees(fee_growth_inside_0, fee_growth_inside_1);
         position.update_amounts(liquidity_delta, amount0, amount1);
 
-        // Update active liquidity if this position spans the current tick
-        if tick_lower <= current_tick && current_tick < tick_upper {
-            self.tick_map.liquidity = liquidity_math_add(self.tick_map.liquidity, liquidity_delta);
+        if let Some(active_liquidity) = new_active_liquidity {
+            self.tick_map.liquidity = active_liquidity;
         }
 
         // Clear the ticks if they are flipped and burned
@@ -1477,6 +1537,7 @@ impl PoolProfiler {
 
         // Set last processed event
         self.last_processed_event = Some(snapshot.block_position);
+        self.last_processed_ts = Some(snapshot.ts_event);
 
         // Mark as initialized
         self.is_initialized = true;
@@ -1623,6 +1684,8 @@ impl PoolProfiler {
             self.last_processed_event
                 .clone()
                 .expect("No events processed yet"),
+            self.last_processed_ts.unwrap_or(self.pool.ts_init), // ts_event (last processed event)
+            self.last_processed_ts.unwrap_or(self.pool.ts_init), // ts_init
         )
     }
 

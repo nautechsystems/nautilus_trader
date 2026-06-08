@@ -48,10 +48,10 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 
 
 # HIP-4 outcome targeted exec tester. The BTC daily binary
-# `+{10*outcome+side}.HYPERLIQUID` is the venue's most active outcome market
-# and settles each day at 06:00 UTC. Outcomes are fully-collateralized in
-# [0, 1]: the maximum loss per contract on the Yes side is the limit price
-# paid.
+# `{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID` is the venue's most active
+# outcome market and settles each day at 06:00 UTC. Outcomes are
+# fully-collateralized in [0, 1]: the maximum loss per contract on the Yes
+# side is the limit price paid.
 #
 # The outcome universe cycles: the index in `outcomeMeta` advances with each
 # new settlement. The default below points at the current BTC daily at the
@@ -73,12 +73,11 @@ testnet = False  # Set to True for testnet, False for mainnet
 outcome_index = 25  # Outcome index from outcomeMeta
 outcome_side = 0  # 0 = Yes, 1 = No
 
-# HIP-4 encoding: 10 * outcome + side
-encoding = 10 * outcome_index + outcome_side
-symbol = f"+{encoding}"
+side_label = "YES" if outcome_side == 0 else "NO"
+symbol = f"{outcome_index}-{side_label}-OUTCOME"
 instrument_id = InstrumentId.from_str(f"{symbol}.{HYPERLIQUID}")
 
-# Default sized for the BTC daily Yes side (`+50`). Notional must clear the
+# Default sized for the BTC daily Yes side. Notional must clear the
 # venue-enforced 10 USDH minimum after `tob_offset_ticks` shifts the limit
 # below the bid; sizing for ~3x the minimum at the prevailing mid leaves
 # headroom for intraday drift (a 0.02 mid with the 5-tick offset lands at

@@ -38,7 +38,7 @@ pub(crate) struct Indicators {
 
 impl Indicators {
     /// Checks if all registered indicators are initialized.
-    pub fn is_initialized(&self) -> bool {
+    pub(crate) fn is_initialized(&self) -> bool {
         if self.indicators.is_empty() {
             return false;
         }
@@ -49,7 +49,7 @@ impl Indicators {
     }
 
     /// Register an indicator to receive quote ticks for the given instrument ID.
-    pub fn register_indicator_for_quotes(
+    pub(crate) fn register_indicator_for_quotes(
         &mut self,
         instrument_id: InstrumentId,
         indicator: Arc<dyn Indicator>,
@@ -71,7 +71,7 @@ impl Indicators {
     }
 
     /// Register an indicator to receive trade ticks for the given instrument ID.
-    pub fn register_indicator_for_trades(
+    pub(crate) fn register_indicator_for_trades(
         &mut self,
         instrument_id: InstrumentId,
         indicator: Arc<dyn Indicator>,
@@ -93,7 +93,7 @@ impl Indicators {
     }
 
     /// Register an indicator to receive bar data for the given bar type.
-    pub fn register_indicator_for_bars(
+    pub(crate) fn register_indicator_for_bars(
         &mut self,
         bar_type: BarType,
         indicator: Arc<dyn Indicator>,

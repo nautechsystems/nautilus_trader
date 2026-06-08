@@ -1,13 +1,30 @@
 [package]
 name = "nautilus-trader"
+readme = "README.md"
 rust-version.workspace = true
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Core crates for the Nautilus trading engine"
+description = "Container crate for core NautilusTrader APIs"
+categories.workspace = true
+keywords.workspace = true
 documentation.workspace = true
-publish = false # Do not publish to crates.io
+repository.workspace = true
+homepage.workspace = true
+publish = false # First crates.io publish is manual before Trusted Publishing
+
+[lints]
+workspace = true
 
 [lib]
 path = "lib.rs"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
+nautilus-model = { workspace = true, features = ["stubs"] }

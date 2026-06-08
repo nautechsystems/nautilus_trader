@@ -33,8 +33,7 @@ use std::sync::Arc;
 use nautilus_common::messages::ExecutionEvent;
 use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_hyperliquid::websocket::dispatch::{
-    DispatchOutcome, OrderIdentity, WsDispatchState, dispatch_fill_report,
-    dispatch_order_status_report,
+    DispatchOutcome, OrderIdentity, WsDispatchState, dispatch_order_event, dispatch_order_fill,
 };
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
@@ -189,7 +188,7 @@ fn test_dispatch_accepted_tracked_emits_order_accepted() {
         Some("56730.0"),
         "0.00020",
     );
-    let outcome = dispatch_order_status_report(&report, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_event(&report, &state, &emitter, UnixNanos::default());
 
     assert_eq!(outcome, DispatchOutcome::Tracked);
     let events = drain_events(&mut rx);
@@ -212,7 +211,7 @@ fn test_dispatch_accepted_external_falls_back() {
         Some("56730.0"),
         "0.00020",
     );
-    let outcome = dispatch_order_status_report(&report, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_event(&report, &state, &emitter, UnixNanos::default());
 
     assert_eq!(outcome, DispatchOutcome::External);
     let events = drain_events(&mut rx);
@@ -234,7 +233,7 @@ fn test_dispatch_canceled_tracked_synthesizes_accepted_then_canceled() {
         Some("56730.0"),
         "0.00020",
     );
-    let outcome = dispatch_order_status_report(&report, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_event(&report, &state, &emitter, UnixNanos::default());
 
     assert_eq!(outcome, DispatchOutcome::Tracked);
     let events = drain_events(&mut rx);
@@ -258,7 +257,7 @@ fn test_dispatch_expired_tracked_synthesizes_accepted_then_expired() {
         Some("56730.0"),
         "0.00020",
     );
-    dispatch_order_status_report(&report, &state, &emitter, UnixNanos::default());
+    dispatch_order_event(&report, &state, &emitter, UnixNanos::default());
 
     let events = drain_events(&mut rx);
     assert_event_types(&events, &["Accepted", "Expired"]);
@@ -280,7 +279,7 @@ fn test_dispatch_rejected_tracked_emits_rejected_and_cleans_up() {
         "0.00020",
     );
     report = report.with_cancel_reason("Insufficient margin".to_string());
-    dispatch_order_status_report(&report, &state, &emitter, UnixNanos::default());
+    dispatch_order_event(&report, &state, &emitter, UnixNanos::default());
 
     let events = drain_events(&mut rx);
     assert_event_types(&events, &["Rejected"]);
@@ -311,7 +310,7 @@ fn test_dispatch_triggered_per_order_type(
     );
     report = report.with_trigger_price(Price::from("56700.0"));
     report.trigger_type = Some(TriggerType::LastPrice);
-    dispatch_order_status_report(&report, &state, &emitter, UnixNanos::default());
+    dispatch_order_event(&report, &state, &emitter, UnixNanos::default());
 
     let events = drain_events(&mut rx);
     assert_event_types(&events, expected);
@@ -325,7 +324,7 @@ fn test_dispatch_fill_tracked_synthesizes_accepted_then_filled() {
     state.register_identity(cid, identity(OrderType::Limit));
 
     let fill = make_fill_report(Some("O-007"), "v-700", "trade-1", "0.00020", "56730.0");
-    let outcome = dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_fill(&fill, &state, &emitter, UnixNanos::default());
 
     assert_eq!(outcome, DispatchOutcome::Tracked);
     let events = drain_events(&mut rx);
@@ -358,8 +357,8 @@ fn test_dispatch_fill_tracked_partial_then_terminal() {
     let partial = make_fill_report(Some("O-008"), "v-800", "t-p1", "0.00010", "56730.0");
     let remainder = make_fill_report(Some("O-008"), "v-800", "t-p2", "0.00010", "56730.0");
 
-    dispatch_fill_report(&partial, &state, &emitter, UnixNanos::default());
-    dispatch_fill_report(&remainder, &state, &emitter, UnixNanos::default());
+    dispatch_order_fill(&partial, &state, &emitter, UnixNanos::default());
+    dispatch_order_fill(&remainder, &state, &emitter, UnixNanos::default());
 
     let events = drain_events(&mut rx);
     assert_event_types(&events, &["Accepted", "Filled", "Filled"]);
@@ -383,9 +382,9 @@ fn test_dispatch_fill_duplicate_trade_id_is_skipped() {
 
     let fill = make_fill_report(Some("O-009"), "v-900", "trade-dup", "0.00010", "56730.0");
 
-    dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
+    dispatch_order_fill(&fill, &state, &emitter, UnixNanos::default());
     // Second dispatch of same trade_id is deduped.
-    let outcome = dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_fill(&fill, &state, &emitter, UnixNanos::default());
     assert_eq!(outcome, DispatchOutcome::Tracked);
 
     let events = drain_events(&mut rx);
@@ -398,7 +397,7 @@ fn test_dispatch_fill_external_falls_back() {
     let state = Arc::new(WsDispatchState::new());
 
     let fill = make_fill_report(None, "v-ext", "trade-ext", "0.00020", "56730.0");
-    let outcome = dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_fill(&fill, &state, &emitter, UnixNanos::default());
     assert_eq!(outcome, DispatchOutcome::External);
     assert!(drain_events(&mut rx).is_empty());
 }
@@ -418,7 +417,7 @@ fn test_dispatch_stale_replay_after_terminal_is_skipped() {
         Some("56730.0"),
         "0.00020",
     );
-    let outcome = dispatch_order_status_report(&report, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_event(&report, &state, &emitter, UnixNanos::default());
     assert_eq!(outcome, DispatchOutcome::Skip);
     assert!(drain_events(&mut rx).is_empty());
 }
@@ -441,7 +440,7 @@ fn test_dispatch_fill_for_order_in_filled_orders_is_skipped() {
         "0.00020",
         "56730.0",
     );
-    let outcome = dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_fill(&fill, &state, &emitter, UnixNanos::default());
 
     assert_eq!(outcome, DispatchOutcome::Skip);
     assert!(drain_events(&mut rx).is_empty());
@@ -476,9 +475,9 @@ fn test_cancel_replace_emits_updated_not_canceled() {
         "0.00020",
     );
 
-    dispatch_order_status_report(&accepted_new, &state, &emitter, UnixNanos::default());
+    dispatch_order_event(&accepted_new, &state, &emitter, UnixNanos::default());
     let canceled_outcome =
-        dispatch_order_status_report(&canceled_old, &state, &emitter, UnixNanos::default());
+        dispatch_order_event(&canceled_old, &state, &emitter, UnixNanos::default());
 
     assert_eq!(canceled_outcome, DispatchOutcome::Skip);
 
@@ -552,8 +551,7 @@ fn test_cancel_replace_price_sources(
         report_price,
         "0.00020",
     );
-    let outcome =
-        dispatch_order_status_report(&accepted_new, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_event(&accepted_new, &state, &emitter, UnixNanos::default());
 
     let events = drain_events(&mut rx);
 
@@ -604,7 +602,7 @@ fn test_cancel_replace_recovers_after_timed_out_modify() {
         Some("53893.0"),
         "0.00020",
     );
-    dispatch_order_status_report(&accepted_new, &state, &emitter, UnixNanos::default());
+    dispatch_order_event(&accepted_new, &state, &emitter, UnixNanos::default());
 
     let events = drain_events(&mut rx);
     assert_event_types(&events, &["Updated"]);
@@ -644,7 +642,7 @@ fn test_cancel_before_accept_is_suppressed() {
         "0.00020",
     );
     let cancel_outcome =
-        dispatch_order_status_report(&canceled_old, &state, &emitter, UnixNanos::default());
+        dispatch_order_event(&canceled_old, &state, &emitter, UnixNanos::default());
     assert_eq!(cancel_outcome, DispatchOutcome::Skip);
 
     let accepted_new = make_status_report(
@@ -654,7 +652,7 @@ fn test_cancel_before_accept_is_suppressed() {
         Some("53893.0"),
         "0.00020",
     );
-    dispatch_order_status_report(&accepted_new, &state, &emitter, UnixNanos::default());
+    dispatch_order_event(&accepted_new, &state, &emitter, UnixNanos::default());
 
     let events = drain_events(&mut rx);
     assert_event_types(&events, &["Updated"]);
@@ -687,7 +685,7 @@ fn test_cancel_after_failed_modify_still_emits_canceled() {
         Some("56730.0"),
         "0.00020",
     );
-    dispatch_order_status_report(&canceled, &state, &emitter, UnixNanos::default());
+    dispatch_order_event(&canceled, &state, &emitter, UnixNanos::default());
 
     let events = drain_events(&mut rx);
     assert_event_types(&events, &["Canceled"]);
@@ -710,7 +708,7 @@ fn test_partial_fill_status_emits_nothing_from_status_path() {
         Some("56730.0"),
         "0.00020",
     );
-    let outcome = dispatch_order_status_report(&report, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_event(&report, &state, &emitter, UnixNanos::default());
     assert_eq!(outcome, DispatchOutcome::Tracked);
     assert!(drain_events(&mut rx).is_empty());
 }
@@ -731,7 +729,7 @@ fn test_filled_status_marker_is_noop_without_fill() {
         Some("56730.0"),
         "0.00020",
     );
-    let outcome = dispatch_order_status_report(&report, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_event(&report, &state, &emitter, UnixNanos::default());
     assert_eq!(outcome, DispatchOutcome::Tracked);
 
     // No events from the status-only marker; the fill side emits the actual
@@ -761,11 +759,11 @@ fn test_filled_status_marker_then_fill_emits_filled() {
         Some("56730.0"),
         "0.00020",
     );
-    dispatch_order_status_report(&status, &state, &emitter, UnixNanos::default());
+    dispatch_order_event(&status, &state, &emitter, UnixNanos::default());
 
     // Status-only marker arrived first; the real fill must still be routed.
     let fill = make_fill_report(Some("O-012a"), "v-1210", "trade-012a", "0.00020", "56730.0");
-    let outcome = dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_fill(&fill, &state, &emitter, UnixNanos::default());
     assert_eq!(outcome, DispatchOutcome::Tracked);
 
     let events = drain_events(&mut rx);
@@ -795,8 +793,8 @@ fn test_accepted_dedup_skips_second_accepted() {
         Some("56730.0"),
         "0.00020",
     );
-    dispatch_order_status_report(&first, &state, &emitter, UnixNanos::default());
-    dispatch_order_status_report(&second, &state, &emitter, UnixNanos::default());
+    dispatch_order_event(&first, &state, &emitter, UnixNanos::default());
+    dispatch_order_event(&second, &state, &emitter, UnixNanos::default());
 
     let events = drain_events(&mut rx);
     assert_event_types(&events, &["Accepted"]);
@@ -814,7 +812,7 @@ fn test_report_without_client_order_id_is_external() {
         Some("56730.0"),
         "0.00020",
     );
-    let outcome = dispatch_order_status_report(&report, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_event(&report, &state, &emitter, UnixNanos::default());
     assert_eq!(outcome, DispatchOutcome::External);
     assert!(drain_events(&mut rx).is_empty());
 }
@@ -838,7 +836,7 @@ fn test_fill_during_pending_modify_is_buffered() {
     );
 
     let fill = make_fill_report(Some("O-FR-001"), "9001", "T-FR-1", "0.00020", "53893.0");
-    let outcome = dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_fill(&fill, &state, &emitter, UnixNanos::default());
 
     assert_eq!(outcome, DispatchOutcome::Tracked);
     assert!(drain_events(&mut rx).is_empty());
@@ -866,7 +864,7 @@ fn test_cancel_replace_accepted_drains_buffered_fill() {
     );
 
     let fill = make_fill_report(Some("O-FR-002"), "9101", "T-FR-2", "0.00020", "53893.0");
-    dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
+    dispatch_order_fill(&fill, &state, &emitter, UnixNanos::default());
     assert_eq!(state.buffered_fill_count(&cid), 1);
     assert!(drain_events(&mut rx).is_empty());
 
@@ -877,8 +875,7 @@ fn test_cancel_replace_accepted_drains_buffered_fill() {
         Some("53893.0"),
         "0.00020",
     );
-    let outcome =
-        dispatch_order_status_report(&accepted_new, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_event(&accepted_new, &state, &emitter, UnixNanos::default());
     assert_eq!(outcome, DispatchOutcome::Tracked);
 
     let events = drain_events(&mut rx);
@@ -946,8 +943,8 @@ fn test_cancel_replace_drains_multiple_buffered_fills_in_arrival_order() {
         "0.00010",
         "53850.0",
     );
-    dispatch_fill_report(&fill_a, &state, &emitter, UnixNanos::default());
-    dispatch_fill_report(&fill_b, &state, &emitter, UnixNanos::default());
+    dispatch_order_fill(&fill_a, &state, &emitter, UnixNanos::default());
+    dispatch_order_fill(&fill_b, &state, &emitter, UnixNanos::default());
 
     assert_eq!(state.buffered_fill_count(&cid), 2);
     assert!(drain_events(&mut rx).is_empty());
@@ -959,7 +956,7 @@ fn test_cancel_replace_drains_multiple_buffered_fills_in_arrival_order() {
         Some("53850.0"),
         "0.00020",
     );
-    dispatch_order_status_report(&accepted_new, &state, &emitter, UnixNanos::default());
+    dispatch_order_event(&accepted_new, &state, &emitter, UnixNanos::default());
 
     let events = drain_events(&mut rx);
     // Updated then both Filled in arrival order. A reversed drain or
@@ -1003,7 +1000,7 @@ fn test_fill_on_cached_voi_passes_through_during_pending_modify() {
     );
 
     let fill = make_fill_report(Some("O-FR-003"), "9200", "T-FR-3", "0.00020", "56730.0");
-    let outcome = dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_fill(&fill, &state, &emitter, UnixNanos::default());
     assert_eq!(outcome, DispatchOutcome::Tracked);
 
     let events = drain_events(&mut rx);
@@ -1037,7 +1034,7 @@ fn test_stale_old_leg_fill_after_cancel_replace_falls_through() {
         "0.00020",
         "56730.0",
     );
-    let outcome = dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
+    let outcome = dispatch_order_fill(&fill, &state, &emitter, UnixNanos::default());
 
     assert_eq!(outcome, DispatchOutcome::Tracked);
     assert_eq!(

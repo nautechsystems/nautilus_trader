@@ -976,23 +976,79 @@ impl Display for Position {
     }
 }
 
+/// Replays position legs onto a hypothetical NETTING position in `ts_opened`
+/// order, returning `(net_signed_qty, net_avg_px_open)`.
+///
+/// Each leg is `(signed_qty, avg_px_open, ts_opened_ns)`. Rules follow
+/// [`Position::apply`]:
+/// - Same-side legs produce a quantity-weighted average open price.
+/// - Opposite-side legs partial-close at the existing average.
+/// - A leg that crosses zero makes the residual take that leg's price.
+///
+/// Zero-quantity legs are skipped. Sort is stable on `ts_opened`; the caller
+/// orders ties (e.g. by `position_id`).
+#[must_use]
+pub fn fold_net_position(legs: &[(Decimal, Decimal, u64)]) -> (Decimal, Decimal) {
+    let mut sorted: Vec<&(Decimal, Decimal, u64)> =
+        legs.iter().filter(|(qty, _, _)| !qty.is_zero()).collect();
+    sorted.sort_by_key(|(_, _, ts_opened)| *ts_opened);
+
+    let mut net_signed_qty = Decimal::ZERO;
+    let mut net_avg_px = Decimal::ZERO;
+
+    for (p_qty, p_px, _) in sorted {
+        let p_qty = *p_qty;
+        let p_px = *p_px;
+
+        if net_signed_qty.is_zero() {
+            net_signed_qty = p_qty;
+            net_avg_px = p_px;
+            continue;
+        }
+
+        let same_side = net_signed_qty.is_sign_negative() == p_qty.is_sign_negative();
+        let new_net = net_signed_qty + p_qty;
+
+        if same_side {
+            let total_abs = net_signed_qty.abs() + p_qty.abs();
+            net_avg_px = (net_signed_qty.abs() * net_avg_px + p_qty.abs() * p_px) / total_abs;
+            net_signed_qty = new_net;
+        } else if new_net.is_zero()
+            || new_net.is_sign_negative() == net_signed_qty.is_sign_negative()
+        {
+            net_signed_qty = new_net;
+            if new_net.is_zero() {
+                net_avg_px = Decimal::ZERO;
+            }
+        } else {
+            net_signed_qty = new_net;
+            net_avg_px = p_px;
+        }
+    }
+
+    (net_signed_qty, net_avg_px)
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
+    use ahash::AHashSet;
     use nautilus_core::UnixNanos;
+    use proptest::prelude::*;
     use rstest::rstest;
-    use rust_decimal::Decimal;
+    use rust_decimal::{Decimal, prelude::ToPrimitive};
+    use rust_decimal_macros::dec;
 
     use crate::{
-        enums::{LiquiditySide, OrderSide, OrderType, PositionAdjustmentType, PositionSide},
+        enums::{OrderSide, OrderType, PositionAdjustmentType, PositionSide},
         events::{OrderEventAny, OrderFilled, PositionAdjusted, order::spec::OrderFilledSpec},
         identifiers::{
             AccountId, ClientOrderId, PositionId, StrategyId, TradeId, VenueOrderId, stubs::uuid4,
         },
         instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, stubs::*},
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
-        position::Position,
+        position::{Position, fold_net_position},
         stubs::*,
         types::{Currency, Money, Price, Quantity},
     };
@@ -1330,27 +1386,22 @@ mod tests {
         );
         let mut position = Position::new(&audusd_sim, fill.into());
 
-        let fill2 = OrderFilled::new(
-            order.trader_id(),
-            StrategyId::new("S-001"),
-            order.instrument_id(),
-            order.client_order_id(),
-            VenueOrderId::from("2"),
-            order.account_id().unwrap_or(AccountId::new("SIM-001")),
-            TradeId::new("2"),
-            OrderSide::Sell,
-            OrderType::Market,
-            order.quantity(),
-            Price::from("1.00011"),
-            audusd_sim.quote_currency(),
-            LiquiditySide::Taker,
-            uuid4(),
-            2_000_000_000.into(),
-            0.into(),
-            false,
-            Some(PositionId::new("T1")),
-            Some(Money::from("0.0 USD")),
-        );
+        let fill2 = OrderFilledSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(StrategyId::new("S-001"))
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::from("2"))
+            .account_id(order.account_id().unwrap_or(AccountId::new("SIM-001")))
+            .trade_id(TradeId::new("2"))
+            .order_side(OrderSide::Sell)
+            .last_qty(order.quantity())
+            .last_px(Price::from("1.00011"))
+            .currency(audusd_sim.quote_currency())
+            .ts_event(2_000_000_000.into())
+            .position_id(PositionId::new("T1"))
+            .commission(Money::from("0.0 USD"))
+            .build();
         position.apply(&fill2);
         let last = Price::from_str("1.0005").unwrap();
 
@@ -1763,51 +1814,40 @@ mod tests {
         );
         let mut position = Position::new(&audusd_sim, fill1.into());
 
-        let fill2 = OrderFilled::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            VenueOrderId::from("2"),
-            order.account_id().unwrap_or(AccountId::new("SIM-001")),
-            TradeId::from("2"),
-            OrderSide::Sell,
-            OrderType::Market,
-            order.quantity(),
-            Price::from("1.00011"),
-            audusd_sim.quote_currency(),
-            LiquiditySide::Taker,
-            uuid4(),
-            UnixNanos::from(2_000_000_000),
-            UnixNanos::default(),
-            false,
-            Some(PositionId::from("P-123456")),
-            Some(Money::from("0 USD")),
-        );
+        let fill2 = OrderFilledSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::from("2"))
+            .account_id(order.account_id().unwrap_or(AccountId::new("SIM-001")))
+            .trade_id(TradeId::from("2"))
+            .order_side(OrderSide::Sell)
+            .last_qty(order.quantity())
+            .last_px(Price::from("1.00011"))
+            .currency(audusd_sim.quote_currency())
+            .ts_event(UnixNanos::from(2_000_000_000))
+            .position_id(PositionId::from("P-123456"))
+            .commission(Money::from("0 USD"))
+            .build();
 
         position.apply(&fill2);
 
-        let fill3 = OrderFilled::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            VenueOrderId::from("2"),
-            order.account_id().unwrap_or(AccountId::new("SIM-001")),
-            TradeId::from("3"),
-            OrderSide::Buy,
-            OrderType::Market,
-            order.quantity(),
-            Price::from("1.00012"),
-            audusd_sim.quote_currency(),
-            LiquiditySide::Taker,
-            uuid4(),
-            UnixNanos::from(3_000_000_000),
-            UnixNanos::default(),
-            false,
-            Some(PositionId::from("P-123456")),
-            Some(Money::from("0 USD")),
-        );
+        let fill3 = OrderFilledSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::from("2"))
+            .account_id(order.account_id().unwrap_or(AccountId::new("SIM-001")))
+            .trade_id(TradeId::from("3"))
+            .last_qty(order.quantity())
+            .last_px(Price::from("1.00012"))
+            .currency(audusd_sim.quote_currency())
+            .ts_event(UnixNanos::from(3_000_000_000))
+            .position_id(PositionId::from("P-123456"))
+            .commission(Money::from("0 USD"))
+            .build();
 
         position.apply(&fill3);
 
@@ -4196,5 +4236,281 @@ mod tests {
                 Money::from("0.0001 BTC"),
             ]
         );
+    }
+
+    #[rstest]
+    fn test_fold_net_position_empty() {
+        let (net_qty, net_px) = fold_net_position(&[]);
+        assert_eq!(net_qty, Decimal::ZERO);
+        assert_eq!(net_px, Decimal::ZERO);
+    }
+
+    #[rstest]
+    fn test_fold_net_position_single_long() {
+        let legs = [(dec!(100), dec!(1.5), 1u64)];
+        let (net_qty, net_px) = fold_net_position(&legs);
+        assert_eq!(net_qty, dec!(100));
+        assert_eq!(net_px, dec!(1.5));
+    }
+
+    #[rstest]
+    fn test_fold_net_position_single_short() {
+        let legs = [(dec!(-100), dec!(1.5), 1u64)];
+        let (net_qty, net_px) = fold_net_position(&legs);
+        assert_eq!(net_qty, dec!(-100));
+        assert_eq!(net_px, dec!(1.5));
+    }
+
+    #[rstest]
+    fn test_fold_net_position_same_side_weighted_average() {
+        // Long 100 @ 1.00, long 200 @ 0.50 -> net 300 @ 0.6667 (rounded weighted avg).
+        let legs = [(dec!(100), dec!(1.0), 1u64), (dec!(200), dec!(0.5), 2u64)];
+        let (net_qty, net_px) = fold_net_position(&legs);
+        assert_eq!(net_qty, dec!(300));
+        // (100 * 1.0 + 200 * 0.5) / 300 = 200/300 = 0.6666...
+        assert_eq!(net_px, dec!(200) / dec!(300));
+    }
+
+    #[rstest]
+    fn test_fold_net_position_partial_close_preserves_avg() {
+        // Long 300 @ 0.80, short 100 @ 1.00 -> net long 200 @ 0.80 (short closes part of long).
+        let legs = [
+            (dec!(300), dec!(0.80), 1u64),
+            (dec!(-100), dec!(1.00), 2u64),
+        ];
+        let (net_qty, net_px) = fold_net_position(&legs);
+        assert_eq!(net_qty, dec!(200));
+        assert_eq!(net_px, dec!(0.80));
+    }
+
+    #[rstest]
+    fn test_fold_net_position_full_close() {
+        let legs = [(dec!(100), dec!(1.0), 1u64), (dec!(-100), dec!(2.0), 2u64)];
+        let (net_qty, net_px) = fold_net_position(&legs);
+        assert_eq!(net_qty, Decimal::ZERO);
+        assert_eq!(net_px, Decimal::ZERO);
+    }
+
+    #[rstest]
+    fn test_fold_net_position_single_flip_uses_flipping_price() {
+        // L100@1, S50@2 partial-closes to L50@1, S100@3 flips to S50 @ 3
+        let legs = [
+            (dec!(100), dec!(1.00), 1u64),
+            (dec!(-50), dec!(2.00), 2u64),
+            (dec!(-100), dec!(3.00), 3u64),
+        ];
+        let (net_qty, net_px) = fold_net_position(&legs);
+        assert_eq!(net_qty, dec!(-50));
+        assert_eq!(net_px, dec!(3.00));
+    }
+
+    #[rstest]
+    fn test_fold_net_position_double_flip() {
+        // L50, S100 flips to S50@2, B100 flips to L50@3
+        let legs = [
+            (dec!(50), dec!(1.00), 1u64),
+            (dec!(-100), dec!(2.00), 2u64),
+            (dec!(100), dec!(3.00), 3u64),
+        ];
+        let (net_qty, net_px) = fold_net_position(&legs);
+        assert_eq!(net_qty, dec!(50));
+        assert_eq!(net_px, dec!(3.00));
+    }
+
+    #[rstest]
+    fn test_fold_net_position_zero_quantity_legs_skipped() {
+        // Zero-qty legs are filtered out (closed positions have signed_qty == 0)
+        let legs = [
+            (dec!(100), dec!(1.0), 1u64),
+            (Decimal::ZERO, dec!(99.0), 2u64),
+            (dec!(50), dec!(2.0), 3u64),
+        ];
+        let (net_qty, net_px) = fold_net_position(&legs);
+        assert_eq!(net_qty, dec!(150));
+        // (100 * 1.0 + 50 * 2.0) / 150 = 200/150 = 1.333
+        assert_eq!(net_px, dec!(200) / dec!(150));
+    }
+
+    #[rstest]
+    fn test_fold_net_position_stable_sort_preserves_input_order_for_equal_ts() {
+        // Caller owns tie-breaking; this pins the input-order contract for equal-ts legs
+        let leg_a = (dec!(100), dec!(1.00), 1u64);
+        let leg_b = (dec!(-100), dec!(2.00), 1u64);
+
+        let ab = [leg_a, leg_b];
+        let ba = [leg_b, leg_a];
+
+        // a-then-b: L100@1, S100@2 -> net zero
+        assert_eq!(fold_net_position(&ab), (Decimal::ZERO, Decimal::ZERO));
+        // b-then-a: S100@2, B100@1 -> net zero
+        assert_eq!(fold_net_position(&ba), (Decimal::ZERO, Decimal::ZERO));
+
+        // Same-ts legs that do NOT fully cancel: input order picks the surviving avg
+        let leg_c = (dec!(150), dec!(1.00), 1u64);
+        let leg_d = (dec!(-100), dec!(2.00), 1u64);
+        let cd = [leg_c, leg_d];
+        let dc = [leg_d, leg_c];
+        // c-then-d: L150@1, S100@2 -> long 50 @ 1
+        assert_eq!(fold_net_position(&cd), (dec!(50), dec!(1.00)));
+        // d-then-c: S100@2, B150@1 -> flip to long, residual @ 1
+        assert_eq!(fold_net_position(&dc), (dec!(50), dec!(1.00)));
+    }
+
+    #[rstest]
+    fn test_fold_net_position_close_then_reopen() {
+        // A leg after a full close opens fresh (new net, new avg)
+        let legs = [
+            (dec!(100), dec!(1.00), 1u64),
+            (dec!(-100), dec!(1.50), 2u64),
+            (dec!(50), dec!(3.00), 3u64),
+        ];
+        let (net_qty, net_px) = fold_net_position(&legs);
+        assert_eq!(net_qty, dec!(50));
+        assert_eq!(net_px, dec!(3.00));
+    }
+
+    #[rstest]
+    fn test_fold_net_position_orders_by_ts_opened() {
+        // Sorted vs shuffled input must fold to the same result.
+        let in_order = [
+            (dec!(100), dec!(1.00), 1u64),
+            (dec!(-50), dec!(2.00), 2u64),
+            (dec!(-100), dec!(3.00), 3u64),
+        ];
+        let shuffled = [
+            (dec!(-100), dec!(3.00), 3u64),
+            (dec!(100), dec!(1.00), 1u64),
+            (dec!(-50), dec!(2.00), 2u64),
+        ];
+        assert_eq!(fold_net_position(&in_order), fold_net_position(&shuffled));
+    }
+
+    // Build a NETTING-mode reference Position by applying fills sorted by ts_opened
+    // (the same order fold_net_position uses). Returns (signed_qty, avg_px_open) as Decimals.
+    fn netting_reference(
+        instrument: &InstrumentAny,
+        fills: &[(OrderSide, u32, u32, u64)],
+    ) -> (Decimal, Decimal) {
+        let mut sorted_fills = fills.to_vec();
+        sorted_fills.sort_by_key(|(_, _, _, ts)| *ts);
+
+        let mut position: Option<Position> = None;
+
+        for (idx, &(side, qty, px, ts)) in sorted_fills.iter().enumerate() {
+            let order = OrderTestBuilder::new(OrderType::Market)
+                .instrument_id(instrument.id())
+                .side(side)
+                .quantity(Quantity::from(qty))
+                .build();
+            let fill = TestOrderEventStubs::filled(
+                &order,
+                instrument,
+                Some(TradeId::new(format!("T{idx}").as_str())),
+                Some(PositionId::new("P-NET")),
+                Some(Price::from(px.to_string().as_str())),
+                None,
+                None,
+                Some(Money::new(0.0, instrument.quote_currency())),
+                Some(UnixNanos::from(ts)),
+                None,
+            );
+            let event: OrderFilled = fill.into();
+            if let Some(p) = position.as_mut() {
+                p.apply(&event);
+            } else {
+                position = Some(Position::new(instrument, event));
+            }
+        }
+        let p = position.expect("at least one fill");
+        let signed = Decimal::try_from(p.signed_qty).unwrap_or(Decimal::ZERO);
+        let px = Decimal::try_from(p.avg_px_open).unwrap_or(Decimal::ZERO);
+        (signed, px)
+    }
+
+    // Build the HEDGING leg list (one leg per fill) as Decimal tuples.
+    fn hedging_legs(fills: &[(OrderSide, u32, u32, u64)]) -> Vec<(Decimal, Decimal, u64)> {
+        fills
+            .iter()
+            .map(|&(side, qty, px, ts)| {
+                let signed = if side == OrderSide::Buy {
+                    Decimal::from(qty)
+                } else {
+                    -Decimal::from(qty)
+                };
+                (signed, Decimal::from(px), ts)
+            })
+            .collect()
+    }
+
+    proptest! {
+        // For any fill sequence that does not fully close mid-stream, fold_net_position
+        // produces the same (signed_qty, avg_px_open) as applying the same fills in order
+        // to a single NETTING-mode Position. Sequences that pass through zero mid-stream are
+        // filtered out because Position::apply does not reset avg_px_open on the next fill
+        // after a close (production fills are pre-split before reaching that path).
+        #[rstest]
+        fn prop_fold_matches_netting_replay(
+            fills in proptest::collection::vec(
+                (
+                    prop_oneof![Just(OrderSide::Buy), Just(OrderSide::Sell)],
+                    1u32..1_000u32,
+                    1u32..100u32,
+                    0u64..1_000_000u64,
+                ),
+                1..6,
+            )
+        ) {
+            // Filter sequences with duplicate ts_opened: equal-ts ties resolve to stable
+            // input order, but the proptest generator does not preserve ties meaningfully.
+            let mut seen_ts: AHashSet<u64> = AHashSet::new();
+            for &(_, _, _, ts) in &fills {
+                if !seen_ts.insert(ts) {
+                    prop_assume!(false);
+                }
+            }
+
+            // Filter sequences that fully close mid-stream on the sorted (ts_opened) order.
+            // Position::apply on a closed position does not reset avg_px_open on the next
+            // re-open fill (production fills are pre-split, so the path is not exercised).
+            let mut sorted_fills = fills.clone();
+            sorted_fills.sort_by_key(|(_, _, _, ts)| *ts);
+            let mut running: i64 = 0;
+            let mut zero_mid = false;
+
+            for (idx, &(side, qty, _, _)) in sorted_fills.iter().enumerate() {
+                let qty_i64 = i64::from(qty);
+                let signed: i64 = if side == OrderSide::Buy {
+                    qty_i64
+                } else {
+                    -qty_i64
+                };
+                running += signed;
+                if idx + 1 < sorted_fills.len() && running == 0 {
+                    zero_mid = true;
+                    break;
+                }
+            }
+            prop_assume!(!zero_mid);
+
+            let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+            let (ref_qty, ref_px) = netting_reference(&instrument, &fills);
+            let legs = hedging_legs(&fills);
+            let (fold_qty, fold_px) = fold_net_position(&legs);
+
+            prop_assert_eq!(fold_qty, ref_qty);
+
+            // avg_px_open is only meaningful when the position is non-flat. Compare via
+            // f64 round-trip since the reference goes through Position::apply f64 arithmetic;
+            // fold's full-precision Decimal is more accurate but not exactly equal.
+            if !ref_qty.is_zero() {
+                let fold_px_f64 = fold_px.to_f64().unwrap_or(0.0);
+                let ref_px_f64 = ref_px.to_f64().unwrap_or(0.0);
+                let max_mag = fold_px_f64.abs().max(ref_px_f64.abs()).max(1.0);
+                prop_assert!(
+                    (fold_px_f64 - ref_px_f64).abs() < 1e-9 * max_mag,
+                    "fold_px {fold_px_f64} vs ref_px {ref_px_f64}",
+                );
+            }
+        }
     }
 }

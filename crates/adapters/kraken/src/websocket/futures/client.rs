@@ -49,7 +49,11 @@ use super::{
     },
 };
 use crate::{
-    common::{credential::KrakenCredential, parse::truncate_cl_ord_id},
+    common::{
+        consts::{KRAKEN_FUTURES_WS_SUBSCRIPTION_QUOTA, KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION},
+        credential::KrakenCredential,
+        parse::truncate_cl_ord_id,
+    },
     websocket::error::KrakenWsError,
 };
 
@@ -66,7 +70,7 @@ pub const KRAKEN_FUTURES_WS_TOPIC_DELIMITER: char = ':';
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.kraken")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
 )]
 pub struct KrakenFuturesWebSocketClient {
     url: String,
@@ -286,8 +290,13 @@ impl KrakenFuturesWebSocketClient {
             proxy_url: self.proxy_url.clone(),
         };
 
+        let keyed_quotas = vec![(
+            KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION[0].to_string(),
+            *KRAKEN_FUTURES_WS_SUBSCRIPTION_QUOTA,
+        )];
+
         let ws_client =
-            WebSocketClient::connect(ws_config, Some(raw_handler), None, None, vec![], None)
+            WebSocketClient::connect(ws_config, Some(raw_handler), None, None, keyed_quotas, None)
                 .await
                 .map_err(|e| KrakenWsError::ConnectionError(e.to_string()))?;
 

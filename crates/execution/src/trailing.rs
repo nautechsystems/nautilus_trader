@@ -33,14 +33,9 @@ use rust_decimal::{Decimal, prelude::*};
 ///
 /// # Errors
 /// Returns an error if:
-/// - the order type or trigger type is invalid.
-/// - the order does not carry a valid `TriggerType` or `TrailingOffsetType`.
-///
-/// # Panics
-/// - If the `trailing_offset_type` is `NoTrailingOffset` or the `trigger_type` is `NoTrigger`.
-/// - If the `trailing_offset` cannot be converted to a float.
-/// - If the `trigger_type` is not supported by this function.
-/// - If the `order_type` is not a trailing stop type.
+/// - the order type, trigger type, or trailing offset type is invalid.
+/// - the order lacks a required trigger, trailing offset, trailing offset type, or limit offset.
+/// - a trailing or limit offset cannot be converted to a float.
 pub fn trailing_stop_calculate(
     price_increment: Price,
     trigger_px: Option<Price>,
@@ -71,9 +66,15 @@ pub fn trailing_stop_calculate(
         None
     };
 
-    let trigger_type = order.trigger_type().unwrap();
-    let trailing_offset = order.trailing_offset().unwrap();
-    let trailing_offset_type = order.trailing_offset_type().unwrap();
+    let trigger_type = order
+        .trigger_type()
+        .ok_or_else(|| anyhow::anyhow!("Missing `TriggerType` for trailing stop calculation"))?;
+    let trailing_offset = order.trailing_offset().ok_or_else(|| {
+        anyhow::anyhow!("Missing `trailing_offset` for trailing stop calculation")
+    })?;
+    let trailing_offset_type = order.trailing_offset_type().ok_or_else(|| {
+        anyhow::anyhow!("Missing `TrailingOffsetType` for trailing stop calculation")
+    })?;
     anyhow::ensure!(
         trigger_type != TriggerType::NoTrigger,
         "Invalid `TriggerType::NoTrigger` for trailing stop calculation"
@@ -109,50 +110,40 @@ pub fn trailing_stop_calculate(
     };
     let better_limit = better_trigger;
 
-    let compute = |off: Decimal, basis: f64| -> Price {
-        Price::new(
-            match trailing_offset_type {
-                TrailingOffsetType::Price => off.to_f64().unwrap().mul_add(
-                    match order_side {
-                        OrderSideSpecified::Buy => 1.0,
-                        OrderSideSpecified::Sell => -1.0,
-                    },
-                    basis,
-                ),
-                TrailingOffsetType::BasisPoints => {
-                    let delta = basis * (off.to_f64().unwrap() / 10_000.0);
-                    delta.mul_add(
-                        match order_side {
-                            OrderSideSpecified::Buy => 1.0,
-                            OrderSideSpecified::Sell => -1.0,
-                        },
-                        basis,
-                    )
-                }
-                TrailingOffsetType::Ticks => {
-                    let delta = off.to_f64().unwrap() * price_increment.as_f64();
-                    delta.mul_add(
-                        match order_side {
-                            OrderSideSpecified::Buy => 1.0,
-                            OrderSideSpecified::Sell => -1.0,
-                        },
-                        basis,
-                    )
-                }
-                _ => unreachable!("checked above"),
-            },
-            price_increment.precision,
-        )
+    let compute = |off: Decimal, basis: f64, label: &str| -> anyhow::Result<Price> {
+        let off = decimal_to_f64(off, label)?;
+        let side_multiplier = match order_side {
+            OrderSideSpecified::Buy => 1.0,
+            OrderSideSpecified::Sell => -1.0,
+        };
+        let value = match trailing_offset_type {
+            TrailingOffsetType::Price => off.mul_add(side_multiplier, basis),
+            TrailingOffsetType::BasisPoints => {
+                let delta = basis * (off / 10_000.0);
+                delta.mul_add(side_multiplier, basis)
+            }
+            TrailingOffsetType::Ticks => {
+                let delta = off * price_increment.as_f64();
+                delta.mul_add(side_multiplier, basis)
+            }
+            _ => {
+                anyhow::bail!("`TrailingOffsetType` {trailing_offset_type} not currently supported")
+            }
+        };
+        Ok(Price::new(value, price_increment.precision))
     };
 
     match trigger_type {
         TriggerType::LastPrice | TriggerType::MarkPrice => {
             let last = last.ok_or(OrderError::InvalidStateTransition)?;
-            let cand_trigger = compute(trailing_offset, last.as_f64());
+            let cand_trigger = compute(trailing_offset, last.as_f64(), "trailing_offset")?;
             new_trigger_price = maybe_move(&mut trigger_price, cand_trigger, better_trigger);
 
             if order_type == OrderType::TrailingStopLimit {
-                let cand_limit = compute(order.limit_offset().unwrap(), last.as_f64());
+                let limit_offset = order.limit_offset().ok_or_else(|| {
+                    anyhow::anyhow!("Missing `limit_offset` for trailing stop limit calculation")
+                })?;
+                let cand_limit = compute(limit_offset, last.as_f64(), "limit_offset")?;
                 new_limit_price = maybe_move(&mut limit_price, cand_limit, better_limit);
             }
         }
@@ -165,24 +156,32 @@ pub fn trailing_stop_calculate(
                 OrderSideSpecified::Buy => ask.as_f64(),
                 OrderSideSpecified::Sell => bid.as_f64(),
             };
-            let cand_trigger = compute(trailing_offset, basis);
+            let cand_trigger = compute(trailing_offset, basis, "trailing_offset")?;
             new_trigger_price = maybe_move(&mut trigger_price, cand_trigger, better_trigger);
 
             if order_type == OrderType::TrailingStopLimit {
-                let cand_limit = compute(order.limit_offset().unwrap(), basis);
+                let limit_offset = order.limit_offset().ok_or_else(|| {
+                    anyhow::anyhow!("Missing `limit_offset` for trailing stop limit calculation")
+                })?;
+                let cand_limit = compute(limit_offset, basis, "limit_offset")?;
                 new_limit_price = maybe_move(&mut limit_price, cand_limit, better_limit);
             }
 
             if trigger_type == TriggerType::LastOrBidAsk {
                 let last = last.ok_or_else(|| anyhow::anyhow!("Last required"))?;
-                let cand_trigger = compute(trailing_offset, last.as_f64());
+                let cand_trigger = compute(trailing_offset, last.as_f64(), "trailing_offset")?;
                 let updated = maybe_move(&mut trigger_price, cand_trigger, better_trigger);
                 if updated.is_some() {
                     new_trigger_price = updated;
                 }
 
                 if order_type == OrderType::TrailingStopLimit {
-                    let cand_limit = compute(order.limit_offset().unwrap(), last.as_f64());
+                    let limit_offset = order.limit_offset().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Missing `limit_offset` for trailing stop limit calculation"
+                        )
+                    })?;
+                    let cand_limit = compute(limit_offset, last.as_f64(), "limit_offset")?;
                     let updated = maybe_move(&mut limit_price, cand_limit, better_limit);
                     if updated.is_some() {
                         new_limit_price = updated;
@@ -201,10 +200,6 @@ pub fn trailing_stop_calculate(
 /// # Errors
 ///
 /// Returns an error if the offset calculation fails or the offset type is unsupported.
-///
-/// # Panics
-///
-/// Panics if the offset cannot be converted to a float.
 pub fn trailing_stop_calculate_with_last(
     price_increment: Price,
     trailing_offset_type: TrailingOffsetType,
@@ -212,7 +207,7 @@ pub fn trailing_stop_calculate_with_last(
     offset: Decimal,
     last: Price,
 ) -> anyhow::Result<Price> {
-    let mut offset_value = offset.to_f64().expect("Invalid `offset` value");
+    let mut offset_value = decimal_to_f64(offset, "offset")?;
     let last_f64 = last.as_f64();
 
     match trailing_offset_type {
@@ -239,10 +234,6 @@ pub fn trailing_stop_calculate_with_last(
 /// # Errors
 ///
 /// Returns an error if the offset calculation fails or the offset type is unsupported.
-///
-/// # Panics
-///
-/// Panics if the offset cannot be converted to a float.
 pub fn trailing_stop_calculate_with_bid_ask(
     price_increment: Price,
     trailing_offset_type: TrailingOffsetType,
@@ -251,7 +242,7 @@ pub fn trailing_stop_calculate_with_bid_ask(
     bid: Price,
     ask: Price,
 ) -> anyhow::Result<Price> {
-    let mut offset_value = offset.to_f64().expect("Invalid `offset` value");
+    let mut offset_value = decimal_to_f64(offset, "offset")?;
     let bid_f64 = bid.as_f64();
     let ask_f64 = ask.as_f64();
 
@@ -273,6 +264,12 @@ pub fn trailing_stop_calculate_with_bid_ask(
     };
 
     Ok(Price::new(price_value, price_increment.precision))
+}
+
+fn decimal_to_f64(value: Decimal, label: &str) -> anyhow::Result<f64> {
+    value.to_f64().ok_or_else(|| {
+        anyhow::anyhow!("Invalid `{label}` value {value} for trailing stop calculation")
+    })
 }
 
 #[cfg(test)]
@@ -361,6 +358,34 @@ mod tests {
 
         // TODO: Basic error assert for now
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_calculate_with_no_trailing_offset_type_returns_error() {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id("BTCUSDT-PERP.BINANCE".into())
+            .side(OrderSide::Buy)
+            .trigger_price(Price::new(100.0, 2))
+            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
+            .trailing_offset(dec!(1.0))
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(1))
+            .build();
+
+        let result = trailing_stop_calculate(
+            Price::new(0.01, 2),
+            None,
+            None,
+            &order,
+            None,
+            None,
+            Some(Price::new(99.0, 2)),
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Invalid `TrailingOffsetType::NoTrailingOffset` for trailing stop calculation"
+        );
     }
 
     #[rstest]

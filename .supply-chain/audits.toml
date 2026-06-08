@@ -127,6 +127,18 @@ criteria = "safe-to-deploy"
 version = "0.5.1"
 notes = "Pure base32 encode/decode library. No unsafe code, no_std, no file/network access."
 
+[[audits.bitflags]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.11.1 -> 2.12.1"
+notes = "Adds bitflags flag_name support and all_named flag aggregation. Macro changes and tests reviewed; no new dependencies, build script, filesystem, network, or unsafe code."
+
+[[audits.bitflags]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.12.1 -> 2.13.0"
+notes = "Adds IterEqualNames and iter_equal_names for exact flag-value names, plus tests and docs. No new dependencies, build script, filesystem, network, or unsafe code changes; existing bytemuck unsafe impl macro is unchanged."
+
 [[audits.borsh]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -155,6 +167,12 @@ criteria = "safe-to-deploy"
 delta = "0.25.2 -> 0.25.3"
 notes = "Iterator size_hint() fix, Into-to-From cleanup. No new unsafe."
 
+[[audits.capnp]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.25.4 -> 0.25.5"
+notes = "Adds FromTypelessPipeline for FromClientHook and refactors pointer arithmetic to add/sub and offset_in_words helpers. Reviewed unsafe pointer changes as equivalent bounds-checked address calculations; no new dependencies, build script, filesystem, or network behavior."
+
 [[audits.capnpc]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -171,6 +189,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.25.2 -> 0.25.3"
 notes = "pub -> pub(crate) visibility narrowing in generated code and codegen internals. No logic changes, no new unsafe."
+
+[[audits.chrono]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.44 -> 0.4.45"
+notes = "Expands Android tzdata path lookup and rejects POSIX TZ offsets whose hour is 24 so they fit FixedOffset. Reviewed touched local-time files; no new network, process, or build-script behavior. Existing filesystem and env access remains limited to local timezone discovery."
 
 [[audits.cmake]]
 who = "Chris Sellers <chris@cjdsellers.io>"
@@ -213,6 +237,18 @@ criteria = "safe-to-deploy"
 delta = "0.49.0 -> 0.50.0"
 notes = "Crate code only bumps dbn to 0.57.0 and updates changelog entries. No source logic, build script, feature, or network behavior changes in databento itself."
 
+[[audits.databento]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.51.0 -> 0.52.0"
+notes = "Adds logging of gateway ErrorMsg/SystemMsg records in the live Client (suppressible via tracing level filter). Single additive logging change."
+
+[[audits.databento]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.52.0 -> 0.53.0"
+notes = "Adds BatchClient::get_job_details on the existing historical API client and bumps dbn to 0.59.0. No new dependencies beyond dbn, build script, filesystem, or new network mechanism."
+
 [[audits.dbn]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -236,6 +272,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.56.0 -> 0.57.0"
 notes = "Adds InstrumentClass::Index plus StatType price variants and Python enum names, and bumps dbn-macros. No new unsafe, build script, file, or network behavior."
+
+[[audits.dbn]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.58.0 -> 0.59.0"
+notes = "Adds vectored DBN encode APIs with ts_out variants plus publisher constants. Reviewed new unsafe MaybeUninit to IoSlice conversions in sync and async encoders; initialized slice counts are bounded by chunk length, with no new build script, filesystem, or network behavior."
 
 [[audits.dbn-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -261,6 +303,12 @@ criteria = "safe-to-deploy"
 delta = "0.56.0 -> 0.57.0"
 notes = "Version bump only. Published source only updates package version metadata."
 
+[[audits.dbn-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.58.0 -> 0.59.0"
+notes = "Version bump only. Published source only updates package version metadata."
+
 [[audits.fastrand]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -272,6 +320,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.0 -> 2.4.1"
 notes = "JS feature build fix, getrandom::getrandom renamed to getrandom::fill."
+
+[[audits.hashlink]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.11.0 -> 0.11.1"
+notes = "Fixes retain removal to match nodes by pointer identity and makes unsafe value-node dropping panic-safe. Reviewed unsafe linked-list delta; no new dependencies, build script, filesystem, or network behavior."
 
 [[audits.hyper]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -290,6 +344,12 @@ who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
 delta = "1.1.2 -> 1.1.3"
 
+[[audits.hypersync-client]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.1.4 -> 1.2.0"
+notes = "Adds explicit rate-limit response APIs and event rate-limit method, and updates Envio documentation URLs. No new dependencies, build script, filesystem behavior, or network mechanism beyond existing client requests."
+
 [[audits.indexmap]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -301,6 +361,18 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.0.17 -> 1.0.18"
 notes = "Performance optimization for 128-bit integer formatting, pointer simplification in Buffer::format. No new unsafe patterns."
+
+[[audits.log]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.30 -> 0.4.31"
+notes = "Adds static string handling for structured log keys and macro plumbing, plus documentation updates. No new dependencies, build script, filesystem, network, or unsafe code."
+
+[[audits.log]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.31 -> 0.4.32"
+notes = "Moves structured Value standard-library conversions under the std feature while keeping to_cow_str gated by kv_std. No new dependencies, build script, filesystem, network, or unsafe code changes."
 
 [[audits.lz4_flex]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -320,6 +392,12 @@ criteria = "safe-to-deploy"
 delta = "0.7.5 -> 0.7.6"
 notes = "Adds byte literal (Lit::Byte) support for enum discriminants"
 
+[[audits.papergrid]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.17.0 -> 0.18.0"
+notes = "Fixes vertical border rendering when a cell is covered by both row and column spans, and derives extra traits for EntityIterator. No new dependencies, build script, filesystem, network, or unsafe code changes."
+
 [[audits.portable-atomic-util]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -337,6 +415,18 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.1.0 -> 1.2.0"
 notes = "Read routing strategies for cluster replicas, lazy connection manager instantiation, sentinel TcpSettings. No new unsafe, no suspicious patterns."
+
+[[audits.redis]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.2.1 -> 1.2.2"
+notes = "Additive feature/fix release: new HOTKEYS command module, TLS certificate auth, SO_LINGER socket option, connection-manager concurrency limit, bb8 sentinel pool. New code plus tests; no build-script or existing-behavior changes."
+
+[[audits.rustls-native-certs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.3 -> 0.8.4"
+notes = "Narrows published crate contents, fixes docs.rs cfg, ignores empty SSL_CERT_DIR path components, and updates tests/docs. No new dependencies, build script, unsafe code, or network behavior in library code."
 
 [[audits.rustls-webpki]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -362,6 +452,18 @@ criteria = "safe-to-deploy"
 delta = "1.1.0 -> 1.1.1"
 notes = "Version bump only: serde_core dep 1.0.225 -> 1.0.228"
 
+[[audits.serde_with]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "3.20.0 -> 3.21.0"
+notes = "Adds cautious capacity sizing for deserialized collections, NoneAsZero support for NonZero types, and smallvec/schema refactors. Existing MaybeUninit array utility is unchanged; no new build script, filesystem, network, or process behavior."
+
+[[audits.serde_with_macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "3.20.0 -> 3.21.0"
+notes = "Proc-macro crate remains forbid(unsafe_code). Delta is doc URL updates, example docs, and Result::err cleanup. No new dependencies, build script, filesystem, network, or process behavior."
+
 [[audits.sysinfo]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -373,6 +475,18 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.38.3 -> 0.38.4"
 notes = "Unpins objc2-* deps, fixes Linux disk size (f_frsize vs f_bsize), adapts to updated objc2-io-kit APIs. No new unsafe."
+
+[[audits.sysinfo]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.39.2 -> 0.39.3"
+notes = "Two bug fixes: Unix Network::mac_addr retrieval; Linux process-info retrieval race when a process terminates mid-read."
+
+[[audits.tabled]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.20.0 -> 0.21.0"
+notes = "Adds Settings::modify, Color::is_empty, ColumnNames padding and RowNames split, LineText limit support, and table rendering fixes. Removes TabSize and adjusts Charset APIs. No new dependencies, build script, filesystem, network, process, or production unsafe code."
 
 [[audits.tempfile]]
 who = "Chris Sellers <chris@cjdsellers.io>"
@@ -426,11 +540,23 @@ who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
 delta = "1.13.1 -> 1.13.2"
 
+[[audits.unicode-segmentation]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.13.2 -> 1.13.3"
+notes = "Fixes grapheme cursor handling for emoji ZWJ sequences split across chunks and updates documentation links. Crate denies unsafe_code; no new dependencies, build script, filesystem, or network behavior."
+
 [[audits.uuid]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.21.0 -> 1.22.0"
 notes = "Version bump only: doc updates, bytemuck/rand dep bumps. No code changes."
+
+[[audits.uuid]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.23.1 -> 1.23.2"
+notes = "Parser error-message refactor (RequestedUuid enum, 0-based indices, ParseLength variant). No new deps, network, or unsafe beyond pre-existing from_utf8_unchecked."
 
 [[audits.winnow]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -443,6 +569,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.0.1 -> 1.0.2"
 notes = "Adds TreeError conversion impls for Bits<I> in binary mode and deprecates tuple-offset helpers. No parser-core logic, unsafe, build, or network changes."
+
+[[audits.yoke]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.2 -> 0.8.3"
+notes = "Fixes unsafe Send and Sync bounds for CartableOptionPointer and adds thread-drop tests. Safety improvement only; no new dependencies, build script, filesystem, or network behavior."
 
 [[audits.zerocopy-derive]]
 who = "Nautech Systems <info@nautechsystems.io>"

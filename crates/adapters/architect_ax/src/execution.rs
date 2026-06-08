@@ -673,6 +673,7 @@ impl ExecutionClient for AxExecutionClient {
                 cmd.params.clone(),
                 UUID4::new(),
                 cmd.ts_init,
+                cmd.correlation_id,
             );
             self.submit_order(submit_cmd)?;
         }
@@ -2032,7 +2033,7 @@ mod tests {
             create_order_rejected(&order, reason, 1609459200, 0, &caches, account_id, clock)
                 .expect("should produce OrderRejected");
 
-        assert_eq!(event.due_post_only, 1, "post-only reason should set flag");
+        assert!(event.due_post_only, "post-only reason should set flag");
         assert_eq!(event.reason, Ustr::from(reason));
     }
 
@@ -2064,7 +2065,7 @@ mod tests {
         )
         .expect("should produce OrderRejected");
 
-        assert_eq!(event.due_post_only, 0);
+        assert!(!event.due_post_only);
         assert_eq!(event.reason, Ustr::from("INSUFFICIENT_MARGIN"));
     }
 

@@ -19,13 +19,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use ahash::AHashSet;
-use nautilus_core::{
-    UnixNanos,
-    correctness::{
-        CorrectnessResultExt, FAILED, check_equal, check_predicate_true, check_slice_not_empty,
-    },
-};
+use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -35,8 +29,18 @@ use crate::{
 
 /// Lightweight identifier container for a group of related orders.
 ///
-/// Stores only the order IDs - full order data lives in the cache.
+/// Stores only the order IDs; full order data lives in the cache.
 /// For serialization payload, see `SubmitOrderList.order_inits`.
+///
+/// All orders should share the same venue. The production constructors
+/// enforce this: [`OrderList::from_orders`] and `OrderFactory::create_list`
+/// panic on mixed venues, and `Strategy::submit_order_list` bails at the
+/// user-facing entry. [`OrderList::new`] is infallible and takes
+/// `instrument_id` directly; it does not verify the venues of the supplied
+/// `client_order_ids`. The `instrument_id` is a representative value taken
+/// from the first order; orders may target different instruments at that
+/// venue. Downstream consumers that need a per-order instrument should
+/// resolve each order from the cache.
 #[derive(Clone, Eq, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
@@ -53,11 +57,10 @@ pub struct OrderList {
 impl OrderList {
     /// Creates a new [`OrderList`] instance.
     ///
-    /// # Panics
-    ///
-    /// Panics if:
-    /// - `orders` is empty.
-    /// - `orders` contains duplicate client order IDs.
+    /// Construction is infallible. [`OrderList::validate`] checks the
+    /// syntactic invariants (non-empty, unique `client_order_ids`); the
+    /// strategy submission path (`Strategy::submit_order_list`) runs it
+    /// before the list reaches the cache.
     #[must_use]
     pub fn new(
         order_list_id: OrderListId,
@@ -66,14 +69,6 @@ impl OrderList {
         client_order_ids: Vec<ClientOrderId>,
         ts_init: UnixNanos,
     ) -> Self {
-        check_slice_not_empty(client_order_ids.as_slice(), stringify!(client_order_ids))
-            .expect_display(FAILED);
-        let unique: HashSet<&ClientOrderId> = client_order_ids.iter().collect();
-        check_predicate_true(
-            unique.len() == client_order_ids.len(),
-            "client_order_ids must not contain duplicates",
-        )
-        .expect_display(FAILED);
         Self {
             id: order_list_id,
             instrument_id,
@@ -85,74 +80,42 @@ impl OrderList {
 
     /// Creates a new [`OrderList`] from a slice of orders.
     ///
-    /// Derives `order_list_id`, `instrument_id`, `strategy_id` and `trader_id`
-    /// from the first order.
+    /// Derives `order_list_id`, `instrument_id`, and `strategy_id` from the
+    /// first order. The `instrument_id` is representative only; orders in
+    /// the list may target different instruments at the same venue.
+    /// Callers in the production path (`OrderFactory` plus a single
+    /// strategy instance) produce orders with a consistent `order_list_id`
+    /// and `strategy_id`. [`OrderList::validate`] checks the syntactic
+    /// invariants (non-empty, unique `client_order_ids`); it does not
+    /// check cross-field consistency.
     ///
     /// # Panics
     ///
-    /// Panics if:
-    /// - `orders` is empty.
-    /// - Any order has `None` for `order_list_id`.
-    /// - Any order has a different `order_list_id` than the first.
-    /// - Any order has a different `trader_id` than the first.
-    /// - Any order has a different `instrument_id` than the first.
-    /// - Any order has a different `strategy_id` than the first.
-    /// - Orders contain duplicate client order IDs.
+    /// Panics if `orders` is empty, if the first order has no
+    /// `order_list_id`, or if orders span more than one venue. Callers
+    /// are expected to guard non-empty input; `Strategy::submit_order_list`
+    /// filters out the empty case and bails on mixed venues before
+    /// reaching this constructor.
     #[must_use]
     pub fn from_orders(orders: &[OrderAny], ts_init: UnixNanos) -> Self {
-        check_slice_not_empty(orders, stringify!(orders)).expect_display(FAILED);
-
-        let first = &orders[0];
+        let first = orders
+            .first()
+            .expect("OrderList::from_orders requires non-empty orders");
         let order_list_id = first
             .order_list_id()
-            .expect("First order must have order_list_id");
-        let trader_id = first.trader_id();
+            .expect("OrderList::from_orders requires first order to have order_list_id");
         let instrument_id = first.instrument_id();
         let strategy_id = first.strategy_id();
+        let venue = instrument_id.venue;
 
-        let mut seen_ids: AHashSet<ClientOrderId> = AHashSet::new();
-        seen_ids.insert(first.client_order_id());
-
-        for order in orders.iter().skip(1) {
-            let other_list_id = order
-                .order_list_id()
-                .expect("All orders must have order_list_id");
-            check_equal(
-                &other_list_id,
-                &order_list_id,
-                "order_list_id",
-                "first order order_list_id",
-            )
-            .expect_display(FAILED);
-            check_equal(
-                &order.trader_id(),
-                &trader_id,
-                "trader_id",
-                "first order trader_id",
-            )
-            .expect_display(FAILED);
-            check_equal(
-                &order.instrument_id(),
-                &instrument_id,
-                "instrument_id",
-                "first order instrument_id",
-            )
-            .expect_display(FAILED);
-            check_equal(
-                &order.strategy_id(),
-                &strategy_id,
-                "strategy_id",
-                "first order strategy_id",
-            )
-            .expect_display(FAILED);
-            check_predicate_true(
-                seen_ids.insert(order.client_order_id()),
-                &format!(
-                    "duplicate client_order_id {} in order list",
-                    order.client_order_id()
-                ),
-            )
-            .expect_display(FAILED);
+        for order in orders {
+            assert!(
+                order.instrument_id().venue == venue,
+                "OrderList::from_orders requires all orders to share the same venue; \
+                 expected {venue}, found {} on {}",
+                order.instrument_id().venue,
+                order.client_order_id(),
+            );
         }
 
         let client_order_ids = orders.iter().map(|o| o.client_order_id()).collect();
@@ -164,6 +127,24 @@ impl OrderList {
             client_order_ids,
             ts_init,
         }
+    }
+
+    /// Validates this [`OrderList`]'s own invariants.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `client_order_ids` is empty or contains duplicates.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if self.client_order_ids.is_empty() {
+            anyhow::bail!("OrderList {} has no orders", self.id);
+        }
+
+        let unique: HashSet<&ClientOrderId> = self.client_order_ids.iter().collect();
+        if unique.len() != self.client_order_ids.len() {
+            anyhow::bail!("OrderList {} contains duplicate client_order_ids", self.id);
+        }
+
+        Ok(())
     }
 
     #[must_use]
@@ -221,7 +202,7 @@ mod tests {
     use super::*;
     use crate::{
         enums::OrderType,
-        identifiers::{InstrumentId, OrderListId, TraderId},
+        identifiers::{InstrumentId, OrderListId},
         orders::builder::OrderTestBuilder,
         types::Quantity,
     };
@@ -262,18 +243,43 @@ mod tests {
         ));
     }
 
-    #[rstest]
-    #[should_panic(expected = "Condition failed: the 'client_order_ids'")]
-    fn test_order_list_creation_with_empty_orders() {
-        let orders: Vec<ClientOrderId> = vec![];
+    fn create_orders_for_instrument(
+        instrument_ids: &[&str],
+        order_list_id: OrderListId,
+    ) -> Vec<OrderAny> {
+        instrument_ids
+            .iter()
+            .enumerate()
+            .map(|(i, instrument)| {
+                OrderTestBuilder::new(OrderType::Market)
+                    .instrument_id(InstrumentId::from(*instrument))
+                    .client_order_id(ClientOrderId::from(format!("O-00{}", i + 1).as_str()))
+                    .order_list_id(order_list_id)
+                    .quantity(Quantity::from(1))
+                    .build()
+            })
+            .collect()
+    }
 
-        let _ = OrderList::new(
-            OrderListId::from("OL-004"),
-            InstrumentId::from("AUD/USD.SIM"),
-            StrategyId::from("S-001"),
-            orders,
-            UnixNanos::default(),
-        );
+    #[rstest]
+    fn test_from_orders_accepts_mixed_instruments_same_venue() {
+        let order_list_id = OrderListId::from("OL-MIXED-001");
+        let orders = create_orders_for_instrument(&["AUD/USD.SIM", "EUR/USD.SIM"], order_list_id);
+
+        let order_list = OrderList::from_orders(&orders, UnixNanos::default());
+
+        assert_eq!(order_list.len(), 2);
+        assert_eq!(order_list.instrument_id, InstrumentId::from("AUD/USD.SIM"));
+    }
+
+    #[rstest]
+    #[should_panic(expected = "share the same venue")]
+    fn test_from_orders_panics_on_mixed_venues() {
+        let order_list_id = OrderListId::from("OL-MIXED-002");
+        let orders =
+            create_orders_for_instrument(&["AUD/USD.SIM", "EUR/USD.IDEALPRO"], order_list_id);
+
+        let _ = OrderList::from_orders(&orders, UnixNanos::default());
     }
 
     #[rstest]
@@ -398,89 +404,52 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "client_order_ids must not contain duplicates")]
-    fn test_new_with_duplicate_client_order_ids() {
+    fn test_validate_accepts_well_formed_list() {
+        let orders = create_client_order_ids(3);
+        let order_list = OrderList::new(
+            OrderListId::from("OL-VALID-001"),
+            InstrumentId::from("AUD/USD.SIM"),
+            StrategyId::from("S-001"),
+            orders,
+            UnixNanos::default(),
+        );
+        order_list
+            .validate()
+            .expect("well-formed list should validate");
+    }
+
+    #[rstest]
+    fn test_validate_rejects_empty_list() {
+        let order_list = OrderList::new(
+            OrderListId::from("OL-EMPTY-001"),
+            InstrumentId::from("AUD/USD.SIM"),
+            StrategyId::from("S-001"),
+            Vec::new(),
+            UnixNanos::default(),
+        );
+        let err = order_list.validate().expect_err("empty list should fail");
+        assert!(
+            err.to_string().contains("OL-EMPTY-001") && err.to_string().contains("no orders"),
+            "unexpected error: {err}",
+        );
+    }
+
+    #[rstest]
+    fn test_validate_rejects_duplicate_client_order_ids() {
         let id = ClientOrderId::from("O-001");
-        let _ = OrderList::new(
-            OrderListId::from("OL-012"),
+        let order_list = OrderList::new(
+            OrderListId::from("OL-DUP-001"),
             InstrumentId::from("AUD/USD.SIM"),
             StrategyId::from("S-001"),
             vec![id, id],
             UnixNanos::default(),
         );
-    }
-
-    #[rstest]
-    #[should_panic(expected = "duplicate client_order_id O-001 in order list")]
-    fn test_from_orders_with_duplicate_client_order_ids() {
-        let order_list_id = OrderListId::from("OL-013");
-        let order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
-            .client_order_id(ClientOrderId::from("O-001"))
-            .order_list_id(order_list_id)
-            .quantity(Quantity::from(1))
-            .build();
-        let _ = OrderList::from_orders(&[order.clone(), order], UnixNanos::default());
-    }
-
-    #[rstest]
-    #[should_panic(expected = "trader_id")]
-    fn test_from_orders_with_mismatched_trader_id() {
-        let order_list_id = OrderListId::from("OL-014");
-        let order1 = OrderTestBuilder::new(OrderType::Market)
-            .trader_id(TraderId::from("TRADER-001"))
-            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
-            .client_order_id(ClientOrderId::from("O-001"))
-            .order_list_id(order_list_id)
-            .quantity(Quantity::from(1))
-            .build();
-        let order2 = OrderTestBuilder::new(OrderType::Market)
-            .trader_id(TraderId::from("TRADER-002"))
-            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
-            .client_order_id(ClientOrderId::from("O-002"))
-            .order_list_id(order_list_id)
-            .quantity(Quantity::from(1))
-            .build();
-        let _ = OrderList::from_orders(&[order1, order2], UnixNanos::default());
-    }
-
-    #[rstest]
-    #[should_panic(expected = "instrument_id")]
-    fn test_from_orders_with_mismatched_instrument_id() {
-        let order_list_id = OrderListId::from("OL-015");
-        let order1 = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
-            .client_order_id(ClientOrderId::from("O-001"))
-            .order_list_id(order_list_id)
-            .quantity(Quantity::from(1))
-            .build();
-        let order2 = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(InstrumentId::from("EUR/USD.SIM"))
-            .client_order_id(ClientOrderId::from("O-002"))
-            .order_list_id(order_list_id)
-            .quantity(Quantity::from(1))
-            .build();
-        let _ = OrderList::from_orders(&[order1, order2], UnixNanos::default());
-    }
-
-    #[rstest]
-    #[should_panic(expected = "strategy_id")]
-    fn test_from_orders_with_mismatched_strategy_id() {
-        let order_list_id = OrderListId::from("OL-016");
-        let order1 = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
-            .strategy_id(StrategyId::from("S-001"))
-            .client_order_id(ClientOrderId::from("O-001"))
-            .order_list_id(order_list_id)
-            .quantity(Quantity::from(1))
-            .build();
-        let order2 = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
-            .strategy_id(StrategyId::from("S-002"))
-            .client_order_id(ClientOrderId::from("O-002"))
-            .order_list_id(order_list_id)
-            .quantity(Quantity::from(1))
-            .build();
-        let _ = OrderList::from_orders(&[order1, order2], UnixNanos::default());
+        let err = order_list
+            .validate()
+            .expect_err("duplicate client_order_ids should fail");
+        assert!(
+            err.to_string().contains("duplicate client_order_ids"),
+            "unexpected error: {err}",
+        );
     }
 }

@@ -25,7 +25,7 @@ use ustr::Ustr;
 
 /// EIP-712 signature type for order signing.
 ///
-/// Serialized as a numeric value (0/1/2) on the wire.
+/// Serialized as a numeric value (0/1/2/3) on the wire.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -39,7 +39,7 @@ use ustr::Ustr;
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.polymarket")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.polymarket")
 )]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
@@ -47,6 +47,7 @@ pub enum SignatureType {
     Eoa = 0,
     PolyProxy = 1,
     PolyGnosisSafe = 2,
+    Poly1271 = 3,
 }
 
 /// Outcome label for a Polymarket market token.
@@ -348,6 +349,10 @@ mod tests {
             serde_json::to_string(&SignatureType::PolyGnosisSafe).unwrap(),
             "2"
         );
+        assert_eq!(
+            serde_json::to_string(&SignatureType::Poly1271).unwrap(),
+            "3"
+        );
     }
 
     #[rstest]
@@ -363,6 +368,10 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<SignatureType>("2").unwrap(),
             SignatureType::PolyGnosisSafe
+        );
+        assert_eq!(
+            serde_json::from_str::<SignatureType>("3").unwrap(),
+            SignatureType::Poly1271
         );
     }
 

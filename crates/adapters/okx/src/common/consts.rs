@@ -68,6 +68,38 @@ pub const OKX_FIELD_SUBCODE: &str = "subCode";
 /// JSON field key for client order ID in order operation responses.
 pub const OKX_FIELD_CLORDID: &str = "clOrdId";
 
+/// Maximum length of a `clOrdId` accepted by OKX.
+///
+/// OKX requires `clOrdId` to be 1-32 case-sensitive alphanumeric characters.
+/// See <https://www.okx.com/docs-v5/en/#order-book-trading-trade>.
+pub const OKX_MAX_CLORDID_LEN: usize = 32;
+
+/// Validates a `clOrdId` against OKX's length and charset rules.
+///
+/// # Errors
+///
+/// Returns a human-readable reason when the ID exceeds
+/// [`OKX_MAX_CLORDID_LEN`] characters or contains non-alphanumeric characters
+/// (such as hyphens or underscores).
+pub fn validate_okx_client_order_id(cl_ord_id: &str) -> Result<(), String> {
+    let len = cl_ord_id.len();
+    if len > OKX_MAX_CLORDID_LEN {
+        return Err(format!(
+            "OKX requires clOrdId to be at most {OKX_MAX_CLORDID_LEN} characters, was {len} ({cl_ord_id:?}); \
+             set `use_uuid_client_order_ids=True` and `use_hyphens_in_client_order_ids=False` on the strategy config"
+        ));
+    }
+
+    if !cl_ord_id.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return Err(format!(
+            "OKX requires clOrdId to be alphanumeric only, was {cl_ord_id:?}; \
+             set `use_hyphens_in_client_order_ids=False` on the strategy config"
+        ));
+    }
+
+    Ok(())
+}
+
 /// OKX supported order time in force.
 ///
 /// # Notes
@@ -114,7 +146,9 @@ pub const OKX_ADVANCE_ALGO_ORDER_TYPES: &[OrderType] = &[OrderType::TrailingStop
 
 /// OKX error codes that should trigger retries.
 ///
-/// Only retry on temporary network/system issues.
+/// Only retry on temporary network/system issues. `50004` ("request
+/// timeout, outcome unknown") is safe because every order/cancel/amend
+/// path sends `clOrdId` and OKX rejects duplicates with `51000`.
 ///
 /// # References
 ///
@@ -229,5 +263,27 @@ mod tests {
     #[case("", false)]
     fn test_is_slippage_rejection(#[case] code: &str, #[case] expected: bool) {
         assert_eq!(is_slippage_rejection(code), expected);
+    }
+
+    #[rstest]
+    #[case("O20260101000000ABC1", true)]
+    #[case("aB9", true)]
+    #[case("abcdefghij0123456789ABCDEFGHIJ12", true)] // exactly 32 chars
+    #[case("abcdefghij0123456789ABCDEFGHIJ123", false)] // 33 chars
+    #[case("O-20260101-000000-001-001-1", false)] // hyphens
+    #[case("O_20260101_000000", false)] // underscores
+    #[case("", true)] // empty: OKX rejects, but core ClientOrderId never produces empty
+    fn test_validate_okx_client_order_id(#[case] cl_ord_id: &str, #[case] expected_ok: bool) {
+        assert_eq!(validate_okx_client_order_id(cl_ord_id).is_ok(), expected_ok);
+    }
+
+    #[rstest]
+    fn test_validate_okx_client_order_id_length_message() {
+        // 35-char compact ID (the shape reported in the original bug report).
+        let cl_ord_id = "O20260522145501532392555aceLTCUSDT5";
+        let err = validate_okx_client_order_id(cl_ord_id).unwrap_err();
+        assert!(err.contains("at most 32"));
+        assert!(err.contains("was 35"));
+        assert!(err.contains("use_uuid_client_order_ids"));
     }
 }

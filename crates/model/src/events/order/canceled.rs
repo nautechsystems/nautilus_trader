@@ -15,7 +15,7 @@
 
 use std::fmt::{Debug, Display};
 
-use nautilus_core::{UUID4, UnixNanos, serialization::from_bool_as_u8};
+use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -61,12 +61,14 @@ pub struct OrderCanceled {
     /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
     /// If the event was generated during reconciliation.
-    #[serde(deserialize_with = "from_bool_as_u8")]
-    pub reconciliation: u8, // TODO: Change to bool once Cython removed
+    pub reconciliation: bool,
     /// The venue order ID associated with the event.
     pub venue_order_id: Option<VenueOrderId>,
     /// The account ID associated with the event.
     pub account_id: Option<AccountId>,
+    /// The causation ID associated with the event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<UUID4>,
 }
 
 impl OrderCanceled {
@@ -93,9 +95,10 @@ impl OrderCanceled {
             event_id,
             ts_event,
             ts_init,
-            reconciliation: u8::from(reconciliation),
+            reconciliation,
             venue_order_id,
             account_id,
+            causation_id: None,
         }
     }
 }
@@ -314,29 +317,9 @@ impl OrderEvent for OrderCanceled {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{UUID4, UnixNanos};
     use rstest::rstest;
 
     use super::*;
-    use crate::identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId};
-
-    // TODO: Remove once reconciliation field is converted back to bool (post-Cython)
-    #[rstest]
-    fn test_reconciliation_bool_to_u8() {
-        let order_canceled = OrderCanceled::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("EMA-CROSS"),
-            InstrumentId::from("EURUSD.SIM"),
-            ClientOrderId::from("O-19700101-000000-001-001-1"),
-            UUID4::default(),
-            UnixNanos::from(1_000_000_000),
-            UnixNanos::from(2_000_000_000),
-            true,
-            None,
-            None,
-        );
-        assert_eq!(order_canceled.reconciliation, 1);
-    }
 
     #[rstest]
     fn test_serialization_roundtrip() {

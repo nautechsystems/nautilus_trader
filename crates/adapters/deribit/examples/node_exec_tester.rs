@@ -31,7 +31,7 @@ use nautilus_deribit::{
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
     http::models::DeribitProductType,
 };
-use nautilus_live::node::LiveNode;
+use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
@@ -78,9 +78,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_factory = DeribitDataClientFactory::new();
     let exec_factory = DeribitExecutionClientFactory::new();
+    let exec_engine_config = LiveExecEngineConfig {
+        open_check_interval_secs: Some(10.0),
+        position_check_interval_secs: Some(30.0),
+        ..Default::default()
+    };
 
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name(node_name)
+        .with_exec_engine_config(exec_engine_config)
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
         .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .with_delay_post_stop_secs(5)

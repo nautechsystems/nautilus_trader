@@ -200,6 +200,7 @@ pub(super) fn run(
     }
 }
 
+#[cfg(not(madsim))]
 fn record_snapshot_anchor(
     backend: &mut dyn EventStore,
     batch: &mut Vec<AppendEntry>,

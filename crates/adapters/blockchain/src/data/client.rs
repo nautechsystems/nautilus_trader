@@ -203,6 +203,12 @@ impl BlockchainDataClient {
                                         }
                                     }
 
+                                    // Cache the block before its events are processed,
+                                    // so conversion can resolve ts_event.
+                                    if let Err(e) = core_client.cache.add_block(block.clone()).await {
+                                        log::error!("Failed to cache block {}: {e}", block.number);
+                                    }
+
                                     Some(DataEvent::DeFi(DefiData::Block(block)))
                                 }
                                 BlockchainMessage::SwapEvent(swap_event) => {
@@ -756,7 +762,10 @@ impl BlockchainDataClient {
                         let pool_data = DataEvent::DeFi(DefiData::Pool(pool.as_ref().clone()));
                         core_client.send_data(pool_data);
 
-                        match core_client.bootstrap_latest_pool_profiler(&pool).await {
+                        match core_client
+                            .bootstrap_latest_pool_profiler(&pool, None)
+                            .await
+                        {
                             Ok((profiler, already_valid)) => {
                                 let snapshot = profiler.extract_snapshot();
 
@@ -1000,5 +1009,123 @@ impl DataClient for BlockchainDataClient {
         let command = DefiDataCommand::Request(DefiRequestCommand::PoolSnapshot(cmd));
         self.command_tx.send(command)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use alloy::primitives::address;
+    use nautilus_common::defi::RequestPoolSnapshot;
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::{
+        defi::{Chain, DexType, Pool, PoolIdentifier, Token},
+        identifiers::ClientId,
+    };
+    use tokio_util::sync::CancellationToken;
+
+    use super::*;
+
+    const WETH_USDT_CREATION_BLOCK: u64 = 12_375_326;
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "requires ENVIO_API_TOKEN and live HyperSync access"]
+    async fn pool_snapshot_request_does_not_emit_snapshot_when_bootstrap_fails() {
+        std::env::var("ENVIO_API_TOKEN").expect("ENVIO_API_TOKEN must be set");
+
+        let pool = weth_usdt_pool();
+        let instrument_id = pool.instrument_id;
+        let (hypersync_tx, _hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
+        let config = BlockchainDataClientConfig::builder()
+            .chain(pool.chain.clone())
+            .dex_ids(vec![DexType::UniswapV3])
+            .http_rpc_url("http://127.0.0.1:9".to_string())
+            .use_hypersync_for_live_data(true)
+            .maybe_from_block(Some(WETH_USDT_CREATION_BLOCK))
+            .build();
+        let mut core = BlockchainDataClientCore::new(
+            config,
+            Some(hypersync_tx),
+            Some(data_tx),
+            CancellationToken::new(),
+        );
+        core.cache
+            .add_pool(pool.as_ref().clone())
+            .await
+            .expect("Pool should be added to in-memory cache");
+
+        let request = RequestPoolSnapshot::new(
+            instrument_id,
+            Some(ClientId::new("BLOCKCHAIN")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+
+        BlockchainDataClient::handle_request_command(
+            DefiRequestCommand::PoolSnapshot(request),
+            &mut core,
+        )
+        .await
+        .expect("Bootstrap failure should not fail the request handler");
+
+        let mut events = Vec::new();
+        while let Ok(event) = data_rx.try_recv() {
+            events.push(event);
+        }
+
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            DataEvent::DeFi(DefiData::Pool(pool)) => {
+                assert_eq!(pool.instrument_id, instrument_id);
+            }
+            _ => panic!("expected only the pool definition event"),
+        }
+        assert!(
+            events
+                .iter()
+                .all(|event| !matches!(event, DataEvent::DeFi(DefiData::PoolSnapshot(_))))
+        );
+    }
+
+    fn weth_usdt_pool() -> Arc<Pool> {
+        let chain = Arc::new(
+            Chain::from_chain_id(1)
+                .expect("Ethereum chain should exist")
+                .clone(),
+        );
+        let dex = get_dex_extended(chain.name, &DexType::UniswapV3)
+            .expect("Ethereum UniswapV3 should be registered")
+            .dex
+            .clone();
+        let pool_address = address!("4e68ccd3e89f51c3074ca5072bbac773960dfa36");
+        let token0 = Token::new(
+            chain.clone(),
+            address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
+            "Wrapped Ether".to_string(),
+            "WETH".to_string(),
+            18,
+        );
+        let token1 = Token::new(
+            chain.clone(),
+            address!("dAC17F958D2ee523a2206206994597C13D831ec7"),
+            "Tether USD".to_string(),
+            "USDT".to_string(),
+            6,
+        );
+        Arc::new(Pool::new(
+            chain,
+            dex,
+            pool_address,
+            PoolIdentifier::from_address(pool_address),
+            WETH_USDT_CREATION_BLOCK,
+            token0,
+            token1,
+            Some(3_000),
+            Some(60),
+            UnixNanos::default(),
+        ))
     }
 }

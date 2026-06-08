@@ -56,6 +56,10 @@ impl ClientConfig for PolymarketDataClientConfig {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")
+)]
 #[derive(Debug, Clone)]
 pub struct PolymarketDataClientFactory;
 
@@ -148,6 +152,10 @@ impl ClientConfig for PolymarketExecClientConfig {
         module = "nautilus_trader.core.nautilus_pyo3.polymarket",
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")
 )]
 #[derive(Debug, Clone)]
 pub struct PolymarketExecutionClientFactory;

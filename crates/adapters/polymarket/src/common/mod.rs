@@ -20,4 +20,5 @@ pub mod credential;
 pub mod enums;
 pub mod models;
 pub mod parse;
+pub mod retry;
 pub mod urls;

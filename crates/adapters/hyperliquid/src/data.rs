@@ -13,9 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    str::FromStr,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use ahash::AHashMap;
@@ -44,7 +47,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Bar, BarType, BookOrder, Data, FundingRateUpdate, OrderBookDeltas_API},
+    data::{Bar, BarType, BookOrder, Data, DataType, FundingRateUpdate, OrderBookDeltas_API},
     enums::{BarAggregation, BookType, OrderSide},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -68,20 +71,13 @@ use crate::{
         client::HyperliquidHttpClient,
         models::{HyperliquidCandle, HyperliquidFundingHistoryEntry, HyperliquidL2Book},
     },
-    websocket::{
-        client::HyperliquidWebSocketClient,
-        messages::{HyperliquidWsMessage, NautilusWsMessage},
-        parse::{
-            parse_ws_candle, parse_ws_order_book_deltas, parse_ws_quote_tick, parse_ws_trade_tick,
-        },
-    },
+    websocket::{client::HyperliquidWebSocketClient, messages::NautilusWsMessage},
 };
 
 #[derive(Debug)]
 pub struct HyperliquidDataClient {
     clock: &'static AtomicTime,
     client_id: ClientId,
-    #[allow(dead_code)]
     config: HyperliquidDataClientConfig,
     http_client: HyperliquidHttpClient,
     ws_client: HyperliquidWebSocketClient,
@@ -181,6 +177,23 @@ impl HyperliquidDataClient {
         *HYPERLIQUID_VENUE
     }
 
+    fn custom_instrument_id(data_type: &DataType) -> anyhow::Result<Option<InstrumentId>> {
+        let Some(raw_instrument_id) = data_type
+            .metadata()
+            .and_then(|m| m.get("instrument_id"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            return Ok(None);
+        };
+
+        let instrument_id = InstrumentId::from_str(raw_instrument_id)
+            .with_context(|| format!("invalid instrument_id metadata `{raw_instrument_id}`"))?;
+
+        Ok(Some(instrument_id))
+    }
+
     async fn bootstrap_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         let instruments = self
             .http_client
@@ -201,7 +214,26 @@ impl HyperliquidDataClient {
         });
 
         for instrument in &instruments {
+            self.http_client.cache_instrument(instrument);
             self.ws_client.cache_instrument(instrument.clone());
+        }
+
+        match self
+            .http_client
+            .build_all_dex_asset_ctxs_instrument_ids()
+            .await
+        {
+            Ok(mapping) => {
+                let mapping = mapping
+                    .into_iter()
+                    .map(|(dex, instrument_ids)| (Ustr::from(dex.as_str()), instrument_ids))
+                    .collect();
+                self.ws_client
+                    .cache_all_dex_asset_ctxs_instrument_ids(mapping);
+            }
+            Err(e) => {
+                log::warn!("Failed to build Hyperliquid allDexsAssetCtxs mapping: {e}");
+            }
         }
 
         log::info!(
@@ -333,166 +365,6 @@ impl HyperliquidDataClient {
         log::info!("WebSocket consumption task spawned");
 
         Ok(())
-    }
-
-    #[allow(dead_code)]
-    fn handle_ws_message(
-        msg: HyperliquidWsMessage,
-        ws_client: &HyperliquidWebSocketClient,
-        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-        coin_to_instrument_id: &Arc<AtomicMap<Ustr, InstrumentId>>,
-        _venue: Venue,
-        clock: &'static AtomicTime,
-    ) {
-        match msg {
-            HyperliquidWsMessage::Bbo { data } => {
-                let coin = data.coin;
-                log::debug!("Received BBO message for coin: {coin}");
-
-                let coin_map = coin_to_instrument_id.load();
-                let instrument_id = coin_map.get(&data.coin);
-
-                if let Some(&instrument_id) = instrument_id {
-                    let instruments_map = instruments.load();
-                    if let Some(instrument) = instruments_map.get(&instrument_id) {
-                        let ts_init = clock.get_time_ns();
-
-                        match parse_ws_quote_tick(&data, instrument, ts_init) {
-                            Ok(quote_tick) => {
-                                log::debug!(
-                                    "Parsed quote tick for {}: bid={}, ask={}",
-                                    data.coin,
-                                    quote_tick.bid_price,
-                                    quote_tick.ask_price
-                                );
-
-                                if let Err(e) =
-                                    data_sender.send(DataEvent::Data(Data::Quote(quote_tick)))
-                                {
-                                    log::error!("Failed to send quote tick: {e}");
-                                }
-                            }
-                            Err(e) => {
-                                log::error!("Failed to parse quote tick for {}: {e}", data.coin);
-                            }
-                        }
-                    }
-                } else {
-                    log::warn!(
-                        "Received BBO for unknown coin: {} (no matching instrument found)",
-                        data.coin
-                    );
-                }
-            }
-            HyperliquidWsMessage::Trades { data } => {
-                let count = data.len();
-                log::debug!("Received {count} trade(s)");
-
-                for trade_data in data {
-                    let coin = trade_data.coin;
-                    let coin_map = coin_to_instrument_id.load();
-
-                    if let Some(&instrument_id) = coin_map.get(&coin) {
-                        let instruments_map = instruments.load();
-                        if let Some(instrument) = instruments_map.get(&instrument_id) {
-                            let ts_init = clock.get_time_ns();
-
-                            match parse_ws_trade_tick(&trade_data, instrument, ts_init) {
-                                Ok(trade_tick) => {
-                                    if let Err(e) =
-                                        data_sender.send(DataEvent::Data(Data::Trade(trade_tick)))
-                                    {
-                                        log::error!("Failed to send trade tick: {e}");
-                                    }
-                                }
-                                Err(e) => {
-                                    log::error!("Failed to parse trade tick for {coin}: {e}");
-                                }
-                            }
-                        }
-                    } else {
-                        log::warn!("Received trade for unknown coin: {coin}");
-                    }
-                }
-            }
-            HyperliquidWsMessage::L2Book { data } => {
-                let coin = data.coin;
-                log::debug!("Received L2 book update for coin: {coin}");
-
-                let coin_map = coin_to_instrument_id.load();
-                if let Some(&instrument_id) = coin_map.get(&data.coin) {
-                    let instruments_map = instruments.load();
-                    if let Some(instrument) = instruments_map.get(&instrument_id) {
-                        let ts_init = clock.get_time_ns();
-
-                        match parse_ws_order_book_deltas(&data, instrument, ts_init) {
-                            Ok(deltas) => {
-                                if let Err(e) = data_sender.send(DataEvent::Data(Data::Deltas(
-                                    OrderBookDeltas_API::new(deltas),
-                                ))) {
-                                    log::error!("Failed to send order book deltas: {e}");
-                                }
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to parse order book deltas for {}: {e}",
-                                    data.coin
-                                );
-                            }
-                        }
-                    }
-                } else {
-                    log::warn!("Received L2 book for unknown coin: {coin}");
-                }
-            }
-            HyperliquidWsMessage::Candle { data } => {
-                let coin = &data.s;
-                let interval = &data.i;
-                log::debug!("Received candle for {coin}:{interval}");
-
-                if let Some(bar_type) = ws_client.get_bar_type(&data.s, &data.i) {
-                    let coin = Ustr::from(&data.s);
-                    let coin_map = coin_to_instrument_id.load();
-
-                    if let Some(&instrument_id) = coin_map.get(&coin) {
-                        let instruments_map = instruments.load();
-                        if let Some(instrument) = instruments_map.get(&instrument_id) {
-                            let ts_init = clock.get_time_ns();
-
-                            match parse_ws_candle(&data, instrument, &bar_type, ts_init) {
-                                Ok(bar) => {
-                                    if let Err(e) =
-                                        data_sender.send(DataEvent::Data(Data::Bar(bar)))
-                                    {
-                                        log::error!("Failed to send bar data: {e}");
-                                    }
-                                }
-                                Err(e) => {
-                                    log::error!("Failed to parse candle for {coin}: {e}");
-                                }
-                            }
-                        }
-                    } else {
-                        log::warn!("Received candle for unknown coin: {coin}");
-                    }
-                } else {
-                    log::debug!("Received candle for {coin}:{interval} but no BarType tracked");
-                }
-            }
-            _ => {
-                log::trace!("Received unhandled WebSocket message: {msg:?}");
-            }
-        }
-    }
-}
-
-impl HyperliquidDataClient {
-    #[allow(dead_code)]
-    fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
-        if let Err(e) = sender.send(DataEvent::Data(data)) {
-            log::error!("Failed to emit data event: {e}");
-        }
     }
 }
 
@@ -632,6 +504,29 @@ impl DataClient for HyperliquidDataClient {
             return Ok(());
         }
 
+        if data_type == "HyperliquidAllDexsAssetCtxs" {
+            let ws = self.ws_client.clone();
+
+            self.spawn_task("subscribe_all_dexs_asset_ctxs", async move {
+                ws.subscribe_all_dexs_asset_ctxs().await
+            });
+
+            return Ok(());
+        }
+
+        if data_type == "HyperliquidOpenInterest" {
+            let ws = self.ws_client.clone();
+            let instrument_id = Self::custom_instrument_id(&cmd.data_type)?.context(
+                "HyperliquidOpenInterest subscriptions require metadata['instrument_id']",
+            )?;
+
+            self.spawn_task("subscribe_open_interest", async move {
+                ws.subscribe_open_interest(instrument_id).await
+            });
+
+            return Ok(());
+        }
+
         log::warn!("Unsupported custom data subscription: {data_type}");
         Ok(())
     }
@@ -655,6 +550,29 @@ impl DataClient for HyperliquidDataClient {
 
             self.spawn_task("unsubscribe_all_mids", async move {
                 ws.unsubscribe_all_mids_with_dex(dex.as_deref()).await
+            });
+
+            return Ok(());
+        }
+
+        if data_type == "HyperliquidAllDexsAssetCtxs" {
+            let ws = self.ws_client.clone();
+
+            self.spawn_task("unsubscribe_all_dexs_asset_ctxs", async move {
+                ws.unsubscribe_all_dexs_asset_ctxs().await
+            });
+
+            return Ok(());
+        }
+
+        if data_type == "HyperliquidOpenInterest" {
+            let ws = self.ws_client.clone();
+            let instrument_id = Self::custom_instrument_id(&cmd.data_type)?.context(
+                "HyperliquidOpenInterest unsubscriptions require metadata['instrument_id']",
+            )?;
+
+            self.spawn_task("unsubscribe_open_interest", async move {
+                ws.unsubscribe_open_interest(instrument_id).await
             });
 
             return Ok(());

@@ -20,8 +20,11 @@
 
 use std::fmt::Display;
 
+use nautilus_core::UnixNanos;
+
 use crate::{
-    defi::{Pool, pool_analysis::snapshot::PoolSnapshot},
+    data::HasTsInit,
+    defi::{Pool, pool_analysis::PoolSnapshot},
     identifiers::InstrumentId,
 };
 
@@ -112,6 +115,80 @@ pub enum DefiData {
 }
 
 impl DefiData {
+    /// Returns the block position associated with this DeFi data.
+    #[must_use]
+    pub fn block_position(&self) -> (u64, u32, u32) {
+        match self {
+            Self::Block(block) => (block.number, 0, 0),
+            Self::Pool(pool) => (pool.creation_block, 0, 0),
+            Self::PoolSnapshot(snapshot) => (
+                snapshot.block_position.number,
+                snapshot.block_position.transaction_index,
+                snapshot.block_position.log_index,
+            ),
+            Self::PoolSwap(swap) => (swap.block, swap.transaction_index, swap.log_index),
+            Self::PoolLiquidityUpdate(update) => {
+                (update.block, update.transaction_index, update.log_index)
+            }
+            Self::PoolFeeCollect(collect) => {
+                (collect.block, collect.transaction_index, collect.log_index)
+            }
+            Self::PoolFlash(flash) => (flash.block, flash.transaction_index, flash.log_index),
+        }
+    }
+
+    /// Returns the block number associated with this DeFi data.
+    #[must_use]
+    pub fn block_number(&self) -> u64 {
+        self.block_position().0
+    }
+
+    /// Returns the transaction index associated with this DeFi data.
+    #[must_use]
+    pub fn transaction_index(&self) -> u32 {
+        self.block_position().1
+    }
+
+    /// Returns the log index associated with this DeFi data.
+    #[must_use]
+    pub fn log_index(&self) -> u32 {
+        self.block_position().2
+    }
+
+    /// Returns the event timestamp associated with this DeFi data.
+    #[must_use]
+    pub fn ts_event(&self) -> UnixNanos {
+        match self {
+            Self::Block(block) => block.timestamp,
+            Self::Pool(pool) => pool.ts_event,
+            Self::PoolSnapshot(snapshot) => snapshot.ts_event,
+            Self::PoolSwap(swap) => swap.ts_event,
+            Self::PoolLiquidityUpdate(update) => update.ts_event,
+            Self::PoolFeeCollect(collect) => collect.ts_event,
+            Self::PoolFlash(flash) => flash.ts_event,
+        }
+    }
+
+    /// Returns the event timestamp associated with this DeFi data.
+    #[must_use]
+    pub fn timestamp(&self) -> UnixNanos {
+        self.ts_event()
+    }
+
+    /// Returns the initialization timestamp associated with this DeFi data.
+    #[must_use]
+    pub fn ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Block(block) => block.timestamp,
+            Self::Pool(pool) => pool.ts_init,
+            Self::PoolSnapshot(snapshot) => snapshot.ts_init,
+            Self::PoolSwap(swap) => swap.ts_init,
+            Self::PoolLiquidityUpdate(update) => update.ts_init,
+            Self::PoolFeeCollect(collect) => collect.ts_init,
+            Self::PoolFlash(flash) => flash.ts_init,
+        }
+    }
+
     /// Returns the instrument ID associated with this DeFi data.
     ///
     /// # Panics
@@ -128,6 +205,48 @@ impl DefiData {
             Self::Pool(pool) => pool.instrument_id,
             Self::PoolFlash(flash) => flash.instrument_id,
         }
+    }
+}
+
+impl HasTsInit for DefiData {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init()
+    }
+}
+
+impl HasTsInit for Block {
+    fn ts_init(&self) -> UnixNanos {
+        self.timestamp
+    }
+}
+
+impl HasTsInit for PoolSnapshot {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl HasTsInit for PoolSwap {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl HasTsInit for PoolLiquidityUpdate {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl HasTsInit for PoolFeeCollect {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl HasTsInit for PoolFlash {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 
@@ -172,5 +291,11 @@ impl From<PoolFeeCollect> for DefiData {
 impl From<PoolSnapshot> for DefiData {
     fn from(value: PoolSnapshot) -> Self {
         Self::PoolSnapshot(value)
+    }
+}
+
+impl From<PoolFlash> for DefiData {
+    fn from(value: PoolFlash) -> Self {
+        Self::PoolFlash(value)
     }
 }

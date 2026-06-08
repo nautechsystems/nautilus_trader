@@ -45,7 +45,33 @@ def test_shutdown_system_command():
     )
     assert (
         repr(command)
-        == f"ShutdownSystem(trader_id=TESTER-000, component_id=Controller, reason='Maintenance', command_id={uuid}, ts_init=0)"
+        == f"ShutdownSystem(trader_id=TESTER-000, component_id=Controller, reason='Maintenance', command_id={uuid}, correlation_id=None, ts_init=0)"
+    )
+
+
+def test_shutdown_system_command_with_correlation_id():
+    # Arrange
+    uuid = UUID4()
+    correlation_id = UUID4()
+    command = ShutdownSystem(
+        trader_id=TestIdStubs.trader_id(),
+        component_id=ComponentId("Controller"),
+        reason="Maintenance",
+        command_id=uuid,
+        ts_init=0,
+        correlation_id=correlation_id,
+    )
+
+    # Act
+    roundtripped = ShutdownSystem.from_dict(ShutdownSystem.to_dict(command))
+
+    # Assert
+    assert command.correlation_id == correlation_id
+    assert roundtripped.correlation_id == correlation_id
+    assert ShutdownSystem.to_dict(command)["correlation_id"] == str(correlation_id)
+    assert (
+        repr(command)
+        == f"ShutdownSystem(trader_id=TESTER-000, component_id=Controller, reason='Maintenance', command_id={uuid}, correlation_id={correlation_id}, ts_init=0)"
     )
 
 

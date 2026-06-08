@@ -36,14 +36,13 @@ use std::{
     fmt::Debug,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
 use nautilus_core::UnixNanos;
 
 use crate::{
-    backend::{IndexKey, IndexKind},
     capture::{encoder::EncodeError, registry::EncoderRegistry},
     entry::Topic,
     headers::Headers,
@@ -86,6 +85,7 @@ pub struct BusCaptureAdapter {
     registry: Arc<EncoderRegistry>,
     halt: HaltCallback,
     halted: AtomicBool,
+    submit_counter: Option<Arc<AtomicU64>>,
 }
 
 impl Debug for BusCaptureAdapter {
@@ -115,7 +115,15 @@ impl BusCaptureAdapter {
             registry,
             halt,
             halted: AtomicBool::new(false),
+            submit_counter: None,
         }
+    }
+
+    /// Shares an entry-submit counter with the data-marker capture path.
+    #[must_use]
+    pub fn with_submit_counter(mut self, submit_counter: Arc<AtomicU64>) -> Self {
+        self.submit_counter = Some(submit_counter);
+        self
     }
 
     /// Returns whether the adapter has fail-stopped.
@@ -192,18 +200,22 @@ impl BusCaptureAdapter {
             return Ok(false);
         };
 
-        let index_keys = with_intent_index(encoded.index_keys, &headers);
         let draft = EntryDraft {
             headers,
             topic,
             payload_type,
             payload: encoded.payload,
             ts_init,
-            index_keys,
+            index_keys: encoded.index_keys,
         };
 
         match self.writer.submit(draft) {
-            Ok(()) => Ok(true),
+            Ok(()) => {
+                if let Some(submit_counter) = self.submit_counter.as_ref() {
+                    submit_counter.fetch_add(1, Ordering::AcqRel);
+                }
+                Ok(true)
+            }
             Err(e) => {
                 self.fail_stop(&e);
                 Err(CaptureError::Submit(e))
@@ -220,19 +232,6 @@ impl BusCaptureAdapter {
             (self.halt)(halt_reason_from_submit(err));
         }
     }
-}
-
-/// Adds an [`IndexKind::IntentId`] sidecar key when `headers.intent_id` is present.
-///
-/// Encoders cannot see headers (the encoder boundary is payload-only), so the adapter
-/// is the one site in the capture path that owns header-derived indices. The append is
-/// idempotent: callers who already populated the intent index in the encoder retain the
-/// earlier entry (the backend keeps the first occurrence per `(kind, key)`).
-fn with_intent_index(mut index_keys: Vec<IndexKey>, headers: &Headers) -> Vec<IndexKey> {
-    if let Some(intent_id) = headers.intent_id {
-        index_keys.push(IndexKey::new(IndexKind::IntentId, intent_id.to_string()));
-    }
-    index_keys
 }
 
 /// Maps a [`SubmitError`] onto the [`HaltReason`] the adapter signals to its kernel.
@@ -258,13 +257,16 @@ fn halt_reason_from_submit(err: &SubmitError) -> HaltReason {
 #[cfg(test)]
 mod tests {
     use std::{
-        sync::{Arc, Mutex},
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicU64, Ordering},
+        },
         time::Duration,
     };
 
     use bytes::Bytes;
     use indexmap::IndexMap;
-    use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_static};
+    use nautilus_core::{UnixNanos, time::get_atomic_clock_static};
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
@@ -506,73 +508,46 @@ mod tests {
     }
 
     #[rstest]
-    fn capture_adds_intent_id_index_from_headers(
-        captured_halt: (HaltCallback, Arc<Mutex<Vec<HaltReason>>>),
-    ) {
-        // Encoders see only the payload; the IntentId sidecar must be derived from
-        // headers at the adapter boundary so forensics scans by intent_id resolve to
-        // the captured seq.
-        let (halt, _captured) = captured_halt;
-        let (writer, backend) = writer_with_open_run("run-intent", Arc::clone(&halt));
-        let adapter = BusCaptureAdapter::new(Arc::clone(&writer), stub_registry(), halt);
-
-        let intent_id = UUID4::new();
-        let cmd = StubCommand {
-            client_order_id: "O-3".to_string(),
-        };
-        adapter
-            .capture::<StubCommand>(
-                Topic::from("exec.command.SubmitOrder"),
-                &cmd,
-                Headers {
-                    intent_id: Some(intent_id),
-                    correlation_id: None,
-                    caused_by: None,
-                },
-                UnixNanos::from(300),
-            )
-            .expect("capture");
-        drain(&writer, 1);
-
-        let backend = backend.lock().expect("backend");
-        let by_intent = backend
-            .lookup(IndexKind::IntentId, &intent_id.to_string())
-            .expect("lookup")
-            .expect("indexed");
-        assert_eq!(by_intent, 1);
-        let by_client = backend
-            .lookup(IndexKind::ClientOrderId, "O-3")
-            .expect("lookup")
-            .expect("indexed");
-        assert_eq!(by_client, 1);
-    }
-
-    #[rstest]
-    fn capture_skips_intent_index_when_header_absent(
+    fn submit_counter_increments_on_each_captured_entry(
         captured_halt: (HaltCallback, Arc<Mutex<Vec<HaltReason>>>),
     ) {
         let (halt, _captured) = captured_halt;
-        let (writer, backend) = writer_with_open_run("run-no-intent", Arc::clone(&halt));
-        let adapter = BusCaptureAdapter::new(Arc::clone(&writer), stub_registry(), halt);
+        let (writer, _backend) = writer_with_open_run("run-submit-counter", Arc::clone(&halt));
+        let submit_counter = Arc::new(AtomicU64::new(1));
+        let adapter = BusCaptureAdapter::new(Arc::clone(&writer), stub_registry(), halt)
+            .with_submit_counter(Arc::clone(&submit_counter));
 
         adapter
             .capture::<StubCommand>(
                 Topic::from("exec.command.SubmitOrder"),
                 &StubCommand {
-                    client_order_id: "O-noint".to_string(),
+                    client_order_id: "O-counter-1".to_string(),
                 },
                 Headers::empty(),
-                UnixNanos::from(400),
+                UnixNanos::from(100),
             )
-            .expect("capture");
-        drain(&writer, 1);
+            .expect("first capture");
+        adapter
+            .capture::<UnknownMessage>(
+                Topic::from("data.market.unknown"),
+                &UnknownMessage,
+                Headers::empty(),
+                UnixNanos::from(101),
+            )
+            .expect("unknown type");
+        adapter
+            .capture::<StubEvent>(
+                Topic::from("exec.event.OrderFilled"),
+                &StubEvent {
+                    client_order_id: "O-counter-1".to_string(),
+                    venue_order_id: "V-counter-1".to_string(),
+                },
+                Headers::empty(),
+                UnixNanos::from(102),
+            )
+            .expect("second capture");
 
-        let backend = backend.lock().expect("backend");
-        let by_intent = backend.lookup(IndexKind::IntentId, "").expect("lookup");
-        assert!(
-            by_intent.is_none(),
-            "no intent_id was supplied, so the IntentId index must remain empty",
-        );
+        assert_eq!(submit_counter.load(Ordering::Acquire), 3);
     }
 
     #[rstest]

@@ -21,7 +21,9 @@ pub mod binary_option;
 pub mod cfd;
 pub mod commodity;
 pub mod crypto_future;
+pub mod crypto_futures_spread;
 pub mod crypto_option;
+pub mod crypto_option_spread;
 pub mod crypto_perpetual;
 pub mod currency_pair;
 pub mod equity;
@@ -59,7 +61,9 @@ pub use crate::instruments::{
     cfd::Cfd,
     commodity::Commodity,
     crypto_future::CryptoFuture,
+    crypto_futures_spread::CryptoFuturesSpread,
     crypto_option::CryptoOption,
+    crypto_option_spread::CryptoOptionSpread,
     crypto_perpetual::CryptoPerpetual,
     currency_pair::CurrencyPair,
     equity::Equity,
@@ -167,6 +171,21 @@ pub fn validate_instrument_common(
     Ok(())
 }
 
+fn currencies_equivalent_for_quanto(left: Currency, right: Currency) -> bool {
+    if left == right {
+        return true;
+    }
+
+    is_usd_equivalent_currency(left) && is_usd_equivalent_currency(right)
+}
+
+fn is_usd_equivalent_currency(currency: Currency) -> bool {
+    matches!(
+        currency.code.as_str(),
+        "BUSD" | "FDUSD" | "pUSD" | "TUSD" | "USD" | "USDC" | "USDC.e" | "USDP" | "USDT"
+    )
+}
+
 #[enum_dispatch]
 pub trait Instrument: 'static + Send {
     fn tick_scheme(&self) -> Option<&dyn TickSchemeRule> {
@@ -205,6 +224,8 @@ pub trait Instrument: 'static + Send {
         if self.is_inverse() {
             self.base_currency()
                 .expect("inverse instrument without base_currency")
+        } else if self.is_quanto() {
+            self.settlement_currency()
         } else {
             self.quote_currency()
         }
@@ -214,6 +235,9 @@ pub trait Instrument: 'static + Send {
     fn option_kind(&self) -> Option<OptionKind>;
     fn exchange(&self) -> Option<Ustr>;
     fn strike_price(&self) -> Option<Price>;
+    fn strategy_type(&self) -> Option<Ustr> {
+        None
+    }
 
     fn activation_ns(&self) -> Option<UnixNanos>;
     fn expiration_ns(&self) -> Option<UnixNanos>;
@@ -223,8 +247,13 @@ pub trait Instrument: 'static + Send {
 
     fn is_inverse(&self) -> bool;
     fn is_quanto(&self) -> bool {
-        self.base_currency()
-            .is_some_and(|currency| currency != self.settlement_currency())
+        self.base_currency().is_some_and(|base_currency| {
+            self.settlement_currency() != base_currency
+                && !currencies_equivalent_for_quanto(
+                    self.settlement_currency(),
+                    self.quote_currency(),
+                )
+        })
     }
 
     fn price_precision(&self) -> u8;
@@ -472,7 +501,7 @@ mod tests {
     use super::*;
     use crate::{instruments::stubs::*, types::Money};
 
-    pub fn default_price_increment(precision: u8) -> Price {
+    pub(super) fn default_price_increment(precision: u8) -> Price {
         let step = 10f64.powi(-i32::from(precision));
         Price::new(step, precision)
     }
@@ -578,6 +607,12 @@ mod tests {
         let notional = currency_pair_btcusdt.calculate_notional_value(quantity, price, None);
         let expected = Money::new(20_000.0, currency_pair_btcusdt.quote_currency());
         assert_eq!(notional, expected);
+    }
+
+    #[rstest]
+    fn currency_pair_is_not_quanto(currency_pair_btcusdt: CurrencyPair) {
+        assert!(!currency_pair_btcusdt.is_quanto());
+        assert_eq!(currency_pair_btcusdt.cost_currency(), Currency::USDT());
     }
 
     #[rstest]
@@ -850,6 +885,42 @@ mod tests {
         let notional = ethbtc_quanto.calculate_notional_value(quantity, price, None);
         let expected = Money::new(0.18, ethbtc_quanto.settlement_currency());
         assert_eq!(notional, expected);
+    }
+
+    #[rstest]
+    #[case("USD", "BUSD")]
+    #[case("USD", "FDUSD")]
+    #[case("USD", "pUSD")]
+    #[case("USD", "TUSD")]
+    #[case("USD", "USD")]
+    #[case("USD", "USDC")]
+    #[case("USD", "USDC.e")]
+    #[case("USD", "USDP")]
+    #[case("USD", "USDT")]
+    #[case("BUSD", "USD")]
+    #[case("FDUSD", "USD")]
+    #[case("pUSD", "USD")]
+    #[case("TUSD", "USD")]
+    #[case("USDC", "USD")]
+    #[case("USDC.e", "USD")]
+    #[case("USDP", "USD")]
+    #[case("USDT", "USD")]
+    fn usd_equivalent_settlement_is_not_quanto(
+        #[case] quote_currency_code: &str,
+        #[case] settlement_currency_code: &str,
+    ) {
+        let quote_currency =
+            Currency::try_from_str(quote_currency_code).expect("quote currency must exist");
+        let settlement_currency = Currency::try_from_str(settlement_currency_code)
+            .expect("settlement currency must exist");
+        let instrument = crypto_future_with_quote_settlement(quote_currency, settlement_currency);
+        let quantity = instrument.make_qty(5.0, None);
+        let price = instrument.make_price(1000.0);
+        let notional = instrument.calculate_notional_value(quantity, price, None);
+
+        assert!(!instrument.is_quanto());
+        assert_eq!(instrument.cost_currency(), quote_currency);
+        assert_eq!(notional, Money::new(5000.0, quote_currency));
     }
 
     #[rstest]
@@ -1156,6 +1227,41 @@ mod tests {
     fn check_positive_money_negative(currency_pair_btcusdt: CurrencyPair) {
         let money = Money::new(-0.01, currency_pair_btcusdt.quote_currency());
         check_positive_money(money, "money").unwrap();
+    }
+
+    fn crypto_future_with_quote_settlement(
+        quote_currency: Currency,
+        settlement_currency: Currency,
+    ) -> CryptoFuture {
+        CryptoFuture::new(
+            InstrumentId::from("ETHUSD-QUANTO-TEST.BINANCE"),
+            Symbol::from("ETHUSD-QUANTO-TEST"),
+            Currency::ETH(),
+            quote_currency,
+            settlement_currency,
+            false,
+            0.into(),
+            0.into(),
+            2,
+            0,
+            Price::from("0.01"),
+            Quantity::from("1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        )
     }
 
     #[rstest]

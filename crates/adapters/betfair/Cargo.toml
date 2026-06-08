@@ -22,6 +22,15 @@ crate-type = ["rlib"]
 
 [features]
 examples = ["nautilus-live/node", "nautilus-trading/examples"]
+extension-module = [
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-live/extension-module",
+  "nautilus-model/extension-module",
+  "nautilus-network/extension-module",
+  "pyo3/extension-module",
+  "python",
+]
 high-precision = ["nautilus-model/high-precision"]
 python = [
   "dep:nautilus-system",
@@ -33,12 +42,12 @@ python = [
   "pyo3-stub-gen",
 ]
 
+[package.metadata.cargo-machete]
+ignored = ["arrow"] # Used by `custom_data` macro expansion
+
 [package.metadata.docs.rs]
 features = ["high-precision"]
 rustdoc-args = ["--cfg", "docsrs"]
-
-[package.metadata.cargo-machete]
-ignored = ["arrow"] # Used by `custom_data` macro expansion
 
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
@@ -76,7 +85,6 @@ pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-backtest = { workspace = true }
-nautilus-execution = { workspace = true }
 nautilus-testkit = { workspace = true }
 nautilus-trading = { workspace = true }
 
@@ -112,3 +120,8 @@ name = "betfair-backtest"
 path = "examples/betfair_backtest.rs"
 required-features = ["examples"]
 doc = false
+
+[[test]]
+name = "python"
+path = "tests/python.rs"
+required-features = ["python"]

@@ -33,6 +33,13 @@ cdef set[InstrumentClass] ENGINE_EXPIRING_INSTRUMENT_CLASSES
 cdef tuple[InstrumentClass, InstrumentClass, InstrumentClass] NEGATIVE_PRICE_INSTRUMENT_CLASSES
 
 
+cdef bint settlement_currency_differs_for_quanto(
+    Currency settlement_currency,
+    Currency quote_currency,
+    Currency base_currency,
+)
+
+
 cdef class Instrument(Data):
     cdef TickScheme _tick_scheme
     cdef uint8_t _min_price_increment_precision

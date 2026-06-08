@@ -8,11 +8,14 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 ## Composite actions (`.github/actions`)
 
+- **attest-build-provenance-retry**: wraps GitHub build provenance attestation with bounded retries.
+- **attest-sbom-retry**: wraps Docker SBOM attestation with bounded retries.
 - **cargo-tool-install**: installs cargo tools (cargo-deny, cargo-vet) with caching.
 - **common-setup**: prepares the environment (OS packages, Rust toolchain, Rust cache, Python, prek, swap space).
 - **common-test-data**: caches large test data under `tests/test_data/large`.
 - **common-wheel-build**: builds and installs Python wheels across Linux, macOS, and Windows for
   multiple Python versions.
+- **generate-sbom-retry**: wraps Docker SBOM generation with bounded retries.
 - **install-capnp**: installs the Cap'n Proto compiler with caching across Linux, macOS, and Windows.
 - **publish-wheels**: publishes built wheels to Cloudflare R2, manages old wheel cleanup and index generation.
 - **upload-artifact-wheel**: uploads the latest wheel artifact to GitHub Actions.
@@ -42,6 +45,8 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **performance.yml**: Rust/Python benchmarks on `nightly`, reporting to CodSpeed.
 - **security-audit.yml**: nightly supply chain security checks (cargo-audit, cargo-deny,
   cargo-vet, pip-audit, osv-scanner, and Zizmor).
+- **openssf-scorecard.yml**: OpenSSF Scorecard posture scan on weekly schedule and manual dispatch.
+  The scheduled run publishes badge/API results; all runs upload SARIF to code scanning.
 
 ## Security
 
@@ -74,6 +79,8 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **Code scanning**: CodeQL analyzes Python and Rust code on PRs to `master`, pushes to `nightly`,
   and manual dispatch. Zizmor runs in `security-audit.yml` and uploads SARIF when token
   permissions allow it.
+- **OpenSSF Scorecard**: `openssf-scorecard.yml` publishes repository posture results for the public
+  badge/API and uploads SARIF to code scanning.
 
 ### Build and publish controls
 
@@ -170,7 +177,9 @@ All workflows read these GitHub variables:
 - `SECURITY_AUDIT_ALLOWED_ENDPOINTS`: Extra endpoints needed by the security audit jobs.
 
 Some workflows add job-specific endpoints inline (e.g., `upload.pypi.org:443` for publishing,
-`auth.docker.io:443` and `registry-1.docker.io:443` for Docker builds).
+`auth.docker.io:443` and `registry-1.docker.io:443` for Docker builds, and Scorecard publishing
+plus lookup endpoints such as `api.scorecard.dev:443`, `fulcio.sigstore.dev:443`, and
+`tuf-repo-cdn.sigstore.dev:443`).
 
 Security audit jobs do not use deployment environments. They do not need environment secrets, and
 environment branch policies block same-repo contributor PRs before the audit steps can start.

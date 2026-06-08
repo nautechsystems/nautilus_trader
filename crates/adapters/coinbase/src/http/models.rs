@@ -30,7 +30,8 @@ use crate::common::{
     },
     parse::{
         deserialize_decimal_from_str, deserialize_decimal_or_zero, deserialize_margin_type_or_none,
-        deserialize_product_type_or_unknown, deserialize_string_to_u64,
+        deserialize_product_status_or_unknown, deserialize_product_type_or_unknown,
+        deserialize_string_to_u64,
     },
 };
 
@@ -60,6 +61,7 @@ pub struct Product {
     pub watched: bool,
     pub is_disabled: bool,
     pub new: bool,
+    #[serde(deserialize_with = "deserialize_product_status_or_unknown")]
     pub status: CoinbaseProductStatus,
     pub cancel_only: bool,
     pub limit_only: bool,

@@ -29,11 +29,11 @@ use nautilus_common::{
     actor::{
         Actor, DataActor,
         data_actor::DataActorCore,
-        registry::{get_actor_registry, try_get_actor_unchecked},
+        registry::{try_get_actor_unchecked, with_actor_registry},
     },
     cache::Cache,
     clock::Clock,
-    component::{Component, get_component_registry},
+    component::{Component, with_component_registry},
     enums::ComponentState,
     python::{cache::PyCache, clock::PyClock, logging::PyLogger},
     signal::Signal,
@@ -71,7 +71,7 @@ use nautilus_model::{
     },
     types::{Price, Quantity},
 };
-use nautilus_portfolio::portfolio::Portfolio;
+use nautilus_portfolio::{portfolio::Portfolio, python::PyPortfolio};
 use pyo3::{prelude::*, types::PyDict};
 use ustr::Ustr;
 
@@ -1161,10 +1161,10 @@ impl PyStrategy {
         let inner_ref: Rc<UnsafeCell<PyStrategyInner>> = self.inner.clone();
 
         let component_trait_ref: Rc<UnsafeCell<dyn Component>> = inner_ref.clone();
-        get_component_registry().insert(component_id, component_trait_ref);
+        with_component_registry(|registry| registry.insert(component_id, component_trait_ref));
 
         let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = inner_ref;
-        get_actor_registry().insert(actor_id, actor_trait_ref);
+        with_actor_registry(|registry| registry.insert(actor_id, actor_trait_ref));
     }
 }
 
@@ -1231,6 +1231,19 @@ impl PyStrategy {
         } else {
             Err(to_pyruntime_err(
                 "Strategy must be registered with a trader before accessing cache",
+            ))
+        }
+    }
+
+    #[getter]
+    #[pyo3(name = "portfolio")]
+    fn py_portfolio(&self) -> PyResult<PyPortfolio> {
+        let inner = self.inner();
+        if inner.core.actor.is_registered() {
+            Ok(PyPortfolio::from_rc(inner.core.portfolio().clone()))
+        } else {
+            Err(to_pyruntime_err(
+                "Strategy must be registered with a trader before accessing portfolio",
             ))
         }
     }

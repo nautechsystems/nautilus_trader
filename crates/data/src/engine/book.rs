@@ -263,9 +263,10 @@ impl BookSnapshotter {
         topic: MStr<Topic>,
         cache: &Ref<Cache>,
     ) {
-        let book = cache
-            .order_book(instrument_id)
-            .unwrap_or_else(|| panic!("OrderBook for {instrument_id} was not in cache"));
+        let Some(book) = cache.order_book(instrument_id) else {
+            log::error!("Cannot publish OrderBook snapshot: no book found for {instrument_id}");
+            return;
+        };
 
         if book.update_count == 0 {
             log::debug!("OrderBook not yet updated for snapshot: {instrument_id}");
@@ -277,5 +278,46 @@ impl BookSnapshotter {
         );
 
         msgbus::publish_book(topic, book);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::{UUID4, UnixNanos};
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn snapshot_skips_missing_order_book() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let interval_ms = NonZeroUsize::new(100).unwrap();
+        let topic = switchboard::get_book_snapshots_topic(instrument_id, interval_ms);
+        let snapshot_infos = Rc::new(RefCell::new(IndexMap::new()));
+
+        snapshot_infos.borrow_mut().insert(
+            instrument_id,
+            BookSnapshotInfo {
+                instrument_id,
+                venue: Venue::new("SIM"),
+                parent: None,
+                topic,
+                interval_ms,
+            },
+        );
+
+        let snapshotter = BookSnapshotter::new(
+            interval_ms,
+            snapshot_infos,
+            Rc::new(RefCell::new(Cache::default())),
+        );
+        let event = TimeEvent::new(
+            Ustr::from("TEST"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        snapshotter.snapshot(event);
     }
 }

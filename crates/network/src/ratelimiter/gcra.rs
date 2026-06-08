@@ -19,7 +19,7 @@ use super::{StateStore, clock, nanos::Nanos, quota::Quota};
 
 /// Information about the rate-limiting state used to reach a decision.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct StateSnapshot {
+pub(crate) struct StateSnapshot {
     /// The "weight" of a single packet in units of time.
     t: Nanos,
     /// The "burst capacity" of the bucket.
@@ -43,7 +43,7 @@ impl StateSnapshot {
     }
 
     /// Returns the quota used to make the rate limiting decision.
-    pub fn quota(&self) -> Quota {
+    pub(crate) fn quota(&self) -> Quota {
         Quota::from_gcra_parameters(self.t, self.tau)
     }
 
@@ -53,7 +53,7 @@ impl StateSnapshot {
     /// If this state snapshot is based on a negative rate limiting
     /// outcome, this method returns 0.
     #[allow(dead_code)]
-    pub fn remaining_burst_capacity(&self) -> u32 {
+    pub(crate) fn remaining_burst_capacity(&self) -> u32 {
         let t = self.t.as_u64();
         if t == 0 {
             return 0;
@@ -120,7 +120,7 @@ impl<P: clock::Reference> Display for NotUntil<P> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Gcra {
+pub(super) struct Gcra {
     /// The "weight" of a single packet in units of time.
     t: Nanos,
 

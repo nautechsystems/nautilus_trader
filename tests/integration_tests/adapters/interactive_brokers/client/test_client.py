@@ -75,6 +75,22 @@ async def test_stop(ib_client_running):
     assert len(ib_client_running.registered_nautilus_clients) == 0
 
 
+@pytest.mark.asyncio
+async def test_stop_clears_bar_tracking_state(ib_client_running):
+    # Arrange
+    task = asyncio.create_task(asyncio.sleep(60))
+    ib_client_running._bar_timeout_tasks["AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL"] = task
+    ib_client_running._bar_type_to_last_bar["AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL"] = object()
+
+    # Act
+    await ib_client_running._stop_async()
+
+    # Assert
+    assert task.cancelled()
+    assert ib_client_running._bar_timeout_tasks == {}
+    assert ib_client_running._bar_type_to_last_bar == {}
+
+
 def test_dispose_sets_shutdown_flag(ib_client):
     # Arrange
 
@@ -210,6 +226,87 @@ async def test_run_connection_watchdog_reconnect(ib_client):
 
     # Assert
     ib_client._handle_disconnection.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_handle_disconnection_sets_last_disconnection_ns_when_was_connected(
+    ib_client_running,
+):
+    # Arrange - client had a genuine prior connection (_had_ib_connection=True) and is
+    # still marked connected (_is_ib_connected set). This is the normal watchdog path.
+    ib_client_running._had_ib_connection = True
+    assert ib_client_running._is_ib_connected.is_set()
+    assert ib_client_running._last_disconnection_ns is None
+    ib_client_running._handle_reconnect = AsyncMock()
+
+    # Act
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        await ib_client_running._handle_disconnection()
+
+    # Assert - timestamp recorded because client had a genuine prior connection
+    assert ib_client_running._last_disconnection_ns is not None
+
+
+@pytest.mark.asyncio
+async def test_handle_disconnection_sets_last_disconnection_ns_when_flag_cleared_before_call(
+    ib_client_running,
+):
+    # Arrange - _is_ib_connected was cleared by another code path (e.g.
+    # _run_tws_incoming_msg_reader finally block) before the watchdog fires and calls
+    # _handle_disconnection. Previously the guard on _is_ib_connected.is_set() would
+    # silently skip the timestamp, causing reconnect warmup to miss bars from the downtime.
+    ib_client_running._had_ib_connection = True
+    ib_client_running._is_ib_connected.clear()
+    assert not ib_client_running._is_ib_connected.is_set()
+    assert ib_client_running._last_disconnection_ns is None
+    ib_client_running._handle_reconnect = AsyncMock()
+
+    # Act
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        await ib_client_running._handle_disconnection()
+
+    # Assert - timestamp still recorded because _had_ib_connection is True
+    assert ib_client_running._last_disconnection_ns is not None
+
+
+@pytest.mark.asyncio
+async def test_handle_disconnection_does_not_set_last_disconnection_ns_when_not_connected(
+    ib_client,
+):
+    # Arrange - client is NOT connected and _had_ib_connection is False, simulating the
+    # watchdog firing during initial startup before the handshake completes. Previously
+    # this stamped _last_disconnection_ns=now, capping the bar warmup window to now and
+    # delivering zero warmup bars on startup.
+    assert not ib_client._is_ib_connected.is_set()
+    assert not ib_client._had_ib_connection
+    assert ib_client._last_disconnection_ns is None
+    ib_client._handle_reconnect = AsyncMock()
+
+    # Act
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        await ib_client._handle_disconnection()
+
+    # Assert - no timestamp recorded because client was never connected
+    assert ib_client._last_disconnection_ns is None
+
+
+@pytest.mark.asyncio
+async def test_handle_disconnection_clears_bar_tracking_state(ib_client_running):
+    # Arrange
+    task = asyncio.create_task(asyncio.sleep(60))
+    ib_client_running._bar_timeout_tasks["AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL"] = task
+    ib_client_running._bar_type_to_last_bar["AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL"] = object()
+    ib_client_running._handle_reconnect = AsyncMock()
+
+    # Act
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        await ib_client_running._handle_disconnection()
+
+    # Assert
+    assert task.cancelled()
+    assert ib_client_running._bar_timeout_tasks == {}
+    assert ib_client_running._bar_type_to_last_bar == {}
+    ib_client_running._handle_reconnect.assert_awaited_once()
 
 
 @pytest.mark.asyncio

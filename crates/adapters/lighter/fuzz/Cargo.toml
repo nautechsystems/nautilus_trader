@@ -1,0 +1,83 @@
+[package]
+name = "nautilus-lighter-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false # Never publish to crates.io
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+# `ecgfp5` is Pornin's reference Rust implementation (zero transitive deps; pinned by commit).
+# The differential targets soak our implementation against it under coverage-guided fuzzing.
+ecgfp5 = { git = "https://github.com/pornin/ecgfp5", rev = "ce059c6d1e1662db437aecbf3db6bb67fe63c716", version = "0.1.0" }
+libfuzzer-sys = "0.4.12"
+nautilus-lighter = { path = ".." }
+
+[[bin]]
+name = "fuzz_verify"
+path = "fuzz_targets/fuzz_verify.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_point_decode"
+path = "fuzz_targets/fuzz_point_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_signature_codec"
+path = "fuzz_targets/fuzz_signature_codec.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_hash_no_pad"
+path = "fuzz_targets/fuzz_hash_no_pad.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_auth_message"
+path = "fuzz_targets/fuzz_auth_message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_compute_tx_hash"
+path = "fuzz_targets/fuzz_compute_tx_hash.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_scalar_mul_ct_diff"
+path = "fuzz_targets/fuzz_scalar_mul_ct_diff.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_pornin_diff_scalar_mul"
+path = "fuzz_targets/fuzz_pornin_diff_scalar_mul.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_pornin_diff_decode"
+path = "fuzz_targets/fuzz_pornin_diff_decode.rs"
+test = false
+doc = false
+bench = false
+
+# Standalone workspace so cargo-fuzz's nightly + libfuzzer-sys requirements
+# do not propagate into the parent workspace's stable build.
+[workspace]
+members = ["."]

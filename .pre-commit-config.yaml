@@ -79,6 +79,7 @@ repos:
         types_or: [rust, python, cython, toml, yaml, rst, markdown]
 
   - repo: https://github.com/gitleaks/gitleaks
+    # Pinned to v8.30.1: autoupdate occasionally selects the lower v8.30.0 tag
     rev: v8.30.1
     hooks:
       - id: gitleaks
@@ -97,7 +98,7 @@ repos:
         description: Checks GitHub Actions workflow syntax and structural correctness
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.24.1
+    rev: v1.25.2
     hooks:
       - id: zizmor
         name: zizmor (security)
@@ -284,6 +285,15 @@ repos:
         types: [file]
         pass_filenames: false
 
+      - id: cargo-clippy-network-turmoil-non-linux
+        name: cargo clippy network turmoil (non-Linux)
+        description: Run the network Turmoil Clippy check on non-Linux hosts
+        entry: bash .pre-commit-hooks/cargo_clippy_network_turmoil_non_linux.sh
+        language: system
+        files: "^(crates/network/|Cargo\\.toml$|clippy\\.toml$|rust-toolchain\\.toml$|\\.cargo/)"
+        types: [file]
+        pass_filenames: false
+
       - id: cargo-doc
         name: cargo doc
         description: Check documentation builds on changed crates
@@ -291,6 +301,14 @@ repos:
         language: system
         files: "\\.(rs|toml)$"
         types: [file]
+        pass_filenames: false
+
+      - id: cargo-machete
+        name: cargo machete
+        description: Detect declared-but-unused workspace dependencies
+        entry: bash .pre-commit-hooks/cargo_machete.sh
+        language: system
+        files: "(Cargo\\.toml|\\.rs)$"
         pass_filenames: false
 
   ##############################################################################
@@ -310,7 +328,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.12
+    rev: v0.15.15
     hooks:
       - id: ruff
         name: ruff
@@ -347,6 +365,7 @@ repos:
           - "--in-place"
 
   - repo: https://github.com/pre-commit/mirrors-mypy
+    # Pinned to v1.20.2: pyproject.toml constrains mypy to <2.0.0; do not bump to v2.x
     rev: v1.20.2
     hooks:
       - id: mypy
@@ -356,7 +375,7 @@ repos:
         additional_dependencies: [msgspec, types-frozendict, types-pytz, types-redis, types-requests, types-toml]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.12 # Must match [tool.uv] required-version in pyproject.toml
+    rev: 0.11.18 # Must match [tool.uv] required-version in pyproject.toml
     hooks:
       - id: uv-lock
         files: ^(uv\.lock|python/uv\.lock)$

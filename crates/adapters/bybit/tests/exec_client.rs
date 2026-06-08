@@ -55,7 +55,7 @@ use nautilus_common::{
     live::runner::set_exec_event_sender,
     messages::{
         ExecutionEvent,
-        execution::{ExecutionReport, SubmitOrder},
+        execution::{CancelOrder, ExecutionReport, ModifyOrder, SubmitOrder},
     },
     testing::wait_until_async,
 };
@@ -67,6 +67,7 @@ use nautilus_model::{
     events::{AccountState, OrderEventAny},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TraderId,
+        VenueOrderId,
     },
     orders::{MarketOrder, OrderAny, TrailingStopMarketOrder},
     types::{AccountBalance, Money, Price, Quantity},
@@ -710,6 +711,40 @@ fn create_test_execution_client(
     (client, rx, cache)
 }
 
+fn create_test_demo_execution_client(
+    addr: SocketAddr,
+) -> (
+    BybitExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("BYBIT-001");
+    let client_id = *BYBIT_CLIENT_ID;
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        *BYBIT_VENUE,
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+
+    let config = create_test_demo_exec_config(addr);
+
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let client = BybitExecutionClient::new(core, config).unwrap();
+
+    (client, rx, cache)
+}
+
 fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: AccountId) {
     let account_state = AccountState::new(
         account_id,
@@ -729,6 +764,55 @@ fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: AccountId) 
 
     let account = AccountAny::Margin(MarginAccount::new(account_state, true));
     cache.borrow_mut().add_account(account).unwrap();
+}
+
+async fn drain_execution_events(rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>) {
+    while tokio::time::timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .is_ok()
+    {}
+}
+
+async fn assert_no_cancel_rejected(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    duration: Duration,
+) {
+    let reject_window = tokio::time::sleep(duration);
+    tokio::pin!(reject_window);
+
+    loop {
+        tokio::select! {
+            () = &mut reject_window => break,
+            event = rx.recv() => {
+                let event = event.expect("channel closed");
+                assert!(
+                    !matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(_))),
+                    "Ambiguous cancel outcome must not emit OrderCancelRejected: {event:?}",
+                );
+            }
+        }
+    }
+}
+
+async fn assert_no_modify_rejected(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    duration: Duration,
+) {
+    let reject_window = tokio::time::sleep(duration);
+    tokio::pin!(reject_window);
+
+    loop {
+        tokio::select! {
+            () = &mut reject_window => break,
+            event = rx.recv() => {
+                let event = event.expect("channel closed");
+                assert!(
+                    !matches!(event, ExecutionEvent::Order(OrderEventAny::ModifyRejected(_))),
+                    "Ambiguous modify outcome must not emit OrderModifyRejected: {event:?}",
+                );
+            }
+        }
+    }
 }
 
 #[rstest]
@@ -1019,6 +1103,7 @@ async fn test_exec_client_query_order() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.query_order(cmd).unwrap();
@@ -1068,6 +1153,7 @@ async fn test_query_account_does_not_block_within_runtime() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.query_account(cmd).unwrap();
@@ -1231,6 +1317,7 @@ async fn test_exec_client_submit_order_list_demo() {
         None,
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order_list(cmd).unwrap();
@@ -1251,6 +1338,83 @@ async fn test_exec_client_submit_order_list_demo() {
     }
 
     assert_eq!(submitted_count, 2, "Expected 2 OrderSubmitted events");
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_demo_cancel_post_lookup_failure_does_not_reject() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_demo_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+
+    client.connect().await.unwrap();
+    client.start().unwrap();
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 4 },
+        Duration::from_secs(10),
+    )
+    .await;
+    drain_execution_events(&mut rx).await;
+
+    let cmd = CancelOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*BYBIT_CLIENT_ID),
+        StrategyId::from("S-001"),
+        InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE),
+        ClientOrderId::from("test-cancel-post-lookup-ambiguous"),
+        Some(VenueOrderId::from("test-order-id-12345")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.cancel_order(cmd).unwrap();
+
+    assert_no_cancel_rejected(&mut rx, Duration::from_millis(300)).await;
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_demo_modify_whole_http_failure_does_not_reject() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_demo_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+
+    client.connect().await.unwrap();
+    client.start().unwrap();
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 4 },
+        Duration::from_secs(10),
+    )
+    .await;
+    drain_execution_events(&mut rx).await;
+
+    let cmd = ModifyOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*BYBIT_CLIENT_ID),
+        StrategyId::from("S-001"),
+        InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE),
+        ClientOrderId::from("test-modify-http-ambiguous"),
+        Some(VenueOrderId::from("test-order-id-12345")),
+        Some(Quantity::from("0.02")),
+        Some(Price::from("1600.00")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.modify_order(cmd).unwrap();
+
+    assert_no_modify_rejected(&mut rx, Duration::from_millis(300)).await;
 
     client.disconnect().await.unwrap();
 }
@@ -1343,6 +1507,7 @@ async fn test_exec_client_demo_submit_post_lookup_failure_does_not_reject() {
         None,
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order(cmd).unwrap();
@@ -1471,6 +1636,7 @@ async fn test_exec_client_demo_submit_confirmed_rejection_emits_order_rejected()
         None,
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order(cmd).unwrap();
@@ -1500,8 +1666,8 @@ async fn test_exec_client_demo_submit_confirmed_rejection_emits_order_rejected()
 
     assert_eq!(event.client_order_id, cid);
     assert_eq!(event.reason.to_string(), "EC_PostOnlyWillTakeLiquidity");
-    assert_eq!(event.reconciliation, 0);
-    assert_eq!(event.due_post_only, 0);
+    assert!(!event.reconciliation);
+    assert!(!event.due_post_only);
 
     client.disconnect().await.unwrap();
 }
@@ -1662,6 +1828,7 @@ async fn test_exec_client_submit_order_list_denies_all_on_invalid_leg() {
         None,
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order_list(cmd).unwrap();

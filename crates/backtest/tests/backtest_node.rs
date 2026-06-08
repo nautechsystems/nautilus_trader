@@ -15,16 +15,24 @@
 
 #![cfg(feature = "streaming")]
 
-use std::fmt::Debug;
+//! Integration tests for BacktestNode streaming runs.
+//!
+//! Tests that arm shutdown-on-error use global logging state. Run with cargo-nextest for process
+//! isolation, or use --test-threads=1.
+
+use std::{fmt::Debug, str::FromStr};
 
 use nautilus_backtest::{
-    config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig, NautilusDataType},
+    config::{
+        BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig,
+        NautilusDataType,
+    },
     node::BacktestNode,
 };
 use nautilus_common::actor::DataActor;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{BarSpecification, QuoteTick, TradeTick},
+    data::{BarSpecification, FundingRateUpdate, QuoteTick, TradeTick},
     enums::{AccountType, AggressorSide, BarAggregation, BookType, OmsType, OrderSide, PriceType},
     identifiers::{InstrumentId, StrategyId, TradeId},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
@@ -33,6 +41,7 @@ use nautilus_model::{
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rstest::*;
+use rust_decimal::Decimal;
 use tempfile::TempDir;
 use ustr::Ustr;
 
@@ -116,6 +125,43 @@ fn create_catalog_with_quotes_and_trades(
     catalog.write_to_parquet(trades, None, None, None).unwrap();
 
     (temp_dir, catalog_path)
+}
+
+fn create_catalog_with_funding_rates(
+    instrument: &InstrumentAny,
+    base_ts: u64,
+) -> (TempDir, String, Vec<FundingRateUpdate>) {
+    let temp_dir = TempDir::new().unwrap();
+    let catalog_path = temp_dir.path().to_str().unwrap().to_string();
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+    catalog.write_instruments(vec![instrument.clone()]).unwrap();
+
+    let instrument_id = instrument.id();
+    let funding_rates = vec![
+        FundingRateUpdate::new(
+            instrument_id,
+            Decimal::from_str("0.0001").unwrap(),
+            Some(480),
+            Some(UnixNanos::from(base_ts + 1_000_000_000)),
+            UnixNanos::from(base_ts),
+            UnixNanos::from(base_ts),
+        ),
+        FundingRateUpdate::new(
+            instrument_id,
+            Decimal::from_str("0.0002").unwrap(),
+            Some(480),
+            Some(UnixNanos::from(base_ts + 2_000_000_000)),
+            UnixNanos::from(base_ts + 1_000_000_000),
+            UnixNanos::from(base_ts + 1_000_000_000),
+        ),
+    ];
+
+    catalog
+        .write_to_parquet(funding_rates.clone(), None, None, None)
+        .unwrap();
+
+    (temp_dir, catalog_path, funding_rates)
 }
 
 fn binance_venue_config() -> BacktestVenueConfig {
@@ -293,6 +339,52 @@ impl DataActor for ShutdownOnTick {
     }
 }
 
+struct LogErrorOnTick {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    error_after: usize,
+    tick_count: usize,
+}
+
+impl LogErrorOnTick {
+    fn new(instrument_id: InstrumentId, error_after: usize) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ERROR-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            error_after,
+            tick_count: 0,
+        }
+    }
+}
+
+nautilus_strategy!(LogErrorOnTick);
+
+impl Debug for LogErrorOnTick {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(LogErrorOnTick)).finish()
+    }
+}
+
+impl DataActor for LogErrorOnTick {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        self.tick_count += 1;
+        if self.tick_count == self.error_after {
+            log::error!("BacktestNode shutdown-on-error smoke test");
+        }
+        Ok(())
+    }
+}
+
 #[rstest]
 fn test_new_rejects_empty_configs() {
     let result = BacktestNode::new(vec![]);
@@ -436,6 +528,37 @@ fn test_run_oneshot_with_time_bounds(crypto_perpetual_ethusdt: CryptoPerpetual) 
 }
 
 #[rstest]
+fn test_run_oneshot_loads_funding_rates_from_catalog(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let (_temp_dir, catalog_path, funding_rates) =
+        create_catalog_with_funding_rates(&instrument, 1_000_000_000);
+
+    let data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::FundingRateUpdate)
+        .catalog_path(catalog_path)
+        .instrument_id(instrument.id())
+        .build();
+    let config = BacktestRunConfig::builder()
+        .venues(vec![binance_venue_config()])
+        .data(vec![data])
+        .dispose_on_completion(false)
+        .build();
+    let config_id = config.id().to_string();
+
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+    let results = node.run().unwrap();
+    let engine = node.get_engine(&config_id).unwrap();
+    let cache = engine.kernel().cache.borrow();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].iterations, funding_rates.len());
+    assert_eq!(
+        cache.funding_rate(&instrument.id()),
+        Some(funding_rates.last().unwrap())
+    );
+}
+
+#[rstest]
 fn test_run_oneshot_with_strategy(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 10, 1_000_000_000);
@@ -526,6 +649,46 @@ fn test_run_streaming_shutdown_stops_between_chunks(crypto_perpetual_ethusdt: Cr
         results[0].iterations < total,
         "Shutdown must stop streaming before all {total} quotes are processed",
     );
+}
+
+mod serial_tests {
+    use super::*;
+
+    #[rstest]
+    fn test_run_streaming_error_log_triggers_shutdown(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let total = 50usize;
+        let (_temp_dir, catalog_path) =
+            create_catalog_with_quotes(&instrument, total, 1_000_000_000);
+
+        let chunk_size = 10usize;
+        let config = BacktestRunConfig::builder()
+            .venues(vec![binance_venue_config()])
+            .data(vec![data_config(&catalog_path, instrument.id())])
+            .engine(BacktestEngineConfig {
+                shutdown_on_error: true,
+                ..Default::default()
+            })
+            .maybe_chunk_size(Some(chunk_size))
+            .dispose_on_completion(false)
+            .build();
+        let config_id = config.id().to_string();
+
+        let mut node = BacktestNode::new(vec![config]).unwrap();
+        node.build().unwrap();
+
+        let engine = node.get_engine_mut(&config_id).unwrap();
+        engine
+            .add_strategy(LogErrorOnTick::new(instrument.id(), 3))
+            .unwrap();
+
+        let results = node.run().unwrap();
+        let engine = node.get_engine(&config_id).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].iterations, 3);
+        assert!(engine.kernel().is_shutdown_requested());
+    }
 }
 
 #[rstest]

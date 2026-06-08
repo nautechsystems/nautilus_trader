@@ -51,7 +51,7 @@ fn parse_rate_limit(name: &str, value: &str) -> PyResult<RateLimit> {
 
     let mut total_secs: u64 = 0;
     let mut parts = interval.split(':');
-    for label in ["hours", "minutes", "seconds"] {
+    for (label, multiplier) in [("hours", 3_600), ("minutes", 60), ("seconds", 1)] {
         let component = parts
             .next()
             .ok_or_else(|| {
@@ -62,12 +62,6 @@ fn parse_rate_limit(name: &str, value: &str) -> PyResult<RateLimit> {
             .parse::<u64>()
             .map_err(|e| to_pyvalue_err(format!("invalid `{name}` {label}: {e}")))?;
 
-        let multiplier: u64 = match label {
-            "hours" => 3_600,
-            "minutes" => 60,
-            "seconds" => 1,
-            _ => unreachable!(),
-        };
         total_secs = total_secs.saturating_add(component.saturating_mul(multiplier));
     }
 

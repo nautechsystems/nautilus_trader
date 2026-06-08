@@ -35,7 +35,7 @@ pub(crate) enum CancelOutcome {
 }
 
 impl CancelOutcome {
-    pub fn classify(reason: &str) -> Self {
+    pub(crate) fn classify(reason: &str) -> Self {
         if reason.contains(CANCEL_ALREADY_DONE) {
             Self::AlreadyDone
         } else {

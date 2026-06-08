@@ -21,7 +21,7 @@ use nautilus_model::identifiers::{
 
 /// A key-value lookup index for a `Cache`.
 #[derive(Debug)]
-pub struct CacheIndex {
+pub(super) struct CacheIndex {
     pub(crate) venue_account: AHashMap<Venue, AccountId>,
     pub(crate) venue_orders: AHashMap<Venue, AHashSet<ClientOrderId>>,
     pub(crate) venue_positions: AHashMap<Venue, AHashSet<PositionId>>,
@@ -96,7 +96,7 @@ impl Default for CacheIndex {
 
 impl CacheIndex {
     /// Clears the index which will clear/reset all internal state.
-    pub fn clear(&mut self) {
+    pub(super) fn clear(&mut self) {
         self.venue_account.clear();
         self.venue_orders.clear();
         self.venue_positions.clear();

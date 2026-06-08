@@ -86,10 +86,11 @@ from nautilus_trader.core.rust.common cimport logger_log
 from nautilus_trader.core.rust.common cimport logging_clock_set_realtime_mode
 from nautilus_trader.core.rust.common cimport logging_clock_set_static_mode
 from nautilus_trader.core.rust.common cimport logging_clock_set_static_time
-from nautilus_trader.core.rust.common cimport logging_init
+from nautilus_trader.core.rust.common cimport logging_init_with_options
 from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.common cimport logging_log_header
 from nautilus_trader.core.rust.common cimport logging_log_sysinfo
+from nautilus_trader.core.rust.common cimport logging_sync_to_disk
 from nautilus_trader.core.rust.common cimport test_clock_advance_time
 from nautilus_trader.core.rust.common cimport test_clock_cancel_callbacks
 from nautilus_trader.core.rust.common cimport test_clock_cancel_default_handler
@@ -1265,6 +1266,8 @@ cpdef LogGuard init_logging(
     bint print_config = False,
     uint64_t max_file_size = 0,
     uint32_t max_backup_count = 5,
+    bint fileout_sync_on_flush = True,
+    bint buffered_stdout = False,
 ):
     """
     Initialize the logging subsystem.
@@ -1314,6 +1317,10 @@ cpdef LogGuard init_logging(
         If set to 0, file rotation is disabled.
     max_backup_count : uint32_t, default 5
         The maximum number of backup log files to keep when rotating.
+    fileout_sync_on_flush : bool, default True
+        If file log flushes should also sync data to disk.
+    buffered_stdout : bool, default False
+        If stdout writes should be buffered until flush or buffer capacity.
 
     Returns
     -------
@@ -1335,7 +1342,7 @@ cpdef LogGuard init_logging(
     if logging_is_initialized():
         raise RuntimeError("Logging subsystem already initialized")
 
-    cdef LogGuard_API log_guard_api = logging_init(
+    cdef LogGuard_API log_guard_api = logging_init_with_options(
         trader_id._mem,
         instance_id._mem,
         level_stdout,
@@ -1350,6 +1357,8 @@ cpdef LogGuard init_logging(
         log_components_only,
         max_file_size,
         max_backup_count,
+        fileout_sync_on_flush,
+        buffered_stdout,
     )
 
     cdef LogGuard log_guard = LogGuard.__new__(LogGuard)
@@ -1378,6 +1387,10 @@ cpdef void set_logging_pyo3(bint value):
 
 cpdef void flush_logger():
     logger_flush()
+
+
+cpdef bint sync_logger_to_disk():
+    return <bint>logging_sync_to_disk()
 
 
 cdef class Logger:
@@ -3157,9 +3170,11 @@ cdef class Throttler:
         cdef int64_t delta_next
         while self._buffer:
             delta_next = self._delta_next()
-            msg = self._buffer.pop()
 
             if delta_next <= 0:
+                # Keep the buffer entry until the rate check passes, otherwise
+                # re-arming the timer would drop it.
+                msg = self._buffer.pop()
                 self._send_msg(msg)
             else:
                 self._set_timer(self._process)

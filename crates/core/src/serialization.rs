@@ -713,7 +713,7 @@ mod tests {
     };
 
     #[derive(Deserialize)]
-    pub struct TestStruct {
+    pub(super) struct TestStruct {
         #[serde(deserialize_with = "from_bool_as_u8")]
         pub value: u8,
     }

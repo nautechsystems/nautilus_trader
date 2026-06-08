@@ -50,9 +50,9 @@ use super::{
         BinanceFuturesCoinExchangeInfo, BinanceFuturesCoinSymbol, BinanceFuturesKline,
         BinanceFuturesMarkPrice, BinanceFuturesOrder, BinanceFuturesTicker24hr,
         BinanceFuturesTrade, BinanceFuturesUsdExchangeInfo, BinanceFuturesUsdSymbol,
-        BinanceHedgeModeResponse, BinanceLeverageResponse, BinanceOpenInterest, BinanceOrderBook,
-        BinancePositionRisk, BinancePriceTicker, BinanceServerTime, BinanceUserTrade,
-        ListenKeyResponse,
+        BinanceHedgeModeResponse, BinanceLeverageResponse, BinanceOpenInterest,
+        BinanceOpenInterestHistRecord, BinanceOrderBook, BinancePositionRisk, BinancePriceTicker,
+        BinanceServerTime, BinanceUserTrade, ListenKeyResponse,
     },
     query::{
         BatchCancelItem, BatchModifyItem, BatchOrderItem, BinanceAlgoOrderQueryParams,
@@ -60,10 +60,10 @@ use super::{
         BinanceCancelAllAlgoOrdersParams, BinanceCancelAllOrdersParams, BinanceCancelOrderParams,
         BinanceDepthParams, BinanceFundingRateParams, BinanceKlinesParams, BinanceMarkPriceParams,
         BinanceModifyOrderParams, BinanceNewAlgoOrderParams, BinanceNewOrderParams,
-        BinanceOpenAlgoOrdersParams, BinanceOpenInterestParams, BinanceOpenOrdersParams,
-        BinanceOrderQueryParams, BinancePositionRiskParams, BinanceSetLeverageParams,
-        BinanceSetMarginTypeParams, BinanceTicker24hrParams, BinanceTradesParams,
-        BinanceUserTradesParams, ListenKeyParams,
+        BinanceOpenAlgoOrdersParams, BinanceOpenInterestHistParams, BinanceOpenInterestParams,
+        BinanceOpenOrdersParams, BinanceOrderQueryParams, BinancePositionRiskParams,
+        BinanceSetLeverageParams, BinanceSetMarginTypeParams, BinanceTicker24hrParams,
+        BinanceTradesParams, BinanceUserTradesParams, ListenKeyParams,
     },
 };
 use crate::common::{
@@ -79,13 +79,26 @@ use crate::common::{
         BinanceSide, BinanceTimeInForce, BinanceWorkingType,
     },
     models::BinanceErrorResponse,
-    parse::{parse_coinm_instrument, parse_usdm_instrument},
+    parse::{
+        parse_coinm_instrument, parse_required_price_at_precision,
+        parse_required_quantity_at_precision, parse_usdm_instrument,
+    },
     symbol::{format_binance_symbol, format_instrument_id},
     urls::get_http_base_url,
 };
 
 const BINANCE_GLOBAL_RATE_KEY: &str = "binance:global";
 const BINANCE_ORDERS_RATE_KEY: &str = "binance:orders";
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchCancelParams {
+    symbol: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    order_id_list: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    orig_client_order_id_list: Option<String>,
+}
 
 /// Raw HTTP client for Binance Futures REST API.
 #[derive(Debug, Clone)]
@@ -433,7 +446,10 @@ impl BinanceRawFuturesHttpClient {
 
     fn build_url(&self, path: &str, query: &str) -> String {
         // Full API paths (e.g., /fapi/v2/account) bypass the default api_path
-        let url_path = if path.starts_with("/fapi/") || path.starts_with("/dapi/") {
+        let url_path = if path.starts_with("/fapi/")
+            || path.starts_with("/dapi/")
+            || path.starts_with("/futures/data/")
+        {
             path.to_string()
         } else if path.starts_with('/') {
             format!("{}{}", self.api_path, path)
@@ -640,6 +656,19 @@ impl BinanceRawFuturesHttpClient {
         params: &BinanceOpenInterestParams,
     ) -> BinanceFuturesHttpResult<BinanceOpenInterest> {
         self.get("openInterest", Some(params), false, false).await
+    }
+
+    /// Fetches historical open interest statistics for a symbol or pair.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn open_interest_hist(
+        &self,
+        params: &BinanceOpenInterestHistParams,
+    ) -> BinanceFuturesHttpResult<Vec<BinanceOpenInterestHistRecord>> {
+        self.get("/futures/data/openInterestHist", Some(params), false, false)
+            .await
     }
 
     /// Fetches recent public trades for a symbol.
@@ -915,11 +944,11 @@ impl BinanceRawFuturesHttpClient {
             .await
     }
 
-    /// Cancels multiple orders in a single request (up to 5 orders).
+    /// Cancels multiple orders in a single request (up to 10 orders).
     ///
     /// # Errors
     ///
-    /// Returns an error if the batch exceeds 5 orders or the request fails.
+    /// Returns an error if the batch exceeds 10 orders or the request fails.
     pub async fn batch_cancel_orders(
         &self,
         cancels: &[BatchCancelItem],
@@ -928,14 +957,74 @@ impl BinanceRawFuturesHttpClient {
             return Ok(Vec::new());
         }
 
-        if cancels.len() > 5 {
+        if cancels.len() > 10 {
             return Err(BinanceFuturesHttpError::ValidationError(
-                "Batch cancel limit is 5 orders maximum".to_string(),
+                "Batch cancel limit is 10 orders maximum".to_string(),
             ));
         }
 
-        self.batch_request_delete("batchOrders", cancels, true)
+        let params = Self::batch_cancel_params(cancels)?;
+        self.request_delete("batchOrders", Some(&params), true, true)
             .await
+    }
+
+    fn batch_cancel_params(
+        cancels: &[BatchCancelItem],
+    ) -> BinanceFuturesHttpResult<BatchCancelParams> {
+        let symbol = cancels[0].symbol.clone();
+        let mut order_ids = Vec::new();
+        let mut client_order_ids = Vec::new();
+
+        for cancel in cancels {
+            if cancel.symbol != symbol {
+                return Err(BinanceFuturesHttpError::ValidationError(
+                    "Batch cancel orders must use the same symbol".to_string(),
+                ));
+            }
+
+            if let Some(order_id) = cancel.order_id {
+                order_ids.push(order_id);
+            }
+
+            if let Some(client_order_id) = &cancel.orig_client_order_id {
+                client_order_ids.push(client_order_id.clone());
+            }
+        }
+
+        if order_ids.is_empty() && client_order_ids.is_empty() {
+            return Err(BinanceFuturesHttpError::ValidationError(
+                "Batch cancel requires at least one order ID or client order ID".to_string(),
+            ));
+        }
+
+        if !order_ids.is_empty() && !client_order_ids.is_empty() {
+            return Err(BinanceFuturesHttpError::ValidationError(
+                "Batch cancel requires either order IDs or client order IDs, not both".to_string(),
+            ));
+        }
+
+        let order_id_list = if order_ids.is_empty() {
+            None
+        } else {
+            Some(
+                serde_json::to_string(&order_ids)
+                    .map_err(|e| BinanceFuturesHttpError::ValidationError(e.to_string()))?,
+            )
+        };
+        let orig_client_order_id_list = if client_order_ids.is_empty() {
+            None
+        } else {
+            Some(
+                serde_json::to_string(&client_order_ids)
+                    .map_err(|e| BinanceFuturesHttpError::ValidationError(e.to_string()))?,
+            )
+        };
+
+        Ok(BatchCancelParams {
+            symbol,
+            order_id_list,
+            orig_client_order_id_list,
+        })
     }
 
     /// Submits a new algo order (conditional order).
@@ -1500,6 +1589,18 @@ impl BinanceFuturesHttpClient {
         self.inner.open_interest(params).await
     }
 
+    /// Fetches historical open interest statistics for a symbol or pair.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn open_interest_hist(
+        &self,
+        params: &BinanceOpenInterestHistParams,
+    ) -> BinanceFuturesHttpResult<Vec<BinanceOpenInterestHistRecord>> {
+        self.inner.open_interest_hist(params).await
+    }
+
     /// Queries a single order by order ID or client order ID.
     ///
     /// # Errors
@@ -1710,8 +1811,15 @@ impl BinanceFuturesHttpClient {
         let binance_order_type = order_type_to_binance_futures(order_type)?;
         let binance_tif = BinanceTimeInForce::try_from(time_in_force)?;
 
+        let requires_trigger_price = matches!(
+            order_type,
+            OrderType::StopMarket
+                | OrderType::StopLimit
+                | OrderType::MarketIfTouched
+                | OrderType::LimitIfTouched
+        );
         anyhow::ensure!(
-            trigger_price.is_some(),
+            !requires_trigger_price || trigger_price.is_some(),
             "Algo order type {order_type:?} requires a trigger price"
         );
 
@@ -1720,7 +1828,16 @@ impl BinanceFuturesHttpClient {
             matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched);
 
         let price_str = price.map(|p| p.to_string());
-        let trigger_price_str = trigger_price.map(|p| p.to_string());
+        let trigger_price_str = if matches!(order_type, OrderType::TrailingStopMarket) {
+            None
+        } else {
+            trigger_price.map(|p| p.to_string())
+        };
+        let reduce_only = if reduce_only && position_side.is_none() {
+            Some(true)
+        } else {
+            None
+        };
         let client_id_str = encode_broker_id(&client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
 
         // closePosition is mutually exclusive with quantity and reduceOnly
@@ -1768,7 +1885,7 @@ impl BinanceFuturesHttpClient {
                 working_type,
                 close_position: None,
                 price_protect: None,
-                reduce_only: if reduce_only { Some(true) } else { None },
+                reduce_only,
                 activation_price: activation_price.map(|p| p.to_string()),
                 callback_rate,
                 client_algo_id: Some(client_id_str),
@@ -1892,10 +2009,19 @@ impl BinanceFuturesHttpClient {
 
         let symbol = format_binance_symbol(&instrument_id);
 
-        let order_id = venue_order_id
-            .map(|id| id.inner().parse::<i64>())
-            .transpose()
-            .map_err(|_| anyhow::anyhow!("Invalid venue order ID"))?;
+        let order_id = match venue_order_id {
+            Some(venue_order_id) => match venue_order_id.inner().parse::<i64>() {
+                Ok(order_id) => Some(order_id),
+                Err(e) if client_order_id.is_some() => {
+                    log::warn!(
+                        "Unable to parse venue_order_id {venue_order_id} for cancel, canceling by client_order_id: {e}"
+                    );
+                    None
+                }
+                Err(e) => anyhow::bail!("Invalid venue order ID: {e}"),
+            },
+            None => None,
+        };
 
         let params = BinanceCancelOrderParams {
             symbol,
@@ -1984,14 +2110,14 @@ impl BinanceFuturesHttpClient {
         }
     }
 
-    /// Cancels multiple orders in a single request (up to 5 orders).
+    /// Cancels multiple orders in a single request (up to 10 orders).
     ///
     /// Each cancel in the batch is processed independently. The response contains
     /// the result for each cancel, which can be either a success or an error.
     ///
     /// # Errors
     ///
-    /// Returns an error if the batch exceeds 5 orders or the request fails.
+    /// Returns an error if the batch exceeds 10 orders or the request fails.
     pub async fn batch_cancel_orders(
         &self,
         cancels: &[BatchCancelItem],
@@ -2276,25 +2402,13 @@ impl BinanceFuturesHttpClient {
 
         let mut result = Vec::with_capacity(trades.len());
         for trade in trades {
-            let price: f64 = trade.price.parse().unwrap_or(0.0);
-            let size: f64 = trade.qty.parse().unwrap_or(0.0);
-            let ts_event = UnixNanos::from_millis(trade.time as u64);
-
-            let aggressor_side = if trade.is_buyer_maker {
-                AggressorSide::Seller
-            } else {
-                AggressorSide::Buyer
-            };
-
-            let tick = TradeTick::new(
+            let tick = parse_futures_trade_tick(
+                &trade,
                 instrument_id,
-                Price::new(price, price_precision),
-                Quantity::new(size, size_precision),
-                aggressor_side,
-                TradeId::new(trade.id.to_string()),
-                ts_event,
+                price_precision,
+                size_precision,
                 ts_init,
-            );
+            )?;
             result.push(tick);
         }
 
@@ -2350,30 +2464,73 @@ impl BinanceFuturesHttpClient {
 
         let mut result = Vec::with_capacity(klines.len());
         for kline in klines {
-            let open: f64 = kline.open.parse().unwrap_or(0.0);
-            let high: f64 = kline.high.parse().unwrap_or(0.0);
-            let low: f64 = kline.low.parse().unwrap_or(0.0);
-            let close: f64 = kline.close.parse().unwrap_or(0.0);
-            let volume: f64 = kline.volume.parse().unwrap_or(0.0);
-
-            // close_time is end of interval, add 1ms for next bar's open
-            let ts_event = UnixNanos::from_millis(kline.close_time as u64);
-
-            let bar = Bar::new(
+            let bar = parse_futures_kline_bar(
+                &kline,
                 bar_type,
-                Price::new(open, price_precision),
-                Price::new(high, price_precision),
-                Price::new(low, price_precision),
-                Price::new(close, price_precision),
-                Quantity::new(volume, size_precision),
-                ts_event,
+                price_precision,
+                size_precision,
                 ts_init,
-            );
+            )?;
             result.push(bar);
         }
 
         Ok(result)
     }
+}
+
+fn parse_futures_trade_tick(
+    trade: &BinanceFuturesTrade,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<TradeTick> {
+    let price = parse_required_price_at_precision(&trade.price, price_precision, "trade.price")
+        .map_err(|e| anyhow::anyhow!("invalid Futures trade id {}: {e}", trade.id))?;
+    let size = parse_required_quantity_at_precision(&trade.qty, size_precision, "trade.qty")
+        .map_err(|e| anyhow::anyhow!("invalid Futures trade id {}: {e}", trade.id))?;
+    let ts_event = UnixNanos::from_millis(trade.time as u64);
+
+    let aggressor_side = if trade.is_buyer_maker {
+        AggressorSide::Seller
+    } else {
+        AggressorSide::Buyer
+    };
+
+    Ok(TradeTick::new(
+        instrument_id,
+        price,
+        size,
+        aggressor_side,
+        TradeId::new(trade.id.to_string()),
+        ts_event,
+        ts_init,
+    ))
+}
+
+fn parse_futures_kline_bar(
+    kline: &BinanceFuturesKline,
+    bar_type: BarType,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Bar> {
+    let open = parse_required_price_at_precision(&kline.open, price_precision, "kline.open")
+        .map_err(|e| anyhow::anyhow!("invalid Futures kline {}: {e}", kline.open_time))?;
+    let high = parse_required_price_at_precision(&kline.high, price_precision, "kline.high")
+        .map_err(|e| anyhow::anyhow!("invalid Futures kline {}: {e}", kline.open_time))?;
+    let low = parse_required_price_at_precision(&kline.low, price_precision, "kline.low")
+        .map_err(|e| anyhow::anyhow!("invalid Futures kline {}: {e}", kline.open_time))?;
+    let close = parse_required_price_at_precision(&kline.close, price_precision, "kline.close")
+        .map_err(|e| anyhow::anyhow!("invalid Futures kline {}: {e}", kline.open_time))?;
+    let volume =
+        parse_required_quantity_at_precision(&kline.volume, size_precision, "kline.volume")
+            .map_err(|e| anyhow::anyhow!("invalid Futures kline {}: {e}", kline.open_time))?;
+    let ts_event = UnixNanos::from_millis(kline.close_time as u64);
+
+    Ok(Bar::new(
+        bar_type, open, high, low, close, volume, ts_event, ts_init,
+    ))
 }
 
 /// Checks if an order type requires the Binance Algo Service API.
@@ -2416,6 +2573,7 @@ mod tests {
     use tokio_util::bytes::Bytes;
 
     use super::*;
+    use crate::common::enums::BinanceTradingStatus;
 
     #[rstest]
     fn test_rate_limit_config_usdm_has_request_weight_and_orders() {
@@ -2465,6 +2623,59 @@ mod tests {
         result.unwrap_err();
     }
 
+    #[rstest]
+    fn test_parse_futures_trade_tick_rejects_invalid_price() {
+        let trade = BinanceFuturesTrade {
+            id: 100,
+            price: "not-a-number".to_string(),
+            qty: "0.001".to_string(),
+            quote_qty: "50.00".to_string(),
+            time: 1_625_474_304_000,
+            is_buyer_maker: false,
+        };
+
+        let result = parse_futures_trade_tick(
+            &trade,
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            2,
+            3,
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("trade.price"));
+        assert!(error.contains("100"));
+    }
+
+    #[rstest]
+    fn test_parse_futures_kline_bar_rejects_invalid_volume() {
+        let kline = BinanceFuturesKline {
+            open_time: 1_625_474_304_000,
+            open: "50000.00".to_string(),
+            high: "51000.00".to_string(),
+            low: "49000.00".to_string(),
+            close: "50500.00".to_string(),
+            volume: "not-a-number".to_string(),
+            close_time: 1_625_474_364_000,
+            quote_volume: "631250.00".to_string(),
+            num_trades: 100,
+            taker_buy_base_volume: "6.2".to_string(),
+            taker_buy_quote_volume: "313100.00".to_string(),
+        };
+
+        let result = parse_futures_kline_bar(
+            &kline,
+            BarType::from("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+            2,
+            3,
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("kline.volume"));
+        assert!(error.contains("1625474304000"));
+    }
+
     fn create_test_raw_client() -> BinanceRawFuturesHttpClient {
         BinanceRawFuturesHttpClient::new(
             BinanceProductType::UsdM,
@@ -2477,6 +2688,182 @@ mod tests {
             None,
         )
         .expect("Failed to create test client")
+    }
+
+    fn create_test_client() -> BinanceFuturesHttpClient {
+        BinanceFuturesHttpClient::new(
+            BinanceProductType::UsdM,
+            BinanceEnvironment::Live,
+            get_atomic_clock_realtime(),
+            None,
+            None,
+            Some("http://127.0.0.1:1".to_string()),
+            None,
+            Some(1),
+            None,
+            false,
+        )
+        .expect("Failed to create test client")
+    }
+
+    fn test_usdm_symbol() -> BinanceFuturesUsdSymbol {
+        BinanceFuturesUsdSymbol {
+            symbol: Ustr::from("BTCUSDT"),
+            pair: Ustr::from("BTCUSDT"),
+            contract_type: "PERPETUAL".to_string(),
+            delivery_date: 4_133_404_800_000,
+            onboard_date: 1_569_398_400_000,
+            status: BinanceTradingStatus::Trading,
+            maint_margin_percent: "2.5000".to_string(),
+            required_margin_percent: "5.0000".to_string(),
+            base_asset: Ustr::from("BTC"),
+            quote_asset: Ustr::from("USDT"),
+            margin_asset: Ustr::from("USDT"),
+            price_precision: 2,
+            quantity_precision: 3,
+            base_asset_precision: 8,
+            quote_precision: 8,
+            underlying_type: None,
+            underlying_sub_type: Vec::new(),
+            settle_plan: None,
+            trigger_protect: None,
+            liquidation_fee: None,
+            market_take_bound: None,
+            order_types: Vec::new(),
+            time_in_force: Vec::new(),
+            filters: Vec::new(),
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_submit_algo_order_stop_market_requires_trigger_price() {
+        let client = create_test_client();
+        client.instruments_cache().insert(
+            Ustr::from("BTCUSDT"),
+            BinanceFuturesInstrument::UsdM(test_usdm_symbol()),
+        );
+
+        let result = client
+            .submit_algo_order(
+                AccountId::from("BINANCE-001"),
+                InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+                ClientOrderId::new("missing-trigger-test-001"),
+                OrderSide::Sell,
+                OrderType::StopMarket,
+                Quantity::from("0.001"),
+                TimeInForce::Gtc,
+                None,
+                None,
+                false,
+                false,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+
+        let error = result.unwrap_err().to_string();
+        assert_eq!(error, "Algo order type StopMarket requires a trigger price");
+    }
+
+    #[rstest]
+    fn test_batch_cancel_params_builds_order_id_list() {
+        let items = vec![
+            BatchCancelItem::by_order_id("BTCUSDT", 123),
+            BatchCancelItem::by_order_id("BTCUSDT", 456),
+        ];
+
+        let params = BinanceRawFuturesHttpClient::batch_cancel_params(&items).unwrap();
+
+        assert_eq!(params.symbol, "BTCUSDT");
+        assert_eq!(params.order_id_list.as_deref(), Some("[123,456]"));
+        assert_eq!(params.orig_client_order_id_list, None);
+    }
+
+    #[rstest]
+    fn test_batch_cancel_params_builds_client_order_id_list() {
+        let items = vec![
+            BatchCancelItem::by_client_order_id("BTCUSDT", "first-order"),
+            BatchCancelItem::by_client_order_id("BTCUSDT", "second-order"),
+        ];
+
+        let params = BinanceRawFuturesHttpClient::batch_cancel_params(&items).unwrap();
+
+        assert_eq!(params.symbol, "BTCUSDT");
+        assert_eq!(params.order_id_list, None);
+        assert_eq!(
+            params.orig_client_order_id_list.as_deref(),
+            Some("[\"first-order\",\"second-order\"]"),
+        );
+    }
+
+    #[rstest]
+    fn test_batch_cancel_params_rejects_mixed_symbols() {
+        let items = vec![
+            BatchCancelItem::by_order_id("BTCUSDT", 123),
+            BatchCancelItem::by_order_id("ETHUSDT", 456),
+        ];
+
+        let result = BinanceRawFuturesHttpClient::batch_cancel_params(&items);
+
+        assert_validation_error(result, "same symbol");
+    }
+
+    #[rstest]
+    fn test_batch_cancel_params_rejects_mixed_id_types() {
+        let items = vec![
+            BatchCancelItem::by_order_id("BTCUSDT", 123),
+            BatchCancelItem::by_client_order_id("BTCUSDT", "client-order"),
+        ];
+
+        let result = BinanceRawFuturesHttpClient::batch_cancel_params(&items);
+
+        assert_validation_error(result, "not both");
+    }
+
+    #[rstest]
+    fn test_batch_cancel_params_rejects_items_without_ids() {
+        let items = vec![BatchCancelItem {
+            symbol: "BTCUSDT".to_string(),
+            order_id: None,
+            orig_client_order_id: None,
+        }];
+
+        let result = BinanceRawFuturesHttpClient::batch_cancel_params(&items);
+
+        assert_validation_error(result, "at least one order ID or client order ID");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_batch_cancel_orders_rejects_more_than_ten_items() {
+        let client = create_test_raw_client();
+        let items = (0..11)
+            .map(|order_id| BatchCancelItem::by_order_id("BTCUSDT", order_id))
+            .collect::<Vec<_>>();
+
+        let result = client.batch_cancel_orders(&items).await;
+
+        match result {
+            Err(BinanceFuturesHttpError::ValidationError(message)) => {
+                assert!(message.contains("10 orders maximum"));
+            }
+            other => panic!("Expected ValidationError, was {other:?}"),
+        }
+    }
+
+    fn assert_validation_error(
+        result: BinanceFuturesHttpResult<BatchCancelParams>,
+        expected_message: &str,
+    ) {
+        match result {
+            Err(BinanceFuturesHttpError::ValidationError(message)) => {
+                assert!(message.contains(expected_message));
+            }
+            other => panic!("Expected ValidationError, was {other:?}"),
+        }
     }
 
     #[rstest]

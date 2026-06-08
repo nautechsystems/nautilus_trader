@@ -339,6 +339,7 @@ pub const fn parse_position_side(current_qty: Option<i64>) -> PositionSide {
 /// - "LAMp" -> "USDT" (Test currency, mapped to USDT)
 /// - "RLUSd" -> "RLUSD" (Ripple USD stablecoin)
 /// - "MAMUSd" -> "MAMUSD" (Unknown stablecoin)
+/// - "USYc" -> "USYC" (testnet stablecoin)
 ///
 /// For other currencies, converts to uppercase.
 #[must_use]
@@ -357,9 +358,15 @@ pub fn map_bitmex_currency(bitmex_currency: &str) -> Cow<'static, str> {
 pub fn bitmex_currency_divisor(bitmex_currency: &str) -> Decimal {
     match bitmex_currency {
         "XBt" => Decimal::from(100_000_000),
-        "USDt" | "LAMp" | "MAMUSd" | "RLUSd" => Decimal::from(1_000_000),
+        "USDt" | "LAMp" | "MAMUSd" | "RLUSd" | "USYc" | "USYC" => Decimal::from(1_000_000),
         _ => Decimal::ONE,
     }
+}
+
+/// Returns the Nautilus account ID for a BitMEX account number.
+#[must_use]
+pub fn bitmex_account_id(account: i64) -> AccountId {
+    AccountId::new(format!("BITMEX-{account}"))
 }
 
 /// Parses a BitMEX margin message into a Nautilus account balance.
@@ -374,21 +381,7 @@ pub fn parse_account_balance(margin: &BitmexMarginMsg) -> AccountBalance {
     );
 
     let currency_str = map_bitmex_currency(&margin.currency);
-
-    let currency = match Currency::try_from_str(&currency_str) {
-        Some(c) => c,
-        None => {
-            // Create a default crypto currency for unknown codes to avoid disrupting flows
-            log::warn!(
-                "Unknown currency '{currency_str}' in margin message, creating default crypto currency"
-            );
-            let currency = Currency::new(&currency_str, 8, 0, &currency_str, CurrencyType::Crypto);
-            if let Err(e) = Currency::register(currency, false) {
-                log::error!("Failed to register currency '{currency_str}': {e}");
-            }
-            currency
-        }
-    };
+    let currency = parse_bitmex_margin_currency(&currency_str);
 
     // BitMEX returns values in satoshis for BTC (XBt) or microunits for stablecoins.
     let divisor = bitmex_currency_divisor(margin.currency.as_str());
@@ -419,6 +412,39 @@ pub fn parse_account_balance(margin: &BitmexMarginMsg) -> AccountBalance {
         let zero = Money::zero(currency);
         AccountBalance::new(zero, zero, zero)
     })
+}
+
+fn parse_bitmex_margin_currency(currency_str: &str) -> Currency {
+    if let Some(currency) = known_bitmex_margin_currency(currency_str) {
+        return currency;
+    }
+
+    match Currency::try_from_str(currency_str) {
+        Some(c) => c,
+        None => {
+            log::warn!(
+                "Unknown currency '{currency_str}' in margin message, creating default crypto currency"
+            );
+            let currency = Currency::new(currency_str, 8, 0, currency_str, CurrencyType::Crypto);
+            if let Err(e) = Currency::register(currency, false) {
+                log::error!("Failed to register currency '{currency_str}': {e}");
+            }
+            currency
+        }
+    }
+}
+
+fn known_bitmex_margin_currency(currency_str: &str) -> Option<Currency> {
+    match currency_str {
+        "USYC" => {
+            let currency = Currency::new("USYC", 6, 0, "USYC", CurrencyType::Crypto);
+            if let Err(e) = Currency::register(currency, true) {
+                log::error!("Failed to register currency '{currency_str}': {e}");
+            }
+            Some(currency)
+        }
+        _ => None,
+    }
 }
 
 /// Parses a BitMEX margin message into a Nautilus account state.
@@ -814,6 +840,58 @@ mod tests {
         let usdt_margin = &account_state.margins[0];
         assert_eq!(usdt_margin.initial.as_f64(), 0.5); // 500000 microunits
         assert_eq!(usdt_margin.maintenance.as_f64(), 0.25); // 250000 microunits
+    }
+
+    #[rstest]
+    fn test_parse_account_state_usyc_margin_currency() {
+        let margin_msg = BitmexMarginMsg {
+            account: 123456,
+            currency: Ustr::from("USYc"),
+            risk_limit: Some(1000000000),
+            amount: Some(100000000),
+            prev_realised_pnl: None,
+            gross_comm: None,
+            gross_open_cost: None,
+            gross_open_premium: None,
+            gross_exec_cost: None,
+            gross_mark_value: None,
+            risk_value: None,
+            init_margin: Some(500000),
+            maint_margin: Some(250000),
+            target_excess_margin: None,
+            realised_pnl: None,
+            unrealised_pnl: None,
+            wallet_balance: Some(100000000),
+            margin_balance: Some(100000000),
+            margin_leverage: None,
+            margin_used_pcnt: None,
+            excess_margin: None,
+            available_margin: Some(99000000),
+            withdrawable_margin: None,
+            maker_fee_discount: None,
+            taker_fee_discount: None,
+            timestamp: chrono::Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap(),
+            foreign_margin_balance: None,
+            foreign_requirement: None,
+        };
+
+        let account_id = AccountId::new("BITMEX-001");
+        let ts_init = UnixNanos::from(1_000_000_000);
+
+        let account_state = parse_account_state(&margin_msg, account_id, ts_init).unwrap();
+
+        let balance = &account_state.balances[0];
+        assert_eq!(balance.currency.code.as_str(), "USYC");
+        assert_eq!(balance.currency.precision, 6);
+        assert_eq!(balance.total.as_f64(), 100.0);
+        assert_eq!(balance.free.as_f64(), 99.0);
+        assert_eq!(balance.locked.as_f64(), 1.0);
+
+        assert_eq!(account_state.margins.len(), 1);
+        let margin = &account_state.margins[0];
+        assert_eq!(margin.currency.code.as_str(), "USYC");
+        assert_eq!(margin.initial.as_f64(), 0.5);
+        assert_eq!(margin.maintenance.as_f64(), 0.25);
     }
 
     #[rstest]

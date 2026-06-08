@@ -42,7 +42,10 @@ use axum::{
 };
 use chrono::{TimeZone, Utc};
 use nautilus_coinbase::{
-    common::{consts::COINBASE_VENUE, enums::CoinbaseEnvironment},
+    common::{
+        consts::{COINBASE_CLIENT_ID, COINBASE_VENUE},
+        enums::CoinbaseEnvironment,
+    },
     config::CoinbaseExecClientConfig,
     execution::CoinbaseExecutionClient,
     http::client::CoinbaseHttpClient,
@@ -53,14 +56,21 @@ use nautilus_common::{
     live::runner::replace_exec_event_sender,
     messages::{
         ExecutionEvent,
-        execution::{GeneratePositionStatusReports, GeneratePositionStatusReportsBuilder},
+        execution::{
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GeneratePositionStatusReports,
+            GeneratePositionStatusReportsBuilder, ModifyOrder,
+        },
     },
+    testing::wait_until_async,
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType, OrderSide, OrderType, PositionSideSpecified, TimeInForce},
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TraderId, VenueOrderId},
+    events::OrderEventAny,
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
+    },
     instruments::InstrumentAny,
     types::{Price, Quantity},
 };
@@ -323,17 +333,35 @@ async fn handle_create_order(
 async fn handle_cancel_orders(
     State(state): State<TestState>,
     Json(body): Json<Value>,
-) -> impl IntoResponse {
+) -> axum::response::Response {
+    if state.is_failing("/orders/batch_cancel") {
+        state.record_failure("/orders/batch_cancel", String::new(), Some(body));
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "unavailable"})),
+        )
+            .into_response();
+    }
+
     let response = state.next_response_with_body("/orders/batch_cancel", body);
-    Json(response)
+    Json(response).into_response()
 }
 
 async fn handle_edit_order(
     State(state): State<TestState>,
     Json(body): Json<Value>,
-) -> impl IntoResponse {
+) -> axum::response::Response {
+    if state.is_failing("/orders/edit") {
+        state.record_failure("/orders/edit", String::new(), Some(body));
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "unavailable"})),
+        )
+            .into_response();
+    }
+
     let response = state.next_response_with_body("/orders/edit", body);
-    Json(response)
+    Json(response).into_response()
 }
 
 const API_PREFIX: &str = "/api/v3/brokerage";
@@ -1640,10 +1668,21 @@ fn make_exec_client(
     addr: std::net::SocketAddr,
     account_type: AccountType,
 ) -> CoinbaseExecutionClient {
-    // The emitter inside the exec client tries to publish on the global
-    // runner sender; install a drop-through channel so constructing it is
-    // safe in tests that only call report-generation methods.
-    let (sender, _rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    let (client, _rx) = make_exec_client_with_events(addr, account_type);
+    client
+}
+
+fn make_exec_client_with_events(
+    addr: std::net::SocketAddr,
+    account_type: AccountType,
+) -> (
+    CoinbaseExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) {
+    // The emitter inside the exec client publishes on the global runner
+    // sender; install a fresh channel so tests can either observe events or
+    // drop the receiver when they only call report-generation methods.
+    let (sender, rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
     replace_exec_event_sender(sender);
 
     let cache = std::rc::Rc::new(std::cell::RefCell::new(Cache::default()));
@@ -1666,7 +1705,10 @@ fn make_exec_client(
         ..CoinbaseExecClientConfig::default()
     };
 
-    CoinbaseExecutionClient::new(core, config).expect("exec client construction")
+    (
+        CoinbaseExecutionClient::new(core, config).expect("exec client construction"),
+        rx,
+    )
 }
 
 fn position_status_reports_cmd(
@@ -1677,6 +1719,55 @@ fn position_status_reports_cmd(
         .instrument_id(instrument_id)
         .build()
         .expect("cmd build")
+}
+
+fn make_cancel_order(
+    client_order_id: ClientOrderId,
+    instrument_id: InstrumentId,
+    strategy_id: StrategyId,
+    venue_order_id: Option<VenueOrderId>,
+) -> CancelOrder {
+    CancelOrder::new(
+        TraderId::from("TRADER-001"),
+        Some(*COINBASE_CLIENT_ID),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+async fn wait_for_requests(state: TestState, path: &'static str, count: usize) {
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.requests_for(path).len() >= count }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+async fn assert_no_order_event_matching<F>(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    predicate: F,
+) where
+    F: Fn(&OrderEventAny) -> bool,
+{
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    while let Ok(event) = rx.try_recv() {
+        if let ExecutionEvent::Order(order_event) = event {
+            assert!(
+                !predicate(&order_event),
+                "unexpected order event: {order_event:?}",
+            );
+        }
+    }
 }
 
 #[rstest]
@@ -1831,6 +1922,317 @@ async fn test_exec_client_mass_status_margin_includes_cfm_positions() {
         Some(1),
         "Margin mass status must carry the CFM position"
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_cancel_order_without_venue_id_does_not_emit_cancel_rejected() {
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx) = make_exec_client_with_events(addr, AccountType::Cash);
+    client.start().unwrap();
+
+    let client_order_id = ClientOrderId::new("cancel-no-venue-id");
+    client
+        .cancel_order(make_cancel_order(
+            client_order_id,
+            btc_usd_instrument_id(),
+            StrategyId::from("S-CANCEL"),
+            None,
+        ))
+        .unwrap();
+
+    assert!(state.requests_for("/orders/batch_cancel").is_empty());
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(rejected)
+                if rejected.client_order_id == client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_cancel_order_http_failure_does_not_emit_cancel_rejected() {
+    let state = TestState::default();
+    state.mark_failing("/orders/batch_cancel");
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx) = make_exec_client_with_events(addr, AccountType::Cash);
+    client.start().unwrap();
+
+    let client_order_id = ClientOrderId::new("cancel-http-failure");
+    client
+        .cancel_order(make_cancel_order(
+            client_order_id,
+            btc_usd_instrument_id(),
+            StrategyId::from("S-CANCEL"),
+            Some(VenueOrderId::new("venue-cancel-http-failure")),
+        ))
+        .unwrap();
+
+    wait_for_requests(state, "/orders/batch_cancel", 1).await;
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(rejected)
+                if rejected.client_order_id == client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_modify_order_http_failure_does_not_emit_modify_rejected() {
+    let state = TestState::default();
+    state.mark_failing("/orders/edit");
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx) = make_exec_client_with_events(addr, AccountType::Cash);
+    client.start().unwrap();
+
+    let client_order_id = ClientOrderId::new("modify-http-failure");
+    let cmd = ModifyOrder::new(
+        TraderId::from("TRADER-001"),
+        Some(*COINBASE_CLIENT_ID),
+        StrategyId::from("S-MODIFY"),
+        btc_usd_instrument_id(),
+        client_order_id,
+        Some(VenueOrderId::new("venue-modify-http-failure")),
+        Some(Quantity::from("0.002")),
+        Some(Price::from("51000.00")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.modify_order(cmd).unwrap();
+
+    wait_for_requests(state, "/orders/edit", 1).await;
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::ModifyRejected(rejected)
+                if rejected.client_order_id == client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_batch_cancel_partial_failure_uses_child_cancel_identity() {
+    let state = TestState::default();
+    state.enqueue(
+        "/orders/batch_cancel",
+        json!({
+            "results": [
+                {"success": true, "failure_reason": "", "order_id": "venue-batch-ok"},
+                {
+                    "success": false,
+                    "failure_reason": "UNKNOWN_CANCEL_FAILURE_REASON",
+                    "order_id": "venue-batch-reject"
+                }
+            ]
+        }),
+    );
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx) = make_exec_client_with_events(addr, AccountType::Cash);
+    client.start().unwrap();
+
+    let reject_client_order_id = ClientOrderId::new("batch-child-reject");
+    let reject_instrument_id = InstrumentId::from("ETH-USD.COINBASE");
+    let reject_strategy_id = StrategyId::from("S-CHILD-REJECT");
+    let cancels = vec![
+        make_cancel_order(
+            ClientOrderId::new("batch-child-ok"),
+            btc_usd_instrument_id(),
+            StrategyId::from("S-CHILD-OK"),
+            Some(VenueOrderId::new("venue-batch-ok")),
+        ),
+        make_cancel_order(
+            reject_client_order_id,
+            reject_instrument_id,
+            reject_strategy_id,
+            Some(VenueOrderId::new("venue-batch-reject")),
+        ),
+    ];
+
+    let cmd = BatchCancelOrders::new(
+        TraderId::from("TRADER-001"),
+        Some(*COINBASE_CLIENT_ID),
+        StrategyId::from("S-BATCH"),
+        btc_usd_instrument_id(),
+        cancels,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.batch_cancel_orders(cmd).unwrap();
+
+    wait_for_requests(state, "/orders/batch_cancel", 1).await;
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    match event {
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
+            assert_eq!(rejected.client_order_id, reject_client_order_id);
+            assert_eq!(rejected.instrument_id, reject_instrument_id);
+            assert_eq!(rejected.strategy_id, reject_strategy_id);
+            assert_eq!(
+                rejected.venue_order_id,
+                Some(VenueOrderId::new("venue-batch-reject")),
+            );
+            assert!(
+                rejected
+                    .reason
+                    .as_str()
+                    .contains("UNKNOWN_CANCEL_FAILURE_REASON"),
+                "reason was: {}",
+                rejected.reason,
+            );
+        }
+        other => panic!("Expected CancelRejected event, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_batch_cancel_http_failure_does_not_emit_cancel_rejected() {
+    let state = TestState::default();
+    state.mark_failing("/orders/batch_cancel");
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx) = make_exec_client_with_events(addr, AccountType::Cash);
+    client.start().unwrap();
+
+    let first_client_order_id = ClientOrderId::new("batch-http-failure-1");
+    let second_client_order_id = ClientOrderId::new("batch-http-failure-2");
+    let cancels = vec![
+        make_cancel_order(
+            first_client_order_id,
+            btc_usd_instrument_id(),
+            StrategyId::from("S-BATCH-1"),
+            Some(VenueOrderId::new("venue-batch-http-failure-1")),
+        ),
+        make_cancel_order(
+            second_client_order_id,
+            btc_usd_instrument_id(),
+            StrategyId::from("S-BATCH-2"),
+            Some(VenueOrderId::new("venue-batch-http-failure-2")),
+        ),
+    ];
+
+    let cmd = BatchCancelOrders::new(
+        TraderId::from("TRADER-001"),
+        Some(*COINBASE_CLIENT_ID),
+        StrategyId::from("S-BATCH"),
+        btc_usd_instrument_id(),
+        cancels,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.batch_cancel_orders(cmd).unwrap();
+
+    wait_for_requests(state, "/orders/batch_cancel", 1).await;
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(rejected)
+                if rejected.client_order_id == first_client_order_id
+                    || rejected.client_order_id == second_client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_batch_cancel_without_venue_id_does_not_emit_cancel_rejected() {
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx) = make_exec_client_with_events(addr, AccountType::Cash);
+    client.start().unwrap();
+
+    let client_order_id = ClientOrderId::new("batch-no-venue-id");
+    let cmd = BatchCancelOrders::new(
+        TraderId::from("TRADER-001"),
+        Some(*COINBASE_CLIENT_ID),
+        StrategyId::from("S-BATCH"),
+        btc_usd_instrument_id(),
+        vec![make_cancel_order(
+            client_order_id,
+            btc_usd_instrument_id(),
+            StrategyId::from("S-BATCH-LOCAL"),
+            None,
+        )],
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.batch_cancel_orders(cmd).unwrap();
+
+    assert!(state.requests_for("/orders/batch_cancel").is_empty());
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(rejected)
+                if rejected.client_order_id == client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_cancel_all_http_failure_does_not_emit_cancel_rejected() {
+    let state = TestState::default();
+    state.enqueue(
+        "/orders/historical/batch",
+        json!({
+            "orders": [
+                order_json("venue-cancel-all-failure", "BTC-USD", "cancel-all-failure", "OPEN")
+            ],
+            "sequence": "0",
+            "has_next": false,
+            "cursor": ""
+        }),
+    );
+    state.mark_failing("/orders/batch_cancel");
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx) = make_exec_client_with_events(addr, AccountType::Cash);
+    client.start().unwrap();
+
+    let cmd = CancelAllOrders::new(
+        TraderId::from("TRADER-001"),
+        Some(*COINBASE_CLIENT_ID),
+        StrategyId::from("S-CANCEL-ALL"),
+        btc_usd_instrument_id(),
+        OrderSide::NoOrderSide,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.cancel_all_orders(cmd).unwrap();
+
+    wait_for_requests(state, "/orders/batch_cancel", 1).await;
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::CancelRejected(_))
+    })
+    .await;
 }
 
 // HTTP error-path tests. Each spins up an ad-hoc router with a single failure

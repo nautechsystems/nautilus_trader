@@ -20,7 +20,7 @@
 
 use alloy_primitives::U256;
 
-use super::PoolProfiler;
+use super::{PoolProfiler, error::PoolEventKind};
 
 /// Configuration for size estimation algorithms.
 ///
@@ -198,7 +198,7 @@ pub fn slippage_for_size_bps(
     size: U256,
     zero_for_one: bool,
 ) -> anyhow::Result<u32> {
-    profiler.check_if_initialized();
+    profiler.check_if_initialized(PoolEventKind::Swap)?;
 
     if size.is_zero() {
         return Ok(0);
@@ -233,7 +233,7 @@ fn binary_search_for_size(
     if impact_bps > 10000 {
         anyhow::bail!("Impact cannot exceed 100% (10000 bps)");
     }
-    profiler.check_if_initialized();
+    profiler.check_if_initialized(PoolEventKind::Swap)?;
 
     // Estimate initial bounds
     let mut low = U256::ZERO;

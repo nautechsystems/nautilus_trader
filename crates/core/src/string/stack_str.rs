@@ -188,7 +188,7 @@ impl StackStr {
     ///
     /// # Safety
     ///
-    /// - `ptr` must be a valid pointer to a null-terminated C string.
+    /// - `ptr` must be a valid, non-null pointer to a null-terminated C string.
     /// - The string must contain only valid ASCII (no interior NUL bytes).
     /// - The string must not exceed 36 characters.
     ///
@@ -209,14 +209,18 @@ impl StackStr {
 
     /// Creates a [`StackStr`] from a C string pointer with validation.
     ///
-    /// Returns `None` if the string is invalid. This is safe to call from C code
-    /// as it never panics on invalid input.
+    /// Returns `None` if the string is null or invalid. This is safe to call from C
+    /// code for null and string-validation failures because it does not panic.
     ///
     /// # Safety
     ///
-    /// - `ptr` must be a valid pointer to a null-terminated C string.
+    /// - `ptr` must be null or a valid pointer to a null-terminated C string.
     #[must_use]
     pub unsafe fn from_c_ptr_checked(ptr: *const c_char) -> Option<Self> {
+        if ptr.is_null() {
+            return None;
+        }
+
         // SAFETY: Caller guarantees ptr is valid and null-terminated
         let cstr = unsafe { CStr::from_ptr(ptr) };
         let s = cstr.to_str().ok()?;
@@ -475,6 +479,13 @@ mod tests {
         let long = "x".repeat(37);
         let cstring = std::ffi::CString::new(long).unwrap();
         let s = unsafe { StackStr::from_c_ptr_checked(cstring.as_ptr()) };
+        assert!(s.is_none());
+    }
+
+    #[rstest]
+    fn test_from_c_ptr_checked_null() {
+        let s = unsafe { StackStr::from_c_ptr_checked(std::ptr::null()) };
+
         assert!(s.is_none());
     }
 
@@ -856,7 +867,7 @@ mod tests {
     #[rstest]
     fn test_partial_eq_str_literal() {
         let s = StackStr::new("hello");
-        assert!(s == "hello");
+        assert_eq!(s, "hello");
         assert!(s != "world");
     }
 

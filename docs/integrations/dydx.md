@@ -188,8 +188,8 @@ time-in-force and expiry, so no manual tagging is needed.
 | `GTC`         | ✓          | Good Till Canceled.                                                        |
 | `GTD`         | ✓          | Good Till Date. The venue reports expiry as a cancel event; the adapter maps this to `OrderExpired` (not `OrderCanceled`) when the order's `expire_time` has passed. |
 | `IOC`         | ✓          | Immediate or Cancel.                                                       |
-| `FOK`         | -          | *Deprecated by dYdX v4*. The chain rejects FOK orders with `code=48`; the adapter denies pre‑submission with `OrderRejected`. |
-| `DAY`         | -          | *Not supported*. The adapter denies pre‑submission with `OrderRejected`.   |
+| `FOK`         | -          | *Deprecated by dYdX v4*. The chain rejects FOK orders with `code=48`; the adapter rejects locally before broadcast with `OrderRejected`. |
+| `DAY`         | -          | *Not supported*. The adapter rejects locally before broadcast with `OrderRejected`. |
 
 ### Advanced order features
 
@@ -715,6 +715,7 @@ wallet credentials.
 | `max_retries`             | `3`       | Maximum retry attempts for REST / WebSocket recovery.                                       |
 | `retry_delay_initial_ms`  | `1,000`   | Initial delay (milliseconds) between retries.                                               |
 | `retry_delay_max_ms`      | `10,000`  | Maximum delay (milliseconds) between retries.                                               |
+| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                                                |
 
 ### Execution client configuration options
 
@@ -733,6 +734,7 @@ wallet credentials.
 | `retry_delay_initial_ms`       | `1,000`   | Initial delay (milliseconds) between retries.                                                      |
 | `retry_delay_max_ms`           | `10,000`  | Maximum delay (milliseconds) between retries.                                                      |
 | `grpc_rate_limit_per_second`   | `4`       | Maximum gRPC requests per second. Set to `None` to disable.                                        |
+| `transport_backend`            | `Sockudo` | WebSocket transport backend.                                                                       |
 
 ### Basic setup
 

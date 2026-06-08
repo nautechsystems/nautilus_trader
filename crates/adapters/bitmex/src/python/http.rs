@@ -615,7 +615,7 @@ impl BitmexHttpClient {
         })
     }
 
-    /// Request account state for the given account.
+    /// Request account state for the authenticated BitMEX account.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,

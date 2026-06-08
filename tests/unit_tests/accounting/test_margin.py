@@ -1358,3 +1358,451 @@ class TestMarginAccount:
         # Assert
         commission = account.commission(USD)
         assert commission == Money(15.00, USD)  # Should accumulate
+
+
+# Regression tests for https://github.com/nautechsystems/nautilus_trader/issues/4110
+#
+# Maintenance margin in HEDGING OMS mode must reflect the account's net per-instrument
+# exposure, not the sum across every open HEDGING sub-position. Each fill in HEDGING mode
+# opens an independent ``Position``, so summing per-position margin causes the requirement
+# to grow with fill count instead of net economic exposure.
+
+
+def _build_hedging_position(
+    instrument,
+    order_factory: OrderFactory,
+    side: OrderSide,
+    qty: str,
+    price: str,
+    position_id: str,
+    ts_event: int = 0,
+) -> Position:
+    order = order_factory.market(
+        instrument.id,
+        side,
+        Quantity.from_str(qty),
+    )
+    fill = TestEventStubs.order_filled(
+        order,
+        instrument=instrument,
+        position_id=PositionId(position_id),
+        strategy_id=StrategyId("S-001"),
+        last_px=Price.from_str(price),
+        commission=Money(0, instrument.quote_currency),
+        ts_event=ts_event,
+    )
+    return Position(instrument, fill)
+
+
+def test_update_positions_nets_hedging_subpositions():
+    # Arrange
+    clock = TestClock()
+    logger = Logger("TestAccountsManager")
+    cache = Cache()
+    account = _fresh_margin_account()
+    instrument = AUDUSD_SIM
+    account.set_leverage(instrument.id, Decimal(1))
+    cache.add_account(account)
+    manager = AccountsManager(cache=cache, clock=clock, logger=logger)
+
+    order_factory = OrderFactory(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=StrategyId("S-001"),
+        clock=clock,
+    )
+
+    positions = []
+    for i in range(5):
+        positions.append(
+            _build_hedging_position(
+                instrument,
+                order_factory,
+                OrderSide.BUY,
+                "50",
+                "1.00000",
+                f"P-L{i}",
+            ),
+        )
+    for i in range(2):
+        positions.append(
+            _build_hedging_position(
+                instrument,
+                order_factory,
+                OrderSide.SELL,
+                "50",
+                "1.00000",
+                f"P-S{i}",
+            ),
+        )
+
+    # Act
+    result = manager.update_positions(
+        account=account,
+        instrument=instrument,
+        positions_open=positions,
+        ts_event=0,
+    )
+
+    # Assert
+    # Net exposure: long 150 @ 1.00000, margin_maint=0.03, leverage=1
+    # Expected: 150 * 1.00 * 0.03 = 4.50 USD
+    # Pre-fix: 7 * (50 * 1.00 * 0.03) = 10.50 USD
+    assert result is True
+    assert account.margin_maint(instrument.id) == Money(4.50, USD)
+
+
+def test_update_positions_net_zero_hedge_clears_margin():
+    # Arrange
+    clock = TestClock()
+    logger = Logger("TestAccountsManager")
+    cache = Cache()
+    account = _fresh_margin_account()
+    instrument = AUDUSD_SIM
+    account.set_leverage(instrument.id, Decimal(1))
+    cache.add_account(account)
+    manager = AccountsManager(cache=cache, clock=clock, logger=logger)
+
+    order_factory = OrderFactory(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=StrategyId("S-001"),
+        clock=clock,
+    )
+
+    long_pos = _build_hedging_position(
+        instrument,
+        order_factory,
+        OrderSide.BUY,
+        "100",
+        "1.00000",
+        "P-L",
+    )
+    short_pos = _build_hedging_position(
+        instrument,
+        order_factory,
+        OrderSide.SELL,
+        "100",
+        "1.00000",
+        "P-S",
+    )
+
+    # Act
+    result = manager.update_positions(
+        account=account,
+        instrument=instrument,
+        positions_open=[long_pos, short_pos],
+        ts_event=0,
+    )
+
+    # Assert: net exposure is zero so the maintenance margin entry must be cleared.
+    assert result is True
+    assert account.margin_maint(instrument.id) is None
+
+
+def test_update_positions_uses_net_side_avg_open_price():
+    # Arrange
+    clock = TestClock()
+    logger = Logger("TestAccountsManager")
+    cache = Cache()
+    account = _fresh_margin_account()
+    instrument = AUDUSD_SIM
+    account.set_leverage(instrument.id, Decimal(1))
+    cache.add_account(account)
+    manager = AccountsManager(cache=cache, clock=clock, logger=logger)
+
+    order_factory = OrderFactory(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=StrategyId("S-001"),
+        clock=clock,
+    )
+
+    # Long 300 @ 0.80000 and short 100 @ 1.00000.
+    # Net is 200 long. The short leg is treated as a closing fill against the long,
+    # so the surviving avg open price is 0.80 (the long leg's price), matching NETTING.
+    # Expected maintenance margin = 200 * 0.80 * 0.03 = 4.80 USD.
+    # Pre-fix: 300*0.80*0.03 + 100*1.00*0.03 = 10.20 USD.
+    long_pos = _build_hedging_position(
+        instrument,
+        order_factory,
+        OrderSide.BUY,
+        "300",
+        "0.80000",
+        "P-L1",
+    )
+    short_pos = _build_hedging_position(
+        instrument,
+        order_factory,
+        OrderSide.SELL,
+        "100",
+        "1.00000",
+        "P-S1",
+    )
+
+    # Act
+    result = manager.update_positions(
+        account=account,
+        instrument=instrument,
+        positions_open=[long_pos, short_pos],
+        ts_event=0,
+    )
+
+    # Assert
+    assert result is True
+    assert account.margin_maint(instrument.id) == Money(4.80, USD)
+
+
+def test_update_positions_floating_dust_clears_margin():
+    # Regression: fractional-size instruments can leave f64 dust on the signed-quantity
+    # sum even when economic exposure is flat (e.g. 0.3 - 0.2 - 0.1). Rounding to the
+    # instrument size precision must clear the margin instead of raising inside `make_qty`
+    # with a sub-tick quantity.
+    clock = TestClock()
+    logger = Logger("TestAccountsManager")
+    cache = Cache()
+    account = _fresh_margin_account()
+    instrument = BTCUSDT_BINANCE
+    account.set_leverage(instrument.id, Decimal(1))
+    cache.add_account(account)
+    manager = AccountsManager(cache=cache, clock=clock, logger=logger)
+
+    order_factory = OrderFactory(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=StrategyId("S-001"),
+        clock=clock,
+    )
+
+    long_pos = _build_hedging_position(
+        instrument,
+        order_factory,
+        OrderSide.BUY,
+        "0.300000",
+        "50000.00",
+        "P-L",
+    )
+    short_pos_a = _build_hedging_position(
+        instrument,
+        order_factory,
+        OrderSide.SELL,
+        "0.200000",
+        "50000.00",
+        "P-S1",
+    )
+    short_pos_b = _build_hedging_position(
+        instrument,
+        order_factory,
+        OrderSide.SELL,
+        "0.100000",
+        "50000.00",
+        "P-S2",
+    )
+
+    # Act
+    result = manager.update_positions(
+        account=account,
+        instrument=instrument,
+        positions_open=[long_pos, short_pos_a, short_pos_b],
+        ts_event=0,
+    )
+
+    # Assert: net rounds to zero at instrument precision -> margin cleared.
+    assert result is True
+    assert account.margin_maint(instrument.id) is None
+
+
+def test_update_positions_net_flat_clears_prior_base_currency_margin():
+    # Regression: a prior non-zero update stored margin in the account base currency.
+    # A subsequent net-flat snapshot must clear that margin so balance_locked drops to zero.
+    clock = TestClock()
+    logger = Logger("TestAccountsManager")
+    cache = Cache()
+    account = _fresh_margin_account()  # base currency = USD
+    instrument = AUDUSD_SIM
+    account.set_leverage(instrument.id, Decimal(1))
+    cache.add_account(account)
+    manager = AccountsManager(cache=cache, clock=clock, logger=logger)
+
+    order_factory = OrderFactory(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=StrategyId("S-001"),
+        clock=clock,
+    )
+
+    # First snapshot: net long 100 @ 1.0 -> non-zero base-currency margin.
+    long_pos = _build_hedging_position(
+        instrument,
+        order_factory,
+        OrderSide.BUY,
+        "100",
+        "1.00000",
+        "P-L",
+    )
+    first = manager.update_positions(
+        account=account,
+        instrument=instrument,
+        positions_open=[long_pos],
+        ts_event=0,
+    )
+    assert first is True
+    prior_margin = account.margin_maint(instrument.id)
+    assert prior_margin is not None
+    assert prior_margin.as_decimal() > 0
+    assert account.balance_locked(USD).as_decimal() > 0
+
+    # Second snapshot: offsetting short closes the net exposure.
+    short_pos = _build_hedging_position(
+        instrument,
+        order_factory,
+        OrderSide.SELL,
+        "100",
+        "1.00000",
+        "P-S",
+    )
+    second = manager.update_positions(
+        account=account,
+        instrument=instrument,
+        positions_open=[long_pos, short_pos],
+        ts_event=0,
+    )
+    assert second is True
+
+    # Net-flat: maintenance margin and the resulting base-currency locked balance must clear.
+    assert account.margin_maint(instrument.id) is None
+    assert account.balance_locked(USD) == Money(0, USD)
+
+
+def test_update_positions_flip_uses_flipping_fill_price():
+    # Regression: in a reversal sequence (long, then offsetting fills that flip the net
+    # to short), NETTING leaves the residual at the flipping fill's price. The replay must
+    # match this: a gross net-side average understates margin in reversal cases.
+    clock = TestClock()
+    logger = Logger("TestAccountsManager")
+    cache = Cache()
+    account = _fresh_margin_account()  # base currency = USD
+    instrument = AUDUSD_SIM
+    account.set_leverage(instrument.id, Decimal(1))
+    cache.add_account(account)
+    manager = AccountsManager(cache=cache, clock=clock, logger=logger)
+
+    order_factory = OrderFactory(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=StrategyId("S-001"),
+        clock=clock,
+    )
+
+    # Long 100 @ 1.00000, short 50 @ 2.00000, short 100 @ 3.00000 (chronological order).
+    # NETTING residual: short 50 @ 3.00000 (the flipping fill's price).
+    # Expected maintenance margin = 50 * 3.00 * 0.03 = 4.50 USD.
+    # Gross net-side average would give 50 * 2.6667 * 0.03 = 4.00 USD (under-margin).
+    long_pos = _build_hedging_position(
+        instrument,
+        order_factory,
+        OrderSide.BUY,
+        "100",
+        "1.00000",
+        "P-L",
+        ts_event=1,
+    )
+    short_partial = _build_hedging_position(
+        instrument,
+        order_factory,
+        OrderSide.SELL,
+        "50",
+        "2.00000",
+        "P-S1",
+        ts_event=2,
+    )
+    short_flip = _build_hedging_position(
+        instrument,
+        order_factory,
+        OrderSide.SELL,
+        "100",
+        "3.00000",
+        "P-S2",
+        ts_event=3,
+    )
+
+    result = manager.update_positions(
+        account=account,
+        instrument=instrument,
+        positions_open=[long_pos, short_partial, short_flip],
+        ts_event=0,
+    )
+
+    assert result is True
+    assert account.margin_maint(instrument.id) == Money(4.50, USD)
+
+
+def test_update_positions_same_ts_legs_ordering_is_deterministic():
+    # Regression: positions_open is read from the cache's AHashSet-backed index, so the
+    # iteration order for legs sharing a ts_opened is non-deterministic across runs. The
+    # manager must impose a tie-breaker (here: position_id) so equal-ts reversal sequences
+    # yield the same maintenance margin regardless of input order.
+    instrument = AUDUSD_SIM
+    clock = TestClock()
+
+    order_factory = OrderFactory(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=StrategyId("S-001"),
+        clock=clock,
+    )
+
+    # Three same-ts legs that form a reversal under canonical (position_id-sorted) order:
+    # long 100 @ 1.0 (id=A), short 50 @ 2.0 (id=B), short 100 @ 3.0 (id=C).
+    # Expected residual: short 50 @ 3.0 -> margin = 50 * 3.0 * 0.03 = 4.50 USD.
+    leg_a = _build_hedging_position(
+        instrument,
+        order_factory,
+        OrderSide.BUY,
+        "100",
+        "1.00000",
+        "P-A",
+        ts_event=42,
+    )
+    leg_b = _build_hedging_position(
+        instrument,
+        order_factory,
+        OrderSide.SELL,
+        "50",
+        "2.00000",
+        "P-B",
+        ts_event=42,
+    )
+    leg_c = _build_hedging_position(
+        instrument,
+        order_factory,
+        OrderSide.SELL,
+        "100",
+        "3.00000",
+        "P-C",
+        ts_event=42,
+    )
+
+    permutations = [
+        [leg_a, leg_b, leg_c],
+        [leg_c, leg_b, leg_a],
+        [leg_b, leg_a, leg_c],
+        [leg_c, leg_a, leg_b],
+    ]
+
+    results = []
+
+    for perm in permutations:
+        logger = Logger("TestAccountsManager")
+        cache = Cache()
+        account = _fresh_margin_account()
+        account.set_leverage(instrument.id, Decimal(1))
+        cache.add_account(account)
+        manager = AccountsManager(cache=cache, clock=clock, logger=logger)
+
+        result = manager.update_positions(
+            account=account,
+            instrument=instrument,
+            positions_open=perm,
+            ts_event=0,
+        )
+        assert result is True
+        results.append(account.margin_maint(instrument.id))
+
+    first = results[0]
+    for r in results[1:]:
+        assert r == first, "maintenance margin must be deterministic across permutations"
+    assert first == Money(4.50, USD)

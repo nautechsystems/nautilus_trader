@@ -18,7 +18,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, ffi::abort_on_panic};
 
 use crate::{
     data::{
@@ -50,34 +50,38 @@ pub unsafe extern "C" fn orderbook_depth10_new(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> OrderBookDepth10 {
-    // Safety: Ensure that `bids_ptr` and `asks_ptr` are valid pointers.
-    // The caller must guarantee that they point to arrays of `BookOrder` of at least `DEPTH10_LEN` length.
-    assert!(!bids_ptr.is_null());
-    assert!(!asks_ptr.is_null());
-    assert!(!bid_counts_ptr.is_null());
-    assert!(!ask_counts_ptr.is_null());
+    abort_on_panic(|| {
+        // SAFETY: Null checks run before slice construction. The caller still
+        // guarantees each pointer refers to `DEPTH10_LEN` initialized elements.
+        assert!(!bids_ptr.is_null());
+        assert!(!asks_ptr.is_null());
+        assert!(!bid_counts_ptr.is_null());
+        assert!(!ask_counts_ptr.is_null());
 
-    let bids_slice = unsafe { std::slice::from_raw_parts(bids_ptr, DEPTH10_LEN) };
-    let asks_slice = unsafe { std::slice::from_raw_parts(asks_ptr, DEPTH10_LEN) };
-    let bids: [BookOrder; DEPTH10_LEN] = bids_slice.try_into().expect("Slice length != 10");
-    let asks: [BookOrder; DEPTH10_LEN] = asks_slice.try_into().expect("Slice length != 10");
+        let bids_slice = unsafe { std::slice::from_raw_parts(bids_ptr, DEPTH10_LEN) };
+        let asks_slice = unsafe { std::slice::from_raw_parts(asks_ptr, DEPTH10_LEN) };
+        let bids: [BookOrder; DEPTH10_LEN] = bids_slice.try_into().expect("Slice length != 10");
+        let asks: [BookOrder; DEPTH10_LEN] = asks_slice.try_into().expect("Slice length != 10");
 
-    let bid_counts_slice = unsafe { std::slice::from_raw_parts(bid_counts_ptr, DEPTH10_LEN) };
-    let ask_counts_slice = unsafe { std::slice::from_raw_parts(ask_counts_ptr, DEPTH10_LEN) };
-    let bid_counts: [u32; DEPTH10_LEN] = bid_counts_slice.try_into().expect("Slice length != 10");
-    let ask_counts: [u32; DEPTH10_LEN] = ask_counts_slice.try_into().expect("Slice length != 10");
+        let bid_counts_slice = unsafe { std::slice::from_raw_parts(bid_counts_ptr, DEPTH10_LEN) };
+        let ask_counts_slice = unsafe { std::slice::from_raw_parts(ask_counts_ptr, DEPTH10_LEN) };
+        let bid_counts: [u32; DEPTH10_LEN] =
+            bid_counts_slice.try_into().expect("Slice length != 10");
+        let ask_counts: [u32; DEPTH10_LEN] =
+            ask_counts_slice.try_into().expect("Slice length != 10");
 
-    OrderBookDepth10::new(
-        instrument_id,
-        bids,
-        asks,
-        bid_counts,
-        ask_counts,
-        flags,
-        sequence,
-        ts_event,
-        ts_init,
-    )
+        OrderBookDepth10::new(
+            instrument_id,
+            bids,
+            asks,
+            bid_counts,
+            ask_counts,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        )
+    })
 }
 
 #[unsafe(no_mangle)]

@@ -16,6 +16,7 @@
 //! Events for the trading domain model.
 
 pub mod account;
+pub mod funding;
 pub mod order;
 pub mod portfolio;
 pub mod position;
@@ -26,6 +27,7 @@ use crate::data::HasTsInit;
 // Re-exports
 pub use crate::events::{
     account::state::AccountState,
+    funding::settlement::FundingSettlement,
     order::{
         OrderEvent, OrderEventType, accepted::OrderAccepted, accepted_batch::OrderAcceptedBatch,
         any::OrderEventAny, cancel_rejected::OrderCancelRejected, canceled::OrderCanceled,
@@ -44,6 +46,12 @@ pub use crate::events::{
 };
 
 impl HasTsInit for AccountState {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl HasTsInit for FundingSettlement {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }

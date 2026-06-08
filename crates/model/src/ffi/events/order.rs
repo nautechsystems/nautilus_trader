@@ -16,14 +16,157 @@
 use std::ffi::c_char;
 
 use nautilus_core::{UUID4, UnixNanos, ffi::string::cstr_to_ustr};
+use ustr::Ustr;
 
 use crate::{
-    events::{
-        OrderAccepted, OrderDenied, OrderEmulated, OrderRejected, OrderReleased, OrderSubmitted,
-    },
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     types::Price,
 };
+
+/// Represents an event where an order has been denied by the Nautilus system.
+///
+/// This could be due an unsupported feature, a risk limit exceedance, or for
+/// any other reason that an otherwise valid order is not able to be submitted.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct OrderDeniedFfi {
+    /// The trader ID associated with the event.
+    pub trader_id: TraderId,
+    /// The strategy ID associated with the event.
+    pub strategy_id: StrategyId,
+    /// The instrument ID associated with the event.
+    pub instrument_id: InstrumentId,
+    /// The client order ID associated with the event.
+    pub client_order_id: ClientOrderId,
+    /// The reason the order was denied.
+    pub reason: Ustr,
+    /// The unique identifier for the event.
+    pub event_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
+    pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
+    pub ts_init: UnixNanos,
+}
+
+/// Represents an event where an order has become emulated by the Nautilus system.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct OrderEmulatedFfi {
+    /// The trader ID associated with the event.
+    pub trader_id: TraderId,
+    /// The strategy ID associated with the event.
+    pub strategy_id: StrategyId,
+    /// The instrument ID associated with the event.
+    pub instrument_id: InstrumentId,
+    /// The client order ID associated with the event.
+    pub client_order_id: ClientOrderId,
+    /// The unique identifier for the event.
+    pub event_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
+    pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
+    pub ts_init: UnixNanos,
+}
+
+/// Represents an event where an order was released from the `OrderEmulated` by the Nautilus system.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct OrderReleasedFfi {
+    /// The trader ID associated with the event.
+    pub trader_id: TraderId,
+    /// The strategy ID associated with the event.
+    pub strategy_id: StrategyId,
+    /// The instrument ID associated with the event.
+    pub instrument_id: InstrumentId,
+    /// The client order ID associated with the event.
+    pub client_order_id: ClientOrderId,
+    pub released_price: Price,
+    /// The unique identifier for the event.
+    pub event_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
+    pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
+    pub ts_init: UnixNanos,
+}
+
+/// Represents an event where an order has been submitted by the system to the
+/// trading venue.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct OrderSubmittedFfi {
+    /// The trader ID associated with the event.
+    pub trader_id: TraderId,
+    /// The strategy ID associated with the event.
+    pub strategy_id: StrategyId,
+    /// The instrument ID associated with the event.
+    pub instrument_id: InstrumentId,
+    /// The client order ID associated with the event.
+    pub client_order_id: ClientOrderId,
+    /// The account ID associated with the event.
+    pub account_id: AccountId,
+    /// The unique identifier for the event.
+    pub event_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
+    pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
+    pub ts_init: UnixNanos,
+}
+
+/// Represents an event where an order has been accepted by the trading venue.
+///
+/// This event often corresponds to a `NEW` `OrdStatus` <39> field in FIX execution reports.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct OrderAcceptedFfi {
+    /// The trader ID associated with the event.
+    pub trader_id: TraderId,
+    /// The strategy ID associated with the event.
+    pub strategy_id: StrategyId,
+    /// The instrument ID associated with the event.
+    pub instrument_id: InstrumentId,
+    /// The client order ID associated with the event.
+    pub client_order_id: ClientOrderId,
+    /// The venue order ID associated with the event.
+    pub venue_order_id: VenueOrderId,
+    /// The account ID associated with the event.
+    pub account_id: AccountId,
+    /// The unique identifier for the event.
+    pub event_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
+    pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
+    pub ts_init: UnixNanos,
+    /// If the event was generated during reconciliation.
+    pub reconciliation: u8,
+}
+
+/// Represents an event where an order has been rejected by the trading venue.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct OrderRejectedFfi {
+    /// The trader ID associated with the event.
+    pub trader_id: TraderId,
+    /// The strategy ID associated with the event.
+    pub strategy_id: StrategyId,
+    /// The instrument ID associated with the event.
+    pub instrument_id: InstrumentId,
+    /// The client order ID associated with the event.
+    pub client_order_id: ClientOrderId,
+    /// The account ID associated with the event.
+    pub account_id: AccountId,
+    /// The reason the order was rejected.
+    pub reason: Ustr,
+    /// The unique identifier for the event.
+    pub event_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
+    pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
+    pub ts_init: UnixNanos,
+    /// If the event was generated during reconciliation.
+    pub reconciliation: u8,
+    /// If the order was rejected because it was post-only and would execute immediately as a taker.
+    pub due_post_only: u8,
+}
 
 /// # Safety
 ///
@@ -38,8 +181,8 @@ pub unsafe extern "C" fn order_denied_new(
     event_id: UUID4,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> OrderDenied {
-    OrderDenied {
+) -> OrderDeniedFfi {
+    OrderDeniedFfi {
         trader_id,
         strategy_id,
         instrument_id,
@@ -60,8 +203,8 @@ pub extern "C" fn order_emulated_new(
     event_id: UUID4,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> OrderEmulated {
-    OrderEmulated {
+) -> OrderEmulatedFfi {
+    OrderEmulatedFfi {
         trader_id,
         strategy_id,
         instrument_id,
@@ -73,7 +216,6 @@ pub extern "C" fn order_emulated_new(
 }
 
 #[unsafe(no_mangle)]
-#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn order_released_new(
     trader_id: TraderId,
     strategy_id: StrategyId,
@@ -83,8 +225,8 @@ pub extern "C" fn order_released_new(
     event_id: UUID4,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> OrderReleased {
-    OrderReleased {
+) -> OrderReleasedFfi {
+    OrderReleasedFfi {
         trader_id,
         strategy_id,
         instrument_id,
@@ -106,8 +248,8 @@ pub extern "C" fn order_submitted_new(
     event_id: UUID4,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> OrderSubmitted {
-    OrderSubmitted {
+) -> OrderSubmittedFfi {
+    OrderSubmittedFfi {
         trader_id,
         strategy_id,
         instrument_id,
@@ -131,8 +273,8 @@ pub extern "C" fn order_accepted_new(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
     reconciliation: u8,
-) -> OrderAccepted {
-    OrderAccepted {
+) -> OrderAcceptedFfi {
+    OrderAcceptedFfi {
         trader_id,
         strategy_id,
         instrument_id,
@@ -162,8 +304,8 @@ pub unsafe extern "C" fn order_rejected_new(
     ts_init: UnixNanos,
     reconciliation: u8,
     due_post_only: u8,
-) -> OrderRejected {
-    OrderRejected {
+) -> OrderRejectedFfi {
+    OrderRejectedFfi {
         trader_id,
         strategy_id,
         instrument_id,

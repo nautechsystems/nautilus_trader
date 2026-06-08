@@ -106,6 +106,7 @@ def get_cached_okx_instrument_provider(
     instrument_types: tuple[OKXInstrumentType, ...],
     contract_types: tuple[OKXContractType, ...] | None = None,
     instrument_families: tuple[str, ...] | None = None,
+    load_spreads: bool = False,
     config: InstrumentProviderConfig | None = None,
 ) -> OKXInstrumentProvider:
     """
@@ -124,6 +125,8 @@ def get_cached_okx_instrument_provider(
     instrument_families : tuple[str, ...], optional
         The instrument families to load (e.g., "BTC-USD", "ETH-USD").
         Required for OPTIONS. Optional for FUTURES/SWAP.
+    load_spreads : bool, default False
+        If True, load OKX Nitro spread instruments.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
 
@@ -137,6 +140,7 @@ def get_cached_okx_instrument_provider(
         instrument_types=instrument_types,
         contract_types=contract_types,
         instrument_families=instrument_families,
+        load_spreads=load_spreads,
         config=config,
     )
 
@@ -196,6 +200,7 @@ class OKXLiveDataClientFactory(LiveDataClientFactory):
             instrument_types=config.instrument_types,
             contract_types=config.contract_types,
             instrument_families=config.instrument_families,
+            load_spreads=config.load_spreads,
             config=config.instrument_provider,
         )
         return OKXDataClient(
@@ -265,6 +270,7 @@ class OKXLiveExecClientFactory(LiveExecClientFactory):
             instrument_types=config.instrument_types,
             contract_types=config.contract_types,
             instrument_families=config.instrument_families,
+            load_spreads=config.load_spreads,
             config=config.instrument_provider,
         )
         return OKXExecutionClient(

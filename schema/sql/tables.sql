@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS "instrument" (
     settlement_currency TEXT REFERENCES currency(id),
     isin TEXT,
     exchange TEXT,
+    strategy_type TEXT,
     option_kind TEXT,
     strike_price TEXT,
     activation_ns TEXT,
@@ -304,6 +305,13 @@ CREATE TABLE IF NOT EXISTS "block" (
     PRIMARY KEY (chain_id, number)
 ) PARTITION BY LIST (chain_id);
 CREATE TABLE IF NOT EXISTS "block_default" PARTITION OF "block" DEFAULT;
+
+CREATE TABLE IF NOT EXISTS "pool_event_block" (
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    number BIGINT NOT NULL,
+    timestamp TEXT NOT NULL,
+    PRIMARY KEY (chain_id, number)
+);
 
 CREATE TABLE IF NOT EXISTS "token"(
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,

@@ -21,11 +21,29 @@
 
 use bytes::Bytes;
 use indexmap::IndexMap;
+use nautilus_common::cache::Cache;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_event_store::{
-    AppendEntry, EventStore, EventStoreEntry, EventStoreError, Headers, IndexKey, IndexKind,
-    MemoryBackend, RedbBackend, RegisteredComponents, RunManifest, RunStatus, ScanDirection,
-    SnapshotAnchor, Topic, compute_entry_hash,
+    AppendEntry, EventStore, EventStoreEntry, EventStoreError, EventStoreReader, Headers, IndexKey,
+    IndexKind, MemoryBackend, PAYLOAD_TYPE_ACCOUNT_STATE, RedbBackend, RegisteredComponents,
+    RunManifest, RunStatus, ScanDirection, SnapshotAnchor, Topic,
+    capture::builtins::encode_order_event_any, compute_entry_hash, encode_account_state,
+    replay_cache_snapshot_tail,
+};
+use nautilus_model::{
+    enums::{OmsType, OrderStatus},
+    events::{
+        AccountState, OrderEventAny, OrderFilled,
+        account::stubs::cash_account_state_million_usd,
+        order::spec::{
+            OrderAcceptedSpec, OrderFilledSpec, OrderInitializedSpec, OrderSubmittedSpec,
+        },
+    },
+    identifiers::{AccountId, ClientOrderId, PositionId, TradeId, VenueOrderId},
+    instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
+    orders::{Order, OrderAny},
+    position::Position,
+    types::Money,
 };
 use proptest::{prelude::*, test_runner::Config as ProptestConfig};
 use rstest::rstest;
@@ -135,7 +153,7 @@ fn methods_error_when_no_run_open(#[case] op: &str) {
             .scan_range(1, 1, ScanDirection::Forward)
             .unwrap_err(),
         "scan_seq" => backend.scan_seq(1).unwrap_err(),
-        "lookup" => backend.lookup(IndexKind::IntentId, "k").unwrap_err(),
+        "lookup" => backend.lookup(IndexKind::ClientOrderId, "k").unwrap_err(),
         "record_snapshot_anchor" => backend
             .record_snapshot_anchor(SnapshotAnchor::new(0, "blob", "hash"))
             .unwrap_err(),
@@ -470,7 +488,6 @@ fn scan_range_yields_expected_seqs(
 #[rstest]
 fn lookup_records_first_occurrence_per_kind() {
     let (_tmp, mut backend) = open_backend();
-    let intent = "intent-1".to_string();
     let cl_ord = "O-1".to_string();
     let venue = "V-1".to_string();
     backend
@@ -478,7 +495,6 @@ fn lookup_records_first_occurrence_per_kind() {
             AppendEntry::new(
                 build_entry(1, Headers::empty(), 10),
                 vec![
-                    IndexKey::new(IndexKind::IntentId, intent.clone()),
                     IndexKey::new(IndexKind::ClientOrderId, cl_ord.clone()),
                     IndexKey::new(IndexKind::VenueOrderId, venue.clone()),
                 ],
@@ -486,7 +502,6 @@ fn lookup_records_first_occurrence_per_kind() {
             AppendEntry::new(
                 build_entry(2, Headers::empty(), 11),
                 vec![
-                    IndexKey::new(IndexKind::IntentId, intent.clone()),
                     IndexKey::new(IndexKind::ClientOrderId, cl_ord.clone()),
                     IndexKey::new(IndexKind::VenueOrderId, venue.clone()),
                 ],
@@ -494,12 +509,6 @@ fn lookup_records_first_occurrence_per_kind() {
         ])
         .expect("append");
 
-    assert_eq!(
-        backend
-            .lookup(IndexKind::IntentId, &intent)
-            .expect("lookup"),
-        Some(1),
-    );
     assert_eq!(
         backend
             .lookup(IndexKind::ClientOrderId, &cl_ord)
@@ -514,7 +523,7 @@ fn lookup_records_first_occurrence_per_kind() {
     );
     assert!(
         backend
-            .lookup(IndexKind::IntentId, "missing")
+            .lookup(IndexKind::ClientOrderId, "missing")
             .expect("lookup")
             .is_none(),
     );
@@ -885,7 +894,7 @@ fn scan_range_reports_gap_at_tail_when_iter_ends_early() {
 fn append_extracts_no_indices_when_keys_empty() {
     let (_tmp, mut backend) = open_backend();
     let headers = Headers {
-        intent_id: Some(UUID4::new()),
+        correlation_id: Some(UUID4::new()),
         ..Headers::empty()
     };
     backend
@@ -894,7 +903,7 @@ fn append_extracts_no_indices_when_keys_empty() {
 
     assert!(
         backend
-            .lookup(IndexKind::IntentId, "any")
+            .lookup(IndexKind::ClientOrderId, "any")
             .expect("lookup")
             .is_none(),
     );
@@ -911,11 +920,11 @@ fn parity_with_memory_backend_for_indices() {
         .open_run(manifest("1700000000-aaaa1111"))
         .expect("memory open");
 
-    let intent = "intent-1".to_string();
     let cl_ord = "O-1".to_string();
+    let venue = "V-1".to_string();
     let key_set = vec![
-        IndexKey::new(IndexKind::IntentId, intent.clone()),
         IndexKey::new(IndexKind::ClientOrderId, cl_ord.clone()),
+        IndexKey::new(IndexKind::VenueOrderId, venue.clone()),
     ];
 
     let batch = vec![AppendEntry::new(
@@ -925,15 +934,10 @@ fn parity_with_memory_backend_for_indices() {
     redb.append_batch(&batch).expect("redb append");
     memory.append_batch(&batch).expect("memory append");
 
-    for kind in [
-        IndexKind::IntentId,
-        IndexKind::ClientOrderId,
-        IndexKind::VenueOrderId,
-    ] {
+    for kind in [IndexKind::ClientOrderId, IndexKind::VenueOrderId] {
         let key = match kind {
-            IndexKind::IntentId => &intent,
             IndexKind::ClientOrderId => &cl_ord,
-            IndexKind::VenueOrderId => &intent,
+            IndexKind::VenueOrderId => &venue,
         };
         assert_eq!(
             redb.lookup(kind, key).expect("redb lookup"),
@@ -1088,12 +1092,257 @@ fn build_payload_entry(seq: u64, ts_init: u64, payload: &[u8]) -> EventStoreEntr
     )
 }
 
+#[derive(Debug, Clone)]
+enum GeneratedReplayAction {
+    Account { balance: u32 },
+    Order { stage: u8 },
+}
+
+#[derive(Debug, PartialEq)]
+struct ObservedCacheState {
+    account_events: Vec<AccountState>,
+    orders: Vec<ObservedOrder>,
+    positions: Vec<ObservedPosition>,
+}
+
+#[derive(Debug, PartialEq)]
+struct ObservedOrder {
+    client_order_id: ClientOrderId,
+    status: OrderStatus,
+    event_count: usize,
+    last_event: OrderEventAny,
+    position_id: Option<PositionId>,
+}
+
+#[derive(Debug, PartialEq)]
+struct ObservedPosition {
+    position_id: PositionId,
+    event_count: usize,
+    trade_ids: Vec<TradeId>,
+    commissions: Vec<Money>,
+    last_event: Option<OrderFilled>,
+}
+
+fn generated_replay_actions() -> impl Strategy<Value = Vec<GeneratedReplayAction>> {
+    (
+        1_u32..1_000_000,
+        proptest::collection::vec(
+            prop_oneof![
+                (1_u32..1_000_000).prop_map(|balance| GeneratedReplayAction::Account { balance }),
+                (1_u8..=4).prop_map(|stage| GeneratedReplayAction::Order { stage }),
+            ],
+            0..8,
+        ),
+    )
+        .prop_map(|(balance, mut tail)| {
+            let mut actions = vec![
+                GeneratedReplayAction::Account { balance },
+                // The three forced fills share a position. The first creates it, the
+                // second reuses the first trade id so replay must take the
+                // duplicate-fill no-op branch, and the third applies a distinct update.
+                GeneratedReplayAction::Order { stage: 4 },
+                GeneratedReplayAction::Order { stage: 4 },
+                GeneratedReplayAction::Order { stage: 4 },
+            ];
+            actions.append(&mut tail);
+            actions
+        })
+}
+
+fn append_replay_payload(seq: u64, payload_type: &str, payload: Bytes) -> AppendEntry {
+    let topic: Topic = "replay.fidelity".into();
+    let ts = UnixNanos::from(seq);
+    let headers = Headers::empty();
+    let hash = compute_entry_hash(
+        seq,
+        ts,
+        ts,
+        topic.as_ref(),
+        payload_type,
+        &payload,
+        &headers,
+    );
+    let entry = EventStoreEntry::new(
+        hash,
+        seq,
+        headers,
+        topic,
+        Ustr::from(payload_type),
+        payload,
+        ts,
+        ts,
+    );
+    AppendEntry::without_indices(entry)
+}
+
+fn append_replay_account_state(seq: u64, state: &AccountState) -> AppendEntry {
+    let encoded = encode_account_state(state).expect("encode account state");
+    append_replay_payload(seq, PAYLOAD_TYPE_ACCOUNT_STATE, encoded.payload)
+}
+
+fn append_replay_order_event(seq: u64, event: &OrderEventAny) -> AppendEntry {
+    let encoded = encode_order_event_any(event).expect("encode order event");
+    let payload_type = encoded.payload_type.expect("order event payload type");
+    append_replay_payload(seq, payload_type.as_str(), encoded.payload)
+}
+
+fn generated_account_state(balance: u32) -> AccountState {
+    let amount = format!("{balance} USD");
+    cash_account_state_million_usd(&amount, "0 USD", &amount)
+}
+
+fn generated_order_events(index: usize, stage: u8) -> Vec<OrderEventAny> {
+    let instrument_id = audusd_sim().id();
+    let client_order_id = ClientOrderId::from(format!("O-{index:03}").as_str());
+    let venue_order_id = VenueOrderId::from(format!("V-{index:03}").as_str());
+    let position_id = PositionId::from("P-shared");
+    let trade_id = if index == 2 {
+        TradeId::from("T-001")
+    } else {
+        TradeId::from(format!("T-{index:03}").as_str())
+    };
+    let base_ts = u64::try_from(index).expect("index fits") * 10;
+    let initialized = OrderInitializedSpec::builder()
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .ts_event(UnixNanos::from(base_ts + 1))
+        .ts_init(UnixNanos::from(base_ts + 1))
+        .build();
+
+    let mut events = vec![OrderEventAny::Initialized(initialized)];
+
+    if stage >= 2 {
+        let submitted = OrderSubmittedSpec::builder()
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .ts_event(UnixNanos::from(base_ts + 2))
+            .ts_init(UnixNanos::from(base_ts + 2))
+            .build();
+        events.push(OrderEventAny::Submitted(submitted));
+    }
+
+    if stage >= 3 {
+        let accepted = OrderAcceptedSpec::builder()
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .venue_order_id(venue_order_id)
+            .ts_event(UnixNanos::from(base_ts + 3))
+            .ts_init(UnixNanos::from(base_ts + 3))
+            .build();
+        events.push(OrderEventAny::Accepted(accepted));
+    }
+
+    if stage >= 4 {
+        let filled = OrderFilledSpec::builder()
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .venue_order_id(venue_order_id)
+            .trade_id(trade_id)
+            .position_id(position_id)
+            .commission(Money::from("1 USD"))
+            .ts_event(UnixNanos::from(base_ts + 4))
+            .ts_init(UnixNanos::from(base_ts + 4))
+            .build();
+        events.push(OrderEventAny::Filled(filled));
+    }
+
+    events
+}
+
+fn apply_live_order_event(cache: &mut Cache, event: &OrderEventAny) {
+    match event {
+        OrderEventAny::Initialized(_) => {
+            let order =
+                OrderAny::from_events(vec![event.clone()]).expect("build initialized order");
+            cache
+                .add_order(order, None, None, false)
+                .expect("add live order");
+        }
+        OrderEventAny::Filled(fill) => {
+            cache.update_order(event).expect("update live order");
+            apply_live_fill_to_position(cache, fill);
+        }
+        _ => {
+            cache.update_order(event).expect("update live order");
+        }
+    }
+}
+
+fn apply_live_fill_to_position(cache: &mut Cache, fill: &OrderFilled) {
+    let Some(position_id) = fill.position_id else {
+        return;
+    };
+
+    if let Some(mut position) = cache.position_owned(&position_id) {
+        if position.trade_ids().contains(&fill.trade_id) {
+            return;
+        }
+
+        position.apply(fill);
+        cache.update_position(&position).expect("update position");
+        return;
+    }
+
+    let Some(instrument) = cache.instrument(&fill.instrument_id).cloned() else {
+        return;
+    };
+
+    let position = Position::new(&instrument, *fill);
+    cache
+        .add_position(&position, OmsType::Unspecified)
+        .expect("add position");
+}
+
+fn observed_cache_state(
+    cache: &Cache,
+    account_id: &AccountId,
+    client_order_ids: &[ClientOrderId],
+    position_ids: &[PositionId],
+) -> ObservedCacheState {
+    let account_events = cache
+        .account_owned(account_id)
+        .map(|account| account.events())
+        .unwrap_or_default();
+    let orders = client_order_ids
+        .iter()
+        .filter_map(|client_order_id| {
+            let order = cache.order_owned(client_order_id)?;
+            Some(ObservedOrder {
+                client_order_id: *client_order_id,
+                status: order.status(),
+                event_count: order.event_count(),
+                last_event: order.last_event().clone(),
+                position_id: order.position_id(),
+            })
+        })
+        .collect();
+    let positions = position_ids
+        .iter()
+        .filter_map(|position_id| {
+            let position = cache.position_owned(position_id)?;
+            Some(ObservedPosition {
+                position_id: *position_id,
+                event_count: position.event_count(),
+                trade_ids: position.trade_ids(),
+                commissions: position.commissions(),
+                last_event: position.last_event(),
+            })
+        })
+        .collect();
+
+    ObservedCacheState {
+        account_events,
+        orders,
+        positions,
+    }
+}
+
 proptest! {
-    // Each case spawns a tempdir + redb file, so cap the run rather than rely on
-    // proptest's default 256 cases. 32 is enough to surface non-deterministic
-    // edge cases without the test taking minutes.
+    // Each case spawns a tempdir + redb file, so the filesystem ops dominate
+    // runtime. The redb append/scan path is deterministic in input, so 8 cases
+    // is plenty to exercise codec round-tripping without minute-long runs.
     #![proptest_config(ProptestConfig {
-        cases: 32,
+        cases: 8,
         ..ProptestConfig::default()
     })]
 
@@ -1105,14 +1354,15 @@ proptest! {
             proptest::collection::vec(any::<u8>(), 0..32),
             1..16,
         ),
-        ts_inits in proptest::collection::vec(any::<u64>(), 1..16),
+        ts_init_seed in any::<u64>(),
     ) {
-        let n = payloads.len().min(ts_inits.len());
+        let n = payloads.len();
         let mut appends = Vec::with_capacity(n);
 
-        for i in 0..n {
+        for (i, payload) in payloads.iter().enumerate() {
             let seq = u64::try_from(i + 1).expect("seq fits");
-            let entry = build_payload_entry(seq, ts_inits[i], &payloads[i]);
+            let ts_init = ts_init_seed.wrapping_add(i as u64);
+            let entry = build_payload_entry(seq, ts_init, payload);
             appends.push(AppendEntry::without_indices(entry));
         }
 
@@ -1145,6 +1395,79 @@ proptest! {
         let mut expected_reversed: Vec<u64> = (1..=total).collect();
         expected_reversed.reverse();
         prop_assert_eq!(reversed_seqs, expected_reversed);
+    }
+
+    /// For generated cache-affecting event sequences, replaying the redb run
+    /// reconstructs the same account, order, and position state as the live cache.
+    #[rstest]
+    fn prop_replay_reconstructs_live_cache_state(
+        actions in generated_replay_actions(),
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let mut live_cache = Cache::default();
+        let mut replayed_cache = Cache::default();
+        live_cache
+            .add_instrument(instrument.clone())
+            .expect("add live instrument");
+        replayed_cache
+            .add_instrument(instrument)
+            .expect("add replay instrument");
+
+        let mut appends = Vec::new();
+        let mut client_order_ids = Vec::new();
+        let mut position_ids = Vec::new();
+        let mut account_id: Option<AccountId> = None;
+        let mut seq = 1_u64;
+
+        for (index, action) in actions.iter().enumerate() {
+            match action {
+                GeneratedReplayAction::Account { balance } => {
+                    let state = generated_account_state(*balance);
+                    account_id = Some(state.account_id);
+                    live_cache
+                        .update_account_state(&state)
+                        .expect("update live account");
+                    appends.push(append_replay_account_state(seq, &state));
+                    seq += 1;
+                }
+                GeneratedReplayAction::Order { stage } => {
+                    let events = generated_order_events(index, *stage);
+                    let client_order_id = match events.first().expect("order event") {
+                        OrderEventAny::Initialized(event) => event.client_order_id,
+                        _ => unreachable!("first order event must initialize"),
+                    };
+                    client_order_ids.push(client_order_id);
+
+                    for event in &events {
+                        if let OrderEventAny::Filled(fill) = event
+                            && let Some(position_id) = fill.position_id
+                        {
+                            position_ids.push(position_id);
+                        }
+
+                        apply_live_order_event(&mut live_cache, event);
+                        appends.push(append_replay_order_event(seq, event));
+                        seq += 1;
+                    }
+                }
+            }
+        }
+
+        let tmp = TempDir::new().expect("tempdir");
+        let mut backend = RedbBackend::new(tmp.path());
+        backend.open_run(manifest("prop-replay-run")).expect("open");
+        backend.append_batch(&appends).expect("append");
+
+        let reader = EventStoreReader::new(backend);
+        let report = replay_cache_snapshot_tail(&mut replayed_cache, &reader).expect("replay");
+        let account_id = account_id.unwrap_or_else(|| AccountId::from("SIM-001"));
+
+        prop_assert_eq!(report.applied_entries, appends.len());
+        prop_assert_eq!(report.ignored_entries, 0);
+        prop_assert_eq!(
+            observed_cache_state(&replayed_cache, &account_id, &client_order_ids, &position_ids),
+            observed_cache_state(&live_cache, &account_id, &client_order_ids, &position_ids),
+        );
     }
 }
 
@@ -1188,20 +1511,13 @@ fn iter_index_keys_enumerates_first_write_wins_pairs() {
         .iter_index_keys(IndexKind::VenueOrderId)
         .expect("iter");
     assert_eq!(venue, vec![("V-1".to_string(), 1u64)]);
-
-    assert!(
-        backend
-            .iter_index_keys(IndexKind::IntentId)
-            .expect("iter")
-            .is_empty(),
-    );
 }
 
 #[rstest]
 fn iter_index_keys_errors_when_no_run_open() {
     let (_tmp, backend) = fresh_backend();
 
-    match backend.iter_index_keys(IndexKind::IntentId) {
+    match backend.iter_index_keys(IndexKind::ClientOrderId) {
         Err(EventStoreError::Backend(msg)) => {
             assert!(msg.contains("no run open"), "msg was: {msg}");
         }

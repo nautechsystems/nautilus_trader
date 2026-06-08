@@ -166,6 +166,7 @@ class InteractiveBrokersClient(
         self._max_connection_attempts: int = int(os.getenv("IB_MAX_CONNECTION_ATTEMPTS", "0"))
         self._indefinite_reconnect: bool = not self._max_connection_attempts
         self._reconnect_delay: int = 5  # seconds
+        self._had_ib_connection: bool = False
         self._last_disconnection_ns: int | None = None
 
         # MarketDataMixin
@@ -190,6 +191,13 @@ class InteractiveBrokersClient(
 
         # Start client
         self._request_id_seq: int = 10000
+
+    @property
+    def is_ready(self) -> bool:
+        """
+        Return whether the Interactive Brokers client is ready for requests.
+        """
+        return self._is_client_ready.is_set()
 
     def _start(self) -> None:
         """
@@ -325,6 +333,7 @@ class InteractiveBrokersClient(
         except Exception as e:
             self._log.exception(f"Error occurred while canceling tasks: {e}", e)
 
+        await self._clear_bar_tracking_state()
         self._eclient.disconnect()
         self._account_ids = set()
         self.registered_nautilus_clients = set()
@@ -432,9 +441,24 @@ class InteractiveBrokersClient(
             self._log.debug("`_is_ib_connected` unset by `_handle_disconnection`", LogColor.BLUE)
             self._is_ib_connected.clear()
 
-        self._last_disconnection_ns = self._clock.timestamp_ns()
+        if self._had_ib_connection:
+            self._last_disconnection_ns = self._clock.timestamp_ns()
+        await self._clear_bar_tracking_state()
         await asyncio.sleep(5)
         await self._handle_reconnect()
+
+    async def _clear_bar_tracking_state(self) -> None:
+        tasks = list(self._bar_timeout_tasks.values())
+
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+
+        self._bar_timeout_tasks.clear()
+        self._bar_type_to_last_bar.clear()
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def _create_task(
         self,

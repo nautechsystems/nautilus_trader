@@ -122,9 +122,9 @@ impl BinanceFuturesWsTradingHandler {
                         BinanceFuturesWsTradingCommand::PlaceOrder { id, params } => {
                             if let Err(e) = self.handle_place_order(id.clone(), params).await {
                                 log::error!("Failed to handle place order command: {e}");
-                                self.emit(BinanceFuturesWsTradingMessage::OrderRejected {
+                                self.pending_requests.remove(&id);
+                                self.emit(BinanceFuturesWsTradingMessage::RequestFailed {
                                     request_id: id,
-                                    code: -1,
                                     msg: e.to_string(),
                                 });
                             }
@@ -132,9 +132,9 @@ impl BinanceFuturesWsTradingHandler {
                         BinanceFuturesWsTradingCommand::CancelOrder { id, params } => {
                             if let Err(e) = self.handle_cancel_order(id.clone(), params).await {
                                 log::error!("Failed to handle cancel order command: {e}");
-                                self.emit(BinanceFuturesWsTradingMessage::CancelRejected {
+                                self.pending_requests.remove(&id);
+                                self.emit(BinanceFuturesWsTradingMessage::RequestFailed {
                                     request_id: id,
-                                    code: -1,
                                     msg: e.to_string(),
                                 });
                             }
@@ -142,9 +142,9 @@ impl BinanceFuturesWsTradingHandler {
                         BinanceFuturesWsTradingCommand::ModifyOrder { id, params } => {
                             if let Err(e) = self.handle_modify_order(id.clone(), params).await {
                                 log::error!("Failed to handle modify order command: {e}");
-                                self.emit(BinanceFuturesWsTradingMessage::ModifyRejected {
+                                self.pending_requests.remove(&id);
+                                self.emit(BinanceFuturesWsTradingMessage::RequestFailed {
                                     request_id: id,
-                                    code: -1,
                                     msg: e.to_string(),
                                 });
                             }
@@ -185,14 +185,11 @@ impl BinanceFuturesWsTradingHandler {
         log::warn!("Failing {count} pending requests after reconnection");
 
         let pending = std::mem::take(&mut self.pending_requests);
-        for (request_id, meta) in pending {
-            let msg = self.create_rejection(
+        for (request_id, _meta) in pending {
+            self.emit(BinanceFuturesWsTradingMessage::RequestFailed {
                 request_id,
-                -1,
-                "Connection lost before response received".to_string(),
-                meta,
-            );
-            self.emit(msg);
+                msg: "Connection lost before response received".to_string(),
+            });
         }
     }
 

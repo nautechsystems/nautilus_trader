@@ -29,7 +29,7 @@ jobs:
       run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -69,7 +69,7 @@ jobs:
       CHANGED_BASE_SHA: >-
         ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -152,7 +152,7 @@ jobs:
           --health-retries 5
     # yamllint enable rule:line-length
     steps:
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -291,13 +291,12 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
       CLOUDFLARE_R2_PREFIX: "v2/simple/nautilus-trader"
     steps:
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
-            # Sigstore TUF trust root (for gh attestation verify)
             tuf-repo-cdn.sigstore.dev:443
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
@@ -321,23 +320,16 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: ./.github/actions/attest-build-provenance-retry
         with:
           subject-path: "dist/*.whl"
 
       - name: Verify wheel attestations
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
-          ISSUER: https://token.actions.githubusercontent.com
-        run: |
-          set -e
-          for whl in dist/*.whl; do
-            gh attestation verify "$whl" \
-              --repo "$GITHUB_REPOSITORY" \
-              --cert-identity "$IDENTITY" \
-              --cert-oidc-issuer "$ISSUER"
-          done
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
+        run: bash ./scripts/ci/verify-gh-attestations.bash dist/*.whl
 
       - name: Publish wheels to Cloudflare R2 (v2 bucket)
         uses: ./.github/actions/publish-wheels

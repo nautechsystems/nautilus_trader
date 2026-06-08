@@ -167,6 +167,30 @@ The `BacktestEngine` enforces important invariants to ensure data integrity:
 
 This design ensures data integrity while enabling performance optimizations for large datasets.
 
+## Funding
+
+Backtests settle perpetual funding at funding boundaries from `FundingRateUpdate` data.
+When an update has `next_funding_ns`, the simulated exchange stores the latest rate and the
+backtest clock emits one `FundingSettlement` at that timestamp. Without `next_funding_ns`, the
+exchange settles only when `ts_event` lands on the `interval` boundary. Updates without a boundary
+remain strategy data and do not create funding payments.
+
+```mermaid
+flowchart LR
+    A[FundingRateUpdate] --> B[SimulatedExchange stores latest rate]
+    B --> C[Backtest clock reaches funding boundary]
+    C --> D[FundingSettlement]
+    D --> E[Open positions]
+    E --> F[PositionAdjusted: Funding]
+    E --> G[AccountState]
+    F --> H[Portfolio]
+    G --> H
+```
+
+`PositionAdjusted` remains the position accounting event. A positive funding rate debits long
+positions and credits short positions. The resulting adjustment changes realized PnL, and the
+matching account balance update records the cash movement.
+
 ## High-level API
 
 The high-level API centers around a `BacktestNode`, which orchestrates the management of multiple `BacktestEngine` instances,
@@ -182,18 +206,41 @@ Each `BacktestRunConfig` object consists of the following:
 - An optional `ImportableControllerConfig` object.
 - An optional `BacktestEngineConfig` object, with a default configuration if not specified.
 
+## Shutdown on error
+
+Set `BacktestEngineConfig.shutdown_on_error=True` so that a Rust error log ends the
+backtest run. The Rust logger records the first `log::error!` emitted after the kernel
+starts, and the kernel converts that trigger into a `ShutdownSystem` command the next time
+the backtest loop checks for shutdown.
+
+The shutdown request follows the normal backtest stop path. It stops the trader and
+engines, then returns the backtest results collected up to the shutdown point. It does not
+abort the process.
+
+```python
+from nautilus_trader.backtest import BacktestEngineConfig
+
+config = BacktestEngineConfig(shutdown_on_error=True)
+```
+
+Error logs suppressed by component filters or `bypass_logging=True` still request shutdown.
+The trigger is cleared and re-armed when a new kernel run starts, so a process can run
+another backtest without reinitializing the logging system. Shutdown-on-error observes Rust
+`log` records, not Python `logging.error(...)` calls.
+
 ## Repeated runs
 
 When conducting multiple backtest runs, it's important to understand how components reset to avoid unexpected behavior.
 
 ### BacktestEngine.reset()
 
-The `.reset()` method returns all stateful fields to their **initial value**, except for data and instruments which persist.
+The `.reset()` method returns engine state and loaded component state to their **initial value**.
+It keeps loaded components, data, instruments, and venues registered.
 
 **What gets reset:**
 
 - All trading state (orders, positions, account balances).
-- Strategy instances are removed (you must re-add strategies before the next run).
+- Loaded actors, strategies, and execution algorithms are reset in place.
 - Engine counters and timestamps.
 
 **What persists:**
@@ -201,6 +248,7 @@ The `.reset()` method returns all stateful fields to their **initial value**, ex
 - Data added via `.add_data()` (use `.clear_data()` to remove).
 - Instruments (must match the persisted data).
 - Venue configurations.
+- Loaded actors, strategies, and execution algorithms.
 
 **Instrument handling:**
 
@@ -251,14 +299,14 @@ engine.add_data(data)
 engine.add_strategy(strategy1)
 engine.run()
 
-# Reset and run 2 - instruments and data persist
+# Reset and run 2 with the same loaded strategy
 engine.reset()
-engine.add_strategy(strategy2)
 engine.run()
 
-# Reset and run 3
+# Reset and run 3 with a different strategy
 engine.reset()
-engine.add_strategy(strategy3)
+engine.clear_strategies()
+engine.add_strategy(strategy2)
 engine.run()
 ```
 
@@ -269,7 +317,8 @@ Instruments and data persist across resets by default for `BacktestEngine`, maki
 :::tip[Best practices]
 
 - **For production backtesting:** Use `BacktestNode` with configuration objects.
-- **For parameter optimizations:** Use `BacktestEngine.reset()` to run multiple strategies against the same data.
+- **For parameter optimizations:** Use `BacktestEngine.reset()` to keep data and instruments,
+  then call `clear_strategies()` before adding a replacement strategy instance.
 - **For quick experiments:** Either approach works - choose based on individual use case.
 
 :::
@@ -452,15 +501,19 @@ correctly. Commands with future timestamps are deferred and processed when the e
 `BacktestEngine::end()` invokes each strategy's `on_stop` handler, drains and settles any commands
 it emits (e.g. `close_all_positions`, `cancel_all_orders`), then stops the engines.
 
-- Final positions, orders, and account balances reflect `on_stop` fills and cancels.
+- `on_stop` commands use normal venue queueing and latency. They do not get priority over earlier inflight commands.
+- If a pre-stop order reaches the venue before an `on_stop` cancel, it may still fill. A later
+  reduce-only close can then reject if the fill changed net exposure.
+- Strategies that need deterministic flattening should enter an exit-only state before stopping and
+  avoid new opening orders while cancel and close commands are in-flight.
 - Strategy event handlers do not fire for the resulting events: the strategy is already `Stopped`,
   so `OrderFilled` and similar events log but bypass `on_order_filled` and friends. Logic that
   reacts to fills must run before `on_stop` returns.
 - Simulation modules do not re-run at shutdown. `SimulationModule::process` is once per timestamp;
   re-invoking would double-apply side effects like FX rollover interest.
-- A `LatencyModel` defers `on_stop` commands by its configured delay; the engine clock does not
-  advance past the final data point, so those commands stay pending. Close earlier (e.g. in the
-  last `on_bar`) for reliable closing fills with latency.
+- A `LatencyModel` adds its configured delay to trailing commands (those emitted on the final
+  data tick or in `on_stop`). The shutdown path advances the engine clock to the latest inflight
+  arrival timestamp so those commands still settle before the engines stop.
 
 ### Fill modeling philosophy
 

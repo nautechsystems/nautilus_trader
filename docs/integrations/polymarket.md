@@ -6,12 +6,12 @@ traders to speculate on event outcomes by buying and selling outcome tokens.
 NautilusTrader provides a venue integration for data and execution via Polymarket's Central Limit
 Order Book (CLOB) API.
 
-Today the repository exposes two Polymarket implementations:
+Today the repository exposes two Polymarket implementations through the public package path
+`nautilus_trader.adapters.polymarket`:
 
-- The Python adapter in `nautilus_trader.adapters.polymarket`, which uses the
+- The Python adapter, which uses the
   [official Python CLOB V2 client library](https://github.com/Polymarket/py-clob-client-v2).
-- The Rust-native adapter surface in `nautilus_trader.polymarket`, which NautilusTrader is
-  consolidating toward.
+- The Rust-native adapter surface, which NautilusTrader is consolidating toward.
 
 :::warning
 The two implementations overlap heavily, but they do not behave identically in every area.
@@ -84,13 +84,14 @@ The table below shows the main differences that affect behavior today.
 
 | Area                | Python adapter                                                                | Rust adapter                                                  | Notes |
 |---------------------|-------------------------------------------------------------------------------|---------------------------------------------------------------|-------|
-| Public package path | `nautilus_trader.adapters.polymarket`                                         | `nautilus_trader.polymarket`                                  | Rust is the consolidation target. |
+| Public package path | `nautilus_trader.adapters.polymarket`                                         | `nautilus_trader.adapters.polymarket`                         | Rust is the consolidation target. |
 | Order signing       | Uses `py-clob-client-v2`                                                      | Native Rust signing                                           | Python signing is slower. |
 | Post‑only orders    | Supported for `GTC` and `GTD` only                                            | Supported for `GTC` and `GTD` only                            | Both reject post‑only with market TIF (`IOC` or `FOK`). |
 | Batch submit        | Uses `POST /orders` for batchable `SubmitOrderList` requests                  | Uses `POST /orders` for batchable `SubmitOrderList` requests  | Both batch only independent limit orders, capped at 15 per request. |
 | Batch cancel        | Uses `DELETE /orders`                                                         | Uses `DELETE /orders`                                         | Both align with official Polymarket docs. |
 | Market unsubscribe  | Sends dynamic WebSocket `unsubscribe` messages                                | Sends dynamic WebSocket `unsubscribe` messages                | Both support subscribe and unsubscribe. |
-| Data client config  | Credentials, subscription buffering, quote handling, provider config          | Base URLs, timeouts, filters, new‑market discovery            | Config surfaces differ materially. |
+| Auto‑load retry     | `auto_load_max_retries` (12), `auto_load_retry_delay_*` (5.0/15.0 secs)       | Same knobs, same defaults                                     | Both retry CLOB‑hydration / indexing‑lag misses with bounded exponential backoff plus jitter. |
+| Data client config  | Credentials, subscription buffering, quote handling, provider config          | Base URLs, timeouts, filters, new‑market discovery            | Config surfaces differ materially outside of the auto‑load family. |
 | Exec client config  | Credentials, retries, raw WS logging, experimental trade‑based order recovery | Credentials, retries, account IDs, native timeouts            | Rust does not expose every Python‑only option. |
 
 ## pUSD
@@ -113,11 +114,12 @@ To interact with Polymarket via NautilusTrader, you'll need a **Polygon**-compat
 
 Polymarket supports multiple signature types for order signing and verification:
 
-| Signature Type | Wallet Type                    | Description | Use Case |
-|----------------|--------------------------------|-------------|----------|
-| `0`            | EOA (Externally Owned Account) | Standard EIP712 signatures from wallets with direct private key control. | **Default.** Direct wallet connections (MetaMask, hardware wallets, etc.). |
-| `1`            | Email/Magic Wallet Proxy       | Smart contract wallet for email‑based accounts (Magic Link). Only the email‑associated address can execute functions. | Polymarket Proxy associated with Email/Magic accounts. Requires `funder` address. |
-| `2`            | Browser Wallet Proxy           | Modified Gnosis Safe (1-of-1 multisig) for browser wallets. | Polymarket Proxy associated with browser wallets. Enables UI verification. Requires `funder` address. |
+| Signature Type | Wallet Type                    | Description                                                              | Use Case                                                                                                   |
+|----------------|--------------------------------|--------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
+| `0`            | EOA (Externally Owned Account) | Standard EIP712 signatures from wallets with direct private key control. | **Default.** Direct wallet connections (MetaMask, hardware wallets, etc.).                                 |
+| `1`            | Email/Magic Wallet Proxy       | Smart contract wallet for email‑based accounts (Magic Link).             | Polymarket Proxy associated with Email/Magic accounts. Requires `funder` address.                          |
+| `2`            | Browser Wallet Proxy           | Modified Gnosis Safe (1-of-1 multisig) for browser wallets.              | Polymarket Proxy associated with browser wallets. Enables UI verification. Requires `funder` address.      |
+| `3`            | Deposit Wallet                 | ERC-1271 deposit wallet flow for new API users.                          | Requires deposit wallet `funder`; API credentials stay bound to the signer.                               |
 
 :::note
 See also: [Proxy wallet](https://docs.polymarket.com/developers/proxy-wallet) in the Polymarket documentation for more details about signature types and proxy wallet infrastructure.
@@ -229,6 +231,8 @@ When setting up NautilusTrader to work with Polymarket, it’s crucial to proper
   - `api_key`: If not provided, will source the `POLYMARKET_API_KEY` environment variable.
   - `api_secret`: If not provided, will source the `POLYMARKET_API_SECRET` environment variable.
   - `passphrase`: If not provided, will source the `POLYMARKET_PASSPHRASE` environment variable.
+  API credentials are created from the private-key signer for L2 authentication. For
+  `POLY_1271`, the deposit wallet remains the `funder`, but it is not the L2 auth address.
 - `auto_load_missing_instruments` (default `True`): Controls whether subscribe and
   request commands for an instrument that is not already in the cache trigger an
   ad-hoc load via the Gamma API. When disabled, subscribing to an uncached
@@ -463,8 +467,8 @@ with additional trade events stored in the cache as JSON under a custom key to r
 ### Trade ID derivation
 
 Polymarket does not publish a trade ID on `last_trade_price` market-data events.
-The adapter derives a deterministic `TradeId` by FNV-1a hashing the asset ID,
-side, price, size, and timestamp (`determine_trade_id` in both Rust and Python).
+The adapter derives a deterministic `TradeId` from the asset ID, side, price,
+size, and timestamp via `determine_trade_id` (FNV-1a in Rust, blake2b in Python).
 For CLOB Data API trade history the adapter composes the `TradeId` from a hash
 suffix, an asset suffix, and a per-(transaction, asset) sequence number (format
 `{transactionHash[-24:]}-{asset[-4:]}-{seq:06d}`). A single Polygon transaction
@@ -586,10 +590,10 @@ normalizes them with a single threshold of `DUST_SNAP_THRESHOLD = 0.01`
 shares. Anything beyond that surfaces to the engine as a real partial fill or
 overfill.
 
-| Direction | Source                                  | Adapter behaviour                         |
-|-----------|-----------------------------------------|-------------------------------------------|
-| Overfill  | V2 USDC‑scale truncation (microshares)  | Snap fill DOWN to `submitted_qty`         |
-| Underfill | CLOB cent‑tick truncation (≤ `0.01`)    | Preserved; synthetic dust fill at MATCHED |
+| Direction | Source                                 | Adapter behaviour                         |
+|-----------|----------------------------------------|-------------------------------------------|
+| Overfill  | V2 USDC‑scale truncation (microshares) | Snap fill DOWN to `submitted_qty`         |
+| Underfill | CLOB cent‑tick truncation (≤ `0.01`)   | Preserved; synthetic dust fill at MATCHED |
 
 `FillReport.commission` always reflects the venue-reported size, not the
 snapped quantity. The few-ulp difference is sub-microcent in pUSD.
@@ -627,16 +631,79 @@ demand so that strategies can subscribe to markets that are not in the cache:
 
 The feature is enabled by default. Disable it by setting `auto_load_missing_instruments=False` on
 `PolymarketDataClientConfig`. To preload a known set of markets at startup instead, supply
-`load_ids` or `event_slug_builder` on `PolymarketInstrumentProviderConfig`.
+`load_ids`, `event_slugs`, `market_slugs`, or `event_slug_builder` on
+`PolymarketInstrumentProviderConfig`.
 
 Newly-minted markets pass through a CLOB hydration window of several minutes during which Gamma
 reports `active=true` but `GET /markets/{cid}` returns either a 404 or a 200 with empty
-`token_id` strings. The adapter classifies both states as transient and retries the auto-load
-with bounded exponential backoff. Tune the cadence with `auto_load_max_retries` (default 12),
-`auto_load_retry_delay_initial_secs` (default 5.0), and `auto_load_retry_delay_max_secs`
-(default 15.0); the defaults cap the retry window near 3 minutes. Set `auto_load_max_retries=0`
-to disable retry. 5-minute markets (e.g. updown crypto) can expire before the venue finishes
-hydrating, so budget for that or raise the cap.
+`token_id` strings. Both adapters classify these as transient and retry the auto-load with
+bounded exponential backoff plus jitter. Tune the cadence with `auto_load_max_retries`
+(default 12), `auto_load_retry_delay_initial_secs` (default 5.0), and
+`auto_load_retry_delay_max_secs` (default 15.0); the defaults cap the retry window near 3
+minutes. Set `auto_load_max_retries=0` to disable retry. 5-minute markets (e.g. updown crypto)
+can expire before the venue finishes hydrating, so budget for that or raise the cap. After the
+retry budget is exhausted, a condition still missing on Gamma is logged as a terminal miss. The
+Python adapter then picks it back up on the next `update_instruments_interval_mins` refresh; the
+Rust adapter leaves the subscription unresolved until the caller resubscribes.
+
+### Market resolution events
+
+The Rust data client tracks Polymarket exposure at `condition_id` level so both YES and NO legs
+close together when the venue resolves the market. Position events add open Polymarket binary
+option instruments to an internal watchlist. Once a watched condition expires, the data client
+waits `resolve_poll_grace_secs`, then polls Gamma every `resolve_poll_interval_secs` until the
+condition resolves or `resolve_poll_max_wait_secs` elapses.
+
+Resolution uses strict winner inference:
+
+- Gamma must return a closed binary market with exactly two token IDs, two outcomes, and a binary
+  `outcomePrices` shape.
+- If Gamma does not provide a strict result for the condition, the client falls back to CLOB
+  `GET /markets/{condition_id}` and uses `tokens[].winner`.
+- Non-binary, ambiguous, malformed, or still-unresolved payloads are skipped. They remain on the
+  watchlist until the poll window times out or a manual request resolves them.
+
+When the client applies a resolution, it emits one `InstrumentStatus` close and one
+`InstrumentClose` per tracked leg. The winner leg closes at `1`, and the losing leg closes at `0`.
+The close type is `InstrumentCloseType.ContractExpired`. This event closes Nautilus exposure and
+does not redeem tokens or claim funds on-chain.
+
+The same apply path handles WebSocket `market_resolved` events, automatic polling, and manual
+requests. After `resolve_poll_max_wait_secs`, automatic polling pauses the watched condition and
+logs it for manual recovery. Manual requests can still retry the condition later.
+
+#### Manual resolution requests
+
+Use `request_data()` with data type `PolymarketResolveRequest` to force a resolution check. The
+request accepts any of these params:
+
+| Param            | Type                 | Description |
+|------------------|----------------------|-------------|
+| `condition_id`   | `str`                | Resolve one Polymarket condition. |
+| `condition_ids`  | `str` or `list[str]` | Resolve one or more Polymarket conditions. |
+| `instrument_ids` | `str` or `list[str]` | Resolve Polymarket instrument IDs; other venues are ignored. |
+
+If a request omits all selectors, the client uses the watchlist. With automatic polling enabled,
+the fallback selects paused or timed-out entries. With automatic polling disabled, it selects all
+expired eligible entries, so operators can run the recovery flow manually.
+
+The response payload is custom data with this dictionary shape:
+
+| Key                          | Meaning |
+|------------------------------|---------|
+| `requested_condition_ids`    | Deduplicated condition IDs checked by the request. |
+| `fetched_markets`            | Gamma markets returned across the batched lookup. |
+| `resolved_markets`           | Conditions with a strict Gamma result or successful CLOB fallback result. |
+| `skipped_non_binary_markets` | Gamma markets skipped for non‑binary or ambiguous resolution shape. |
+| `clob_fallback_successes`    | Conditions resolved through the CLOB fallback path. |
+| `emitted_condition_ids`      | Conditions that emitted at least one `InstrumentClose`. |
+| `failed_condition_ids`       | Conditions where both Gamma and CLOB lookup failed. |
+| `used_watchlist_fallback`    | Whether the request selected conditions from the watchlist. |
+| `timed_out_watchlist`        | Timed‑out watchlist entries seen during fallback selection. |
+| `error`                      | First summary error, if one occurred. |
+
+Redemption is a separate account or execution workflow. Do not extend the data client resolution
+path to claim funds; it only publishes market-outcome close events into Nautilus.
 
 ### Purging instruments at runtime
 
@@ -696,13 +763,16 @@ When you attempt to subscribe to 501 or more instruments on a single WebSocket c
 
 NautilusTrader automatically manages WebSocket connections to handle this limitation:
 
-- The adapter defaults to **200 instrument subscriptions per connection** (configurable via `ws_max_subscriptions_per_connection`).
+- The adapter defaults to **200 instrument subscriptions per connection** (configurable via
+  `ws_max_subscriptions_per_connection` in the Python adapter; `ws_max_subscriptions` in the
+  Rust adapter).
 - When the subscription count exceeds this limit, additional WebSocket connections are created automatically.
 - This ensures you receive complete order book data (including initial snapshots) for all subscribed instruments.
 
 :::tip
 If you need to subscribe to a large number of instruments (e.g., 5000+), the adapter will automatically distribute these subscriptions across multiple WebSocket connections.
-You can tune the per-connection limit up to 500 via `ws_max_subscriptions_per_connection`.
+You can tune the per-connection limit up to 500 via `ws_max_subscriptions_per_connection`
+(Python) or `ws_max_subscriptions` (Rust).
 :::
 
 ## Rate limiting
@@ -737,8 +807,9 @@ Polymarket changes these quotas over time. As of 2026-05-06, the official limits
 
 The WebSocket quotas are not part of the published REST rate-limits table.
 The adapter ships a configurable per-connection subscription cap
-(`ws_max_subscriptions_per_connection`) defaulting to 200; Polymarket previously
-documented an upper bound of 500 per connection.
+(`ws_max_subscriptions_per_connection` in the Python adapter,
+`ws_max_subscriptions` in the Rust adapter) defaulting to 200; Polymarket
+previously documented an upper bound of 500 per connection.
 
 :::warning
 Exceeding Polymarket rate limits triggers Cloudflare throttling. Requests are queued
@@ -774,9 +845,8 @@ The following limitations are currently known:
 
 ## Configuration
 
-The Python adapter (`nautilus_trader.adapters.polymarket`) and the Rust-native adapter
-(`nautilus_trader.polymarket`) expose different config surfaces. The tables below document
-both adapters in full.
+The Python adapter and the Rust-native adapter expose different config surfaces. The tables
+below document both adapters in full.
 
 ### Data client options (Python v2)
 
@@ -802,6 +872,9 @@ Class: `PolymarketDataClientConfig` in `nautilus_trader.adapters.polymarket.conf
 | `drop_quotes_missing_side`            | `True`       | Drop quotes with missing bid/ask prices instead of substituting boundary values. |
 | `auto_load_missing_instruments`       | `True`       | Load instruments on demand when subscribe or request commands reference uncached instruments. |
 | `auto_load_debounce_ms`               | `100`        | Debounce window (milliseconds) for coalescing concurrent runtime instrument loads. |
+| `auto_load_max_retries`               | `12`         | Maximum retry attempts on transient auto‑load failures (404 or empty `token_id` during CLOB hydration). Set to `0` to disable. |
+| `auto_load_retry_delay_initial_secs`  | `5.0`        | Initial delay (seconds) between transient auto‑load retries. |
+| `auto_load_retry_delay_max_secs`      | `15.0`       | Maximum delay (seconds) between transient auto‑load retries. |
 | `instrument_config`                   | `None`       | Optional `PolymarketInstrumentProviderConfig` for instrument loading. |
 
 ### Execution client options (Python v2)
@@ -834,22 +907,29 @@ Class: `PolymarketExecClientConfig` in `nautilus_trader.adapters.polymarket.conf
 
 Struct: `PolymarketDataClientConfig` in `crates/adapters/polymarket/src/config.rs`.
 
-| Option                             | Default                                    | Description |
-|------------------------------------|--------------------------------------------|-------------|
-| `base_url_http`                    | `None` (official CLOB endpoint)            | Override for the CLOB REST base URL. |
-| `base_url_ws`                      | `None` (official CLOB endpoint)            | Override for the CLOB WebSocket base URL. |
-| `base_url_gamma`                   | `None` (official Gamma endpoint)           | Override for the Gamma API base URL. |
-| `base_url_data_api`                | `None` (`https://data-api.polymarket.com`) | Override for the Data API base URL. |
-| `http_timeout_secs`                | `60`                                       | HTTP request timeout (seconds). |
-| `ws_timeout_secs`                  | `30`                                       | WebSocket connect/idle timeout (seconds). |
-| `ws_max_subscriptions`             | `200`                                      | Maximum instrument subscriptions per WebSocket connection. |
-| `update_instruments_interval_mins` | `60`                                       | Interval (minutes) between instrument catalogue refreshes. |
-| `subscribe_new_markets`            | `false`                                    | Subscribe to new‑market discovery events via WebSocket when `true`. |
-| `auto_load_missing_instruments`    | `true`                                     | Load instruments on demand when subscribe or request commands reference uncached instruments. |
-| `auto_load_debounce_ms`            | `100`                                      | Debounce window (milliseconds) for coalescing concurrent runtime instrument loads. |
-| `filters`                          | `[]`                                       | Instrument filters applied during loading and discovery. |
-| `new_market_filter`                | `None`                                     | Optional filter applied to newly discovered markets before emission. |
-| `transport_backend`                | `Sockudo`                                  | WebSocket transport backend. |
+| Option                               | Default                                    | Description |
+|--------------------------------------|--------------------------------------------|-------------|
+| `base_url_http`                      | `None` (official CLOB endpoint)            | Override for the CLOB REST base URL. |
+| `base_url_ws`                        | `None` (official CLOB endpoint)            | Override for the CLOB WebSocket base URL. |
+| `base_url_gamma`                     | `None` (official Gamma endpoint)           | Override for the Gamma API base URL. |
+| `base_url_data_api`                  | `None` (`https://data-api.polymarket.com`) | Override for the Data API base URL. |
+| `http_timeout_secs`                  | `60`                                       | HTTP request timeout (seconds). |
+| `ws_timeout_secs`                    | `30`                                       | WebSocket connect/idle timeout (seconds). |
+| `ws_max_subscriptions`               | `200`                                      | Maximum instrument subscriptions per WebSocket connection. |
+| `update_instruments_interval_mins`   | `60`                                       | Interval (minutes) between instrument catalogue refreshes. |
+| `subscribe_new_markets`              | `false`                                    | Subscribe to new‑market discovery events via WebSocket when `true`. |
+| `auto_load_missing_instruments`      | `true`                                     | Load instruments on demand when subscribe or request commands reference uncached instruments. |
+| `auto_load_debounce_ms`              | `100`                                      | Debounce window (milliseconds) for coalescing concurrent runtime instrument loads. |
+| `auto_load_max_retries`              | `12`                                       | Maximum retry attempts on transient auto‑load failures (markets in the CLOB hydration window). Set to `0` to disable. |
+| `auto_load_retry_delay_initial_secs` | `5.0`                                      | Initial delay (seconds) between transient auto‑load retries. |
+| `auto_load_retry_delay_max_secs`     | `15.0`                                     | Maximum delay (seconds) between transient auto‑load retries. |
+| `resolve_poll_enabled`               | `true`                                     | Automatically poll expired watched conditions for market resolution. |
+| `resolve_poll_interval_secs`         | `30`                                       | Interval (seconds) between automatic resolution polling attempts. |
+| `resolve_poll_grace_secs`            | `10`                                       | Delay (seconds) after expiry before the first automatic resolution poll. |
+| `resolve_poll_max_wait_secs`         | `1800`                                     | Maximum wait (seconds) after expiry before automatic polling pauses a watched condition for manual recovery. |
+| `filters`                            | `[]`                                       | Instrument filters applied during loading and discovery. |
+| `new_market_filter`                  | `None`                                     | Optional filter applied to newly discovered markets before emission. |
+| `transport_backend`                  | `Sockudo`                                  | WebSocket transport backend. |
 
 The Rust data client config does not accept account credentials; authentication is handled by
 the execution client. Subscription buffering (`ws_connection_initial_delay_secs`) and quote
@@ -867,8 +947,8 @@ Struct: `PolymarketExecClientConfig` in `crates/adapters/polymarket/src/config.r
 | `api_key`                | `None` (`POLYMARKET_API_KEY` env)          | CLOB API key (L2 auth). |
 | `api_secret`             | `None` (`POLYMARKET_API_SECRET` env)       | CLOB API secret (L2 auth). |
 | `passphrase`             | `None` (`POLYMARKET_PASSPHRASE` env)       | CLOB API passphrase (L2 auth). |
-| `funder`                 | `None` (`POLYMARKET_FUNDER` env)           | pUSD funding wallet. |
-| `signature_type`         | `Eoa`                                      | Signature scheme (`Eoa`, `PolyProxy`, `PolyGnosisSafe`). |
+| `funder`                 | `None` (`POLYMARKET_FUNDER` env)           | pUSD funding wallet; for `Poly1271`, this is the deposit wallet. |
+| `signature_type`         | `Eoa`                                      | Signature scheme (`Eoa`, `PolyProxy`, `PolyGnosisSafe`, `Poly1271`). |
 | `base_url_http`          | `None` (official CLOB endpoint)            | Override for the CLOB REST base URL. |
 | `base_url_ws`            | `None` (official CLOB endpoint)            | Override for the CLOB WebSocket base URL. |
 | `base_url_data_api`      | `None` (`https://data-api.polymarket.com`) | Override for the Data API base URL. |
@@ -888,46 +968,40 @@ single-order path still retries on transient failures.
 
 The instrument provider config is passed via the `instrument_config` parameter on the data client config.
 
-| Option               | Default | Description                                                                                    |
-|----------------------|---------|------------------------------------------------------------------------------------------------|
-| `load_all`           | `False` | Load all venue instruments on start. Auto‑set to `True` when `event_slug_builder` is provided. |
-| `event_slug_builder` | `None`  | Fully qualified path to a callable returning event slugs (e.g., `"mymodule:build_slugs"`).     |
+| Option               | Default | Description                                                                                 |
+|----------------------|---------|---------------------------------------------------------------------------------------------|
+| `load_all`           | `False` | Load all venue instruments on start. Auto‑set to `True` when slug scopes are provided.      |
+| `event_slugs`        | `None`  | Static event slugs to resolve through Gamma events.                                        |
+| `market_slugs`       | `None`  | Static market slugs to load directly through Gamma markets.                                |
+| `event_slug_builder` | `None`  | Rust‑backed `PolymarketUpDownEventSlugConfig` for predictable Up/Down event slug windows.  |
 
 #### Event slug builder
 
-The `event_slug_builder` feature enables efficient loading of niche markets without downloading
-the full venue catalogue. Instead of loading everything, you provide a function that returns
-event slugs for the specific markets you need.
+The Rust Python v2 adapter treats Python as a configuration, factory, and user strategy boundary.
+Provider, data, and execution operations run in Rust. `event_slug_builder` therefore accepts a
+Rust-backed `PolymarketUpDownEventSlugConfig`; it does not accept Python callable paths.
+
+Use this for predictable Polymarket Up/Down event slugs without downloading the full venue
+catalogue. The builder emits slugs with the pattern
+`{asset}-updown-{interval_mins}m-{unix_timestamp}` for the configured window of aligned periods.
 
 ```python
-from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProviderConfig
+from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConfig
+from nautilus_trader.adapters.polymarket import PolymarketUpDownEventSlugConfig
 
-# Configure with a slug builder function
 instrument_config = PolymarketInstrumentProviderConfig(
-    event_slug_builder="myproject.slugs:build_temperature_slugs",
+    event_slug_builder=PolymarketUpDownEventSlugConfig(
+        assets=["btc"],
+        interval_mins=5,
+        periods=3,
+        start_offset_periods=0,
+    ),
 )
 ```
 
-The callable must have signature `() -> list[str]` and return a list of event slugs:
-
-```python
-# myproject/slugs.py
-from datetime import UTC, datetime, timedelta
-
-def build_temperature_slugs() -> list[str]:
-    """Build slugs for NYC temperature markets."""
-    slugs = []
-    today = datetime.now(tz=UTC).date()
-
-    for i in range(7):
-        date = today + timedelta(days=i)
-        slug = f"highest-temperature-in-nyc-on-{date.strftime('%B-%d').lower()}"
-        slugs.append(slug)
-
-    return slugs
-```
-
-See `examples/live/polymarket/slug_builders.py` for more examples including crypto UpDown markets.
+For custom event patterns, pass explicit `event_slugs`, pass direct `market_slugs`, or add a Rust
+filter or builder. The Rust v2 adapter rejects Python callable `event_slug_builder` values so adapter
+operations do not cross into Python during live trading.
 
 ## Historical data loading
 

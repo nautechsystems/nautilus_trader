@@ -16,7 +16,10 @@
 import pytest
 
 from nautilus_trader.accounting.accounts.margin import MarginAccount
+from nautilus_trader.core.nautilus_pyo3 import UUID4
 from nautilus_trader.core.nautilus_pyo3 import AccountId
+from nautilus_trader.core.nautilus_pyo3 import AccountState
+from nautilus_trader.core.nautilus_pyo3 import AccountType
 from nautilus_trader.core.nautilus_pyo3 import Currency
 from nautilus_trader.core.nautilus_pyo3 import Money
 from nautilus_trader.core.nautilus_pyo3 import Price
@@ -100,6 +103,28 @@ def test_update_maintenance_margin():
 
     assert account.maintenance_margin(AUDUSD_SIM) == margin
     assert account.maintenance_margins() == {AUDUSD_SIM: margin}
+
+
+def test_margin_getters_return_none_after_account_state_clears_margin():
+    account = TestAccountingProviderPyo3.margin_account()
+    event = account.last_event
+
+    account.apply(
+        AccountState(
+            account_id=account.id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            balances=event.balances,
+            margins=[],
+            is_reported=True,
+            event_id=UUID4(),
+            ts_init=0,
+            ts_event=1,
+        ),
+    )
+
+    assert account.initial_margin(AUDUSD_SIM) is None
+    assert account.maintenance_margin(AUDUSD_SIM) is None
 
 
 def test_calculate_initial_margin_with_leverage():

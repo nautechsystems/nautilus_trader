@@ -912,3 +912,69 @@ class TestParseFiltersExpr:
 
         # Assert
         assert decoded.oto_trigger_mode == OtoTriggerMode.FULL
+
+    def test_backtest_venue_config_liquidation_field_defaults(self):
+        """
+        Test that liquidation fields default to their documented values.
+        """
+        # Arrange & Act
+        config = BacktestVenueConfig(
+            name="SIM",
+            oms_type="NETTING",
+            account_type="CASH",
+            starting_balances=["1_000_000 USD"],
+        )
+
+        # Assert
+        assert config.liquidation_enabled is False
+        assert config.liquidation_trigger_ratio == 1.0
+        assert config.liquidation_cancel_open_orders is True
+
+    def test_backtest_venue_config_liquidation_custom_values(self):
+        """
+        Test that liquidation fields store custom values correctly.
+        """
+        # Arrange & Act
+        config = BacktestVenueConfig(
+            name="SIM",
+            oms_type="NETTING",
+            account_type="MARGIN",
+            starting_balances=["1_000_000 USD"],
+            liquidation_enabled=True,
+            liquidation_trigger_ratio=1.5,
+            liquidation_cancel_open_orders=False,
+        )
+
+        # Assert
+        assert config.liquidation_enabled is True
+        assert config.liquidation_trigger_ratio == 1.5
+        assert config.liquidation_cancel_open_orders is False
+
+    def test_backtest_venue_config_liquidation_fields_serialization(self):
+        """
+        Test that BacktestVenueConfig with liquidation fields serializes and
+        deserializes correctly.
+        """
+        # Arrange
+        config = BacktestVenueConfig(
+            name="SIM",
+            oms_type="NETTING",
+            account_type="MARGIN",
+            starting_balances=["1_000_000 USD"],
+            liquidation_enabled=True,
+            liquidation_trigger_ratio=1.5,
+            liquidation_cancel_open_orders=False,
+        )
+
+        # Act
+        json_bytes = msgspec.json.encode(config, enc_hook=msgspec_encoding_hook)
+        decoded = msgspec.json.decode(
+            json_bytes,
+            type=BacktestVenueConfig,
+            dec_hook=msgspec_decoding_hook,
+        )
+
+        # Assert
+        assert decoded.liquidation_enabled is True
+        assert decoded.liquidation_trigger_ratio == 1.5
+        assert decoded.liquidation_cancel_open_orders is False

@@ -28,12 +28,14 @@ on:
       - Cargo.lock # Keep in sync with scripts/ci/security-audit-gate.sh.
       - Cargo.toml
       - crates/**/Cargo.toml
+      - crates/**/fuzz/Cargo.lock
       - uv.lock
       - pyproject.toml
       - .pre-commit-config.yaml
       - python/uv.lock
       - python/pyproject.toml
       - deny.toml
+      - .cargo/deny-fuzz.toml
       - osv-scanner.toml
       - .supply-chain/**
       - tools.toml
@@ -61,7 +63,7 @@ jobs:
     outputs:
       audit_needed: ${{ steps.filter.outputs.audit_needed }}
     steps:
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -94,7 +96,7 @@ jobs:
       actions: read
       security-events: write
     steps:
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -130,7 +132,7 @@ jobs:
           hashFiles('zizmor.sarif') != '' &&
           (github.event_name != 'pull_request' ||
           !github.event.pull_request.head.repo.fork)
-        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
+        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
         with:
           sarif_file: zizmor.sarif
           category: zizmor
@@ -141,7 +143,7 @@ jobs:
     if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
     steps:
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -159,7 +161,10 @@ jobs:
           tool-name: cargo-audit
 
       - name: Run cargo-audit
-        run: cargo audit
+        run: |
+          cargo audit
+          cargo audit --file crates/adapters/lighter/fuzz/Cargo.lock
+          cargo audit --file crates/adapters/derive/fuzz/Cargo.lock
 
   cargo-deny:
     name: cargo-deny
@@ -167,7 +172,7 @@ jobs:
     if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
     steps:
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -185,7 +190,14 @@ jobs:
           tool-name: cargo-deny
 
       - name: Run cargo-deny (advisories, licenses, sources, bans)
-        run: cargo deny --all-features check advisories licenses sources bans
+        run: |
+          cargo deny --all-features check advisories licenses sources bans
+          cargo deny --manifest-path crates/adapters/lighter/fuzz/Cargo.toml \
+            --locked --all-features check --config .cargo/deny-fuzz.toml \
+            advisories licenses sources bans
+          cargo deny --manifest-path crates/adapters/derive/fuzz/Cargo.toml \
+            --locked --all-features check --config .cargo/deny-fuzz.toml \
+            advisories licenses sources bans
 
   cargo-vet:
     name: cargo-vet
@@ -193,7 +205,7 @@ jobs:
     if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
     steps:
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -211,7 +223,12 @@ jobs:
           tool-name: cargo-vet
 
       - name: Run cargo-vet
-        run: cargo vet --locked
+        run: |
+          cargo vet --locked
+          cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/Cargo.toml \
+            --store-path .supply-chain
+          cargo vet --locked --manifest-path crates/adapters/derive/fuzz/Cargo.toml \
+            --store-path .supply-chain
 
   pip-audit:
     name: pip-audit
@@ -219,7 +236,7 @@ jobs:
     if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
     steps:
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -245,10 +262,14 @@ jobs:
         run: uv python install 3.13
 
       - name: Run pip-audit
+        # aiohttp 3.14.0 fixes these advisories, but remains inside uv's 3-day
+        # exclude-newer window while aiohttp source builds are disabled.
         run: >
           uv export --no-hashes --frozen |
           uv run --no-project --no-build --with "pip-audit==$(bash scripts/tool-version.sh pip-audit)" --
           pip-audit --disable-pip --no-deps -r /dev/stdin
+          --ignore-vuln GHSA-jg22-mg44-37j8
+          --ignore-vuln GHSA-hg6j-4rv6-33pg
 
   osv-scanner:
     name: osv-scanner
@@ -256,7 +277,7 @@ jobs:
     if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
     steps:
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -274,5 +295,7 @@ jobs:
           scan-args: |-
             --config=osv-scanner.toml
             --lockfile=Cargo.lock
+            --lockfile=crates/adapters/lighter/fuzz/Cargo.lock
+            --lockfile=crates/adapters/derive/fuzz/Cargo.lock
             --lockfile=uv.lock
             --lockfile=python/uv.lock

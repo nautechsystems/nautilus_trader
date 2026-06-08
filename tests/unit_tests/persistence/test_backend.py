@@ -17,8 +17,10 @@ import pandas as pd
 import pytest
 
 from nautilus_trader import TEST_DATA_DIR
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
+from nautilus_trader.model.data import OptionGreeks
 from nautilus_trader.model.data import capsule_to_list
 from nautilus_trader.model.objects import HIGH_PRECISION
 
@@ -266,6 +268,39 @@ def test_pyo3_list_to_data_list_unknown_type_raises() -> None:
 
     with pytest.raises(RuntimeError, match="Cannot convert PyO3 data type"):
         pyo3_list_to_data_list(["not a data object"])
+
+
+def test_pyo3_list_to_data_list_option_greeks() -> None:
+    from nautilus_trader.model.data import pyo3_list_to_data_list
+
+    instrument_id = nautilus_pyo3.InstrumentId.from_str("BTC-20260529-100000-C.OKX")
+    pyo3_greeks = nautilus_pyo3.OptionGreeks(
+        instrument_id,
+        0.55,
+        0.012,
+        3.4,
+        -1.2,
+        0.01,
+        0.64,
+        None,
+        0.66,
+        100_000.0,
+        None,
+        1_000_000_000,
+        1_000_000_001,
+        nautilus_pyo3.GreeksConvention.PRICE_ADJUSTED,
+    )
+
+    result = pyo3_list_to_data_list([pyo3_greeks])
+
+    assert len(result) == 1
+    greeks = result[0]
+    assert isinstance(greeks, OptionGreeks)
+    assert greeks.instrument_id == OptionGreeks.from_pyo3(pyo3_greeks).instrument_id
+    assert greeks.delta == 0.55
+    assert greeks.bid_iv is None
+    assert greeks.open_interest is None
+    assert greeks.convention == nautilus_pyo3.GreeksConvention.PRICE_ADJUSTED
 
 
 def test_backend_session_register_object_store_from_uri_invalid_uri() -> None:

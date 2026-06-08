@@ -20,14 +20,15 @@
 //! proper order events; untracked orders fall back to execution reports for
 //! downstream reconciliation.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    collections::VecDeque,
+    hash::Hash,
+    sync::{Arc, Mutex},
 };
 
 use ahash::AHashMap;
-use dashmap::{DashMap, DashSet};
-use nautilus_core::{UUID4, UnixNanos, time::AtomicTime};
+use dashmap::DashMap;
+use nautilus_core::{AtomicMap, MUTEX_POISONED, UUID4, UnixNanos, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType},
@@ -45,7 +46,8 @@ use ustr::Ustr;
 use crate::{
     common::{
         consts::{
-            OKX_FIELD_CLORDID, OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_FIELD_SUBCODE, OKX_SUCCESS_CODE,
+            OKX_FIELD_CLORDID, OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_FIELD_SUBCODE,
+            OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_SUCCESS_CODE,
         },
         enums::OKXOrderStatus,
         parse::{
@@ -53,7 +55,7 @@ use crate::{
             parse_quantity,
         },
     },
-    http::models::{OKXAccount, OKXCancelAlgoOrderResponse, OKXPosition},
+    http::models::{OKXAccount, OKXCancelAlgoOrderResponse, OKXPosition, OKXSpreadOrder},
     websocket::{
         client::PendingOrderInfo,
         enums::OKXWsOperation,
@@ -61,13 +63,98 @@ use crate::{
         messages::{ExecutionReport, OKXOrderMsg, OKXWsMessage},
         parse::{
             OrderStateSnapshot, ParsedOrderEvent, parse_algo_order_msg, parse_order_event,
-            parse_order_msg, update_fee_fill_caches,
+            parse_order_msg, parse_spread_order_event, parse_spread_order_msg,
+            update_fee_fill_caches,
         },
     },
 };
 
-/// Maximum entries in the dedup sets before they are cleared.
+/// Maximum entries held by the dedup sets before the oldest is evicted.
 const DEDUP_CAPACITY: usize = 10_000;
+
+/// Bounded deduplication set with FIFO eviction.
+///
+/// Insertions are tagged with a sequence number so a stale marker left
+/// behind by `remove` or by re-insertion of the same key cannot evict the
+/// live entry when it reaches the front of the queue.
+#[derive(Debug)]
+pub struct BoundedDedup<K> {
+    inner: Mutex<BoundedDedupInner<K>>,
+    capacity: usize,
+}
+
+#[derive(Debug)]
+struct BoundedDedupInner<K> {
+    set: AHashMap<K, u64>,
+    queue: VecDeque<(K, u64)>,
+    next_seq: u64,
+}
+
+impl<K> BoundedDedup<K>
+where
+    K: Eq + Hash + Clone,
+{
+    /// Creates a new dedup set with the given maximum capacity.
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            inner: Mutex::new(BoundedDedupInner {
+                set: AHashMap::with_capacity(capacity),
+                queue: VecDeque::with_capacity(capacity),
+                next_seq: 0,
+            }),
+            capacity,
+        }
+    }
+
+    /// Returns `true` if the key is currently present.
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    pub fn contains(&self, key: &K) -> bool {
+        self.inner
+            .lock()
+            .expect(MUTEX_POISONED)
+            .set
+            .contains_key(key)
+    }
+
+    /// Inserts the key. Returns `true` when the key was already present
+    /// (duplicate) and `false` when this call was the first insertion.
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    pub fn check_and_insert(&self, key: K) -> bool {
+        let mut inner = self.inner.lock().expect(MUTEX_POISONED);
+        if inner.set.contains_key(&key) {
+            return true;
+        }
+        let seq = inner.next_seq;
+        inner.next_seq = inner.next_seq.wrapping_add(1);
+        inner.set.insert(key.clone(), seq);
+        inner.queue.push_back((key, seq));
+        while inner.queue.len() > self.capacity
+            && let Some((old_key, old_seq)) = inner.queue.pop_front()
+        {
+            // Skip if a fresher insertion has superseded this marker.
+            if inner.set.get(&old_key) == Some(&old_seq) {
+                inner.set.remove(&old_key);
+            }
+        }
+        false
+    }
+
+    /// Inserts the key without reporting whether it was already present.
+    pub fn insert(&self, key: K) {
+        let _ = self.check_and_insert(key);
+    }
+
+    /// Drops the key from the set if present. Returns `true` if it was found.
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    pub fn remove(&self, key: &K) -> bool {
+        self.inner
+            .lock()
+            .expect(MUTEX_POISONED)
+            .set
+            .remove(key)
+            .is_some()
+    }
+}
 
 /// Order identity context stored at submission time, used by the WS dispatch
 /// task to produce proper order events without Cache access.
@@ -85,34 +172,29 @@ pub struct OrderIdentity {
 
 /// Shared state for cross-stream event deduplication between the private
 /// and business WebSocket dispatch loops.
-///
-/// Uses `DashMap`/`DashSet` for concurrent access from both stream tasks
-/// and the main thread without mutex contention.
 #[derive(Debug)]
 pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
-    pub emitted_accepted: DashSet<ClientOrderId>,
-    pub triggered_orders: DashSet<ClientOrderId>,
-    pub filled_orders: DashSet<ClientOrderId>,
-    pub emitted_trades: DashSet<TradeId>,
+    pub emitted_accepted: BoundedDedup<ClientOrderId>,
+    pub triggered_orders: BoundedDedup<ClientOrderId>,
+    pub filled_orders: BoundedDedup<ClientOrderId>,
+    pub emitted_trades: BoundedDedup<TradeId>,
     pub(crate) pending_orders: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_cancels: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_amends: Arc<DashMap<String, PendingOrderInfo>>,
-    clearing: AtomicBool,
 }
 
 impl Default for WsDispatchState {
     fn default() -> Self {
         Self {
             order_identities: DashMap::new(),
-            emitted_accepted: DashSet::default(),
-            triggered_orders: DashSet::default(),
-            filled_orders: DashSet::default(),
-            emitted_trades: DashSet::default(),
+            emitted_accepted: BoundedDedup::new(DEDUP_CAPACITY),
+            triggered_orders: BoundedDedup::new(DEDUP_CAPACITY),
+            filled_orders: BoundedDedup::new(DEDUP_CAPACITY),
+            emitted_trades: BoundedDedup::new(DEDUP_CAPACITY),
             pending_orders: Arc::new(DashMap::new()),
             pending_cancels: Arc::new(DashMap::new()),
             pending_amends: Arc::new(DashMap::new()),
-            clearing: AtomicBool::new(false),
         }
     }
 }
@@ -135,50 +217,22 @@ impl WsDispatchState {
 }
 
 impl WsDispatchState {
-    fn evict_if_full(&self, set: &DashSet<ClientOrderId>) {
-        if set.len() >= DEDUP_CAPACITY
-            && self
-                .clearing
-                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
-                .is_ok()
-        {
-            set.clear();
-            self.clearing.store(false, Ordering::Release);
-        }
-    }
-
     pub(crate) fn insert_accepted(&self, cid: ClientOrderId) {
-        self.evict_if_full(&self.emitted_accepted);
         self.emitted_accepted.insert(cid);
     }
 
     pub(crate) fn insert_filled(&self, cid: ClientOrderId) {
-        self.evict_if_full(&self.filled_orders);
         self.filled_orders.insert(cid);
     }
 
     pub(crate) fn insert_triggered(&self, cid: ClientOrderId) {
-        self.evict_if_full(&self.triggered_orders);
         self.triggered_orders.insert(cid);
     }
 
     /// Returns `true` if this trade was already emitted (duplicate).
     /// Uses atomic insert to avoid TOCTOU races between concurrent streams.
     pub fn check_and_insert_trade(&self, trade_id: TradeId) -> bool {
-        self.evict_if_full_trades();
-        !self.emitted_trades.insert(trade_id)
-    }
-
-    fn evict_if_full_trades(&self) {
-        if self.emitted_trades.len() >= DEDUP_CAPACITY
-            && self
-                .clearing
-                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
-                .is_ok()
-        {
-            self.emitted_trades.clear();
-            self.clearing.store(false, Ordering::Release);
-        }
+        self.emitted_trades.check_and_insert(trade_id)
     }
 }
 
@@ -194,12 +248,15 @@ pub fn dispatch_ws_message(
     emitter: &ExecutionEventEmitter,
     state: &WsDispatchState,
     account_id: AccountId,
-    instruments: &AHashMap<Ustr, InstrumentAny>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     fee_cache: &mut AHashMap<Ustr, Money>,
     filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
     order_state_cache: &mut AHashMap<ClientOrderId, OrderStateSnapshot>,
     clock: &AtomicTime,
 ) {
+    let guard = instruments.load();
+    let instruments: &AHashMap<Ustr, InstrumentAny> = &guard;
+
     match message {
         OKXWsMessage::Orders(order_msgs) => {
             let ts_init = clock.get_time_ns();
@@ -210,6 +267,19 @@ pub fn dispatch_ws_message(
                 account_id,
                 instruments,
                 fee_cache,
+                filled_qty_cache,
+                order_state_cache,
+                ts_init,
+            );
+        }
+        OKXWsMessage::SpreadOrders(order_msgs) => {
+            let ts_init = clock.get_time_ns();
+            dispatch_spread_order_messages(
+                &order_msgs,
+                emitter,
+                state,
+                account_id,
+                instruments,
                 filled_qty_cache,
                 order_state_cache,
                 ts_init,
@@ -331,7 +401,11 @@ pub fn dispatch_ws_message(
                     continue;
                 };
 
-                let Some(ident) = state.order_identities.get(&client_order_id) else {
+                let Some(ident) = state
+                    .order_identities
+                    .get(&client_order_id)
+                    .map(|entry| entry.clone())
+                else {
                     log::warn!(
                         "Order response error for untracked order: \
                          op={op:?} cl_ord_id={cl_ord_id} s_code={s_code} s_msg={s_msg}"
@@ -403,10 +477,14 @@ pub fn dispatch_ws_message(
             op,
             error,
         } => {
-            log::error!("WebSocket send failed: request_id={request_id} error={error}");
+            log::error!(
+                "WebSocket send failed without structured venue response: \
+                 request_id={request_id}, client_order_id={client_order_id:?}, \
+                 op={op:?}, awaiting reconciliation: {error}"
+            );
 
             if let Some(client_order_id) = client_order_id {
-                let ts_init = clock.get_time_ns();
+                let key = client_order_id.as_str();
 
                 match op {
                     Some(
@@ -414,18 +492,7 @@ pub fn dispatch_ws_message(
                         | OKXWsOperation::BatchOrders
                         | OKXWsOperation::OrderAlgo,
                     ) => {
-                        let key = client_order_id.as_str();
                         state.pending_orders.remove(key);
-                        if let Some((_, ident)) = state.order_identities.remove(&client_order_id) {
-                            emitter.emit_order_rejected_event(
-                                ident.strategy_id,
-                                ident.instrument_id,
-                                client_order_id,
-                                &error,
-                                ts_init,
-                                false,
-                            );
-                        }
                     }
                     Some(
                         OKXWsOperation::CancelOrder
@@ -433,38 +500,12 @@ pub fn dispatch_ws_message(
                         | OKXWsOperation::MassCancel
                         | OKXWsOperation::CancelAlgos,
                     ) => {
-                        let key = client_order_id.as_str();
                         state.pending_cancels.remove(key);
-                        if let Some(ident) = state.order_identities.get(&client_order_id) {
-                            emitter.emit_order_cancel_rejected_event(
-                                ident.strategy_id,
-                                ident.instrument_id,
-                                client_order_id,
-                                None,
-                                &error,
-                                ts_init,
-                            );
-                        }
                     }
                     Some(OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders) => {
-                        let key = client_order_id.as_str();
                         state.pending_amends.remove(key);
-                        if let Some(ident) = state.order_identities.get(&client_order_id) {
-                            emitter.emit_order_modify_rejected_event(
-                                ident.strategy_id,
-                                ident.instrument_id,
-                                client_order_id,
-                                None,
-                                &error,
-                                ts_init,
-                            );
-                        }
                     }
-                    _ => {
-                        log::warn!(
-                            "SendFailed for {client_order_id} with unknown op, cannot emit rejection"
-                        );
-                    }
+                    _ => {}
                 }
             }
         }
@@ -633,6 +674,132 @@ fn dispatch_order_messages(
                 account_id,
                 instruments,
                 fee_cache,
+                filled_qty_cache,
+                emitter,
+                state,
+                ts_init,
+            );
+        }
+    }
+}
+
+#[expect(clippy::too_many_arguments)]
+fn dispatch_spread_order_messages(
+    order_msgs: &[OKXSpreadOrder],
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+    account_id: AccountId,
+    instruments: &AHashMap<Ustr, InstrumentAny>,
+    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    order_state_cache: &mut AHashMap<ClientOrderId, OrderStateSnapshot>,
+    ts_init: UnixNanos,
+) {
+    for msg in order_msgs {
+        let Some(instrument) = instruments.get(&msg.sprd_id) else {
+            log::warn!(
+                "No instrument for {}, skipping spread order message",
+                msg.sprd_id
+            );
+            continue;
+        };
+
+        let Some(client_order_id) = parse_client_order_id(msg.cl_ord_id.as_str()) else {
+            log::debug!(
+                "Spread order without client_order_id (ord_id={}), sending as report",
+                msg.ord_id
+            );
+            dispatch_spread_order_msg_as_report(
+                msg,
+                account_id,
+                instruments,
+                filled_qty_cache,
+                emitter,
+                state,
+                ts_init,
+            );
+            continue;
+        };
+
+        let identity = state
+            .order_identities
+            .get(&client_order_id)
+            .map(|r| r.clone());
+
+        if let Some(ident) = identity {
+            if is_spread_post_only_auto_cancel(msg) {
+                let ts_event = msg
+                    .u_time
+                    .or(msg.c_time)
+                    .map_or(ts_init, parse_millisecond_timestamp);
+                let rejected = OrderRejected::new(
+                    emitter.trader_id(),
+                    ident.strategy_id,
+                    instrument.id(),
+                    client_order_id,
+                    account_id,
+                    Ustr::from(OKX_POST_ONLY_CANCEL_REASON),
+                    UUID4::new(),
+                    ts_event,
+                    ts_init,
+                    false,
+                    true,
+                );
+                state.order_identities.remove(&client_order_id);
+                order_state_cache.remove(&client_order_id);
+                filled_qty_cache.remove(&msg.ord_id);
+                emitter.send_order_event(OrderEventAny::Rejected(rejected));
+                continue;
+            }
+
+            let previous_filled_qty = filled_qty_cache.get(&msg.ord_id).copied();
+            let previous_state = order_state_cache.get(&client_order_id);
+
+            match parse_spread_order_event(
+                msg,
+                client_order_id,
+                account_id,
+                emitter.trader_id(),
+                ident.strategy_id,
+                instrument,
+                previous_filled_qty,
+                previous_state,
+                ts_init,
+            ) {
+                Ok(event) => {
+                    update_spread_order_caches(
+                        msg,
+                        instrument,
+                        client_order_id,
+                        filled_qty_cache,
+                        order_state_cache,
+                    );
+                    dispatch_parsed_order_event(
+                        event,
+                        client_order_id,
+                        account_id,
+                        VenueOrderId::new(msg.ord_id.as_str()),
+                        &ident,
+                        instrument,
+                        msg.state,
+                        emitter,
+                        state,
+                        order_state_cache,
+                        ts_init,
+                    );
+                }
+                Err(e) => {
+                    log::error!("Failed to parse spread order event for {client_order_id}: {e}");
+                }
+            }
+        } else {
+            log::debug!(
+                "Untracked spread order {client_order_id} (ord_id={}), sending as report for reconciliation",
+                msg.ord_id
+            );
+            dispatch_spread_order_msg_as_report(
+                msg,
+                account_id,
+                instruments,
                 filled_qty_cache,
                 emitter,
                 state,
@@ -889,6 +1056,26 @@ fn dispatch_order_msg_as_report(
     }
 }
 
+fn dispatch_spread_order_msg_as_report(
+    msg: &OKXSpreadOrder,
+    account_id: AccountId,
+    instruments: &AHashMap<Ustr, InstrumentAny>,
+    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+    ts_init: UnixNanos,
+) {
+    match parse_spread_order_msg(msg, account_id, instruments, filled_qty_cache, ts_init) {
+        Ok(report) => {
+            if let Some(instrument) = instruments.get(&msg.sprd_id) {
+                update_spread_fill_cache(msg, instrument, filled_qty_cache);
+            }
+            dispatch_execution_reports(vec![report], emitter, state);
+        }
+        Err(e) => log::error!("Failed to parse spread order message as report: {e}"),
+    }
+}
+
 /// Updates fee, fill, and order state caches from a raw OKX order message.
 fn update_order_caches(
     msg: &OKXOrderMsg,
@@ -918,6 +1105,50 @@ fn update_order_caches(
     );
 }
 
+fn update_spread_order_caches(
+    msg: &OKXSpreadOrder,
+    instrument: &InstrumentAny,
+    client_order_id: ClientOrderId,
+    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    order_state_cache: &mut AHashMap<ClientOrderId, OrderStateSnapshot>,
+) {
+    update_spread_fill_cache(msg, instrument, filled_qty_cache);
+
+    let venue_order_id = VenueOrderId::new(msg.ord_id.as_str());
+    let quantity = parse_quantity(&msg.sz, instrument.size_precision()).unwrap_or_default();
+    let price = if is_market_price(&msg.px) {
+        None
+    } else {
+        parse_price(&msg.px, instrument.price_precision()).ok()
+    };
+
+    order_state_cache.insert(
+        client_order_id,
+        OrderStateSnapshot {
+            venue_order_id,
+            quantity,
+            price,
+        },
+    );
+}
+
+fn update_spread_fill_cache(
+    msg: &OKXSpreadOrder,
+    instrument: &InstrumentAny,
+    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+) {
+    if !msg.acc_fill_sz.is_empty()
+        && msg.acc_fill_sz != "0"
+        && let Ok(qty) = parse_quantity(&msg.acc_fill_sz, instrument.size_precision())
+    {
+        filled_qty_cache.insert(msg.ord_id, qty);
+    }
+}
+
+fn is_spread_post_only_auto_cancel(msg: &OKXSpreadOrder) -> bool {
+    msg.state == OKXOrderStatus::Canceled && msg.cancel_source == OKX_POST_ONLY_CANCEL_SOURCE
+}
+
 /// Dispatches execution reports with cross-stream deduplication.
 pub fn dispatch_execution_reports(
     reports: Vec<ExecutionReport>,
@@ -932,7 +1163,7 @@ pub fn dispatch_execution_reports(
                 if let Some(cid) = order_report.client_order_id {
                     match order_report.order_status {
                         // Guard form reformats awkwardly across multiple lines
-                        #[expect(clippy::collapsible_match)]
+                        #[allow(clippy::collapsible_match)]
                         OrderStatus::Accepted => {
                             if state.filled_orders.contains(&cid)
                                 || state.triggered_orders.contains(&cid)
@@ -1044,18 +1275,13 @@ pub fn emit_algo_cancel_rejections(
 pub fn emit_batch_cancel_failure(
     contexts: &[AlgoCancelContext],
     error: &str,
-    emitter: &ExecutionEventEmitter,
-    clock: &'static AtomicTime,
+    _emitter: &ExecutionEventEmitter,
+    _clock: &'static AtomicTime,
 ) {
     for ctx in contexts {
-        let ts = clock.get_time_ns();
-        emitter.emit_order_cancel_rejected_event(
-            ctx.strategy_id,
-            ctx.instrument_id,
-            ctx.client_order_id,
-            ctx.venue_order_id,
-            error,
-            ts,
+        log::error!(
+            "Ambiguous algo batch cancel failure for {}, awaiting reconciliation: {error}",
+            ctx.client_order_id
         );
     }
 }
@@ -1064,7 +1290,7 @@ pub fn emit_batch_cancel_failure(
 mod tests {
     use rstest::rstest;
 
-    use super::format_order_response_reason;
+    use super::{BoundedDedup, format_order_response_reason};
 
     #[rstest]
     #[case("51000", "Rejected", "", "Rejected")]
@@ -1083,5 +1309,79 @@ mod tests {
             format_order_response_reason(s_code, s_msg, sub_code),
             expected
         );
+    }
+
+    #[rstest]
+    fn test_bounded_dedup_check_and_insert_returns_false_on_first_insert() {
+        let dedup = BoundedDedup::<u32>::new(4);
+        assert!(!dedup.check_and_insert(1));
+        assert!(dedup.contains(&1));
+    }
+
+    #[rstest]
+    fn test_bounded_dedup_check_and_insert_returns_true_on_duplicate() {
+        let dedup = BoundedDedup::<u32>::new(4);
+        dedup.insert(1);
+        assert!(dedup.check_and_insert(1));
+    }
+
+    #[rstest]
+    fn test_bounded_dedup_evicts_oldest_on_overflow() {
+        let dedup = BoundedDedup::<u32>::new(3);
+        dedup.insert(1);
+        dedup.insert(2);
+        dedup.insert(3);
+        dedup.insert(4);
+
+        assert!(!dedup.contains(&1));
+        assert!(dedup.contains(&2));
+        assert!(dedup.contains(&3));
+        assert!(dedup.contains(&4));
+    }
+
+    #[rstest]
+    fn test_bounded_dedup_evicted_key_is_not_treated_as_duplicate() {
+        let dedup = BoundedDedup::<u32>::new(2);
+        dedup.insert(1);
+        dedup.insert(2);
+        dedup.insert(3);
+
+        assert!(!dedup.check_and_insert(1));
+        assert!(dedup.contains(&1));
+    }
+
+    #[rstest]
+    fn test_bounded_dedup_remove_drops_entry() {
+        let dedup = BoundedDedup::<u32>::new(4);
+        dedup.insert(1);
+        assert!(dedup.remove(&1));
+        assert!(!dedup.contains(&1));
+        assert!(!dedup.remove(&1));
+    }
+
+    #[rstest]
+    fn test_bounded_dedup_remove_then_reinsert_does_not_double_count() {
+        let dedup = BoundedDedup::<u32>::new(2);
+        for k in 0u32..1000 {
+            dedup.insert(k);
+            dedup.remove(&k);
+        }
+        assert!(!dedup.contains(&0));
+        assert!(!dedup.contains(&500));
+    }
+
+    #[rstest]
+    fn test_bounded_dedup_reinsert_survives_stale_marker_eviction() {
+        let dedup = BoundedDedup::<u32>::new(3);
+        dedup.insert(1);
+        dedup.remove(&1);
+
+        dedup.insert(2);
+        dedup.insert(3);
+        dedup.insert(1);
+
+        assert!(dedup.contains(&1));
+        assert!(dedup.contains(&2));
+        assert!(dedup.contains(&3));
     }
 }

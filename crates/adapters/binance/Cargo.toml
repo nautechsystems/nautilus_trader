@@ -162,3 +162,8 @@ name = "binance-futures-exec-trailing-stop-tester"
 path = "examples/futures/node_exec_trailing_stop_tester.rs"
 required-features = ["examples"]
 doc = false
+
+[[test]]
+name = "python"
+path = "tests/python.rs"
+required-features = ["python"]

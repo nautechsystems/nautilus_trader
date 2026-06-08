@@ -142,6 +142,11 @@ forwards `position.id`, which under `NETTING` is exactly the deterministic ID, s
 accepted. To label or partition positions with arbitrary IDs, configure the strategy
 with `oms_type=HEDGING`.
 
+For `submit_order_list`, the engine additionally denies any mixed-instrument list when a
+`position_id` is supplied, regardless of OMS. A position belongs to a single instrument,
+so the combination is rejected with an explicit `OrderDenied` reason. See
+[Order lists](orders/advanced.md#order-lists) for the broader set of mixed-instrument caveats.
+
 ## Risk engine
 
 The `RiskEngine` is a component of every Nautilus system, including backtest, sandbox, and live
@@ -611,6 +616,6 @@ the local position without any strategy-side handling.
 ## Related guides
 
 - [Events](events.md) - Order and position event types and dispatch.
-- [Orders](orders.md) - Order types and management.
+- [Orders](orders/) - Order types and management.
 - [Positions](positions.md) - Position tracking from executions.
 - [Strategies](strategies.md) - Order submission from strategies.

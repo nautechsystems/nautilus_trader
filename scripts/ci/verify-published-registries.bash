@@ -156,7 +156,8 @@ verify_pypi() {
       "$filename" \
       "$provenance_file"
 
-    uv run --no-project --no-build --with "pypi-attestations==${pypi_attestations_version}" -- \
+    retry_with_backoff "pypi-attestations verify ${filename}" 3 15 \
+      uv run --no-project --no-build --with "pypi-attestations==${pypi_attestations_version}" -- \
       pypi-attestations verify pypi \
       --repository "https://github.com/${pypi_publisher_repository}" \
       "$remote_url"
@@ -343,7 +344,7 @@ verify_crates() {
     published_by="$(jq -c '.published_by' <<< "$version_json")"
 
     if [[ "$published_by" != "null" ]]; then
-      echo "::error::Expected trusted publishing for ${crate_name}, got user publisher:"
+      echo "::error::Expected trusted publishing for ${crate_name}, received user publisher:"
       echo "$published_by"
       exit 1
     fi
@@ -447,7 +448,7 @@ check_crates_io_version() {
   published_by="$(jq -c '.published_by' <<< "$version_json")"
 
   if [[ "$published_by" != "null" ]]; then
-    echo "::error::Expected trusted publishing for ${crate_name}, got user publisher:"
+    echo "::error::Expected trusted publishing for ${crate_name}, received user publisher:"
     echo "$published_by"
     return 2
   fi
@@ -540,6 +541,36 @@ wait_for_registry_state() {
     echo "Waiting for ${description} to propagate (${remaining}s remaining)."
     sleep "$registry_propagation_poll_seconds"
   done
+}
+
+# Retry a command with exponential backoff for transient network failures (e.g. Sigstore TUF flakes)
+retry_with_backoff() {
+  local description=$1
+  local attempts=$2
+  local initial_delay=$3
+  shift 3
+
+  local delay="$initial_delay"
+  local status=0
+  for i in $(seq 1 "$attempts"); do
+    set +e
+    "$@"
+    status=$?
+    set -e
+
+    if [[ "$status" -eq 0 ]]; then
+      return 0
+    fi
+
+    if [[ "$i" -lt "$attempts" ]]; then
+      echo "${description} failed (exit=${status}), retry (${i}/${attempts}) after ${delay}s"
+      sleep "$delay"
+      delay=$((delay * 2))
+    fi
+  done
+
+  echo "::error::${description} failed after ${attempts} attempts."
+  return "$status"
 }
 
 verify_pypi

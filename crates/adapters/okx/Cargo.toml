@@ -102,9 +102,21 @@ rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 toml = { workspace = true }
 
-# Run with `cargo bench -p nautilus-okx --bench websocket`
+# Canonical benches; see crates/adapters/okx/benches/BENCHMARKS.md for context
 [[bench]]
-name = "websocket"
+name = "data"
+harness = false
+
+[[bench]]
+name = "exec"
+harness = false
+
+[[bench]]
+name = "micros"
+harness = false
+
+[[bench]]
+name = "signing"
 harness = false
 
 [[bin]]
@@ -128,6 +140,13 @@ test = false
 [[bin]]
 name = "okx-ws-exec"
 path = "bin/ws_exec.rs"
+doc = false
+test = false
+
+# Run with `cargo run -p nautilus-okx --bin okx-flatten`.
+[[bin]]
+name = "okx-flatten"
+path = "bin/flatten.rs"
 doc = false
 test = false
 
@@ -158,3 +177,8 @@ name = "okx-delta-neutral"
 path = "examples/node_delta_neutral.rs"
 required-features = ["examples"]
 doc = false
+
+[[test]]
+name = "python"
+path = "tests/python.rs"
+required-features = ["python"]

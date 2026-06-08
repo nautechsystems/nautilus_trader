@@ -402,7 +402,7 @@ where
 #[cfg(test)]
 mod test_utils {
     #[derive(Debug, thiserror::Error)]
-    pub enum TestError {
+    pub(super) enum TestError {
         #[error("Retryable error: {0}")]
         Retryable(String),
         #[error("Non-retryable error: {0}")]
@@ -411,11 +411,11 @@ mod test_utils {
         Timeout(String),
     }
 
-    pub fn should_retry_test_error(error: &TestError) -> bool {
+    pub(super) fn should_retry_test_error(error: &TestError) -> bool {
         matches!(error, TestError::Retryable(_))
     }
 
-    pub fn create_test_error(msg: String) -> TestError {
+    pub(super) fn create_test_error(msg: String) -> TestError {
         TestError::Timeout(msg)
     }
 }

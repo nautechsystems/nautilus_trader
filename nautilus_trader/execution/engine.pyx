@@ -1157,12 +1157,19 @@ cdef class ExecutionEngine(Component):
                 if self.snapshot_orders:
                     self._create_order_state_snapshot(order)
 
-        cdef str deny_reason = self._check_position_id_against_oms(
-            command.instrument_id,
-            command.strategy_id,
-            command.position_id,
-            client,
-        )
+        cdef str deny_reason = None
+        if command.position_id is not None and not command.order_list.is_uniform_instrument():
+            deny_reason = (
+                f"`position_id` {command.position_id!r} is not valid for a mixed-instrument "
+                "order list; a position belongs to a single instrument"
+            )
+        else:
+            deny_reason = self._check_position_id_against_oms(
+                command.instrument_id,
+                command.strategy_id,
+                command.position_id,
+                client,
+            )
         if deny_reason is not None:
             for order in command.order_list.orders:
                 self._deny_order(order, deny_reason)
@@ -1682,11 +1689,50 @@ cdef class ExecutionEngine(Component):
     cdef void _handle_position_update(self, Instrument instrument, OrderFilled fill, OmsType oms_type):
         cdef Position position = self._cache.position(fill.position_id)
         if position is None or position.is_closed_c():
+            if self._reject_reduce_only_netting_position_open(fill, oms_type):
+                return
+
             self._open_position(instrument, position, fill, oms_type)
         elif self._will_flip_position(position, fill):
             self._flip_position(instrument, position, fill, oms_type)
         else:
             self._update_position(instrument, position, fill, oms_type)
+
+    cdef bint _reject_reduce_only_netting_position_open(self, OrderFilled fill, OmsType oms_type):
+        if oms_type != OmsType.NETTING:
+            return False
+
+        cdef Order order = self._cache.order(fill.client_order_id)
+        if order is None or not order.is_reduce_only:
+            return False
+
+        cdef list positions_open = self._cache.positions_open(
+            venue=None,
+            instrument_id=fill.instrument_id,
+            strategy_id=None,
+            side=PositionSide.NO_POSITION_SIDE,
+            account_id=fill.account_id,
+        )
+        cdef list candidates = []
+        cdef Position open_position
+        for open_position in positions_open:
+            if open_position.is_opposite_side(fill.order_side):
+                candidates.append(open_position)
+
+        cdef str open_positions = self._reduce_only_open_position_details(positions_open)
+        cdef str matching_positions = self._reduce_only_open_position_details(candidates)
+        self._log.error(
+            f"Cannot open NETTING position {fill.position_id!r} from reduce-only fill "
+            f"{fill.trade_id!r} for {fill.instrument_id}; "
+            f"matching_reduce_positions=[{matching_positions}], open_positions=[{open_positions}]",
+        )
+        return True
+
+    cdef str _reduce_only_open_position_details(self, list positions_open):
+        return ", ".join(
+            f"{position.id}:strategy_id={position.strategy_id},signed_qty={position.signed_decimal_qty()}"
+            for position in sorted(positions_open, key=lambda pos: pos.id.value)
+        )
 
     cpdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
         if position is not None:

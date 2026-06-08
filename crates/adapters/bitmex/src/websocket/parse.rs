@@ -63,11 +63,12 @@ use crate::{
             BitmexPegPriceType, BitmexSide,
         },
         parse::{
-            bitmex_currency_divisor, clean_reason, derive_trade_id, extract_trigger_type,
-            map_bitmex_currency, normalize_trade_bin_prices, normalize_trade_bin_volume,
-            parse_account_balance, parse_contracts_quantity, parse_fractional_quantity,
-            parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
-            parse_position_side, parse_signed_contracts_quantity,
+            bitmex_account_id, bitmex_currency_divisor, clean_reason, derive_trade_id,
+            extract_trigger_type, map_bitmex_currency, normalize_trade_bin_prices,
+            normalize_trade_bin_volume, parse_account_balance, parse_contracts_quantity,
+            parse_fractional_quantity, parse_instrument_id, parse_liquidity_side,
+            parse_optional_datetime_to_unix_nanos, parse_position_side,
+            parse_signed_contracts_quantity,
         },
     },
     http::parse::get_currency,
@@ -521,7 +522,7 @@ pub fn parse_order_msg(
     order_type_cache: &mut AHashMap<ClientOrderId, OrderType>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
-    let account_id = AccountId::new(format!("BITMEX-{}", msg.account)); // TODO: Revisit
+    let account_id = bitmex_account_id(msg.account);
     let instrument_id = parse_instrument_id(msg.symbol);
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
     let common_side: BitmexSide = msg.side.into();
@@ -938,7 +939,7 @@ pub fn parse_execution_msg(
         }
     }
 
-    let account_id = AccountId::new(format!("BITMEX-{}", msg.account?));
+    let account_id = bitmex_account_id(msg.account?);
     let instrument_id = parse_instrument_id(msg.symbol?);
     let venue_order_id = VenueOrderId::new(msg.order_id?.to_string());
     let trade_id = TradeId::new(msg.trd_match_id?.to_string());
@@ -986,7 +987,7 @@ pub fn parse_position_msg(
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> PositionStatusReport {
-    let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
+    let account_id = bitmex_account_id(msg.account);
     let instrument_id = parse_instrument_id(msg.symbol);
     let position_side = parse_position_side(msg.current_qty).as_specified();
     let quantity = parse_signed_contracts_quantity(msg.current_qty.unwrap_or(0), instrument);
@@ -1030,18 +1031,16 @@ pub fn parse_instrument_msg(
     let mut updates = Vec::new();
     let is_index = is_index_symbol(&msg.symbol);
 
-    // For index symbols (like .BXBT), the lastPrice field contains the index price
-    // For regular instruments, use the explicit index_price field if present
+    // Mark: `markPrice` (canonical, varies by `markMethod`) with `fairPrice` fallback.
+    // Index: `indicativeSettlePrice` (BitMEX's actual field); `indexPrice` legacy fallback.
+    let effective_mark_price = msg.mark_price.or(msg.fair_price);
     let effective_index_price = if is_index {
         msg.last_price
     } else {
-        msg.index_price
+        msg.indicative_settle_price.or(msg.index_price)
     };
 
-    // Return early if no relevant prices present (mark_price or effective_index_price)
-    // Note: effective_index_price uses lastPrice for index symbols, index_price for others
-    // (Funding rates come through a separate Funding channel)
-    if msg.mark_price.is_none() && effective_index_price.is_none() {
+    if effective_mark_price.is_none() && effective_index_price.is_none() {
         return updates;
     }
 
@@ -1069,7 +1068,7 @@ pub fn parse_instrument_msg(
 
     // Add mark price update if present
     // For index symbols, markPrice equals lastPrice and is valid to emit
-    if let Some(mark_price) = msg.mark_price {
+    if let Some(mark_price) = effective_mark_price {
         let price = Price::new(mark_price, price_precision);
         updates.push(Data::MarkPriceUpdate(MarkPriceUpdate::new(
             instrument_id,
@@ -1126,7 +1125,7 @@ pub fn parse_funding_msg(msg: &BitmexFundingMsg, ts_init: UnixNanos) -> FundingR
 /// Panics if the balance calculation is invalid (total != locked + free).
 #[must_use]
 pub fn parse_wallet_msg(msg: &BitmexWalletMsg, ts_init: UnixNanos) -> AccountState {
-    let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
+    let account_id = bitmex_account_id(msg.account);
 
     // Map BitMEX currency to standard currency code
     let currency_str = map_bitmex_currency(msg.currency.as_str());
@@ -1173,7 +1172,7 @@ pub fn parse_margin_msg(msg: &BitmexMarginMsg) -> MarginBalance {
 /// Parses a BitMEX margin message into an [`AccountState`] with balances and margins.
 #[must_use]
 pub fn parse_margin_account_state(msg: &BitmexMarginMsg, ts_init: UnixNanos) -> AccountState {
-    let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
+    let account_id = bitmex_account_id(msg.account);
     let balance = parse_account_balance(msg);
 
     let margin = parse_margin_msg(msg);
@@ -1995,10 +1994,9 @@ mod tests {
 
         let updates = parse_instrument_msg(&msg, &instruments_cache, UnixNanos::from(1));
 
-        // XBTUSD is not an index symbol, so it should have both mark and index prices
+        // Mark comes from `markPrice` (95125.7); index from `indicativeSettlePrice` (95126.0).
         assert_eq!(updates.len(), 2);
 
-        // Check mark price update
         match &updates[0] {
             Data::MarkPriceUpdate(update) => {
                 assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
@@ -2007,11 +2005,10 @@ mod tests {
             _ => panic!("Expected MarkPriceUpdate at index 0"),
         }
 
-        // Check index price update
         match &updates[1] {
             Data::IndexPriceUpdate(update) => {
                 assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
-                assert_eq!(update.value.as_f64(), 95124.3);
+                assert_eq!(update.value.as_f64(), 95126.0);
             }
             _ => panic!("Expected IndexPriceUpdate at index 1"),
         }
@@ -2022,8 +2019,8 @@ mod tests {
         let mut msg: BitmexInstrumentMsg =
             serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
         msg.index_price = None;
+        msg.indicative_settle_price = None;
 
-        // Create cache with test instrument
         let mut instruments_cache = AHashMap::new();
         let test_instrument = create_test_perpetual_instrument();
         instruments_cache.insert(Ustr::from("XBTUSD"), test_instrument);
@@ -2045,8 +2042,8 @@ mod tests {
         let mut msg: BitmexInstrumentMsg =
             serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
         msg.mark_price = None;
+        msg.fair_price = None;
 
-        // Create cache with test instrument
         let mut instruments_cache = AHashMap::new();
         let test_instrument = create_test_perpetual_instrument();
         instruments_cache.insert(Ustr::from("XBTUSD"), test_instrument);
@@ -2057,7 +2054,7 @@ mod tests {
         match &updates[0] {
             Data::IndexPriceUpdate(update) => {
                 assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
-                assert_eq!(update.value.as_f64(), 95124.3);
+                assert_eq!(update.value.as_f64(), 95126.0);
             }
             _ => panic!("Expected IndexPriceUpdate"),
         }
@@ -2068,7 +2065,9 @@ mod tests {
         let mut msg: BitmexInstrumentMsg =
             serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
         msg.mark_price = None;
+        msg.fair_price = None;
         msg.index_price = None;
+        msg.indicative_settle_price = None;
         msg.last_price = None;
 
         // Create cache with test instrument
@@ -2089,7 +2088,9 @@ mod tests {
         msg.symbol = Ustr::from(".BXBT");
         msg.last_price = Some(119163.05);
         msg.mark_price = Some(119163.05); // Index symbols have mark price equal to last price
+        msg.fair_price = None;
         msg.index_price = None;
+        msg.indicative_settle_price = None;
 
         // Create instruments cache with proper precision for .BXBT
         let instrument_id = InstrumentId::from(".BXBT.BITMEX");
@@ -2147,6 +2148,82 @@ mod tests {
                 assert_eq!(update.ts_init, UnixNanos::from(1));
             }
             _ => panic!("Expected IndexPriceUpdate for index symbol"),
+        }
+    }
+
+    /// Real-wire mark-only update: pins fairPrice preference.
+    #[rstest]
+    fn test_parse_instrument_msg_mark_update_wire_shape() {
+        let msg: BitmexInstrumentMsg =
+            serde_json::from_str(&load_test_json("ws_instrument_mark_update.json")).unwrap();
+
+        let instrument_id = InstrumentId::from("DOTUSDT.BITMEX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("DOTUSDT"),
+            Currency::from_str("DOT").unwrap(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false, // is_inverse
+            4,     // price_precision (1.2669)
+            8,     // size_precision
+            Price::from("0.0001"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        let mut instruments_cache = AHashMap::new();
+        instruments_cache.insert(
+            Ustr::from("DOTUSDT"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+
+        let updates = parse_instrument_msg(&msg, &instruments_cache, UnixNanos::from(1));
+
+        assert_eq!(updates.len(), 1);
+        match &updates[0] {
+            Data::MarkPriceUpdate(update) => {
+                assert_eq!(update.instrument_id.to_string(), "DOTUSDT.BITMEX");
+                assert_eq!(update.value, Price::from("1.2669"));
+            }
+            _ => panic!("Expected single MarkPriceUpdate for mark-update wire shape"),
+        }
+    }
+
+    /// Real-wire index-only update: regression for indicativeSettlePrice routing.
+    #[rstest]
+    fn test_parse_instrument_msg_index_update_wire_shape() {
+        let msg: BitmexInstrumentMsg =
+            serde_json::from_str(&load_test_json("ws_instrument_index_update.json")).unwrap();
+
+        let mut instruments_cache = AHashMap::new();
+        instruments_cache.insert(
+            Ustr::from("XBTUSD"),
+            create_test_perpetual_instrument_with_precisions(2, 0),
+        );
+
+        let updates = parse_instrument_msg(&msg, &instruments_cache, UnixNanos::from(1));
+
+        assert_eq!(updates.len(), 1);
+        match &updates[0] {
+            Data::IndexPriceUpdate(update) => {
+                assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
+                assert_eq!(update.value, Price::from("75847.62"));
+            }
+            _ => panic!("Expected single IndexPriceUpdate for index-update wire shape"),
         }
     }
 

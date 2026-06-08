@@ -38,7 +38,7 @@ use futures_util::StreamExt;
 use nautilus_common::testing::wait_until_async;
 use nautilus_hyperliquid::{
     common::enums::HyperliquidEnvironment,
-    data_types::HyperliquidAllMids,
+    data_types::{HyperliquidAllDexsAssetCtxs, HyperliquidAllMids},
     websocket::{client::HyperliquidWebSocketClient, messages::NautilusWsMessage},
 };
 use nautilus_model::{
@@ -156,6 +156,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
 
     let book_payload = load_json("ws_book_data.json");
     let allmids_payload = load_json("ws_allmids.json");
+    let all_dexs_asset_ctxs_payload = load_json("ws_all_dexs_asset_ctxs.json");
 
     while let Some(message) = socket.next().await {
         let Ok(message) = message else { break };
@@ -222,6 +223,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                             }
                                         }),
                                         "allMids" => allmids_payload.clone(),
+                                        "allDexsAssetCtxs" => all_dexs_asset_ctxs_payload.clone(),
                                         _ => json!({"channel": sub_type, "data": {}}),
                                     };
 
@@ -346,6 +348,10 @@ fn cache_test_instruments(client: &mut HyperliquidWebSocketClient) {
         ("BTC", "BTC-USD-PERP"),
         ("ETH", "ETH-USD-PERP"),
         ("SOL", "SOL-USD-PERP"),
+        ("ATOM", "ATOM-USD-PERP"),
+        ("xyz:XYZ100", "xyz:XYZ100-USD-PERP"),
+        ("xyz:TSLA", "xyz:TSLA-USD-PERP"),
+        ("xyz:NVDA", "xyz:NVDA-USD-PERP"),
     ];
 
     let mut test_instruments = Vec::new();
@@ -384,6 +390,24 @@ fn cache_test_instruments(client: &mut HyperliquidWebSocketClient) {
     }
 
     client.cache_instruments(test_instruments);
+    client.cache_all_dex_asset_ctxs_instrument_ids(ahash::AHashMap::from_iter([
+        (
+            ustr::Ustr::from(""),
+            vec![
+                Some(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID")),
+                Some(InstrumentId::from("ETH-USD-PERP.HYPERLIQUID")),
+                Some(InstrumentId::from("ATOM-USD-PERP.HYPERLIQUID")),
+            ],
+        ),
+        (
+            ustr::Ustr::from("xyz"),
+            vec![
+                Some(InstrumentId::from("xyz:XYZ100-USD-PERP.HYPERLIQUID")),
+                Some(InstrumentId::from("xyz:TSLA-USD-PERP.HYPERLIQUID")),
+                Some(InstrumentId::from("xyz:NVDA-USD-PERP.HYPERLIQUID")),
+            ],
+        ),
+    ]));
 }
 
 async fn wait_until_active(
@@ -1560,22 +1584,135 @@ async fn test_all_mids_default_and_dex_subscriptions_emit_distinct_data_types() 
     )
     .await;
 
-    let dexes = [
-        next_all_mids_dex(&mut client).await,
-        next_all_mids_dex(&mut client).await,
+    let emissions = [
+        next_all_mids_emission(&mut client).await,
+        next_all_mids_emission(&mut client).await,
     ];
 
-    assert!(dexes.iter().any(Option::is_none));
+    assert!(emissions.iter().any(|(dex, _)| dex.is_none()));
     assert!(
-        dexes
+        emissions
             .iter()
-            .any(|dex| dex.as_deref() == Some("hyperliquid"))
+            .any(|(dex, _)| dex.as_deref() == Some("hyperliquid"))
     );
+
+    // Both emissions must carry the full `mids` payload, not just one.
+    // The handler reuses the parsed map across subscribers via `mem::take`
+    // on the final iteration; a regression that gives the moved-out empty
+    // map to the wrong iteration would leave a count of zero here.
+    for (dex, count) in &emissions {
+        assert!(
+            *count > 0,
+            "AllMids emission for dex={dex:?} carried an empty mids map",
+        );
+    }
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_all_dexs_asset_ctxs_subscription_emits_normalized_custom_data() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    client
+        .subscribe_all_dexs_asset_ctxs()
+        .await
+        .expect("subscribe allDexsAssetCtxs failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscriptions
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|(t, _)| t == "allDexsAssetCtxs")
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let msg = tokio::time::timeout(Duration::from_secs(5), client.next_event())
+        .await
+        .expect("timeout waiting for allDexsAssetCtxs message")
+        .expect("no message received");
+
+    match msg {
+        NautilusWsMessage::CustomData(Data::Custom(custom)) => {
+            let payload = custom
+                .data
+                .as_any()
+                .downcast_ref::<HyperliquidAllDexsAssetCtxs>()
+                .expect("expected HyperliquidAllDexsAssetCtxs");
+            assert_eq!(payload.entries.len(), 6);
+
+            let btc = payload
+                .entries
+                .iter()
+                .find(|entry| entry.instrument_id == InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
+                .expect("expected BTC entry");
+            assert_eq!(btc.dex, "");
+            assert_eq!(btc.mark_price.to_string(), "77562.0");
+            assert_eq!(btc.open_interest.to_string(), "27353.17682");
+
+            let tsla = payload
+                .entries
+                .iter()
+                .find(|entry| {
+                    entry.instrument_id == InstrumentId::from("xyz:TSLA-USD-PERP.HYPERLIQUID")
+                })
+                .expect("expected xyz:TSLA entry");
+            assert_eq!(tsla.dex, "xyz");
+            assert_eq!(tsla.oracle_price.to_string(), "433.95");
+            assert_eq!(tsla.day_base_volume.to_string(), "11640.042");
+            assert!(tsla.impact_prices.is_some());
+        }
+        other => panic!("unexpected message type: {other:?}"),
+    }
+
+    client
+        .unsubscribe_all_dexs_asset_ctxs()
+        .await
+        .expect("unsubscribe allDexsAssetCtxs failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .unsubscriptions
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|subscription| {
+                        subscription.get("type").and_then(|value| value.as_str())
+                            == Some("allDexsAssetCtxs")
+                    })
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     client.disconnect().await.expect("close failed");
 }
 
 async fn next_all_mids_dex(client: &mut HyperliquidWebSocketClient) -> Option<String> {
+    next_all_mids_emission(client).await.0
+}
+
+/// Reads one `AllMids` emission and returns `(dex, mids_count)` so callers can
+/// assert both the routing metadata and that the payload itself was populated.
+async fn next_all_mids_emission(
+    client: &mut HyperliquidWebSocketClient,
+) -> (Option<String>, usize) {
     let msg = tokio::time::timeout(Duration::from_secs(5), client.next_event())
         .await
         .expect("timeout waiting for allMids message")
@@ -1583,16 +1720,17 @@ async fn next_all_mids_dex(client: &mut HyperliquidWebSocketClient) -> Option<St
 
     match msg {
         NautilusWsMessage::CustomData(Data::Custom(custom)) => {
-            custom
+            let all_mids = custom
                 .data
                 .as_any()
                 .downcast_ref::<HyperliquidAllMids>()
                 .expect("expected HyperliquidAllMids");
-            custom
+            let dex = custom
                 .data_type
                 .metadata()
                 .and_then(|metadata| metadata.get_str("dex"))
-                .map(ToString::to_string)
+                .map(ToString::to_string);
+            (dex, all_mids.mids.len())
         }
         other => panic!("unexpected message type: {other:?}"),
     }

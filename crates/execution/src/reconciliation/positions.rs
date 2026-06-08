@@ -180,7 +180,7 @@ pub fn process_mass_status_for_reconciliation(
 /// Returns `FillAdjustmentResult` indicating what adjustments (if any) are needed.
 ///
 #[must_use]
-pub fn adjust_fills_for_partial_window(
+pub(super) fn adjust_fills_for_partial_window(
     fills: &[FillSnapshot],
     venue_position: &VenuePositionSnapshot,
     tolerance: Decimal,
@@ -453,7 +453,7 @@ pub fn check_position_reconciliation(
 /// # Errors
 ///
 /// Returns an error if the fill quantity cannot be converted to f64.
-pub fn create_synthetic_order_report(
+pub(super) fn create_synthetic_order_report(
     fill: &FillSnapshot,
     account_id: AccountId,
     instrument_id: InstrumentId,
@@ -487,7 +487,7 @@ pub fn create_synthetic_order_report(
 /// # Errors
 ///
 /// Returns an error if the fill quantity or price cannot be converted.
-pub fn create_synthetic_fill_report(
+pub(super) fn create_synthetic_fill_report(
     fill: &FillSnapshot,
     account_id: AccountId,
     instrument_id: InstrumentId,
@@ -633,7 +633,7 @@ fn extract_fills_for_instrument(
 ///
 /// Returns a tuple of (quantity, value) after applying all fills.
 #[must_use]
-pub fn simulate_position(fills: &[FillSnapshot]) -> (Decimal, Decimal) {
+pub(super) fn simulate_position(fills: &[FillSnapshot]) -> (Decimal, Decimal) {
     let mut qty = Decimal::ZERO;
     let mut value = Decimal::ZERO;
 
@@ -690,7 +690,7 @@ pub fn simulate_position(fills: &[FillSnapshot]) -> (Decimal, Decimal) {
 ///
 /// Returns a list of timestamps where position crosses through zero.
 #[must_use]
-pub fn detect_zero_crossings(fills: &[FillSnapshot]) -> Vec<u64> {
+pub(super) fn detect_zero_crossings(fills: &[FillSnapshot]) -> Vec<u64> {
     let mut running_qty = Decimal::ZERO;
     let mut zero_crossings = Vec::new();
 
@@ -719,7 +719,7 @@ pub fn detect_zero_crossings(fills: &[FillSnapshot]) -> Vec<u64> {
 ///
 /// Returns true if quantities and average prices match within tolerance.
 #[must_use]
-pub fn check_position_match(
+pub(super) fn check_position_match(
     simulated_qty: Decimal,
     simulated_value: Decimal,
     venue_qty: Decimal,
@@ -831,7 +831,11 @@ pub fn calculate_reconciliation_price(
 /// For integer precision (0), requires exact match.
 /// For fractional precision, allows difference of 1 unit at that precision.
 #[must_use]
-pub fn is_within_single_unit_tolerance(value1: Decimal, value2: Decimal, precision: u8) -> bool {
+pub(super) fn is_within_single_unit_tolerance(
+    value1: Decimal,
+    value2: Decimal,
+    precision: u8,
+) -> bool {
     if precision == 0 {
         return value1 == value2;
     }

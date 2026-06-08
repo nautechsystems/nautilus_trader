@@ -31,7 +31,7 @@ use tokio_tungstenite::{
 #[non_exhaustive]
 #[derive(Clone)]
 #[allow(dead_code)]
-pub enum Connector {
+pub(crate) enum Connector {
     /// No TLS connection.
     Plain,
     /// TLS connection using `rustls`.
@@ -40,7 +40,7 @@ pub enum Connector {
 
 mod encryption {
 
-    pub mod rustls {
+    pub(super) mod rustls {
         use std::{convert::TryFrom, sync::Arc};
 
         use nautilus_cryptography::tls::create_tls_config;
@@ -52,7 +52,7 @@ mod encryption {
             tungstenite::{Error, error::TlsError, stream::Mode},
         };
 
-        pub async fn wrap_stream<S>(
+        pub(crate) async fn wrap_stream<S>(
             socket: S,
             domain: String,
             mode: Mode,
@@ -83,7 +83,7 @@ mod encryption {
         }
     }
 
-    pub mod plain {
+    pub(super) mod plain {
         use tokio::io::{AsyncRead, AsyncWrite};
         use tokio_tungstenite::{
             MaybeTlsStream,
@@ -97,7 +97,10 @@ mod encryption {
             clippy::unused_async,
             reason = "signature mirrors the rustls variant which is genuinely async"
         )]
-        pub async fn wrap_stream<S>(socket: S, mode: Mode) -> Result<MaybeTlsStream<S>, Error>
+        pub(crate) async fn wrap_stream<S>(
+            socket: S,
+            mode: Mode,
+        ) -> Result<MaybeTlsStream<S>, Error>
         where
             S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
         {
@@ -109,7 +112,7 @@ mod encryption {
     }
 }
 
-pub async fn tcp_tls<S>(
+pub(crate) async fn tcp_tls<S>(
     request: &Request,
     mode: Mode,
     stream: S,
@@ -149,7 +152,7 @@ fn domain(request: &Request) -> Result<String, Error> {
     }
 }
 
-pub fn create_tls_config_from_certs_dir(
+pub(crate) fn create_tls_config_from_certs_dir(
     certs_dir: &Path,
     require_client_auth: bool,
 ) -> anyhow::Result<rustls::ClientConfig> {

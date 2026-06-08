@@ -20,10 +20,6 @@ id = "RUSTSEC-2024-0388"
 reason = "derivative crate is unmaintained, transitive dependency with no available fix"
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2023-0071"
-reason = "rsa timing sidechannel (Marvin Attack), transitive via sqlx-mysql, no fix available"
-
-[[IgnoredVulns]]
 id = "RUSTSEC-2025-0143"
 reason = "capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix"
 
@@ -56,6 +52,10 @@ id = "RUSTSEC-2025-0141"
 reason = "bincode unmaintained, transitive via hypersync-client (not a security vulnerability)"
 
 [[IgnoredVulns]]
+id = "RUSTSEC-2026-0173"
+reason = "proc-macro-error2 unmaintained via alloy and tabled_derive; no patch available"
+
+[[IgnoredVulns]]
 id = "GHSA-7gcm-g887-7qv7"
 reason = "protobuf JSON recursion DoS, no fix available yet, low risk for internal use (we don't parse untrusted JSON with protobuf)"
 
@@ -66,3 +66,11 @@ reason = "pytest tmpdir local tampering (fixed in 9.0.3); dev/test-only dependen
 [[IgnoredVulns]]
 id = "GHSA-2f9f-gq7v-9h6m"
 reason = "thrift 0.17.0 memory-allocation DoS, transitive via parquet/datafusion; fix in thrift 0.23.0 not yet adopted upstream, we don't parse untrusted thrift/parquet input"
+
+[[IgnoredVulns]]
+id = "GHSA-jg22-mg44-37j8"
+reason = "aiohttp 3.13.5 has a fix in 3.14.0, but the fixed wheels are still inside uv's 3-day exclude-newer window while source builds are disabled"
+
+[[IgnoredVulns]]
+id = "GHSA-hg6j-4rv6-33pg"
+reason = "aiohttp 3.13.5 has a fix in 3.14.0, but the fixed wheels are still inside uv's 3-day exclude-newer window while source builds are disabled"

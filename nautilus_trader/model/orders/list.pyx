@@ -15,7 +15,9 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport ContingencyType
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.orders.base cimport Order
 
 
@@ -23,7 +25,9 @@ cdef class OrderList:
     """
     Represents a list of bulk or related contingent orders.
 
-    All orders must be for the same instrument ID.
+    All orders must share the same venue. They may target different instruments
+    at that venue (e.g. pairs, calendar spreads, multi-leg legs); the list's
+    `instrument_id` is taken from the first order as a representative value.
 
     Parameters
     ----------
@@ -39,7 +43,7 @@ cdef class OrderList:
     ValueError
         If `orders` contains a type other than `Order`.
     ValueError
-        If orders contain different instrument IDs (must all be the same instrument).
+        If orders contain different venues (must all share the same venue).
 
     """
 
@@ -50,23 +54,24 @@ cdef class OrderList:
     ) -> None:
         Condition.not_empty(orders, "orders")
         Condition.list_type(orders, Order, "orders")
-        cdef Order first = orders[0]
+        cdef Order first_order = orders[0]
+        cdef Venue first_venue = first_order.instrument_id.venue
         cdef Order order
         for order in orders:
             # First condition check avoids creating an f-string for performance reasons
-            if order.instrument_id != first.instrument_id:
+            if order.instrument_id.venue != first_venue:
                 Condition.is_true(
-                    order.instrument_id == first.instrument_id,
-                    f"order.instrument_id {order.instrument_id} != instrument_id {first.instrument_id}; "
-                    "all orders in the list must be for the same instrument ID",
+                    order.instrument_id.venue == first_venue,
+                    f"order.instrument_id.venue {order.instrument_id.venue} != venue {first_venue}; "
+                    "all orders in the list must share the same venue",
                 )
 
         self.id = order_list_id
-        self.instrument_id = first.instrument_id
-        self.strategy_id = first.strategy_id
+        self.instrument_id = first_order.instrument_id
+        self.strategy_id = first_order.strategy_id
         self.orders = orders
-        self.first = first
-        self.ts_init = first.ts_init
+        self.first = first_order
+        self.ts_init = first_order.ts_init
 
     def __eq__(self, OrderList other) -> bool:
         if other is None:
@@ -87,6 +92,37 @@ cdef class OrderList:
             f"strategy_id={self.strategy_id}, "
             f"orders={self.orders})"
         )
+
+    cpdef set instrument_ids(self):
+        """
+        Return the set of distinct instrument IDs across all orders in the list.
+
+        Returns
+        -------
+        set[InstrumentId]
+
+        """
+        cdef set ids = set()
+        cdef Order order
+        for order in self.orders:
+            ids.add(order.instrument_id)
+        return ids
+
+    cpdef bint is_uniform_instrument(self):
+        """
+        Return whether all orders in the list share the same instrument ID.
+
+        Returns
+        -------
+        bool
+
+        """
+        cdef InstrumentId first_id = self.first.instrument_id
+        cdef Order order
+        for order in self.orders:
+            if order.instrument_id != first_id:
+                return False
+        return True
 
     cpdef bint is_bracket(self):
         """

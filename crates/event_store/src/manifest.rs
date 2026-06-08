@@ -17,16 +17,10 @@
 
 use indexmap::IndexMap;
 use nautilus_core::UnixNanos;
-pub use nautilus_system::RegisteredComponents;
+pub use nautilus_system::{RegisteredComponents, event_store::RunId};
 use serde::{Deserialize, Serialize};
 
 use crate::wire;
-
-/// The id of a captured run: `<start_ts_init>-<short_uuid>`, sortable by start time.
-///
-/// The runtime constructs this from the kernel's start timestamp plus a fresh `UUID4` so the
-/// representation stays stable across processes and platforms.
-pub type RunId = String;
 
 /// Lifecycle state of a captured run.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

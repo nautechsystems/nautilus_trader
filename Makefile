@@ -32,6 +32,8 @@ VERBOSE ?= true
 # Set UV_SYNC_FLAGS= to make uv prune packages not in uv.lock
 UV_SYNC_FLAGS ?= --inexact
 
+PIP_AUDIT_IGNORE_FLAGS := --ignore-vuln GHSA-jg22-mg44-37j8 --ignore-vuln GHSA-hg6j-4rv6-33pg
+
 # TARGET_DIR controls where cargo places build artifacts.
 # Can be overridden to use a separate directory: make build-debug TARGET_DIR=target-python
 TARGET_DIR ?= target
@@ -117,7 +119,8 @@ CORE_CRATES := nautilus-analysis nautilus-backtest nautilus-common nautilus-core
 ADAPTER_CRATES := nautilus-architect-ax nautilus-betfair nautilus-binance \
     nautilus-bitmex nautilus-blockchain nautilus-bybit nautilus-databento \
     nautilus-deribit nautilus-dydx nautilus-hyperliquid nautilus-kraken \
-    nautilus-okx nautilus-polymarket nautilus-sandbox nautilus-tardis
+    nautilus-lighter nautilus-okx nautilus-polymarket nautilus-sandbox \
+    nautilus-tardis
 
 # > Colors
 # Use ANSI escape codes directly for cross-platform compatibility (Git Bash on Windows doesn't have tput)
@@ -230,7 +233,7 @@ ib-stop:  #-- Stop local TWS/IBC processes and Docker IB Gateway containers
 
 .PHONY: clean-builds
 clean-builds:  #-- Clean distribution and target directories
-	$Q rm -rf dist target target-v2 2>/dev/null || true
+	$Q rm -rf dist target target-v2 crates/pyo3/target-v2 2>/dev/null || true
 
 .PHONY: clean-build-artifacts
 clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, .pyc, .c files)
@@ -290,6 +293,21 @@ check-all-targets:  #-- Run clippy on all targets including bins and examples (n
 	@cargo clippy --workspace --all-targets --features "$(CARGO_FEATURES),examples" --profile nextest -- -D warnings
 	@printf "$(GREEN)All-targets check passed$(RESET)\n"
 
+# Time a block of make sub-targets. Use as:
+#   @$(timer_start) \
+#       $(MAKE) ... \
+#       && $(MAKE) ... \
+#   $(call timer_end,Time label)
+# Prints "<Time label> time: H:MM:SS" and propagates the block's exit code.
+timer_start = _t_start=$$(date +%s); (
+
+define timer_end
+); _t_rc=$$?; \
+_t_elapsed=$$(( $$(date +%s) - _t_start )); \
+printf "$(1) time: %d:%02d:%02d\n" $$(( _t_elapsed / 3600 )) $$(( (_t_elapsed % 3600) / 60 )) $$(( _t_elapsed % 60 )); \
+exit $$_t_rc
+endef
+
 .PHONY: pre-flight
 pre-flight: export CARGO_TARGET_DIR=$(TARGET_DIR)
 pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, build-debug, pytest)
@@ -299,13 +317,15 @@ pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, build-de
 		printf "$(YELLOW)Stage your changes first:$(RESET) git add .\n"; \
 		exit 1; \
 	fi
-	@$(MAKE) --no-print-directory install-deps
-	@$(MAKE) --no-print-directory format
-	@$(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync"
-	@$(MAKE) --no-print-directory cargo-test-extras
-	@$(MAKE) --no-print-directory build-debug
-	@$(MAKE) --no-print-directory pytest
-	@printf "$(GREEN)All pre-flight checks passed$(RESET)\n"
+	@$(timer_start) \
+		$(MAKE) --no-print-directory install-deps \
+		&& $(MAKE) --no-print-directory format \
+		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
+		&& $(MAKE) --no-print-directory cargo-test-extras \
+		&& $(MAKE) --no-print-directory build-debug \
+		&& $(MAKE) --no-print-directory pytest \
+		&& $(MAKE) --no-print-directory security-audit \
+	$(call timer_end,Pre-flight)
 
 .PHONY: ruff
 ruff:  #-- Run ruff linter with automatic fixes
@@ -350,7 +370,7 @@ outdated: check-edit-installed  #-- Check for outdated dependencies
 
 .PHONY: update
 update: cargo-update update-uv  #-- Update all dependencies (cargo and uv)
-	uv lock --upgrade
+	$Q uv lock --upgrade
 
 .PHONY: update-uv
 update-uv:  #-- Install or upgrade uv to the version pinned in pyproject.toml
@@ -378,19 +398,33 @@ install-tools: check-binstall-installed update-uv  #-- Install required developm
 
 #== Security
 
+# Run an audit step: capture stdout+stderr, only display on failure.
+# Args: $(1) display name, $(2) command to run.
+define audit_step
+	printf "$(CYAN)Running $(1)...$(RESET) "; \
+	if _out=$$($(2) 2>&1); then \
+		printf "$(GREEN)ok$(RESET)\n"; \
+	else \
+		rc=$$?; printf "$(RED)failed$(RESET)\n%s\n" "$$_out"; exit $$rc; \
+	fi
+endef
+
 .PHONY: security-audit
 security-audit: check-audit-installed check-deny-installed check-vet-installed check-osv-scanner-installed  #-- Run comprehensive security audit (cargo-audit, cargo-deny, cargo-vet, pip-audit, osv-scanner)
 	$(info $(M) Running security audit...)
-	@printf "$(CYAN)Running cargo audit...$(RESET)\n"
-	cargo audit --color never
-	@printf "\n$(CYAN)Running cargo deny (advisories, licenses, sources, bans)...$(RESET)\n"
-	cargo deny --all-features check advisories licenses sources bans
-	@printf "\n$(CYAN)Running cargo vet (supply chain audit)...$(RESET)\n"
-	cargo vet --locked
-	@printf "\n$(CYAN)Running pip-audit (Python dependencies)...$(RESET)\n"
-	uv export --no-hashes --frozen | uv run --no-project --with pip-audit -- pip-audit --disable-pip --no-deps -r /dev/stdin
-	@printf "\n$(CYAN)Running osv-scanner (Cargo.lock + uv.lock + python/uv.lock)...$(RESET)\n"
-	osv-scanner --config=osv-scanner.toml --lockfile=Cargo.lock --lockfile=uv.lock --lockfile=python/uv.lock
+	@$(call audit_step,cargo audit,cargo audit --color never)
+	@$(call audit_step,cargo audit lighter fuzz,cargo audit --color never --file crates/adapters/lighter/fuzz/Cargo.lock)
+	@$(call audit_step,cargo audit derive fuzz,cargo audit --color never --file crates/adapters/derive/fuzz/Cargo.lock)
+	@$(call audit_step,cargo deny,cargo deny --all-features check advisories licenses sources bans)
+	@$(call audit_step,cargo deny lighter fuzz,cargo deny --manifest-path crates/adapters/lighter/fuzz/Cargo.toml --locked --all-features check --config .cargo/deny-fuzz.toml advisories licenses sources bans)
+	@$(call audit_step,cargo deny derive fuzz,cargo deny --manifest-path crates/adapters/derive/fuzz/Cargo.toml --locked --all-features check --config .cargo/deny-fuzz.toml advisories licenses sources bans)
+	@$(call audit_step,cargo vet,cargo vet --locked)
+	@$(call audit_step,cargo vet lighter fuzz,cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/Cargo.toml --store-path .supply-chain)
+	@$(call audit_step,cargo vet derive fuzz,cargo vet --locked --manifest-path crates/adapters/derive/fuzz/Cargo.toml --store-path .supply-chain)
+	@# aiohttp 3.14.0 fixes these advisories, but remains inside uv's 3-day
+	@# exclude-newer window while aiohttp source builds are disabled.
+	@$(call audit_step,pip-audit,uv export --no-hashes --frozen | uv run --no-project --with pip-audit -- pip-audit --disable-pip --no-deps -r /dev/stdin $(PIP_AUDIT_IGNORE_FLAGS))
+	@$(call audit_step,osv-scanner,osv-scanner --config=osv-scanner.toml --lockfile=Cargo.lock --lockfile=crates/adapters/lighter/fuzz/Cargo.lock --lockfile=crates/adapters/derive/fuzz/Cargo.lock --lockfile=uv.lock --lockfile=python/uv.lock)
 
 .PHONY: cargo-deny
 cargo-deny: check-deny-installed  #-- Run cargo-deny checks (advisories, sources, bans, licenses)
@@ -649,6 +683,48 @@ cargo-test-sim:  #-- Run DST simulation smoke tests (cfg madsim + simulation fea
 	$(info $(M) Running nautilus-core DST seam pinning tests under simulation...)
 	cargo nextest run -p nautilus-core --features simulation -E 'test(~virtual_time)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) --status-level fail --final-status-level flaky
 
+PLUGIN_CDYLIB_SMOKE_LIVE_FILTER := \
+    test(=loader_loads_example_cdylib) \
+    | test(=custom_data_registration_round_trips_via_registry) \
+    | test(=live_node_loads_configured_plugin_actor_strategy_and_custom_data) \
+    | test(=live_node_start_invokes_configured_plugin_actor) \
+    | (test(~cdylib_actor_) & test(~normalizes_identifiers_for_plugin)) \
+    | (test(~cdylib_strategy_) & test(~normalizes_identifiers))
+
+.PHONY: cargo-test-plugin-cdylib-smoke
+cargo-test-plugin-cdylib-smoke: export RUST_BACKTRACE=1
+cargo-test-plugin-cdylib-smoke: check-nextest-installed
+cargo-test-plugin-cdylib-smoke:  #-- Run Linux plug-in cdylib smoke tests
+	@if [ "$$(uname -s)" != "Linux" ]; then \
+		echo "cargo-test-plugin-cdylib-smoke requires Linux"; \
+		exit 1; \
+	fi
+	$(info $(M) Running nautilus-plugin loader cdylib smoke test...)
+	cargo nextest run \
+		-p nautilus-plugin \
+		--features host \
+		--test load_example_cdylib \
+		--run-ignored only \
+		-E 'test(=loads_example_cdylib_and_walks_manifest) | test(=rejects_second_plugin_with_duplicate_custom_data_type) | test(~rejects_malformed_cdylib_fixture)' \
+		$(FAIL_FAST_FLAG) \
+		--profile $(NEXTEST_PROFILE) \
+		--cargo-profile $(CARGO_CI_PROFILE) \
+		--test-threads 1 \
+		--status-level fail \
+		--final-status-level flaky
+	$(info $(M) Running nautilus-live plug-in cdylib smoke tests...)
+	cargo nextest run \
+		-p nautilus-live \
+		--features plugin \
+		--test plugin \
+		-E '$(PLUGIN_CDYLIB_SMOKE_LIVE_FILTER)' \
+		$(FAIL_FAST_FLAG) \
+		--profile $(NEXTEST_PROFILE) \
+		--cargo-profile $(CARGO_CI_PROFILE) \
+		--test-threads 1 \
+		--status-level fail \
+		--final-status-level flaky
+
 .PHONY: cargo-test-core-debug
 cargo-test-core-debug: export RUST_BACKTRACE=1
 cargo-test-core-debug: check-nextest-installed
@@ -723,10 +799,10 @@ cargo-test-coverage-crate-html-%:  #-- Run coverage for specific crate with HTML
 # -----------------------------------------------------------------------------
 # Miri (UB detection)
 # -----------------------------------------------------------------------------
-# Runs library tests under Miri to detect undefined behaviour: invalid pointer
-# operations, aliasing violations (Stacked/Tree Borrows), uninitialised reads,
-# and unsound `unsafe` impls. Requires a nightly toolchain with the `miri`
-# component installed.
+# Runs library and selected integration tests under Miri to detect undefined
+# behaviour: invalid pointer operations, aliasing violations (Stacked/Tree
+# Borrows), uninitialised reads, and unsound `unsafe` impls. Requires a nightly
+# toolchain with the `miri` component installed.
 #
 # Features: `ffi`, `python`, `extension-module`, and `defi` are intentionally
 # disabled. Miri cannot execute Python interpreter calls or most foreign FFI,
@@ -735,26 +811,54 @@ cargo-test-coverage-crate-html-%:  #-- Run coverage for specific crate with HTML
 #
 # Proptest cases are dialled down via `PROPTEST_CASES` since Miri is roughly
 # 10-100x slower than native execution. `MIRIFLAGS` enables disable-isolation
-# so tests that read environment variables (e.g. PATH probes) work.
+# so tests that read environment variables (e.g. PATH probes) work. Most runs
+# use strict provenance; the collections slice uses permissive provenance to
+# match arc-swap's Miri policy.
 # -----------------------------------------------------------------------------
 
 # Override these on the command line if needed, e.g.:
 #   make cargo-miri-core MIRI_TOOLCHAIN=nightly-2026-04-16
-#   make cargo-miri-core MIRI_CORE_FILTER=  (empty: run every test)
+#   make cargo-miri-core MIRI_CORE_FILTER=...
+#   make cargo-miri-core MIRI_CORE_ARC_SWAP_FILTER=...
+#   make cargo-miri-plugin MIRI_PLUGIN_FILTER=...
+#   make cargo-miri-plugin MIRI_PLUGIN_MANIFEST_FILTER=...
+#   make cargo-miri-plugin MIRI_PLUGIN_CUSTOM_DATA_FILTER=...
+#   make cargo-miri-plugin MIRI_PLUGIN_PANIC_FILTER=...
+#   make cargo-miri-plugin MIRI_PLUGIN_HOOK_FILTER=...
 MIRI_TOOLCHAIN ?= nightly
 MIRI_FLAGS ?= -Zmiri-disable-isolation -Zmiri-strict-provenance
+MIRI_CORE_ARC_SWAP_FLAGS ?= -Zmiri-disable-isolation -Zmiri-permissive-provenance
+MIRI_PLUGIN_MANIFEST_FLAGS ?= $(MIRI_FLAGS) -Zmiri-ignore-leaks
 MIRI_PROPTEST_CASES ?= 4
 
 # Default test filters target modules with `unsafe` blocks or hand-rolled
 # pointer/integer code where Miri provides the most signal. Miri runs ~10-100x
 # slower than native, so we narrow the default scope; pass the override above
 # (or `MIRI_CORE_FILTER=`) to widen it.
-MIRI_CORE_FILTER ?= -E 'test(/^(string::stack_str|nanos|uuid|hex|correctness|datetime|collections)::/)'
+MIRI_CORE_FILTER ?= -E 'test(/^(string::stack_str|nanos|uuid|hex|correctness|datetime)::/)'
+# `collections::` covers AtomicMap/AtomicSet, which are backed by arc-swap.
+# arc-swap runs Miri with permissive provenance, so use the same provenance
+# policy for this slice while keeping strict provenance for in-tree pointer code.
+MIRI_CORE_ARC_SWAP_FILTER ?= -E 'test(/^collections::/)'
 # `test_price_to_order_id_{comprehensive_collision_check,realistic_orderbook_prices}`
 # iterate over the full price space to verify hash uniqueness. They run for
 # multiple hours under the Miri interpreter and exercise no unsafe, so we skip
 # them here while keeping the rest of `orderbook::` in scope.
 MIRI_MODEL_FILTER ?= -E 'test(/^(types::|identifiers::|orderbook::)/) and not test(=orderbook::aggregation::tests::test_price_to_order_id_comprehensive_collision_check) and not test(=orderbook::aggregation::tests::test_price_to_order_id_realistic_orderbook_prices)'
+# Keep the plug-in Miri lane focused on the ABI boundary, raw handle ownership,
+# panic guards, and command handles. Manifest fixtures model static cdylib
+# storage with `Box::leak`, so that slice runs with leak detection disabled
+# while the ownership-focused tests stay strict. Integration slices avoid the
+# host feature and dynamic loading: `custom_data_dispatch` covers clone, drop,
+# equality, and decoded handle arrays; `panic_propagation` covers fallible thunk
+# panic/error mapping; `hook_dispatch` covers no-host actor/strategy lifecycle
+# and custom-data dispatch. Broader hook/event slices stay available by
+# overriding `MIRI_PLUGIN_HOOK_FILTER`.
+MIRI_PLUGIN_FILTER ?= -E 'test(/^(boundary|host|panic|surfaces::commands)::/)'
+MIRI_PLUGIN_MANIFEST_FILTER ?= -E 'test(/^manifest::/)'
+MIRI_PLUGIN_CUSTOM_DATA_FILTER ?= -E 'all()'
+MIRI_PLUGIN_PANIC_FILTER ?= -E 'test(~custom_data_) | (test(~_thunk_propagates_failure::) & (test(~on_start_panic) | test(~on_start_err)))'
+MIRI_PLUGIN_HOOK_FILTER ?= -E 'test(~_lifecycle_thunk_dispatches_to_its_method) | test(~_data_thunk_dispatches_to_its_method)'
 
 .PHONY: check-miri-installed
 check-miri-installed:
@@ -766,12 +870,13 @@ check-miri-installed:
 
 .PHONY: cargo-miri-core
 cargo-miri-core: export RUST_BACKTRACE=1
-cargo-miri-core: export MIRIFLAGS=$(MIRI_FLAGS)
 cargo-miri-core: export PROPTEST_CASES=$(MIRI_PROPTEST_CASES)
 cargo-miri-core: check-miri-installed check-nextest-installed
 cargo-miri-core:  #-- Run nautilus-core library tests under Miri to detect UB
-	$(info $(M) Running nautilus-core tests under Miri (filter: $(MIRI_CORE_FILTER))...)
-	cargo +$(MIRI_TOOLCHAIN) miri nextest run -p nautilus-core --no-default-features --lib $(MIRI_CORE_FILTER)
+	$(info $(M) Running nautilus-core tests under Miri with strict provenance (filter: $(MIRI_CORE_FILTER))...)
+	MIRIFLAGS="$(MIRI_FLAGS)" cargo +$(MIRI_TOOLCHAIN) miri nextest run -p nautilus-core --no-default-features --lib $(MIRI_CORE_FILTER)
+	$(info $(M) Running nautilus-core collections tests under Miri with permissive provenance (filter: $(MIRI_CORE_ARC_SWAP_FILTER))...)
+	MIRIFLAGS="$(MIRI_CORE_ARC_SWAP_FLAGS)" cargo +$(MIRI_TOOLCHAIN) miri nextest run -p nautilus-core --no-default-features --lib $(MIRI_CORE_ARC_SWAP_FILTER)
 
 .PHONY: cargo-miri-model
 cargo-miri-model: export RUST_BACKTRACE=1
@@ -782,10 +887,52 @@ cargo-miri-model:  #-- Run nautilus-model library tests under Miri to detect UB
 	$(info $(M) Running nautilus-model tests under Miri (filter: $(MIRI_MODEL_FILTER))...)
 	cargo +$(MIRI_TOOLCHAIN) miri nextest run -p nautilus-model --no-default-features --lib $(MIRI_MODEL_FILTER)
 
+.PHONY: cargo-miri-plugin
+cargo-miri-plugin: export RUST_BACKTRACE=1
+cargo-miri-plugin: export PROPTEST_CASES=$(MIRI_PROPTEST_CASES)
+cargo-miri-plugin: check-miri-installed check-nextest-installed
+cargo-miri-plugin:  #-- Run nautilus-plugin boundary and dispatch tests under Miri
+	$(info $(M) Running nautilus-plugin library tests under Miri (filter: $(MIRI_PLUGIN_FILTER))...)
+	MIRIFLAGS="$(MIRI_FLAGS)" \
+		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
+		-p nautilus-plugin \
+		--no-default-features \
+		--lib \
+		$(MIRI_PLUGIN_FILTER)
+	$(info $(M) Running nautilus-plugin manifest tests under Miri (filter: $(MIRI_PLUGIN_MANIFEST_FILTER))...)
+	MIRIFLAGS="$(MIRI_PLUGIN_MANIFEST_FLAGS)" \
+		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
+		-p nautilus-plugin \
+		--no-default-features \
+		--lib \
+		$(MIRI_PLUGIN_MANIFEST_FILTER)
+	$(info $(M) Running nautilus-plugin custom data dispatch tests under Miri (filter: $(MIRI_PLUGIN_CUSTOM_DATA_FILTER))...)
+	MIRIFLAGS="$(MIRI_FLAGS)" \
+		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
+		-p nautilus-plugin \
+		--no-default-features \
+		--test custom_data_dispatch \
+		$(MIRI_PLUGIN_CUSTOM_DATA_FILTER)
+	$(info $(M) Running nautilus-plugin panic propagation tests under Miri (filter: $(MIRI_PLUGIN_PANIC_FILTER))...)
+	MIRIFLAGS="$(MIRI_FLAGS)" \
+		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
+		-p nautilus-plugin \
+		--no-default-features \
+		--test panic_propagation \
+		$(MIRI_PLUGIN_PANIC_FILTER)
+	$(info $(M) Running nautilus-plugin hook dispatch tests under Miri (filter: $(MIRI_PLUGIN_HOOK_FILTER))...)
+	MIRIFLAGS="$(MIRI_FLAGS)" \
+		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
+		-p nautilus-plugin \
+		--no-default-features \
+		--test hook_dispatch \
+		$(MIRI_PLUGIN_HOOK_FILTER)
+
 .PHONY: cargo-miri
-cargo-miri:  #-- Run Miri across the in-scope foundational crates (core + model)
+cargo-miri:  #-- Run Miri across the in-scope foundational and plug-in crates
 	$(MAKE) cargo-miri-core
 	$(MAKE) cargo-miri-model
+	$(MAKE) cargo-miri-plugin
 
 #------------------------------------------------------------------------------
 # Benchmarks
@@ -882,14 +1029,15 @@ sync-v2:  #-- Sync v2 Python dependencies (without building the package)
 	$Q cd python && VIRTUAL_ENV= uv sync --all-groups --no-install-package nautilus-trader $(UV_SYNC_FLAGS)
 
 .PHONY: build-debug-v2
-build-debug-v2: sync-v2  #-- Build the v2 Python package in debug mode (fast incremental builds)
+build-debug-v2: sync-v2  #-- Build the v2 Python package in debug mode (also regenerates type stubs)
+	@$(MAKE) --no-print-directory py-stubs-v2
 	$(info $(M) Building v2 extension in debug mode...)
 	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=../target-v2 uv run --no-sync maturin develop
 
 .PHONY: py-stubs-v2
-py-stubs-v2:  #-- Regenerate v2 Python type stubs from Rust bindings
+py-stubs-v2: sync-v2  #-- Regenerate v2 Python type stubs from Rust bindings
 	$(info $(M) Generating v2 Python type stubs...)
-	$Q CARGO_TARGET_DIR=target-v2 python python/generate_stubs.py
+	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(CURDIR)/target-v2 uv run --no-sync python generate_stubs.py
 
 .PHONY: update-v2
 update-v2: cargo-update  #-- Update v2 dependencies (cargo and uv)
@@ -911,13 +1059,15 @@ pre-flight-v2:  #-- Run comprehensive v2 pre-flight checks (format, check-code, 
 		printf "$(YELLOW)Stage your changes first:$(RESET) git add .\n"; \
 		exit 1; \
 	fi
-	@$(MAKE) --no-print-directory install-deps
-	@$(MAKE) --no-print-directory format
-	@$(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync"
-	@$(MAKE) --no-print-directory cargo-test-extras
-	@$(MAKE) --no-print-directory build-debug-v2
-	@$(MAKE) --no-print-directory pytest-v2
-	@printf "$(GREEN)All v2 pre-flight checks passed$(RESET)\n"
+	@$(timer_start) \
+		$(MAKE) --no-print-directory install-deps \
+		&& $(MAKE) --no-print-directory format \
+		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
+		&& $(MAKE) --no-print-directory cargo-test-extras \
+		&& $(MAKE) --no-print-directory build-debug-v2 \
+		&& $(MAKE) --no-print-directory pytest-v2 \
+		&& $(MAKE) --no-print-directory security-audit \
+	$(call timer_end,Pre-flight)
 
 #== CLI Tools
 

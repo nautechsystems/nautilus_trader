@@ -37,7 +37,7 @@ use serde::{Deserialize, Serialize};
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.binance")
 )]
 pub enum BinanceProductType {
     /// Spot trading (api.binance.com).
@@ -128,7 +128,7 @@ impl Display for BinanceProductType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.binance")
 )]
 pub enum BinanceEnvironment {
     /// Live exchange environment.
@@ -198,7 +198,7 @@ impl From<BinanceSide> for OrderSide {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.binance")
 )]
 pub enum BinancePositionSide {
     /// Single position mode (both).
@@ -229,7 +229,7 @@ pub enum BinancePositionSide {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.binance")
 )]
 pub enum BinanceMarginType {
     /// Cross margin.

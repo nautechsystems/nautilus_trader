@@ -23,7 +23,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProductType},
-    config::{BinanceDataClientConfig, BinanceExecClientConfig},
+    config::{BinanceDataClientConfig, BinanceExecClientConfig, BinanceSpotMarketDataMode},
 };
 
 #[pymethods]
@@ -34,31 +34,35 @@ impl BinanceDataClientConfig {
     /// Ed25519 API keys are required for SBE WebSocket streams.
     #[new]
     #[pyo3(signature = (
-        product_types = None,
+        product_type = None,
         environment = None,
         base_url_http = None,
         base_url_ws = None,
         api_key = None,
         api_secret = None,
+        spot_market_data_mode = None,
         instrument_status_poll_secs = None,
     ))]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
-        product_types: Option<Vec<BinanceProductType>>,
+        product_type: Option<BinanceProductType>,
         environment: Option<BinanceEnvironment>,
         base_url_http: Option<String>,
         base_url_ws: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
+        spot_market_data_mode: Option<BinanceSpotMarketDataMode>,
         instrument_status_poll_secs: Option<u64>,
     ) -> Self {
         let defaults = Self::default();
         Self {
-            product_types: product_types.unwrap_or(defaults.product_types),
+            product_type: product_type.unwrap_or(defaults.product_type),
             environment: environment.unwrap_or(defaults.environment),
             base_url_http: base_url_http.or(defaults.base_url_http),
             base_url_ws: base_url_ws.or(defaults.base_url_ws),
             api_key: api_key.or(defaults.api_key),
             api_secret: api_secret.or(defaults.api_secret),
+            spot_market_data_mode: spot_market_data_mode.unwrap_or(defaults.spot_market_data_mode),
             instrument_status_poll_secs: instrument_status_poll_secs
                 .unwrap_or(defaults.instrument_status_poll_secs),
             transport_backend: defaults.transport_backend,
@@ -82,7 +86,7 @@ impl BinanceExecClientConfig {
     #[pyo3(signature = (
         trader_id,
         account_id,
-        product_types = None,
+        product_type = None,
         environment = None,
         base_url_http = None,
         base_url_ws = None,
@@ -101,7 +105,7 @@ impl BinanceExecClientConfig {
     fn py_new(
         trader_id: TraderId,
         account_id: AccountId,
-        product_types: Option<Vec<BinanceProductType>>,
+        product_type: Option<BinanceProductType>,
         environment: Option<BinanceEnvironment>,
         base_url_http: Option<String>,
         base_url_ws: Option<String>,
@@ -120,7 +124,7 @@ impl BinanceExecClientConfig {
         Self {
             trader_id,
             account_id,
-            product_types: product_types.unwrap_or(defaults.product_types),
+            product_type: product_type.unwrap_or(defaults.product_type),
             environment: environment.unwrap_or(defaults.environment),
             base_url_http: base_url_http.or(defaults.base_url_http),
             base_url_ws: base_url_ws.or(defaults.base_url_ws),
@@ -154,15 +158,17 @@ mod tests {
 
     #[rstest]
     fn test_data_client_py_new_uses_defaults_for_omitted_fields() {
-        let config = BinanceDataClientConfig::py_new(None, None, None, None, None, None, None);
+        let config =
+            BinanceDataClientConfig::py_new(None, None, None, None, None, None, None, None);
         let defaults = BinanceDataClientConfig::default();
 
-        assert_eq!(config.product_types, defaults.product_types);
+        assert_eq!(config.product_type, defaults.product_type);
         assert_eq!(config.environment, defaults.environment);
         assert_eq!(config.base_url_http, defaults.base_url_http);
         assert_eq!(config.base_url_ws, defaults.base_url_ws);
         assert_eq!(config.api_key, defaults.api_key);
         assert_eq!(config.api_secret, defaults.api_secret);
+        assert_eq!(config.spot_market_data_mode, defaults.spot_market_data_mode);
         assert_eq!(
             config.instrument_status_poll_secs,
             defaults.instrument_status_poll_secs
@@ -172,16 +178,17 @@ mod tests {
     #[rstest]
     fn test_data_client_py_new_uses_explicit_overrides() {
         let config = BinanceDataClientConfig::py_new(
-            Some(vec![BinanceProductType::UsdM]),
+            Some(BinanceProductType::UsdM),
             Some(BinanceEnvironment::Testnet),
             Some("https://http.example".to_string()),
             Some("wss://ws.example".to_string()),
             Some("api-key".to_string()),
             Some("api-secret".to_string()),
+            Some(BinanceSpotMarketDataMode::Json),
             Some(15),
         );
 
-        assert_eq!(config.product_types, vec![BinanceProductType::UsdM]);
+        assert_eq!(config.product_type, BinanceProductType::UsdM);
         assert_eq!(config.environment, BinanceEnvironment::Testnet);
         assert_eq!(
             config.base_url_http.as_deref(),
@@ -190,6 +197,10 @@ mod tests {
         assert_eq!(config.base_url_ws.as_deref(), Some("wss://ws.example"));
         assert_eq!(config.api_key.as_deref(), Some("api-key"));
         assert_eq!(config.api_secret.as_deref(), Some("api-secret"));
+        assert_eq!(
+            config.spot_market_data_mode,
+            BinanceSpotMarketDataMode::Json
+        );
         assert_eq!(config.instrument_status_poll_secs, 15);
     }
 
@@ -205,7 +216,7 @@ mod tests {
 
         assert_eq!(config.trader_id, trader_id);
         assert_eq!(config.account_id, account_id);
-        assert_eq!(config.product_types, defaults.product_types);
+        assert_eq!(config.product_type, defaults.product_type);
         assert_eq!(config.environment, defaults.environment);
         assert_eq!(config.base_url_http, defaults.base_url_http);
         assert_eq!(config.base_url_ws, defaults.base_url_ws);
@@ -233,7 +244,7 @@ mod tests {
         let config = BinanceExecClientConfig::py_new(
             TraderId::from("TRADER-002"),
             AccountId::from("BINANCE-002"),
-            Some(vec![BinanceProductType::UsdM]),
+            Some(BinanceProductType::UsdM),
             Some(BinanceEnvironment::Demo),
             Some("https://http.example".to_string()),
             Some("wss://stream.example".to_string()),
@@ -249,7 +260,7 @@ mod tests {
             true,
         );
 
-        assert_eq!(config.product_types, vec![BinanceProductType::UsdM]);
+        assert_eq!(config.product_type, BinanceProductType::UsdM);
         assert_eq!(config.environment, BinanceEnvironment::Demo);
         assert_eq!(
             config.base_url_http.as_deref(),

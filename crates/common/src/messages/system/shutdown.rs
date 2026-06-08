@@ -43,6 +43,8 @@ pub struct ShutdownSystem {
     pub command_id: UUID4,
     /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
+    /// The correlation ID, set when this command is correlated to another command or request.
+    pub correlation_id: Option<UUID4>,
 }
 
 impl ShutdownSystem {
@@ -54,6 +56,7 @@ impl ShutdownSystem {
         reason: Option<String>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
     ) -> Self {
         Self {
             trader_id,
@@ -61,6 +64,7 @@ impl ShutdownSystem {
             reason,
             command_id,
             ts_init,
+            correlation_id,
         }
     }
 
@@ -73,12 +77,13 @@ impl Display for ShutdownSystem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}(trader_id={}, component_id={}, reason={:?}, command_id={})",
+            "{}(trader_id={}, component_id={}, reason={:?}, command_id={}, correlation_id={:?})",
             stringify!(ShutdownSystem),
             self.trader_id,
             self.component_id,
             self.reason,
             self.command_id,
+            self.correlation_id,
         )
     }
 }

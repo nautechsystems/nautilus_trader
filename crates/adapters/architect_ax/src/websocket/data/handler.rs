@@ -103,7 +103,7 @@ pub(crate) struct AxMdWsFeedHandler {
 impl AxMdWsFeedHandler {
     /// Creates a new [`AxMdWsFeedHandler`] instance.
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
@@ -199,7 +199,7 @@ impl AxMdWsFeedHandler {
     /// Returns the next message from the handler.
     ///
     /// This method blocks until a message is available or the handler is stopped.
-    pub async fn next(&mut self) -> Option<AxDataWsMessage> {
+    pub(crate) async fn next(&mut self) -> Option<AxDataWsMessage> {
         loop {
             if self.needs_subscription_replay && self.message_queue.is_empty() {
                 self.needs_subscription_replay = false;

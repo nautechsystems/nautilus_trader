@@ -1,0 +1,50 @@
+{
+    "jsonrpc": "2.0",
+    "result": {
+        "trades": [
+            {
+                "timestamp": 1700000000000,
+                "price": 0.05,
+                "amount": 0.1,
+                "direction": "buy",
+                "instrument_name": "BTC-CS-19MAY26-70000_75000",
+                "trade_seq": 1,
+                "tick_direction": 0,
+                "legs": [
+                    {
+                        "timestamp": 1700000000000,
+                        "price": 0.0174,
+                        "amount": 0.1,
+                        "direction": "buy",
+                        "instrument_name": "BTC-19MAY26-75000-C",
+                        "trade_seq": 1,
+                        "tick_direction": 0,
+                        "combo_id": "BTC-CS-19MAY26-70000_75000",
+                        "trade_id": "999000001",
+                        "combo_trade_id": "999000000"
+                    },
+                    {
+                        "timestamp": 1700000000000,
+                        "iv": 83.39,
+                        "price": 0.0813,
+                        "amount": 0.1,
+                        "direction": "sell",
+                        "index_price": 76185.14,
+                        "instrument_name": "BTC-19MAY26-70000-C",
+                        "trade_seq": 2,
+                        "tick_direction": 0,
+                        "combo_id": "BTC-CS-19MAY26-70000_75000",
+                        "trade_id": "999000002",
+                        "combo_trade_id": "999000000"
+                    }
+                ],
+                "trade_id": "999000000"
+            }
+        ],
+        "has_more": false
+    },
+    "usIn": 1700000000000000,
+    "usOut": 1700000000000100,
+    "usDiff": 100,
+    "testnet": true
+}

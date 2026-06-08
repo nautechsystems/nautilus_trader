@@ -1366,30 +1366,35 @@ impl DydxDataClient {
             let instrument_id = Self::instrument_id_from_ticker(ticker);
 
             if let Some(status) = &update.status {
-                let action = MarketStatusAction::from(*status);
-                let is_trading = matches!(status, crate::common::enums::DydxMarketStatus::Active);
+                if *status == crate::common::enums::DydxMarketStatus::Unknown {
+                    log::warn!("Skipping unmodeled dYdX market status for {instrument_id}");
+                } else {
+                    let action = MarketStatusAction::from(*status);
+                    let is_trading =
+                        matches!(status, crate::common::enums::DydxMarketStatus::Active);
 
-                let instrument_status = InstrumentStatus::new(
-                    instrument_id,
-                    action,
-                    ts_init,
-                    ts_init,
-                    None,
-                    None,
-                    Some(is_trading),
-                    None,
-                    None,
-                );
+                    let instrument_status = InstrumentStatus::new(
+                        instrument_id,
+                        action,
+                        ts_init,
+                        ts_init,
+                        None,
+                        None,
+                        Some(is_trading),
+                        None,
+                        None,
+                    );
 
-                ctx.last_instrument_statuses
-                    .insert(instrument_id, instrument_status);
+                    ctx.last_instrument_statuses
+                        .insert(instrument_id, instrument_status);
 
-                if ctx.active_instrument_status_subs.contains(&instrument_id)
-                    && let Err(e) = ctx
-                        .data_sender
-                        .send(DataEvent::InstrumentStatus(instrument_status))
-                {
-                    log::error!("Failed to emit instrument status for {instrument_id}: {e}");
+                    if ctx.active_instrument_status_subs.contains(&instrument_id)
+                        && let Err(e) = ctx
+                            .data_sender
+                            .send(DataEvent::InstrumentStatus(instrument_status))
+                    {
+                        log::error!("Failed to emit instrument status for {instrument_id}: {e}");
+                    }
                 }
             }
 

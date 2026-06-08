@@ -61,6 +61,9 @@ pub struct DeltaNeutralVolConfig {
     pub entry_iv_offset: f64,
     /// Time-in-force for strangle entry orders.
     pub entry_time_in_force: TimeInForce,
+    /// Tick offset from the option ask used for premium-priced entry orders.
+    /// When set, the strategy does not pass IV params to the adapter.
+    pub entry_premium_offset_ticks: Option<i32>,
     /// Param key for implied volatility passed to `submit_order`.
     /// Adapter-specific: Bybit uses `"order_iv"`, OKX uses `"px_vol"`.
     pub iv_param_key: String,
@@ -92,6 +95,7 @@ impl DeltaNeutralVolConfig {
             enter_strangle: true,
             entry_iv_offset: 0.0,
             entry_time_in_force: TimeInForce::Gtc,
+            entry_premium_offset_ticks: None,
             iv_param_key: "px_vol".to_string(),
         }
     }
@@ -151,6 +155,12 @@ impl DeltaNeutralVolConfig {
     }
 
     #[must_use]
+    pub fn with_entry_premium_offset_ticks(mut self, ticks: i32) -> Self {
+        self.entry_premium_offset_ticks = Some(ticks);
+        self
+    }
+
+    #[must_use]
     pub fn with_strategy_id(mut self, strategy_id: StrategyId) -> Self {
         self.base.strategy_id = Some(strategy_id);
         self
@@ -188,6 +198,7 @@ impl DeltaNeutralVolConfig {
         enter_strangle=true,
         entry_iv_offset=0.0,
         entry_time_in_force=TimeInForce::Gtc,
+        entry_premium_offset_ticks=None,
         iv_param_key="px_vol",
     ))]
     #[expect(clippy::too_many_arguments)]
@@ -206,6 +217,7 @@ impl DeltaNeutralVolConfig {
         enter_strangle: bool,
         entry_iv_offset: f64,
         entry_time_in_force: TimeInForce,
+        entry_premium_offset_ticks: Option<i32>,
         iv_param_key: &str,
     ) -> Self {
         let mut config = Self::new(option_family, hedge_instrument_id, client_id)
@@ -218,6 +230,10 @@ impl DeltaNeutralVolConfig {
             .with_entry_iv_offset(entry_iv_offset)
             .with_entry_time_in_force(entry_time_in_force)
             .with_iv_param_key(iv_param_key.to_string());
+
+        if let Some(ticks) = entry_premium_offset_ticks {
+            config.entry_premium_offset_ticks = Some(ticks);
+        }
 
         if let Some(id) = strategy_id {
             config.base.strategy_id = Some(id);
@@ -292,5 +308,10 @@ impl DeltaNeutralVolConfig {
     #[getter]
     fn entry_time_in_force(&self) -> TimeInForce {
         self.entry_time_in_force
+    }
+
+    #[getter]
+    fn entry_premium_offset_ticks(&self) -> Option<i32> {
+        self.entry_premium_offset_ticks
     }
 }

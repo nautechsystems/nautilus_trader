@@ -17,7 +17,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use nautilus_hyperliquid::{
-    common::credential::EvmPrivateKey,
+    common::credential::{EvmPrivateKey, VaultAddress},
     http::models::{
         HyperliquidExecAction, HyperliquidExecGrouping, HyperliquidExecLimitParams,
         HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
@@ -55,14 +55,14 @@ fn make_order_action() -> HyperliquidExecAction {
 
 fn make_sign_request(action: &HyperliquidExecAction) -> SignRequest {
     let action_bytes = rmp_serde::to_vec_named(action).unwrap();
-    let action_value = serde_json::to_value(action).unwrap();
     SignRequest {
-        action: action_value,
+        action: None,
         action_bytes: Some(action_bytes),
         time_nonce: TimeNonce::from_millis(1733833200000),
         action_type: HyperliquidActionType::L1,
         is_testnet: false,
         vault_address: None,
+        expires_after: None,
     }
 }
 
@@ -104,15 +104,17 @@ fn bench_sign_l1_with_vault(c: &mut Criterion) {
     let signer = make_signer();
     let action = make_order_action();
     let action_bytes = rmp_serde::to_vec_named(&action).unwrap();
-    let action_value = serde_json::to_value(&action).unwrap();
 
     let request = SignRequest {
-        action: action_value,
+        action: None,
         action_bytes: Some(action_bytes),
         time_nonce: TimeNonce::from_millis(1733833200000),
         action_type: HyperliquidActionType::L1,
         is_testnet: false,
-        vault_address: Some("0xAbCdEf0123456789AbCdEf0123456789AbCdEf01".to_string()),
+        vault_address: Some(
+            VaultAddress::parse("0xAbCdEf0123456789AbCdEf0123456789AbCdEf01").unwrap(),
+        ),
+        expires_after: None,
     };
 
     c.bench_function("sign_l1_action_with_vault", |b| {

@@ -35,4 +35,4 @@ pub use builtins::{
     encode_submit_order, register_default,
 };
 pub use encoder::{Encode, EncodeError, EncodedPayload, TypedEncoder};
-pub use registry::EncoderRegistry;
+pub use registry::{EncoderRegistry, HeadersExtractor, TypedHeadersExtractor};

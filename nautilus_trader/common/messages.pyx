@@ -50,6 +50,8 @@ cdef class ShutdownSystem(Command):
         UNIX timestamp (nanoseconds) when the object was initialized.
     reason : str, optional
         The reason for the shutdown command (can be None).
+    correlation_id : UUID4, optional
+        The correlation ID. If provided, this command is correlated to another command or request.
     """
 
     def __init__(
@@ -92,19 +94,21 @@ cdef class ShutdownSystem(Command):
             f"component_id={self.component_id.to_str()}, "
             f"reason='{self.reason}', "
             f"command_id={self._command_id.to_str()}, "
+            f"correlation_id={self.correlation_id.to_str() if self.correlation_id is not None else None}, "
             f"ts_init={self._ts_init})"
         )
 
     @staticmethod
     cdef ShutdownSystem from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str corr = values.get("correlation_id")
         return ShutdownSystem(
             trader_id=TraderId(values["trader_id"]),
             component_id=ComponentId(values["component_id"]),
             reason=values["reason"],
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
-            correlation_id=UUID4.from_str_c(values["correlation_id"]) if values.get("correlation_id") else None,
+            correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
         )
 
     @staticmethod
@@ -117,6 +121,7 @@ cdef class ShutdownSystem(Command):
             "reason": obj.reason,
             "command_id": obj._command_id.to_str(),
             "ts_init": obj._ts_init,
+            "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
         }
 
     @staticmethod

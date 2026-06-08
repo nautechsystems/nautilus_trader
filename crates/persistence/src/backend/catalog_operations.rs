@@ -20,6 +20,7 @@
 
 use ahash::{AHashMap, AHashSet};
 use futures::StreamExt;
+use indexmap::IndexSet;
 use nautilus_core::UnixNanos;
 use nautilus_model::data::{
     Bar, CustomData, Data, HasTsInit, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta,
@@ -1680,7 +1681,7 @@ impl ParquetDataCatalog {
 
         let leaf_dirs = self.execute_async(async {
             let mut all_paths = AHashSet::new();
-            let mut directories = AHashSet::new();
+            let mut directories = IndexSet::new();
             let mut files_in_dirs = AHashMap::new();
 
             // List all objects under the data directory
@@ -1721,6 +1722,7 @@ impl ParquetDataCatalog {
                 }
             }
 
+            leaf_dirs.sort();
             Ok::<Vec<String>, anyhow::Error>(leaf_dirs)
         })?;
 

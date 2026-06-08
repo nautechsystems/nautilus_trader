@@ -162,7 +162,7 @@ impl AroonOscillator {
 
     fn calculate_aroon(&mut self) {
         let len = self.high_inputs.len();
-        debug_assert!(len == self.period + 1);
+        debug_assert_eq!(len, self.period + 1);
 
         let mut max_idx = 0_usize;
         let mut max_val = f64::MIN;

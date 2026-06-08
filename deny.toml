@@ -27,6 +27,8 @@ ignore = [
   { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a vulnerability)" },
 
   # unic-* unmaintained, transitive via pyo3-stub-gen -> rustpython-parser (dev tool only).
+  # Upstream advisory-db duplicates each entry under both a specific RUSTSEC-2025-* ID and an
+  # umbrella RUSTSEC-0000-0000 entry; cargo-deny matches whichever it sees first, so ignore both.
   # TODO: Monitor https://github.com/Jij-Inc/pyo3-stub-gen for migration away from rustpython-parser
   { id = "RUSTSEC-2025-0075", reason = "unic-char-range unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0080", reason = "unic-common unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
@@ -34,6 +36,7 @@ ignore = [
   { id = "RUSTSEC-2025-0090", reason = "unic-emoji-char unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
+  { id = "RUSTSEC-0000-0000", reason = "umbrella ID for unic-* unmaintained announcement (rustsec/advisory-db#2414)" },
 
   # bincode 1.3.3 unmaintained, transitive via hypersync-client. Not a vulnerability.
   # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for migration
@@ -44,8 +47,13 @@ ignore = [
   # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for capnp update
   { id = "RUSTSEC-2025-0143", reason = "capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix" },
 
-  # NOTE: cargo-audit also flags RUSTSEC-2024-0388 (derivative) and RUSTSEC-2023-0071 (rsa)
-  # which cargo-deny does not surface; those are listed only in .cargo/audit.toml.
+  # proc-macro-error2 unmaintained, transitive via alloy and tabled_derive.
+  # No patched version is available; not a vulnerability.
+  # TODO: Monitor upstream alloy and tabled releases for migration away from proc-macro-error2
+  { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2 unmaintained via alloy and tabled_derive; no patch" },
+
+  # NOTE: cargo-audit also flags RUSTSEC-2024-0388 (derivative), which cargo-deny
+  # does not surface; it is listed only in .cargo/audit.toml.
 ]
 
 # =============================================================================
@@ -125,11 +133,14 @@ deny = []
 
 # Skip certain crates during duplicate detection.
 # These are transitive duplicates from upstream crates outside our control.
-# Last reviewed: 2026-03-25
+# Last reviewed: 2026-05-30
 skip = [
   # Crypto ecosystem - version-locked together, pulled by various blockchain crates
   { crate = "block-buffer" },
+  { crate = "crypto-common" },
   { crate = "digest" },
+  { crate = "hmac" },
+  { crate = "md-5" },
   { crate = "sha2" },
 
   # RNG ecosystem - version-locked together, pulled by crypto and blockchain crates
@@ -242,7 +253,12 @@ unknown-registry = "deny"
 unknown-git = "deny"
 
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+# `pornin/ecgfp5` is the upstream MIT-licensed Rust reference implementation
+# of the curve and field underpinning the Lighter L2 signer. Pulled in as a
+# `#[cfg(test)]` dev-dep (zero transitive deps; pinned by commit) for the
+# Lighter signing module's differential proptest and fuzz parity layer; never
+# linked into the production binary.
+allow-git = ["https://github.com/pornin/ecgfp5"]
 
 [sources.allow-org]
 github = []

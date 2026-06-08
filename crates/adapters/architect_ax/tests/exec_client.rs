@@ -276,6 +276,7 @@ async fn test_query_account_does_not_block_within_runtime() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client
@@ -382,6 +383,8 @@ async fn test_cancel_all_orders_uses_http_endpoint() {
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
+        correlation_id: None,
+        causation_id: None,
     };
 
     client
@@ -739,6 +742,7 @@ async fn test_modify_order_without_venue_order_id_emits_rejected() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client
@@ -802,6 +806,7 @@ async fn test_modify_order_success_updates_caches() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client
@@ -876,6 +881,7 @@ async fn test_modify_order_http_error_emits_rejected() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client
@@ -937,6 +943,8 @@ async fn test_cancel_all_orders_http_failure_emits_cancel_rejected() {
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
+        correlation_id: None,
+        causation_id: None,
     };
 
     client
@@ -990,6 +998,8 @@ async fn test_batch_cancel_orders_emits_one_ws_cancel_per_entry() {
             command_id: UUID4::new(),
             ts_init: UnixNanos::default(),
             params: None,
+            correlation_id: None,
+            causation_id: None,
         },
         CancelOrder {
             trader_id: TraderId::from("TESTER-001"),
@@ -1001,6 +1011,8 @@ async fn test_batch_cancel_orders_emits_one_ws_cancel_per_entry() {
             command_id: UUID4::new(),
             ts_init: UnixNanos::default(),
             params: None,
+            correlation_id: None,
+            causation_id: None,
         },
     ];
 
@@ -1013,6 +1025,8 @@ async fn test_batch_cancel_orders_emits_one_ws_cancel_per_entry() {
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
+        correlation_id: None,
+        causation_id: None,
     };
 
     client

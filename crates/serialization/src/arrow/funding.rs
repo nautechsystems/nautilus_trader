@@ -16,11 +16,11 @@
 use std::collections::HashMap;
 
 use arrow::{datatypes::Schema, error::ArrowError, record_batch::RecordBatch};
-use nautilus_model::data::FundingRateUpdate;
+use nautilus_model::data::{Data, FundingRateUpdate};
 
 use super::{
-    ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch, EncodingError,
-    KEY_INSTRUMENT_ID,
+    ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch,
+    EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
 };
 
@@ -73,6 +73,16 @@ impl DecodeTypedFromRecordBatch for FundingRateUpdate {
             FUNDING_RATE_UPDATE_FIELDS,
             Some("FundingRateUpdate"),
         )
+    }
+}
+
+impl DecodeDataFromRecordBatch for FundingRateUpdate {
+    fn decode_data_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Result<Vec<Data>, EncodingError> {
+        let updates = Self::decode_typed_batch(metadata, record_batch)?;
+        Ok(updates.into_iter().map(Data::from).collect())
     }
 }
 

@@ -42,7 +42,9 @@ use nautilus_model::{
         OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
         OrderUpdated, PositionChanged, PositionClosed, PositionEvent, PositionOpened,
     },
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId,
+    },
     orders::{
         LIMIT_ORDER_TYPES, Order, OrderAny, OrderCore, OrderError, OrderList, STOP_ORDER_TYPES,
     },
@@ -115,7 +117,7 @@ pub trait Strategy: DataActor {
     ) -> anyhow::Result<()> {
         let core = self.core_mut();
 
-        let trader_id = core.trader_id().expect("Trader ID not set");
+        let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_init = core.clock().timestamp_ns();
 
@@ -161,14 +163,15 @@ pub trait Strategy: DataActor {
             params,
             UUID4::new(),
             ts_init,
+            None, // correlation_id
         );
 
         let manager = core.order_manager();
 
         if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger) {
             manager.send_emulator_command(TradingCommand::SubmitOrder(command));
-        } else if order.exec_algorithm_id().is_some() {
-            manager.send_algo_command(command, order.exec_algorithm_id().unwrap());
+        } else if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
+            manager.send_algo_command(command, exec_algorithm_id);
         } else {
             manager.send_risk_command(TradingCommand::SubmitOrder(command));
         }
@@ -190,11 +193,28 @@ pub trait Strategy: DataActor {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) -> anyhow::Result<()> {
+        if orders.is_empty() {
+            log::error!("OrderList denied: no orders to submit");
+            anyhow::bail!("OrderList denied: no orders to submit");
+        }
+
         for order in &orders {
             if order.status() != OrderStatus::Initialized {
                 anyhow::bail!(
                     "Order in list denied: invalid status for {}, expected INITIALIZED",
                     order.client_order_id()
+                );
+            }
+        }
+
+        let first_venue = orders[0].instrument_id().venue;
+        for order in &orders {
+            if order.instrument_id().venue != first_venue {
+                anyhow::bail!(
+                    "OrderList denied: orders must share the same venue; \
+                     expected {first_venue}, found {} on {}",
+                    order.instrument_id().venue,
+                    order.client_order_id(),
                 );
             }
         }
@@ -215,7 +235,7 @@ pub trait Strategy: DataActor {
 
         let core = self.core_mut();
 
-        let trader_id = core.trader_id().expect("Trader ID not set");
+        let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_init = core.clock().timestamp_ns();
 
@@ -225,6 +245,11 @@ pub trait Strategy: DataActor {
         } else {
             core.order_factory().create_list(&mut orders, ts_init)
         };
+
+        if let Err(e) = order_list.validate() {
+            log::error!("OrderList denied: {e}");
+            anyhow::bail!("OrderList denied: {e}");
+        }
 
         {
             let cache_rc = core.cache_rc();
@@ -276,6 +301,7 @@ pub trait Strategy: DataActor {
             params,
             UUID4::new(),
             ts_init,
+            None, // correlation_id
         );
 
         let has_emulated_order = orders.iter().any(|o| {
@@ -318,7 +344,7 @@ pub trait Strategy: DataActor {
         let (trader_id, strategy_id) = {
             let core = self.core_mut();
             (
-                core.trader_id().expect("Trader ID not set"),
+                registered_trader_id(core)?,
                 StrategyId::from(core.actor_id().inner().as_str()),
             )
         };
@@ -398,6 +424,7 @@ pub trait Strategy: DataActor {
             UUID4::new(),
             self.core_mut().clock().timestamp_ns(),
             params,
+            None, // correlation_id
         );
 
         let manager = self.core_mut().order_manager();
@@ -424,7 +451,7 @@ pub trait Strategy: DataActor {
         let (trader_id, strategy_id, ts_init) = {
             let core = self.core_mut();
             (
-                core.trader_id().expect("Trader ID not set"),
+                registered_trader_id(core)?,
                 StrategyId::from(core.actor_id().inner().as_str()),
                 core.clock().timestamp_ns(),
             )
@@ -459,6 +486,7 @@ pub trait Strategy: DataActor {
             UUID4::new(),
             ts_init,
             params,
+            None, // correlation_id
         );
 
         let manager = self.core_mut().order_manager();
@@ -506,7 +534,7 @@ pub trait Strategy: DataActor {
         let (trader_id, strategy_id, ts_init) = {
             let core = self.core_mut();
             (
-                core.trader_id().expect("Trader ID not set"),
+                registered_trader_id(core)?,
                 StrategyId::from(core.actor_id().inner().as_str()),
                 core.clock().timestamp_ns(),
             )
@@ -559,6 +587,7 @@ pub trait Strategy: DataActor {
                 UUID4::new(),
                 ts_init,
                 params.clone(),
+                None, // correlation_id
             ));
         }
 
@@ -577,6 +606,7 @@ pub trait Strategy: DataActor {
             UUID4::new(),
             ts_init,
             params,
+            None, // correlation_id
         );
 
         manager.send_exec_command(TradingCommand::BatchCancelOrders(command));
@@ -594,6 +624,7 @@ pub trait Strategy: DataActor {
         }
 
         let strategy_id = order.strategy_id();
+        required_account_id(order, "pending update")?;
         let event = OrderEventAny::PendingUpdate(self.generate_order_pending_update(order));
 
         {
@@ -639,6 +670,7 @@ pub trait Strategy: DataActor {
         }
 
         let strategy_id = order.strategy_id();
+        required_account_id(order, "pending cancel")?;
         let event = OrderEventAny::PendingCancel(self.generate_order_pending_cancel(order));
 
         {
@@ -721,7 +753,7 @@ pub trait Strategy: DataActor {
         let params = params.filter(|params| !params.is_empty());
         let core = self.core_mut();
 
-        let trader_id = core.trader_id().expect("Trader ID not set");
+        let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_init = core.clock().timestamp_ns();
         let cache = core.cache();
@@ -818,6 +850,7 @@ pub trait Strategy: DataActor {
                 UUID4::new(),
                 ts_init,
                 params.clone(),
+                None, // correlation_id
             );
 
             manager.send_exec_command(TradingCommand::CancelAllOrders(command));
@@ -833,6 +866,7 @@ pub trait Strategy: DataActor {
                 UUID4::new(),
                 ts_init,
                 params,
+                None, // correlation_id
             );
 
             manager.send_emulator_command(TradingCommand::CancelAllOrders(command));
@@ -975,7 +1009,7 @@ pub trait Strategy: DataActor {
     ) -> anyhow::Result<()> {
         let core = self.core_mut();
 
-        let trader_id = core.trader_id().expect("Trader ID not set");
+        let trader_id = registered_trader_id(core)?;
         let ts_init = core.clock().timestamp_ns();
 
         let command = QueryAccount::new(
@@ -985,6 +1019,7 @@ pub trait Strategy: DataActor {
             UUID4::new(),
             ts_init,
             params,
+            None, // correlation_id
         );
 
         core.order_manager()
@@ -1008,7 +1043,7 @@ pub trait Strategy: DataActor {
     ) -> anyhow::Result<()> {
         let core = self.core_mut();
 
-        let trader_id = core.trader_id().expect("Trader ID not set");
+        let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_init = core.clock().timestamp_ns();
 
@@ -1022,6 +1057,7 @@ pub trait Strategy: DataActor {
             UUID4::new(),
             ts_init,
             params,
+            None, // correlation_id
         );
 
         core.order_manager()
@@ -1635,7 +1671,13 @@ pub trait Strategy: DataActor {
     /// and updates the cache.
     fn deny_order(&mut self, order: &OrderAny, reason: Ustr) {
         let core = self.core_mut();
-        let trader_id = core.trader_id().expect("Trader ID not set");
+        let Some(trader_id) = core.trader_id() else {
+            log::error!(
+                "Cannot deny order {}: trader_id is not set",
+                order.client_order_id()
+            );
+            return;
+        };
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_now = core.clock().timestamp_ns();
 
@@ -1836,6 +1878,20 @@ fn publish_order_initialized(order: &OrderAny) {
     msgbus::publish_order_event(topic.into(), &event);
 }
 
+fn registered_trader_id(core: &StrategyCore) -> anyhow::Result<TraderId> {
+    core.trader_id()
+        .ok_or_else(|| anyhow::anyhow!("Strategy not registered: trader_id is not set"))
+}
+
+fn required_account_id(order: &OrderAny, operation: &str) -> anyhow::Result<AccountId> {
+    order.account_id().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Cannot generate {operation} event for {}: account_id is not set",
+            order.client_order_id()
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, rc::Rc};
@@ -1996,6 +2052,7 @@ mod tests {
             ts_init: UnixNanos::default(),
             reconciliation: false,
             commission: None,
+            causation_id: None,
         })
     }
 
@@ -2010,7 +2067,8 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
+            reconciliation: false,
+            causation_id: None,
         })
     }
 
@@ -2025,8 +2083,9 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
-            due_post_only: 0,
+            reconciliation: false,
+            due_post_only: false,
+            causation_id: None,
         })
     }
 
@@ -2041,7 +2100,8 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
+            reconciliation: false,
+            causation_id: None,
         })
     }
 
@@ -2056,7 +2116,8 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
+            reconciliation: false,
+            causation_id: None,
         })
     }
 
@@ -2298,8 +2359,9 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
-            due_post_only: 0,
+            reconciliation: false,
+            due_post_only: false,
+            causation_id: None,
         });
 
         strategy.handle_order_event(event);
@@ -2412,6 +2474,34 @@ mod tests {
             OrderEventAny::Initialized(order.init_event().clone())
         );
         assert_eq!(timeline.borrow().as_slice(), &["init", "command"]);
+    }
+
+    #[rstest]
+    fn test_submit_order_errors_when_strategy_not_registered() {
+        let mut strategy = create_test_strategy();
+        let order = make_initialized_market_order("O-20250208-UNREGISTERED-001");
+
+        let err = strategy
+            .submit_order(order, None, None, None)
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(err, "Strategy not registered: trader_id is not set");
+    }
+
+    #[rstest]
+    fn test_required_account_id_errors_when_missing_for_strategy_event() {
+        let order = make_initialized_market_order("O-20250208-NO-ACCOUNT-001");
+
+        let err = required_account_id(&order, "pending cancel")
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(
+            err,
+            "Cannot generate pending cancel event for O-20250208-NO-ACCOUNT-001: \
+             account_id is not set"
+        );
     }
 
     #[rstest]
@@ -3937,6 +4027,47 @@ mod tests {
                 .contains("expected INITIALIZED")
         );
         assert!(event_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_submit_order_list_rejects_mixed_venues_with_friendly_error() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+
+        let binance_order = make_initialized_market_order("O-MIXED-VENUE-001");
+        let bybit_order = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("TEST-001"),
+            InstrumentId::from("BTCUSDT.BYBIT"),
+            ClientOrderId::from("O-MIXED-VENUE-002"),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            UnixNanos::default(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+
+        let result = strategy.submit_order_list(vec![binance_order, bybit_order], None, None, None);
+
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("OrderList denied: orders must share the same venue"),
+            "unexpected error: {msg}",
+        );
+        assert!(msg.contains("BINANCE"), "expected BINANCE in error: {msg}");
+        assert!(msg.contains("BYBIT"), "expected BYBIT in error: {msg}");
     }
 
     #[rstest]

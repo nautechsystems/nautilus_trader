@@ -28,6 +28,14 @@ use serde::{Deserialize, Serialize};
 /// Configuration for the execution tester strategy.
 #[derive(Debug, Clone, Deserialize, Serialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.testkit", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.testkit")
+)]
 pub struct ExecTesterConfig {
     /// Base strategy configuration.
     #[builder(default)]
@@ -68,6 +76,9 @@ pub struct ExecTesterConfig {
     pub book_levels_to_print: usize,
     /// Quantity to open position on start (positive for buy, negative for sell).
     pub open_position_on_start_qty: Option<Decimal>,
+    /// Delay opening the start position until the first quote arrives.
+    #[builder(default = false)]
+    pub open_position_on_first_quote: bool,
     /// Time in force for opening position order.
     #[builder(default = TimeInForce::Gtc)]
     pub open_position_time_in_force: TimeInForce,
@@ -184,6 +195,9 @@ pub struct ExecTesterConfig {
     /// Whether unsubscribe is supported on stop.
     #[builder(default = true)]
     pub can_unsubscribe: bool,
+    /// Clamp computed prices to the instrument's `[min_price, max_price]` before submit.
+    #[builder(default = false)]
+    pub clamp_to_instrument_price_range: bool,
 }
 
 impl ExecTesterConfig {
@@ -219,6 +233,7 @@ impl ExecTesterConfig {
             book_interval_ms: NonZeroUsize::new(1000).unwrap(),
             book_levels_to_print: 10,
             open_position_on_start_qty: None,
+            open_position_on_first_quote: false,
             open_position_time_in_force: TimeInForce::Gtc,
             enable_limit_buys: true,
             enable_limit_sells: true,
@@ -257,6 +272,7 @@ impl ExecTesterConfig {
             test_reject_reduce_only: false,
             test_modify_rejected: false,
             can_unsubscribe: true,
+            clamp_to_instrument_price_range: false,
         }
     }
 }

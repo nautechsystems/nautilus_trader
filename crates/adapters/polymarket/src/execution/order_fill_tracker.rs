@@ -51,14 +51,14 @@ pub(crate) struct OrderFillTrackerMap {
 }
 
 impl OrderFillTrackerMap {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             inner: Mutex::new(FifoCacheMap::default()),
         }
     }
 
     /// Register an order after HTTP accept.
-    pub fn register(
+    pub(crate) fn register(
         &self,
         venue_order_id: VenueOrderId,
         submitted_qty: Quantity,
@@ -84,7 +84,7 @@ impl OrderFillTrackerMap {
     }
 
     /// Returns true if the order has been registered (accepted).
-    pub fn contains(&self, venue_order_id: &VenueOrderId) -> bool {
+    pub(crate) fn contains(&self, venue_order_id: &VenueOrderId) -> bool {
         self.inner
             .lock()
             .expect(MUTEX_POISONED)
@@ -93,7 +93,7 @@ impl OrderFillTrackerMap {
     }
 
     /// Returns true if the order has received any fills or been removed (settled).
-    pub fn has_fills_or_settled(&self, venue_order_id: &VenueOrderId) -> bool {
+    pub(crate) fn has_fills_or_settled(&self, venue_order_id: &VenueOrderId) -> bool {
         let guard = self.inner.lock().expect(MUTEX_POISONED);
         match guard.get(venue_order_id) {
             Some(s) => s.cumulative_filled > 0.0,
@@ -102,7 +102,7 @@ impl OrderFillTrackerMap {
     }
 
     /// Returns the cumulative filled quantity for an order, if tracked.
-    pub fn get_cumulative_filled(&self, venue_order_id: &VenueOrderId) -> Option<f64> {
+    pub(crate) fn get_cumulative_filled(&self, venue_order_id: &VenueOrderId) -> Option<f64> {
         self.inner
             .lock()
             .expect(MUTEX_POISONED)
@@ -112,7 +112,7 @@ impl OrderFillTrackerMap {
 
     /// Returns `true` if cumulative fills have reached the submitted quantity
     /// (within a tight tolerance to account for f64 accumulation noise).
-    pub fn is_fully_filled(&self, venue_order_id: &VenueOrderId) -> bool {
+    pub(crate) fn is_fully_filled(&self, venue_order_id: &VenueOrderId) -> bool {
         self.inner
             .lock()
             .expect(MUTEX_POISONED)
@@ -124,7 +124,13 @@ impl OrderFillTrackerMap {
     }
 
     /// Record a fill, updating cumulative total and last price/ts.
-    pub fn record_fill(&self, venue_order_id: &VenueOrderId, qty: f64, px: f64, ts: UnixNanos) {
+    pub(crate) fn record_fill(
+        &self,
+        venue_order_id: &VenueOrderId,
+        qty: f64,
+        px: f64,
+        ts: UnixNanos,
+    ) {
         if let Some(s) = self
             .inner
             .lock()
@@ -143,7 +149,7 @@ impl OrderFillTrackerMap {
     ///
     /// Commission is intentionally not recomputed: it tracks the venue charge
     /// from the on-chain fill, which is independent of our local snap.
-    pub fn snap_fill_reports(&self, reports: &mut [FillReport]) {
+    pub(crate) fn snap_fill_reports(&self, reports: &mut [FillReport]) {
         for report in reports {
             report.last_qty = self.snap_fill_qty(&report.venue_order_id, report.last_qty);
         }
@@ -162,7 +168,11 @@ impl OrderFillTrackerMap {
     /// terminal state is known.
     ///
     /// See `docs/integrations/polymarket.md` (Fill quantity normalization).
-    pub fn snap_fill_qty(&self, venue_order_id: &VenueOrderId, fill_qty: Quantity) -> Quantity {
+    pub(crate) fn snap_fill_qty(
+        &self,
+        venue_order_id: &VenueOrderId,
+        fill_qty: Quantity,
+    ) -> Quantity {
         let guard = self.inner.lock().expect(MUTEX_POISONED);
         match guard.get(venue_order_id) {
             Some(s) => {
@@ -186,7 +196,7 @@ impl OrderFillTrackerMap {
     /// Removes the entry on dust settlement to prevent duplicate synthetic
     /// fills from repeated MATCHED events.
     #[expect(clippy::too_many_arguments)]
-    pub fn check_dust_and_build_fill(
+    pub(crate) fn check_dust_and_build_fill(
         &self,
         venue_order_id: &VenueOrderId,
         account_id: AccountId,

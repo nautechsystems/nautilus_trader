@@ -181,48 +181,42 @@ fn reader_chunked_iteration_yields_every_seq_over_disk_file() {
 #[rstest]
 fn reader_lookup_returns_seq_recorded_through_writer() {
     let tmp = TempDir::new().expect("tempdir");
-    let intent = "intent-Z".to_string();
     let cl_ord = "O-7".to_string();
     let venue = "V-7".to_string();
 
     let drafts = vec![
         entry_draft(10, Vec::new()),
-        entry_draft(11, vec![IndexKey::new(IndexKind::IntentId, intent.clone())]),
         entry_draft(
-            12,
+            11,
             vec![IndexKey::new(IndexKind::ClientOrderId, cl_ord.clone())],
         ),
         entry_draft(
-            13,
+            12,
             vec![IndexKey::new(IndexKind::VenueOrderId, venue.clone())],
         ),
     ];
     let final_hwm = seed_sealed_run(&tmp, "run-lookup", 300, drafts);
-    // 4 drafts + RunEnded.
-    assert_eq!(final_hwm, 5);
+    // 3 drafts + RunEnded.
+    assert_eq!(final_hwm, 4);
 
     let backend = RedbBackend::open_sealed(tmp.path(), INSTANCE_ID, "run-lookup").expect("open");
     let reader = EventStoreReader::new(backend);
 
     assert_eq!(
-        reader.lookup(IndexKind::IntentId, &intent).expect("lookup"),
-        Some(2),
-    );
-    assert_eq!(
         reader
             .lookup(IndexKind::ClientOrderId, &cl_ord)
             .expect("lookup"),
-        Some(3),
+        Some(2),
     );
     assert_eq!(
         reader
             .lookup(IndexKind::VenueOrderId, &venue)
             .expect("lookup"),
-        Some(4),
+        Some(3),
     );
     assert!(
         reader
-            .lookup(IndexKind::IntentId, "missing")
+            .lookup(IndexKind::ClientOrderId, "missing")
             .expect("lookup")
             .is_none(),
     );

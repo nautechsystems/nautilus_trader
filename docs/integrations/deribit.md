@@ -107,6 +107,161 @@ Examples:
 InstrumentId.from_str("BTC_USDC.DERIBIT")
 ```
 
+### Future combos
+
+Format: `{Currency}-FS-{LegA}_{LegB}`
+
+Legs are dated futures or the perpetual (denoted `PERP` inside combo names, even though the
+standalone instrument is `BTC-PERPETUAL`). The combo expires with its earliest leg.
+
+Examples:
+
+- `BTC-FS-25DEC26_PERP` - calendar spread between the Dec 2026 future and the perpetual.
+- `BTC-FS-22MAY26_19MAY26` - inter-month spread between two dated futures.
+
+```python
+InstrumentId.from_str("BTC-FS-25DEC26_PERP.DERIBIT")
+```
+
+The adapter models future combos as `CryptoFuturesSpread`, priced in USD as the spread
+between legs, with crypto settlement currency and `is_inverse` set per the upstream
+`instrument_type`.
+
+### Option combos
+
+Format: `{Currency}-{Strategy}-{DDMMMYY}-{Strikes}`
+
+Strategy codes include CS (call spread), PS (put spread), STRG (strangle), STRD (straddle),
+BOX (box), and RR (risk reversal). The strikes segment separates multiple strikes with `_`.
+
+Examples:
+
+- `BTC-CS-19MAY26-70000_75000` - 70k / 75k call spread expiring 19 May 2026.
+- `BTC-STRG-29MAY26-72000_80000` - 72k / 80k strangle.
+- `BTC-STRD-29MAY26-77000` - 77k straddle.
+- `BTC-BOX-25DEC26-58000_60000` - 58k / 60k box.
+
+```python
+InstrumentId.from_str("BTC-STRG-29MAY26-72000_80000.DERIBIT")
+```
+
+The adapter models option combos as `CryptoOptionSpread`, priced in the base currency under
+Deribit's inverse-option convention; fractional `size_increment` (e.g. `0.1`) is preserved
+end-to-end.
+
+## Traded expirations
+
+Deribit exposes active traded expirations through the `public/get_expirations` HTTP endpoint.
+Option-chain loaders can use the high-level HTTP client to refresh active option series without
+scanning every instrument.
+
+```rust tab="Rust"
+use nautilus_deribit::http::models::DeribitCurrency;
+
+let expirations = client
+    .request_option_expirations(DeribitCurrency::BTC)
+    .await?;
+```
+
+```python tab="Python"
+from nautilus_trader.adapters.deribit import DeribitCurrency
+from nautilus_trader.adapters.deribit import DeribitHttpClient
+
+client = DeribitHttpClient()
+expirations = await client.request_option_expirations(DeribitCurrency.BTC)
+```
+
+The high-level method returns option expirations only. For lower-level Rust requests, call
+`client.inner().get_expirations(...)` with `GetExpirationsParams`. Deribit returns a
+currency-keyed result for concrete currencies such as `BTC`, and a direct kind-keyed result for
+`currency=any`; the adapter handles both shapes.
+
+## Combo instruments
+
+The instrument provider loads combos when `product_types` includes
+`DeribitProductType.OptionCombo` or `DeribitProductType.FutureCombo`. Deribit exposes the leg
+makeup of every active combo on `/public/get_combos`, and the combo's trading metadata
+(tick size, contract size, expiration, min trade amount) on the standard
+`/public/get_instruments?kind=option_combo|future_combo` response.
+
+### Trade publishing
+
+Deribit publishes each combo trade twice:
+
+- On the combo's trade channel (`trades.{combo_name}.{interval}`): the parent trade plus a
+  `legs[]` array describing each leg fill.
+- On each leg's trade channel (`trades.{leg_instrument}.{interval}`): a standalone trade for the
+  leg, tagged with `combo_id` and `combo_trade_id` pointing back to the parent.
+
+A subscriber to a plain option or future therefore sees combo-origin fills on its existing
+trade stream, and a subscriber to the combo itself sees the combo-level trade. The adapter
+does not fan out combo parent messages into extra leg ticks; it forwards the upstream parent
+and per-leg messages as separate `TradeTick`s against their respective `InstrumentId`s, so a
+subscriber to both the combo and an underlying leg sees one combo tick plus one leg tick for
+that combo trade, not duplicate ticks against the same instrument.
+
+To have the Deribit data client open the real leg trade channels alongside a combo trade
+subscription, pass `params={"subscribe_combo_legs": True}` to `subscribe_trade_ticks`. When
+unsubscribing that combo trade stream, Nautilus also closes the leg subscriptions opened by
+this opt-in.
+
+Deribit already publishes block trades and Block RFQs per leg, so the adapter forwards
+them through the standard 1:1 trade path. See [Trade ID provenance](#trade-id-provenance)
+for how block- and RFQ-origin trades are tagged on the resulting `TradeTick`.
+
+### Historical combo trades
+
+The standard per-instrument trades endpoint accepts combo instrument names. To sweep all combos
+of a given product kind in one call, use `get_last_trades_by_currency` via
+`DeribitHttpClient::inner()`:
+
+```rust
+use nautilus_deribit::http::{
+    models::{DeribitCurrency, DeribitProductType},
+    query::GetLastTradesByCurrencyParams,
+};
+
+let params = GetLastTradesByCurrencyParams::builder()
+    .currency(DeribitCurrency::BTC)
+    .kind(DeribitProductType::FutureCombo)
+    .count(50_u32)
+    .include_old(true)
+    .build()?;
+let resp = client.inner().get_last_trades_by_currency(params).await?;
+```
+
+Each returned `DeribitPublicTrade` carries `legs: Option<Vec<DeribitTradeLeg>>` plus the
+`combo_id` and `combo_trade_id` fields used to correlate per-leg trades.
+
+## Trade ID provenance
+
+Public `TradeTick`s emitted by the adapter prefix the venue trade ID when the trade
+originated from a Block RFQ, a block trade, or a combo. Strategies that need to
+distinguish these from plain trades can pattern-match the prefix on `TradeTick.trade_id`.
+The raw Deribit `trade_id` is preserved after the prefix, so reconciliation against
+Deribit's own IDs is a prefix strip.
+
+| Prefix       | Source field    | Meaning                                                        |
+|--------------|-----------------|----------------------------------------------------------------|
+| `RFQ-`       | `block_rfq_id`  | Trade originated from a Block RFQ.                             |
+| `BLK-`       | `block_trade_id`| Trade is a (non‑RFQ) block trade.                              |
+| `COMBO-`     | `combo_id`      | Per‑leg trade whose parent originated from a combo instrument. |
+| *unprefixed* | (none of above) | Standard trade.                                                |
+
+Precedence when multiple tags are present: `RFQ-` > `BLK-` > `COMBO-`. Block RFQs are
+themselves block trades on Deribit, so the RFQ tag wins; combos executed as block trades
+are tagged `BLK-` because the block flow is the more important reconciliation signal.
+
+This applies only to public trades (`TradeTick`). `FillReport.trade_id` is unchanged so
+reconciliation against `get_user_trades_*` keeps working.
+
+:::note
+This is a one-way convention. Replay data captured before this version lacks prefixes.
+Strategies that store and compare `trade_id` strings across versions should strip the
+prefix on the new-data side, or filter by prefix only on data they know was captured
+post-upgrade.
+:::
+
 ## Order book subscriptions
 
 Deribit provides two types of order book feeds, each suited for different use cases.
@@ -134,10 +289,10 @@ This groups multiple order book changes into single messages.
 
 The Nautilus adapter supports both feed types via subscription parameters:
 
-| Parameter | Values | Notes |
-|-----------|--------|-------|
+| Parameter  | Values                 | Notes                                                                         |
+|------------|------------------------|-------------------------------------------------------------------------------|
 | `interval` | `raw`, `100ms`, `agg2` | Default: `100ms`. `agg2` batches at ~1 second intervals. `raw` requires auth. |
-| `depth` | `1`, `10`, `20` | Default: `10`. Number of price levels per side. |
+| `depth`    | `1`, `10`, `20`        | Default: `10`. Number of price levels per side.                               |
 
 ```python
 from nautilus_trader.model.identifiers import InstrumentId
@@ -571,6 +726,7 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 | `retry_delay_max_ms`               | `10,000`   | Maximum delay (milliseconds) between retries. |
 | `update_instruments_interval_mins` | `60`       | Interval (minutes) between instrument refreshes. |
 | `auto_load_missing_instruments`    | `False`    | Lazy‑load uncached instruments on subscribe; see [Lazy‑load on subscribe](#lazy-load-on-subscribe). |
+| `transport_backend`                | `Sockudo`  | WebSocket transport backend. |
 
 #### Lazy-load on subscribe
 
@@ -599,6 +755,7 @@ HTTP failures are logged and the WebSocket subscribe is skipped.
 | `max_retries`            | `3`        | Maximum retry attempts for recoverable errors. |
 | `retry_delay_initial_ms` | `1,000`    | Initial delay (milliseconds) before retrying. |
 | `retry_delay_max_ms`     | `10,000`   | Maximum delay (milliseconds) between retries. |
+| `transport_backend`      | `Sockudo`  | WebSocket transport backend. |
 
 ### Production configuration
 

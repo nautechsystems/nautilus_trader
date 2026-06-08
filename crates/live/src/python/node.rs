@@ -30,6 +30,17 @@ use nautilus_core::{
 use nautilus_model::identifiers::{ActorId, ComponentId, ExecAlgorithmId, StrategyId, TraderId};
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_system::get_global_pyo3_registry;
+#[cfg(feature = "examples")]
+use nautilus_testkit::{DataTester, DataTesterConfig, ExecTester, ExecTesterConfig};
+#[cfg(feature = "examples")]
+use nautilus_trading::examples::{
+    actors::{BookImbalanceActor, BookImbalanceActorConfig},
+    strategies::{
+        CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol, DeltaNeutralVolConfig,
+        EmaCross, EmaCrossConfig, GridMarketMaker, GridMarketMakerConfig, HurstVpinDirectional,
+        HurstVpinDirectionalConfig,
+    },
+};
 use nautilus_trading::{
     ImportableExecAlgorithmConfig, ImportableStrategyConfig,
     python::strategy::{PyStrategy, PyStrategyInner},
@@ -42,9 +53,19 @@ use serde_json;
 
 use crate::{
     builder::LiveNodeBuilder,
-    config::{LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig},
+    config::{
+        LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig,
+        PluginConfig,
+    },
     node::LiveNode,
+    python::config::coerce_json_config,
 };
+
+struct SendPtr<T>(*mut T);
+
+// SAFETY: `py_run` has exclusive access to `LiveNode` through `&mut self`.
+#[allow(unsafe_code)]
+unsafe impl<T> Send for SendPtr<T> {}
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
@@ -138,8 +159,7 @@ impl LiveNode {
         signal_module.call_method1("signal", (2, signal_callback))?;
 
         // Run the node and restore signal handler afterward
-        let result =
-            { get_runtime().block_on(async { self.run().await.map_err(to_pyruntime_err) }) };
+        let result = run_live_node_detached(py, self);
 
         // Restore original signal handler
         signal_module.call_method1("signal", (2, original_handler))?;
@@ -484,62 +504,55 @@ impl LiveNode {
         Ok(())
     }
 
-    /// Adds a native Rust strategy from its config.
-    ///
-    /// The config type determines which built-in strategy is constructed.
-    /// All execution happens in Rust; Python is the configuration layer.
-    ///
-    /// Custom native Rust strategies require the native strategy plugin API.
-    #[cfg(feature = "examples")]
-    #[pyo3(name = "add_native_strategy")]
-    fn py_add_native_strategy(&mut self, config: &Bound<'_, PyAny>) -> PyResult<()> {
-        use nautilus_trading::examples::strategies::{
-            CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol,
-            DeltaNeutralVolConfig, EmaCross, EmaCrossConfig, GridMarketMaker,
-            GridMarketMakerConfig, HurstVpinDirectional, HurstVpinDirectionalConfig,
+    /// Adds a Rust-native plug-in component from a cdylib.
+    #[pyo3(name = "add_plugin", signature = (path, type_name, config=None, sha256=None))]
+    fn py_add_plugin(
+        &mut self,
+        path: String,
+        type_name: String,
+        config: Option<HashMap<String, Py<PyAny>>>,
+        sha256: Option<String>,
+    ) -> PyResult<()> {
+        let config = PluginConfig {
+            path,
+            type_name,
+            config: match config {
+                Some(config) => coerce_json_config(config)?,
+                None => HashMap::new(),
+            },
+            sha256,
         };
 
-        if let Ok(config) = config.extract::<EmaCrossConfig>() {
-            self.add_strategy(EmaCross::from_config(config))
-                .map_err(to_pyruntime_err)
-        } else if let Ok(config) = config.extract::<GridMarketMakerConfig>() {
-            self.add_strategy(GridMarketMaker::new(config))
-                .map_err(to_pyruntime_err)
-        } else if let Ok(config) = config.extract::<CompositeMarketMakerConfig>() {
-            self.add_strategy(CompositeMarketMaker::new(config))
-                .map_err(to_pyruntime_err)
-        } else if let Ok(config) = config.extract::<DeltaNeutralVolConfig>() {
-            self.add_strategy(DeltaNeutralVol::new(config))
-                .map_err(to_pyruntime_err)
-        } else if let Ok(config) = config.extract::<HurstVpinDirectionalConfig>() {
-            self.add_strategy(HurstVpinDirectional::new(config))
-                .map_err(to_pyruntime_err)
-        } else {
-            let type_name = config.get_type().name()?;
-            Err(to_pytype_err(format!(
-                "Unsupported native strategy config type: {type_name}",
-            )))
-        }
+        self.add_plugin(config).map_err(to_pyruntime_err)
     }
 
-    /// Adds a native Rust actor from its config.
+    /// Adds a compiled-in native Rust strategy from its type name and config.
     ///
-    /// The config type determines which built-in actor is constructed.
+    /// The type name determines which built-in strategy is constructed.
+    /// All execution happens in Rust; Python is the configuration layer.
+    #[cfg(feature = "examples")]
+    #[pyo3(name = "add_native_strategy")]
+    fn py_add_native_strategy(
+        &mut self,
+        type_name: &str,
+        config: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let register = native_strategy_register(type_name).ok_or_else(|| {
+            to_pytype_err(format!("Unsupported native strategy type: {type_name}"))
+        })?;
+        register(self, config)
+    }
+
+    /// Adds a compiled-in native Rust actor from its type name and config.
+    ///
+    /// The type name determines which built-in actor is constructed.
     /// All execution happens in Rust; Python is the configuration layer.
     #[cfg(feature = "examples")]
     #[pyo3(name = "add_native_actor")]
-    fn py_add_native_actor(&mut self, config: &Bound<'_, PyAny>) -> PyResult<()> {
-        use nautilus_trading::examples::actors::{BookImbalanceActor, BookImbalanceActorConfig};
-
-        if let Ok(config) = config.extract::<BookImbalanceActorConfig>() {
-            self.add_actor(BookImbalanceActor::from_config(config))
-                .map_err(to_pyruntime_err)
-        } else {
-            let type_name = config.get_type().name()?;
-            Err(to_pytype_err(format!(
-                "Unsupported native actor config type: {type_name}",
-            )))
-        }
+    fn py_add_native_actor(&mut self, type_name: &str, config: &Bound<'_, PyAny>) -> PyResult<()> {
+        let register = native_actor_register(type_name)
+            .ok_or_else(|| to_pytype_err(format!("Unsupported native actor type: {type_name}")))?;
+        register(self, config)
     }
 
     #[allow(
@@ -712,6 +725,106 @@ impl LiveNode {
             self.is_running()
         )
     }
+}
+
+#[allow(unsafe_code)]
+fn run_live_node_detached(py: Python<'_>, node: &mut LiveNode) -> PyResult<()> {
+    let node_ptr = SendPtr(std::ptr::from_mut::<LiveNode>(node));
+
+    // SAFETY: `py_run` holds the only mutable reference to `LiveNode` until
+    // `run()` returns, and the detached closure completes before `py_run` can
+    // access `node` again.
+    unsafe {
+        py.detach(move || {
+            let ptr = node_ptr;
+            get_runtime().block_on(async { (*ptr.0).run().await })
+        })
+    }
+    .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+type NativeStrategyRegister = for<'py> fn(&mut LiveNode, &Bound<'py, PyAny>) -> PyResult<()>;
+
+#[cfg(feature = "examples")]
+type NativeActorRegister = for<'py> fn(&mut LiveNode, &Bound<'py, PyAny>) -> PyResult<()>;
+
+#[cfg(feature = "examples")]
+fn native_strategy_register(type_name: &str) -> Option<NativeStrategyRegister> {
+    match type_name {
+        "CompositeMarketMaker" => Some(register_composite_market_maker),
+        "DeltaNeutralVol" => Some(register_delta_neutral_vol),
+        "EmaCross" => Some(register_ema_cross),
+        "ExecTester" => Some(register_exec_tester),
+        "GridMarketMaker" => Some(register_grid_market_maker),
+        "HurstVpinDirectional" => Some(register_hurst_vpin_directional),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "examples")]
+fn native_actor_register(type_name: &str) -> Option<NativeActorRegister> {
+    match type_name {
+        "BookImbalanceActor" => Some(register_book_imbalance_actor),
+        "DataTester" => Some(register_data_tester),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "examples")]
+fn register_composite_market_maker(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<CompositeMarketMakerConfig>()?;
+    node.add_strategy(CompositeMarketMaker::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_delta_neutral_vol(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<DeltaNeutralVolConfig>()?;
+    node.add_strategy(DeltaNeutralVol::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_ema_cross(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<EmaCrossConfig>()?;
+    node.add_strategy(EmaCross::from_config(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_exec_tester(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<ExecTesterConfig>()?;
+    node.add_strategy(ExecTester::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_grid_market_maker(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<GridMarketMakerConfig>()?;
+    node.add_strategy(GridMarketMaker::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_hurst_vpin_directional(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<HurstVpinDirectionalConfig>()?;
+    node.add_strategy(HurstVpinDirectional::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_book_imbalance_actor(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<BookImbalanceActorConfig>()?;
+    node.add_actor(BookImbalanceActor::from_config(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_data_tester(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<DataTesterConfig>()?;
+    node.add_actor(DataTester::new(config))
+        .map_err(to_pyruntime_err)
 }
 
 /// Python wrapper for `LiveNodeBuilder` that uses interior mutability
@@ -1024,6 +1137,49 @@ impl LiveNodeBuilderPy {
         }
     }
 
+    #[pyo3(name = "add_simulated_exec_client")]
+    #[expect(clippy::needless_pass_by_value)]
+    fn py_add_simulated_exec_client(
+        &self,
+        name: Option<String>,
+        factory: Py<PyAny>,
+        config: Py<PyAny>,
+    ) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            Python::attach(|py| -> PyResult<Self> {
+                let registry = get_global_pyo3_registry();
+
+                let boxed_factory = registry.extract_sim_exec_factory(py, factory.clone_ref(py))?;
+                let boxed_config = registry.extract_config(py, config.clone_ref(py))?;
+
+                let factory_name = factory
+                    .getattr(py, "name")?
+                    .call0(py)?
+                    .extract::<String>(py)?;
+                let client_name = name.unwrap_or(factory_name);
+
+                match builder.add_simulated_exec_client(
+                    Some(client_name),
+                    boxed_factory,
+                    boxed_config,
+                ) {
+                    Ok(updated_builder) => {
+                        *inner_ref = Some(updated_builder);
+                        Ok(Self {
+                            inner: self.inner.clone(),
+                        })
+                    }
+                    Err(e) => Err(to_pyruntime_err(format!(
+                        "Failed to add simulated exec client: {e}"
+                    ))),
+                }
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
     #[pyo3(name = "build")]
     fn py_build(&self) -> PyResult<LiveNode> {
         let mut inner_ref = self.inner.borrow_mut();
@@ -1162,8 +1318,10 @@ mod tests {
         sync::{
             Arc,
             atomic::{AtomicBool, AtomicUsize, Ordering},
+            mpsc,
         },
-        time::Duration,
+        thread,
+        time::{Duration, Instant},
     };
 
     use async_trait::async_trait;
@@ -1191,6 +1349,7 @@ mod tests {
         Python,
         types::{PyAnyMethods, PyDict, PyModule, PyModuleMethods},
     };
+    use rstest::rstest;
 
     use super::LiveNode;
     #[derive(Debug, Default)]
@@ -1449,6 +1608,316 @@ class HistoricalBarsStrategy(Strategy):
             .expect("historical_bar_count should extract");
 
         (on_start, on_historical_bars, historical_bar_count)
+    }
+
+    fn install_timer_strategy_module(py: Python<'_>, module_name: &str) {
+        let module = PyModule::new(py, module_name).expect("test module should create");
+        module
+            .setattr("Strategy", py.get_type::<PyStrategy>())
+            .expect("Strategy type should bind");
+        module
+            .setattr("RESULTS", PyDict::new(py))
+            .expect("RESULTS should bind");
+
+        let code = CString::new(
+            r#"
+RESULTS["on_start"] = 0
+RESULTS["callback_timer_count"] = 0
+RESULTS["default_timer_count"] = 0
+RESULTS["callback_event_type"] = ""
+RESULTS["default_event_type"] = ""
+RESULTS["callback_event_name"] = ""
+RESULTS["default_event_name"] = ""
+
+class LiveTimerStrategy(Strategy):
+    def __init__(self):
+        super().__init__()
+
+    def on_start(self):
+        RESULTS["on_start"] += 1
+        self.clock.set_timer_ns(
+            "explicit_timer",
+            1_000_000,
+            callback=self._on_timer,
+            fire_immediately=True,
+        )
+        self.clock.set_timer_ns(
+            "default_timer",
+            1_000_000,
+            fire_immediately=True,
+        )
+
+    def on_stop(self):
+        pass
+
+    def _on_timer(self, event):
+        RESULTS["callback_timer_count"] += 1
+        RESULTS["callback_event_type"] = type(event).__name__
+        RESULTS["callback_event_name"] = event.name
+
+    def on_time_event(self, event):
+        RESULTS["default_timer_count"] += 1
+        RESULTS["default_event_type"] = type(event).__name__
+        RESULTS["default_event_name"] = event.name
+"#,
+        )
+        .expect("python test code should be valid CString");
+
+        py.run(code.as_c_str(), Some(&module.dict()), None)
+            .expect("test strategy code should execute");
+
+        let sys_modules = py
+            .import("sys")
+            .expect("sys should import")
+            .getattr("modules")
+            .expect("sys.modules should exist");
+        sys_modules
+            .set_item(module_name, module)
+            .expect("test strategy module should register");
+    }
+
+    #[derive(Debug)]
+    struct TimerStrategyResults {
+        on_start: usize,
+        callback_timer_count: usize,
+        default_timer_count: usize,
+        callback_event_type: String,
+        default_event_type: String,
+        callback_event_name: String,
+        default_event_name: String,
+    }
+
+    fn get_timer_results(py: Python<'_>, module_name: &str) -> TimerStrategyResults {
+        let module = py
+            .import(module_name)
+            .expect("test strategy module should import");
+        let results_obj = module.getattr("RESULTS").expect("RESULTS should exist");
+        let results = results_obj
+            .cast::<PyDict>()
+            .expect("RESULTS should be a dict");
+
+        TimerStrategyResults {
+            on_start: results
+                .get_item("on_start")
+                .expect("on_start key should exist")
+                .extract::<usize>()
+                .expect("on_start should extract"),
+            callback_timer_count: results
+                .get_item("callback_timer_count")
+                .expect("callback_timer_count key should exist")
+                .extract::<usize>()
+                .expect("callback_timer_count should extract"),
+            default_timer_count: results
+                .get_item("default_timer_count")
+                .expect("default_timer_count key should exist")
+                .extract::<usize>()
+                .expect("default_timer_count should extract"),
+            callback_event_type: results
+                .get_item("callback_event_type")
+                .expect("callback_event_type key should exist")
+                .extract::<String>()
+                .expect("callback_event_type should extract"),
+            default_event_type: results
+                .get_item("default_event_type")
+                .expect("default_event_type key should exist")
+                .extract::<String>()
+                .expect("default_event_type should extract"),
+            callback_event_name: results
+                .get_item("callback_event_name")
+                .expect("callback_event_name key should exist")
+                .extract::<String>()
+                .expect("callback_event_name should extract"),
+            default_event_name: results
+                .get_item("default_event_name")
+                .expect("default_event_name key should exist")
+                .extract::<String>()
+                .expect("default_event_name should extract"),
+        }
+    }
+
+    #[cfg(feature = "examples")]
+    #[rstest]
+    #[case("CompositeMarketMaker")]
+    #[case("DeltaNeutralVol")]
+    #[case("EmaCross")]
+    #[case("ExecTester")]
+    #[case("GridMarketMaker")]
+    #[case("HurstVpinDirectional")]
+    fn test_native_strategy_register_accepts_supported_names(#[case] type_name: &str) {
+        assert!(super::native_strategy_register(type_name).is_some());
+    }
+
+    #[cfg(feature = "examples")]
+    #[rstest]
+    #[case("BookImbalanceActor")]
+    #[case("DataTester")]
+    fn test_native_actor_register_accepts_supported_names(#[case] type_name: &str) {
+        assert!(super::native_actor_register(type_name).is_some());
+    }
+
+    #[cfg(feature = "examples")]
+    #[rstest]
+    fn test_native_register_rejects_unknown_names() {
+        assert!(super::native_strategy_register("UnknownStrategy").is_none());
+        assert!(super::native_actor_register("UnknownActor").is_none());
+    }
+
+    #[cfg(feature = "examples")]
+    #[rstest]
+    fn test_native_strategy_register_rejects_mismatched_config() {
+        Python::initialize();
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+
+        Python::attach(|py| {
+            let register = super::native_strategy_register("EmaCross").unwrap();
+            let config = PyDict::new(py);
+            let error = register(&mut node, config.as_any()).unwrap_err();
+
+            assert!(error.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
+        });
+    }
+
+    #[cfg(feature = "examples")]
+    #[rstest]
+    fn test_native_actor_register_rejects_mismatched_config() {
+        Python::initialize();
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+
+        Python::attach(|py| {
+            let register = super::native_actor_register("DataTester").unwrap();
+            let config = PyDict::new(py);
+            let error = register(&mut node, config.as_any()).unwrap_err();
+
+            assert!(error.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
+        });
+    }
+
+    #[rstest]
+    fn test_run_live_node_detached_releases_gil() {
+        Python::initialize();
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .build()
+            .unwrap();
+
+        let handle = node.handle();
+        let (gil_tx, gil_rx) = mpsc::channel();
+        let acquired_before_stop = Arc::new(AtomicBool::new(false));
+        let acquired_before_stop_for_thread = acquired_before_stop.clone();
+
+        let stop_thread = thread::spawn(move || {
+            if gil_rx.recv_timeout(Duration::from_secs(1)).is_ok() {
+                acquired_before_stop_for_thread.store(true, Ordering::SeqCst);
+            }
+            handle.stop();
+        });
+
+        let gil_thread = thread::spawn(move || {
+            Python::attach(|_| {});
+            let _ = gil_tx.send(());
+        });
+
+        Python::attach(|py| {
+            super::run_live_node_detached(py, &mut node).expect("node should run cleanly");
+        });
+
+        stop_thread.join().expect("stop thread should join");
+        gil_thread.join().expect("GIL thread should join");
+
+        assert!(
+            acquired_before_stop.load(Ordering::SeqCst),
+            "worker thread should acquire the GIL while LiveNode::run is blocked"
+        );
+    }
+
+    #[rstest]
+    fn test_live_node_pystrategy_timer_callbacks_run_on_event_loop() {
+        Python::initialize();
+
+        let module_name = "test_live_node_timer_strategy";
+        Python::attach(|py| install_timer_strategy_module(py, module_name));
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .build()
+            .unwrap();
+
+        let importable = ImportableStrategyConfig {
+            strategy_path: format!("{module_name}:LiveTimerStrategy"),
+            config_path: String::new(),
+            config: HashMap::new(),
+        };
+
+        Python::attach(|py| {
+            node.py_add_strategy_from_config(py, importable)
+                .expect("strategy should register");
+        });
+
+        let handle = node.handle();
+        let stop_handle = handle.clone();
+        let watchdog_handle = handle;
+        let (done_tx, done_rx) = mpsc::channel();
+        let module_name_for_stop = module_name.to_string();
+
+        let stop_thread = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+
+            loop {
+                let fired = Python::attach(|py| {
+                    let results = get_timer_results(py, &module_name_for_stop);
+                    results.callback_timer_count > 0 && results.default_timer_count > 0
+                });
+
+                if fired || Instant::now() >= deadline {
+                    break;
+                }
+
+                thread::sleep(Duration::from_millis(20));
+            }
+
+            stop_handle.stop();
+        });
+
+        let watchdog_thread = thread::spawn(move || {
+            if done_rx.recv_timeout(Duration::from_secs(5)).is_err() {
+                watchdog_handle.stop();
+            }
+        });
+
+        Python::attach(|py| {
+            super::run_live_node_detached(py, &mut node).expect("node should run cleanly");
+        });
+
+        let _ = done_tx.send(());
+        stop_thread.join().expect("stop thread should join");
+        watchdog_thread.join().expect("watchdog thread should join");
+
+        let results = Python::attach(|py| get_timer_results(py, module_name));
+
+        assert_eq!(results.on_start, 1);
+        assert!(results.callback_timer_count > 0);
+        assert!(results.default_timer_count > 0);
+        assert_eq!(results.callback_event_type, "TimeEvent");
+        assert_eq!(results.default_event_type, "TimeEvent");
+        assert_eq!(results.callback_event_name, "explicit_timer");
+        assert_eq!(results.default_event_name, "default_timer");
     }
 
     #[tokio::test(flavor = "current_thread")]

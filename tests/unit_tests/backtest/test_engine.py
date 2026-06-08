@@ -156,6 +156,16 @@ class TestBacktestEngine:
         assert self.engine.backtest_end is None
         assert self.engine.iteration == 0  # No exceptions raised
 
+    def test_reset_preserves_strategies(self):
+        # Arrange
+        self.engine.add_strategy(Strategy())
+
+        # Act
+        self.engine.reset()
+
+        # Assert
+        assert len(self.engine.trader.strategies()) == 1
+
     def test_clear_actors_with_no_actors(self):
         # Arrange, Act, Assert
         self.engine.clear_actors()
@@ -231,6 +241,18 @@ class TestBacktestEngine:
         # Assert
         assert len(report) == 1
         assert report.index[0] == start
+
+    def test_account_state_timestamp_after_reset(self):
+        start_a = pd.Timestamp("2013-01-31 23:59:59.700000+00:00")
+        self.engine.run(start=start_a)
+        self.engine.reset()
+
+        start_b = pd.Timestamp("2013-02-01 00:00:00+00:00")
+        self.engine.run(start=start_b)
+        report = self.engine.trader.generate_account_report(Venue("SIM"))
+
+        assert len(report) == 1
+        assert report.index[0] == start_b
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_persistence_files_cleaned_up(self, tmp_path: Path) -> None:

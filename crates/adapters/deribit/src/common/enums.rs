@@ -50,7 +50,7 @@ use strum::{AsRefStr, Display as StrumDisplay, EnumIter, EnumString};
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.deribit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.deribit")
 )]
 pub enum DeribitProductType {
     /// Future contract
@@ -85,7 +85,7 @@ pub enum DeribitProductType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.deribit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.deribit")
 )]
 pub enum DeribitCurrency {
     /// Bitcoin
@@ -268,7 +268,7 @@ impl TryFrom<TimeInForce> for DeribitTimeInForce {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.deribit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.deribit")
 )]
 pub enum DeribitEnvironment {
     /// Live trading environment.

@@ -32,7 +32,7 @@ use nautilus_model::identifiers::{ComponentId, TraderId};
 use ustr::Ustr;
 
 use crate::{
-    actor::{Actor, registry::get_actor_registry},
+    actor::{Actor, registry::with_actor_registry},
     cache::Cache,
     clock::Clock,
     enums::{ComponentState, ComponentTrigger},
@@ -118,7 +118,7 @@ pub trait Component {
         self.transition_state(ComponentTrigger::Start)?; // -> Starting
 
         if let Err(e) = self.on_start() {
-            log_error(&e);
+            log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
 
@@ -136,7 +136,7 @@ pub trait Component {
         self.transition_state(ComponentTrigger::Stop)?; // -> Stopping
 
         if let Err(e) = self.on_stop() {
-            log_error(&e);
+            log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
 
@@ -154,7 +154,7 @@ pub trait Component {
         self.transition_state(ComponentTrigger::Resume)?; // -> Resuming
 
         if let Err(e) = self.on_resume() {
-            log_error(&e);
+            log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
 
@@ -172,7 +172,7 @@ pub trait Component {
         self.transition_state(ComponentTrigger::Degrade)?; // -> Degrading
 
         if let Err(e) = self.on_degrade() {
-            log_error(&e);
+            log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
 
@@ -190,7 +190,7 @@ pub trait Component {
         self.transition_state(ComponentTrigger::Fault)?; // -> Faulting
 
         if let Err(e) = self.on_fault() {
-            log_error(&e);
+            log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
 
@@ -208,7 +208,7 @@ pub trait Component {
         self.transition_state(ComponentTrigger::Reset)?; // -> Resetting
 
         if let Err(e) = self.on_reset() {
-            log_error(&e);
+            log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
 
@@ -226,7 +226,7 @@ pub trait Component {
         self.transition_state(ComponentTrigger::Dispose)?; // -> Disposing
 
         if let Err(e) = self.on_dispose() {
-            log_error(&e);
+            log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
 
@@ -319,8 +319,8 @@ pub trait Component {
     }
 }
 
-fn log_error(e: &anyhow::Error) {
-    log::error!("{e}");
+fn log_error(component: ComponentId, e: &anyhow::Error) {
+    log::error!(component = component.as_str(); "{e}");
 }
 
 #[rustfmt::skip]
@@ -448,17 +448,12 @@ impl BorrowGuard {
 
 impl Drop for BorrowGuard {
     fn drop(&mut self) {
-        get_component_registry().release_borrow(&self.id);
+        with_component_registry(|registry| registry.release_borrow(&self.id));
     }
 }
 
-/// Returns a reference to the global component registry.
-pub fn get_component_registry() -> &'static ComponentRegistry {
-    COMPONENT_REGISTRY.with(|registry| unsafe {
-        // SAFETY: We return a static reference that lives for the lifetime of the thread.
-        // Since this is thread_local storage, each thread has its own instance.
-        std::mem::transmute::<&ComponentRegistry, &'static ComponentRegistry>(registry)
-    })
+pub fn with_component_registry<R>(f: impl FnOnce(&ComponentRegistry) -> R) -> R {
+    COMPONENT_REGISTRY.with(f)
 }
 
 /// Registers a component.
@@ -471,7 +466,7 @@ where
 
     // Register in component registry
     let component_trait_ref: Rc<UnsafeCell<dyn Component>> = component_ref.clone();
-    get_component_registry().insert(component_id, component_trait_ref);
+    with_component_registry(|registry| registry.insert(component_id, component_trait_ref));
 
     component_ref
 }
@@ -487,11 +482,11 @@ where
 
     // Register in component registry
     let component_trait_ref: Rc<UnsafeCell<dyn Component>> = component_ref.clone();
-    get_component_registry().insert(component_id, component_trait_ref);
+    with_component_registry(|registry| registry.insert(component_id, component_trait_ref));
 
     // Register in actor registry
     let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = component_ref.clone();
-    get_actor_registry().insert(actor_id, actor_trait_ref);
+    with_actor_registry(|registry| registry.insert(actor_id, actor_trait_ref));
 
     component_ref
 }
@@ -504,17 +499,20 @@ where
 /// - Returns an error if the component is already borrowed.
 /// - Returns an error if `start()` fails.
 pub fn start_component(id: &Ustr) -> anyhow::Result<()> {
-    let registry = get_component_registry();
-    let component_ref = registry
-        .get(id)
-        .ok_or_else(|| anyhow::anyhow!("Component '{id}' not found in global registry"))?;
+    let component_ref = with_component_registry(|registry| {
+        let component_ref = registry
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("Component '{id}' not found in global registry"))?;
 
-    if !registry.try_borrow(*id) {
-        anyhow::bail!(
-            "Component '{id}' is already mutably borrowed. \
-             This would create aliasing mutable references (undefined behavior)."
-        );
-    }
+        if !registry.try_borrow(*id) {
+            anyhow::bail!(
+                "Component '{id}' is already mutably borrowed. \
+                 This would create aliasing mutable references (undefined behavior)."
+            );
+        }
+
+        Ok::<_, anyhow::Error>(component_ref)
+    })?;
 
     let _guard = BorrowGuard::new(*id);
 
@@ -533,17 +531,20 @@ pub fn start_component(id: &Ustr) -> anyhow::Result<()> {
 /// - Returns an error if the component is already borrowed.
 /// - Returns an error if `stop()` fails.
 pub fn stop_component(id: &Ustr) -> anyhow::Result<()> {
-    let registry = get_component_registry();
-    let component_ref = registry
-        .get(id)
-        .ok_or_else(|| anyhow::anyhow!("Component '{id}' not found in global registry"))?;
+    let component_ref = with_component_registry(|registry| {
+        let component_ref = registry
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("Component '{id}' not found in global registry"))?;
 
-    if !registry.try_borrow(*id) {
-        anyhow::bail!(
-            "Component '{id}' is already mutably borrowed. \
-             This would create aliasing mutable references (undefined behavior)."
-        );
-    }
+        if !registry.try_borrow(*id) {
+            anyhow::bail!(
+                "Component '{id}' is already mutably borrowed. \
+                 This would create aliasing mutable references (undefined behavior)."
+            );
+        }
+
+        Ok::<_, anyhow::Error>(component_ref)
+    })?;
 
     let _guard = BorrowGuard::new(*id);
 
@@ -562,17 +563,20 @@ pub fn stop_component(id: &Ustr) -> anyhow::Result<()> {
 /// - Returns an error if the component is already borrowed.
 /// - Returns an error if `reset()` fails.
 pub fn reset_component(id: &Ustr) -> anyhow::Result<()> {
-    let registry = get_component_registry();
-    let component_ref = registry
-        .get(id)
-        .ok_or_else(|| anyhow::anyhow!("Component '{id}' not found in global registry"))?;
+    let component_ref = with_component_registry(|registry| {
+        let component_ref = registry
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("Component '{id}' not found in global registry"))?;
 
-    if !registry.try_borrow(*id) {
-        anyhow::bail!(
-            "Component '{id}' is already mutably borrowed. \
-             This would create aliasing mutable references (undefined behavior)."
-        );
-    }
+        if !registry.try_borrow(*id) {
+            anyhow::bail!(
+                "Component '{id}' is already mutably borrowed. \
+                 This would create aliasing mutable references (undefined behavior)."
+            );
+        }
+
+        Ok::<_, anyhow::Error>(component_ref)
+    })?;
 
     let _guard = BorrowGuard::new(*id);
 
@@ -591,17 +595,20 @@ pub fn reset_component(id: &Ustr) -> anyhow::Result<()> {
 /// - Returns an error if the component is already borrowed.
 /// - Returns an error if `dispose()` fails.
 pub fn dispose_component(id: &Ustr) -> anyhow::Result<()> {
-    let registry = get_component_registry();
-    let component_ref = registry
-        .get(id)
-        .ok_or_else(|| anyhow::anyhow!("Component '{id}' not found in global registry"))?;
+    let component_ref = with_component_registry(|registry| {
+        let component_ref = registry
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("Component '{id}' not found in global registry"))?;
 
-    if !registry.try_borrow(*id) {
-        anyhow::bail!(
-            "Component '{id}' is already mutably borrowed. \
-             This would create aliasing mutable references (undefined behavior)."
-        );
-    }
+        if !registry.try_borrow(*id) {
+            anyhow::bail!(
+                "Component '{id}' is already mutably borrowed. \
+                 This would create aliasing mutable references (undefined behavior)."
+            );
+        }
+
+        Ok::<_, anyhow::Error>(component_ref)
+    })?;
 
     let _guard = BorrowGuard::new(*id);
 
@@ -614,25 +621,30 @@ pub fn dispose_component(id: &Ustr) -> anyhow::Result<()> {
 
 /// Returns a component from the global registry by ID.
 pub fn get_component(id: &Ustr) -> Option<Rc<UnsafeCell<dyn Component>>> {
-    get_component_registry().get(id)
+    with_component_registry(|registry| registry.get(id))
 }
 
 #[cfg(test)]
 /// Clears the component registry (for test isolation).
 pub fn clear_component_registry() {
-    let registry = get_component_registry();
-    registry.components.borrow_mut().clear();
-    registry.borrows.borrow_mut().clear();
+    with_component_registry(|registry| {
+        registry.components.borrow_mut().clear();
+        registry.borrows.borrow_mut().clear();
+    });
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::{
+        any::Any,
+        sync::atomic::{AtomicBool, Ordering},
+    };
 
     use rstest::rstest;
 
     use super::*;
 
+    #[derive(Debug)]
     struct TestComponent {
         id: ComponentId,
         state: ComponentState,
@@ -646,6 +658,18 @@ mod tests {
                 state: ComponentState::Ready,
                 should_panic,
             }
+        }
+    }
+
+    impl Actor for TestComponent {
+        fn id(&self) -> Ustr {
+            self.id.inner()
+        }
+
+        fn handle(&mut self, _msg: &dyn Any) {}
+
+        fn as_any(&self) -> &dyn Any {
+            self
         }
     }
 
@@ -694,7 +718,7 @@ mod tests {
         let component_id = component.id.inner();
 
         let component_ref = Rc::new(UnsafeCell::new(component));
-        get_component_registry().insert(component_id, component_ref);
+        with_component_registry(|registry| registry.insert(component_id, component_ref));
 
         // First borrow via start_component should succeed
         let result1 = start_component(&id);
@@ -714,13 +738,15 @@ mod tests {
         let component_id = component.id.inner();
 
         let component_ref = Rc::new(UnsafeCell::new(component));
-        get_component_registry().insert(component_id, component_ref);
+        with_component_registry(|registry| registry.insert(component_id, component_ref));
 
         // Call start - borrow should be released after
         let _ = start_component(&id);
 
         // Verify not marked as borrowed
-        assert!(!get_component_registry().is_borrowed(&id));
+        assert!(!with_component_registry(
+            |registry| registry.is_borrowed(&id)
+        ));
     }
 
     #[rstest]
@@ -732,7 +758,7 @@ mod tests {
         let component_id = component.id.inner();
 
         let component_ref = Rc::new(UnsafeCell::new(component));
-        get_component_registry().insert(component_id, component_ref);
+        with_component_registry(|registry| registry.insert(component_id, component_ref));
 
         // Call start which will panic - catch the panic
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -742,7 +768,7 @@ mod tests {
 
         // Borrow should still be released due to BorrowGuard drop
         assert!(
-            !get_component_registry().is_borrowed(&id),
+            !with_component_registry(|registry| registry.is_borrowed(&id)),
             "Borrow was not released after panic"
         );
     }

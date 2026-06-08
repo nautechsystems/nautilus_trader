@@ -61,6 +61,8 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
         If ``None`` then defaults to LIVE.
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
+    load_spreads : bool, default False
+        If True, load OKX Nitro spread instruments from the spread endpoint.
     vip_level : OKXVipLevel, optional
         The account VIP level to determine book subscriptions.
         - Only VIP4 and above in trading fee tier are allowed to subscribe to "books50-l2-tbt" 50 depth channels (10 ms updates).
@@ -83,6 +85,7 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     retry_delay_initial_ms: PositiveInt | None = 1_000
     retry_delay_max_ms: PositiveInt | None = 10_000
     update_instruments_interval_mins: PositiveInt | None = 60
+    load_spreads: bool = False
     vip_level: OKXVipLevel | None = None
 
 
@@ -153,6 +156,8 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
         If False, SPOT instruments return FLAT position reports (default behavior).
     ws_auth_timeout_secs : PositiveInt, default 30
         The timeout (seconds) for WebSocket authentication.
+    load_spreads : bool, default False
+        If True, load OKX Nitro spread instruments and subscribe to spread order updates.
 
     """
 
@@ -176,3 +181,4 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     use_mm_mass_cancel: bool = False
     use_spot_cash_position_reports: bool = False
     ws_auth_timeout_secs: PositiveInt | None = 30
+    load_spreads: bool = False

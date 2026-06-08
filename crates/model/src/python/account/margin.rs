@@ -307,8 +307,8 @@ impl MarginAccount {
 
     /// Returns the initial margin amount for the specified instrument.
     #[pyo3(name = "initial_margin")]
-    fn py_initial_margin(&self, instrument_id: InstrumentId) -> Money {
-        self.initial_margin(instrument_id)
+    fn py_initial_margin(&self, instrument_id: InstrumentId) -> Option<Money> {
+        self.margin(&instrument_id).map(|margin| margin.initial)
     }
 
     /// Updates the maintenance margin for the specified instrument.
@@ -323,8 +323,8 @@ impl MarginAccount {
 
     /// Returns the maintenance margin amount for the specified instrument.
     #[pyo3(name = "maintenance_margin")]
-    fn py_maintenance_margin(&self, instrument_id: InstrumentId) -> Money {
-        self.maintenance_margin(instrument_id)
+    fn py_maintenance_margin(&self, instrument_id: InstrumentId) -> Option<Money> {
+        self.margin(&instrument_id).map(|margin| margin.maintenance)
     }
 
     #[pyo3(name = "calculate_initial_margin")]
@@ -357,7 +357,13 @@ impl MarginAccount {
             InstrumentAny::CryptoFuture(inst) => self
                 .calculate_initial_margin(&inst, quantity, price, use_quote_for_inverse)
                 .map_err(to_pyvalue_err),
+            InstrumentAny::CryptoFuturesSpread(inst) => self
+                .calculate_initial_margin(&inst, quantity, price, use_quote_for_inverse)
+                .map_err(to_pyvalue_err),
             InstrumentAny::CryptoOption(inst) => self
+                .calculate_initial_margin(&inst, quantity, price, use_quote_for_inverse)
+                .map_err(to_pyvalue_err),
+            InstrumentAny::CryptoOptionSpread(inst) => self
                 .calculate_initial_margin(&inst, quantity, price, use_quote_for_inverse)
                 .map_err(to_pyvalue_err),
             InstrumentAny::CryptoPerpetual(inst) => self
@@ -423,7 +429,13 @@ impl MarginAccount {
             InstrumentAny::CryptoFuture(inst) => self
                 .calculate_maintenance_margin(&inst, quantity, price, use_quote_for_inverse)
                 .map_err(to_pyvalue_err),
+            InstrumentAny::CryptoFuturesSpread(inst) => self
+                .calculate_maintenance_margin(&inst, quantity, price, use_quote_for_inverse)
+                .map_err(to_pyvalue_err),
             InstrumentAny::CryptoOption(inst) => self
+                .calculate_maintenance_margin(&inst, quantity, price, use_quote_for_inverse)
+                .map_err(to_pyvalue_err),
+            InstrumentAny::CryptoOptionSpread(inst) => self
                 .calculate_maintenance_margin(&inst, quantity, price, use_quote_for_inverse)
                 .map_err(to_pyvalue_err),
             InstrumentAny::CryptoPerpetual(inst) => self

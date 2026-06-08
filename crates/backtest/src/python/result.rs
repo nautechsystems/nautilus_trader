@@ -79,6 +79,15 @@ impl BacktestResult {
     }
 
     #[getter]
+    #[pyo3(name = "summary")]
+    fn py_summary(&self) -> HashMap<String, String> {
+        self.summary
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect()
+    }
+
+    #[getter]
     #[pyo3(name = "stats_pnls")]
     fn py_stats_pnls(&self) -> HashMap<String, HashMap<String, f64>> {
         self.stats_pnls

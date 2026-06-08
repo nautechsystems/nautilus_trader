@@ -39,6 +39,7 @@
 //! or as part of a Rust only build.
 //!
 //! - `node` (default): Enables the full live node, builder, config, and execution manager.
+//! - `plugin` (default): Enables the host-side plug-in adapters and loader from `nautilus-plugin`.
 //! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `streaming`: Enables `persistence` dependency for streaming configuration (requires `node`).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `node` and `streaming`).
@@ -58,6 +59,21 @@
 //! With `node` disabled, this crate exposes only `emitter` and `runner`, and skips
 //! the transitive dependencies on `nautilus-system`, `nautilus-trading`,
 //! `nautilus-portfolio`, `nautilus-risk`, and `nautilus-data`.
+//!
+//! # Opting out of plug-in support
+//!
+//! Builds that statically link every actor and strategy can drop the plug-in
+//! adapter machinery (and its `libloading`-backed loader) by disabling the
+//! `plugin` feature:
+//!
+//! ```toml
+//! nautilus-live = { workspace = true, default-features = false, features = ["node"] }
+//! ```
+//!
+//! With `plugin` disabled, the `plugin` module is removed, the unsafe FFI
+//! surface that supports it does not link, and `nautilus-plugin` is not pulled
+//! into the dependency graph. A non-empty `LiveNodeConfig.plugins` list is
+//! rejected at build time under this configuration.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -73,17 +89,26 @@ pub mod runner;
 
 #[cfg(feature = "node")]
 pub mod builder;
+
 #[cfg(feature = "node")]
 pub mod config;
+
 #[cfg(feature = "node")]
 pub mod manager;
+
 #[cfg(feature = "node")]
 pub mod node;
+
+#[cfg(feature = "node")]
+mod execution;
+
+#[cfg(feature = "plugin")]
+pub mod plugin;
+
+#[cfg(feature = "python")]
+pub mod python;
 
 // Re-exports for adapters
 pub use emitter::ExecutionEventEmitter;
 pub use nautilus_common::factories::OrderEventFactory;
 pub use nautilus_execution::client::core::ExecutionClientCore;
-
-#[cfg(feature = "python")]
-pub mod python;

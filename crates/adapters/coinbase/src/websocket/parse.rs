@@ -15,25 +15,34 @@
 
 //! Parsing functions for converting Coinbase WebSocket messages to Nautilus domain types.
 
+use std::str::FromStr;
+
 use anyhow::Context;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
-    enums::{BookAction, LiquiditySide, OrderSide, OrderStatus, RecordFlag},
+    data::{
+        Bar, BarType, BookOrder, InstrumentStatus, OrderBookDelta, OrderBookDeltas, QuoteTick,
+        TradeTick,
+    },
+    enums::{BookAction, LiquiditySide, MarketStatusAction, OrderSide, OrderStatus, RecordFlag},
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
 };
+use rust_decimal::{Decimal, prelude::ToPrimitive};
+use ustr::Ustr;
 
 use crate::{
+    common::enums::CoinbaseProductStatus,
     http::parse::{
         coinbase_side_to_aggressor, parse_epoch_secs_timestamp, parse_order_side,
         parse_order_status, parse_order_type, parse_price, parse_quantity, parse_rfc3339_timestamp,
         parse_time_in_force,
     },
     websocket::messages::{
-        WsBookSide, WsCandle, WsL2DataEvent, WsL2Update, WsOrderUpdate, WsTicker, WsTrade,
+        WsBookSide, WsCandle, WsL2DataEvent, WsL2Update, WsOrderUpdate, WsStatusProduct, WsTicker,
+        WsTrade,
     },
 };
 
@@ -117,6 +126,7 @@ pub fn parse_ws_l2_snapshot(
     let mut deltas = Vec::with_capacity(total + 1);
 
     let mut clear = OrderBookDelta::clear(instrument_id, 0, ts_event, ts_init);
+    clear.flags |= RecordFlag::F_SNAPSHOT as u8;
 
     if total == 0 {
         clear.flags |= RecordFlag::F_LAST as u8;
@@ -196,7 +206,7 @@ fn parse_l2_delta(
     let size = parse_quantity(&update.new_quantity, size_precision)?;
     let side = ws_book_side_to_order_side(update.side);
 
-    let mut flags = RecordFlag::F_MBP as u8;
+    let mut flags = RecordFlag::F_MBP as u8 | RecordFlag::F_SNAPSHOT as u8;
 
     if is_last {
         flags |= RecordFlag::F_LAST as u8;
@@ -297,10 +307,11 @@ pub fn parse_ws_user_event_to_order_status_report(
     );
 
     if !update.avg_price.is_empty()
-        && let Ok(avg_px) = update.avg_price.parse::<f64>()
-        && avg_px > 0.0
+        && let Ok(avg_decimal) = Decimal::from_str(&update.avg_price)
+        && avg_decimal.is_sign_positive()
+        && !avg_decimal.is_zero()
     {
-        report = report.with_avg_px(avg_px)?;
+        report = report.with_avg_px(avg_decimal.to_f64().unwrap_or_default())?;
     }
 
     Ok(report)
@@ -356,6 +367,44 @@ pub fn parse_ws_user_event_to_fill_report(
         ts_init,
         None,
     )
+}
+
+/// Parses a [`WsStatusProduct`] from the `status` channel into an
+/// [`InstrumentStatus`].
+///
+/// Returns `None` when the venue's status is unset (e.g. futures products in
+/// the FCM session), which carries no information for the data engine.
+pub fn parse_ws_status_product(
+    product: &WsStatusProduct,
+    instrument_id: InstrumentId,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> Option<InstrumentStatus> {
+    let action = match product.status {
+        CoinbaseProductStatus::Online => MarketStatusAction::Trading,
+        CoinbaseProductStatus::Offline => MarketStatusAction::Halt,
+        CoinbaseProductStatus::Delisted => MarketStatusAction::Close,
+        // Unset (futures) carries no info; Unknown is an unmodeled status we cannot
+        // safely map to a market action, so emit nothing rather than guess.
+        CoinbaseProductStatus::Unset | CoinbaseProductStatus::Unknown => return None,
+    };
+    let reason = if product.status_message.is_empty() {
+        None
+    } else {
+        Some(Ustr::from(&product.status_message))
+    };
+    let is_trading = Some(matches!(action, MarketStatusAction::Trading));
+    Some(InstrumentStatus::new(
+        instrument_id,
+        action,
+        ts_event,
+        ts_init,
+        reason,
+        None,
+        is_trading,
+        None,
+        None,
+    ))
 }
 
 #[cfg(test)]
@@ -544,6 +593,67 @@ mod tests {
                 // Last delta has F_LAST flag
                 let last = deltas.deltas.last().unwrap();
                 assert_ne!(last.flags & RecordFlag::F_LAST as u8, 0);
+
+                // Every delta in a snapshot sequence carries F_SNAPSHOT.
+                for delta in &deltas.deltas {
+                    assert_ne!(
+                        delta.flags & RecordFlag::F_SNAPSHOT as u8,
+                        0,
+                        "snapshot delta missing F_SNAPSHOT: {delta:?}",
+                    );
+                }
+            }
+            _ => panic!("Expected L2Data"),
+        }
+    }
+
+    // Empty-book snapshots must carry F_SNAPSHOT | F_LAST on the lone Clear
+    // delta so buffered consumers receive the clear event; without F_LAST the
+    // DataEngine never flushes and downstream subscribers see nothing.
+    #[rstest]
+    fn test_parse_ws_l2_snapshot_empty_book_clear_carries_snapshot_and_last() {
+        let event = WsL2DataEvent {
+            event_type: WsEventType::Snapshot,
+            product_id: Ustr::from("BTC-USD"),
+            updates: Vec::new(),
+        };
+        let instrument = test_instrument();
+        let ts_event = UnixNanos::from(1);
+        let ts_init = UnixNanos::from(2);
+
+        let deltas = parse_ws_l2_snapshot(&event, &instrument, ts_event, ts_init).unwrap();
+        assert_eq!(deltas.deltas.len(), 1);
+        let clear = &deltas.deltas[0];
+        assert_eq!(clear.action, BookAction::Clear);
+        assert_ne!(clear.flags & RecordFlag::F_SNAPSHOT as u8, 0);
+        assert_ne!(clear.flags & RecordFlag::F_LAST as u8, 0);
+    }
+
+    // Update deltas must NOT carry F_SNAPSHOT; only snapshot sequences do.
+    // A regression that copy-pastes the snapshot path would have updates
+    // misclassified by downstream consumers.
+    #[rstest]
+    fn test_parse_ws_l2_update_omits_snapshot_flag() {
+        let json = load_test_fixture("ws_l2_data_update.json");
+        let msg: CoinbaseWsMessage = serde_json::from_str(&json).unwrap();
+        let instrument = test_instrument();
+        let ts_init = UnixNanos::default();
+
+        match msg {
+            CoinbaseWsMessage::L2Data {
+                timestamp, events, ..
+            } => {
+                let event = &events[0];
+                let ts_event = parse_rfc3339_timestamp(&timestamp).unwrap();
+                let deltas = parse_ws_l2_update(event, &instrument, ts_event, ts_init).unwrap();
+
+                for delta in &deltas.deltas {
+                    assert_eq!(
+                        delta.flags & RecordFlag::F_SNAPSHOT as u8,
+                        0,
+                        "update delta must not carry F_SNAPSHOT: {delta:?}",
+                    );
+                }
             }
             _ => panic!("Expected L2Data"),
         }
@@ -758,5 +868,76 @@ mod tests {
         assert_eq!(report.commission, commission);
         assert_eq!(report.liquidity_side, LiquiditySide::Maker);
         assert_eq!(report.trade_id, trade_id);
+    }
+
+    fn make_status_product(status: CoinbaseProductStatus, message: &str) -> WsStatusProduct {
+        WsStatusProduct {
+            product_type: crate::common::enums::CoinbaseProductType::Spot,
+            id: Ustr::from("BTC-USD"),
+            base_currency: Ustr::from("BTC"),
+            quote_currency: Ustr::from("USD"),
+            base_increment: "0.00000001".to_string(),
+            quote_increment: "0.01".to_string(),
+            display_name: "BTC/USD".to_string(),
+            status,
+            status_message: message.to_string(),
+            min_market_funds: Decimal::ONE,
+        }
+    }
+
+    #[rstest]
+    #[case::online(
+        CoinbaseProductStatus::Online,
+        "",
+        Some(MarketStatusAction::Trading),
+        Some(true),
+        None
+    )]
+    #[case::offline_with_reason(
+        CoinbaseProductStatus::Offline,
+        "maintenance",
+        Some(MarketStatusAction::Halt),
+        Some(false),
+        Some("maintenance")
+    )]
+    #[case::delisted(
+        CoinbaseProductStatus::Delisted,
+        "",
+        Some(MarketStatusAction::Close),
+        Some(false),
+        None
+    )]
+    #[case::unset_skipped(CoinbaseProductStatus::Unset, "", None, None, None)]
+    fn test_parse_ws_status_product(
+        #[case] status: CoinbaseProductStatus,
+        #[case] message: &str,
+        #[case] expected_action: Option<MarketStatusAction>,
+        #[case] expected_is_trading: Option<bool>,
+        #[case] expected_reason: Option<&str>,
+    ) {
+        let product = make_status_product(status, message);
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), *COINBASE_VENUE);
+        let result = parse_ws_status_product(
+            &product,
+            instrument_id,
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        );
+
+        match expected_action {
+            Some(action) => {
+                let status = result.expect("expected InstrumentStatus");
+                assert_eq!(status.instrument_id, instrument_id);
+                assert_eq!(status.action, action);
+                assert_eq!(status.is_trading, expected_is_trading);
+                assert_eq!(
+                    status.reason.map(|s| s.to_string()),
+                    expected_reason.map(|s| s.to_string()),
+                );
+                assert_eq!(status.ts_event, UnixNanos::from(1));
+                assert_eq!(status.ts_init, UnixNanos::from(2));
+            }
+            None => assert!(result.is_none(), "expected None for unset status"),
+        }
     }
 }

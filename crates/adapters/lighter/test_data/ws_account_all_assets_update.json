@@ -1,0 +1,13 @@
+{
+  "assets": {
+    "0": {
+      "symbol": "USDC",
+      "asset_id": 0,
+      "balance": "100.000000",
+      "locked_balance": "1.000000"
+    }
+  },
+  "channel": "account_all_assets:1234",
+  "timestamp": 1774883844933,
+  "type": "update/account_all_assets"
+}

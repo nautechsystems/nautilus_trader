@@ -19,7 +19,10 @@
 //! reports the correct high-watermark over a multi-batch run.
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Condvar, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
@@ -30,8 +33,9 @@ use nautilus_core::{
     time::{get_atomic_clock_realtime, get_atomic_clock_static},
 };
 use nautilus_event_store::{
-    EntryDraft, EventStore, EventStoreWriter, HaltCallback, HaltReason, Headers, IndexKey,
-    IndexKind, RedbBackend, RegisteredComponents, RunManifest, RunStatus, Topic, WriterConfig,
+    AppendEntry, EntryDraft, EventStore, EventStoreEntry, EventStoreWriter, HaltCallback,
+    HaltReason, Headers, IndexKey, IndexKind, MemoryBackend, RedbBackend, RegisteredComponents,
+    RunManifest, RunStatus, ScanDirection, SubmitError, Topic, WriterConfig,
 };
 use redb::{ReadableDatabase, ReadableTable};
 use rstest::rstest;
@@ -100,6 +104,100 @@ fn open_backend_with(tmp: &TempDir, run_id: &str) -> RedbBackend {
     backend
 }
 
+#[derive(Debug)]
+struct BlockingMemoryBackend {
+    inner: Arc<Mutex<MemoryBackend>>,
+    gate: Arc<(Mutex<bool>, Condvar)>,
+    appends_started: Arc<AtomicUsize>,
+}
+
+impl BlockingMemoryBackend {
+    fn new(
+        inner: Arc<Mutex<MemoryBackend>>,
+        gate: Arc<(Mutex<bool>, Condvar)>,
+        appends_started: Arc<AtomicUsize>,
+    ) -> Self {
+        Self {
+            inner,
+            gate,
+            appends_started,
+        }
+    }
+}
+
+impl EventStore for BlockingMemoryBackend {
+    fn open_run(&mut self, _: RunManifest) -> Result<(), nautilus_event_store::EventStoreError> {
+        unreachable!("test wrapper does not forward open_run")
+    }
+
+    fn append_batch(
+        &mut self,
+        entries: &[AppendEntry],
+    ) -> Result<u64, nautilus_event_store::EventStoreError> {
+        self.appends_started.fetch_add(1, Ordering::SeqCst);
+        let (lock, cvar) = &*self.gate;
+        let mut released = lock.lock().expect("gate poisoned");
+
+        while !*released {
+            released = cvar.wait(released).expect("gate wait");
+        }
+
+        self.inner
+            .lock()
+            .expect("inner poisoned")
+            .append_batch(entries)
+    }
+
+    fn scan_range(
+        &self,
+        from: u64,
+        to: u64,
+        direction: ScanDirection,
+    ) -> Result<Vec<EventStoreEntry>, nautilus_event_store::EventStoreError> {
+        self.inner
+            .lock()
+            .expect("inner poisoned")
+            .scan_range(from, to, direction)
+    }
+
+    fn scan_seq(
+        &self,
+        seq: u64,
+    ) -> Result<Option<EventStoreEntry>, nautilus_event_store::EventStoreError> {
+        self.inner.lock().expect("inner poisoned").scan_seq(seq)
+    }
+
+    fn lookup(
+        &self,
+        kind: IndexKind,
+        key: &str,
+    ) -> Result<Option<u64>, nautilus_event_store::EventStoreError> {
+        self.inner.lock().expect("inner poisoned").lookup(kind, key)
+    }
+
+    fn iter_index_keys(
+        &self,
+        kind: IndexKind,
+    ) -> Result<Vec<(String, u64)>, nautilus_event_store::EventStoreError> {
+        self.inner
+            .lock()
+            .expect("inner poisoned")
+            .iter_index_keys(kind)
+    }
+
+    fn seal(&mut self, status: RunStatus) -> Result<(), nautilus_event_store::EventStoreError> {
+        self.inner.lock().expect("inner poisoned").seal(status)
+    }
+
+    fn manifest(&self) -> Result<RunManifest, nautilus_event_store::EventStoreError> {
+        self.inner.lock().expect("inner poisoned").manifest()
+    }
+
+    fn high_watermark(&self) -> Result<u64, nautilus_event_store::EventStoreError> {
+        self.inner.lock().expect("inner poisoned").high_watermark()
+    }
+}
+
 #[rstest]
 fn writer_commits_drafts_durably_to_redb_file() {
     let tmp = TempDir::new().expect("tempdir");
@@ -115,33 +213,27 @@ fn writer_commits_drafts_durably_to_redb_file() {
     )
     .expect("spawn");
 
-    // Submit four drafts with sidecar index keys spanning every IndexKind variant.
+    // Submit three drafts with sidecar index keys spanning every IndexKind variant.
     writer
         .submit(entry_draft(
             10,
-            vec![IndexKey::new(IndexKind::IntentId, "intent-A".to_string())],
+            vec![IndexKey::new(IndexKind::ClientOrderId, "O-1".to_string())],
         ))
         .expect("submit 1");
     writer
         .submit(entry_draft(
             11,
-            vec![IndexKey::new(IndexKind::ClientOrderId, "O-1".to_string())],
+            vec![IndexKey::new(IndexKind::VenueOrderId, "V-1".to_string())],
         ))
         .expect("submit 2");
     writer
-        .submit(entry_draft(
-            12,
-            vec![IndexKey::new(IndexKind::VenueOrderId, "V-1".to_string())],
-        ))
+        .submit(entry_draft(12, Vec::new()))
         .expect("submit 3");
-    writer
-        .submit(entry_draft(13, Vec::new()))
-        .expect("submit 4");
 
     let final_hwm = writer.close(run_ended_draft()).expect("close");
 
-    // 4 drafts + RunEnded == 5 entries.
-    assert_eq!(final_hwm, 5);
+    // 3 drafts + RunEnded == 4 entries.
+    assert_eq!(final_hwm, 4);
     assert!(captured.lock().expect("captured").is_empty());
 
     // Reopening the same path with a fresh backend instance must surface the run as
@@ -199,6 +291,95 @@ fn writer_high_watermark_advances_only_after_backend_ack() {
 
     let final_hwm = writer.close(run_ended_draft()).expect("close");
     assert_eq!(final_hwm, 11);
+}
+
+#[rstest]
+fn writer_halts_instead_of_dropping_when_backend_blocks_past_channel_capacity() {
+    let inner = Arc::new(Mutex::new(MemoryBackend::new()));
+    inner
+        .lock()
+        .expect("inner")
+        .open_run(manifest("run-backpressure"))
+        .expect("open run");
+    let gate = Arc::new((Mutex::new(false), Condvar::new()));
+    let appends_started = Arc::new(AtomicUsize::new(0));
+    let backend = BlockingMemoryBackend::new(
+        Arc::clone(&inner),
+        Arc::clone(&gate),
+        Arc::clone(&appends_started),
+    );
+    let (halt, captured) = captured_halt();
+
+    let writer = EventStoreWriter::spawn(
+        Box::new(backend),
+        get_atomic_clock_static(),
+        halt,
+        WriterConfig {
+            channel_capacity: 2,
+            max_batch_entries: 1,
+            max_batch_latency: Duration::from_secs(30),
+            halt_threshold: Duration::from_millis(30),
+        },
+    )
+    .expect("spawn");
+
+    writer
+        .submit(entry_draft(10, Vec::new()))
+        .expect("submit 1");
+    let mut waited = Duration::ZERO;
+    while appends_started.load(Ordering::SeqCst) == 0 && waited < Duration::from_secs(1) {
+        std::thread::sleep(Duration::from_millis(2));
+        waited += Duration::from_millis(2);
+    }
+    assert_eq!(
+        appends_started.load(Ordering::SeqCst),
+        1,
+        "writer must be blocked inside the first backend append",
+    );
+
+    writer
+        .submit(entry_draft(11, Vec::new()))
+        .expect("submit 2");
+    writer
+        .submit(entry_draft(12, Vec::new()))
+        .expect("submit 3");
+    let stalled = writer
+        .submit(entry_draft(13, Vec::new()))
+        .expect_err("submit beyond channel capacity must halt");
+
+    match stalled {
+        SubmitError::HaltSignaled { .. } => {}
+        SubmitError::Closed => panic!("expected HaltSignaled, was Closed"),
+    }
+    assert!(matches!(
+        captured.lock().expect("captured").first(),
+        Some(HaltReason::BackpressureStall { .. }),
+    ));
+
+    let (lock, cvar) = &*gate;
+    *lock.lock().expect("gate") = true;
+    cvar.notify_all();
+
+    let mut waited = Duration::ZERO;
+    while writer.high_watermark() < 3 && waited < Duration::from_secs(1) {
+        std::thread::sleep(Duration::from_millis(2));
+        waited += Duration::from_millis(2);
+    }
+    assert_eq!(
+        writer.high_watermark(),
+        3,
+        "all accepted entries must commit after the backend resumes",
+    );
+    drop(writer);
+
+    let backend = inner.lock().expect("inner");
+    let entries = backend
+        .scan_range(1, 3, ScanDirection::Forward)
+        .expect("scan committed entries");
+    let committed_ts_init: Vec<u64> = entries.iter().map(|entry| entry.ts_init.as_u64()).collect();
+
+    assert_eq!(committed_ts_init, vec![10, 11, 12]);
+    assert_eq!(backend.high_watermark().expect("hwm"), 3);
 }
 
 #[rstest]
@@ -276,11 +457,14 @@ fn writer_committed_entries_are_scannable_after_close() {
     )
     .expect("spawn");
 
-    let intent = "intent-Z".to_string();
+    let client_order_id = "O-Z".to_string();
 
     for ts in 10_u64..18_u64 {
         let keys = if ts == 11 {
-            vec![IndexKey::new(IndexKind::IntentId, intent.clone())]
+            vec![IndexKey::new(
+                IndexKind::ClientOrderId,
+                client_order_id.clone(),
+            )]
         } else {
             Vec::new()
         };
@@ -295,8 +479,8 @@ fn writer_committed_entries_are_scannable_after_close() {
     // run on open.
     let prior_path = tmp.path().join(INSTANCE_ID).join("run-scan.redb");
     let entries_table: redb::TableDefinition<u64, &[u8]> = redb::TableDefinition::new("entries");
-    let intent_table: redb::TableDefinition<&str, u64> =
-        redb::TableDefinition::new("intent_id_idx");
+    let client_order_table: redb::TableDefinition<&str, u64> =
+        redb::TableDefinition::new("client_order_id_idx");
     let db = redb::Database::create(&prior_path).expect("open prior");
     let txn = db.begin_read().expect("begin read");
 
@@ -309,12 +493,15 @@ fn writer_committed_entries_are_scannable_after_close() {
     }
     assert_eq!(seqs, (1_u64..=9_u64).collect::<Vec<_>>());
 
-    let idx = txn.open_table(intent_table).expect("open intent idx");
+    let idx = txn
+        .open_table(client_order_table)
+        .expect("open client_order idx");
     let recorded = idx
-        .get("intent-Z")
-        .expect("get intent")
-        .expect("intent recorded");
-    // The second submitted draft (ts_init=11) carried the intent key, so its seq is 2.
+        .get("O-Z")
+        .expect("get client_order_id")
+        .expect("client_order_id recorded");
+    // The second submitted draft (ts_init=11) carried the client_order_id key, so its
+    // seq is 2.
     assert_eq!(recorded.value(), 2);
 }
 

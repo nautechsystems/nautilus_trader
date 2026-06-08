@@ -103,3 +103,8 @@ doc = false
 name = "feed_handler"
 path = "tests/feed_handler.rs"
 required-features = ["live"]
+
+[[test]]
+name = "python"
+path = "tests/python.rs"
+required-features = ["python"]

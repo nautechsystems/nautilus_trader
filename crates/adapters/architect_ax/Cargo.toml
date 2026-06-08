@@ -45,6 +45,11 @@ extension-module = [
   "python",
 ]
 
+[package.metadata.cargo-machete]
+ignored = [
+  "nautilus-system",
+] # Optional dep activated only via the python feature
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

@@ -66,7 +66,7 @@ impl Type<Postgres> for U128Pg {
 impl<'q> Encode<'q, Postgres> for I256Pg {
     fn encode_by_ref(
         &self,
-        buf: &mut <Postgres as Database>::ArgumentBuffer<'_>,
+        buf: &mut <Postgres as Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
         let s = self.0.to_string();
         <&str as Encode<Postgres>>::encode(&s, buf)
@@ -76,7 +76,7 @@ impl<'q> Encode<'q, Postgres> for I256Pg {
 impl<'q> Encode<'q, Postgres> for U256Pg {
     fn encode_by_ref(
         &self,
-        buf: &mut <Postgres as Database>::ArgumentBuffer<'_>,
+        buf: &mut <Postgres as Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
         // Ensure we send decimal format, not hex format to PostgreSQL
         let decimal_str = format!("{}", self.0);
@@ -87,7 +87,7 @@ impl<'q> Encode<'q, Postgres> for U256Pg {
 impl<'q> Encode<'q, Postgres> for U160Pg {
     fn encode_by_ref(
         &self,
-        buf: &mut <Postgres as Database>::ArgumentBuffer<'_>,
+        buf: &mut <Postgres as Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
         let decimal_str = format!("{}", self.0);
         <&str as Encode<Postgres>>::encode(&decimal_str, buf)
@@ -97,7 +97,7 @@ impl<'q> Encode<'q, Postgres> for U160Pg {
 impl<'q> Encode<'q, Postgres> for U128Pg {
     fn encode_by_ref(
         &self,
-        buf: &mut <Postgres as Database>::ArgumentBuffer<'_>,
+        buf: &mut <Postgres as Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
         let decimal_str = self.0.to_string();
         <&str as Encode<Postgres>>::encode(&decimal_str, buf)

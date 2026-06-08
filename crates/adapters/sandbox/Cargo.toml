@@ -35,6 +35,7 @@ python = [
   "nautilus-core/python",
   "nautilus-execution/python",
   "nautilus-model/python",
+  "nautilus-system/python",
   "pyo3",
   "pyo3-stub-gen",
 ]
@@ -55,6 +56,7 @@ nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true }
+nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -73,6 +75,7 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-data = { workspace = true }
 nautilus-testkit = { workspace = true }
 nautilus-trading = { workspace = true }
 
@@ -85,3 +88,8 @@ name = "databento-cme-sandbox"
 path = "examples/databento_cme.rs"
 required-features = ["example-databento"]
 doc = false
+
+[[test]]
+name = "python"
+path = "tests/python.rs"
+required-features = ["python"]

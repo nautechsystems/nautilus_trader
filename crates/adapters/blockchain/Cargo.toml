@@ -101,3 +101,8 @@ name = "blockchain-data-tester"
 path = "examples/node_data_tester.rs"
 required-features = ["hypersync"]
 doc = false
+
+[[test]]
+name = "python"
+path = "tests/python.rs"
+required-features = ["python", "hypersync"]

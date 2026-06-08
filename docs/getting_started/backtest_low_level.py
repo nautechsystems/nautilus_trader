@@ -166,14 +166,14 @@ engine.trader.generate_positions_report()
 # %% [markdown]
 # ## Repeated runs
 #
-# Reset the engine for repeated runs with different configurations. Instruments
-# and data persist across resets, so you only need to add new components.
+# Reset the engine for repeated runs. Instruments, data, and loaded components
+# persist across resets; loaded components have their internal state reset.
 
 # %%
 # For repeated backtest runs, reset the engine
 engine.reset()
 
-# Instruments and data persist, just add new components and run again
+# Clear or remove loaded components before adding replacements.
 
 # %% [markdown]
 # Remove and add individual components (actors, strategies, execution algorithms) as required.

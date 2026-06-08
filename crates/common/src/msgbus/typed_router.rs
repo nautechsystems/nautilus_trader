@@ -172,9 +172,10 @@ impl<T: 'static> TopicRouter<T> {
     pub fn subscribe(&mut self, pattern: MStr<Pattern>, handler: TypedHandler<T>, priority: u32) {
         let sub = TypedSubscription::new(pattern, handler, Some(priority));
 
-        // Check for duplicate
+        // Re-subscribing the same handler is expected (e.g. book deltas + snapshots
+        // share one BookUpdater), so dedup at debug rather than warn.
         if self.subscriptions.iter().any(|s| s == &sub) {
-            log::warn!("{sub:?} already exists");
+            log::debug!("{sub:?} already exists; skipping duplicate subscription");
             return;
         }
 

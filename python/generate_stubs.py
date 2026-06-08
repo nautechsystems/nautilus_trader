@@ -27,9 +27,11 @@ from __future__ import annotations
 
 import argparse
 import keyword
+import os
 import re
 import subprocess
 import sys
+import sysconfig
 import tomllib
 from dataclasses import dataclass
 from dataclasses import field
@@ -162,6 +164,7 @@ def run_command(
     cwd: Path | None = None,
     check: bool = True,
     stream_output: bool = False,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """
     Run a command and return the result.
@@ -172,9 +175,9 @@ def run_command(
         print(f"  in: {cwd}")
 
     if stream_output:
-        result = subprocess.run(cmd, cwd=cwd, text=True, check=False)
+        result = subprocess.run(cmd, cwd=cwd, text=True, check=False, env=env)
     else:
-        result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
+        result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False, env=env)
 
     if check and result.returncode != 0:
         if not stream_output:
@@ -182,6 +185,31 @@ def run_command(
         raise subprocess.CalledProcessError(result.returncode, cmd)
 
     return result
+
+
+def python_libdir_env() -> dict[str, str]:
+    """
+    Return an environment that lets binaries linked against the interpreter's shared
+    ``libpython`` locate it at runtime.
+
+    uv-managed CPython is a shared build whose ``libpython`` lives under its own ``lib``
+    directory, which is not on the system loader path. The standalone ``python-stub-gen``
+    binary has no rpath, so without this it cannot load ``libpython`` at runtime.
+
+    """
+    env = os.environ.copy()
+
+    if sys.platform == "win32" or not sysconfig.get_config_var("Py_ENABLE_SHARED"):
+        return env
+
+    libdir = sysconfig.get_config_var("LIBDIR")
+    if not libdir:
+        return env
+
+    var = "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
+    existing = env.get(var)
+    env[var] = f"{libdir}{os.pathsep}{existing}" if existing else libdir
+    return env
 
 
 def load_pyproject() -> dict:
@@ -235,7 +263,7 @@ def generate_stubs() -> bool:
     if cargo_features:
         cmd.extend(["--features", ",".join(cargo_features)])
 
-    result = run_command(cmd, cwd=crates_dir, stream_output=True)
+    result = run_command(cmd, cwd=crates_dir, stream_output=True, env=python_libdir_env())
 
     print("Stubs generated successfully")
 
@@ -256,6 +284,7 @@ def generate_stubs() -> bool:
         relocate_classes_from_libnautilus(root)
         inject_module_constants(root, workspace_root)
         format_stub_files(root)
+        remove_stale_top_level_adapter_stubs(root)
 
     relative_root = dest_dir.relative_to(Path(__file__).parent)
     print(f"Type stubs written to {relative_root or Path('.')} ")
@@ -287,6 +316,7 @@ def post_process_stubs(root: Path) -> None:
     workspace_root = Path(__file__).parent.parent
     rust_fixups = collect_rust_class_fixups(workspace_root)
     renamed_enums = collect_renamed_enums(workspace_root)
+    renamed_enum_variants = collect_renamed_enum_variants(workspace_root)
 
     for stub_file in root.rglob("*.pyi"):
         content = stub_file.read_text()
@@ -296,7 +326,7 @@ def post_process_stubs(root: Path) -> None:
         content = fix_stub_header(content)
 
         # Rename enum variants to match PyO3 rename_all = "SCREAMING_SNAKE_CASE"
-        content = rename_enum_variants(content, renamed_enums)
+        content = rename_enum_variants(content, renamed_enums, renamed_enum_variants)
 
         # Rename methods (py_new -> __init__, etc.)
         content = rename_methods(content)
@@ -336,6 +366,32 @@ def post_process_stubs(root: Path) -> None:
 
         if content != original:
             stub_file.write_text(content)
+
+
+def remove_stale_top_level_adapter_stubs(root: Path) -> None:
+    """
+    Remove generated top-level adapter stubs from the former flat package layout.
+    """
+    adapters_dir = root / "adapters"
+    if not adapters_dir.exists():
+        return
+
+    adapter_names = {
+        path.parent.name
+        for path in [*adapters_dir.glob("*/__init__.py"), *adapters_dir.glob("*/__init__.pyi")]
+    }
+
+    for adapter_name in sorted(adapter_names):
+        stale_dir = root / adapter_name
+        stale_init = stale_dir / "__init__.pyi"
+        if not stale_init.exists():
+            continue
+
+        if any(child.name != "__init__.pyi" for child in stale_dir.iterdir()):
+            continue
+
+        stale_init.unlink()
+        stale_dir.rmdir()
 
 
 IDENTIFIER_MACRO_METHOD_FIXUPS = ClassMethodFixup(
@@ -545,6 +601,7 @@ def collect_rust_class_fixups(workspace_root: Path) -> dict[str, ClassMethodFixu
 
 PYCLASS_RENAME_ALL_RE = re.compile(r'pyclass\b.*rename_all\s*=\s*"SCREAMING_SNAKE_CASE"')
 RUST_ENUM_DECL_RE = re.compile(r"^\s*(?:pub\s+)?enum\s+([A-Za-z_][A-Za-z0-9_]*)\b")
+RUST_ENUM_VARIANT_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\b")
 
 
 def collect_renamed_enums(workspace_root: Path) -> set[str]:
@@ -590,7 +647,84 @@ def collect_renamed_enums(workspace_root: Path) -> set[str]:
     return renamed
 
 
-def rename_enum_variants(content: str, renamed_enums: set[str]) -> str:
+def collect_renamed_enum_variants(workspace_root: Path) -> dict[str, list[str]]:
+    """
+    Collect Rust variant names for enums whose pyclass attribute includes ``rename_all =
+    "SCREAMING_SNAKE_CASE"``.
+    """
+    variants: dict[str, list[str]] = {}
+
+    for rust_file in sorted(workspace_root.glob("crates/**/src/**/*.rs")):
+        source = rust_file.read_text()
+        lines = source.splitlines()
+        pending_attrs: list[str] = []
+        i = 0
+
+        while i < len(lines):
+            stripped = lines[i].strip()
+
+            if not stripped:
+                pending_attrs.clear()
+                i += 1
+                continue
+
+            if stripped.startswith(("///", "//!")):
+                i += 1
+                continue
+
+            if stripped.startswith("#["):
+                attribute, i = consume_rust_attribute(lines, i)
+                pending_attrs.append(attribute)
+                continue
+
+            enum_match = RUST_ENUM_DECL_RE.match(lines[i])
+            if enum_match is not None and any(
+                PYCLASS_RENAME_ALL_RE.search(attr) for attr in pending_attrs
+            ):
+                enum_name = enum_match.group(1)
+                variants[enum_name] = collect_rust_enum_variants(lines, i)
+
+            pending_attrs.clear()
+            i += 1
+
+    return variants
+
+
+def collect_rust_enum_variants(lines: list[str], enum_start: int) -> list[str]:
+    """
+    Collect top-level Rust enum variant names from ``lines``.
+    """
+    variants: list[str] = []
+    brace_depth = lines[enum_start].count("{") - lines[enum_start].count("}")
+    i = enum_start + 1
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        if stripped.startswith("#["):
+            _, i = consume_rust_attribute(lines, i)
+            continue
+
+        if brace_depth == 1 and stripped and not stripped.startswith(("///", "//", "}")):
+            variant_match = RUST_ENUM_VARIANT_RE.match(line)
+            if variant_match is not None:
+                variants.append(variant_match.group(1))
+
+        brace_depth += line.count("{") - line.count("}")
+        i += 1
+
+        if brace_depth <= 0:
+            break
+
+    return variants
+
+
+def rename_enum_variants(
+    content: str,
+    renamed_enums: set[str],
+    renamed_enum_variants: dict[str, list[str]] | None = None,
+) -> str:
     """
     Rename enum variants from PascalCase to SCREAMING_SNAKE_CASE for enums whose pyclass
     has ``rename_all = "SCREAMING_SNAKE_CASE"``.
@@ -601,11 +735,13 @@ def rename_enum_variants(content: str, renamed_enums: set[str]) -> str:
     lines = content.split("\n")
     result: list[str] = []
     in_renamed_enum = False
+    current_enum: str | None = None
 
     for line in lines:
         class_match = re.match(r"^class\s+(\w+)\s*\(", line)
         if class_match:
             class_name = class_match.group(1)
+            current_enum = class_name
             in_renamed_enum = (
                 class_name in renamed_enums
                 and re.search(r"\(\s*(?:enum\.)?Enum\s*\)", line) is not None
@@ -617,12 +753,53 @@ def rename_enum_variants(content: str, renamed_enums: set[str]) -> str:
                 indent = variant_match.group(1)
                 name = variant_match.group(2)
                 rest = variant_match.group(3)
-                new_name = to_screaming_snake_case(name)
+                new_name = renamed_enum_variant_name(
+                    current_enum,
+                    name,
+                    renamed_enum_variants,
+                )
                 line = f"{indent}{new_name}{rest}"  # noqa: PLW2901
 
         result.append(line)
 
     return "\n".join(result)
+
+
+def renamed_enum_variant_name(
+    enum_name: str | None,
+    variant_name: str,
+    renamed_enum_variants: dict[str, list[str]] | None,
+) -> str:
+    """
+    Return the Python enum variant name for a generated stub variant.
+    """
+    if enum_name is not None and renamed_enum_variants:
+        source_variants = renamed_enum_variants.get(enum_name, [])
+        source_variant = enum_variant_lookup(source_variants).get(
+            normalize_enum_variant_name(variant_name),
+        )
+
+        if source_variant is not None:
+            return to_screaming_snake_case(source_variant)
+
+    return to_screaming_snake_case(variant_name)
+
+
+def enum_variant_lookup(source_variants: list[str]) -> dict[str, str]:
+    """
+    Return source enum variants keyed by their case-insensitive identifier body.
+    """
+    return {
+        normalize_enum_variant_name(source_variant): source_variant
+        for source_variant in source_variants
+    }
+
+
+def normalize_enum_variant_name(name: str) -> str:
+    """
+    Normalize enum variant spellings across stub-gen and Rust source transforms.
+    """
+    return name.replace("_", "").lower()
 
 
 def fix_enum_defaults_in_signatures(content: str, renamed_enums: set[str]) -> str:
@@ -2350,8 +2527,8 @@ def collect_module_constants(workspace_root: Path) -> dict[str, list[ModuleConst
     """
     Collect module-level constants exported via ``m.add()`` in pymodule definitions.
 
-    Returns a mapping of stub module path (e.g. ``"core"``, ``"hyperliquid"``) to
-    constant declarations.
+    Returns a mapping of stub module path (e.g. ``"core"``, ``"adapters.hyperliquid"``)
+    to constant declarations.
 
     """
     constants: dict[str, list[ModuleConstant]] = {}
@@ -2380,13 +2557,12 @@ def _derive_module_path(crate_dir: Path, workspace_root: Path) -> str:
     """
     Derive the stub module path from a crate directory.
 
-    The ``adapters`` directory is organizational only and is not part of
-    the module path, so ``crates/adapters/bybit`` maps to ``"bybit"``.
+    Adapter crates map to the public adapter package path, so
+    ``crates/adapters/bybit`` maps to ``"adapters.bybit"``.
 
     """
     relative = crate_dir.relative_to(workspace_root / "crates")
-    parts = [p for p in relative.parts if p != "adapters"]
-    return ".".join(parts)
+    return ".".join(relative.parts)
 
 
 def _infer_constant_python_type(

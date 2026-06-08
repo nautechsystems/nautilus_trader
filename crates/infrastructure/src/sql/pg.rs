@@ -16,7 +16,7 @@
 use derive_builder::Builder;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use sqlx::{ConnectOptions, PgPool, postgres::PgConnectOptions};
+use sqlx::{AssertSqlSafe, ConnectOptions, PgPool, postgres::PgConnectOptions};
 
 fn validate_sql_identifier(value: &str, label: &str) -> anyhow::Result<()> {
     if value.is_empty() {
@@ -237,9 +237,9 @@ pub async fn init_postgres(
 
     // Create role if not exists
     let escaped_password = escape_sql_string(&password);
-    match sqlx::query(
-        format!("CREATE ROLE {database} PASSWORD '{escaped_password}' LOGIN;").as_str(),
-    )
+    match sqlx::query(AssertSqlSafe(format!(
+        "CREATE ROLE {database} PASSWORD '{escaped_password}' LOGIN;"
+    )))
     .execute(pg)
     .await
     {
@@ -285,7 +285,7 @@ pub async fn init_postgres(
         };
 
         for sql_statement in sql_statements {
-            sqlx::query(&sql_statement)
+            sqlx::query(AssertSqlSafe(sql_statement.as_str()))
                 .execute(pg)
                 .await
                 .map_err(|e| {
@@ -300,27 +300,31 @@ pub async fn init_postgres(
     }
 
     // Grant connect
-    match sqlx::query(format!("GRANT CONNECT ON DATABASE {database} TO {database};").as_str())
-        .execute(pg)
-        .await
+    match sqlx::query(AssertSqlSafe(format!(
+        "GRANT CONNECT ON DATABASE {database} TO {database};"
+    )))
+    .execute(pg)
+    .await
     {
         Ok(_) => log::info!("Connect privileges granted to role {database}"),
         Err(e) => log::error!("Error granting connect privileges to role {database}: {e:?}"),
     }
 
     // Grant all schema privileges to the role
-    match sqlx::query(format!("GRANT ALL PRIVILEGES ON SCHEMA public TO {database};").as_str())
-        .execute(pg)
-        .await
+    match sqlx::query(AssertSqlSafe(format!(
+        "GRANT ALL PRIVILEGES ON SCHEMA public TO {database};"
+    )))
+    .execute(pg)
+    .await
     {
         Ok(_) => log::info!("All schema privileges granted to role {database}"),
         Err(e) => log::error!("Error granting all privileges to role {database}: {e:?}"),
     }
 
     // Grant all table privileges to the role
-    match sqlx::query(
-        format!("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {database};").as_str(),
-    )
+    match sqlx::query(AssertSqlSafe(format!(
+        "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {database};"
+    )))
     .execute(pg)
     .await
     {
@@ -329,9 +333,9 @@ pub async fn init_postgres(
     }
 
     // Grant all sequence privileges to the role
-    match sqlx::query(
-        format!("GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {database};").as_str(),
-    )
+    match sqlx::query(AssertSqlSafe(format!(
+        "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {database};"
+    )))
     .execute(pg)
     .await
     {
@@ -340,9 +344,9 @@ pub async fn init_postgres(
     }
 
     // Grant all function privileges to the role
-    match sqlx::query(
-        format!("GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {database};").as_str(),
-    )
+    match sqlx::query(AssertSqlSafe(format!(
+        "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {database};"
+    )))
     .execute(pg)
     .await
     {
@@ -362,7 +366,7 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
     validate_sql_identifier(&database, "database")?;
 
     // Execute drop owned
-    match sqlx::query(format!("DROP OWNED BY {database}").as_str())
+    match sqlx::query(AssertSqlSafe(format!("DROP OWNED BY {database}")))
         .execute(pg)
         .await
     {
@@ -378,18 +382,20 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
     }
 
     // Revoke connect
-    match sqlx::query(format!("REVOKE CONNECT ON DATABASE {database} FROM {database};").as_str())
-        .execute(pg)
-        .await
+    match sqlx::query(AssertSqlSafe(format!(
+        "REVOKE CONNECT ON DATABASE {database} FROM {database};"
+    )))
+    .execute(pg)
+    .await
     {
         Ok(_) => log::info!("Revoked connect privileges from role {database}"),
         Err(e) => log::error!("Error revoking connect privileges from role {database}: {e:?}"),
     }
 
     // Revoke privileges
-    match sqlx::query(
-        format!("REVOKE ALL PRIVILEGES ON DATABASE {database} FROM {database};").as_str(),
-    )
+    match sqlx::query(AssertSqlSafe(format!(
+        "REVOKE ALL PRIVILEGES ON DATABASE {database} FROM {database};"
+    )))
     .execute(pg)
     .await
     {
@@ -407,7 +413,7 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
     }
 
     // Drop role
-    match sqlx::query(format!("DROP ROLE IF EXISTS {database};").as_str())
+    match sqlx::query(AssertSqlSafe(format!("DROP ROLE IF EXISTS {database};")))
         .execute(pg)
         .await
     {

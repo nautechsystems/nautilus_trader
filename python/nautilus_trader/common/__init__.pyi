@@ -2,6 +2,7 @@
 # ruff: noqa: F401
 
 import datetime
+import decimal
 import enum
 import typing
 
@@ -48,6 +49,7 @@ __all__ = [
     "logging_clock_set_realtime_mode",
     "logging_clock_set_static_mode",
     "logging_clock_set_static_time",
+    "logging_sync_to_disk",
     "tracing_is_initialized",
 ]
 
@@ -201,6 +203,8 @@ class LoggerConfig:
         log_components_only: bool | None = None,
         file_config: FileWriterConfig | None = None,
         clear_log_file: bool | None = None,
+        fileout_sync_on_flush: bool | None = None,
+        buffered_stdout: bool | None = None,
     ) -> None: ...
     @staticmethod
     def from_spec(spec: str) -> LoggerConfig: ...
@@ -1058,6 +1062,8 @@ class GreeksCalculator:
         index_instrument_id: model.InstrumentId | None = None,
         beta_weights: typing.Mapping[model.InstrumentId, float] | None = None,
         vega_time_weight_base: int | None = None,
+        vol_index_instrument_id: model.InstrumentId | None = None,
+        vol_beta_weights: typing.Mapping[model.InstrumentId, float] | None = None,
     ) -> model.GreeksData: ...
     def modify_greeks(
         self,
@@ -1073,6 +1079,11 @@ class GreeksCalculator:
         vol: float = 0.0,
         expiry_in_days: int = 0,
         vega_time_weight_base: int | None = None,
+        unshocked_vol: float = 0.0,
+        vol_index_instrument_id: model.InstrumentId | None = None,
+        vol_beta_weights: typing.Mapping[model.InstrumentId, float] | None = None,
+        index_price: float | None = None,
+        vol_index_price: float | None = None,
     ) -> tuple[float, float, float]: ...
     def portfolio_greeks(
         self,
@@ -1094,6 +1105,8 @@ class GreeksCalculator:
         beta_weights: typing.Mapping[model.InstrumentId, float] | None = None,
         greeks_filter: typing.Any | None = None,
         vega_time_weight_base: int | None = None,
+        vol_index_instrument_id: model.InstrumentId | None = None,
+        vol_beta_weights: typing.Mapping[model.InstrumentId, float] | None = None,
     ) -> model.PortfolioGreeks: ...
     def cache_futures_spread(
         self,
@@ -1110,14 +1123,14 @@ class Logger:
     def __init__(self, name: str = "Python") -> None: ...
     @property
     def name(self) -> str: ...
-    def trace(self, message: str, color: LogColor | None = ...) -> None: ...
-    def debug(self, message: str, color: LogColor | None = ...) -> None: ...
-    def info(self, message: str, color: LogColor | None = ...) -> None: ...
-    def warning(self, message: str, color: LogColor | None = ...) -> None: ...
-    def error(self, message: str, color: LogColor | None = ...) -> None: ...
+    def trace(self, message: str, color: LogColor | None = None) -> None: ...
+    def debug(self, message: str, color: LogColor | None = None) -> None: ...
+    def info(self, message: str, color: LogColor | None = None) -> None: ...
+    def warning(self, message: str, color: LogColor | None = None) -> None: ...
+    def error(self, message: str, color: LogColor | None = None) -> None: ...
     def exception(self, message: str = "", color: LogColor | None = None) -> None: ...
     def flush(self) -> None: ...
-    def _log(self, level: LogLevel, color: LogColor | None, message: str) -> None: ...
+    def _log(self, level: LogLevel, color: LogColor | None = None, message: str = "") -> None: ...
 
 @typing.final
 class MessageBus:
@@ -1313,7 +1326,7 @@ def get_exchange_rate(
     price_type: model.PriceType,
     quotes_bid: typing.Mapping[str, float],
     quotes_ask: typing.Mapping[str, float],
-) -> float | None: ...
+) -> decimal.Decimal | None: ...
 def init_logging(
     trader_id: model.TraderId,
     instance_id: core.UUID4,
@@ -1328,6 +1341,8 @@ def init_logging(
     is_bypassed: bool | None = None,
     print_config: bool | None = None,
     log_components_only: bool | None = None,
+    fileout_sync_on_flush: bool | None = None,
+    buffered_stdout: bool | None = None,
 ) -> LogGuard: ...
 def init_tracing() -> None: ...
 def log_header(
@@ -1339,4 +1354,5 @@ def logger_log(level: LogLevel, color: LogColor, component: str, message: str) -
 def logging_clock_set_realtime_mode() -> None: ...
 def logging_clock_set_static_mode() -> None: ...
 def logging_clock_set_static_time(time_ns: int) -> None: ...
+def logging_sync_to_disk() -> bool: ...
 def tracing_is_initialized() -> bool: ...

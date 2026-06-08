@@ -18,7 +18,7 @@
 //! Run with: `cargo run --example okx-exec-tester --package nautilus-okx --features examples`
 
 use nautilus_common::enums::Environment;
-use nautilus_live::node::LiveNode;
+use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
@@ -67,14 +67,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_factory = OKXDataClientFactory::new();
     let exec_factory = OKXExecutionClientFactory::new();
+    let exec_engine_config = LiveExecEngineConfig {
+        open_check_interval_secs: Some(10.0),
+        position_check_interval_secs: Some(30.0),
+        ..Default::default()
+    };
 
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name(node_name)
+        .with_exec_engine_config(exec_engine_config)
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
         .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .with_reconciliation(true)
         .with_delay_post_stop_secs(5)
         .build()?;
+
+    let order_qty = Quantity::from("0.01");
 
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
@@ -86,7 +94,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
-        .order_qty(Quantity::from("0.01"))
+        .order_qty(order_qty)
+        .open_position_on_start_qty(order_qty.as_decimal())
         .log_data(false)
         // .enable_limit_buys(false)
         // .enable_limit_sells(false)

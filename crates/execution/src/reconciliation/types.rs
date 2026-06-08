@@ -25,7 +25,7 @@ use rust_decimal::Decimal;
 
 /// Immutable snapshot of fill data for position simulation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FillSnapshot {
+pub(super) struct FillSnapshot {
     /// The venue order ID.
     pub venue_order_id: VenueOrderId,
     /// The order side (BUY or SELL).
@@ -40,7 +40,7 @@ pub struct FillSnapshot {
 
 /// Represents a position snapshot from the venue.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VenuePositionSnapshot {
+pub(super) struct VenuePositionSnapshot {
     /// The position side (Long, Short, or Flat).
     pub side: PositionSideSpecified,
     /// The position quantity (always positive, even for Short).
@@ -51,7 +51,7 @@ pub struct VenuePositionSnapshot {
 
 /// Result of the fill adjustment process.
 #[derive(Debug, Clone, PartialEq)]
-pub enum FillAdjustmentResult {
+pub(super) enum FillAdjustmentResult {
     /// No adjustment needed - return fills unchanged.
     NoAdjustment,
     /// Add synthetic opening fill to oldest lifecycle.
@@ -80,7 +80,7 @@ pub enum FillAdjustmentResult {
 impl FillSnapshot {
     /// Create a new fill snapshot.
     #[must_use]
-    pub fn new(
+    pub(super) fn new(
         venue_order_id: VenueOrderId,
         side: OrderSide,
         qty: Decimal,
@@ -98,7 +98,7 @@ impl FillSnapshot {
 
     /// Return signed direction multiplier: +1 for BUY, -1 for SELL.
     #[must_use]
-    pub fn direction(&self) -> i8 {
+    pub(super) fn direction(&self) -> i8 {
         match self.side {
             OrderSide::Buy => 1,
             OrderSide::Sell => -1,

@@ -21,7 +21,7 @@ name = "nautilus_live"
 crate-type = ["rlib"]
 
 [features]
-default = ["node"]
+default = ["node", "plugin"]
 node = [
   "dep:nautilus-data",
   "dep:nautilus-portfolio",
@@ -29,7 +29,8 @@ node = [
   "dep:nautilus-system",
   "dep:nautilus-trading",
 ]
-examples = ["node", "nautilus-trading/examples"]
+plugin = ["node", "dep:aws-lc-rs", "dep:nautilus-plugin"]
+examples = ["node", "dep:nautilus-testkit", "nautilus-trading/examples"]
 streaming = ["node", "nautilus-persistence", "nautilus-system/streaming"]
 extension-module = [
   "nautilus-common/extension-module",
@@ -50,6 +51,7 @@ python = [
   "nautilus-persistence?/python",
   "nautilus-portfolio/python",
   "nautilus-system/python",
+  "nautilus-testkit?/python",
   "nautilus-trading/python",
   "pyo3",
   "pyo3-stub-gen",
@@ -61,6 +63,11 @@ simulation = [
   "nautilus-common/simulation",
   "nautilus-execution/simulation",
 ]
+
+[package.metadata.cargo-machete]
+ignored = [
+  "nautilus-persistence",
+] # Optional dep activated only via the streaming feature
 
 [package.metadata.docs.rs]
 all-features = true
@@ -74,13 +81,17 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 
 nautilus-data = { workspace = true, optional = true }
 nautilus-persistence = { workspace = true, optional = true }
+nautilus-plugin = { workspace = true, features = ["host"], optional = true }
 nautilus-portfolio = { workspace = true, optional = true }
 nautilus-risk = { workspace = true, optional = true }
 nautilus-system = { workspace = true, features = ["live"], optional = true }
+nautilus-testkit = { workspace = true, optional = true }
 nautilus-trading = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
+aws-lc-rs = { workspace = true, optional = true }
 bon = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
@@ -95,7 +106,6 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
-async-trait = { workspace = true }
 criterion = { workspace = true }
 madsim = { workspace = true }
 rstest = { workspace = true }
@@ -112,6 +122,16 @@ harness = false
 name = "manager"
 path = "tests/manager.rs"
 required-features = ["node"]
+
+[[test]]
+name = "plugin"
+path = "tests/plugin.rs"
+required-features = ["plugin"]
+
+[[test]]
+name = "plugin_dispatch"
+path = "tests/plugin_dispatch.rs"
+required-features = ["plugin"]
 
 [[test]]
 name = "node"

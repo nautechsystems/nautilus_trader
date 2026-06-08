@@ -187,12 +187,10 @@ pub fn round_to_sig_figs(value: Decimal, sig_figs: u32) -> Decimal {
         return Decimal::ZERO;
     }
 
-    // Find order of magnitude using log10
-    let abs_val = value.abs();
-    let float_val: f64 = abs_val.to_string().parse().unwrap_or(0.0);
-    let magnitude = float_val.log10().floor() as i32;
+    // log10(|value|) = log10(|mantissa|) - scale; `ilog10` skips the float path
+    let mantissa = value.mantissa().unsigned_abs();
+    let magnitude = mantissa.ilog10() as i32 - value.scale() as i32;
 
-    // Calculate shift to round to sig_figs
     let shift = sig_figs as i32 - 1 - magnitude;
     let factor = Decimal::from(10_i64.pow(shift.unsigned_abs()));
 
@@ -288,6 +286,84 @@ fn parse_outcome_symbol_encoding(symbol: &str) -> anyhow::Result<u32> {
     encoding
         .parse::<u32>()
         .with_context(|| format!("Invalid Hyperliquid outcome symbol '{symbol}'"))
+}
+
+/// Suffix shared by every Nautilus outcome symbol, mirroring `-PERP` / `-SPOT`.
+pub const OUTCOME_SYMBOL_SUFFIX: &str = "-OUTCOME";
+/// Yes-side label on Nautilus outcome symbols.
+pub const OUTCOME_SIDE_YES: &str = "YES";
+/// No-side label on Nautilus outcome symbols.
+pub const OUTCOME_SIDE_NO: &str = "NO";
+
+/// Parses a Nautilus outcome instrument symbol of the form
+/// `{outcome_index}-{YES|NO}-OUTCOME` into `(outcome_index, side)` where side
+/// is `0` for Yes and `1` for No.
+///
+/// Returns `None` if the symbol does not match the expected shape or if the
+/// `(outcome_index, side)` pair would not encode into a valid HIP-4
+/// `HyperliquidAssetId` (i.e. `100_000_000 + 10 * outcome_index + side`
+/// would overflow `u32`). The legacy `#E` / `+E` wire parser already rejects
+/// out-of-range encodings; this keeps the two paths in parity so downstream
+/// arithmetic on the returned pair cannot overflow.
+#[must_use]
+pub fn parse_outcome_nautilus_symbol(symbol: &str) -> Option<(u32, u8)> {
+    let rest = symbol.strip_suffix(OUTCOME_SYMBOL_SUFFIX)?;
+    let (index_str, side_str) = rest.rsplit_once('-')?;
+    let outcome_index = index_str.parse::<u32>().ok()?;
+    let side = match side_str {
+        OUTCOME_SIDE_YES => 0,
+        OUTCOME_SIDE_NO => 1,
+        _ => return None,
+    };
+    let encoding = outcome_index
+        .checked_mul(10)?
+        .checked_add(u32::from(side))?;
+    HyperliquidAssetId::from_outcome_encoding(encoding)?;
+    Some((outcome_index, side))
+}
+
+/// Formats an `(outcome_index, side)` pair into the Nautilus outcome symbol
+/// form `{outcome_index}-{YES|NO}-OUTCOME`.
+#[must_use]
+pub fn format_outcome_nautilus_symbol(outcome_index: u32, side: u8) -> String {
+    let side_label = match side {
+        0 => OUTCOME_SIDE_YES,
+        _ => OUTCOME_SIDE_NO,
+    };
+    format!("{outcome_index}-{side_label}{OUTCOME_SYMBOL_SUFFIX}")
+}
+
+/// Returns the `+<encoding>` token form for the side token referenced by a
+/// Nautilus outcome symbol, or `None` if the symbol is not an outcome.
+#[must_use]
+pub fn outcome_token_from_nautilus_symbol(symbol: &str) -> Option<String> {
+    let (outcome_index, side) = parse_outcome_nautilus_symbol(symbol)?;
+    let encoding = 10 * outcome_index + u32::from(side);
+    Some(format!("+{encoding}"))
+}
+
+/// Returns the secondary cache-alias key for a Nautilus instrument symbol.
+///
+/// For outcome symbols, this is the `+<encoding>` token form (matching the
+/// `coin` field on `spotClearinghouseState` balances). For perp / spot
+/// symbols it is the leading segment before the first `-` (the base asset
+/// or sanitized base for HIP-3 perps). Returns `None` for an empty symbol.
+///
+/// Used by `cache_instrument`, order-response report builders, and the bar
+/// lookup so all three derive the same alias and stay in sync as the symbol
+/// shape evolves.
+#[must_use]
+pub fn cache_alias_for_symbol(symbol: &str) -> Option<String> {
+    if let Some(token) = outcome_token_from_nautilus_symbol(symbol) {
+        return Some(token);
+    }
+
+    let leading = symbol.split('-').next()?;
+    if leading.is_empty() {
+        None
+    } else {
+        Some(leading.to_string())
+    }
 }
 
 /// Converts a Nautilus `TimeInForce` to Hyperliquid TIF.
@@ -409,6 +485,25 @@ pub fn order_to_hyperliquid_request_with_asset(
     price_decimals: u8,
     should_normalize_prices: bool,
     slippage_bps: u32,
+) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
+    order_to_hyperliquid_request_with_asset_and_cloid(
+        order,
+        asset,
+        price_decimals,
+        should_normalize_prices,
+        slippage_bps,
+        Some(Cloid::from_client_order_id(order.client_order_id())),
+    )
+}
+
+/// Converts a Nautilus order to Hyperliquid request with an explicit CLOID.
+pub fn order_to_hyperliquid_request_with_asset_and_cloid(
+    order: &OrderAny,
+    asset: u32,
+    price_decimals: u8,
+    should_normalize_prices: bool,
+    slippage_bps: u32,
+    cloid: Option<Cloid>,
 ) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
     let is_buy = matches!(order.order_side(), OrderSide::Buy);
     let reduce_only = order.is_reduce_only();
@@ -540,8 +635,6 @@ pub fn order_to_hyperliquid_request_with_asset(
         }
         _ => anyhow::bail!("Unsupported order type for Hyperliquid: {order_type:?}"),
     };
-
-    let cloid = Some(Cloid::from_client_order_id(order.client_order_id()));
 
     Ok(HyperliquidExecPlaceOrderRequest {
         asset,
@@ -839,12 +932,12 @@ pub fn parse_account_balances_and_margins(
         None => return Ok((balances, margins)),
     };
 
-    let mut total_value = cross_margin_summary.total_raw_usd.max(Decimal::ZERO);
+    let mut total_value = cross_margin_summary.total_raw_usd;
     let free_value = state.withdrawable.unwrap_or(total_value).max(Decimal::ZERO);
 
-    // Withdrawable may include spot balances that sit outside the margin account value;
-    // raise total so those funds are not silently clamped away. Mirrors the HTTP parser.
-    if free_value > total_value {
+    // Withdrawable may include spot balances that sit outside a positive margin
+    // account value; raise total so those funds are not silently clamped away.
+    if total_value >= Decimal::ZERO && free_value > total_value {
         total_value = free_value;
     }
 
@@ -869,10 +962,10 @@ pub fn parse_account_balances_and_margins(
 
 /// Merges perp clearinghouse balances with spot balances into a unified set.
 ///
-/// The perp parser already reflects combined USDC (its `withdrawable` may include
-/// spot buckets). To avoid double-counting, this helper appends only non-USDC
-/// spot tokens onto the perp-derived balances. If the perp state has no margin
-/// summary, the full spot balance set is used verbatim.
+/// The perp parser already reflects combined USDC when its cross-margin summary
+/// carries collateral or margin state, so this helper appends only non-USDC spot
+/// tokens in that case. If the perp state has no margin summary, or the summary
+/// is present but zeroed, spot USDC is used verbatim.
 ///
 /// # Errors
 ///
@@ -883,12 +976,24 @@ pub fn parse_combined_account_balances_and_margins(
 ) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>)> {
     let (mut balances, margins) = parse_account_balances_and_margins(perp_state)?;
 
-    let has_perp_summary = perp_state.cross_margin_summary.is_some();
+    let perp_reflects_usdc = perp_state
+        .cross_margin_summary
+        .as_ref()
+        .is_some_and(|summary| {
+            summary.total_raw_usd != Decimal::ZERO
+                || summary.total_margin_used > Decimal::ZERO
+                || perp_state.withdrawable.unwrap_or(Decimal::ZERO) > Decimal::ZERO
+        });
+
+    if perp_state.cross_margin_summary.is_some() && !perp_reflects_usdc {
+        balances.retain(|balance| balance.currency.code.as_str() != "USDC");
+    }
+
     let spot_balances = parse_spot_account_balances(spot_state)?;
 
     for balance in spot_balances {
         let is_usdc = balance.currency.code.as_str() == "USDC";
-        if has_perp_summary && is_usdc {
+        if perp_reflects_usdc && is_usdc {
             continue;
         }
         balances.push(balance);
@@ -1024,6 +1129,84 @@ mod tests {
         assert_eq!(asset_id.to_raw(), raw_asset_id);
         assert_eq!(asset_id.outcome_index(), Some(outcome));
         assert_eq!(asset_id.outcome_side(), Some(side));
+    }
+
+    #[rstest]
+    #[case("25-YES-OUTCOME", 25, 0)]
+    #[case("25-NO-OUTCOME", 25, 1)]
+    #[case("0-YES-OUTCOME", 0, 0)]
+    #[case("999-NO-OUTCOME", 999, 1)]
+    fn test_parse_outcome_nautilus_symbol(
+        #[case] symbol: &str,
+        #[case] outcome_index: u32,
+        #[case] side: u8,
+    ) {
+        let parsed = parse_outcome_nautilus_symbol(symbol).unwrap();
+        assert_eq!(parsed, (outcome_index, side));
+    }
+
+    #[rstest]
+    #[case("25-OUTCOME")]
+    #[case("25-MAYBE-OUTCOME")]
+    #[case("25-yes-OUTCOME")]
+    #[case("-YES-OUTCOME")]
+    #[case("YES-25-OUTCOME")]
+    #[case("25-YES-outcome")]
+    #[case("25-YES")]
+    fn test_parse_outcome_nautilus_symbol_rejects_invalid(#[case] symbol: &str) {
+        assert!(parse_outcome_nautilus_symbol(symbol).is_none());
+    }
+
+    #[rstest]
+    // outcome_index * 10 overflows u32.
+    #[case("999999999-YES-OUTCOME")]
+    // outcome_index * 10 fits but 100_000_000 + encoding overflows u32.
+    #[case("429496729-YES-OUTCOME")]
+    // u32::MAX itself; rejected on the multiply.
+    #[case("4294967295-NO-OUTCOME")]
+    fn test_parse_outcome_nautilus_symbol_rejects_overflow(#[case] symbol: &str) {
+        assert!(parse_outcome_nautilus_symbol(symbol).is_none());
+    }
+
+    #[rstest]
+    #[case(25, 0, "25-YES-OUTCOME")]
+    #[case(25, 1, "25-NO-OUTCOME")]
+    #[case(0, 0, "0-YES-OUTCOME")]
+    fn test_format_outcome_nautilus_symbol(
+        #[case] outcome_index: u32,
+        #[case] side: u8,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            format_outcome_nautilus_symbol(outcome_index, side),
+            expected,
+        );
+    }
+
+    #[rstest]
+    #[case("25-YES-OUTCOME", Some("+250".to_string()))]
+    #[case("25-NO-OUTCOME", Some("+251".to_string()))]
+    #[case("0-YES-OUTCOME", Some("+0".to_string()))]
+    #[case("BTC-USD-PERP", None)]
+    #[case("+250", None)]
+    fn test_outcome_token_from_nautilus_symbol(
+        #[case] symbol: &str,
+        #[case] expected: Option<String>,
+    ) {
+        assert_eq!(outcome_token_from_nautilus_symbol(symbol), expected);
+    }
+
+    #[rstest]
+    #[case("25-YES-OUTCOME", Some("+250".to_string()))]
+    #[case("25-NO-OUTCOME", Some("+251".to_string()))]
+    #[case("BTC-USD-PERP", Some("BTC".to_string()))]
+    #[case("PURR-USDC-SPOT", Some("PURR".to_string()))]
+    #[case("dex:STREAMABCDxxxx-USD-PERP", Some("dex:STREAMABCDxxxx".to_string()))]
+    #[case("+250", Some("+250".to_string()))]
+    #[case("#250", Some("#250".to_string()))]
+    #[case("", None)]
+    fn test_cache_alias_for_symbol(#[case] symbol: &str, #[case] expected: Option<String>) {
+        assert_eq!(cache_alias_for_symbol(symbol), expected);
     }
 
     #[rstest]
@@ -1163,6 +1346,11 @@ mod tests {
 
         // Zero case
         assert_eq!(round_to_sig_figs(dec!(0), 5), dec!(0));
+
+        assert_eq!(round_to_sig_figs(dec!(-104567.3), 5), dec!(-104570));
+        assert_eq!(round_to_sig_figs(dec!(-1234.5), 5), dec!(-1234.5));
+        assert_eq!(round_to_sig_figs(dec!(-0.000123456), 5), dec!(-0.00012346));
+        assert_eq!(round_to_sig_figs(dec!(-0.123456), 5), dec!(-0.12346));
     }
 
     #[rstest]
@@ -1870,7 +2058,25 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_account_balances_bumps_total_when_withdrawable_exceeds() {
+    fn test_parse_account_balances_preserves_negative_total_raw_usd() {
+        let json =
+            include_str!("../../test_data/http_clearinghouse_state_negative_total_raw_usd.json");
+
+        let state: ClearinghouseState = serde_json::from_str(json).unwrap();
+        let (balances, margins) = parse_account_balances_and_margins(&state).unwrap();
+
+        assert_eq!(balances.len(), 1);
+        let balance = &balances[0];
+        assert_eq!(balance.total.as_decimal(), dec!(-22358.938225));
+        assert_eq!(balance.free.as_decimal(), dec!(772.232111));
+        assert_eq!(balance.locked.as_decimal(), dec!(-23131.170336));
+
+        assert_eq!(margins.len(), 1);
+        assert_eq!(margins[0].initial.as_decimal(), dec!(963.798764));
+    }
+
+    #[rstest]
+    fn test_parse_account_balances_bumps_positive_total_when_withdrawable_exceeds() {
         let json = r#"{
             "assetPositions": [],
             "crossMarginSummary": {
@@ -1990,6 +2196,178 @@ mod tests {
         assert_eq!(balances.len(), 2);
         assert_eq!(balances[0].currency.code.as_str(), "USDC");
         assert_eq!(balances[0].total.as_decimal(), dec!(500));
+        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].total.as_decimal(), dec!(10));
+    }
+
+    #[rstest]
+    fn test_parse_combined_surfaces_spot_usdc_when_perp_summary_zeroed_unified() {
+        let perp_json = r#"{
+            "assetPositions": [],
+            "crossMarginSummary": {
+                "accountValue": "0",
+                "totalNtlPos": "0",
+                "totalRawUsd": "0",
+                "totalMarginUsed": "0",
+                "withdrawable": "0"
+            },
+            "withdrawable": "0"
+        }"#;
+        let perp_state: ClearinghouseState = serde_json::from_str(perp_json).unwrap();
+
+        let spot_json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "75", "hold": "5", "entryNtl": "0"},
+                {"coin": "PURR", "token": 1, "total": "10", "hold": "0", "entryNtl": "5"}
+            ]
+        }"#;
+        let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
+
+        let (balances, margins) =
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+
+        assert!(margins.is_empty());
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(75));
+        assert_eq!(balances[0].free.as_decimal(), dec!(70));
+        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].total.as_decimal(), dec!(10));
+    }
+
+    #[rstest]
+    fn test_parse_combined_deduplicates_usdc_when_perp_total_raw_usd_non_zero() {
+        let perp_json = r#"{
+            "assetPositions": [],
+            "crossMarginSummary": {
+                "accountValue": "50",
+                "totalNtlPos": "0",
+                "totalRawUsd": "50",
+                "totalMarginUsed": "0",
+                "withdrawable": "0"
+            },
+            "withdrawable": "0"
+        }"#;
+        let perp_state: ClearinghouseState = serde_json::from_str(perp_json).unwrap();
+
+        let spot_json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "75", "hold": "0", "entryNtl": "0"},
+                {"coin": "PURR", "token": 1, "total": "10", "hold": "0", "entryNtl": "5"}
+            ]
+        }"#;
+        let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
+
+        let (balances, margins) =
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+
+        assert!(margins.is_empty());
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(50));
+        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].total.as_decimal(), dec!(10));
+    }
+
+    #[rstest]
+    fn test_parse_combined_deduplicates_usdc_when_perp_total_raw_usd_negative() {
+        let perp_json = r#"{
+            "assetPositions": [],
+            "crossMarginSummary": {
+                "accountValue": "-50",
+                "totalNtlPos": "0",
+                "totalRawUsd": "-50",
+                "totalMarginUsed": "0",
+                "withdrawable": "0"
+            },
+            "withdrawable": "0"
+        }"#;
+        let perp_state: ClearinghouseState = serde_json::from_str(perp_json).unwrap();
+
+        let spot_json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "75", "hold": "0", "entryNtl": "0"},
+                {"coin": "PURR", "token": 1, "total": "10", "hold": "0", "entryNtl": "5"}
+            ]
+        }"#;
+        let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
+
+        let (balances, margins) =
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+
+        assert!(margins.is_empty());
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(-50));
+        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].total.as_decimal(), dec!(10));
+    }
+
+    #[rstest]
+    fn test_parse_combined_deduplicates_usdc_when_perp_margin_used_non_zero() {
+        let perp_json = r#"{
+            "assetPositions": [],
+            "crossMarginSummary": {
+                "accountValue": "0",
+                "totalNtlPos": "0",
+                "totalRawUsd": "0",
+                "totalMarginUsed": "25",
+                "withdrawable": "0"
+            },
+            "withdrawable": "0"
+        }"#;
+        let perp_state: ClearinghouseState = serde_json::from_str(perp_json).unwrap();
+
+        let spot_json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "75", "hold": "0", "entryNtl": "0"},
+                {"coin": "PURR", "token": 1, "total": "10", "hold": "0", "entryNtl": "5"}
+            ]
+        }"#;
+        let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
+
+        let (balances, margins) =
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+
+        assert_eq!(margins.len(), 1);
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(0));
+        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].total.as_decimal(), dec!(10));
+    }
+
+    #[rstest]
+    fn test_parse_combined_deduplicates_usdc_when_perp_withdrawable_non_zero() {
+        let perp_json = r#"{
+            "assetPositions": [],
+            "crossMarginSummary": {
+                "accountValue": "0",
+                "totalNtlPos": "0",
+                "totalRawUsd": "0",
+                "totalMarginUsed": "0",
+                "withdrawable": "50"
+            },
+            "withdrawable": "50"
+        }"#;
+        let perp_state: ClearinghouseState = serde_json::from_str(perp_json).unwrap();
+
+        let spot_json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "75", "hold": "0", "entryNtl": "0"},
+                {"coin": "PURR", "token": 1, "total": "10", "hold": "0", "entryNtl": "5"}
+            ]
+        }"#;
+        let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
+
+        let (balances, margins) =
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+
+        assert!(margins.is_empty());
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(50));
+        assert_eq!(balances[0].free.as_decimal(), dec!(50));
         assert_eq!(balances[1].currency.code.as_str(), "PURR");
         assert_eq!(balances[1].total.as_decimal(), dec!(10));
     }

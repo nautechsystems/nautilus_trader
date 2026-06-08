@@ -233,6 +233,59 @@ class TickScheduled(Strategy):
         pass
 
 
+class MultiInstrumentTickScheduledConfig(StrategyConfig):
+    """
+    Submit market orders from an instrument keyed action schedule.
+    """
+
+    _CUSTOM_FIELDS = ("instrument_actions",)
+
+    def __new__(cls, *args, **kwargs):
+        for key in cls._CUSTOM_FIELDS:
+            kwargs.pop(key, None)
+        return super().__new__(cls, *args, **kwargs)
+
+    def __init__(
+        self,
+        instrument_actions: dict,
+        **kwargs,
+    ):
+        super().__init__()
+        self.instrument_actions = instrument_actions
+
+
+class MultiInstrumentTickScheduled(Strategy):
+    def __init__(self, config: MultiInstrumentTickScheduledConfig):
+        super().__init__(config)
+        self._actions: dict[InstrumentId, dict[int, list[tuple[OrderSide, Quantity]]]] = {}
+        self._tick_counts: dict[InstrumentId, int] = {}
+
+        for raw_instrument_id, actions in config.instrument_actions.items():
+            instrument_id = InstrumentId.from_str(str(raw_instrument_id))
+            instrument_actions: dict[int, list[tuple[OrderSide, Quantity]]] = {}
+            for entry in actions:
+                idx = int(entry[0])
+                side = OrderSide.BUY if str(entry[1]).upper() == "BUY" else OrderSide.SELL
+                qty = Quantity.from_str(str(entry[2]))
+                instrument_actions.setdefault(idx, []).append((side, qty))
+
+            self._actions[instrument_id] = instrument_actions
+            self._tick_counts[instrument_id] = 0
+
+    def on_start(self):
+        for instrument_id in self._actions:
+            self.subscribe_quotes(instrument_id)
+
+    def on_quote(self, tick: QuoteTick):
+        instrument_id = tick.instrument_id
+        self._tick_counts[instrument_id] += 1
+        for side, qty in self._actions[instrument_id].get(self._tick_counts[instrument_id], []):
+            self.submit_order(_market_order(self, instrument_id, side, qty))
+
+    def on_stop(self):
+        pass
+
+
 class CascadingStopConfig(StrategyConfig):
     _CUSTOM_FIELDS = ("instrument_id", "trade_size", "stop_price")
 

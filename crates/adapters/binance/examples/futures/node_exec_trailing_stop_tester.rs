@@ -76,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     http_client.cancel_all_algo_orders(instrument_id).await?;
 
     let data_config = BinanceDataClientConfig {
-        product_types: vec![product_type],
+        product_type,
         environment,
         api_key: Some(api_key.clone()),
         api_secret: Some(api_secret.clone()),
@@ -86,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let exec_config = BinanceExecClientConfig {
         trader_id,
         account_id,
-        product_types: vec![product_type],
+        product_type,
         environment,
         api_key: Some(api_key),
         api_secret: Some(api_secret),

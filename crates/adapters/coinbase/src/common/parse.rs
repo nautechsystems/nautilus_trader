@@ -32,7 +32,9 @@ use serde::{
     de::{self, Unexpected},
 };
 
-use crate::common::enums::{CoinbaseGranularity, CoinbaseMarginType, CoinbaseProductType};
+use crate::common::enums::{
+    CoinbaseGranularity, CoinbaseMarginType, CoinbaseProductStatus, CoinbaseProductType,
+};
 
 /// Deserializes an optional value where Coinbase uses an empty string for `None`.
 pub fn deserialize_empty_string_to_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -67,6 +69,17 @@ where
 {
     let value = String::deserialize(deserializer)?;
     Ok(CoinbaseProductType::from_str(&value).unwrap_or(CoinbaseProductType::Unknown))
+}
+
+/// Deserializes a Coinbase product status and falls back to `Unknown`.
+pub fn deserialize_product_status_or_unknown<'de, D>(
+    deserializer: D,
+) -> Result<CoinbaseProductStatus, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    Ok(CoinbaseProductStatus::from_str(&value).unwrap_or(CoinbaseProductStatus::Unknown))
 }
 
 /// Deserializes the optional `margin_type` field on historical orders.

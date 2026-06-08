@@ -19,7 +19,7 @@ use pyo3::{
     prelude::*,
     types::{PyDict, PyList},
 };
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use super::common::commissions_from_vec;
 use crate::{
@@ -29,7 +29,7 @@ use crate::{
         ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId, Venue,
         VenueOrderId,
     },
-    position::Position,
+    position::{self, Position},
     python::instruments::pyobject_to_instrument_any,
     types::{Currency, Money, Price, Quantity},
 };
@@ -465,4 +465,26 @@ impl Position {
         dict.set_item("commissions", commissions_from_vec(py, self.commissions())?)?;
         Ok(dict.into())
     }
+}
+
+/// Replays position legs onto a hypothetical NETTING position in `ts_opened`
+/// order, returning `(net_signed_qty, net_avg_px_open)`.
+///
+/// Each leg is `(signed_qty, avg_px_open, ts_opened_ns)`. Rules follow
+/// `Position.apply`:
+/// - Same-side legs produce a quantity-weighted average open price.
+/// - Opposite-side legs partial-close at the existing average.
+/// - A leg that crosses zero makes the residual take that leg's price.
+///
+/// Zero-quantity legs are skipped. Sort is stable on `ts_opened`; the caller
+/// orders ties (e.g. by `position_id`).
+#[must_use]
+#[pyfunction]
+#[pyo3(name = "fold_net_position")]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "PyO3 cannot extract Python list into &[T]; Vec<T> ownership is required"
+)]
+pub fn py_fold_net_position(legs: Vec<(Decimal, Decimal, u64)>) -> (Decimal, Decimal) {
+    position::fold_net_position(&legs)
 }

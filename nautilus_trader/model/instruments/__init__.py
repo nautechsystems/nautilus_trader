@@ -24,7 +24,9 @@ from nautilus_trader.model.instruments.binary_option import BinaryOption
 from nautilus_trader.model.instruments.cfd import Cfd
 from nautilus_trader.model.instruments.commodity import Commodity
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
+from nautilus_trader.model.instruments.crypto_futures_spread import CryptoFuturesSpread
 from nautilus_trader.model.instruments.crypto_option import CryptoOption
+from nautilus_trader.model.instruments.crypto_option_spread import CryptoOptionSpread
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.equity import Equity
@@ -44,7 +46,9 @@ __all__ = [
     "Cfd",
     "Commodity",
     "CryptoFuture",
+    "CryptoFuturesSpread",
     "CryptoOption",
+    "CryptoOptionSpread",
     "CryptoPerpetual",
     "CurrencyPair",
     "Equity",

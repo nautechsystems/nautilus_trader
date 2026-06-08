@@ -18,6 +18,9 @@
 pub mod config;
 
 #[cfg(feature = "hypersync")]
+pub mod cache;
+
+#[cfg(feature = "hypersync")]
 pub mod factories;
 
 #[cfg(feature = "hypersync")]
@@ -69,6 +72,11 @@ pub fn blockchain(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::config::DexPoolFilters>()?;
     #[cfg(feature = "hypersync")]
     m.add_class::<crate::factories::BlockchainDataClientFactory>()?;
+    #[cfg(feature = "hypersync")]
+    m.add_function(wrap_pyfunction!(
+        crate::python::cache::py_load_pool_snapshot,
+        m
+    )?)?;
 
     // Register extractors with the global registry
     #[cfg(feature = "hypersync")]

@@ -173,7 +173,26 @@ where
     #[must_use]
     pub fn new_with_quota(base_quota: Option<Quota>, keyed_quotas: Vec<(K, Quota)>) -> Self {
         let clock = MonotonicClock {};
-        let start = MonotonicClock::now(&clock);
+        Self::new_with_clock(base_quota, keyed_quotas, clock)
+    }
+}
+
+impl<K, C> RateLimiter<K, C>
+where
+    K: Eq + Hash,
+    C: Clock,
+{
+    /// Creates a new rate limiter with an explicit clock.
+    ///
+    /// The base quota applies to all keys that do not have specific quotas.
+    /// Keyed quotas override the base quota for specific keys.
+    #[must_use]
+    pub fn new_with_clock(
+        base_quota: Option<Quota>,
+        keyed_quotas: Vec<(K, Quota)>,
+        clock: C,
+    ) -> Self {
+        let start = clock.now();
         let gcra: DashMap<_, _> = keyed_quotas
             .into_iter()
             .map(|(k, q)| (k, Gcra::new(q)))

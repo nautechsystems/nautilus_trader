@@ -566,6 +566,7 @@ where
             ts_event: order.ts_init(),
             ts_init: order.ts_init(),
             reconciliation: false,
+            causation_id: None,
         }
     }
 }
@@ -857,6 +858,15 @@ impl OrderCore {
         self.filled_qty = new_filled_qty;
         self.leaves_qty = self.leaves_qty.saturating_sub(event.last_qty);
         self.ts_last = event.ts_event;
+
+        if let Some(commission) = event.commission {
+            let commission_currency = commission.currency;
+            if let Some(existing_commission) = self.commissions.get_mut(&commission_currency) {
+                *existing_commission = *existing_commission + commission;
+            } else {
+                self.commissions.insert(commission_currency, commission);
+            }
+        }
 
         if self.ts_accepted.is_none() {
             // Set ts_accepted to time of first fill if not previously set
@@ -1153,6 +1163,38 @@ mod tests {
         assert_eq!(order.leaves_qty(), Quantity::from(0));
         // Weighted avg: (50_000 * -5.0 + 50_000 * -7.0) / 100_000 = -6.0
         assert_eq!(order.avg_px(), Some(-6.0));
+    }
+
+    #[rstest]
+    fn test_order_life_cycle_accumulates_fill_commissions() {
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
+        let fill1 = OrderFilledSpec::builder()
+            .last_qty(Quantity::from(50_000))
+            .trade_id(TradeId::from("TRADE-1"))
+            .commission(Money::from("1.25 USD"))
+            .build();
+        let fill2 = OrderFilledSpec::builder()
+            .last_qty(Quantity::from(50_000))
+            .trade_id(TradeId::from("TRADE-2"))
+            .commission(Money::from("1.35 USD"))
+            .build();
+
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order.apply(OrderEventAny::Filled(fill1)).unwrap();
+        order.apply(OrderEventAny::Filled(fill2)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(
+            order.commission(&Currency::USD()),
+            Some(Money::from("2.60 USD"))
+        );
+        assert_eq!(order.commissions_vec(), vec![Money::from("2.60 USD")]);
     }
 
     #[rstest]

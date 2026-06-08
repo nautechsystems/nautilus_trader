@@ -1,0 +1,54 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "sprdId": "ETH-USD-SWAP_ETH-USD-231229",
+      "sprdType": "inverse",
+      "state": "live",
+      "baseCcy": "ETH",
+      "szCcy": "USD",
+      "quoteCcy": "USD",
+      "tickSz": "0.01",
+      "minSz": "10",
+      "lotSz": "10",
+      "listTime": "1686903000159",
+      "legs": [
+        {
+          "instId": "ETH-USD-SWAP",
+          "side": "sell"
+        },
+        {
+          "instId": "ETH-USD-231229",
+          "side": "buy"
+        }
+      ],
+      "expTime": "1703836800000",
+      "uTime": "1691376905595"
+    },
+    {
+      "sprdId": "BTC-USDT_BTC-USDT-SWAP",
+      "sprdType": "linear",
+      "state": "live",
+      "baseCcy": "BTC",
+      "szCcy": "BTC",
+      "quoteCcy": "USDT",
+      "tickSz": "0.0001",
+      "minSz": "0.001",
+      "lotSz": "0.001",
+      "listTime": "1597026383085",
+      "expTime": "",
+      "uTime": "1597028888085",
+      "legs": [
+        {
+          "instId": "BTC-USDT",
+          "side": "sell"
+        },
+        {
+          "instId": "BTC-USDT-SWAP",
+          "side": "buy"
+        }
+      ]
+    }
+  ]
+}

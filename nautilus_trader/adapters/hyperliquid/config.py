@@ -69,7 +69,8 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
         When set, this address is used for balance queries, position reports,
         and WebSocket subscriptions instead of the address derived from the private key.
         Signing still uses the agent wallet's private key.
-        If ``None`` then will source the `HYPERLIQUID_ACCOUNT_ADDRESS` environment variable.
+        If ``None`` and no explicit `vault_address` is set, then will source the
+        `HYPERLIQUID_ACCOUNT_ADDRESS` environment variable.
     product_types : tuple[HyperliquidProductType, ...], optional
         The Hyperliquid product types to load for the client instrument provider.
         If ``None`` then the instrument provider defaults are used.
@@ -88,6 +89,8 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
         The maximum delay (milliseconds) between retries.
     http_timeout_secs : PositiveInt, default 10
         The timeout (seconds) for HTTP requests.
+    ws_post_timeout_secs : PositiveInt, default 10
+        The timeout (seconds) for WebSocket post trading requests.
     normalize_prices : bool, default True
         If order prices should be normalized to 5 significant figures before submission.
         Hyperliquid enforces a maximum of 5 significant figures on all prices, which is a
@@ -112,4 +115,5 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None
     http_timeout_secs: PositiveInt = 10
+    ws_post_timeout_secs: PositiveInt = 10
     normalize_prices: bool = True

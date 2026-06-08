@@ -183,6 +183,7 @@ fn sample_cancel(seq: u64, ts_init: UnixNanos) -> CancelOrder {
         UUID4::new(),
         ts_init,
         None,
+        None, // correlation_id
     )
 }
 

@@ -1179,12 +1179,13 @@ cdef class BacktestEngine:
         """
         Reset the backtest engine.
 
-        All stateful fields are reset to their initial value, except for data and instruments which persist.
+        All stateful fields are reset to their initial value while loaded components,
+        data, instruments, and venues persist.
 
         Notes
         -----
-        Data and instruments are retained across resets by default to enable repeated runs
-        with different strategies or parameters against the same dataset.
+        Loaded actors, strategies, execution algorithms, data, and instruments are retained
+        across resets by default. Clear or remove loaded components before adding replacements.
 
         See Also
         --------
@@ -1203,9 +1204,13 @@ cdef class BacktestEngine:
 
         self._kernel.data_engine.reset()
 
-        # Reset ExecEngine
         if self._kernel.exec_engine.is_running:
             self._kernel.exec_engine.stop()
+
+        # Reset exchanges before ExecEngine wipes the cache so the conditional
+        # in exchange.reset() can see the prior run's account.
+        for exchange in self._venues.values():
+            exchange.reset()
 
         self._kernel.exec_engine.reset()
 
@@ -1222,9 +1227,6 @@ cdef class BacktestEngine:
         self._kernel.emulator.reset()
 
         self._kernel.trader.reset()
-
-        for exchange in self._venues.values():
-            exchange.reset()
 
         # Clear accumulated timer events from previous run
         if self._accumulator._0 != NULL:
@@ -1463,9 +1465,69 @@ cdef class BacktestEngine:
             total_events=self._kernel.exec_engine.event_count,
             total_orders=self._kernel.cache.orders_total_count(),
             total_positions=len(self._kernel.cache.positions()) + len(self._kernel.cache.position_snapshots()),
+            summary=self._get_result_summary(),
             stats_pnls=stats_pnls,
             stats_returns=self._kernel.portfolio.analyzer.get_performance_stats_returns(),
         )
+
+    cdef dict _get_result_summary(self):
+        cdef:
+            dict summary = {}
+            object cache = self._kernel.cache
+            int snapshot_positions = len(cache.position_snapshots())
+            object venue
+            object account
+            object currency
+            object balance
+            object base_currency
+            object venues
+            str venue_key
+            str account_key
+            str balance_key
+
+        summary["iterations"] = str(self._iteration)
+        summary["total_events"] = str(self._kernel.exec_engine.event_count)
+        summary["orders.total"] = str(cache.orders_total_count())
+        summary["orders.open"] = str(cache.orders_open_count())
+        summary["orders.closed"] = str(cache.orders_closed_count())
+        summary["orders.emulated"] = str(cache.orders_emulated_count())
+        summary["orders.inflight"] = str(cache.orders_inflight_count())
+        summary["positions.total"] = str(cache.positions_total_count())
+        summary["positions.open"] = str(cache.positions_open_count())
+        summary["positions.closed"] = str(cache.positions_closed_count())
+        summary["positions.snapshots"] = str(snapshot_positions)
+        summary["positions.total_with_snapshots"] = str(
+            cache.positions_total_count() + snapshot_positions,
+        )
+
+        venues = sorted(self._venues.keys(), key=str)
+        summary["venues.total"] = str(len(venues))
+
+        for venue in venues:
+            account = cache.account_for_venue(venue)
+            if account is None:
+                continue
+
+            venue_key = str(venue)
+            account_key = f"account.{venue_key}"
+            summary[f"{account_key}.id"] = str(account.id)
+            summary[f"{account_key}.type"] = account_type_to_str(account.type)
+            base_currency = account.base_currency
+            summary[f"{account_key}.base_currency"] = (
+                base_currency.code if base_currency is not None else "None"
+            )
+            summary[f"{account_key}.event_count"] = str(account.event_count)
+
+            for currency, balance in sorted(
+                account.balances().items(),
+                key=lambda item: item[0].code,
+            ):
+                balance_key = f"{account_key}.balance.{currency.code}"
+                summary[f"{balance_key}.total"] = str(balance.total)
+                summary[f"{balance_key}.free"] = str(balance.free)
+                summary[f"{balance_key}.locked"] = str(balance.locked)
+
+        return summary
 
     def _run(
         self,
@@ -1530,6 +1592,9 @@ cdef class BacktestEngine:
             clock.set_time(start_ns)
 
         if self._iteration == 0:
+            for exchange in self._venues.values():
+                exchange._set_instrument_expiration_timers()
+
             # Initialize run
             self._run_config_id = run_config_id  # Can be None
             self._run_id = UUID4()
@@ -3005,6 +3070,7 @@ cdef class SimulatedExchange:
         self._matching_engines[instrument.id] = matching_engine
 
         self._update_next_instrument_expiration(matching_engine)
+        self._set_instrument_expiration_timer(matching_engine)
 
         self._log.info(f"Added instrument {instrument.id} and created matching engine")
 
@@ -3284,6 +3350,8 @@ cdef class SimulatedExchange:
             return
 
         matching_engine.update_instrument(instrument)
+        self._update_next_instrument_expiration(matching_engine)
+        self._set_instrument_expiration_timer(matching_engine)
 
     cdef bint _has_pending_commands(self, uint64_t ts_now):
         if self._message_queue:
@@ -3622,6 +3690,9 @@ cdef class SimulatedExchange:
         if found:
             self._next_instrument_expiration_ns = earliest
 
+    cpdef void _process_instrument_expiration_time_event(self, TimeEvent event):
+        self._process_instrument_expirations(event.ts_event)
+
     cdef void _update_next_instrument_expiration(self, OrderMatchingEngine matching_engine):
         cdef uint64_t expiration_ns
         if matching_engine._instrument_has_expiration and not matching_engine._expiration_processed:
@@ -3631,6 +3702,32 @@ cdef class SimulatedExchange:
                     self._has_next_instrument_expiration = True
                     self._next_instrument_expiration_ns = expiration_ns
 
+    cdef void _set_instrument_expiration_timer(self, OrderMatchingEngine matching_engine):
+        if not matching_engine._instrument_has_expiration or matching_engine._expiration_processed:
+            return
+
+        cdef uint64_t expiration_ns = matching_engine.instrument.expiration_ns
+        if expiration_ns == 0:
+            return
+
+        cdef str timer_name = self._instrument_expiration_timer_name(matching_engine.instrument.id)
+        if timer_name in self._clock.timer_names:
+            self._clock.cancel_timer(timer_name)
+
+        self._clock.set_time_alert_ns(
+            name=timer_name,
+            alert_time_ns=expiration_ns,
+            callback=self._process_instrument_expiration_time_event,
+        )
+
+    cdef void _set_instrument_expiration_timers(self):
+        cdef OrderMatchingEngine matching_engine
+        for matching_engine in self._matching_engines.values():
+            self._set_instrument_expiration_timer(matching_engine)
+
+    cdef str _instrument_expiration_timer_name(self, InstrumentId instrument_id):
+        return f"INSTRUMENT-EXPIRATION:{instrument_id.value}"
+
     cpdef void reset(self):
         """
         Reset the simulated exchange.
@@ -3639,10 +3736,11 @@ cdef class SimulatedExchange:
         """
         self._log.debug(f"Resetting")
 
+        if not self._account_at_starting_balances():
+            self._generate_fresh_account_state()
+
         for module in self.modules:
             module.reset()
-
-        self._generate_fresh_account_state()
 
         for matching_engine in self._matching_engines.values():
             matching_engine.reset()
@@ -3771,6 +3869,19 @@ cdef class SimulatedExchange:
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
+
+    cdef bint _account_at_starting_balances(self):
+        cdef Account account = self.get_account()
+        if account is None:
+            return False
+
+        cdef Money starting_money
+        for starting_money in self.starting_balances:
+            if account.balance_total(starting_money.currency) != starting_money:
+                return False
+            if account.balance_free(starting_money.currency) != starting_money:
+                return False
+        return True
 
     cdef void _generate_fresh_account_state(self):
         cdef list[AccountBalance] balances = [

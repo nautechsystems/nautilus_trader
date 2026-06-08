@@ -698,6 +698,59 @@ async fn test_websocket_connection() {
 
 #[rstest]
 #[tokio::test]
+async fn test_initial_authenticated_connect_subscribes_instrument_once() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/realtime");
+
+    let mut client = BitmexWebSocketClient::new(
+        Some(ws_url),
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(AccountId::new("BITMEX-001")),
+        5,
+        TransportBackend::default(),
+        None,
+    )
+    .unwrap();
+
+    client.connect().await.unwrap();
+
+    wait_for_subscription_events(&state, Duration::from_secs(5), |events| {
+        events
+            .iter()
+            .filter(|(topic, ok)| topic == "instrument" && *ok)
+            .count()
+            == 1
+    })
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    let events = state.subscription_events().await;
+    let instrument_event_count = events
+        .iter()
+        .filter(|(topic, ok)| topic == "instrument" && *ok)
+        .count();
+
+    assert_eq!(
+        instrument_event_count, 1,
+        "expected one initial instrument subscription, was {events:?}"
+    );
+    assert!(
+        state.authenticated.load(Ordering::Relaxed),
+        "client should authenticate before private subscriptions"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|(topic, ok)| topic == "instrument" && *ok),
+        "instrument subscription should be confirmed"
+    );
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_client_replies_to_server_ping() {
     let (addr, state) = start_test_server().await.unwrap();
     state.send_initial_ping.store(true, Ordering::Relaxed);
@@ -944,6 +997,8 @@ async fn test_reconnection_scenario() {
     let auth_calls_before = *state.auth_calls.lock().await;
     let state_for_auth = state.clone();
 
+    state.clear_subscription_events().await;
+
     // Trigger disconnect using one-shot flag (auto-resets after dropping one connection)
     trigger_server_disconnect(&state).await;
 
@@ -957,9 +1012,6 @@ async fn test_reconnection_scenario() {
         Duration::from_secs(10),
     )
     .await;
-
-    // Clear events now that reconnection has happened
-    state.clear_subscription_events().await;
 
     // Wait for automatic reconnection to complete
     client.wait_until_active(10.0).await.unwrap();
@@ -1862,6 +1914,9 @@ async fn test_rapid_consecutive_reconnections() {
         let auth_before = *state.auth_calls.lock().await;
         let state_for_auth = state.clone();
 
+        // Clear before the disconnect so fast auth acks cannot race with the clear.
+        state.clear_subscription_events().await;
+
         // Trigger disconnect using one-shot flag
         trigger_server_disconnect(&state).await;
 
@@ -1875,9 +1930,6 @@ async fn test_rapid_consecutive_reconnections() {
             Duration::from_secs(10),
         )
         .await;
-
-        // Clear events now that reconnection has started
-        state.clear_subscription_events().await;
 
         let reconnect_result = client.wait_until_active(15.0).await;
         assert!(

@@ -356,7 +356,7 @@ mod tests {
         };
 
         let key = get_stream_key(trader_id, instance_id, &config);
-        assert_eq!(key, format!("stream"));
+        assert_eq!(key, "stream".to_string());
     }
 
     #[rstest]

@@ -26,10 +26,9 @@
 //!
 //! - Walk every `seq` over `[1, high_watermark]` and recompute [`crate::EntryHash`].
 //! - Detect gaps in the seq sequence (the SPEC's gap-detection idempotency primitive).
-//! - Rebuild the `intent_id` sidecar index from headers and cross-check against the
-//!   stored projection. For `client_order_id` and `venue_order_id` the verifier
-//!   validates that every stored target seq still resolves to a clean entry; full
-//!   payload-derived rebuild is deferred until the wrapper-type encoders land.
+//! - Validate that every `client_order_id` and `venue_order_id` stored target seq still
+//!   resolves to a clean entry; full payload-derived rebuild is deferred until the
+//!   wrapper-type encoders land.
 //! - Validate manifest invariants: `high_watermark` matches the durable last seq, the
 //!   recorded `start_ts_init` and `end_ts_init` bracket the entry stream, and a sealed
 //!   manifest's status is a terminal state.
@@ -38,11 +37,7 @@
 //! [`VerifyReport`] structured for downstream operator tooling, and a [`VerifyError`]
 //! reserved for failures that prevent the verifier from producing any report at all.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::Debug,
-    path::Path,
-};
+use std::{collections::BTreeSet, fmt::Debug, path::Path};
 
 use crate::{
     backend::{EventStore, IndexKind, RedbBackend},
@@ -54,9 +49,9 @@ use crate::{
 /// Verifier over a single open run.
 ///
 /// Constructed either by passing an already-open backend ([`Verifier::new`]) or by
-/// opening a sealed redb file directly ([`Verifier::open_redb`]). The verifier never
-/// mutates the backend; it walks the entry table and the secondary indices, then emits
-/// a typed [`VerifyReport`].
+/// opening a sealed redb file directly ([`Verifier::open_redb`] or
+/// [`Verifier::open_redb_file`]). The verifier never mutates the backend; it walks the
+/// entry table and the secondary indices, then emits a typed [`VerifyReport`].
 pub struct Verifier {
     backend: Box<dyn EventStore>,
 }
@@ -97,6 +92,23 @@ impl Verifier {
         })
     }
 
+    /// Opens a sealed redb run file directly by path and wraps it for verification.
+    ///
+    /// The backend uses a read-only database handle for this path. The verifier
+    /// reports findings, but it never seals or quarantines the file; a supervisor or
+    /// operator process decides that policy from the returned [`VerifyReport`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VerifyError::Backend`] when the underlying backend rejects the open
+    /// (file missing, run still `Running`, header corruption).
+    pub fn open_redb_file(path: impl AsRef<Path>) -> Result<Self, VerifyError> {
+        let backend = RedbBackend::open_sealed_file(path.as_ref().to_path_buf())?;
+        Ok(Self {
+            backend: Box::new(backend),
+        })
+    }
+
     /// Returns a reference to the wrapped backend.
     #[must_use]
     pub fn backend(&self) -> &dyn EventStore {
@@ -106,11 +118,10 @@ impl Verifier {
     /// Performs a full integrity scan of the open run and returns the typed report.
     ///
     /// `verify` reads the manifest, walks every `seq` in `[1, high_watermark]`,
-    /// rebuilds the intent-id sidecar index, cross-checks the stored client- and
-    /// venue-order-id indices, and validates manifest invariants. Hash mismatches,
-    /// gaps, index drift, and manifest mismatches surface as [`VerifyFinding`]s on the
-    /// returned report; only failures that prevent the verifier from producing a
-    /// report at all surface as [`VerifyError`].
+    /// cross-checks the stored client- and venue-order-id indices, and validates manifest
+    /// invariants. Hash mismatches, gaps, index drift, and manifest mismatches surface as
+    /// [`VerifyFinding`]s on the returned report; only failures that prevent the verifier
+    /// from producing a report at all surface as [`VerifyError`].
     ///
     /// # Errors
     ///
@@ -143,7 +154,6 @@ impl Verifier {
         let mut scanned: u64 = 0;
         let mut min_ts: Option<u64> = None;
         let mut max_ts: Option<u64> = None;
-        let mut intent_index: BTreeMap<String, u64> = BTreeMap::new();
         let mut clean_seqs: BTreeSet<u64> = BTreeSet::new();
         let mut corrupted_seqs: BTreeSet<u64> = BTreeSet::new();
         let mut gap_cursor: Option<u64> = None;
@@ -168,7 +178,7 @@ impl Verifier {
                         scanned += 1;
                         continue;
                     }
-                    record_entry(&entry, &mut min_ts, &mut max_ts, &mut intent_index);
+                    record_entry(&entry, &mut min_ts, &mut max_ts);
                     clean_seqs.insert(seq);
                     scanned += 1;
                 }
@@ -191,7 +201,6 @@ impl Verifier {
             scanned,
             min_ts,
             max_ts,
-            intent_index,
             clean_seqs,
             corrupted_seqs,
         })
@@ -202,18 +211,6 @@ impl Verifier {
         scan: &EntryScan,
         findings: &mut Vec<VerifyFinding>,
     ) -> Result<(), VerifyError> {
-        let stored_intent: BTreeMap<String, u64> = self
-            .backend
-            .iter_index_keys(IndexKind::IntentId)?
-            .into_iter()
-            .collect();
-        diff_index(
-            IndexKind::IntentId,
-            &scan.intent_index,
-            &stored_intent,
-            findings,
-        );
-
         for kind in [IndexKind::ClientOrderId, IndexKind::VenueOrderId] {
             for (key, stored_seq) in self.backend.iter_index_keys(kind)? {
                 let drift = classify_target(stored_seq, scan);
@@ -232,26 +229,14 @@ struct EntryScan {
     scanned: u64,
     min_ts: Option<u64>,
     max_ts: Option<u64>,
-    intent_index: BTreeMap<String, u64>,
     clean_seqs: BTreeSet<u64>,
     corrupted_seqs: BTreeSet<u64>,
 }
 
-fn record_entry(
-    entry: &EventStoreEntry,
-    min_ts: &mut Option<u64>,
-    max_ts: &mut Option<u64>,
-    intent_index: &mut BTreeMap<String, u64>,
-) {
+fn record_entry(entry: &EventStoreEntry, min_ts: &mut Option<u64>, max_ts: &mut Option<u64>) {
     let ts = entry.ts_init.as_u64();
     *min_ts = Some(min_ts.map_or(ts, |cur| cur.min(ts)));
     *max_ts = Some(max_ts.map_or(ts, |cur| cur.max(ts)));
-
-    if let Some(intent_id) = entry.headers.intent_id.as_ref() {
-        intent_index
-            .entry(intent_id.to_string())
-            .or_insert(entry.seq);
-    }
 }
 
 fn extend_pending_gap(seq: u64, gap_cursor: &mut Option<u64>) {
@@ -272,46 +257,6 @@ fn flush_pending_gap(
                 to: next_seq - 1,
             },
         });
-    }
-}
-
-fn diff_index(
-    kind: IndexKind,
-    rebuilt: &BTreeMap<String, u64>,
-    stored: &BTreeMap<String, u64>,
-    findings: &mut Vec<VerifyFinding>,
-) {
-    for (key, rebuilt_seq) in rebuilt {
-        match stored.get(key) {
-            Some(stored_seq) if stored_seq == rebuilt_seq => {}
-            Some(stored_seq) => findings.push(VerifyFinding::IndexDrift {
-                kind,
-                key: key.clone(),
-                drift: IndexDrift::DivergentSeq {
-                    stored_seq: *stored_seq,
-                    rebuilt_seq: *rebuilt_seq,
-                },
-            }),
-            None => findings.push(VerifyFinding::IndexDrift {
-                kind,
-                key: key.clone(),
-                drift: IndexDrift::MissingFromStored {
-                    rebuilt_seq: *rebuilt_seq,
-                },
-            }),
-        }
-    }
-
-    for (key, stored_seq) in stored {
-        if !rebuilt.contains_key(key) {
-            findings.push(VerifyFinding::IndexDrift {
-                kind,
-                key: key.clone(),
-                drift: IndexDrift::UnknownKey {
-                    stored_seq: *stored_seq,
-                },
-            });
-        }
     }
 }
 
@@ -463,32 +408,13 @@ pub struct GapRange {
 }
 
 /// The kind of drift observed for a sidecar index key.
+///
+/// Today the verifier only reports target reachability for the `client_order_id` and
+/// `venue_order_id` indices because the rebuild is not yet payload-aware. Variants for
+/// rebuild-vs-stored mismatches (missing from stored, divergent seq, unknown key) will
+/// land when wrapper-type encoders provide a payload-derived projection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IndexDrift {
-    /// The verifier rebuilt this key from the entry table but no stored index entry
-    /// exists for it.
-    MissingFromStored {
-        /// The seq the verifier recomputed for this key.
-        rebuilt_seq: u64,
-    },
-    /// The stored index entry points at a different seq than the rebuild produced.
-    DivergentSeq {
-        /// The seq currently recorded in the stored index.
-        stored_seq: u64,
-        /// The seq the verifier recomputed for this key.
-        rebuilt_seq: u64,
-    },
-    /// A stored index key the verifier could not match against its rebuilt projection.
-    ///
-    /// For `intent_id` this means the entry table contains no header carrying the
-    /// stored key. For `client_order_id` and `venue_order_id` the rebuild is not yet
-    /// payload-aware (wrapper-type encoders are deferred), so this variant is not
-    /// emitted for those kinds; their target reachability is reported as
-    /// [`Self::DanglingTarget`] and [`Self::TargetCorrupted`] instead.
-    UnknownKey {
-        /// The seq the stored index recorded.
-        stored_seq: u64,
-    },
     /// The stored index points at a seq that does not exist inside the high-watermark.
     DanglingTarget {
         /// The seq the stored index recorded.
@@ -529,7 +455,7 @@ pub enum VerifyError {
 mod tests {
     use bytes::Bytes;
     use indexmap::IndexMap;
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::UnixNanos;
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
@@ -592,15 +518,6 @@ mod tests {
 
     fn append_with(seq: u64, ts_init: u64, index_keys: Vec<IndexKey>) -> AppendEntry {
         AppendEntry::new(build_entry(seq, Headers::empty(), ts_init), index_keys)
-    }
-
-    fn append_with_headers(
-        seq: u64,
-        ts_init: u64,
-        headers: Headers,
-        index_keys: Vec<IndexKey>,
-    ) -> AppendEntry {
-        AppendEntry::new(build_entry(seq, headers, ts_init), index_keys)
     }
 
     /// Test-only wrapper that delegates every call to an inner backend except the
@@ -774,122 +691,6 @@ mod tests {
             })
             .collect();
         assert_eq!(mismatch_seqs, vec![2, 4]);
-    }
-
-    #[rstest]
-    fn intent_id_drift_divergent_seq() {
-        // Stored intent index points at seq=1 (where the encoder emitted the key) but
-        // only seq=2 carries the matching header. Rebuild yields {intent: 2}; stored
-        // holds {intent: 1}; DivergentSeq surfaces.
-        let intent = UUID4::new();
-        let headers = Headers {
-            intent_id: Some(intent),
-            ..Headers::empty()
-        };
-        let mut backend = MemoryBackend::new();
-        backend.open_run(manifest("run-drift")).expect("open run");
-        backend
-            .append_batch(&[
-                append_with(
-                    1,
-                    10,
-                    vec![IndexKey::new(IndexKind::IntentId, intent.to_string())],
-                ),
-                append_with_headers(2, 11, headers, Vec::new()),
-            ])
-            .expect("append");
-        backend.seal(RunStatus::Ended).expect("seal");
-
-        let report = verifier_for(backend).verify().expect("verify");
-
-        let drift = report
-            .findings
-            .iter()
-            .find(|f| matches!(f, VerifyFinding::IndexDrift { .. }))
-            .unwrap_or_else(|| panic!("expected IndexDrift, was {:?}", report.findings));
-
-        match drift {
-            VerifyFinding::IndexDrift {
-                kind: IndexKind::IntentId,
-                key,
-                drift:
-                    IndexDrift::DivergentSeq {
-                        stored_seq,
-                        rebuilt_seq,
-                    },
-            } => {
-                assert_eq!(*key, intent.to_string());
-                assert_eq!(*stored_seq, 1);
-                assert_eq!(*rebuilt_seq, 2);
-            }
-            other => panic!("unexpected drift, was {other:?}"),
-        }
-    }
-
-    #[rstest]
-    fn intent_id_unknown_stored_key() {
-        // Stored intent index carries a key whose entry has no intent_id header. The
-        // verifier rebuilds an empty intent map and surfaces the orphan as
-        // UnknownKey drift.
-        let mut backend = MemoryBackend::new();
-        backend.open_run(manifest("run-orphan")).expect("open run");
-        let key = "intent-orphan".to_string();
-        backend
-            .append_batch(&[append_with(
-                1,
-                10,
-                vec![IndexKey::new(IndexKind::IntentId, key.clone())],
-            )])
-            .expect("append");
-
-        let report = verifier_for(backend).verify().expect("verify");
-
-        let drift = report
-            .findings
-            .iter()
-            .find(|f| matches!(f, VerifyFinding::IndexDrift { .. }))
-            .unwrap_or_else(|| panic!("expected IndexDrift, was {:?}", report.findings));
-
-        match drift {
-            VerifyFinding::IndexDrift {
-                kind: IndexKind::IntentId,
-                key: drift_key,
-                drift: IndexDrift::UnknownKey { stored_seq: 1 },
-            } => assert_eq!(*drift_key, key),
-            other => panic!("unexpected drift, was {other:?}"),
-        }
-    }
-
-    #[rstest]
-    fn intent_id_missing_from_stored_drift() {
-        // Entry carries an intent header, but no stored index entry exists for that
-        // key. Rebuild yields {intent: 1}, stored is empty, so MissingFromStored
-        // surfaces.
-        let intent = UUID4::new();
-        let headers = Headers {
-            intent_id: Some(intent),
-            ..Headers::empty()
-        };
-        let mut backend = MemoryBackend::new();
-        backend.open_run(manifest("run-missing")).expect("open run");
-        backend
-            .append_batch(&[append_with_headers(1, 10, headers, Vec::new())])
-            .expect("append");
-
-        let report = verifier_for(backend).verify().expect("verify");
-
-        assert!(
-            report.findings.iter().any(|f| matches!(
-                f,
-                VerifyFinding::IndexDrift {
-                    kind: IndexKind::IntentId,
-                    drift: IndexDrift::MissingFromStored { rebuilt_seq: 1 },
-                    ..
-                }
-            )),
-            "findings was: {:?}",
-            report.findings,
-        );
     }
 
     #[rstest]

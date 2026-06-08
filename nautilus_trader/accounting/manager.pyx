@@ -15,6 +15,8 @@
 
 from decimal import Decimal
 
+from nautilus_trader.core import nautilus_pyo3
+
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -38,6 +40,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 
@@ -365,7 +368,15 @@ cdef class AccountsManager:
         """
         Update the maintenance (position) margin.
 
-        Will return ``None`` if operation fails.
+        Maintenance margin is computed on the netted per-instrument exposure: HEDGING
+        sub-positions are replayed onto a hypothetical NETTING position in ``ts_opened``
+        order, so the resulting signed quantity and average open price match what a
+        NETTING-mode account would carry for the same fill sequence (including reversal
+        cases where opposing fills flip the net side). This keeps HEDGING-mode accounts
+        (where every fill opens its own ``Position``) consistent with NETTING-mode behavior
+        instead of growing the requirement with fill count.
+
+        Will return ``False`` if operation fails.
 
         Parameters
         ----------
@@ -388,51 +399,77 @@ cdef class AccountsManager:
         Condition.not_none(instrument, "instrument")
         Condition.not_none(positions_open, "positions_open")
 
-        total_margin_maint = Decimal(0)
-        base_xrate = Decimal(0)
-
-        cdef Currency currency = instrument.get_cost_currency()
-
         cdef Position position
-        for position in positions_open:
+        cdef list decorated = []
+        cdef int idx
+        for idx, position in enumerate(positions_open):
+            decorated.append((position.ts_opened, str(position.id), idx, position))
+        decorated.sort()
+
+        legs = []
+        for _, _, _, position in decorated:
             assert position.instrument_id == instrument.id
-
             if not position.is_open_c():
-                # Does not contribute to maintenance margin
                 continue
+            legs.append((
+                position.signed_decimal_qty(),
+                Decimal(f"{position.avg_px_open:.{position.price_precision}f}"),
+                position.ts_opened,
+            ))
 
-            # Calculate margin
+        net_signed_qty, net_avg_px = nautilus_pyo3.fold_net_position(legs)
+
+        cdef Currency currency = (
+            account.base_currency
+            if account.base_currency is not None
+            else instrument.get_cost_currency()
+        )
+
+        total_margin_maint = Decimal(0)
+
+        cdef Quantity net_quantity = None
+        try:
+            candidate = instrument.make_qty(abs(net_signed_qty))
+        except ValueError:
+            candidate = None
+        if candidate is not None and not candidate.is_zero():
+            net_quantity = candidate
+
+        cdef PositionSide net_side
+        cdef OrderSide net_entry
+        if net_quantity is not None:
+            if net_signed_qty > 0:
+                net_side = PositionSide.LONG
+                net_entry = OrderSide.BUY
+            else:
+                net_side = PositionSide.SHORT
+                net_entry = OrderSide.SELL
+
             margin_maint = account.calculate_margin_maint(
                 instrument,
-                position.side,
-                position.quantity,
-                instrument.make_price(position.avg_px_open),
+                net_side,
+                net_quantity,
+                instrument.make_price(net_avg_px),
             ).as_decimal()
 
             if account.base_currency is not None:
+                base_xrate = self._calculate_xrate_to_base(
+                    instrument=instrument,
+                    account=account,
+                    side=net_entry,
+                )
+
                 if base_xrate == 0:
-                    # Cache base currency and xrate
-                    currency = account.base_currency
-                    base_xrate = self._calculate_xrate_to_base(
-                        instrument=instrument,
-                        account=account,
-                        side=position.entry,
+                    self._log.debug(
+                        f"Cannot calculate maintenance (position) margin: "
+                        f"insufficient data for "
+                        f"{instrument.get_cost_currency()}/{account.base_currency}"
                     )
+                    return False
 
-                    # xrate=0 indicates price data unavailable - defer calculation
-                    if base_xrate == 0:
-                        self._log.debug(
-                            f"Cannot calculate maintenance (position) margin: "
-                            f"insufficient data for "
-                            f"{instrument.get_cost_currency()}/{account.base_currency}"
-                        )
-                        return False
-
-                # Apply base xrate
                 margin_maint = round(margin_maint * base_xrate, currency.get_precision())
 
-            # Increment total maintenance margin
-            total_margin_maint += margin_maint
+            total_margin_maint = margin_maint
 
         cdef Money margin_maint_money = Money(total_margin_maint, currency)
         if total_margin_maint == 0:

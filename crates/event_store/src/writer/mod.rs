@@ -271,37 +271,16 @@ mod imp {
 
             let tx = self.tx.as_ref().ok_or(SubmitError::Closed)?;
             let ts_publish = self.clock.get_time_ns();
-            let mut pending = WriterMessage::Entry { draft, ts_publish };
+            let pending = WriterMessage::Entry { draft, ts_publish };
             let start = Instant::now();
 
-            // Check elapsed before each try_send (including after a sleep) so that a
-            // stall which exceeds the threshold fires halt even when the next attempt
-            // would have succeeded. The first iteration's elapsed is ~0, so it falls
-            // through to try_send.
-            loop {
-                let elapsed = start.elapsed();
-
-                if elapsed >= self.halt_threshold {
-                    self.halted.store(true, Ordering::Release);
-                    let reason = HaltReason::BackpressureStall {
-                        stalled_for: elapsed,
-                        threshold: self.halt_threshold,
-                    };
-                    (self.halt)(reason);
-                    return Err(SubmitError::HaltSignaled {
-                        stalled_for: elapsed,
-                        threshold: self.halt_threshold,
-                    });
-                }
-
-                match tx.try_send(pending) {
-                    Ok(()) => return Ok(()),
-                    Err(TrySendError::Full(returned)) => {
-                        pending = returned;
-                        thread::sleep(SUBMIT_RETRY_INTERVAL);
-                    }
-                    Err(TrySendError::Disconnected(_)) => return Err(SubmitError::Closed),
-                }
+            match self.enqueue_with_backpressure(tx, pending, start) {
+                Ok(()) => Ok(()),
+                Err(EnqueueFailure::Stalled(elapsed)) => Err(SubmitError::HaltSignaled {
+                    stalled_for: elapsed,
+                    threshold: self.halt_threshold,
+                }),
+                Err(EnqueueFailure::Closed) => Err(SubmitError::Closed),
             }
         }
 
@@ -337,36 +316,22 @@ mod imp {
 
             let tx = self.tx.as_ref().ok_or(EventStoreError::Closed)?;
             let (ack_tx, ack_rx) = mpsc::sync_channel::<Result<SnapshotAnchor, EventStoreError>>(1);
-            let mut pending = WriterMessage::RecordSnapshotAnchor {
+            let pending = WriterMessage::RecordSnapshotAnchor {
                 blob_ref: blob_ref.into(),
                 content_hash: content_hash.into(),
                 ack: ack_tx,
             };
             let start = Instant::now();
 
-            loop {
-                let elapsed = start.elapsed();
-
-                if elapsed >= self.halt_threshold {
-                    self.halted.store(true, Ordering::Release);
-                    let reason = HaltReason::BackpressureStall {
-                        stalled_for: elapsed,
-                        threshold: self.halt_threshold,
-                    };
-                    (self.halt)(reason);
-                    return Err(EventStoreError::Backend(format!(
-                        "snapshot anchor submit stalled for {elapsed:?}, halt threshold {:?}",
-                        self.halt_threshold,
-                    )));
-                }
-
-                match tx.try_send(pending) {
-                    Ok(()) => break,
-                    Err(TrySendError::Full(returned)) => {
-                        pending = returned;
-                        thread::sleep(SUBMIT_RETRY_INTERVAL);
+            if let Err(e) = self.enqueue_with_backpressure(tx, pending, start) {
+                match e {
+                    EnqueueFailure::Stalled(elapsed) => {
+                        return Err(EventStoreError::Backend(format!(
+                            "snapshot anchor submit stalled for {elapsed:?}, halt threshold {:?}",
+                            self.halt_threshold,
+                        )));
                     }
-                    Err(TrySendError::Disconnected(_)) => return Err(EventStoreError::Closed),
+                    EnqueueFailure::Closed => return Err(EventStoreError::Closed),
                 }
             }
 
@@ -374,12 +339,7 @@ mod imp {
                 Ok(result) => result,
                 Err(RecvTimeoutError::Timeout) => {
                     let elapsed = start.elapsed();
-                    self.halted.store(true, Ordering::Release);
-                    let reason = HaltReason::BackpressureStall {
-                        stalled_for: elapsed,
-                        threshold: self.halt_threshold,
-                    };
-                    (self.halt)(reason);
+                    self.signal_backpressure_stall(elapsed);
                     Err(EventStoreError::Backend(format!(
                         "snapshot anchor ack stalled for {elapsed:?}, halt threshold {:?}",
                         self.halt_threshold,
@@ -389,6 +349,43 @@ mod imp {
                     "snapshot anchor ack channel disconnected".to_string(),
                 )),
             }
+        }
+
+        fn enqueue_with_backpressure(
+            &self,
+            tx: &SyncSender<WriterMessage>,
+            mut pending: WriterMessage,
+            start: Instant,
+        ) -> Result<(), EnqueueFailure> {
+            // Check elapsed before each try_send (including after a sleep) so that a
+            // stall which exceeds the threshold fires halt even when the next attempt
+            // would have succeeded. The first iteration's elapsed is ~0, so it falls
+            // through to try_send.
+            loop {
+                let elapsed = start.elapsed();
+
+                if elapsed >= self.halt_threshold {
+                    self.signal_backpressure_stall(elapsed);
+                    return Err(EnqueueFailure::Stalled(elapsed));
+                }
+
+                match tx.try_send(pending) {
+                    Ok(()) => return Ok(()),
+                    Err(TrySendError::Full(returned)) => {
+                        pending = returned;
+                        thread::sleep(SUBMIT_RETRY_INTERVAL);
+                    }
+                    Err(TrySendError::Disconnected(_)) => return Err(EnqueueFailure::Closed),
+                }
+            }
+        }
+
+        fn signal_backpressure_stall(&self, stalled_for: Duration) {
+            self.halted.store(true, Ordering::Release);
+            (self.halt)(HaltReason::BackpressureStall {
+                stalled_for,
+                threshold: self.halt_threshold,
+            });
         }
 
         /// Drains the channel, commits `run_ended` as the final entry, and seals the
@@ -427,6 +424,11 @@ mod imp {
             }
             result
         }
+    }
+
+    enum EnqueueFailure {
+        Stalled(Duration),
+        Closed,
     }
 
     impl Drop for EventStoreWriter {
@@ -827,13 +829,13 @@ mod tests {
         }
 
         fn append_batch(&mut self, entries: &[AppendEntry]) -> Result<u64, EventStoreError> {
+            self.appends_seen.fetch_add(1, Ordering::SeqCst);
             let (lock, cvar) = &*self.gate;
             let mut released = lock.lock().expect("gate poisoned");
 
             while !*released {
                 released = cvar.wait(released).expect("gate wait");
             }
-            self.appends_seen.fetch_add(1, Ordering::SeqCst);
             self.inner
                 .lock()
                 .expect("inner poisoned")
@@ -1109,11 +1111,12 @@ mod tests {
             Arc::clone(&appends_seen),
         );
 
+        let halt_threshold = Duration::from_millis(50);
         let config = WriterConfig {
             channel_capacity: 1,
             max_batch_entries: 1,
             max_batch_latency: Duration::from_millis(1),
-            halt_threshold: Duration::from_millis(50),
+            halt_threshold,
         };
 
         let clock = get_atomic_clock_static();
@@ -1142,10 +1145,7 @@ mod tests {
             1,
             "halt callback must fire exactly once",
         );
-        assert!(matches!(
-            captured_reasons.first(),
-            Some(HaltReason::BackpressureStall { .. })
-        ));
+        assert_backpressure_stall(captured_reasons.first(), halt_threshold);
         drop(captured_reasons);
 
         // After a backpressure halt has fired, subsequent submits must reject without
@@ -1195,6 +1195,8 @@ mod tests {
             Arc::clone(&appends_seen),
         );
 
+        let halt_threshold = Duration::from_millis(50);
+
         let writer = EventStoreWriter::spawn(
             Box::new(backend),
             get_atomic_clock_static(),
@@ -1203,7 +1205,7 @@ mod tests {
                 channel_capacity: 2,
                 max_batch_entries: 1,
                 max_batch_latency: Duration::from_millis(1),
-                halt_threshold: Duration::from_millis(50),
+                halt_threshold,
             },
         )
         .expect("spawn");
@@ -1239,10 +1241,98 @@ mod tests {
             }
         }
 
-        assert!(matches!(
-            captured.lock().expect("captured").first(),
-            Some(HaltReason::BackpressureStall { .. })
-        ));
+        let captured_reasons = captured.lock().expect("captured");
+        assert_eq!(
+            captured_reasons.len(),
+            1,
+            "halt callback must fire exactly once",
+        );
+        assert_backpressure_stall(captured_reasons.first(), halt_threshold);
+    }
+
+    #[rstest]
+    fn record_snapshot_anchor_signals_halt_when_submit_stalls(
+        captured_halt: (HaltCallback, Arc<Mutex<Vec<HaltReason>>>),
+    ) {
+        let (halt, captured) = captured_halt;
+        let inner = Arc::new(Mutex::new(MemoryBackend::new()));
+        inner
+            .lock()
+            .expect("inner")
+            .open_run(manifest("run-anchor-submit-halt"))
+            .expect("open");
+
+        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let appends_seen = Arc::new(AtomicUsize::new(0));
+        let backend = BlockingBackend::new(
+            Arc::clone(&inner),
+            Arc::clone(&gate),
+            Arc::clone(&appends_seen),
+        );
+
+        let halt_threshold = Duration::from_millis(50);
+
+        let writer = EventStoreWriter::spawn(
+            Box::new(backend),
+            get_atomic_clock_static(),
+            halt,
+            WriterConfig {
+                channel_capacity: 1,
+                max_batch_entries: 1,
+                max_batch_latency: Duration::from_secs(30),
+                halt_threshold,
+            },
+        )
+        .expect("spawn");
+
+        writer.submit(entry_draft(10)).expect("first submit fits");
+        let mut waited = Duration::ZERO;
+        while appends_seen.load(Ordering::SeqCst) == 0 && waited < Duration::from_secs(1) {
+            std::thread::sleep(Duration::from_millis(2));
+            waited += Duration::from_millis(2);
+        }
+        assert_eq!(
+            appends_seen.load(Ordering::SeqCst),
+            1,
+            "writer must be blocked inside the first backend append",
+        );
+        writer.submit(entry_draft(11)).expect("second submit fits");
+
+        let err = writer
+            .record_snapshot_anchor("cache://position-snapshots/P-1/0", "blake3:abc")
+            .expect_err("snapshot anchor submit must time out");
+        let post_halt = writer
+            .submit(entry_draft(12))
+            .expect_err("post-halt submit");
+
+        let (lock, cvar) = &*gate;
+        *lock.lock().expect("gate") = true;
+        cvar.notify_all();
+
+        match err {
+            EventStoreError::Backend(msg) => {
+                assert!(
+                    msg.contains("snapshot anchor submit stalled"),
+                    "msg was: {msg}"
+                );
+            }
+            other => panic!("expected Backend, was {other:?}"),
+        }
+
+        match post_halt {
+            SubmitError::Closed => {}
+            SubmitError::HaltSignaled { .. } => {
+                panic!("expected Closed after anchor halt, was HaltSignaled")
+            }
+        }
+
+        let captured_reasons = captured.lock().expect("captured");
+        assert_eq!(
+            captured_reasons.len(),
+            1,
+            "halt callback must fire exactly once",
+        );
+        assert_backpressure_stall(captured_reasons.first(), halt_threshold);
     }
 
     #[rstest]
@@ -1369,6 +1459,22 @@ mod tests {
         assert_eq!(draft.payload, payload);
         assert_eq!(draft.ts_init, ts_init);
         assert!(draft.index_keys.is_empty());
+    }
+
+    fn assert_backpressure_stall(reason: Option<&HaltReason>, expected_threshold: Duration) {
+        match reason {
+            Some(HaltReason::BackpressureStall {
+                stalled_for,
+                threshold,
+            }) => {
+                assert!(
+                    *stalled_for >= expected_threshold,
+                    "stalled_for {stalled_for:?} must be >= {expected_threshold:?}",
+                );
+                assert_eq!(*threshold, expected_threshold);
+            }
+            other => panic!("expected BackpressureStall, was {other:?}"),
+        }
     }
 }
 

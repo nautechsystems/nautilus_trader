@@ -68,10 +68,11 @@ class TardisDataClientConfig:
         self,
         api_key: str | None = None,
         tardis_ws_url: str | None = None,
+        proxy_url: str | None = None,
         normalize_symbols: bool | None = None,
         options: typing.Sequence[ReplayNormalizedRequestOptions] | None = None,
         stream_options: typing.Sequence[StreamNormalizedRequestOptions] | None = None,
-        proxy_url: str | None = None,
+        extract_bbo_as_quotes: bool | None = None,
     ) -> None: ...
 
 @typing.final
@@ -155,6 +156,7 @@ class TardisMachineClient:
         base_url: str | None = None,
         normalize_symbols: bool = True,
         book_snapshot_output: str = "deltas",
+        extract_bbo_as_quotes: bool = False,
     ) -> None: ...
     def is_closed(self) -> bool: ...
     def close(self) -> None: ...

@@ -17,13 +17,13 @@
 //! path (no `splitOutcome` required).
 //!
 //! Loads instruments (including outcomes), places a far-from-touch limit buy
-//! on `+<encoding>.HYPERLIQUID`, then cancels it. The point is to confirm the
-//! venue accepts the order via the ordinary `Order` action — i.e. that a
-//! strategy can trade outcome instruments with no special methods.
+//! on `{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID`, then cancels it. The
+//! point is to confirm the venue accepts the order via the ordinary `Order`
+//! action: a strategy can trade outcome instruments with no special methods.
 //!
 //! Env vars (mainnet by default; set `HYPERLIQUID_TESTNET=1` for testnet):
 //!
-//! - `HYPERLIQUID_OUTCOME_SYMBOL` (e.g. `+500.HYPERLIQUID`).
+//! - `HYPERLIQUID_OUTCOME_SYMBOL` (e.g. `50-YES-OUTCOME.HYPERLIQUID`).
 //! - `HYPERLIQUID_OUTCOME_PX` (limit price, e.g. `0.005`).
 //! - `HYPERLIQUID_OUTCOME_QTY` (size, e.g. `600`).
 
@@ -50,8 +50,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             HyperliquidEnvironment::Mainnet
         };
 
-    let symbol =
-        env::var("HYPERLIQUID_OUTCOME_SYMBOL").unwrap_or_else(|_| "+500.HYPERLIQUID".to_string());
+    let symbol = env::var("HYPERLIQUID_OUTCOME_SYMBOL")
+        .unwrap_or_else(|_| "50-YES-OUTCOME.HYPERLIQUID".to_string());
     let px = Price::from_str(
         env::var("HYPERLIQUID_OUTCOME_PX")
             .unwrap_or_else(|_| "0.0050".to_string())

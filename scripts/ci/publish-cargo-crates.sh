@@ -412,7 +412,10 @@ publish_crate() {
     echo "Publishing ${crate_name} ${crate_version} (attempt ${attempt}/${cargo_publish_attempts})"
 
     set +e
-    cargo publish --locked --package "$crate_name"
+    # --no-verify: the verify build resolves [dev-dependencies] from crates.io,
+    # which fails for crates whose dev-deps appear later in the publish plan.
+    # CI already verifies the workspace builds before this script runs.
+    cargo publish --locked --no-verify --package "$crate_name"
     status=$?
     set -e
 

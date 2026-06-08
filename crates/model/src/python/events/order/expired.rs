@@ -136,7 +136,7 @@ impl OrderExpired {
     #[getter]
     #[pyo3(name = "reconciliation")]
     fn py_reconciliation(&self) -> bool {
-        self.reconciliation != 0
+        self.reconciliation
     }
 
     #[pyo3(name = "to_dict")]
@@ -159,6 +159,11 @@ impl OrderExpired {
         match self.account_id {
             Some(account_id) => dict.set_item("account_id", account_id.to_string())?,
             None => dict.set_item("account_id", py.None())?,
+        }
+
+        match self.causation_id {
+            Some(causation_id) => dict.set_item("causation_id", causation_id.to_string())?,
+            None => dict.set_item("causation_id", py.None())?,
         }
         Ok(dict.into())
     }

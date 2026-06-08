@@ -24,7 +24,7 @@ use std::{fs, path::PathBuf};
 /// Panics if the file does not exist.
 #[cfg(test)]
 #[must_use]
-pub fn get_test_data_path(file_name: &str) -> PathBuf {
+pub(crate) fn get_test_data_path(file_name: &str) -> PathBuf {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("test_data")
         .join(file_name);
@@ -40,7 +40,7 @@ pub fn get_test_data_path(file_name: &str) -> PathBuf {
 /// Panics if the test file cannot be read.
 #[cfg(test)]
 #[must_use]
-pub fn load_test_json(file_name: &str) -> String {
+pub(crate) fn load_test_json(file_name: &str) -> String {
     let path = get_test_data_path(file_name);
     fs::read_to_string(path).expect("Failed to read test JSON file")
 }

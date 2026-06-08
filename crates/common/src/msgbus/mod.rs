@@ -78,6 +78,7 @@ pub use self::{
     },
     typed_router::{TopicRouter, TypedSubscription},
 };
+use crate::timer::TimeEvent;
 
 /// Inline capacity for handler buffers before heap allocation.
 pub(super) const HANDLER_BUFFER_CAP: usize = 64;
@@ -169,6 +170,11 @@ pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
     })
 }
 
+/// Returns the thread-local message bus if one has been set for this thread.
+pub fn try_get_message_bus() -> Option<Rc<RefCell<MessageBus>>> {
+    MESSAGE_BUS.with(|bus| bus.borrow().clone())
+}
+
 /// Observes dispatched bus traffic for the durable event store.
 ///
 /// The bus invokes the registered tap (when present) before each publish, send, or
@@ -237,4 +243,9 @@ pub(super) fn dispatch_tap_response(correlation_id: &UUID4, message: &dyn Any) {
     if let Some(tap) = tap {
         tap.on_response(correlation_id, message);
     }
+}
+
+#[inline]
+pub(crate) fn dispatch_tap_time_event(event: &TimeEvent) {
+    dispatch_tap_publish(MessagingSwitchboard::time_event_topic(), event);
 }

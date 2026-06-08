@@ -17,23 +17,24 @@
 
 use std::{
     collections::HashMap,
+    str::FromStr,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
 use nautilus_core::{
-    AtomicMap, AtomicTime, datetime::nanos_to_millis, nanos::UnixNanos,
+    AtomicMap, AtomicTime, Params, datetime::nanos_to_millis, nanos::UnixNanos,
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{AggregationSource, BarAggregation},
     events::AccountState,
-    identifiers::{AccountId, InstrumentId},
+    identifiers::{AccountId, InstrumentId, Symbol},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
@@ -44,6 +45,7 @@ use nautilus_network::{
     retry::{RetryConfig, RetryManager},
 };
 use serde::{Serialize, de::DeserializeOwned};
+use serde_json::json;
 use strum::IntoEnumIterator;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -51,15 +53,17 @@ use ustr::Ustr;
 use super::{
     error::DeribitHttpError,
     models::{
-        DeribitAccountSummariesResponse, DeribitBookSummary, DeribitCurrency, DeribitInstrument,
-        DeribitJsonRpcRequest, DeribitJsonRpcResponse, DeribitPosition, DeribitProductType,
-        DeribitTicker, DeribitUserTradesResponse,
+        DeribitAccountSummariesResponse, DeribitBookSummary, DeribitCombo, DeribitCurrency,
+        DeribitExpirationsResponse, DeribitInstrument, DeribitJsonRpcRequest,
+        DeribitJsonRpcResponse, DeribitPosition, DeribitProductType, DeribitTicker,
+        DeribitUserTradesResponse,
     },
     query::{
-        GetAccountSummariesParams, GetBookSummaryByCurrencyParams, GetInstrumentParams,
-        GetInstrumentsParams, GetOpenOrdersByInstrumentParams, GetOpenOrdersParams,
-        GetOrderHistoryByCurrencyParams, GetOrderHistoryByInstrumentParams, GetOrderStateParams,
-        GetPositionsParams, GetTickerParams, GetUserTradesByCurrencyAndTimeParams,
+        DeribitExpirationKind, GetAccountSummariesParams, GetBookSummaryByCurrencyParams,
+        GetCombosParams, GetExpirationsParams, GetInstrumentParams, GetInstrumentsParams,
+        GetOpenOrdersByInstrumentParams, GetOpenOrdersParams, GetOrderHistoryByCurrencyParams,
+        GetOrderHistoryByInstrumentParams, GetOrderStateParams, GetPositionsParams,
+        GetTickerParams, GetUserTradesByCurrencyAndTimeParams,
         GetUserTradesByInstrumentAndTimeParams,
     },
 };
@@ -68,7 +72,7 @@ use crate::{
         consts::{
             DERIBIT_ACCOUNT_RATE_KEY, DERIBIT_API_PATH, DERIBIT_GLOBAL_RATE_KEY,
             DERIBIT_HTTP_ACCOUNT_QUOTA, DERIBIT_HTTP_ORDER_QUOTA, DERIBIT_HTTP_REST_QUOTA,
-            DERIBIT_ORDER_RATE_KEY, JSONRPC_VERSION, should_retry_error_code,
+            DERIBIT_ORDER_RATE_KEY, DERIBIT_VENUE, JSONRPC_VERSION, should_retry_error_code,
         },
         credential::{Credential, credential_env_vars},
         enums::DeribitEnvironment,
@@ -81,8 +85,8 @@ use crate::{
     http::{
         models::{DeribitOrderBook, DeribitTradesResponse, DeribitTradingViewChartData},
         query::{
-            GetLastTradesByInstrumentAndTimeParams, GetOrderBookParams,
-            GetTradingViewChartDataParams,
+            GetLastTradesByCurrencyParams, GetLastTradesByInstrumentAndTimeParams,
+            GetOrderBookParams, GetTradingViewChartDataParams,
         },
     },
     websocket::{
@@ -512,7 +516,7 @@ impl DeribitRawHttpClient {
                         );
                         log::debug!(
                             "Response JSON (first 2000 chars): {}",
-                            &json_value
+                            json_value
                                 .to_string()
                                 .chars()
                                 .take(2000)
@@ -619,6 +623,18 @@ impl DeribitRawHttpClient {
             .await
     }
 
+    /// Gets combo definitions for a currency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_combos(
+        &self,
+        params: GetCombosParams,
+    ) -> Result<DeribitJsonRpcResponse<Vec<DeribitCombo>>, DeribitHttpError> {
+        self.send_request("public/get_combos", params, false).await
+    }
+
     /// Gets recent trades for an instrument within a time range.
     ///
     /// # Errors
@@ -634,6 +650,36 @@ impl DeribitRawHttpClient {
             false,
         )
         .await
+    }
+
+    /// Gets recent trades for a currency, optionally filtered by product kind.
+    ///
+    /// The instrument-and-time variant accepts combo instrument names, but
+    /// this currency-scoped endpoint is the only way to sweep trades across
+    /// all combos of a given kind (e.g., every BTC future combo) in one call.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_last_trades_by_currency(
+        &self,
+        params: GetLastTradesByCurrencyParams,
+    ) -> Result<DeribitJsonRpcResponse<DeribitTradesResponse>, DeribitHttpError> {
+        self.send_request("public/get_last_trades_by_currency", params, false)
+            .await
+    }
+
+    /// Gets traded expirations by currency and instrument kind.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_expirations(
+        &self,
+        params: GetExpirationsParams,
+    ) -> Result<DeribitJsonRpcResponse<DeribitExpirationsResponse>, DeribitHttpError> {
+        self.send_request("public/get_expirations", params, false)
+            .await
     }
 
     /// Gets TradingView chart data (OHLCV) for an instrument.
@@ -847,7 +893,7 @@ impl DeribitRawHttpClient {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.deribit")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.deribit")
 )]
 pub struct DeribitHttpClient {
     pub(crate) inner: Arc<DeribitRawHttpClient>,
@@ -875,6 +921,15 @@ impl Clone for DeribitHttpClient {
 }
 
 impl DeribitHttpClient {
+    /// Returns a reference to the underlying raw HTTP client.
+    ///
+    /// Exposes low-level endpoint methods (e.g., `get_last_trades_by_currency`)
+    /// that this wrapper does not yet adapt.
+    #[must_use]
+    pub fn inner(&self) -> &DeribitRawHttpClient {
+        &self.inner
+    }
+
     /// Creates a new [`DeribitHttpClient`] with default configuration.
     ///
     /// # Parameters
@@ -978,6 +1033,7 @@ impl DeribitHttpClient {
             .ok_or_else(|| anyhow::anyhow!("No result in response"))?;
         let ts_event = extract_server_timestamp(full_response.us_out)?;
         let ts_init = self.generate_ts_init();
+        let combo_by_id = self.combo_map_for_instruments(currency, &result).await;
 
         // Parse each instrument
         let mut instruments = Vec::new();
@@ -986,7 +1042,10 @@ impl DeribitHttpClient {
 
         for raw_instrument in result {
             match parse_deribit_instrument_any(&raw_instrument, ts_init, ts_event) {
-                Ok(Some(instrument)) => {
+                Ok(Some(mut instrument)) => {
+                    if let Some(combo) = combo_by_id.get(&raw_instrument.instrument_name) {
+                        Self::attach_combo_leg_info(&mut instrument, combo);
+                    }
                     instruments.push(instrument);
                 }
                 Ok(None) => {
@@ -1046,13 +1105,124 @@ impl DeribitHttpClient {
         let ts_init = self.generate_ts_init();
 
         match parse_deribit_instrument_any(&response, ts_init, ts_event)? {
-            Some(instrument) => Ok(instrument),
+            Some(mut instrument) => {
+                if Self::is_combo_kind(response.kind) {
+                    let currency = DeribitCurrency::from_str(response.base_currency.as_str())
+                        .unwrap_or(DeribitCurrency::ANY);
+                    let combo_by_id = self
+                        .combo_map_for_instruments(currency, std::slice::from_ref(&response))
+                        .await;
+
+                    if let Some(combo) = combo_by_id.get(&response.instrument_name) {
+                        Self::attach_combo_leg_info(&mut instrument, combo);
+                    }
+                }
+
+                Ok(instrument)
+            }
             None => anyhow::bail!(
                 "Unsupported instrument type: {} (kind: {:?})",
                 response.instrument_name,
                 response.kind
             ),
         }
+    }
+
+    async fn combo_map_for_instruments(
+        &self,
+        requested_currency: DeribitCurrency,
+        raw_instruments: &[DeribitInstrument],
+    ) -> AHashMap<Ustr, DeribitCombo> {
+        if !raw_instruments
+            .iter()
+            .any(|instrument| Self::is_combo_kind(instrument.kind))
+        {
+            return AHashMap::new();
+        }
+
+        let mut currencies = AHashSet::new();
+
+        if requested_currency == DeribitCurrency::ANY {
+            for instrument in raw_instruments
+                .iter()
+                .filter(|instrument| Self::is_combo_kind(instrument.kind))
+            {
+                if let Ok(currency) = DeribitCurrency::from_str(instrument.base_currency.as_str()) {
+                    currencies.insert(currency);
+                }
+            }
+        } else {
+            currencies.insert(requested_currency);
+        }
+
+        let mut combo_by_id = AHashMap::new();
+
+        for currency in currencies {
+            match self.inner.get_combos(GetCombosParams::new(currency)).await {
+                Ok(response) => {
+                    if let Some(combos) = response.result {
+                        for combo in combos {
+                            combo_by_id.insert(combo.id, combo);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to load Deribit combo definitions for {currency}: {e}");
+                }
+            }
+        }
+
+        combo_by_id
+    }
+
+    fn is_combo_kind(kind: DeribitProductType) -> bool {
+        matches!(
+            kind,
+            DeribitProductType::FutureCombo | DeribitProductType::OptionCombo
+        )
+    }
+
+    fn attach_combo_leg_info(instrument: &mut InstrumentAny, combo: &DeribitCombo) {
+        if let Some(info) = Self::combo_leg_info(instrument, combo) {
+            match instrument {
+                InstrumentAny::CryptoOptionSpread(spread) => spread.info = Some(info),
+                InstrumentAny::CryptoFuturesSpread(spread) => spread.info = Some(info),
+                _ => {}
+            }
+        }
+    }
+
+    fn combo_leg_info(instrument: &InstrumentAny, combo: &DeribitCombo) -> Option<Params> {
+        let existing_info = match instrument {
+            InstrumentAny::CryptoOptionSpread(spread) => spread.info.clone(),
+            InstrumentAny::CryptoFuturesSpread(spread) => spread.info.clone(),
+            _ => return None,
+        };
+
+        let mut info = existing_info.unwrap_or_default();
+        let legs = combo
+            .legs
+            .iter()
+            .map(|leg| {
+                let instrument_id =
+                    InstrumentId::new(Symbol::new(leg.instrument_name.as_str()), *DERIBIT_VENUE);
+
+                json!({
+                    "amount": leg.amount,
+                    "instrument_id": instrument_id.to_string(),
+                    "instrument_name": leg.instrument_name,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        info.insert("deribit_combo_id".to_string(), json!(combo.id));
+        info.insert(
+            "deribit_combo_state".to_string(),
+            json!(combo.state.as_str()),
+        );
+        info.insert("deribit_combo_legs".to_string(), json!(legs));
+
+        Some(info)
     }
 
     /// Requests historical trades for an instrument within a time range.
@@ -1742,6 +1912,31 @@ impl DeribitHttpClient {
         full_response
             .result
             .ok_or_else(|| anyhow::anyhow!("No result in book summary response"))
+    }
+
+    /// Requests traded option expirations for a settlement currency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn request_option_expirations(
+        &self,
+        currency: DeribitCurrency,
+    ) -> anyhow::Result<Vec<String>> {
+        let params = GetExpirationsParams::new(currency.as_str(), DeribitExpirationKind::Option);
+        let full_response = self
+            .inner
+            .get_expirations(params)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let response = full_response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("No result in expirations response"))?;
+        let expirations = response
+            .expirations_for_currency(currency.as_str())
+            .ok_or_else(|| anyhow::anyhow!("No option expirations for {currency}"))?;
+
+        Ok(expirations.option.clone())
     }
 
     /// Requests position status reports for reconciliation.

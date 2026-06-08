@@ -73,7 +73,7 @@ constructors that enforce the invariant centrally; prefer them over
 | --------------------------------------- | ------------------------------------------------------------------------------ |
 | `AccountBalance::from_total_and_locked` | Venue reports total and locked; `free` is derived and clamped to `[0, total]`. |
 | `AccountBalance::from_total_and_free`   | Venue reports total and free; `locked` is derived and clamped.                 |
-| `AccountBalance::new`                   | All three values are already known and consistent (tests, pass‑through).      |
+| `AccountBalance::new`                   | All three values are already known and consistent (tests, pass‑through).       |
 
 The helpers clamp the derived field to `[0, total]` when `total >= 0`, so
 transient overshoots from venue rounding never leave the account in a broken
@@ -88,19 +88,17 @@ A `MarginBalance` has four fields: `initial`, `maintenance`, `currency`, and an
 
 `MarginBalance.instrument_id` is set to a concrete instrument. Use this for:
 
-- Isolated margin (per-position collateral), such as some OKX unified or Bybit
-  isolated modes.
+- Isolated margin (per-position collateral).
 - Backtest or calculated margin, where the `AccountsManager` derives margin
   locally from open orders and positions per instrument.
 
 ### Account-wide scope
 
 `MarginBalance.instrument_id` is `None`. The entry is keyed by its
-`currency` (the collateral currency). Use this for:
-
-- Cross-margin venues reporting a single aggregate per collateral. Examples:
-  Binance USDT-M (USDT) and COIN-M (one per base coin), OKX, BitMEX, Hyperliquid
-  (USDC), Bybit UNIFIED (per coin), Deribit (per currency), Kraken Futures.
+`currency` (the collateral currency). Use this for cross-margin venues that
+report a single aggregate per collateral currency. A venue may emit one
+account-wide entry (single-collateral cross margin) or several (one per
+collateral coin).
 
 Both scopes coexist on the same `MarginAccount` in separate internal stores.
 An `AccountState` event may carry entries in either or both scopes, and
@@ -120,11 +118,11 @@ Use the query that matches the venue's reporting shape. If a venue reports
 per-instrument margins, ask by `InstrumentId`. If it reports account-wide
 margins, ask by `Currency`.
 
-| Scope of the value you want              | Use                                                      |
-| ---------------------------------------- | -------------------------------------------------------- |
-| Per‑instrument margin (isolated)         | `margin(id)` / `margin_init(id)` / `margin_maint(id)`    |
-| Account‑wide margin for one collateral   | `margin_for_currency(ccy)` / `margin_init_for_currency(ccy)` / `margin_maint_for_currency(ccy)` |
-| Combined total across both scopes        | `total_margin_init(ccy)` / `total_margin_maint(ccy)`     |
+| Scope of the value you want            | Use                                                                                             |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Per‑instrument margin (isolated)       | `margin(id)` / `margin_init(id)` / `margin_maint(id)`                                           |
+| Account‑wide margin for one collateral | `margin_for_currency(ccy)` / `margin_init_for_currency(ccy)` / `margin_maint_for_currency(ccy)` |
+| Combined total across both scopes      | `total_margin_init(ccy)` / `total_margin_maint(ccy)`                                            |
 
 Point queries return `None` when the entry is absent; total queries always
 return a `Money` (zero for the currency if nothing matches).
@@ -205,24 +203,18 @@ warn-once missing-price tracker.
 
 ### Worked examples
 
-Hyperliquid (single-collateral USDC cross margin):
+Single-collateral cross margin (one account-wide entry):
 
 ```python
 usdc_margin = margin_account.margin_init_for_currency(USDC)
-usdc_total  = margin_account.total_margin_init(USDC)
+usdc_total = margin_account.total_margin_init(USDC)
 ```
 
-Bybit UNIFIED (per-coin cross margin):
+Per-coin cross margin (one entry per collateral currency):
 
 ```python
 for ccy, margin_balance in margin_account.account_margins().items():
     print(ccy, margin_balance.initial, margin_balance.maintenance)
-```
-
-dYdX v4 (USDC cross margin, aggregated per quote currency):
-
-```python
-usdc_margin = margin_account.margin_init_for_currency(USDC)
 ```
 
 ## Margin models
@@ -236,10 +228,8 @@ for reconciliation). Reported margins from a venue flow straight into
 
 Different venues treat leverage differently:
 
-- **Traditional brokers** (Interactive Brokers, TD Ameritrade): fixed margin
-  percentages regardless of leverage.
-- **Crypto exchanges** (Binance, others): leverage may reduce margin
-  requirements.
+- **Traditional brokers** (Interactive Brokers, TD Ameritrade): fixed margin percentages regardless of leverage.
+- **Crypto exchanges** (Binance, others): leverage may reduce margin requirements.
 
 Both built-in models compute margin as a percentage of notional using the
 instrument's `margin_init` and `margin_maint` fields. They differ only in
@@ -247,6 +237,24 @@ whether leverage reduces the reservation. For venues with true per-contract
 fixed margin (CME / ICE), set `instrument.margin_init` and `margin_maint` so
 the percentage recovers the desired dollar amount, or implement a
 [custom model](#custom-models).
+
+### HEDGING-mode netting
+
+Under `OmsType.HEDGING` each fill opens its own `Position`, so an account can
+hold many open sub-positions for the same instrument. The accounts manager
+nets those sub-positions onto a hypothetical NETTING position in `ts_opened`
+order, then runs the margin model once on the resulting net signed quantity
+and average open price.
+
+The replay follows the same rules as `Position.apply`: same-side fills
+produce a quantity-weighted average open price, opposite-side fills
+partial-close at the existing average, and a fill that crosses zero makes
+the residual take the flipping fill's price. Sub-positions sharing a
+`ts_opened` fold in `(ts_opened, position_id)` order so the result does
+not depend on cache iteration order.
+
+HEDGING and NETTING accounts compute the same maintenance margin for the
+same fill sequence; the requirement scales with net economic exposure.
 
 ### Available models
 
@@ -369,57 +377,17 @@ three values are already authoritative (e.g., tests).
 
 Pick the scope that matches what the venue reports:
 
-| Venue reports                                   | Scope          | Emit with                                              |
-| ----------------------------------------------- | -------------- | ------------------------------------------------------ |
-| Per‑instrument (isolated positions)             | Per‑instrument | `MarginBalance::new(initial, maint, Some(id))`         |
-| Single aggregate per collateral (cross margin)  | Account‑wide   | `MarginBalance::new(initial, maint, None)`             |
-| Multiple aggregates, one per collateral         | Account‑wide   | One `MarginBalance` per currency with `instrument_id=None` |
-
-### Current live-adapter convention
-
-| Adapter              | Scope                        | Collateral currencies                                    |
-| -------------------- | ---------------------------- | -------------------------------------------------------- |
-| Binance Futures      | Account‑wide                 | USDT‑M: USDT (or BNB/etc. under multi‑assets mode); COIN‑M: one per base coin (BTC, ETH, …) |
-| Bybit                | Account‑wide                 | One per coin (USDT, BTC, USDC, …); sums position IM + order IM |
-| Deribit              | Account‑wide                 | One per currency (BTC, ETH, USDC, …)                     |
-| Hyperliquid          | Account‑wide                 | USDC                                                     |
-| OKX                  | Account‑wide                 | USD (unified account aggregate)                          |
-| BitMEX               | Account‑wide                 | Per collateral currency (XBT, USDT, …)                   |
-| Kraken Futures       | Account‑wide                 | USD                                                      |
-| dYdX v4              | Account‑wide                 | Computed per‑position, aggregated per quote currency (USDC) |
-| Interactive Brokers  | Account‑wide                 | Per account currency                                     |
+| Venue reports                                  | Scope          | Emit with                                                  |
+| ---------------------------------------------- | -------------- | ---------------------------------------------------------- |
+| Per‑instrument (isolated positions)            | Per‑instrument | `MarginBalance::new(initial, maint, Some(id))`             |
+| Single aggregate per collateral (cross margin) | Account‑wide   | `MarginBalance::new(initial, maint, None)`                 |
+| Multiple aggregates, one per collateral        | Account‑wide   | One `MarginBalance` per currency with `instrument_id=None` |
 
 :::note
 Synthetic `ACCOUNT.{VENUE}` or `ACCOUNT-{COIN}.{VENUE}` `InstrumentId`
 placeholders are not used. Account-wide entries carry `instrument_id=None` and
 are keyed by `currency`.
 :::
-
-## Migration notes
-
-### 1.226.0
-
-`MarginBalance.instrument_id` became `Optional[InstrumentId]`, and
-`MarginAccount` split its internal storage into per-instrument and account-wide
-stores. If your strategy previously used
-`portfolio.margins_init(account_id=...)` to discover cross-margin balances via
-synthetic IDs, migrate to:
-
-```python
-account = portfolio.account(venue)
-
-# All account-wide margins for this account
-account_margins = account.account_margins_init()
-
-# Specific collateral currency
-usdc_margin = account.margin_init_for_currency(USDC)
-
-# Sum of per-instrument + account-wide for a currency
-total = account.total_margin_init(USDC)
-```
-
-The per-instrument query API (`margin_init(instrument_id)`,
-`margins_init()`) is unchanged and now has strict per-instrument semantics.
 
 ## Related guides
 

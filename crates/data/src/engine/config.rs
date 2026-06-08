@@ -66,10 +66,10 @@ pub struct DataEngineConfig {
     /// If quotes should be emitted on order book depth updates.
     #[builder(default)]
     pub emit_quotes_from_book_depths: bool,
-    /// If data published through `process_historical` should be suppressed from the cache.
+    /// If data published through the pipeline path should be suppressed from the cache.
     ///
-    /// When `true`, historical replays still publish on historical topics but the
-    /// engine does not write the data to the cache.
+    /// When `true`, historical replays still publish on pipeline topics but the engine does not
+    /// write the data to the cache.
     #[builder(default)]
     pub disable_historical_cache: bool,
     /// The client IDs declared for external stream processing.

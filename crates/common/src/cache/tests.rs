@@ -40,11 +40,15 @@ use nautilus_model::{
     events::{
         AccountState, OrderAccepted, OrderCanceled, OrderEmulated, OrderEventAny, OrderFilled,
         OrderRejected, OrderReleased, OrderSnapshot, OrderSubmitted, OrderUpdated,
+        order::spec::{
+            OrderCanceledSpec, OrderEmulatedSpec, OrderFilledSpec, OrderReleasedSpec,
+            OrderUpdatedSpec,
+        },
         position::snapshot::PositionSnapshot,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
-        OrderListId, PositionId, StrategyId, Symbol, TradeId, Venue, VenueOrderId,
+        OrderListId, PositionId, StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{
         CurrencyPair, Instrument, InstrumentAny, OptionContract, SyntheticInstrument, stubs::*,
@@ -60,6 +64,7 @@ use nautilus_model::{
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rstest::{fixture, rstest};
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 use crate::{
@@ -69,6 +74,118 @@ use crate::{
     },
     signal::Signal,
 };
+
+fn build_order_canceled(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: Option<VenueOrderId>,
+    account_id: Option<AccountId>,
+) -> OrderCanceled {
+    OrderCanceledSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .maybe_venue_order_id(venue_order_id)
+        .maybe_account_id(account_id)
+        .build()
+}
+
+#[expect(clippy::too_many_arguments)]
+fn build_order_filled(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+    trade_id: TradeId,
+    order_side: OrderSide,
+    order_type: OrderType,
+    last_qty: Quantity,
+    last_px: Price,
+    currency: Currency,
+    liquidity_side: LiquiditySide,
+    position_id: Option<PositionId>,
+    commission: Option<Money>,
+) -> OrderFilled {
+    OrderFilledSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .trade_id(trade_id)
+        .order_side(order_side)
+        .order_type(order_type)
+        .last_qty(last_qty)
+        .last_px(last_px)
+        .currency(currency)
+        .liquidity_side(liquidity_side)
+        .maybe_position_id(position_id)
+        .maybe_commission(commission)
+        .build()
+}
+
+#[expect(clippy::too_many_arguments)]
+fn build_order_updated(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    quantity: Quantity,
+    venue_order_id: Option<VenueOrderId>,
+    account_id: Option<AccountId>,
+    price: Option<Price>,
+    trigger_price: Option<Price>,
+    protection_price: Option<Price>,
+) -> OrderUpdated {
+    OrderUpdatedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .quantity(quantity)
+        .maybe_venue_order_id(venue_order_id)
+        .maybe_account_id(account_id)
+        .maybe_price(price)
+        .maybe_trigger_price(trigger_price)
+        .maybe_protection_price(protection_price)
+        .build()
+}
+
+fn build_order_released(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    released_price: Price,
+) -> OrderReleased {
+    OrderReleasedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .released_price(released_price)
+        .build()
+}
+
+fn build_order_emulated(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+) -> OrderEmulated {
+    OrderEmulatedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .build()
+}
 
 #[fixture]
 fn cache() -> Cache {
@@ -168,6 +285,72 @@ fn test_reset_honors_drop_instruments_on_reset(
     assert_eq!(cache.orders_total_count(None, None, None, None, None), 0);
     assert_eq!(cache.positions_total_count(None, None, None, None, None), 0);
     assert_eq!(cache.instrument(&audusd_sim.id).is_some(), retained);
+}
+
+#[rstest]
+#[case(false, true)]
+#[case(true, false)]
+fn test_get_xrate_after_reset_follows_instrument_lifecycle(
+    audusd_sim: CurrencyPair,
+    #[case] drop_on_reset: bool,
+    #[case] xrate_available: bool,
+) {
+    let config = CacheConfig::builder()
+        .drop_instruments_on_reset(drop_on_reset)
+        .build();
+    let mut cache = Cache::new(Some(config), None);
+
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+
+    cache.reset();
+
+    let quote = QuoteTick {
+        instrument_id: audusd_sim.id,
+        bid_price: Price::from("0.80000"),
+        ask_price: Price::from("0.80010"),
+        bid_size: Quantity::from(1),
+        ask_size: Quantity::from(1),
+        ..Default::default()
+    };
+    cache.add_quote(quote).unwrap();
+
+    let rate = cache.get_xrate(
+        audusd_sim.id.venue,
+        Currency::AUD(),
+        Currency::USD(),
+        PriceType::Mid,
+    );
+
+    if xrate_available {
+        assert_eq!(rate, Some(dec!(0.80005)));
+    } else {
+        assert_eq!(rate, None);
+    }
+}
+
+#[rstest]
+fn test_reset_clears_mark_xrate_even_when_instruments_retained(audusd_sim: CurrencyPair) {
+    let config = CacheConfig::builder()
+        .drop_instruments_on_reset(false)
+        .build();
+    let mut cache = Cache::new(Some(config), None);
+
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+    cache.set_mark_xrate(Currency::AUD(), Currency::USD(), 0.80000);
+
+    cache.reset();
+
+    // Instruments are retained, but mark xrates are market state and always cleared
+    assert!(cache.instrument(&audusd_sim.id).is_some());
+    assert!(
+        cache
+            .get_mark_xrate(Currency::AUD(), Currency::USD())
+            .is_none()
+    );
 }
 
 #[rstest]
@@ -759,15 +942,11 @@ fn test_update_order_rejects_venue_fallback_when_event_client_id_differs(
     update_order_with_event(&mut cache, &mut order, accepted);
     let event_count = cache.order(&client_order_id).unwrap().event_count();
 
-    let canceled = OrderEventAny::Canceled(OrderCanceled::new(
+    let canceled = OrderEventAny::Canceled(build_order_canceled(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         ClientOrderId::from("UNKNOWN"),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(venue_order_id),
         Some(account_id),
     ));
@@ -2284,6 +2463,241 @@ fn test_bars_when_some(mut cache: Cache) {
     cache.add_bars(&bars).unwrap();
     let result = cache.bars(&bars[0].bar_type);
     assert_eq!(result, Some(bars));
+}
+
+fn cache_with_data_capacity(tick_capacity: usize, bar_capacity: usize) -> Cache {
+    let config = CacheConfig::builder()
+        .tick_capacity(tick_capacity)
+        .bar_capacity(bar_capacity)
+        .build();
+
+    Cache::new(Some(config), None)
+}
+
+fn quote_tick_with_ts(ts_event: u64) -> QuoteTick {
+    QuoteTick {
+        ts_event: UnixNanos::from(ts_event),
+        ts_init: UnixNanos::from(ts_event),
+        ..Default::default()
+    }
+}
+
+fn trade_tick_with_ts(ts_event: u64) -> TradeTick {
+    TradeTick {
+        ts_event: UnixNanos::from(ts_event),
+        ts_init: UnixNanos::from(ts_event),
+        ..Default::default()
+    }
+}
+
+fn bar_with_ts(ts_event: u64) -> Bar {
+    Bar {
+        ts_event: UnixNanos::from(ts_event),
+        ts_init: UnixNanos::from(ts_event),
+        ..Default::default()
+    }
+}
+
+fn mark_price_with_ts(instrument_id: InstrumentId, ts_event: u64) -> MarkPriceUpdate {
+    MarkPriceUpdate::new(
+        instrument_id,
+        Price::from("1.00000"),
+        UnixNanos::from(ts_event),
+        UnixNanos::from(ts_event),
+    )
+}
+
+fn index_price_with_ts(instrument_id: InstrumentId, ts_event: u64) -> IndexPriceUpdate {
+    IndexPriceUpdate::new(
+        instrument_id,
+        Price::from("1.00000"),
+        UnixNanos::from(ts_event),
+        UnixNanos::from(ts_event),
+    )
+}
+
+fn funding_rate_with_ts(instrument_id: InstrumentId, ts_event: u64) -> FundingRateUpdate {
+    FundingRateUpdate::new(
+        instrument_id,
+        "0.0001".parse().unwrap(),
+        None,
+        None,
+        UnixNanos::from(ts_event),
+        UnixNanos::from(ts_event),
+    )
+}
+
+fn instrument_status_with_ts(instrument_id: InstrumentId, ts_event: u64) -> InstrumentStatus {
+    InstrumentStatus::new(
+        instrument_id,
+        MarketStatusAction::Trading,
+        UnixNanos::from(ts_event),
+        UnixNanos::from(ts_event),
+        None,
+        None,
+        Some(true),
+        Some(true),
+        None,
+    )
+}
+
+#[rstest]
+fn test_add_quotes_enforces_tick_capacity() {
+    let mut cache = cache_with_data_capacity(3, 10);
+    let instrument_id = QuoteTick::default().instrument_id;
+    let quotes = (0..5).map(quote_tick_with_ts).collect::<Vec<_>>();
+
+    cache.add_quotes(&quotes).unwrap();
+
+    let cached = cache.quotes(&instrument_id).unwrap();
+    let ts_events = cached
+        .iter()
+        .map(|quote| quote.ts_event.as_u64())
+        .collect::<Vec<_>>();
+
+    assert_eq!(cache.quote_count(&instrument_id), 3);
+    assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_trades_enforces_tick_capacity() {
+    let mut cache = cache_with_data_capacity(3, 10);
+    let instrument_id = TradeTick::default().instrument_id;
+    let trades = (0..5).map(trade_tick_with_ts).collect::<Vec<_>>();
+
+    cache.add_trades(&trades).unwrap();
+
+    let cached = cache.trades(&instrument_id).unwrap();
+    let ts_events = cached
+        .iter()
+        .map(|trade| trade.ts_event.as_u64())
+        .collect::<Vec<_>>();
+
+    assert_eq!(cache.trade_count(&instrument_id), 3);
+    assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_bars_enforces_bar_capacity() {
+    let mut cache = cache_with_data_capacity(10, 3);
+    let bar_type = Bar::default().bar_type;
+    let bars = (0..5).map(bar_with_ts).collect::<Vec<_>>();
+
+    cache.add_bars(&bars).unwrap();
+
+    let cached = cache.bars(&bar_type).unwrap();
+    let ts_events = cached
+        .iter()
+        .map(|bar| bar.ts_event.as_u64())
+        .collect::<Vec<_>>();
+
+    assert_eq!(cache.bar_count(&bar_type), 3);
+    assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_mark_prices_enforces_tick_capacity() {
+    let mut cache = cache_with_data_capacity(3, 10);
+    let instrument_id = InstrumentId::from("AUDUSD.SIM");
+
+    for ts_event in 0..5 {
+        cache
+            .add_mark_price(mark_price_with_ts(instrument_id, ts_event))
+            .unwrap();
+    }
+
+    let cached = cache.mark_prices(&instrument_id).unwrap();
+    let ts_events = cached
+        .iter()
+        .map(|mark_price| mark_price.ts_event.as_u64())
+        .collect::<Vec<_>>();
+
+    assert_eq!(cached.len(), 3);
+    assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_index_prices_enforces_tick_capacity() {
+    let mut cache = cache_with_data_capacity(3, 10);
+    let instrument_id = InstrumentId::from("AUDUSD.SIM");
+
+    for ts_event in 0..5 {
+        cache
+            .add_index_price(index_price_with_ts(instrument_id, ts_event))
+            .unwrap();
+    }
+
+    let cached = cache.index_prices(&instrument_id).unwrap();
+    let ts_events = cached
+        .iter()
+        .map(|index_price| index_price.ts_event.as_u64())
+        .collect::<Vec<_>>();
+
+    assert_eq!(cached.len(), 3);
+    assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_funding_rates_enforces_tick_capacity() {
+    let mut cache = cache_with_data_capacity(3, 10);
+    let instrument_id = InstrumentId::from("AUDUSD.SIM");
+    let funding_rates = (0..5)
+        .map(|ts_event| funding_rate_with_ts(instrument_id, ts_event))
+        .collect::<Vec<_>>();
+
+    cache.add_funding_rates(&funding_rates).unwrap();
+
+    let cached = cache.funding_rates(&instrument_id).unwrap();
+    let ts_events = cached
+        .iter()
+        .map(|funding_rate| funding_rate.ts_event.as_u64())
+        .collect::<Vec<_>>();
+
+    assert_eq!(cached.len(), 3);
+    assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_instrument_statuses_enforces_tick_capacity() {
+    let mut cache = cache_with_data_capacity(3, 10);
+    let instrument_id = InstrumentId::from("AUDUSD.SIM");
+
+    for ts_event in 0..5 {
+        cache
+            .add_instrument_status(instrument_status_with_ts(instrument_id, ts_event))
+            .unwrap();
+    }
+
+    let cached = cache.instrument_statuses(&instrument_id).unwrap();
+    let ts_events = cached
+        .iter()
+        .map(|status| status.ts_event.as_u64())
+        .collect::<Vec<_>>();
+
+    assert_eq!(cached.len(), 3);
+    assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+#[should_panic(expected = "invalid usize for 'tick_capacity' not positive")]
+fn test_new_rejects_zero_tick_capacity() {
+    let config = CacheConfig {
+        tick_capacity: 0,
+        ..Default::default()
+    };
+
+    let _cache = Cache::new(Some(config), None);
+}
+
+#[rstest]
+#[should_panic(expected = "invalid usize for 'bar_capacity' not positive")]
+fn test_new_rejects_zero_bar_capacity() {
+    let config = CacheConfig {
+        bar_capacity: 0,
+        ..Default::default()
+    };
+
+    let _cache = Cache::new(Some(config), None);
 }
 
 // -- ACCOUNT ---------------------------------------------------------------------------------
@@ -4139,7 +4553,7 @@ fn test_update_order_venue_id_conflict_still_removes_closed_from_own_book(mut ca
             .contains(&live_order.client_order_id())
     );
 
-    let filled = OrderFilled::new(
+    let filled = build_order_filled(
         live_order.trader_id(),
         live_order.strategy_id(),
         audusd_sim.id(),
@@ -4153,10 +4567,6 @@ fn test_update_order_venue_id_conflict_still_removes_closed_from_own_book(mut ca
         Price::from("1.00000"),
         audusd_sim.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("P-CONFLICT")),
         Some(Money::from("0 USD")),
     );
@@ -4210,22 +4620,17 @@ fn test_update_order_allows_venue_id_change_for_order_updated(mut cache: Cache) 
     update_order_with_event(&mut cache, &mut live_order, accepted);
 
     let new_venue_order_id = VenueOrderId::new("V-UPDATED");
-    let updated = OrderEventAny::Updated(OrderUpdated::new(
+    let updated = OrderEventAny::Updated(build_order_updated(
         live_order.trader_id(),
         live_order.strategy_id(),
         audusd_sim.id(),
         live_order.client_order_id(),
         live_order.quantity(),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(new_venue_order_id),
         Some(AccountId::new("SIM-001")),
         live_order.price(),
         None,
         None,
-        false,
     ));
     update_order_with_event(&mut cache, &mut live_order, updated);
 
@@ -5443,15 +5848,12 @@ fn test_released_order_indexes_in_orders_active_local(mut cache: Cache, audusd_s
 
     cache.add_order(order.clone(), None, None, false).unwrap();
 
-    let released = OrderReleased::new(
+    let released = build_order_released(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
         Price::from("1.00010"),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
     );
     let mut order = order;
     update_order_with_event(&mut cache, &mut order, OrderEventAny::Released(released));
@@ -5482,14 +5884,11 @@ fn test_emulated_order_indexes_in_orders_active_local(mut cache: Cache, audusd_s
 
     cache.add_order(order.clone(), None, None, false).unwrap();
 
-    let emulated = OrderEmulated::new(
+    let emulated = build_order_emulated(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
     );
     let mut order = order;
     update_order_with_event(&mut cache, &mut order, OrderEventAny::Emulated(emulated));
@@ -5532,15 +5931,12 @@ fn test_update_released_order_removes_from_orders_emulated(
     );
 
     // Apply released event (order sent to venue, no longer emulated)
-    let released = OrderReleased::new(
+    let released = build_order_released(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
         Price::from("1.00010"),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
     );
     let mut order = order;
     update_order_with_event(&mut cache, &mut order, OrderEventAny::Released(released));
@@ -5579,14 +5975,11 @@ fn test_update_closed_emulated_order_removes_from_orders_emulated(
     );
 
     // Apply emulated event first
-    let emulated = OrderEmulated::new(
+    let emulated = build_order_emulated(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
     );
     let mut order = order;
     update_order_with_event(&mut cache, &mut order, OrderEventAny::Emulated(emulated));
@@ -5601,15 +5994,11 @@ fn test_update_closed_emulated_order_removes_from_orders_emulated(
     );
 
     // Apply canceled event (order is now closed)
-    let canceled = OrderCanceled::new(
+    let canceled = build_order_canceled(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         None,
         None,
     );

@@ -13,10 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use ahash::HashMap;
+use ahash::{AHashMap, HashMap};
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::enums::PriceType;
 use pyo3::prelude::*;
+use rust_decimal::{Decimal, prelude::FromPrimitive};
 use ustr::Ustr;
 
 use crate::xrate::get_exchange_rate;
@@ -37,13 +38,28 @@ pub fn py_get_exchange_rate(
     price_type: PriceType,
     quotes_bid: HashMap<String, f64>,
     quotes_ask: HashMap<String, f64>,
-) -> PyResult<Option<f64>> {
+) -> PyResult<Option<Decimal>> {
+    let quotes_bid = f64_quotes_to_decimal(quotes_bid).map_err(to_pyvalue_err)?;
+    let quotes_ask = f64_quotes_to_decimal(quotes_ask).map_err(to_pyvalue_err)?;
+
     get_exchange_rate(
         Ustr::from(from_currency),
         Ustr::from(to_currency),
         price_type,
-        quotes_bid.into_iter().collect(),
-        quotes_ask.into_iter().collect(),
+        quotes_bid,
+        quotes_ask,
     )
     .map_err(to_pyvalue_err)
+}
+
+fn f64_quotes_to_decimal(quotes: HashMap<String, f64>) -> anyhow::Result<AHashMap<Ustr, Decimal>> {
+    quotes
+        .into_iter()
+        .map(|(pair, value)| {
+            let rate = Decimal::from_f64(value).ok_or_else(|| {
+                anyhow::anyhow!("Invalid quote rate for pair {pair}, was {value}")
+            })?;
+            Ok((Ustr::from(&pair), rate))
+        })
+        .collect()
 }

@@ -21,7 +21,10 @@ mod datetime_format {
     use chrono::{DateTime, Utc};
     use serde::{self, Serializer};
 
-    pub fn serialize<S>(date: &Option<DateTime<Utc>>, serializer: S) -> Result<S::Ok, S::Error>
+    pub(super) fn serialize<S>(
+        date: &Option<DateTime<Utc>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {

@@ -19,6 +19,7 @@
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_model::enums::PriceType;
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 /// Calculates the exchange rate between two currencies using provided bid and ask quotes.
@@ -39,13 +40,13 @@ pub fn get_exchange_rate(
     from_currency: Ustr,
     to_currency: Ustr,
     price_type: PriceType,
-    quotes_bid: AHashMap<String, f64>,
-    quotes_ask: AHashMap<String, f64>,
-) -> anyhow::Result<Option<f64>> {
+    quotes_bid: AHashMap<Ustr, Decimal>,
+    quotes_ask: AHashMap<Ustr, Decimal>,
+) -> anyhow::Result<Option<Decimal>> {
     if from_currency == to_currency {
         // When the source and target currencies are identical,
-        // no conversion is needed; return an exchange rate of 1.0.
-        return Ok(Some(1.0));
+        // no conversion is needed; return an exchange rate of one.
+        return Ok(Some(Decimal::ONE));
     }
 
     if quotes_bid.is_empty() || quotes_ask.is_empty() {
@@ -57,7 +58,7 @@ pub fn get_exchange_rate(
     }
 
     // Build effective quotes based on the requested price type
-    let effective_quotes: AHashMap<String, f64> = match price_type {
+    let effective_quotes: AHashMap<Ustr, Decimal> = match price_type {
         PriceType::Bid => quotes_bid,
         PriceType::Ask => quotes_ask,
         PriceType::Mid => {
@@ -67,7 +68,7 @@ pub fn get_exchange_rate(
                 let ask = quotes_ask
                     .get(pair)
                     .ok_or_else(|| anyhow::anyhow!("Missing ask quote for pair {pair}"))?;
-                mid_quotes.insert(pair.clone(), (bid + ask) / 2.0);
+                mid_quotes.insert(*pair, (bid + ask) / Decimal::TWO);
             }
             mid_quotes
         }
@@ -75,22 +76,31 @@ pub fn get_exchange_rate(
     };
 
     // Construct a graph: each currency maps to its neighbors and corresponding conversion rate
-    let mut graph: AHashMap<Ustr, Vec<(Ustr, f64)>> = AHashMap::new();
+    let mut graph: AHashMap<Ustr, Vec<(Ustr, Decimal)>> = AHashMap::new();
     for (pair, rate) in effective_quotes {
         let parts: Vec<&str> = pair.split('/').collect();
         if parts.len() != 2 {
             log::warn!("Skipping invalid pair string: {pair}");
             continue;
         }
+
+        if rate <= Decimal::ZERO {
+            // A non-positive quote would divide by zero on the inverse edge
+            log::warn!("Skipping non-positive rate for pair {pair}");
+            continue;
+        }
         let base = Ustr::from(parts[0]);
         let quote = Ustr::from(parts[1]);
 
         graph.entry(base).or_default().push((quote, rate));
-        graph.entry(quote).or_default().push((base, 1.0 / rate));
+        graph
+            .entry(quote)
+            .or_default()
+            .push((base, Decimal::ONE / rate));
     }
 
     // DFS: search for a conversion path from `from_currency` to `to_currency`
-    let mut stack: Vec<(Ustr, f64)> = vec![(from_currency, 1.0)];
+    let mut stack: Vec<(Ustr, Decimal)> = vec![(from_currency, Decimal::ONE)];
     let mut visited: AHashSet<Ustr> = AHashSet::new();
     visited.insert(from_currency);
 
@@ -116,26 +126,28 @@ pub fn get_exchange_rate(
 mod tests {
     use ahash::AHashMap;
     use rstest::rstest;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use super::*;
 
-    fn setup_test_quotes() -> (AHashMap<String, f64>, AHashMap<String, f64>) {
+    fn setup_test_quotes() -> (AHashMap<Ustr, Decimal>, AHashMap<Ustr, Decimal>) {
         let mut quotes_bid = AHashMap::new();
         let mut quotes_ask = AHashMap::new();
 
         // Direct pairs
-        quotes_bid.insert("EUR/USD".to_string(), 1.1000);
-        quotes_ask.insert("EUR/USD".to_string(), 1.1002);
+        quotes_bid.insert(Ustr::from("EUR/USD"), dec!(1.1000));
+        quotes_ask.insert(Ustr::from("EUR/USD"), dec!(1.1002));
 
-        quotes_bid.insert("GBP/USD".to_string(), 1.3000);
-        quotes_ask.insert("GBP/USD".to_string(), 1.3002);
+        quotes_bid.insert(Ustr::from("GBP/USD"), dec!(1.3000));
+        quotes_ask.insert(Ustr::from("GBP/USD"), dec!(1.3002));
 
-        quotes_bid.insert("USD/JPY".to_string(), 110.00);
-        quotes_ask.insert("USD/JPY".to_string(), 110.02);
+        quotes_bid.insert(Ustr::from("USD/JPY"), dec!(110.00));
+        quotes_ask.insert(Ustr::from("USD/JPY"), dec!(110.02));
 
-        quotes_bid.insert("AUD/USD".to_string(), 0.7500);
-        quotes_ask.insert("AUD/USD".to_string(), 0.7502);
+        quotes_bid.insert(Ustr::from("AUD/USD"), dec!(0.7500));
+        quotes_ask.insert(Ustr::from("AUD/USD"), dec!(0.7502));
 
         (quotes_bid, quotes_ask)
     }
@@ -145,11 +157,11 @@ mod tests {
         let mut quotes_bid = AHashMap::new();
         let mut quotes_ask = AHashMap::new();
         // Invalid pair string (missing '/')
-        quotes_bid.insert("EURUSD".to_string(), 1.1000);
-        quotes_ask.insert("EURUSD".to_string(), 1.1002);
+        quotes_bid.insert(Ustr::from("EURUSD"), dec!(1.1000));
+        quotes_ask.insert(Ustr::from("EURUSD"), dec!(1.1002));
         // Valid pair string
-        quotes_bid.insert("EUR/USD".to_string(), 1.1000);
-        quotes_ask.insert("EUR/USD".to_string(), 1.1002);
+        quotes_bid.insert(Ustr::from("EUR/USD"), dec!(1.1000));
+        quotes_ask.insert(Ustr::from("EUR/USD"), dec!(1.1002));
 
         let rate = get_exchange_rate(
             Ustr::from("EUR"),
@@ -160,8 +172,7 @@ mod tests {
         )
         .unwrap();
 
-        let expected = f64::midpoint(1.1000, 1.1002);
-        assert!((rate.unwrap() - expected).abs() < 0.0001);
+        assert_eq!(rate, Some(dec!(1.1001)));
     }
 
     #[rstest]
@@ -175,17 +186,17 @@ mod tests {
             quotes_ask,
         )
         .unwrap();
-        assert_eq!(rate, Some(1.0));
+        assert_eq!(rate, Some(Decimal::ONE));
     }
 
     #[rstest(
         price_type,
         expected,
-        case(PriceType::Bid, 1.1000),
-        case(PriceType::Ask, 1.1002),
-        case(PriceType::Mid, f64::midpoint(1.1000, 1.1002))
+        case(PriceType::Bid, dec!(1.1000)),
+        case(PriceType::Ask, dec!(1.1002)),
+        case(PriceType::Mid, dec!(1.1001))
     )]
-    fn test_direct_pair(price_type: PriceType, expected: f64) {
+    fn test_direct_pair(price_type: PriceType, expected: Decimal) {
         let (quotes_bid, quotes_ask) = setup_test_quotes();
 
         let rate = get_exchange_rate(
@@ -198,7 +209,7 @@ mod tests {
         .unwrap();
 
         let rate = rate.unwrap_or_else(|| panic!("Expected a conversion rate for {price_type}"));
-        assert!((rate - expected).abs() < 0.0001);
+        assert_eq!(rate, expected);
     }
 
     #[rstest]
@@ -223,7 +234,8 @@ mod tests {
         .unwrap();
 
         if let (Some(eur_usd), Some(usd_eur)) = (rate_eur_usd, rate_usd_eur) {
-            assert!(eur_usd.mul_add(usd_eur, -1.0).abs() < 0.0001);
+            // Inverse-edge rounding makes the round-trip near one, not exactly one
+            assert!((eur_usd * usd_eur - Decimal::ONE).abs() < dec!(0.0001));
         } else {
             panic!("Expected valid conversion rates for inverse conversion");
         }
@@ -241,15 +253,29 @@ mod tests {
         )
         .unwrap();
         // Expected rate: (EUR/USD mid) * (USD/JPY mid)
-        let mid_eur_usd = f64::midpoint(1.1000, 1.1002);
-        let mid_usd_jpy = f64::midpoint(110.00, 110.02);
-        let expected = mid_eur_usd * mid_usd_jpy;
+        let expected = dec!(1.1001) * dec!(110.01);
 
-        if let Some(val) = rate {
-            assert!((val - expected).abs() < 0.1);
-        } else {
-            panic!("Expected conversion rate through USD but got None");
-        }
+        assert_eq!(rate, Some(expected));
+    }
+
+    #[rstest]
+    #[case(dec!(0))]
+    #[case(dec!(-1.1))]
+    fn test_non_positive_rate_is_skipped(#[case] rate: Decimal) {
+        let mut quotes_bid = AHashMap::new();
+        let mut quotes_ask = AHashMap::new();
+        quotes_bid.insert(Ustr::from("EUR/USD"), rate);
+        quotes_ask.insert(Ustr::from("EUR/USD"), rate);
+
+        let result = get_exchange_rate(
+            Ustr::from("EUR"),
+            Ustr::from("USD"),
+            PriceType::Mid,
+            quotes_bid,
+            quotes_ask,
+        );
+
+        assert_eq!(result.unwrap(), None);
     }
 
     #[rstest]
@@ -258,8 +284,8 @@ mod tests {
         let mut quotes_ask = AHashMap::new();
 
         // Only one pair provided
-        quotes_bid.insert("EUR/USD".to_string(), 1.1000);
-        quotes_ask.insert("EUR/USD".to_string(), 1.1002);
+        quotes_bid.insert(Ustr::from("EUR/USD"), dec!(1.1000));
+        quotes_ask.insert(Ustr::from("EUR/USD"), dec!(1.1002));
 
         // Attempt conversion from EUR to JPY should yield None
         let rate = get_exchange_rate(
@@ -275,8 +301,8 @@ mod tests {
 
     #[rstest]
     fn test_empty_quotes() {
-        let quotes_bid: AHashMap<String, f64> = AHashMap::new();
-        let quotes_ask: AHashMap<String, f64> = AHashMap::new();
+        let quotes_bid: AHashMap<Ustr, Decimal> = AHashMap::new();
+        let quotes_ask: AHashMap<Ustr, Decimal> = AHashMap::new();
         let result = get_exchange_rate(
             Ustr::from("EUR"),
             Ustr::from("USD"),
@@ -292,9 +318,9 @@ mod tests {
         let mut quotes_bid = AHashMap::new();
         let mut quotes_ask = AHashMap::new();
 
-        quotes_bid.insert("EUR/USD".to_string(), 1.1000);
-        quotes_bid.insert("GBP/USD".to_string(), 1.3000);
-        quotes_ask.insert("EUR/USD".to_string(), 1.1002);
+        quotes_bid.insert(Ustr::from("EUR/USD"), dec!(1.1000));
+        quotes_bid.insert(Ustr::from("GBP/USD"), dec!(1.3000));
+        quotes_ask.insert(Ustr::from("EUR/USD"), dec!(1.1002));
         // Missing GBP/USD in ask quotes.
 
         let result = get_exchange_rate(
@@ -326,10 +352,10 @@ mod tests {
         let mut quotes_bid = AHashMap::new();
         let mut quotes_ask = AHashMap::new();
         // Create a cycle by including both EUR/USD and USD/EUR quotes
-        quotes_bid.insert("EUR/USD".to_string(), 1.1);
-        quotes_ask.insert("EUR/USD".to_string(), 1.1002);
-        quotes_bid.insert("USD/EUR".to_string(), 0.909);
-        quotes_ask.insert("USD/EUR".to_string(), 0.9091);
+        quotes_bid.insert(Ustr::from("EUR/USD"), dec!(1.1));
+        quotes_ask.insert(Ustr::from("EUR/USD"), dec!(1.1002));
+        quotes_bid.insert(Ustr::from("USD/EUR"), dec!(0.909));
+        quotes_ask.insert(Ustr::from("USD/EUR"), dec!(0.9091));
 
         let rate = get_exchange_rate(
             Ustr::from("EUR"),
@@ -340,9 +366,9 @@ mod tests {
         )
         .unwrap();
 
-        // Expect the direct EUR/USD mid rate
-        let expected = f64::midpoint(1.1, 1.1002);
-        assert!((rate.unwrap() - expected).abs() < 0.0001);
+        // Edge order is non-deterministic, so allow a small tolerance around the mid rate
+        let expected = dec!(1.1001);
+        assert!((rate.unwrap() - expected).abs() < dec!(0.0001));
     }
 
     #[rstest]
@@ -350,13 +376,13 @@ mod tests {
         let mut quotes_bid = AHashMap::new();
         let mut quotes_ask = AHashMap::new();
         // Direct conversion
-        quotes_bid.insert("EUR/USD".to_string(), 1.1000);
-        quotes_ask.insert("EUR/USD".to_string(), 1.1002);
+        quotes_bid.insert(Ustr::from("EUR/USD"), dec!(1.1000));
+        quotes_ask.insert(Ustr::from("EUR/USD"), dec!(1.1002));
         // Indirect path via GBP: EUR/GBP and GBP/USD
-        quotes_bid.insert("EUR/GBP".to_string(), 0.8461);
-        quotes_ask.insert("EUR/GBP".to_string(), 0.8463);
-        quotes_bid.insert("GBP/USD".to_string(), 1.3000);
-        quotes_ask.insert("GBP/USD".to_string(), 1.3002);
+        quotes_bid.insert(Ustr::from("EUR/GBP"), dec!(0.8461));
+        quotes_ask.insert(Ustr::from("EUR/GBP"), dec!(0.8463));
+        quotes_bid.insert(Ustr::from("GBP/USD"), dec!(1.3000));
+        quotes_ask.insert(Ustr::from("GBP/USD"), dec!(1.3002));
 
         let rate = get_exchange_rate(
             Ustr::from("EUR"),
@@ -368,10 +394,9 @@ mod tests {
         .unwrap();
 
         // Both paths should be consistent:
-        let direct: f64 = f64::midpoint(1.1000_f64, 1.1002_f64);
-        let indirect: f64 =
-            f64::midpoint(0.8461_f64, 0.8463_f64) * f64::midpoint(1.3000_f64, 1.3002_f64);
-        assert!((direct - indirect).abs() < 0.0001_f64);
-        assert!((rate.unwrap() - direct).abs() < 0.0001_f64);
+        let direct = dec!(1.1001);
+        let indirect = dec!(0.8462) * dec!(1.3001);
+        assert!((direct - indirect).abs() < dec!(0.0001));
+        assert!((rate.unwrap() - direct).abs() < dec!(0.0001));
     }
 }

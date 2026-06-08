@@ -1,0 +1,33 @@
+{
+  "id": 1,
+  "result": [
+    {
+      "amount_step": "0.001",
+      "base_asset_address": "0x0000000000000000000000000000000000000001",
+      "base_asset_sub_id": "0",
+      "base_currency": "ETH",
+      "base_fee": "0.5",
+      "instrument_name": "ETH-PERP",
+      "instrument_type": "perp",
+      "is_active": true,
+      "maker_fee_rate": "0.0001",
+      "mark_price_fee_rate_cap": null,
+      "maximum_amount": "1000",
+      "minimum_amount": "0.001",
+      "option_details": null,
+      "perp_details": {
+        "aggregate_funding": "1.5",
+        "funding_rate": "0.0001",
+        "index": "ETH-USD",
+        "max_rate_per_hour": "0.01",
+        "min_rate_per_hour": "-0.01",
+        "static_interest_rate": "0.0"
+      },
+      "quote_currency": "USDC",
+      "scheduled_activation": 0,
+      "scheduled_deactivation": 0,
+      "taker_fee_rate": "0.0005",
+      "tick_size": "0.01"
+    }
+  ]
+}

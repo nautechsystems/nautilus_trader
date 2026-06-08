@@ -15,9 +15,13 @@
 
 //! WebSocket message handler for Hyperliquid.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    collections::VecDeque,
+    str::FromStr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -27,7 +31,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{BarType, CustomData, Data, DataType},
-    identifiers::AccountId,
+    identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     types::Price,
 };
@@ -36,6 +40,7 @@ use nautilus_network::{
     retry::{RetryManager, create_websocket_retry_manager},
     websocket::{SubscriptionState, WebSocketClient},
 };
+use rust_decimal::Decimal;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
@@ -45,15 +50,20 @@ use super::{
     error::HyperliquidWsError,
     messages::{
         CandleData, ExecutionReport, HyperliquidWsMessage, HyperliquidWsRequest, NautilusWsMessage,
-        SubscriptionRequest, WsActiveAssetCtxData, WsUserEventData,
+        PostRequest, SubscriptionRequest, WsActiveAssetCtxData, WsAllDexsAssetCtxsData,
+        WsUserEventData,
     },
     parse::{
-        parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_order_book_deltas,
-        parse_ws_order_book_depth10, parse_ws_order_status_report, parse_ws_quote_tick,
-        parse_ws_trade_tick,
+        parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_open_interest,
+        parse_ws_order_book_deltas, parse_ws_order_book_depth10, parse_ws_order_status_report,
+        parse_ws_quote_tick, parse_ws_trade_tick,
     },
+    post::PostRouter,
 };
-use crate::data_types::HyperliquidAllMids;
+use crate::data_types::{
+    HyperliquidAllDexsAssetCtxs, HyperliquidAllMids, HyperliquidDexAssetCtx,
+    HyperliquidImpactPrices,
+};
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -75,6 +85,8 @@ pub enum HandlerCommand {
     Unsubscribe {
         subscriptions: Vec<SubscriptionRequest>,
     },
+    /// Send a WebSocket post request.
+    Post { id: u64, request: PostRequest },
     /// Initialize the instruments cache with the given instruments.
     InitializeInstruments(Vec<InstrumentAny>),
     /// Update a single instrument in the cache.
@@ -88,11 +100,57 @@ pub enum HandlerCommand {
         coin: Ustr,
         data_types: AHashSet<AssetContextDataType>,
     },
+    /// Cache the ordered instrument IDs needed to normalize `allDexsAssetCtxs`.
+    CacheAllDexAssetCtxsInstrumentIds(AHashMap<Ustr, Vec<Option<InstrumentId>>>),
     /// Cache spot fill coin mappings for instrument lookup.
     CacheSpotFillCoins(AHashMap<Ustr, Ustr>),
     /// Flag whether the `l2Book` stream for `coin` should also be emitted
     /// as [`NautilusWsMessage::Depth10`] snapshots.
     SetDepth10Sub { coin: Ustr, subscribed: bool },
+}
+
+#[derive(Default)]
+struct AssetContextCaches {
+    mark_price: AHashMap<Ustr, String>,
+    index_price: AHashMap<Ustr, String>,
+    funding_rate: AHashMap<Ustr, String>,
+    open_interest: AHashMap<Ustr, String>,
+}
+
+impl AssetContextCaches {
+    fn clear(&mut self, coin: Ustr, data_type: AssetContextDataType) {
+        match data_type {
+            AssetContextDataType::MarkPrice => {
+                self.mark_price.remove(&coin);
+            }
+            AssetContextDataType::IndexPrice => {
+                self.index_price.remove(&coin);
+            }
+            AssetContextDataType::FundingRate => {
+                self.funding_rate.remove(&coin);
+            }
+            AssetContextDataType::OpenInterest => {
+                self.open_interest.remove(&coin);
+            }
+        }
+    }
+
+    fn clear_removed(
+        &mut self,
+        coin: Ustr,
+        previous_data_types: Option<&AHashSet<AssetContextDataType>>,
+        next_data_types: &AHashSet<AssetContextDataType>,
+    ) {
+        let Some(previous_data_types) = previous_data_types else {
+            return;
+        };
+
+        for data_type in previous_data_types {
+            if !next_data_types.contains(data_type) {
+                self.clear(coin, *data_type);
+            }
+        }
+    }
 }
 
 pub(super) struct FeedHandler {
@@ -104,22 +162,26 @@ pub(super) struct FeedHandler {
     out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
     account_id: Option<AccountId>,
     subscriptions: SubscriptionState,
+    post_router: Arc<PostRouter>,
     retry_manager: RetryManager<HyperliquidWsError>,
-    message_buffer: Vec<NautilusWsMessage>,
+    message_buffer: VecDeque<NautilusWsMessage>,
     instruments: AHashMap<Ustr, InstrumentAny>,
     cloid_cache: CloidCache,
     bar_types_cache: AHashMap<String, BarType>,
     bar_cache: AHashMap<String, CandleData>,
     asset_context_subs: AHashMap<Ustr, AHashSet<AssetContextDataType>>,
+    all_dex_asset_ctxs_instrument_ids: AHashMap<Ustr, Vec<Option<InstrumentId>>>,
     depth10_subs: AHashSet<Ustr>,
     processed_trade_ids: FifoCache<u64, 10_000>,
-    mark_price_cache: AHashMap<Ustr, String>,
-    index_price_cache: AHashMap<Ustr, String>,
-    funding_rate_cache: AHashMap<Ustr, String>,
+    asset_context_caches: AssetContextCaches,
 }
 
 impl FeedHandler {
     /// Creates a new [`FeedHandler`] instance.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "constructs the handler from independent runtime channels and caches"
+    )]
     pub(super) fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
@@ -128,6 +190,7 @@ impl FeedHandler {
         account_id: Option<AccountId>,
         subscriptions: SubscriptionState,
         cloid_cache: CloidCache,
+        post_router: Arc<PostRouter>,
     ) -> Self {
         Self {
             clock: get_atomic_clock_realtime(),
@@ -138,18 +201,18 @@ impl FeedHandler {
             out_tx,
             account_id,
             subscriptions,
+            post_router,
             retry_manager: create_websocket_retry_manager(),
-            message_buffer: Vec::new(),
+            message_buffer: VecDeque::new(),
             instruments: AHashMap::new(),
             cloid_cache,
             bar_types_cache: AHashMap::new(),
             bar_cache: AHashMap::new(),
             asset_context_subs: AHashMap::new(),
+            all_dex_asset_ctxs_instrument_ids: AHashMap::new(),
             depth10_subs: AHashSet::new(),
             processed_trade_ids: FifoCache::new(),
-            mark_price_cache: AHashMap::new(),
-            index_price_cache: AHashMap::new(),
-            funding_rate_cache: AHashMap::new(),
+            asset_context_caches: AssetContextCaches::default(),
         }
     }
 
@@ -189,8 +252,8 @@ impl FeedHandler {
     }
 
     pub(super) async fn next(&mut self) -> Option<NautilusWsMessage> {
-        if !self.message_buffer.is_empty() {
-            return Some(self.message_buffer.remove(0));
+        if let Some(msg) = self.message_buffer.pop_front() {
+            return Some(msg);
         }
 
         loop {
@@ -250,6 +313,22 @@ impl FeedHandler {
                                 }
                             }
                         }
+                        HandlerCommand::Post { id, request } => {
+                            let request = HyperliquidWsRequest::Post { id, request };
+                            match serde_json::to_string(&request) {
+                                Ok(payload) => {
+                                    log::debug!("Sending post payload: id={id}");
+                                    if let Err(e) = self.send_with_retry(payload).await {
+                                        log::error!("Error sending post request id={id}: {e}");
+                                        self.post_router.cancel(id).await;
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!("Error serializing post request id={id}: {e}");
+                                    self.post_router.cancel(id).await;
+                                }
+                            }
+                        }
                         HandlerCommand::InitializeInstruments(instruments) => {
                             for inst in instruments {
                                 let coin = inst.raw_symbol().inner();
@@ -268,11 +347,21 @@ impl FeedHandler {
                             self.bar_cache.remove(&key);
                         }
                         HandlerCommand::UpdateAssetContextSubs { coin, data_types } => {
+                            let previous_data_types = self.asset_context_subs.get(&coin).cloned();
+                            self.asset_context_caches.clear_removed(
+                                coin,
+                                previous_data_types.as_ref(),
+                                &data_types,
+                            );
+
                             if data_types.is_empty() {
                                 self.asset_context_subs.remove(&coin);
                             } else {
                                 self.asset_context_subs.insert(coin, data_types);
                             }
+                        }
+                        HandlerCommand::CacheAllDexAssetCtxsInstrumentIds(mappings) => {
+                            self.all_dex_asset_ctxs_instrument_ids = mappings;
                         }
                         HandlerCommand::CacheSpotFillCoins(_) => {
                             // No longer needed - raw_symbol now contains the proper format
@@ -297,6 +386,11 @@ impl FeedHandler {
 
                             match serde_json::from_str::<HyperliquidWsMessage>(&text) {
                                 Ok(msg) => {
+                                    if let HyperliquidWsMessage::Post { data } = msg {
+                                        self.post_router.complete(data).await;
+                                        continue;
+                                    }
+
                                     let ts_init = self.clock.get_time_ns();
                                     let all_mids_data_types =
                                         Self::all_mids_data_types(&self.subscriptions);
@@ -311,10 +405,9 @@ impl FeedHandler {
                                         &self.asset_context_subs,
                                         &self.depth10_subs,
                                         &mut self.processed_trade_ids,
-                                        &mut self.mark_price_cache,
-                                        &mut self.index_price_cache,
-                                        &mut self.funding_rate_cache,
+                                        &mut self.asset_context_caches,
                                         &mut self.bar_cache,
+                                        &self.all_dex_asset_ctxs_instrument_ids,
                                         &all_mids_data_types,
                                     );
 
@@ -363,10 +456,9 @@ impl FeedHandler {
         asset_context_subs: &AHashMap<Ustr, AHashSet<AssetContextDataType>>,
         depth10_subs: &AHashSet<Ustr>,
         processed_trade_ids: &mut FifoCache<u64, 10_000>,
-        mark_price_cache: &mut AHashMap<Ustr, String>,
-        index_price_cache: &mut AHashMap<Ustr, String>,
-        funding_rate_cache: &mut AHashMap<Ustr, String>,
+        asset_context_caches: &mut AssetContextCaches,
         bar_cache: &mut AHashMap<String, CandleData>,
+        all_dex_asset_ctxs_instrument_ids: &AHashMap<Ustr, Vec<Option<InstrumentId>>>,
         all_mids_data_types: &[DataType],
     ) -> Vec<NautilusWsMessage> {
         let mut result = Vec::new();
@@ -458,10 +550,12 @@ impl FeedHandler {
                 }
             }
             HyperliquidWsMessage::AllMids { data } => {
-                let mut mids = std::collections::HashMap::new();
+                let mut mids = std::collections::HashMap::with_capacity(
+                    data.mids.len().min(instruments.len()),
+                );
+
                 for (coin, mid_str) in &data.mids {
-                    let coin_ustr = Ustr::from(coin.as_str());
-                    if let Some(instrument) = instruments.get(&coin_ustr) {
+                    if let Some(instrument) = instruments.get(coin) {
                         match mid_str.parse::<Price>() {
                             Ok(price) => {
                                 mids.insert(instrument.id(), price);
@@ -476,12 +570,28 @@ impl FeedHandler {
                 }
 
                 if !mids.is_empty() {
-                    for data_type in all_mids_data_types {
-                        let all_mids = HyperliquidAllMids::new(mids.clone(), ts_init, ts_init);
+                    // Take instead of clone on the last subscriber
+                    let last_idx = all_mids_data_types.len().saturating_sub(1);
+                    for (i, data_type) in all_mids_data_types.iter().enumerate() {
+                        let mids_for_this = if i == last_idx {
+                            std::mem::take(&mut mids)
+                        } else {
+                            mids.clone()
+                        };
+                        let all_mids = HyperliquidAllMids::new(mids_for_this, ts_init, ts_init);
                         result.push(NautilusWsMessage::CustomData(Data::Custom(
                             CustomData::new(Arc::new(all_mids), data_type.clone()),
                         )));
                     }
+                }
+            }
+            HyperliquidWsMessage::AllDexsAssetCtxs { data } => {
+                if let Some(msg) = Self::handle_all_dexs_asset_ctxs(
+                    data,
+                    all_dex_asset_ctxs_instrument_ids,
+                    ts_init,
+                ) {
+                    result.push(msg);
                 }
             }
             HyperliquidWsMessage::Bbo { data } => {
@@ -510,9 +620,7 @@ impl FeedHandler {
                     &data,
                     instruments,
                     asset_context_subs,
-                    mark_price_cache,
-                    index_price_cache,
-                    funding_rate_cache,
+                    asset_context_caches,
                     ts_init,
                 ));
             }
@@ -626,11 +734,7 @@ impl FeedHandler {
                 }
             } else {
                 // Not marked as processed so fill is retried if instrument loads later
-                log::warn!(
-                    "No instrument found for fill coin={}. Keys: {:?}",
-                    fill.coin,
-                    instruments.keys().collect::<Vec<_>>()
-                );
+                log::warn!("No instrument found for fill coin={}", fill.coin);
             }
         }
 
@@ -765,9 +869,7 @@ impl FeedHandler {
         data: &WsActiveAssetCtxData,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         asset_context_subs: &AHashMap<Ustr, AHashSet<AssetContextDataType>>,
-        mark_price_cache: &mut AHashMap<Ustr, String>,
-        index_price_cache: &mut AHashMap<Ustr, String>,
-        funding_rate_cache: &mut AHashMap<Ustr, String>,
+        asset_context_caches: &mut AssetContextCaches,
         ts_init: UnixNanos,
     ) -> Vec<NautilusWsMessage> {
         let mut result = Vec::new();
@@ -778,19 +880,23 @@ impl FeedHandler {
         };
 
         if let Some(instrument) = instruments.get(coin) {
-            let (mark_px, oracle_px, funding) = match data {
+            let (mark_px, oracle_px, funding, open_interest) = match data {
                 WsActiveAssetCtxData::Perp { ctx, .. } => (
                     &ctx.shared.mark_px,
                     Some(&ctx.oracle_px),
                     Some(&ctx.funding),
+                    Some(&ctx.open_interest),
                 ),
-                WsActiveAssetCtxData::Spot { ctx, .. } => (&ctx.shared.mark_px, None, None),
+                WsActiveAssetCtxData::Spot { ctx, .. } => (&ctx.shared.mark_px, None, None, None),
             };
 
-            let mark_changed = mark_price_cache.get(coin) != Some(mark_px);
-            let index_changed = oracle_px.is_some_and(|px| index_price_cache.get(coin) != Some(px));
-            let funding_changed =
-                funding.is_some_and(|rate| funding_rate_cache.get(coin) != Some(rate));
+            let mark_changed = asset_context_caches.mark_price.get(coin) != Some(mark_px);
+            let index_changed =
+                oracle_px.is_some_and(|px| asset_context_caches.index_price.get(coin) != Some(px));
+            let funding_changed = funding
+                .is_some_and(|rate| asset_context_caches.funding_rate.get(coin) != Some(rate));
+            let open_interest_changed = open_interest
+                .is_some_and(|value| asset_context_caches.open_interest.get(coin) != Some(value));
 
             let subscribed_types = asset_context_subs.get(coin);
 
@@ -801,7 +907,9 @@ impl FeedHandler {
                             && subscribed_types
                                 .is_some_and(|s| s.contains(&AssetContextDataType::MarkPrice))
                         {
-                            mark_price_cache.insert(*coin, mark_px.clone());
+                            asset_context_caches
+                                .mark_price
+                                .insert(*coin, mark_px.clone());
                             result.push(NautilusWsMessage::MarkPrice(mark_price));
                         }
 
@@ -810,7 +918,7 @@ impl FeedHandler {
                                 .is_some_and(|s| s.contains(&AssetContextDataType::IndexPrice))
                         {
                             if let Some(px) = oracle_px {
-                                index_price_cache.insert(*coin, px.clone());
+                                asset_context_caches.index_price.insert(*coin, px.clone());
                             }
 
                             if let Some(index) = index_price {
@@ -823,7 +931,9 @@ impl FeedHandler {
                                 .is_some_and(|s| s.contains(&AssetContextDataType::FundingRate))
                         {
                             if let Some(rate) = funding {
-                                funding_rate_cache.insert(*coin, rate.clone());
+                                asset_context_caches
+                                    .funding_rate
+                                    .insert(*coin, rate.clone());
                             }
 
                             if let Some(funding) = funding_rate {
@@ -836,11 +946,147 @@ impl FeedHandler {
                     }
                 }
             }
+
+            if let Some(value) = open_interest
+                && open_interest_changed
+                && subscribed_types.is_some_and(|s| s.contains(&AssetContextDataType::OpenInterest))
+            {
+                match parse_ws_open_interest(value, instrument, ts_init) {
+                    Ok(open_interest_data) => {
+                        asset_context_caches
+                            .open_interest
+                            .insert(*coin, value.clone());
+
+                        let data_type =
+                            Self::open_interest_data_type(open_interest_data.instrument_id);
+                        result.push(NautilusWsMessage::CustomData(Data::Custom(
+                            CustomData::new(Arc::new(open_interest_data), data_type),
+                        )));
+                    }
+                    Err(e) => {
+                        log::error!("Error parsing open interest: {e}");
+                    }
+                }
+            }
         } else {
             log::debug!("No instrument found for coin: {coin}");
         }
 
         result
+    }
+
+    fn handle_all_dexs_asset_ctxs(
+        data: WsAllDexsAssetCtxsData,
+        all_dex_asset_ctxs_instrument_ids: &AHashMap<Ustr, Vec<Option<InstrumentId>>>,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        let mut entries = Vec::new();
+
+        for (dex, ctxs) in data.ctxs {
+            let dex_key = Ustr::from(dex.as_str());
+            let Some(instrument_ids) = all_dex_asset_ctxs_instrument_ids.get(&dex_key) else {
+                log::warn!("Missing Hyperliquid allDexsAssetCtxs mapping for dex='{dex}'");
+                continue;
+            };
+
+            if ctxs.len() != instrument_ids.len() {
+                // Mapping is built once at bootstrap, so a count change means the universe
+                // drifted and positional alignment can no longer be trusted.
+                log::warn!(
+                    "Hyperliquid allDexsAssetCtxs count mismatch for dex='{dex}': received {} contexts but cached {} instrument IDs (reconnect to refresh)",
+                    ctxs.len(),
+                    instrument_ids.len()
+                );
+            }
+
+            for (index, ctx) in ctxs.into_iter().enumerate() {
+                let Some(Some(instrument_id)) = instrument_ids.get(index).copied() else {
+                    log::warn!(
+                        "Missing Hyperliquid allDexsAssetCtxs instrument mapping for dex='{dex}' index={index}"
+                    );
+                    continue;
+                };
+
+                match Self::normalize_all_dex_asset_ctx_entry(&dex, instrument_id, ctx) {
+                    Ok(entry) => entries.push(entry),
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to normalize Hyperliquid allDexsAssetCtxs entry dex='{dex}' index={index}: {e}"
+                        );
+                    }
+                }
+            }
+        }
+
+        if entries.is_empty() {
+            return None;
+        }
+
+        let payload = HyperliquidAllDexsAssetCtxs::new(entries, ts_init, ts_init);
+        let data_type = DataType::new("HyperliquidAllDexsAssetCtxs", None, None);
+        Some(NautilusWsMessage::CustomData(Data::Custom(
+            CustomData::new(Arc::new(payload), data_type),
+        )))
+    }
+
+    fn normalize_all_dex_asset_ctx_entry(
+        dex: &str,
+        instrument_id: InstrumentId,
+        ctx: super::messages::PerpsAssetCtx,
+    ) -> anyhow::Result<HyperliquidDexAssetCtx> {
+        let mark_price = ctx
+            .shared
+            .mark_px
+            .parse::<Price>()
+            .map_err(anyhow::Error::msg)?;
+        let oracle_price = ctx.oracle_px.parse::<Price>().map_err(anyhow::Error::msg)?;
+        let prev_day_price = ctx
+            .shared
+            .prev_day_px
+            .parse::<Price>()
+            .map_err(anyhow::Error::msg)?;
+        let mid_price = ctx
+            .shared
+            .mid_px
+            .map(|value| value.parse::<Price>().map_err(anyhow::Error::msg))
+            .transpose()?;
+        let funding_rate = Decimal::from_str(&ctx.funding)?;
+        let open_interest = Decimal::from_str(&ctx.open_interest)?;
+        let premium = ctx.premium.as_deref().map(Decimal::from_str).transpose()?;
+        let day_ntl_volume = Decimal::from_str(&ctx.shared.day_ntl_vlm)?;
+        let day_base_volume = Decimal::from_str(
+            ctx.shared
+                .day_base_vlm
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("missing dayBaseVlm"))?,
+        )?;
+        let impact_prices = match ctx.shared.impact_pxs {
+            Some(values) => match values.as_slice() {
+                [bid, ask] => Some(HyperliquidImpactPrices {
+                    bid: bid.parse::<Price>().map_err(anyhow::Error::msg)?,
+                    ask: ask.parse::<Price>().map_err(anyhow::Error::msg)?,
+                }),
+                other => {
+                    anyhow::bail!("expected 2 impact prices, received {}", other.len());
+                }
+            },
+            None => None,
+        };
+
+        Ok(HyperliquidDexAssetCtx {
+            dex: dex.to_string(),
+            instrument_id,
+            mark_price,
+            oracle_price,
+            prev_day_price,
+            mid_price,
+            impact_prices,
+            funding_rate,
+            open_interest,
+            premium,
+            day_ntl_volume,
+            day_base_volume,
+        })
     }
 
     fn all_mids_data_types(subscriptions: &SubscriptionState) -> Vec<DataType> {
@@ -871,6 +1117,19 @@ impl FeedHandler {
 
         data_types
     }
+
+    fn open_interest_data_type(instrument_id: InstrumentId) -> DataType {
+        let mut metadata = Params::new();
+        metadata.insert(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        );
+        DataType::new(
+            "HyperliquidOpenInterest",
+            Some(metadata),
+            Some(instrument_id.to_string()),
+        )
+    }
 }
 
 pub(crate) fn subscription_to_key(sub: &SubscriptionRequest) -> String {
@@ -881,6 +1140,9 @@ pub(crate) fn subscription_to_key(sub: &SubscriptionRequest) -> String {
             } else {
                 HyperliquidWsChannel::AllMids.as_str().to_string()
             }
+        }
+        SubscriptionRequest::AllDexsAssetCtxs => {
+            HyperliquidWsChannel::AllDexsAssetCtxs.as_str().to_string()
         }
         SubscriptionRequest::Notification { user } => {
             format!("{}:{user}", HyperliquidWsChannel::Notification.as_str())
@@ -971,21 +1233,40 @@ pub(crate) fn create_hyperliquid_timeout_error(msg: String) -> HyperliquidWsErro
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        sync::{Arc, Mutex, atomic::AtomicBool},
+        time::Duration,
+    };
+
     use ahash::{AHashMap, AHashSet};
+    use nautilus_common::cache::fifo::FifoCacheMap;
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
-        identifiers::{InstrumentId, Symbol},
-        instruments::{CryptoPerpetual, InstrumentAny},
+        data::Data,
+        identifiers::{ClientOrderId, InstrumentId, Symbol},
+        instruments::{CryptoPerpetual, Instrument, InstrumentAny},
         types::{Currency, Price, Quantity},
     };
+    use nautilus_network::websocket::SubscriptionState;
     use rstest::rstest;
+    use serde_json::json;
     use ustr::Ustr;
 
     use super::{
-        super::messages::{NautilusWsMessage, WsBookData, WsLevelData},
-        FeedHandler,
+        super::{
+            client::{AssetContextDataType, CLOID_CACHE_CAPACITY, CloidCache},
+            messages::{
+                NautilusWsMessage, PerpsAssetCtx, PostRequest, SharedAssetCtx, SpotAssetCtx,
+                WsActiveAssetCtxData, WsAllDexsAssetCtxsData, WsBookData, WsLevelData,
+            },
+            post::PostRouter,
+        },
+        AssetContextCaches, FeedHandler, HandlerCommand,
     };
-    use crate::common::consts::HYPERLIQUID_VENUE;
+    use crate::{
+        common::consts::HYPERLIQUID_VENUE,
+        data_types::{HyperliquidAllDexsAssetCtxs, HyperliquidOpenInterest},
+    };
 
     fn btc_perp() -> InstrumentAny {
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
@@ -1034,6 +1315,120 @@ mod tests {
             ],
             time: 1_700_000_000_000,
         }
+    }
+
+    fn btc_active_spot_asset_ctx() -> WsActiveAssetCtxData {
+        WsActiveAssetCtxData::Spot {
+            coin: Ustr::from("BTC"),
+            ctx: SpotAssetCtx {
+                shared: SharedAssetCtx {
+                    day_ntl_vlm: "1000000.0".to_string(),
+                    prev_day_px: "49000.0".to_string(),
+                    mark_px: "50000.0".to_string(),
+                    mid_px: Some("50001.0".to_string()),
+                    impact_pxs: None,
+                    day_base_vlm: Some("100.0".to_string()),
+                },
+                circulating_supply: "19000000.0".to_string(),
+            },
+        }
+    }
+
+    fn btc_active_asset_ctx(open_interest: &str) -> WsActiveAssetCtxData {
+        WsActiveAssetCtxData::Perp {
+            coin: Ustr::from("BTC"),
+            ctx: PerpsAssetCtx {
+                shared: SharedAssetCtx {
+                    day_ntl_vlm: "1000000.0".to_string(),
+                    prev_day_px: "49000.0".to_string(),
+                    mark_px: "50000.0".to_string(),
+                    mid_px: Some("50001.0".to_string()),
+                    impact_pxs: Some(vec!["50000.0".to_string(), "50002.0".to_string()]),
+                    day_base_vlm: Some("100.0".to_string()),
+                },
+                funding: "0.0001".to_string(),
+                open_interest: open_interest.to_string(),
+                oracle_px: "50005.0".to_string(),
+                premium: Some("-0.0001".to_string()),
+            },
+        }
+    }
+
+    fn sample_all_dexs_asset_ctxs() -> WsAllDexsAssetCtxsData {
+        let raw = include_str!("../../test_data/ws_all_dexs_asset_ctxs.json");
+        let msg: super::super::messages::HyperliquidWsMessage =
+            serde_json::from_str(raw).expect("expected valid allDexsAssetCtxs fixture");
+
+        let super::super::messages::HyperliquidWsMessage::AllDexsAssetCtxs { data } = msg else {
+            panic!("expected allDexsAssetCtxs fixture message");
+        };
+
+        let default_entry = data
+            .ctxs
+            .iter()
+            .find(|(dex, _)| dex.is_empty())
+            .and_then(|(dex, ctxs)| ctxs.first().cloned().map(|ctx| (dex.clone(), vec![ctx])))
+            .expect("expected default dex sample");
+        let xyz_entry = data
+            .ctxs
+            .iter()
+            .find(|(dex, _)| dex == "xyz")
+            .and_then(|(dex, ctxs)| ctxs.first().cloned().map(|ctx| (dex.clone(), vec![ctx])))
+            .expect("expected xyz dex sample");
+
+        WsAllDexsAssetCtxsData {
+            ctxs: vec![default_entry, xyz_entry],
+        }
+    }
+
+    #[tokio::test]
+    async fn post_send_failure_cancels_router_waiter() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let post_router = PostRouter::new();
+        let cloid_cache: CloidCache = Arc::new(Mutex::new(FifoCacheMap::<
+            Ustr,
+            ClientOrderId,
+            CLOID_CACHE_CAPACITY,
+        >::new()));
+        let mut handler = FeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            None,
+            SubscriptionState::new(':'),
+            cloid_cache,
+            Arc::clone(&post_router),
+        );
+
+        let id = 99;
+        let rx = post_router.register(id).await.unwrap();
+
+        let task = tokio::spawn(async move { handler.next().await });
+
+        cmd_tx
+            .send(HandlerCommand::Post {
+                id,
+                request: PostRequest::Info {
+                    payload: json!({"type": "userRateLimit", "user": "0x123"}),
+                },
+            })
+            .unwrap();
+        drop(cmd_tx);
+        drop(raw_tx);
+
+        let closed = tokio::time::timeout(Duration::from_millis(100), rx)
+            .await
+            .expect("post waiter should close without waiting for post timeout");
+        assert!(closed.is_err(), "post router cancel must close the waiter");
+        let _rx = post_router
+            .register(id)
+            .await
+            .expect("post id should be reusable after cancellation");
+        assert!(task.await.unwrap().is_none());
     }
 
     #[rstest]
@@ -1085,5 +1480,253 @@ mod tests {
         );
 
         assert!(msgs.is_empty());
+    }
+
+    #[rstest]
+    fn handle_asset_context_emits_open_interest_custom_data_when_subscribed() {
+        let instrument = btc_perp();
+        let instrument_id = instrument.id();
+        let mut instruments = AHashMap::new();
+        instruments.insert(Ustr::from("BTC"), instrument);
+
+        let mut asset_context_subs = AHashMap::new();
+        asset_context_subs.insert(
+            Ustr::from("BTC"),
+            AHashSet::from_iter([AssetContextDataType::OpenInterest]),
+        );
+
+        let mut asset_context_caches = AssetContextCaches::default();
+
+        let msgs = FeedHandler::handle_asset_context(
+            &btc_active_asset_ctx("100000.0"),
+            &instruments,
+            &asset_context_subs,
+            &mut asset_context_caches,
+            UnixNanos::default(),
+        );
+
+        assert_eq!(msgs.len(), 1);
+
+        match &msgs[0] {
+            NautilusWsMessage::CustomData(Data::Custom(custom)) => {
+                let open_interest = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<HyperliquidOpenInterest>()
+                    .expect("expected HyperliquidOpenInterest");
+                assert_eq!(open_interest.instrument_id, instrument_id);
+                assert_eq!(open_interest.open_interest.to_string(), "100000.0");
+                assert_eq!(
+                    custom
+                        .data_type
+                        .metadata()
+                        .and_then(|metadata| metadata.get_str("instrument_id"))
+                        .map(ToString::to_string),
+                    Some(instrument_id.to_string()),
+                );
+            }
+            other => panic!("unexpected message type: {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_all_dexs_asset_ctxs_emits_normalized_custom_data() {
+        let mapping = AHashMap::from_iter([
+            (
+                Ustr::from(""),
+                vec![Some(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))],
+            ),
+            (
+                Ustr::from("xyz"),
+                vec![Some(InstrumentId::from("xyz:XYZ100-USD-PERP.HYPERLIQUID"))],
+            ),
+        ]);
+
+        let msg = FeedHandler::handle_all_dexs_asset_ctxs(
+            sample_all_dexs_asset_ctxs(),
+            &mapping,
+            UnixNanos::default(),
+        )
+        .expect("expected custom data");
+
+        match msg {
+            NautilusWsMessage::CustomData(Data::Custom(custom)) => {
+                let payload = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<HyperliquidAllDexsAssetCtxs>()
+                    .expect("expected HyperliquidAllDexsAssetCtxs");
+                assert_eq!(payload.entries.len(), 2);
+                assert_eq!(
+                    payload.entries[0].instrument_id,
+                    InstrumentId::from("BTC-USD-PERP.HYPERLIQUID")
+                );
+                assert_eq!(payload.entries[1].dex, "xyz");
+                assert_eq!(
+                    payload.entries[1].instrument_id,
+                    InstrumentId::from("xyz:XYZ100-USD-PERP.HYPERLIQUID")
+                );
+                assert_eq!(payload.entries[0].mark_price.to_string(), "77562.0");
+                assert_eq!(payload.entries[1].day_base_volume.to_string(), "5135.2458");
+            }
+            other => panic!("expected custom data, found {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_all_dexs_asset_ctxs_preserves_index_alignment_when_mappings_are_missing() {
+        let data = WsAllDexsAssetCtxsData {
+            ctxs: vec![(
+                String::new(),
+                vec![
+                    PerpsAssetCtx {
+                        shared: SharedAssetCtx {
+                            day_ntl_vlm: "1516669192.1953897476".to_string(),
+                            prev_day_px: "76317.0".to_string(),
+                            mark_px: "77562.0".to_string(),
+                            mid_px: Some("77558.5".to_string()),
+                            impact_pxs: Some(vec!["77558.0".to_string(), "77559.0".to_string()]),
+                            day_base_vlm: Some("19707.77457".to_string()),
+                        },
+                        funding: "-0.0000015186".to_string(),
+                        open_interest: "27353.17682".to_string(),
+                        oracle_px: "77605.0".to_string(),
+                        premium: Some("-0.0005927453".to_string()),
+                    },
+                    PerpsAssetCtx {
+                        shared: SharedAssetCtx {
+                            day_ntl_vlm: "591989409.9392402172".to_string(),
+                            prev_day_px: "2094.6".to_string(),
+                            mark_px: "2123.7".to_string(),
+                            mid_px: Some("2123.95".to_string()),
+                            impact_pxs: Some(vec!["2123.65".to_string(), "2124.0".to_string()]),
+                            day_base_vlm: Some("281686.8234999999".to_string()),
+                        },
+                        funding: "0.0000125".to_string(),
+                        open_interest: "605822.2557999999".to_string(),
+                        oracle_px: "2124.6".to_string(),
+                        premium: Some("-0.0002824061".to_string()),
+                    },
+                ],
+            )],
+        };
+
+        let mapping = AHashMap::from_iter([(
+            Ustr::from(""),
+            vec![None, Some(InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"))],
+        )]);
+
+        let msg = FeedHandler::handle_all_dexs_asset_ctxs(data, &mapping, UnixNanos::default())
+            .expect("expected custom data");
+
+        match msg {
+            NautilusWsMessage::CustomData(Data::Custom(custom)) => {
+                let payload = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<HyperliquidAllDexsAssetCtxs>()
+                    .expect("expected HyperliquidAllDexsAssetCtxs");
+                assert_eq!(payload.entries.len(), 1);
+                assert_eq!(
+                    payload.entries[0].instrument_id,
+                    InstrumentId::from("ETH-USD-PERP.HYPERLIQUID")
+                );
+                assert_eq!(payload.entries[0].mark_price.to_string(), "2123.7");
+            }
+            other => panic!("expected custom data, found {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_asset_context_skips_open_interest_for_spot_payload() {
+        let instrument = btc_perp();
+        let mut instruments = AHashMap::new();
+        instruments.insert(Ustr::from("BTC"), instrument);
+
+        let mut asset_context_subs = AHashMap::new();
+        asset_context_subs.insert(
+            Ustr::from("BTC"),
+            AHashSet::from_iter([AssetContextDataType::OpenInterest]),
+        );
+
+        let mut asset_context_caches = AssetContextCaches::default();
+
+        let msgs = FeedHandler::handle_asset_context(
+            &btc_active_spot_asset_ctx(),
+            &instruments,
+            &asset_context_subs,
+            &mut asset_context_caches,
+            UnixNanos::default(),
+        );
+
+        assert!(msgs.is_empty());
+        assert!(asset_context_caches.open_interest.is_empty());
+    }
+
+    #[rstest]
+    fn handle_asset_context_suppresses_unchanged_open_interest() {
+        let instrument = btc_perp();
+        let mut instruments = AHashMap::new();
+        instruments.insert(Ustr::from("BTC"), instrument);
+
+        let mut asset_context_subs = AHashMap::new();
+        asset_context_subs.insert(
+            Ustr::from("BTC"),
+            AHashSet::from_iter([AssetContextDataType::OpenInterest]),
+        );
+
+        let mut asset_context_caches = AssetContextCaches::default();
+
+        let first = FeedHandler::handle_asset_context(
+            &btc_active_asset_ctx("100000.0"),
+            &instruments,
+            &asset_context_subs,
+            &mut asset_context_caches,
+            UnixNanos::default(),
+        );
+        let second = FeedHandler::handle_asset_context(
+            &btc_active_asset_ctx("100000.0"),
+            &instruments,
+            &asset_context_subs,
+            &mut asset_context_caches,
+            UnixNanos::default(),
+        );
+
+        assert_eq!(first.len(), 1);
+        assert!(second.is_empty());
+    }
+
+    #[rstest]
+    fn asset_context_caches_clear_removed_data_types() {
+        let coin = Ustr::from("BTC");
+        let mut caches = AssetContextCaches::default();
+        caches.mark_price.insert(coin, "98455.5".to_string());
+        caches.index_price.insert(coin, "98460.0".to_string());
+        caches.funding_rate.insert(coin, "0.0001".to_string());
+        caches.open_interest.insert(coin, "1500.0".to_string());
+
+        let previous_data_types = AHashSet::from_iter([
+            AssetContextDataType::MarkPrice,
+            AssetContextDataType::IndexPrice,
+            AssetContextDataType::FundingRate,
+            AssetContextDataType::OpenInterest,
+        ]);
+        let next_data_types = AHashSet::from_iter([
+            AssetContextDataType::MarkPrice,
+            AssetContextDataType::FundingRate,
+        ]);
+
+        caches.clear_removed(coin, Some(&previous_data_types), &next_data_types);
+
+        assert_eq!(
+            caches.mark_price.get(&coin).map(String::as_str),
+            Some("98455.5")
+        );
+        assert!(caches.index_price.get(&coin).is_none());
+        assert_eq!(
+            caches.funding_rate.get(&coin).map(String::as_str),
+            Some("0.0001")
+        );
+        assert!(caches.open_interest.get(&coin).is_none());
     }
 }

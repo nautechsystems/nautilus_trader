@@ -23,8 +23,8 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Bar, BarType, OrderBookDeltas, QuoteTick, TradeTick},
-    identifiers::{AccountId, InstrumentId},
+    data::{Bar, BarType, InstrumentStatus, OrderBookDeltas, QuoteTick, TradeTick},
+    identifiers::{AccountId, InstrumentId, Symbol},
     instruments::{Instrument, InstrumentAny},
     reports::OrderStatusReport,
 };
@@ -33,23 +33,26 @@ use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 use crate::{
-    common::consts::COINBASE,
+    common::consts::COINBASE_VENUE,
     websocket::{
         client::COINBASE_WS_SUBSCRIPTION_KEYS,
         messages::{CoinbaseWsMessage, CoinbaseWsSubscription, WsEventType, WsOrderUpdate},
         parse::{
-            parse_ws_candle, parse_ws_l2_snapshot, parse_ws_l2_update, parse_ws_ticker,
-            parse_ws_trade, parse_ws_user_event_to_order_status_report,
+            parse_ws_candle, parse_ws_l2_snapshot, parse_ws_l2_update, parse_ws_status_product,
+            parse_ws_ticker, parse_ws_trade, parse_ws_user_event_to_order_status_report,
         },
     },
 };
 
 fn instrument_id_from_product(product_id: &Ustr) -> InstrumentId {
-    InstrumentId::from(format!("{product_id}.{COINBASE}").as_str())
+    InstrumentId::new(Symbol::new(*product_id), *COINBASE_VENUE)
 }
 
-fn resolve_instrument_id(aliases: &AtomicMap<Ustr, Ustr>, product_id: &Ustr) -> InstrumentId {
-    let resolved = aliases.get_cloned(product_id).unwrap_or(*product_id);
+fn resolve_instrument_id_from_aliases(
+    aliases: &AHashMap<Ustr, Ustr>,
+    product_id: &Ustr,
+) -> InstrumentId {
+    let resolved = aliases.get(product_id).copied().unwrap_or(*product_id);
     instrument_id_from_product(&resolved)
 }
 
@@ -128,6 +131,9 @@ pub enum NautilusWsMessage {
     /// Futures balance summary snapshot from the
     /// `futures_balance_summary` channel.
     FuturesBalanceSummary(Box<crate::websocket::messages::WsFcmBalanceSummary>),
+    /// Instrument status update from the `status` channel. Emitted for every
+    /// product the venue reports; the data client filters by subscription.
+    InstrumentStatus(Box<InstrumentStatus>),
     /// The connection was re-established after a drop.
     Reconnected,
     /// An error occurred during message processing.
@@ -144,8 +150,8 @@ pub struct FeedHandler {
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
     /// Shared with [`super::client::CoinbaseWebSocketClient`]; consulted in
-    /// `resolve_instrument_id` to re-key inbound messages whose wire `product_id`
-    /// is the canonical alias of a subscribed/submitted product.
+    /// `resolve_instrument_id_from_aliases` to re-key inbound messages whose wire
+    /// `product_id` is the canonical alias of a subscribed/submitted product.
     subscription_aliases: Arc<AtomicMap<Ustr, Ustr>>,
     bar_types: AHashMap<String, BarType>,
     account_id: Option<AccountId>,
@@ -172,10 +178,6 @@ impl FeedHandler {
             account_id: None,
             buffer: Vec::new(),
         }
-    }
-
-    fn resolve_instrument_id(&self, product_id: &Ustr) -> InstrumentId {
-        resolve_instrument_id(&self.subscription_aliases, product_id)
     }
 
     /// Sets the account ID used to stamp user-channel execution reports.
@@ -327,13 +329,9 @@ impl FeedHandler {
             CoinbaseWsMessage::FuturesBalanceSummary { events, .. } => {
                 self.handle_futures_balance_summary(events)
             }
-            CoinbaseWsMessage::Status { events, .. } => {
-                log::debug!(
-                    "Ignoring {} status events until venue status handling lands",
-                    events.len()
-                );
-                None
-            }
+            CoinbaseWsMessage::Status {
+                timestamp, events, ..
+            } => self.handle_status_events(&events, &timestamp, ts_init),
         }
     }
 
@@ -352,9 +350,10 @@ impl FeedHandler {
         };
 
         let mut first: Option<NautilusWsMessage> = None;
+        let aliases = self.subscription_aliases.load();
 
         for event in events {
-            let instrument_id = self.resolve_instrument_id(&event.product_id);
+            let instrument_id = resolve_instrument_id_from_aliases(&aliases, &event.product_id);
 
             let instrument = match self.instruments.get(&instrument_id) {
                 Some(inst) => inst,
@@ -394,9 +393,11 @@ impl FeedHandler {
         events: &[crate::websocket::messages::WsMarketTradesEvent],
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
+        let aliases = self.subscription_aliases.load();
+
         for event in events {
             for trade in &event.trades {
-                let instrument_id = self.resolve_instrument_id(&trade.product_id);
+                let instrument_id = resolve_instrument_id_from_aliases(&aliases, &trade.product_id);
 
                 let instrument = match self.instruments.get(&instrument_id) {
                     Some(inst) => inst,
@@ -428,6 +429,7 @@ impl FeedHandler {
         ts_init: UnixNanos,
     ) {
         let mut found_current = false;
+        let aliases = self.subscription_aliases.load();
 
         for event in events {
             let is_current_event = std::ptr::eq(event, current_event);
@@ -440,7 +442,7 @@ impl FeedHandler {
                     continue;
                 }
 
-                let instrument_id = self.resolve_instrument_id(&trade.product_id);
+                let instrument_id = resolve_instrument_id_from_aliases(&aliases, &trade.product_id);
 
                 if let Some(instrument) = self.instruments.get(&instrument_id)
                     && let Ok(tick) = parse_ws_trade(trade, instrument, ts_init)
@@ -460,10 +462,12 @@ impl FeedHandler {
         let ts_event = crate::http::parse::parse_rfc3339_timestamp(timestamp).unwrap_or(ts_init);
 
         let mut first: Option<NautilusWsMessage> = None;
+        let aliases = self.subscription_aliases.load();
 
         for event in events {
             for ticker in &event.tickers {
-                let instrument_id = self.resolve_instrument_id(&ticker.product_id);
+                let instrument_id =
+                    resolve_instrument_id_from_aliases(&aliases, &ticker.product_id);
 
                 let instrument = match self.instruments.get(&instrument_id) {
                     Some(inst) => inst,
@@ -516,12 +520,13 @@ impl FeedHandler {
         };
 
         let mut first: Option<NautilusWsMessage> = None;
+        let aliases = self.subscription_aliases.load();
 
         for event in events {
             let is_snapshot = matches!(event.event_type, WsEventType::Snapshot);
 
             for order in &event.orders {
-                let instrument_id = self.resolve_instrument_id(&order.product_id);
+                let instrument_id = resolve_instrument_id_from_aliases(&aliases, &order.product_id);
                 let instrument = match self.instruments.get(&instrument_id).cloned() {
                     Some(inst) => inst,
                     None => {
@@ -585,6 +590,41 @@ impl FeedHandler {
         }
     }
 
+    fn handle_status_events(
+        &mut self,
+        events: &[crate::websocket::messages::WsStatusEvent],
+        timestamp: &str,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        let ts_event = crate::http::parse::parse_rfc3339_timestamp(timestamp).unwrap_or(ts_init);
+
+        let mut first: Option<NautilusWsMessage> = None;
+        let aliases = self.subscription_aliases.load();
+
+        for event in events {
+            for product in &event.products {
+                let canonical = product.id;
+                let resolved = resolve_instrument_id_from_aliases(&aliases, &canonical);
+                let Some(status) = parse_ws_status_product(product, resolved, ts_event, ts_init)
+                else {
+                    continue;
+                };
+                let msg = NautilusWsMessage::InstrumentStatus(Box::new(status));
+
+                if first.is_none() {
+                    first = Some(msg);
+                } else {
+                    self.buffer.push(msg);
+                }
+            }
+        }
+
+        if first.is_some() {
+            self.buffer.reverse();
+        }
+        first
+    }
+
     fn handle_futures_balance_summary(
         &mut self,
         events: Vec<crate::websocket::messages::WsFuturesBalanceSummaryEvent>,
@@ -613,6 +653,7 @@ impl FeedHandler {
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
         let mut first: Option<NautilusWsMessage> = None;
+        let aliases = self.subscription_aliases.load();
 
         for event in events {
             for candle in &event.candles {
@@ -626,7 +667,8 @@ impl FeedHandler {
                     }
                 };
 
-                let instrument_id = self.resolve_instrument_id(&candle.product_id);
+                let instrument_id =
+                    resolve_instrument_id_from_aliases(&aliases, &candle.product_id);
 
                 let instrument = match self.instruments.get(&instrument_id) {
                     Some(inst) => inst,
@@ -776,7 +818,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_text_ignores_status_channel() {
+    fn test_handle_text_emits_instrument_status_from_status_channel() {
+        use nautilus_model::enums::MarketStatusAction;
+
         let json = r#"{
           "channel": "status",
           "client_id": "",
@@ -797,6 +841,18 @@ mod tests {
                   "status": "online",
                   "status_message": "",
                   "min_market_funds": "1"
+                },
+                {
+                  "product_type": "SPOT",
+                  "id": "ETH-USD",
+                  "base_currency": "ETH",
+                  "quote_currency": "USD",
+                  "base_increment": "0.00000001",
+                  "quote_increment": "0.01",
+                  "display_name": "ETH/USD",
+                  "status": "offline",
+                  "status_message": "maintenance",
+                  "min_market_funds": "1"
                 }
               ]
             }
@@ -804,8 +860,28 @@ mod tests {
         }"#;
         let mut handler = test_handler();
 
-        assert!(handler.handle_text(json).is_none());
-        assert!(handler.buffer.is_empty());
+        let first = handler
+            .handle_text(json)
+            .expect("status channel must emit InstrumentStatus");
+        let NautilusWsMessage::InstrumentStatus(status) = first else {
+            panic!("expected InstrumentStatus, was {first:?}");
+        };
+        assert_eq!(status.instrument_id, btc_usd_instrument().id());
+        assert_eq!(status.action, MarketStatusAction::Trading);
+        assert_eq!(status.is_trading, Some(true));
+        assert!(status.reason.is_none());
+
+        // The second product (ETH-USD offline) is buffered behind the BTC one.
+        assert_eq!(handler.buffer.len(), 1);
+        let NautilusWsMessage::InstrumentStatus(status) = handler.buffer.pop().unwrap() else {
+            panic!("expected buffered InstrumentStatus");
+        };
+        assert_eq!(status.action, MarketStatusAction::Halt);
+        assert_eq!(status.is_trading, Some(false));
+        assert_eq!(
+            status.reason.map(|s| s.to_string()),
+            Some("maintenance".to_string())
+        );
     }
 
     #[rstest]

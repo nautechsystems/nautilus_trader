@@ -111,7 +111,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let limit_price = (best_bid * dec!(0.95)).round();
     log::info!("Limit order price: ${limit_price}");
 
-    // Create cloid from a test ClientOrderId (production-like)
     let client_order_id = ClientOrderId::from("O-20241210-TEST-001-001-1");
     let cloid = Cloid::from_client_order_id(client_order_id);
     log::info!("ClientOrderId: {client_order_id}");

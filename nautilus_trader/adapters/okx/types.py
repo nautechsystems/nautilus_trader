@@ -27,7 +27,9 @@ OkxInstrument = (
     nautilus_pyo3.CurrencyPair
     | nautilus_pyo3.CryptoPerpetual
     | nautilus_pyo3.CryptoFuture
+    | nautilus_pyo3.CryptoFuturesSpread
     | nautilus_pyo3.CryptoOption
+    | nautilus_pyo3.CryptoOptionSpread
     | nautilus_pyo3.BinaryOption
 )
 
@@ -36,14 +38,18 @@ OKX_INSTRUMENT_TYPES: Final[
         type[nautilus_pyo3.CurrencyPair],
         type[nautilus_pyo3.CryptoPerpetual],
         type[nautilus_pyo3.CryptoFuture],
+        type[nautilus_pyo3.CryptoFuturesSpread],
         type[nautilus_pyo3.CryptoOption],
+        type[nautilus_pyo3.CryptoOptionSpread],
         type[nautilus_pyo3.BinaryOption],
     ]
 ] = (
     nautilus_pyo3.CurrencyPair,
     nautilus_pyo3.CryptoPerpetual,
     nautilus_pyo3.CryptoFuture,
+    nautilus_pyo3.CryptoFuturesSpread,
     nautilus_pyo3.CryptoOption,
+    nautilus_pyo3.CryptoOptionSpread,
     nautilus_pyo3.BinaryOption,
 )
 

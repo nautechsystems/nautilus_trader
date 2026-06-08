@@ -20,15 +20,17 @@ use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
-    types::{Currency, Money, Price, Quantity},
+    types::{Currency, Money},
 };
 use rust_decimal::Decimal;
 
 use crate::{
     common::{
-        consts::{BETFAIR_PRICE_PRECISION, BETFAIR_QUANTITY_PRECISION},
         enums::{BetfairOrderType, resolve_order_status},
-        parse::{make_instrument_id, parse_betfair_timestamp},
+        parse::{
+            make_instrument_id, parse_betfair_price, parse_betfair_quantity,
+            parse_betfair_timestamp,
+        },
     },
     http::models::CurrentOrderSummary,
 };
@@ -88,8 +90,8 @@ pub fn parse_current_order_report(
         size_lapsed,
         size_voided,
     );
-    let quantity = Quantity::from_decimal_dp(qty, BETFAIR_QUANTITY_PRECISION)?;
-    let filled_qty = Quantity::from_decimal_dp(size_matched, BETFAIR_QUANTITY_PRECISION)?;
+    let quantity = parse_betfair_quantity(qty)?;
+    let filled_qty = parse_betfair_quantity(size_matched)?;
 
     let ts_accepted = parse_betfair_timestamp(&order.placed_date)?;
     let ts_last = order
@@ -105,7 +107,7 @@ pub fn parse_current_order_report(
         .filter(|s| !s.is_empty())
         .map(ClientOrderId::from);
 
-    let price = Price::from_decimal_dp(order.price_size.price, BETFAIR_PRICE_PRECISION)?;
+    let price = parse_betfair_price(order.price_size.price)?;
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -168,8 +170,8 @@ pub fn parse_current_order_fill_report(
         .average_price_matched
         .unwrap_or(order.price_size.price);
 
-    let last_qty = Quantity::from_decimal_dp(size_matched, BETFAIR_QUANTITY_PRECISION)?;
-    let last_px = Price::from_decimal_dp(avg_px, BETFAIR_PRICE_PRECISION)?;
+    let last_qty = parse_betfair_quantity(size_matched)?;
+    let last_px = parse_betfair_price(avg_px)?;
 
     let trade_id = TradeId::new(format!("{}-{size_matched}", order.bet_id));
 
@@ -187,7 +189,7 @@ pub fn parse_current_order_fill_report(
         order_side,
         last_qty,
         last_px,
-        Money::new(0.0, currency),
+        Money::zero(currency),
         LiquiditySide::NoLiquiditySide,
         client_order_id,
         None,
@@ -199,7 +201,10 @@ pub fn parse_current_order_fill_report(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::enums::OrderStatus;
+    use nautilus_model::{
+        enums::OrderStatus,
+        types::{Price, Quantity},
+    };
     use rstest::rstest;
 
     use super::*;
@@ -464,7 +469,7 @@ mod tests {
         assert_eq!(report.last_qty, Quantity::from("10.00"));
         assert_eq!(report.last_px, Price::from("1.90"));
         assert_eq!(report.trade_id, TradeId::new("228059821049-10"));
-        assert_eq!(report.commission, Money::new(0.0, currency));
+        assert_eq!(report.commission, Money::zero(currency));
         assert_eq!(report.liquidity_side, LiquiditySide::NoLiquiditySide);
     }
 

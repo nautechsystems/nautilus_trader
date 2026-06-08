@@ -34,15 +34,17 @@ use nautilus_model::{
     data::{InstrumentClose, InstrumentStatus, OrderBookDeltas, TradeTick},
     identifiers::{InstrumentId, TradeId},
     instruments::{Instrument, InstrumentAny},
-    types::{Currency, Money, Price, Quantity},
+    types::{Currency, Money},
 };
 use rust_decimal::Decimal;
 
 use crate::{
     common::{
-        consts::{BETFAIR_PRICE_PRECISION, BETFAIR_QUANTITY_PRECISION},
         enums::MarketStatus,
-        parse::{make_instrument_id, parse_market_definition, parse_millis_timestamp},
+        parse::{
+            make_instrument_id, parse_betfair_price, parse_betfair_quantity,
+            parse_market_definition, parse_millis_timestamp,
+        },
     },
     data_types::{
         BetfairBspBookDelta, BetfairRaceProgress, BetfairRaceRunnerData, BetfairSequenceCompleted,
@@ -325,24 +327,21 @@ impl BetfairDataLoader {
                                 .unwrap_or(Decimal::ZERO);
 
                             if pv.volume <= prev_volume {
+                                self.traded_volumes.insert(key, pv.volume);
                                 continue;
                             }
 
                             let trade_volume = pv.volume - prev_volume;
                             self.traded_volumes.insert(key, pv.volume);
 
-                            let price =
-                                match Price::from_decimal_dp(pv.price, BETFAIR_PRICE_PRECISION) {
-                                    Ok(p) => p,
-                                    Err(e) => {
-                                        log::warn!("Invalid trade price: {e}");
-                                        continue;
-                                    }
-                                };
-                            let size = match Quantity::from_decimal_dp(
-                                trade_volume,
-                                BETFAIR_QUANTITY_PRECISION,
-                            ) {
+                            let price = match parse_betfair_price(pv.price) {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    log::warn!("Invalid trade price: {e}");
+                                    continue;
+                                }
+                            };
+                            let size = match parse_betfair_quantity(trade_volume) {
                                 Ok(q) => q,
                                 Err(e) => {
                                     log::warn!("Invalid trade size: {e}");
@@ -402,7 +401,7 @@ impl BetfairDataLoader {
             return;
         };
 
-        let fallback_ts = parse_millis_timestamp(rcm.pt);
+        let ts_init = parse_millis_timestamp(rcm.pt);
 
         for rc in race_changes {
             let race_id = rc.id.as_deref().unwrap_or("");
@@ -410,10 +409,10 @@ impl BetfairDataLoader {
 
             if let Some(runners) = &rc.rrc {
                 for rrc in runners {
-                    let ts_event = rrc.ft.map_or(fallback_ts, parse_millis_timestamp);
+                    let ts_event = rrc.ft.map_or(ts_init, parse_millis_timestamp);
 
                     if let Some(runner) =
-                        parse_race_runner_data(race_id, market_id, rrc, ts_event, ts_event)
+                        parse_race_runner_data(race_id, market_id, rrc, ts_event, ts_init)
                     {
                         items.push(BetfairDataItem::RaceRunnerData(runner));
                     }
@@ -421,8 +420,8 @@ impl BetfairDataLoader {
             }
 
             if let Some(rpc) = &rc.rpc {
-                let ts_event = rpc.ft.map_or(fallback_ts, parse_millis_timestamp);
-                let progress = parse_race_progress(race_id, market_id, rpc, ts_event, ts_event);
+                let ts_event = rpc.ft.map_or(ts_init, parse_millis_timestamp);
+                let progress = parse_race_progress(race_id, market_id, rpc, ts_event, ts_init);
                 items.push(BetfairDataItem::RaceProgress(progress));
             }
         }
@@ -448,6 +447,7 @@ fn open_reader(filepath: &Path) -> anyhow::Result<Box<dyn BufRead>> {
 mod tests {
     use std::path::PathBuf;
 
+    use nautilus_model::types::Price;
     use rstest::rstest;
 
     use super::*;
@@ -517,6 +517,43 @@ mod tests {
             .iter()
             .any(|i| matches!(i, BetfairDataItem::SequenceCompleted(_)));
         assert!(has_sequence, "should emit SequenceCompleted");
+
+        std::fs::remove_file(&tmp_file).ok();
+    }
+
+    #[rstest]
+    fn test_load_rcm_uses_publish_time_as_ts_init() {
+        let rcm = r#"{"op":"rcm","clk":"17787241","pt":1583685064634,"rc":[{"id":"29741583.1630","mid":"1.169866199","rrc":[{"ft":1583685064600,"id":24330465,"long":-0.9116606,"lat":53.0712976,"spd":16.91,"prg":750.7,"sfq":2.52}],"rpc":{"ft":1583685064600,"g":"4f","st":11.74,"rt":30.93,"spd":16.8,"prg":749.2,"ord":[8709395,24330465]}}]}"#;
+        let tmp_dir = std::env::temp_dir().join("betfair_test");
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let tmp_file = tmp_dir.join("test_rcm_timestamps.json");
+        std::fs::write(&tmp_file, rcm).unwrap();
+
+        let mut loader = BetfairDataLoader::new(Currency::GBP(), None);
+        let items = loader.load(&tmp_file).unwrap();
+
+        let expected_event = nautilus_core::UnixNanos::from(1_583_685_064_600_000_000);
+        let expected_init = nautilus_core::UnixNanos::from(1_583_685_064_634_000_000);
+
+        let runner = items
+            .iter()
+            .find_map(|item| match item {
+                BetfairDataItem::RaceRunnerData(runner) => Some(runner),
+                _ => None,
+            })
+            .expect("expected race runner data");
+        assert_eq!(runner.ts_event, expected_event);
+        assert_eq!(runner.ts_init, expected_init);
+
+        let progress = items
+            .iter()
+            .find_map(|item| match item {
+                BetfairDataItem::RaceProgress(progress) => Some(progress),
+                _ => None,
+            })
+            .expect("expected race progress data");
+        assert_eq!(progress.ts_event, expected_event);
+        assert_eq!(progress.ts_init, expected_init);
 
         std::fs::remove_file(&tmp_file).ok();
     }

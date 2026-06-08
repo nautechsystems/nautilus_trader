@@ -29,6 +29,7 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
+from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.backtest cimport TimeEventAccumulator_API
 from nautilus_trader.core.rust.core cimport CVec
@@ -138,6 +139,7 @@ cdef class BacktestEngine:
         bint only_now,
         bint as_of_now=*,
     )
+    cdef dict _get_result_summary(self)
 
     cpdef void _handle_data_command(self, DataCommand command)
     cdef void _handle_subscribe(self, SubscribeData command)
@@ -323,9 +325,13 @@ cdef class SimulatedExchange:
     cpdef void process_instrument_status(self, InstrumentStatus data)
     cpdef void process(self, uint64_t ts_now)
     cpdef void reset(self)
+    cpdef void _process_instrument_expiration_time_event(self, TimeEvent event)
 
     cdef void _process_instrument_expirations(self, uint64_t ts_now)
     cdef void _update_next_instrument_expiration(self, OrderMatchingEngine matching_engine)
+    cdef void _set_instrument_expiration_timer(self, OrderMatchingEngine matching_engine)
+    cdef void _set_instrument_expiration_timers(self)
+    cdef str _instrument_expiration_timer_name(self, InstrumentId instrument_id)
 
     cdef void _process_trading_command(self, TradingCommand command)
     cdef void _process_modify_submitted_order(self, ModifyOrder command)
@@ -349,6 +355,7 @@ cdef class SimulatedExchange:
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
+    cdef bint _account_at_starting_balances(self)
     cdef void _generate_fresh_account_state(self)
 
 

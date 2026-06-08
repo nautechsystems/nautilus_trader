@@ -1,0 +1,39 @@
+{
+  "id": "1",
+  "result": {
+    "order": {
+      "amount": "0.1",
+      "average_price": "0",
+      "cancel_reason": "",
+      "creation_timestamp": 1779606523447,
+      "direction": "buy",
+      "extra_fee": "0",
+      "filled_amount": "0",
+      "instrument_name": "ETH-USDC",
+      "is_transfer": false,
+      "label": "research-q4-buy",
+      "last_update_timestamp": 1779606523447,
+      "limit_price": "100",
+      "max_fee": "1000",
+      "mmp": false,
+      "nonce": 17796065232320,
+      "order_fee": "0",
+      "order_id": "4c502c6f-e129-4649-8102-2755e8280400",
+      "order_status": "open",
+      "order_type": "limit",
+      "quote_id": null,
+      "replaced_order_id": null,
+      "signature": "0xb946fb2718d7a47f651daa22e1e03eaf84dc35d08776c72025a607b1bf2c7b1426edaf7cea635a3692e29069c021b74eaf2bd1800b1a394114c46c450b091a031c",
+      "signature_expiry_sec": 1779607123,
+      "signed_limit_price": null,
+      "signer": "0xd1bb5c1daeba3b9ccf690aecceff80a0afb0d48d",
+      "subaccount_id": 144259,
+      "time_in_force": "gtc",
+      "trigger_price": null,
+      "trigger_price_type": null,
+      "trigger_reject_message": null,
+      "trigger_type": null
+    },
+    "trades": []
+  }
+}

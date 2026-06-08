@@ -147,17 +147,23 @@ pub fn load_deltas<P: AsRef<Path>>(
         update_precision_if_needed(&mut current_price_precision, data.price, price_precision);
         update_precision_if_needed(&mut current_size_precision, data.amount, size_precision);
 
-        // Insert CLEAR on snapshot boundary to reset order book state
-        if data.is_snapshot && !last_is_snapshot {
+        let ts_event = parse_timestamp(data.timestamp);
+        let ts_init = parse_timestamp(data.local_timestamp);
+
+        // Insert CLEAR on snapshot boundary to reset order book state.
+        // Some venues emit every book event as a full snapshot, so a new
+        // snapshot timestamp must also reset the previous snapshot state.
+        let starts_new_snapshot =
+            data.is_snapshot && (!last_is_snapshot || last_ts_event != ts_event);
+
+        if starts_new_snapshot {
             let clear_instrument_id =
                 instrument_id.unwrap_or_else(|| parse_instrument_id(&data.exchange, data.symbol));
-            let ts_event = parse_timestamp(data.timestamp);
-            let ts_init = parse_timestamp(data.local_timestamp);
 
             if last_ts_event != ts_event
                 && let Some(last_delta) = deltas.last_mut()
             {
-                last_delta.flags = RecordFlag::F_LAST.value();
+                last_delta.flags = RecordFlag::F_LAST as u8;
             }
             last_ts_event = ts_event;
 
@@ -189,7 +195,7 @@ pub fn load_deltas<P: AsRef<Path>>(
         if last_ts_event != ts_event
             && let Some(last_delta) = deltas.last_mut()
         {
-            last_delta.flags = RecordFlag::F_LAST.value();
+            last_delta.flags = RecordFlag::F_LAST as u8;
         }
 
         last_ts_event = ts_event;
@@ -199,7 +205,7 @@ pub fn load_deltas<P: AsRef<Path>>(
 
     // Set F_LAST flag for final delta
     if let Some(last_delta) = deltas.last_mut() {
-        last_delta.flags = RecordFlag::F_LAST.value();
+        last_delta.flags = RecordFlag::F_LAST as u8;
     }
 
     // Update all deltas to use the final (maximum) precision discovered
@@ -291,7 +297,7 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
             None => parse_instrument_id(&data.exchange, data.symbol),
         };
         // Mark as both snapshot and last (consistent with streaming implementation)
-        let flags = RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value();
+        let flags = RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8;
         let sequence = 0; // Sequence not available
         let ts_event = parse_timestamp(data.timestamp);
         let ts_init = parse_timestamp(data.local_timestamp);
@@ -449,7 +455,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
             None => parse_instrument_id(&data.exchange, data.symbol),
         };
         // Mark as both snapshot and last (consistent with streaming implementation)
-        let flags = RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value();
+        let flags = RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8;
         let sequence = 0; // Sequence not available
         let ts_event = parse_timestamp(data.timestamp);
         let ts_init = parse_timestamp(data.local_timestamp);
@@ -897,7 +903,7 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         // F_SNAPSHOT (32) | F_LAST (128) = 160
         assert_eq!(
             depths[0].flags,
-            RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value()
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
         );
         assert_eq!(depths[0].ts_event, 1598918403696000000);
         assert_eq!(depths[0].ts_init, 1598918403810979000);
@@ -941,7 +947,7 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         // F_SNAPSHOT (32) | F_LAST (128) = 160
         assert_eq!(
             depths[0].flags,
-            RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value()
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
         );
         assert_eq!(depths[0].ts_event, 1598918403696000000);
         assert_eq!(depths[0].ts_init, 1598918403810979000);
@@ -1184,7 +1190,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         // Check metadata - F_SNAPSHOT (32) | F_LAST (128) = 160
         assert_eq!(
             first.flags,
-            RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value()
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
         );
         assert_eq!(first.ts_event.as_u64(), 1598918403696000000);
         assert_eq!(first.ts_init.as_u64(), 1598918403810979000);
@@ -1284,7 +1290,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         // Check metadata - F_SNAPSHOT (32) | F_LAST (128) = 160
         assert_eq!(
             first.flags,
-            RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value()
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
         );
         assert_eq!(first.ts_event.as_u64(), 1598918403696000000);
         assert_eq!(first.ts_init.as_u64(), 1598918403810979000);
@@ -1386,6 +1392,35 @@ binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,ask,50001.0,2.0";
 
         assert_eq!(deltas.len(), 1);
         assert_eq!(deltas[0].action, BookAction::Clear);
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    fn test_load_deltas_with_consecutive_snapshots_inserts_clear() {
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+hyperliquid,BTC,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+hyperliquid,BTC,1640995200000000,1640995200100000,true,ask,50001.0,2.0
+hyperliquid,BTC,1640995201000000,1640995201100000,true,bid,49990.0,3.0
+hyperliquid,BTC,1640995201000000,1640995201100000,true,ask,49991.0,4.0";
+
+        let temp_file = std::env::temp_dir().join("test_load_deltas_consecutive_snapshots.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let deltas = load_deltas(&temp_file, Some(1), Some(1), None, None).unwrap();
+        let clear_count = deltas
+            .iter()
+            .filter(|d| d.action == BookAction::Clear)
+            .count();
+
+        assert_eq!(clear_count, 2);
+        assert_eq!(deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas[3].action, BookAction::Clear);
+        assert_eq!(
+            deltas[2].flags & RecordFlag::F_LAST as u8,
+            RecordFlag::F_LAST as u8
+        );
+        assert_eq!(deltas[3].flags & RecordFlag::F_LAST as u8, 0);
 
         std::fs::remove_file(&temp_file).ok();
     }

@@ -20,6 +20,11 @@ NautilusTrader operates primarily on granular order book data for the highest re
 in execution simulations. Backtests can also run on any supported market data type,
 depending on the desired simulation fidelity.
 
+When data flows over the message bus, topic-addressable data stays under the `data`
+root. Live streams use `data.<kind>...`; the data pipeline path uses
+`data.pipeline.<kind>...`. See [Message Bus](message_bus.md#topic-hierarchy) for
+the topic hierarchy.
+
 ## Order books
 
 A high-performance order book implemented in Rust is available to maintain order book state based on provided data.
@@ -57,57 +62,11 @@ delta is emitted.
 
 ## Instruments
 
-NautilusTrader supports a variety of instrument types across spot, derivatives, and specialty markets:
+All market data belongs to an instrument. The instrument definition supplies the
+identity, precision, price and size increments, limits, currencies, and contract
+semantics that make the data meaningful.
 
-```mermaid
-flowchart TD
-    I[Instrument Types]
-    I --> Spot
-    I --> Derivatives
-    I --> Other
-
-    Spot --> Equity
-    Spot --> CurrencyPair
-    Spot --> Commodity
-    Spot --> IndexInstrument
-
-    Derivatives --> Futures
-    Derivatives --> Options
-    Derivatives --> Cfd
-
-    Futures --> FuturesContract
-    Futures --> FuturesSpread
-    Futures --> CryptoFuture
-    Futures --> CryptoPerpetual
-    Futures --> PerpetualContract
-
-    Options --> OptionContract
-    Options --> OptionSpread
-    Options --> CryptoOption
-    Options --> BinaryOption
-
-    Other --> BettingInstrument
-    Other --> SyntheticInstrument
-```
-
-| Instrument           | Description                                                                      |
-|----------------------|----------------------------------------------------------------------------------|
-| `Equity`             | Generic equity instrument.                                                       |
-| `CurrencyPair`       | Currency pair in a spot/cash market.                                             |
-| `Commodity`          | Commodity in a spot/cash market.                                                 |
-| `IndexInstrument`    | Spot index (reference price, not directly tradable).                             |
-| `FuturesContract`    | Generic deliverable futures contract.                                            |
-| `FuturesSpread`      | Deliverable futures spread.                                                      |
-| `CryptoFuture`       | Deliverable futures with crypto assets as underlying and settlement.             |
-| `CryptoPerpetual`    | Crypto perpetual futures (perpetual swap).                                       |
-| `PerpetualContract`  | Asset‑class agnostic perpetual swap (any underlying).                            |
-| `OptionContract`     | Generic option contract.                                                         |
-| `OptionSpread`       | Generic option spread.                                                           |
-| `CryptoOption`       | Crypto option contract.                                                          |
-| `BinaryOption`       | Binary option instrument.                                                        |
-| `Cfd`                | Contract for Difference (CFD).                                                   |
-| `BettingInstrument`  | Instrument in a betting market.                                                  |
-| `SyntheticInstrument`| Synthetic instrument with prices derived from component instruments via formula. |
+See [Instruments](instruments/) for the instrument taxonomy and per-type guides.
 
 ## Bars and aggregation
 
@@ -369,6 +328,10 @@ NautilusTrader provides two distinct operations for working with bars:
 - **`request_aggregated_bars()`**: Fetches historical data for a dependency-ordered list of bar
   types, building internal bars on the fly.
 - **`subscribe_bars()`**: Establishes a real-time data feed processed by the `on_bar()` handler.
+  It expects the instrument for the `BarType` to already be loaded in the cache.
+
+The same cache precondition applies to quote, trade, order book, and other live
+subscriptions.
 
 These methods work together in a typical workflow:
 
@@ -515,6 +478,7 @@ These timestamps serve distinct purposes and help maintain precise timing inform
 | `QuoteTick`      | Time when quote occurred at the exchange.             | Time when Nautilus received the quote data. |
 | `OrderBookDelta` | Time when order book update occurred at the exchange. | Time when Nautilus received the order book update. |
 | `Bar`            | Time of the bar's closing (exact minute/hour).        | Time when Nautilus generated (for internal bars) or received the bar data (for external bars). |
+| `DefiData`       | Time the block or pool event occurred.                | Time when Nautilus created the object from the chain data. |
 | `OrderFilled`    | Time when order was filled at the exchange.           | Time when Nautilus received and processed the fill confirmation. |
 | `OrderCanceled`  | Time when cancellation was processed at the exchange. | Time when Nautilus received and processed the cancellation confirmation. |
 | `NewsEvent`      | Time when the news was published.                     | Time when the event object was created (if internal event) or received (if external event) in Nautilus. |
@@ -543,6 +507,8 @@ The dual timestamp system enables latency analysis within the platform:
 #### Backtesting environment
 
 - Data is ordered by `ts_init` using a stable sort.
+- DeFi data (`DefiData`) breaks `ts_init` ties by on-chain position (block number, transaction
+  index, log index) so events from the same block replay in canonical chain order.
 - This behavior ensures deterministic processing order and simulates realistic system behavior, including latencies.
 
 #### Live trading environment
@@ -1926,7 +1892,7 @@ class GreeksData(Data):
 
 ## Related guides
 
-- [Instruments](instruments.md) - Financial instruments referenced by data.
+- [Instruments](instruments/) - Financial instruments referenced by data.
 - [Options](options.md) - Option instruments, chain subscriptions, and strike filtering.
 - [Greeks](greeks.md) - Venue-provided and locally computed option Greeks.
 - [Cache](cache.md) - Data storage and retrieval.

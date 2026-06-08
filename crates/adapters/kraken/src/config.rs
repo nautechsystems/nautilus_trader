@@ -36,7 +36,7 @@ use crate::common::{
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.kraken")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
 )]
 pub struct KrakenDataClientConfig {
     pub api_key: Option<String>,
@@ -123,7 +123,7 @@ impl KrakenDataClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.kraken")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
 )]
 pub struct KrakenExecClientConfig {
     #[builder(default)]
@@ -197,8 +197,10 @@ pub struct KrakenExecClientConfig {
     #[builder(default = true)]
     pub use_ws_trade: bool,
 
-    /// Timeout in seconds for WebSocket order responses before emitting a
-    /// rejection event.
+    /// Timeout in seconds for WebSocket order responses.
+    ///
+    /// Submit, amend, and batch-add timeouts emit rejection events. Cancel
+    /// timeouts log and await reconciliation.
     #[builder(default = 5)]
     pub ws_request_timeout_secs: u64,
 }

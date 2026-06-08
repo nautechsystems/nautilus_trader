@@ -15,6 +15,8 @@
 
 //! Parse functions for converting Polymarket WebSocket messages to Nautilus data types.
 
+use std::str::FromStr;
+
 use nautilus_core::{
     UnixNanos,
     correctness::{CorrectnessError, CorrectnessResult},
@@ -26,6 +28,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
+use rust_decimal::Decimal;
 
 use super::messages::{PolymarketBookSnapshot, PolymarketQuote, PolymarketQuotes, PolymarketTrade};
 use crate::common::{enums::PolymarketOrderSide, parse::determine_trade_id};
@@ -42,21 +45,17 @@ pub fn parse_timestamp_ms(ts: &str) -> anyhow::Result<UnixNanos> {
 }
 
 pub(crate) fn parse_price(s: &str, precision: u8) -> CorrectnessResult<Price> {
-    let value: f64 = s
-        .parse()
-        .map_err(|e| CorrectnessError::PredicateViolation {
-            message: format!("Invalid price '{s}': {e}"),
-        })?;
-    Price::new_checked(value, precision)
+    let value = Decimal::from_str(s).map_err(|e| CorrectnessError::PredicateViolation {
+        message: format!("Invalid price '{s}': {e}"),
+    })?;
+    Price::from_decimal_dp(value, precision)
 }
 
 pub(crate) fn parse_quantity(s: &str, precision: u8) -> CorrectnessResult<Quantity> {
-    let value: f64 = s
-        .parse()
-        .map_err(|e| CorrectnessError::PredicateViolation {
-            message: format!("Invalid quantity '{s}': {e}"),
-        })?;
-    Quantity::new_checked(value, precision)
+    let value = Decimal::from_str(s).map_err(|e| CorrectnessError::PredicateViolation {
+        message: format!("Invalid quantity '{s}': {e}"),
+    })?;
+    Quantity::from_decimal_dp(value, precision)
 }
 
 /// Parses a book snapshot into [`OrderBookDeltas`] (CLEAR + ADD).

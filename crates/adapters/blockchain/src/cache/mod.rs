@@ -107,6 +107,14 @@ impl BlockchainCache {
         self.block_timestamps.get(&block_number)
     }
 
+    /// Records a block timestamp in the in-memory cache without persisting it.
+    ///
+    /// Used while streaming pool events so event conversion can resolve `ts_event` for blocks
+    /// that have not been persisted via [`Self::add_block`].
+    pub fn cache_block_timestamp(&mut self, number: u64, timestamp: UnixNanos) {
+        self.block_timestamps.insert(number, timestamp);
+    }
+
     /// Initializes the database connection for persistent storage.
     pub async fn initialize_database(&mut self, pg_connect_options: PgConnectOptions) {
         let database = BlockchainCacheDatabase::init(pg_connect_options).await;
@@ -348,10 +356,11 @@ impl BlockchainCache {
     ///
     /// Returns an error if adding the block to the database fails.
     pub async fn add_block(&mut self, block: Block) -> anyhow::Result<()> {
+        // Populate in-memory first so the timestamp resolves even if persistence fails
+        self.block_timestamps.insert(block.number, block.timestamp);
         if let Some(database) = &self.database {
             database.add_block(self.chain.chain_id, &block).await?;
         }
-        self.block_timestamps.insert(block.number, block.timestamp);
         Ok(())
     }
 
@@ -382,6 +391,29 @@ impl BlockchainCache {
         }
 
         // Update in-memory cache
+        for block in blocks {
+            self.block_timestamps.insert(block.number, block.timestamp);
+        }
+
+        Ok(())
+    }
+
+    /// Adds block timestamps observed while streaming pool events.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the block timestamps to the database fails.
+    pub async fn add_pool_event_blocks_batch(&mut self, blocks: Vec<Block>) -> anyhow::Result<()> {
+        if blocks.is_empty() {
+            return Ok(());
+        }
+
+        if let Some(database) = &self.database {
+            database
+                .add_pool_event_blocks_batch(self.chain.chain_id, &blocks)
+                .await?;
+        }
+
         for block in blocks {
             self.block_timestamps.insert(block.number, block.timestamp);
         }
@@ -642,6 +674,24 @@ impl BlockchainCache {
         pool_identifier: &PoolIdentifier,
         snapshot: &PoolSnapshot,
     ) -> anyhow::Result<()> {
+        // Reject stub snapshots at the pool's creation block: empty positions, empty ticks,
+        // and the snapshot block matching pool creation indicates a bootstrap that bailed
+        // before any liquidity events landed. A legitimately empty pool (e.g., fully burned)
+        // would have its last_processed_event at the burn block, not at creation, so the
+        // creation-block check preserves those valid checkpoints.
+        if snapshot.positions.is_empty()
+            && snapshot.ticks.is_empty()
+            && let Some(pool) = self.pools.get(pool_identifier)
+            && snapshot.block_position.number == pool.creation_block
+        {
+            log::warn!(
+                "Refusing to persist empty stub snapshot for {} at pool creation block {}",
+                snapshot.instrument_id,
+                snapshot.block_position.number,
+            );
+            return Ok(());
+        }
+
         if let Some(database) = &self.database {
             // Save snapshot first (required for foreign key constraints)
             database
@@ -836,7 +886,7 @@ impl BlockchainCache {
         pool_identifier: &PoolIdentifier,
     ) -> anyhow::Result<Option<u64>> {
         if let Some(database) = &self.database {
-            let (swaps_last_block, liquidity_last_block, collect_last_block) = tokio::try_join!(
+            let (swaps_last_block, liquidity_last_block, collect_last_block, flash_last_block) = tokio::try_join!(
                 database.get_table_last_block(
                     self.chain.chain_id,
                     "pool_swap_event",
@@ -852,15 +902,76 @@ impl BlockchainCache {
                     "pool_collect_event",
                     pool_identifier
                 ),
+                database.get_table_last_block(
+                    self.chain.chain_id,
+                    "pool_flash_event",
+                    pool_identifier
+                ),
             )?;
 
-            let max_block = [swaps_last_block, liquidity_last_block, collect_last_block]
-                .into_iter()
-                .flatten()
-                .max();
+            let max_block = [
+                swaps_last_block,
+                liquidity_last_block,
+                collect_last_block,
+                flash_last_block,
+            ]
+            .into_iter()
+            .flatten()
+            .max();
             Ok(max_block)
         } else {
             Ok(None)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use nautilus_core::UnixNanos;
+    use nautilus_model::defi::{Block, Blockchain, Chain};
+    use rstest::rstest;
+    use ustr::Ustr;
+
+    use super::*;
+
+    fn test_cache() -> BlockchainCache {
+        BlockchainCache::new(Arc::new(Chain::new(Blockchain::Ethereum, 1)))
+    }
+
+    #[rstest]
+    fn cache_block_timestamp_records_in_memory() {
+        let mut cache = test_cache();
+        assert_eq!(cache.get_block_timestamp(100), None);
+
+        cache.cache_block_timestamp(100, UnixNanos::from(1_700_000_000_000_000_000));
+
+        assert_eq!(
+            cache.get_block_timestamp(100),
+            Some(&UnixNanos::from(1_700_000_000_000_000_000))
+        );
+    }
+
+    #[tokio::test]
+    async fn add_block_populates_timestamp_without_database() {
+        let mut cache = test_cache();
+        let block = Block::new(
+            "0x1".to_string(),
+            "0x0".to_string(),
+            42,
+            Ustr::from("miner"),
+            30_000_000,
+            21_000,
+            UnixNanos::from(1_700_000_000_000_000_000),
+            Some(Blockchain::Ethereum),
+        );
+
+        cache.add_block(block).await.unwrap();
+
+        assert_eq!(
+            cache.get_block_timestamp(42),
+            Some(&UnixNanos::from(1_700_000_000_000_000_000))
+        );
     }
 }

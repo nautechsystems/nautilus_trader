@@ -149,7 +149,7 @@ impl OrderModifyRejected {
     #[getter]
     #[pyo3(name = "reconciliation")]
     fn py_reconciliation(&self) -> bool {
-        self.reconciliation != 0
+        self.reconciliation
     }
 
     #[pyo3(name = "to_dict")]
@@ -177,6 +177,10 @@ impl OrderModifyRejected {
         dict.set_item("reconciliation", self.reconciliation)?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
+        match self.causation_id {
+            Some(causation_id) => dict.set_item("causation_id", causation_id.to_string())?,
+            None => dict.set_item("causation_id", py.None())?,
+        }
         Ok(dict.into())
     }
 }

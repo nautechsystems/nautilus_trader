@@ -29,8 +29,10 @@ use crate::common::enums::{
 /// Response from candleSnapshot endpoint (returns array directly).
 pub type HyperliquidCandleSnapshot = Vec<HyperliquidCandle>;
 
+const CLOID_MARKER_PREFIX_BYTES: [u8; 2] = [0x6e, 0x42];
+
 /// A 128-bit client order ID represented as a hex string with `0x` prefix.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Cloid(pub [u8; 16]);
 
 impl Cloid {
@@ -60,16 +62,31 @@ impl Cloid {
         Ok(Self(bytes))
     }
 
-    /// Creates a `Cloid` from a Nautilus `ClientOrderId` by hashing it.
-    ///
-    /// Uses keccak256 hash and takes the first 16 bytes to create a deterministic
-    /// 128-bit CLOID from any client order ID format.
+    /// Creates a deterministic `Cloid` from a Nautilus `ClientOrderId`.
     #[must_use]
     pub fn from_client_order_id(client_order_id: ClientOrderId) -> Self {
         let hash = keccak256(client_order_id.as_str().as_bytes());
         let mut bytes = [0u8; 16];
         bytes.copy_from_slice(&hash[..16]);
+        bytes[..CLOID_MARKER_PREFIX_BYTES.len()].copy_from_slice(&CLOID_MARKER_PREFIX_BYTES);
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
         Self(bytes)
+    }
+
+    /// Creates a legacy deterministic `Cloid` from a Nautilus `ClientOrderId`.
+    #[must_use]
+    pub fn from_legacy_client_order_id(client_order_id: ClientOrderId) -> Self {
+        let hash = keccak256(client_order_id.as_str().as_bytes());
+        let mut bytes = [0u8; 16];
+        bytes.copy_from_slice(&hash[..16]);
+        Self(bytes)
+    }
+
+    /// Returns whether the CLOID matches the UUIDv4 version and variant bits.
+    #[must_use]
+    pub fn is_uuid_v4(&self) -> bool {
+        self.0[6] >> 4 == 4 && matches!(self.0[8] >> 4, 8..=11)
     }
 
     /// Converts the CLOID to a hex string with `0x` prefix.
@@ -191,6 +208,15 @@ pub struct MarginTier {
     pub lower_bound: String,
     /// Maximum leverage for this tier.
     pub max_leverage: u32,
+}
+
+/// Descriptor for a builder-deployed perp dex from `POST /info` with
+/// `{ "type": "perpDexs" }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerpDex {
+    /// Dex identifier used by WebSocket `dex` metadata and subscription routing.
+    pub name: String,
 }
 
 /// Complete spot metadata response from `POST /info` with `{ "type": "spotMeta" }`.
@@ -541,7 +567,7 @@ pub struct HyperliquidOrderInfo {
     /// Original order size.
     #[serde(rename = "origSz")]
     pub orig_sz: String,
-    /// Optional client order ID (hex representation of the keccak256 cloid).
+    /// Optional client order ID (hex representation of the venue CLOID).
     #[serde(default)]
     pub cloid: Option<String>,
 }

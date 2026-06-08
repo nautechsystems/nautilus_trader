@@ -187,6 +187,29 @@ class TestBufferingThrottler:
         assert self.throttler.recv_count == 7
         assert self.throttler.sent_count == 7
 
+    def test_buffered_burst_delivers_all_messages_in_order(self):
+        # Regression: `_process` must not pop before the rate check, otherwise
+        # re-arming the timer drops one buffered message per refill.
+
+        # Arrange
+        messages = [f"MESSAGE-{i}" for i in range(20)]
+
+        # Act
+        for message in messages:
+            self.throttler.send(message)
+
+        while self.throttler.qsize > 0:
+            events = self.clock.advance_time(self.clock.timestamp_ns() + 1_000_000_000)
+            for event in events:
+                event.handle()
+
+        # Assert
+        assert self.handler == messages
+        assert self.throttler.qsize == 0
+        assert self.throttler.is_limiting is False
+        assert self.throttler.recv_count == 20
+        assert self.throttler.sent_count == 20
+
 
 class TestDroppingThrottler:
     def setup(self):

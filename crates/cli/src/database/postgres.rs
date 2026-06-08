@@ -31,7 +31,7 @@ use crate::opt::{DatabaseCommand, DatabaseOpt};
 /// - Schema initialization fails
 /// - Database dropping operation fails
 /// - Any PostgreSQL operation encounters an error
-pub async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
+pub(crate) async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
     let command = opt.command.clone();
 
     match command {

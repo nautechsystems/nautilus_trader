@@ -318,7 +318,7 @@ mod tests {
         TestClock::new()
     }
 
-    pub fn test_callback() -> TimeEventCallback {
+    pub(super) fn test_callback() -> TimeEventCallback {
         Python::initialize();
         Python::attach(|py| {
             let py_list = PyList::empty(py);
@@ -328,7 +328,7 @@ mod tests {
         })
     }
 
-    pub fn test_py_callback() -> Py<PyAny> {
+    pub(super) fn test_py_callback() -> Py<PyAny> {
         Python::initialize();
         Python::attach(|py| {
             let py_list = PyList::empty(py);

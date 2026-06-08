@@ -35,7 +35,11 @@ use crate::{
         encoder::decode_broker_id,
         enums::{BinanceEnvironment, BinanceMarginType, BinancePositionSide, BinanceProductType},
     },
-    config::{BinanceDataClientConfig, BinanceExecClientConfig},
+    config::{BinanceDataClientConfig, BinanceExecClientConfig, BinanceSpotMarketDataMode},
+    data_types::{
+        BinanceFuturesLiquidation, BinanceFuturesOpenInterest, BinanceFuturesOpenInterestHist,
+        BinanceFuturesOpenInterestHistPoint, register_binance_custom_data,
+    },
     factories::{BinanceDataClientFactory, BinanceExecutionClientFactory},
 };
 
@@ -131,6 +135,10 @@ pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BinanceMarginType>()?;
     m.add_class::<BinancePositionSide>()?;
     m.add_class::<BinanceBar>()?;
+    m.add_class::<BinanceFuturesLiquidation>()?;
+    m.add_class::<BinanceFuturesOpenInterest>()?;
+    m.add_class::<BinanceFuturesOpenInterestHistPoint>()?;
+    m.add_class::<BinanceFuturesOpenInterestHist>()?;
     m.add_function(wrap_pyfunction!(arrow::get_binance_arrow_schema_map, m)?)?;
     m.add_function(wrap_pyfunction!(
         arrow::py_binance_bar_to_arrow_record_batch_bytes,
@@ -142,6 +150,7 @@ pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_class::<BinanceDataClientConfig>()?;
     m.add_class::<BinanceExecClientConfig>()?;
+    m.add_class::<BinanceSpotMarketDataMode>()?;
     m.add_class::<BinanceDataClientFactory>()?;
     m.add_class::<BinanceExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(py_decode_binance_spot_client_order_id, m)?)?;
@@ -153,6 +162,10 @@ pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Register BinanceBar for Arrow/JSON serialization and Python extraction
     ensure_custom_data_registered::<BinanceBar>();
     let _result = ensure_rust_extractor_registered::<BinanceBar>();
+    register_binance_custom_data();
+    let _result = ensure_rust_extractor_registered::<BinanceFuturesLiquidation>();
+    let _result = ensure_rust_extractor_registered::<BinanceFuturesOpenInterest>();
+    let _result = ensure_rust_extractor_registered::<BinanceFuturesOpenInterestHist>();
 
     let registry = get_global_pyo3_registry();
 

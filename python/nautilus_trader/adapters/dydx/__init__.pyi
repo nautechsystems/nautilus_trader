@@ -31,7 +31,9 @@ __all__ = [
 
 @typing.final
 class DydxDataClientConfig:
-    def __init__(self, proxy_url: str | None = None) -> None: ...
+    def __init__(
+        self, proxy_url: str | None = None, network: DydxNetwork | None = None
+    ) -> None: ...
 
 @typing.final
 class DydxDataClientFactory:
@@ -45,6 +47,10 @@ class DydxExecClientConfig:
         trader_id: model.TraderId,
         account_id: model.AccountId,
         proxy_url: str | None = None,
+        network: DydxNetwork | None = None,
+        private_key: str | None = None,
+        wallet_address: str | None = None,
+        subaccount_number: int = 0,
     ) -> None: ...
 
 @typing.final
@@ -55,10 +61,7 @@ class DydxExecutionClientFactory:
 @typing.final
 class DydxHttpClient:
     def __init__(
-        self,
-        base_url: str | None = None,
-        network: DydxNetwork = ...,
-        proxy_url: str | None = None,
+        self, base_url: str | None = None, network: DydxNetwork = ..., proxy_url: str | None = None
     ) -> None: ...
     def is_testnet(self) -> bool: ...
     def base_url(self) -> str: ...
@@ -156,9 +159,7 @@ class DydxOraclePrice:
 class DydxWebSocketClient:
     @staticmethod
     def new_public(
-        url: str,
-        heartbeat: int | None = None,
-        proxy_url: str | None = None,
+        url: str, heartbeat: int | None = None, proxy_url: str | None = None
     ) -> DydxWebSocketClient: ...
     @staticmethod
     def new_private(
@@ -357,6 +358,17 @@ class DydxCandleResolution(enum.Enum):
 class DydxNetwork(enum.Enum):
     MAINNET = ...
     TESTNET = ...
+
+    def __init__(self, value: typing.Any) -> None: ...
+    def __hash__(self) -> int: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> int: ...
+    @classmethod
+    def variants(cls) -> list[str]: ...
+    @classmethod
+    def from_str(cls, data: typing.Any) -> DydxNetwork: ...
 
 @typing.final
 class DydxOrderSide(enum.Enum):

@@ -67,7 +67,7 @@ pub struct RustTestParamsCustomData {
 #[custom_data(pyo3)]
 pub struct RustTestPriceMapCustomData {
     pub name: String,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub prices: IndexMap<InstrumentId, Price>,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
@@ -77,45 +77,45 @@ pub struct RustTestPriceMapCustomData {
 #[custom_data(pyo3)]
 pub struct RustTestTypedMapCustomData {
     pub name: String,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub instrument_ids: IndexMap<String, InstrumentId>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub account_ids: IndexMap<String, AccountId>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub currencies: IndexMap<String, Currency>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub bar_types: IndexMap<String, BarType>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub prices: IndexMap<String, Price>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub quantities: IndexMap<String, Quantity>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub monies: IndexMap<String, Money>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub prices_by_instrument: IndexMap<InstrumentId, Price>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub quantities_by_account: IndexMap<AccountId, Quantity>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub monies_by_currency: IndexMap<Currency, Money>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub prices_by_bar_type: IndexMap<BarType, Price>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub hash_prices_by_instrument: HashMap<InstrumentId, Price>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub strings: HashMap<String, String>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub floats_64: HashMap<String, f64>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub floats_32: HashMap<String, f32>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub booleans: HashMap<String, bool>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub integers_u64: HashMap<String, u64>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub integers_i64: HashMap<String, i64>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub integers_u32: HashMap<String, u32>,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub integers_i32: HashMap<String, i32>,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
@@ -125,8 +125,33 @@ pub struct RustTestTypedMapCustomData {
 #[custom_data]
 pub struct RustTestHashMapCustomData {
     pub name: String,
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub prices: HashMap<String, Price>,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}
+
+/// Plain Serde enum stored inside custom data as a field.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum RustTestSerdeFieldKind {
+    Alpha,
+    Beta { count: u64 },
+}
+
+/// Plain Serde payload stored inside custom data without its own timestamps.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct RustTestSerdeFieldPayload {
+    pub kind: RustTestSerdeFieldKind,
+    pub label: String,
+    pub values: Vec<f64>,
+}
+
+/// Rust custom data type that exercises arbitrary Serde field support.
+#[custom_data]
+pub struct RustTestSerdeFieldCustomData {
+    pub name: String,
+    #[custom_data_field(serde)]
+    pub payload: RustTestSerdeFieldPayload,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
 }
@@ -134,7 +159,9 @@ pub struct RustTestHashMapCustomData {
 #[cfg(test)]
 mod tests {
     use arrow::datatypes::DataType;
-    use nautilus_serialization::arrow::ArrowSchemaProvider;
+    use nautilus_serialization::arrow::{
+        ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch,
+    };
     use rstest::rstest;
 
     use super::*;
@@ -175,6 +202,38 @@ mod tests {
         let prices_field = schema.field_with_name("prices").unwrap();
 
         assert_eq!(prices_field.data_type(), &DataType::Utf8);
+    }
+
+    #[rstest]
+    fn test_rust_test_serde_field_custom_data_schema_uses_utf8_for_payload() {
+        let schema = RustTestSerdeFieldCustomData::get_schema(None);
+        let payload_field = schema.field_with_name("payload").unwrap();
+
+        assert_eq!(payload_field.data_type(), &DataType::Utf8);
+    }
+
+    #[rstest]
+    fn test_rust_test_serde_field_custom_data_roundtrip_decodes_exact_payload() {
+        let original = RustTestSerdeFieldCustomData {
+            name: "serde-field".to_string(),
+            payload: RustTestSerdeFieldPayload {
+                kind: RustTestSerdeFieldKind::Beta { count: 7 },
+                label: "payload".to_string(),
+                values: vec![1.0, 2.0, 3.0],
+            },
+            ts_event: UnixNanos::from(10),
+            ts_init: UnixNanos::from(11),
+        };
+        let metadata = original.metadata();
+        let batch =
+            RustTestSerdeFieldCustomData::encode_batch(&metadata, std::slice::from_ref(&original))
+                .unwrap();
+        let decoded = RustTestSerdeFieldCustomData::decode_data_batch(&metadata, batch).unwrap();
+
+        assert_eq!(decoded.len(), 1);
+        let decoded =
+            RustTestSerdeFieldCustomData::try_from(decoded.into_iter().next().unwrap()).unwrap();
+        assert_eq!(decoded, original);
     }
 
     #[rstest]

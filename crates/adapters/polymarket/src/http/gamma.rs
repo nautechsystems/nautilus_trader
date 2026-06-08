@@ -36,10 +36,10 @@ use nautilus_core::{
 };
 use nautilus_model::instruments::InstrumentAny;
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, Method, USER_AGENT},
+    http::{HttpClient, HttpClientError, HttpResponse, Method, USER_AGENT},
     retry::{RetryConfig, RetryManager},
 };
-use serde::Serialize;
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 use crate::{
@@ -97,7 +97,7 @@ impl PolymarketGammaRawHttpClient {
         format!("{}{path}", self.base_url)
     }
 
-    async fn send_get<P: Serialize, T: serde::de::DeserializeOwned>(
+    async fn send_get<P: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
         params: Option<&P>,
@@ -109,14 +109,22 @@ impl PolymarketGammaRawHttpClient {
             .await
             .map_err(Error::from_http_client)?;
 
-        if response.status.is_success() {
-            serde_json::from_slice(&response.body).map_err(Error::Serde)
-        } else {
-            Err(Error::from_status_code(
-                response.status.as_u16(),
-                &response.body,
-            ))
-        }
+        decode_response(&response)
+    }
+
+    async fn send_get_query_map<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        params: Option<&HashMap<String, Vec<String>>>,
+    ) -> Result<T> {
+        let url = self.url(path);
+        let response = self
+            .client
+            .request(Method::GET, url, params, None, None, None, None)
+            .await
+            .map_err(Error::from_http_client)?;
+
+        decode_response(&response)
     }
 
     /// Fetches markets from the Gamma API.
@@ -126,7 +134,10 @@ impl PolymarketGammaRawHttpClient {
         &self,
         params: GetGammaMarketsParams,
     ) -> Result<Vec<GammaMarket>> {
-        let value: Value = self.send_get("/markets", Some(&params)).await?;
+        let query_params = gamma_markets_query_params(params)?;
+        let value: Value = self
+            .send_get_query_map("/markets", Some(&query_params))
+            .await?;
 
         let array = match value {
             Value::Array(_) => value,
@@ -175,14 +186,94 @@ impl PolymarketGammaRawHttpClient {
     }
 }
 
+fn decode_response<T: DeserializeOwned>(response: &HttpResponse) -> Result<T> {
+    if response.status.is_success() {
+        serde_json::from_slice(&response.body).map_err(Error::Serde)
+    } else {
+        Err(Error::from_status_code(
+            response.status.as_u16(),
+            &response.body,
+        ))
+    }
+}
+
+fn gamma_markets_query_params(
+    params: GetGammaMarketsParams,
+) -> Result<HashMap<String, Vec<String>>> {
+    let mut scalar_params = params;
+    let clob_token_ids = scalar_params.clob_token_ids.take();
+    let condition_ids = scalar_params.condition_ids.take();
+    let question_ids = scalar_params.question_ids.take();
+    let value = serde_json::to_value(&scalar_params).map_err(Error::Serde)?;
+    let fields = value
+        .as_object()
+        .ok_or_else(|| Error::decode("Gamma markets params must encode to an object"))?;
+    let mut params = HashMap::with_capacity(fields.len());
+
+    for (key, value) in fields {
+        if let Some(value) = gamma_markets_query_value(value)? {
+            params.insert(key.clone(), vec![value]);
+        }
+    }
+
+    insert_repeated_csv_param(&mut params, "clob_token_ids", clob_token_ids);
+    insert_repeated_csv_param(&mut params, "condition_ids", condition_ids);
+    insert_repeated_csv_param(&mut params, "question_ids", question_ids);
+
+    Ok(params)
+}
+
+fn insert_repeated_csv_param(
+    params: &mut HashMap<String, Vec<String>>,
+    key: &str,
+    value: Option<String>,
+) {
+    let Some(value) = value else {
+        return;
+    };
+
+    let values: Vec<String> = value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+        .collect();
+
+    if !values.is_empty() {
+        params.insert(key.to_string(), values);
+    }
+}
+
+fn gamma_markets_query_value(value: &Value) -> Result<Option<String>> {
+    match value {
+        Value::Null => Ok(None),
+        Value::String(value) => Ok(Some(value.clone())),
+        Value::Bool(value) => Ok(Some(value.to_string())),
+        Value::Number(value) => Ok(Some(value.to_string())),
+        other => Err(Error::decode(format!(
+            "Unsupported Gamma markets query value: {other}"
+        ))),
+    }
+}
+
 fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> Vec<InstrumentAny> {
+    let (instruments, _transient) = parse_markets_with_transient(markets, ts_init);
+    instruments
+}
+
+// Returns parsed instruments alongside condition IDs of markets still in the
+// CLOB hydration window (empty or empty-entry `clob_token_ids`), so callers
+// can retry rather than treating them as terminal.
+fn parse_markets_with_transient(
+    markets: &[GammaMarket],
+    ts_init: UnixNanos,
+) -> (Vec<InstrumentAny>, Vec<String>) {
     let mut instruments = Vec::new();
-    let mut skipped_empty = 0u32;
+    let mut transient = Vec::new();
 
     for market in markets {
-        // Markets without CLOB token IDs are not tradeable (resolved, pending, etc.)
-        if market.clob_token_ids.is_empty() {
-            skipped_empty += 1;
+        if is_transient_clob_token_ids(&market.clob_token_ids) {
+            transient.push(market.condition_id.clone());
             continue;
         }
 
@@ -199,12 +290,27 @@ fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> 
         }
     }
 
-    if skipped_empty > 0 {
+    if !transient.is_empty() {
         log::debug!(
-            "Skipped {skipped_empty} markets with empty clob_token_ids (currently not tradeable)"
+            "{} market(s) without usable clob_token_ids deferred as transient (CLOB hydration)",
+            transient.len(),
         );
     }
-    instruments
+    (instruments, transient)
+}
+
+// Treats bare empty string, encoded empty array, and arrays with empty entries
+// as transient. Unparsable payloads fall through to `parse_gamma_market` so
+// real schema errors still surface.
+fn is_transient_clob_token_ids(raw: &str) -> bool {
+    if raw.is_empty() {
+        return true;
+    }
+
+    match serde_json::from_str::<Vec<String>>(raw) {
+        Ok(ids) => ids.is_empty() || ids.iter().any(|t| t.is_empty()),
+        Err(_) => false,
+    }
 }
 
 fn flatten_event_markets(events: Vec<GammaEvent>) -> Vec<GammaMarket> {
@@ -502,6 +608,34 @@ impl PolymarketGammaHttpClient {
         let instruments = parse_markets_to_instruments(&markets, ts_init);
         log::debug!("Parsed {} instruments from params query", instruments.len());
         Ok(instruments)
+    }
+
+    /// Same as [`Self::request_instruments_by_params`] but also returns
+    /// condition IDs whose markets came back from Gamma with empty
+    /// `clob_token_ids`. Callers driving auto-load retries use the transient
+    /// list to distinguish "still hydrating in the CLOB" from "absent on the
+    /// venue".
+    pub async fn request_instruments_by_params_with_transient(
+        &self,
+        base_params: GetGammaMarketsParams,
+    ) -> anyhow::Result<(Vec<InstrumentAny>, Vec<String>)> {
+        let markets = self.fetch_gamma_markets_paginated(base_params).await?;
+        let ts_init = self.clock.get_time_ns();
+        let (instruments, transient) = parse_markets_with_transient(&markets, ts_init);
+        log::debug!(
+            "Parsed {} instruments and {} transient condition_id(s) from params query",
+            instruments.len(),
+            transient.len(),
+        );
+        Ok((instruments, transient))
+    }
+
+    /// Fetches raw Gamma markets using arbitrary query params with auto-pagination.
+    pub async fn request_markets_by_params(
+        &self,
+        base_params: GetGammaMarketsParams,
+    ) -> anyhow::Result<Vec<GammaMarket>> {
+        self.fetch_gamma_markets_paginated(base_params).await
     }
 
     /// Fetches instruments from an event slug with client-side sorting and limiting.

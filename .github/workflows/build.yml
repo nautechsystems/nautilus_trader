@@ -30,7 +30,7 @@ jobs:
       run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -71,7 +71,7 @@ jobs:
         ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -118,7 +118,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -137,7 +137,14 @@ jobs:
           tool-name: cargo-deny
 
       - name: Run cargo-deny (advisories, licenses, sources, bans)
-        run: cargo deny --all-features check advisories licenses sources bans
+        run: |
+          cargo deny --all-features check advisories licenses sources bans
+          cargo deny --manifest-path crates/adapters/lighter/fuzz/Cargo.toml \
+            --locked --all-features check --config .cargo/deny-fuzz.toml \
+            advisories licenses sources bans
+          cargo deny --manifest-path crates/adapters/derive/fuzz/Cargo.toml \
+            --locked --all-features check --config .cargo/deny-fuzz.toml \
+            advisories licenses sources bans
 
   # Supply chain security auditing (master only - gates releases)
   # https://mozilla.github.io/cargo-vet/configuring-ci.html
@@ -146,7 +153,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -165,7 +172,12 @@ jobs:
           tool-name: cargo-vet
 
       - name: Run cargo-vet
-        run: cargo vet --locked
+        run: |
+          cargo vet --locked
+          cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/Cargo.toml \
+            --store-path .supply-chain
+          cargo vet --locked --manifest-path crates/adapters/derive/fuzz/Cargo.toml \
+            --store-path .supply-chain
 
   build-linux-x86:
     if: github.ref != 'refs/heads/test-pre-commit' && needs.plan.outputs.run-tests == 'true'
@@ -234,7 +246,7 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -291,6 +303,12 @@ jobs:
       - name: Run Rust tests (adapters)
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: make cargo-test-adapters EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
+
+      - name: Run plug-in cdylib smoke tests
+        if: >
+          needs.plan.outputs.run-rust-tests == 'true' &&
+          matrix.python-version == '3.13'
+        run: make cargo-test-plugin-cdylib-smoke NEXTEST_PROFILE=ci
 
       - name: Clean Rust test artifacts
         if: needs.plan.outputs.run-rust-tests == 'true'
@@ -371,7 +389,7 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -473,7 +491,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -636,7 +654,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -706,13 +724,12 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
-            # Sigstore TUF trust root (for gh attestation verify)
             tuf-repo-cdn.sigstore.dev:443
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
@@ -737,23 +754,16 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: ./.github/actions/attest-build-provenance-retry
         with:
           subject-path: "dist/nautilus_trader-*.whl"
 
       - name: Verify wheel attestations
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
-          ISSUER: https://token.actions.githubusercontent.com
-        run: |
-          set -e
-          for whl in dist/nautilus_trader-*.whl; do
-            gh attestation verify "$whl" \
-              --repo "$GITHUB_REPOSITORY" \
-              --cert-identity "$IDENTITY" \
-              --cert-oidc-issuer "$ISSUER"
-          done
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
+        run: bash ./scripts/ci/verify-gh-attestations.bash dist/nautilus_trader-*.whl
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
@@ -776,7 +786,7 @@ jobs:
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/nightly'
     steps:
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -809,7 +819,10 @@ jobs:
 
       - name: Run cargo-audit (fail on vulnerabilities)
         if: steps.gate.outputs.override_active != 'true'
-        run: cargo audit --deny unsound
+        run: |
+          cargo audit --deny unsound
+          cargo audit --deny unsound --file crates/adapters/lighter/fuzz/Cargo.lock
+          cargo audit --deny unsound --file crates/adapters/derive/fuzz/Cargo.lock
 
       - name: Run osv-scanner
         id: osv-scan
@@ -822,6 +835,8 @@ jobs:
             --format json
             --output=/github/workspace/osv-results.json
             --lockfile=Cargo.lock
+            --lockfile=crates/adapters/lighter/fuzz/Cargo.lock
+            --lockfile=crates/adapters/derive/fuzz/Cargo.lock
             --lockfile=uv.lock
             --lockfile=python/uv.lock
 
@@ -850,13 +865,12 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
-            # Sigstore TUF trust root (for gh attestation verify)
             tuf-repo-cdn.sigstore.dev:443
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
@@ -875,23 +889,16 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: ./.github/actions/attest-build-provenance-retry
         with:
           subject-path: "dist/nautilus_trader-*.whl"
 
       - name: Verify wheel attestations
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
-          ISSUER: https://token.actions.githubusercontent.com
-        run: |
-          set -e
-          for whl in dist/nautilus_trader-*.whl; do
-            gh attestation verify "$whl" \
-              --repo "$GITHUB_REPOSITORY" \
-              --cert-identity "$IDENTITY" \
-              --cert-oidc-issuer "$ISSUER"
-          done
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
+        run: bash ./scripts/ci/verify-gh-attestations.bash dist/nautilus_trader-*.whl
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
@@ -916,7 +923,7 @@ jobs:
       github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -987,7 +994,7 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -1033,13 +1040,12 @@ jobs:
       github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
-            # Sigstore TUF trust root (for gh attestation verify)
             tuf-repo-cdn.sigstore.dev:443
             pypi.org:443
             files.pythonhosted.org:443
@@ -1071,30 +1077,21 @@ jobs:
           merge-multiple: true
 
       - name: Generate PyPI publish attestations
-        run: |
-          uv run --no-project --no-build --with "pypi-attestations==${PYPI_ATTESTATIONS_VERSION}" -- \
-            python -m pypi_attestations sign dist/nautilus_trader-*.whl
+        run: bash ./scripts/ci/sign-pypi-attestations.bash dist/nautilus_trader-*.whl
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
         id: attest-wheels
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: ./.github/actions/attest-build-provenance-retry
         with:
           subject-path: "dist/nautilus_trader-*.whl"
 
       - name: Verify wheel attestations
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
-          ISSUER: https://token.actions.githubusercontent.com
-        run: |
-          set -e
-          for whl in dist/nautilus_trader-*.whl; do
-            gh attestation verify "$whl" \
-              --repo "$GITHUB_REPOSITORY" \
-              --cert-identity "$IDENTITY" \
-              --cert-oidc-issuer "$ISSUER"
-          done
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
+        run: bash ./scripts/ci/verify-gh-attestations.bash dist/nautilus_trader-*.whl
 
       - name: Publish wheels to PyPI
         if: success()
@@ -1134,7 +1131,7 @@ jobs:
       tag_name: ${{ env.TAG_NAME }}
     steps:
       # Security hardening
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -1192,7 +1189,7 @@ jobs:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -1239,7 +1236,7 @@ jobs:
       contents: write # Required for uploading release assets
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -1279,13 +1276,12 @@ jobs:
       attestations: write # Required for GitHub artifact attestations
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
-            # Sigstore TUF trust root (for gh attestation verify)
             tuf-repo-cdn.sigstore.dev:443
             pypi.org:443
             files.pythonhosted.org:443
@@ -1316,27 +1312,21 @@ jobs:
           path: dist
 
       - name: Generate PyPI publish attestation
-        run: |
-          uv run --no-project --no-build --with "pypi-attestations==${PYPI_ATTESTATIONS_VERSION}" -- \
-            python -m pypi_attestations sign dist/nautilus_trader-*.tar.gz
+        run: bash ./scripts/ci/sign-pypi-attestations.bash dist/nautilus_trader-*.tar.gz
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest sdist provenance
         id: attest-sdist
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: ./.github/actions/attest-build-provenance-retry
         with:
           subject-path: "dist/nautilus_trader-*.tar.gz"
 
       - name: Verify sdist attestation
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
-          ISSUER: https://token.actions.githubusercontent.com
-        run: |
-          gh attestation verify dist/nautilus_trader-*.tar.gz \
-            --repo "$GITHUB_REPOSITORY" \
-            --cert-identity "$IDENTITY" \
-            --cert-oidc-issuer "$ISSUER"
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
+        run: bash ./scripts/ci/verify-gh-attestations.bash dist/nautilus_trader-*.tar.gz
 
       - name: Publish sdist to PyPI
         if: success()
@@ -1371,13 +1361,12 @@ jobs:
       contents: write # Required for uploading release integrity assets
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
-            # Sigstore TUF trust root (for pypi-attestations verify)
             tuf-repo-cdn.sigstore.dev:443
             pypi.org:443
             files.pythonhosted.org:443
@@ -1446,8 +1435,10 @@ jobs:
           TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
         run: bash ./scripts/ci/upload-release-attestation-siblings.bash release-attestations
 
+      # success() so a failed publish-release-integrity leaves attestation
+      # workflow artifacts in place for re-runs.
       - name: Delete artifacts for current run
-        if: always()
+        if: success()
         continue-on-error: true
         shell: bash
         env:
@@ -1465,7 +1456,7 @@ jobs:
       contents: write # Required for publishing the draft release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -1477,6 +1468,9 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+
+      - name: Check Rekor readiness
+        run: bash ./scripts/ci/check-rekor-ready.bash
 
       - name: Publish GitHub release
         env:

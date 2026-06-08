@@ -19,6 +19,7 @@ struct TradingCommandHeader {
     commandId @4 :Base.UUID4;
     tsInit @5 :Base.UnixNanos;
     correlationId @6 :Base.UUID4;  # Optional
+    causationId @7 :Base.UUID4;  # Optional
 }
 
 # Order snapshot - bag of values representing current order state
@@ -233,6 +234,7 @@ struct QueryAccount {
     tsInit @3 :Base.UnixNanos;
     params @4 :Base.StringMap;
     correlationId @5 :Base.UUID4;  # Optional
+    causationId @6 :Base.UUID4;  # Optional
 }
 
 # Execution report commands

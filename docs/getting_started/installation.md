@@ -229,6 +229,10 @@ cd nautilus_trader
 uv sync --all-extras
 ```
 
+For development hosts and CI runner images, see the
+[single source of truth for versions](../developer_guide/environment_setup.md#single-source-of-truth-for-versions)
+before installing pinned tools.
+
 :::note
 The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
 :::

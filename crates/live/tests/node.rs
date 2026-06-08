@@ -18,24 +18,47 @@
 //! These tests use global logging state (one logger per process).
 //! Run with cargo-nextest for process isolation, or use --test-threads=1.
 
-use std::{fmt::Debug, time::Duration};
+use std::{
+    cell::Cell,
+    fmt::Debug,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
+use async_trait::async_trait;
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
+    cache::CacheView,
+    clients::ExecutionClient,
     enums::Environment,
-    messages::system::ShutdownSystem,
-    msgbus::{self, MessagingSwitchboard},
+    factories::{ClientConfig, ExecutionClientFactory},
+    messages::{
+        execution::{GenerateOrderStatusReports, GeneratePositionStatusReports, QueryOrder},
+        system::ShutdownSystem,
+    },
+    msgbus::{self, MessagingSwitchboard, switchboard},
     nautilus_actor,
-    testing::wait_until_async,
+    testing::{wait_until, wait_until_async},
 };
-use nautilus_core::UUID4;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{
+    builder::LiveNodeBuilder,
     config::{LiveExecEngineConfig, LiveNodeConfig},
     node::{LiveNode, LiveNodeHandle, NodeState},
 };
 use nautilus_model::{
-    identifiers::{ExecAlgorithmId, TraderId},
-    orders::OrderAny,
+    accounts::AccountAny,
+    enums::{OmsType, OrderType},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, ExecAlgorithmId, TraderId, Venue, VenueOrderId,
+    },
+    instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+    orders::{OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
+    reports::{OrderStatusReport, PositionStatusReport},
+    types::{AccountBalance, MarginBalance, Price, Quantity},
 };
 use nautilus_trading::{
     ExecutionAlgorithm, ExecutionAlgorithmConfig, ExecutionAlgorithmCore, nautilus_strategy,
@@ -182,6 +205,213 @@ fn test_builder_accepts_live() {
 
 mod serial_tests {
     use super::*;
+
+    struct BlockingReportExecutionClient {
+        connected: Cell<bool>,
+        query_order_received: Arc<AtomicBool>,
+        blocking_order_report_requested: Arc<AtomicBool>,
+        position_report_requested: Arc<AtomicBool>,
+        instrument_received: Arc<AtomicBool>,
+        order_report_release: Option<Arc<tokio::sync::Notify>>,
+    }
+
+    impl BlockingReportExecutionClient {
+        fn new(
+            query_order_received: Arc<AtomicBool>,
+            blocking_order_report_requested: Arc<AtomicBool>,
+            position_report_requested: Arc<AtomicBool>,
+            instrument_received: Arc<AtomicBool>,
+            order_report_release: Option<Arc<tokio::sync::Notify>>,
+        ) -> Self {
+            Self {
+                connected: Cell::new(false),
+                query_order_received,
+                blocking_order_report_requested,
+                position_report_requested,
+                instrument_received,
+                order_report_release,
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    struct BlockingReportExecutionClientConfig;
+
+    impl ClientConfig for BlockingReportExecutionClientConfig {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    #[derive(Debug)]
+    struct BlockingReportExecutionClientFactory {
+        query_order_received: Arc<AtomicBool>,
+        blocking_order_report_requested: Arc<AtomicBool>,
+        position_report_requested: Arc<AtomicBool>,
+        instrument_received: Arc<AtomicBool>,
+        order_report_release: Option<Arc<tokio::sync::Notify>>,
+    }
+
+    impl BlockingReportExecutionClientFactory {
+        fn new(
+            query_order_received: Arc<AtomicBool>,
+            blocking_order_report_requested: Arc<AtomicBool>,
+            position_report_requested: Arc<AtomicBool>,
+            instrument_received: Arc<AtomicBool>,
+            order_report_release: Option<Arc<tokio::sync::Notify>>,
+        ) -> Self {
+            Self {
+                query_order_received,
+                blocking_order_report_requested,
+                position_report_requested,
+                instrument_received,
+                order_report_release,
+            }
+        }
+    }
+
+    impl ExecutionClientFactory for BlockingReportExecutionClientFactory {
+        fn create(
+            &self,
+            _name: &str,
+            _config: &dyn ClientConfig,
+            _cache: CacheView,
+        ) -> anyhow::Result<Box<dyn ExecutionClient>> {
+            Ok(Box::new(BlockingReportExecutionClient::new(
+                self.query_order_received.clone(),
+                self.blocking_order_report_requested.clone(),
+                self.position_report_requested.clone(),
+                self.instrument_received.clone(),
+                self.order_report_release.clone(),
+            )))
+        }
+
+        fn name(&self) -> &'static str {
+            "blocking-report"
+        }
+
+        fn config_type(&self) -> &'static str {
+            stringify!(BlockingReportExecutionClientConfig)
+        }
+    }
+
+    fn live_node_with_blocking_exec_client(
+        name: &str,
+        config: LiveNodeConfig,
+        query_order_received: Arc<AtomicBool>,
+        blocking_order_report_requested: Arc<AtomicBool>,
+        position_report_requested: Arc<AtomicBool>,
+        instrument_received: Arc<AtomicBool>,
+        order_report_release: Option<Arc<tokio::sync::Notify>>,
+    ) -> LiveNode {
+        let factory = BlockingReportExecutionClientFactory::new(
+            query_order_received,
+            blocking_order_report_requested,
+            position_report_requested,
+            instrument_received,
+            order_report_release,
+        );
+
+        LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name(name)
+            .add_exec_client(
+                Some("blocking-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap()
+    }
+
+    #[async_trait(?Send)]
+    impl ExecutionClient for BlockingReportExecutionClient {
+        fn is_connected(&self) -> bool {
+            self.connected.get()
+        }
+
+        fn client_id(&self) -> ClientId {
+            ClientId::from("BLOCKING-REPORT")
+        }
+
+        fn account_id(&self) -> AccountId {
+            AccountId::from("BLOCKING-REPORT-001")
+        }
+
+        fn venue(&self) -> Venue {
+            crypto_perpetual_ethusdt().id().venue
+        }
+
+        fn oms_type(&self) -> OmsType {
+            OmsType::Hedging
+        }
+
+        fn get_account(&self) -> Option<AccountAny> {
+            None
+        }
+
+        fn generate_account_state(
+            &self,
+            _balances: Vec<AccountBalance>,
+            _margins: Vec<MarginBalance>,
+            _reported: bool,
+            _ts_event: UnixNanos,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
+            self.query_order_received.store(true, Ordering::Relaxed);
+            Ok(())
+        }
+
+        fn on_instrument(&mut self, _instrument: InstrumentAny) {
+            self.instrument_received.store(true, Ordering::Relaxed);
+        }
+
+        async fn connect(&mut self) -> anyhow::Result<()> {
+            self.connected.set(true);
+            Ok(())
+        }
+
+        async fn disconnect(&mut self) -> anyhow::Result<()> {
+            self.connected.set(false);
+            Ok(())
+        }
+
+        async fn generate_order_status_reports(
+            &self,
+            _cmd: &GenerateOrderStatusReports,
+        ) -> anyhow::Result<Vec<OrderStatusReport>> {
+            self.blocking_order_report_requested
+                .store(true, Ordering::Relaxed);
+
+            if let Some(release) = &self.order_report_release {
+                release.notified().await;
+                Ok(Vec::new())
+            } else {
+                std::future::pending::<anyhow::Result<Vec<OrderStatusReport>>>().await
+            }
+        }
+
+        async fn generate_position_status_reports(
+            &self,
+            _cmd: &GeneratePositionStatusReports,
+        ) -> anyhow::Result<Vec<PositionStatusReport>> {
+            self.position_report_requested
+                .store(true, Ordering::Relaxed);
+            std::future::pending::<anyhow::Result<Vec<PositionStatusReport>>>().await
+        }
+    }
 
     #[rstest]
     fn test_live_node_build_with_default_config() {
@@ -437,6 +667,7 @@ mod serial_tests {
                 Some("integration test".to_string()),
                 UUID4::new(),
                 ts,
+                None, // correlation_id
             );
             msgbus::publish_any(
                 MessagingSwitchboard::shutdown_system_topic(),
@@ -445,6 +676,34 @@ mod serial_tests {
         });
 
         let result = node.run().await;
+
+        assert!(result.is_ok());
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_error_log_triggers_graceful_shutdown() {
+        let config = LiveNodeConfig {
+            shutdown_on_error: true,
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
+        let handle = node.handle();
+        let state_handle = handle.clone();
+
+        let log_thread = std::thread::spawn(move || {
+            wait_until(|| state_handle.is_running(), Duration::from_secs(5));
+            log::error!("LiveNode shutdown-on-error smoke test");
+        });
+
+        let result = node.run().await;
+        log_thread.join().unwrap();
 
         assert!(result.is_ok());
         assert_eq!(handle.state(), NodeState::Stopped);
@@ -528,6 +787,270 @@ mod serial_tests {
             result.unwrap().is_ok(),
             "run() should succeed after maintenance dispatcher fires"
         );
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_continuous_reconciliation_does_not_block_on_report_generation() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                open_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            delay_post_stop: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let query_order_received = Arc::new(AtomicBool::new(false));
+        let blocking_order_report_requested = Arc::new(AtomicBool::new(false));
+        let position_report_requested = Arc::new(AtomicBool::new(false));
+        let instrument_received = Arc::new(AtomicBool::new(false));
+        let mut node = live_node_with_blocking_exec_client(
+            "NonBlockingReconciliationNode",
+            config,
+            query_order_received.clone(),
+            blocking_order_report_requested.clone(),
+            position_report_requested.clone(),
+            instrument_received,
+            None,
+        );
+        let handle = node.handle();
+
+        let client_id = ClientId::from("BLOCKING-REPORT");
+        let account_id = AccountId::from("BLOCKING-REPORT-001");
+        let venue_order_id = VenueOrderId::from("V-NONBLOCK-001");
+        let instrument = crypto_perpetual_ethusdt();
+        let instrument_id = instrument.id();
+        let client_order_id = ClientOrderId::from("O-NONBLOCK-001");
+
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+            .unwrap();
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(client_order_id)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("10.0"))
+            .price(Price::from("100.0"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_order(order, None, Some(client_id), false)
+            .unwrap();
+        let order = node
+            .kernel()
+            .cache
+            .borrow_mut()
+            .update_order(&submitted)
+            .unwrap();
+        let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .update_order(&accepted)
+            .unwrap();
+
+        let stop_handle = handle.clone();
+        let order_report_observed = blocking_order_report_requested.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { stop_handle.is_running() },
+                Duration::from_secs(5),
+            )
+            .await;
+            wait_until_async(
+                || async { order_report_observed.load(Ordering::Relaxed) },
+                Duration::from_secs(5),
+            )
+            .await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "run() should not block on report generation"
+        );
+        assert!(
+            result.unwrap().is_ok(),
+            "run() should stop cleanly after continuous reconciliation fires"
+        );
+        assert!(blocking_order_report_requested.load(Ordering::Relaxed));
+        assert!(!query_order_received.load(Ordering::Relaxed));
+        assert!(!position_report_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_instrument_update_during_open_order_report_does_not_panic() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                open_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            delay_post_stop: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let query_order_received = Arc::new(AtomicBool::new(false));
+        let blocking_order_report_requested = Arc::new(AtomicBool::new(false));
+        let position_report_requested = Arc::new(AtomicBool::new(false));
+        let instrument_received = Arc::new(AtomicBool::new(false));
+        let order_report_release = Arc::new(tokio::sync::Notify::new());
+        let mut node = live_node_with_blocking_exec_client(
+            "InstrumentUpdateDuringReportNode",
+            config,
+            query_order_received.clone(),
+            blocking_order_report_requested.clone(),
+            position_report_requested.clone(),
+            instrument_received.clone(),
+            Some(order_report_release.clone()),
+        );
+        let handle = node.handle();
+
+        let client_id = ClientId::from("BLOCKING-REPORT");
+        let account_id = AccountId::from("BLOCKING-REPORT-001");
+        let venue_order_id = VenueOrderId::from("V-INST-001");
+        let instrument = crypto_perpetual_ethusdt();
+        let instrument_id = instrument.id();
+        let client_order_id = ClientOrderId::from("O-INST-001");
+
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+            .unwrap();
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(client_order_id)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("10.0"))
+            .price(Price::from("100.0"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_order(order, None, Some(client_id), false)
+            .unwrap();
+        let order = node
+            .kernel()
+            .cache
+            .borrow_mut()
+            .update_order(&submitted)
+            .unwrap();
+        let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .update_order(&accepted)
+            .unwrap();
+
+        let stop_handle = handle.clone();
+        let order_report_observed = blocking_order_report_requested.clone();
+        let instrument_observed = instrument_received.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { stop_handle.is_running() },
+                Duration::from_secs(5),
+            )
+            .await;
+            wait_until_async(
+                || async { order_report_observed.load(Ordering::Relaxed) },
+                Duration::from_secs(5),
+            )
+            .await;
+
+            let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+            let topic = switchboard::get_instrument_topic(instrument.id());
+            msgbus::publish_instrument(topic, &instrument);
+            order_report_release.notify_one();
+
+            wait_until_async(
+                || async { instrument_observed.load(Ordering::Relaxed) },
+                Duration::from_secs(5),
+            )
+            .await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(3), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "run() should not panic when an instrument update arrives during report generation"
+        );
+        assert!(
+            result.unwrap().is_ok(),
+            "run() should stop cleanly after flushing deferred instrument updates"
+        );
+        assert!(blocking_order_report_requested.load(Ordering::Relaxed));
+        assert!(instrument_received.load(Ordering::Relaxed));
+        assert!(!query_order_received.load(Ordering::Relaxed));
+        assert!(!position_report_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_position_only_continuous_reconciliation_does_not_request_reports() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                inflight_check_interval_ms: 0,
+                position_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            delay_post_stop: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let query_order_received = Arc::new(AtomicBool::new(false));
+        let blocking_order_report_requested = Arc::new(AtomicBool::new(false));
+        let position_report_requested = Arc::new(AtomicBool::new(false));
+        let instrument_received = Arc::new(AtomicBool::new(false));
+        let mut node = live_node_with_blocking_exec_client(
+            "PositionOnlyReconciliationNode",
+            config,
+            query_order_received.clone(),
+            blocking_order_report_requested.clone(),
+            position_report_requested.clone(),
+            instrument_received,
+            None,
+        );
+        let handle = node.handle();
+
+        let stop_handle = handle.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { stop_handle.is_running() },
+                Duration::from_secs(5),
+            )
+            .await;
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "run() should not block when only position reconciliation is configured"
+        );
+        assert!(
+            result.unwrap().is_ok(),
+            "run() should stop cleanly without requesting position reports"
+        );
+        assert!(!query_order_received.load(Ordering::Relaxed));
+        assert!(!blocking_order_report_requested.load(Ordering::Relaxed));
+        assert!(!position_report_requested.load(Ordering::Relaxed));
         assert_eq!(handle.state(), NodeState::Stopped);
     }
 }

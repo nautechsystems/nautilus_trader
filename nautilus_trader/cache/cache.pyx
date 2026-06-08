@@ -1282,17 +1282,18 @@ cdef class Cache(CacheFacade):
         Reset the cache.
 
         All stateful fields are reset to their initial value.
+
+        Instruments, currencies and synthetic instruments are retained when
+        `drop_instruments_on_reset` is `False` so that repeated backtest runs
+        can reuse the same dataset.
         """
         self._log.debug("Resetting cache")
 
         self._general.clear()
-        self._currencies.clear()
-        self._synthetics.clear()
         self._order_books.clear()
         self._own_order_books.clear()
         self._quote_ticks.clear()
         self._trade_ticks.clear()
-        self._xrate_symbols.clear()
         self._mark_xrates.clear()
         self._mark_prices.clear()
         self._index_prices.clear()
@@ -1311,7 +1312,10 @@ cdef class Cache(CacheFacade):
         self.clear_index()
 
         if self._drop_instruments_on_reset:
+            self._currencies.clear()
             self._instruments.clear()
+            self._xrate_symbols.clear()
+            self._synthetics.clear()
 
         self._log.info(f"Reset")
 
@@ -3781,13 +3785,15 @@ cdef class Cache(CacheFacade):
 
         cdef tuple quotes = self._build_quote_table(venue)
         try:
-            return nautilus_pyo3.get_exchange_rate(
+            # `get_exchange_rate` returns a `Decimal`; the Cython path uses floats, so cast here
+            xrate = nautilus_pyo3.get_exchange_rate(
                 from_currency=from_currency.code,
                 to_currency=to_currency.code,
                 price_type=nautilus_pyo3.PriceType.from_int(price_type),
                 quotes_bid=quotes[0],  # Bid
                 quotes_ask=quotes[1],  # Ask
             )
+            return float(xrate) if xrate is not None else None
         except ValueError as e:
             self._log.error(f"Cannot calculate exchange rate: {e!r}")
 

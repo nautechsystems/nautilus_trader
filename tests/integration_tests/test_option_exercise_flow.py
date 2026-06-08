@@ -334,6 +334,286 @@ def test_otm_option_expiry():
     engine.dispose()
 
 
+def test_otm_option_expiry_runs_without_data_at_expiration():
+    """
+    Test OTM option expiry runs from the expiration timer when data stops before expiry.
+    """
+    venue = Venue("NASDAQ")
+    engine = BacktestEngine(config=BacktestEngineConfig())
+
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        base_currency=USD,
+        starting_balances=[Money(1_000_000, USD)],
+    )
+
+    underlying = Equity(
+        instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+        raw_symbol=Symbol("AAPL"),
+        currency=USD,
+        price_precision=2,
+        price_increment=Price(0.01, 2),
+        lot_size=Quantity.from_int(1),
+        ts_event=0,
+        ts_init=0,
+    )
+    engine.add_instrument(underlying)
+
+    expiry_ns = dt_to_unix_nanos(pd.Timestamp("2024-03-15 16:00:00", tz="UTC"))
+    option = OptionContract(
+        instrument_id=InstrumentId.from_str("AAPL240315C00150000.NASDAQ"),
+        raw_symbol=Symbol("AAPL240315C00150000"),
+        asset_class=AssetClass.EQUITY,
+        underlying="AAPL",
+        option_kind=OptionKind.CALL,
+        strike_price=Price(150.0, 2),
+        currency=USD,
+        activation_ns=dt_to_unix_nanos(pd.Timestamp("2024-03-01", tz="UTC")),
+        expiration_ns=expiry_ns,
+        price_precision=2,
+        price_increment=Price(0.01, 2),
+        multiplier=Quantity.from_int(100),
+        lot_size=Quantity.from_int(1),
+        ts_event=0,
+        ts_init=0,
+    )
+    engine.add_instrument(option)
+    engine.add_strategy(OptionExerciseTestStrategy())
+
+    data = [
+        QuoteTick(
+            instrument_id=option.id,
+            bid_price=Price(5.0, 2),
+            ask_price=Price(5.1, 2),
+            bid_size=Quantity.from_int(10),
+            ask_size=Quantity.from_int(10),
+            ts_event=expiry_ns - 2_000,
+            ts_init=expiry_ns - 2_000,
+        ),
+        TradeTick(
+            instrument_id=underlying.id,
+            price=Price(140.0, 2),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+            trade_id=TradeId("T1"),
+            ts_event=expiry_ns - 1_000,
+            ts_init=expiry_ns - 1_000,
+        ),
+    ]
+    engine.add_data(data)
+
+    engine.run(
+        start=pd.Timestamp(expiry_ns - 3_000, unit="ns", tz="UTC"),
+        end=pd.Timestamp(expiry_ns + 1_000, unit="ns", tz="UTC"),
+    )
+
+    option_pos = engine.cache.positions_open(venue=venue, instrument_id=option.id)
+    assert len(option_pos) == 0, "Option position should be closed by the expiration timer"
+    _assert_settlement_orders_cached(engine, expected_count=1)
+
+    engine.dispose()
+
+
+def test_itm_option_expiry_runs_without_data_at_expiration():
+    """
+    Test ITM option exercise runs from the expiration timer when data stops before
+    expiry.
+    """
+    venue = Venue("NASDAQ")
+    expiry_ns = dt_to_unix_nanos(pd.Timestamp("2024-03-15 16:00:00", tz="UTC"))
+    engine, option_id, underlying_id = _build_timer_engine_with_call_option(
+        underlying_price=160.0,
+        expiry_ns=expiry_ns,
+        end_ns=expiry_ns + 1_000,
+    )
+
+    option_pos = engine.cache.positions_open(venue=venue, instrument_id=option_id)
+    assert len(option_pos) == 0, "Option position should be closed by the expiration timer"
+
+    underlying_pos = engine.cache.positions_open(venue=venue, instrument_id=underlying_id)
+    assert len(underlying_pos) == 1, "Underlying position should have been created by exercise"
+    assert underlying_pos[0].quantity == Quantity.from_int(100)
+    assert underlying_pos[0].avg_px_open == Price(150.0, 2)
+    _assert_settlement_orders_cached(engine, expected_count=2)
+
+    engine.dispose()
+
+
+def test_option_expiry_timer_runs_when_end_equals_expiration():
+    """
+    Test option expiry timer fires when the backtest end equals expiration.
+    """
+    venue = Venue("NASDAQ")
+    expiry_ns = dt_to_unix_nanos(pd.Timestamp("2024-03-15 16:00:00", tz="UTC"))
+    engine, option_id, underlying_id = _build_timer_engine_with_call_option(
+        underlying_price=140.0,
+        expiry_ns=expiry_ns,
+        end_ns=expiry_ns,
+    )
+
+    option_pos = engine.cache.positions_open(venue=venue, instrument_id=option_id)
+    assert len(option_pos) == 0, "Option position should close at the exact backtest end"
+
+    underlying_pos = engine.cache.positions_open(venue=venue, instrument_id=underlying_id)
+    assert len(underlying_pos) == 0, "No underlying position for OTM expiry"
+    _assert_settlement_orders_cached(engine, expected_count=1)
+
+    engine.dispose()
+
+
+def test_option_expiry_timer_reschedules_after_instrument_update():
+    """
+    Test an instrument update can move the expiration timer into the run window.
+    """
+    venue = Venue("NASDAQ")
+    expiry_ns = dt_to_unix_nanos(pd.Timestamp("2024-03-15 16:00:00", tz="UTC"))
+    original_expiry_ns = expiry_ns + 10_000
+    engine = BacktestEngine(config=BacktestEngineConfig())
+
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        base_currency=USD,
+        starting_balances=[Money(1_000_000, USD)],
+    )
+
+    underlying = _timer_underlying_equity()
+    option = _timer_call_option(expiration_ns=original_expiry_ns)
+    updated_option = _timer_call_option(
+        expiration_ns=expiry_ns,
+        ts_event=expiry_ns - 2_000,
+        ts_init=expiry_ns - 2_000,
+    )
+    engine.add_instrument(underlying)
+    engine.add_instrument(option)
+    engine.add_strategy(OptionExerciseTestStrategy())
+
+    data = [
+        QuoteTick(
+            instrument_id=option.id,
+            bid_price=Price(5.0, 2),
+            ask_price=Price(5.1, 2),
+            bid_size=Quantity.from_int(10),
+            ask_size=Quantity.from_int(10),
+            ts_event=expiry_ns - 3_000,
+            ts_init=expiry_ns - 3_000,
+        ),
+        updated_option,
+        TradeTick(
+            instrument_id=underlying.id,
+            price=Price(140.0, 2),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+            trade_id=TradeId("T1"),
+            ts_event=expiry_ns - 1_000,
+            ts_init=expiry_ns - 1_000,
+        ),
+    ]
+    engine.add_data(data)
+
+    engine.run(
+        start=pd.Timestamp(expiry_ns - 4_000, unit="ns", tz="UTC"),
+        end=pd.Timestamp(expiry_ns + 1_000, unit="ns", tz="UTC"),
+    )
+
+    option_pos = engine.cache.positions_open(venue=venue, instrument_id=option.id)
+    assert len(option_pos) == 0, "Updated expiration should close the option position"
+    _assert_settlement_orders_cached(engine, expected_count=1)
+
+    engine.dispose()
+
+
+def _build_timer_engine_with_call_option(
+    underlying_price: float,
+    expiry_ns: int,
+    end_ns: int,
+) -> tuple[BacktestEngine, InstrumentId, InstrumentId]:
+    venue = Venue("NASDAQ")
+    engine = BacktestEngine(config=BacktestEngineConfig())
+
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        base_currency=USD,
+        starting_balances=[Money(1_000_000, USD)],
+    )
+
+    underlying = _timer_underlying_equity()
+    option = _timer_call_option(expiration_ns=expiry_ns)
+    engine.add_instrument(underlying)
+    engine.add_instrument(option)
+    engine.add_strategy(OptionExerciseTestStrategy())
+
+    data = [
+        QuoteTick(
+            instrument_id=option.id,
+            bid_price=Price(5.0, 2),
+            ask_price=Price(5.1, 2),
+            bid_size=Quantity.from_int(10),
+            ask_size=Quantity.from_int(10),
+            ts_event=expiry_ns - 2_000,
+            ts_init=expiry_ns - 2_000,
+        ),
+        TradeTick(
+            instrument_id=underlying.id,
+            price=Price(underlying_price, 2),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+            trade_id=TradeId("T1"),
+            ts_event=expiry_ns - 1_000,
+            ts_init=expiry_ns - 1_000,
+        ),
+    ]
+    engine.add_data(data)
+
+    engine.run(
+        start=pd.Timestamp(expiry_ns - 3_000, unit="ns", tz="UTC"),
+        end=pd.Timestamp(end_ns, unit="ns", tz="UTC"),
+    )
+    return engine, option.id, underlying.id
+
+
+def _timer_underlying_equity() -> Equity:
+    return Equity(
+        instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+        raw_symbol=Symbol("AAPL"),
+        currency=USD,
+        price_precision=2,
+        price_increment=Price(0.01, 2),
+        lot_size=Quantity.from_int(1),
+        ts_event=0,
+        ts_init=0,
+    )
+
+
+def _timer_call_option(
+    expiration_ns: int,
+    ts_event: int = 0,
+    ts_init: int = 0,
+) -> OptionContract:
+    return OptionContract(
+        instrument_id=InstrumentId.from_str("AAPL240315C00150000.NASDAQ"),
+        raw_symbol=Symbol("AAPL240315C00150000"),
+        asset_class=AssetClass.EQUITY,
+        underlying="AAPL",
+        option_kind=OptionKind.CALL,
+        strike_price=Price(150.0, 2),
+        currency=USD,
+        activation_ns=dt_to_unix_nanos(pd.Timestamp("2024-03-01", tz="UTC")),
+        expiration_ns=expiration_ns,
+        price_precision=2,
+        price_increment=Price(0.01, 2),
+        multiplier=Quantity.from_int(100),
+        lot_size=Quantity.from_int(1),
+        ts_event=ts_event,
+        ts_init=ts_init,
+    )
+
+
 def test_itm_option_expiry_with_custom_settlement():
     """
     Test ITM option exercise with custom settlement price for the option leg.

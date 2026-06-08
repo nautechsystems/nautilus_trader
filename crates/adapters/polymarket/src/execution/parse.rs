@@ -129,19 +129,13 @@ pub fn parse_order_status_report(
     let order_side = OrderSide::from(order.side);
     let time_in_force = TimeInForce::from(order.order_type);
     let order_status = OrderStatus::from(order.status);
-    let quantity = Quantity::new(
-        order.original_size.to_string().parse().unwrap_or(0.0),
-        size_precision,
-    );
-    let raw_filled_qty = Quantity::new(
-        order.size_matched.to_string().parse().unwrap_or(0.0),
-        size_precision,
-    );
+    let quantity = Quantity::from_decimal_dp(order.original_size, size_precision)
+        .unwrap_or_else(|_| Quantity::zero(size_precision));
+    let raw_filled_qty = Quantity::from_decimal_dp(order.size_matched, size_precision)
+        .unwrap_or_else(|_| Quantity::zero(size_precision));
     let filled_qty = snap_filled_qty_to_quantity(quantity, raw_filled_qty, order_status);
-    let price = Price::new(
-        order.price.to_string().parse().unwrap_or(0.0),
-        price_precision,
-    );
+    let price = Price::from_decimal_dp(order.price, price_precision)
+        .unwrap_or_else(|_| Price::zero(price_precision));
 
     let ts_accepted = UnixNanos::from(order.created_at * NANOSECONDS_IN_SECOND);
 
@@ -201,14 +195,10 @@ pub fn parse_fill_report(
     let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
     let trade_id = TradeId::from(trade.id.as_str());
     let order_side = OrderSide::from(trade.side);
-    let last_qty = Quantity::new(
-        trade.size.to_string().parse().unwrap_or(0.0),
-        size_precision,
-    );
-    let last_px = Price::new(
-        trade.price.to_string().parse().unwrap_or(0.0),
-        price_precision,
-    );
+    let last_qty = Quantity::from_decimal_dp(trade.size, size_precision)
+        .unwrap_or_else(|_| Quantity::zero(size_precision));
+    let last_px = Price::from_decimal_dp(trade.price, price_precision)
+        .unwrap_or_else(|_| Price::zero(price_precision));
     let liquidity_side = parse_liquidity_side(trade.trader_side);
 
     let commission_value =
@@ -265,14 +255,10 @@ pub fn build_maker_fill_report(
         taker_asset_id,
         mo.asset_id.as_str(),
     );
-    let last_qty = Quantity::new(
-        mo.matched_amount.to_string().parse::<f64>().unwrap_or(0.0),
-        size_precision,
-    );
-    let last_px = Price::new(
-        mo.price.to_string().parse::<f64>().unwrap_or(0.0),
-        price_precision,
-    );
+    let last_qty = Quantity::from_decimal_dp(mo.matched_amount, size_precision)
+        .unwrap_or_else(|_| Quantity::zero(size_precision));
+    let last_px = Price::from_decimal_dp(mo.price, price_precision)
+        .unwrap_or_else(|_| Price::zero(price_precision));
     // Maker fills always pay zero commission per Polymarket docs:
     // https://docs.polymarket.com/trading/fees
     let commission_value =

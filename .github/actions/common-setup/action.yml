@@ -186,7 +186,7 @@ runs:
     - name: Install cargo-nextest
       if: inputs.build-type != 'pre-commit' && runner.os != 'macOS'
       # https://github.com/taiki-e/install-action
-      uses: taiki-e/install-action@b651345a718c8f44efa2460560b3dbf29cbd7ee1 # v2.75.26
+      uses: taiki-e/install-action@db5fb34fa772531a3ece57ca434f579eb334e0fb # v2.75.30
       with:
         tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
 

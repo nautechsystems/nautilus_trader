@@ -23,10 +23,10 @@ use pyo3::{
 
 use crate::{
     instruments::{
-        BettingInstrument, BinaryOption, Cfd, Commodity, CryptoFuture, CryptoPerpetual,
-        CurrencyPair, Equity, FuturesContract, FuturesSpread, IndexInstrument, InstrumentAny,
-        OptionContract, OptionSpread, PerpetualContract, TokenizedAsset,
-        crypto_option::CryptoOption,
+        BettingInstrument, BinaryOption, Cfd, Commodity, CryptoFuture, CryptoFuturesSpread,
+        CryptoOptionSpread, CryptoPerpetual, CurrencyPair, Equity, FuturesContract, FuturesSpread,
+        IndexInstrument, InstrumentAny, OptionContract, OptionSpread, PerpetualContract,
+        TokenizedAsset, crypto_option::CryptoOption,
     },
     types::{Currency, Money, Price, Quantity},
 };
@@ -117,7 +117,9 @@ impl_instrument_common_pymethods!(BinaryOption);
 impl_instrument_common_pymethods!(Cfd);
 impl_instrument_common_pymethods!(Commodity);
 impl_instrument_common_pymethods!(CryptoFuture);
+impl_instrument_common_pymethods!(CryptoFuturesSpread);
 impl_instrument_common_pymethods!(CryptoOption);
+impl_instrument_common_pymethods!(CryptoOptionSpread);
 impl_instrument_common_pymethods!(CryptoPerpetual);
 impl_instrument_common_pymethods!(CurrencyPair);
 impl_instrument_common_pymethods!(Equity);
@@ -134,7 +136,9 @@ pub mod binary_option;
 pub mod cfd;
 pub mod commodity;
 pub mod crypto_future;
+pub mod crypto_futures_spread;
 pub mod crypto_option;
+pub mod crypto_option_spread;
 pub mod crypto_perpetual;
 pub mod currency_pair;
 pub mod equity;
@@ -159,7 +163,9 @@ pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyRe
         InstrumentAny::Cfd(inst) => inst.into_py_any(py),
         InstrumentAny::Commodity(inst) => inst.into_py_any(py),
         InstrumentAny::CryptoFuture(inst) => inst.into_py_any(py),
+        InstrumentAny::CryptoFuturesSpread(inst) => inst.into_py_any(py),
         InstrumentAny::CryptoOption(inst) => inst.into_py_any(py),
+        InstrumentAny::CryptoOptionSpread(inst) => inst.into_py_any(py),
         InstrumentAny::CryptoPerpetual(inst) => inst.into_py_any(py),
         InstrumentAny::CurrencyPair(inst) => inst.into_py_any(py),
         InstrumentAny::Equity(inst) => inst.into_py_any(py),
@@ -194,8 +200,14 @@ pub fn pyobject_to_instrument_any(py: Python, instrument: Py<PyAny>) -> PyResult
         stringify!(CryptoFuture) => Ok(InstrumentAny::CryptoFuture(
             instrument.extract::<CryptoFuture>(py)?,
         )),
+        stringify!(CryptoFuturesSpread) => Ok(InstrumentAny::CryptoFuturesSpread(
+            instrument.extract::<CryptoFuturesSpread>(py)?,
+        )),
         stringify!(CryptoOption) => Ok(InstrumentAny::CryptoOption(
             instrument.extract::<CryptoOption>(py)?,
+        )),
+        stringify!(CryptoOptionSpread) => Ok(InstrumentAny::CryptoOptionSpread(
+            instrument.extract::<CryptoOptionSpread>(py)?,
         )),
         stringify!(CryptoPerpetual) => Ok(InstrumentAny::CryptoPerpetual(
             instrument.extract::<CryptoPerpetual>(py)?,

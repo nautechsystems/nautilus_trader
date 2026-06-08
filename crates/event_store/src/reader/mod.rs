@@ -63,7 +63,7 @@ impl SnapshotReplayPlan {
 
 /// Read-only handle over an [`EventStore`] backend.
 ///
-/// The reader is the canonical entry point for forensics replay, audit, and verifier
+/// The reader is the canonical entry point for read-only replay, audit, and verifier
 /// scans: it never mutates the backend (no `append_batch` surface) and it tolerates
 /// running and sealed backends uniformly.
 #[derive(Debug)]
@@ -391,7 +391,7 @@ impl Iterator for RangeScan<'_> {
 mod tests {
     use bytes::Bytes;
     use indexmap::IndexMap;
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::UnixNanos;
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
@@ -716,14 +716,10 @@ mod tests {
             .append_batch(&[
                 AppendEntry::new(
                     build_entry(1, 100),
-                    vec![IndexKey::new(IndexKind::IntentId, "intent-A".to_string())],
-                ),
-                AppendEntry::new(
-                    build_entry(2, 101),
                     vec![IndexKey::new(IndexKind::ClientOrderId, "O-1".to_string())],
                 ),
                 AppendEntry::new(
-                    build_entry(3, 102),
+                    build_entry(2, 101),
                     vec![IndexKey::new(IndexKind::VenueOrderId, "V-1".to_string())],
                 ),
             ])
@@ -732,25 +728,19 @@ mod tests {
 
         assert_eq!(
             reader
-                .lookup(IndexKind::IntentId, "intent-A")
+                .lookup(IndexKind::ClientOrderId, "O-1")
                 .expect("lookup"),
             Some(1),
         );
         assert_eq!(
             reader
-                .lookup(IndexKind::ClientOrderId, "O-1")
+                .lookup(IndexKind::VenueOrderId, "V-1")
                 .expect("lookup"),
             Some(2),
         );
-        assert_eq!(
-            reader
-                .lookup(IndexKind::VenueOrderId, "V-1")
-                .expect("lookup"),
-            Some(3),
-        );
         assert!(
             reader
-                .lookup(IndexKind::IntentId, "missing")
+                .lookup(IndexKind::ClientOrderId, "missing")
                 .expect("lookup")
                 .is_none(),
         );
@@ -955,24 +945,24 @@ mod tests {
         // record it; the reader's lookup path must not collapse kinds.
         let mut backend = MemoryBackend::new();
         backend.open_run(manifest("run-kinds")).expect("open run");
-        let intent_id = UUID4::new();
+        let shared_key = "shared-key".to_string();
         backend
             .append_batch(&[AppendEntry::new(
                 build_entry(1, 100),
-                vec![IndexKey::new(IndexKind::IntentId, intent_id.to_string())],
+                vec![IndexKey::new(IndexKind::ClientOrderId, shared_key.clone())],
             )])
             .expect("append");
         let reader = EventStoreReader::new(backend);
 
         assert_eq!(
             reader
-                .lookup(IndexKind::IntentId, &intent_id.to_string())
+                .lookup(IndexKind::ClientOrderId, &shared_key)
                 .expect("lookup"),
             Some(1),
         );
         assert!(
             reader
-                .lookup(IndexKind::ClientOrderId, &intent_id.to_string())
+                .lookup(IndexKind::VenueOrderId, &shared_key)
                 .expect("lookup")
                 .is_none(),
         );

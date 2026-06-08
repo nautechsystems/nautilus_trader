@@ -48,8 +48,10 @@ pub mod hash;
 pub mod headers;
 pub mod kernel;
 pub mod manifest;
+pub mod markers;
 pub mod reader;
 pub mod replay;
+pub mod retention;
 pub mod snapshot;
 pub mod verifier;
 pub mod writer;
@@ -72,16 +74,45 @@ pub use error::EventStoreError;
 pub use hash::{EntryHash, compute_entry_hash};
 pub use headers::Headers;
 pub use kernel::{
-    BootError, EventStoreConfig, EventStoreLifecycle, EventStoreSession, HaltSignal, KernelError,
-    RecoveredRun, RecoveryOutcome, RetentionMode, RunIdentity, build_run_id, open_run,
+    BootError, EventStoreLifecycle, EventStoreLifecycleOptions, EventStoreSession, HaltSignal,
+    KernelError, RecoveredRun, RecoveryOutcome, build_run_id, open_run, open_run_with_options,
     recover_predecessors,
 };
 pub use manifest::{RunId, RunManifest, RunStatus};
-pub use nautilus_system::RegisteredComponents;
+pub use markers::{
+    CursorState, DEFAULT_MARKER_CHANNEL_CAPACITY, DEFAULT_MARKER_MAX_BATCH,
+    DEFAULT_MARKER_MAX_LATENCY, DataClass, DataCursorSnapshot, DataMarkerCapture,
+    DataMarkerExtractor, DataMarkerExtractorRegistry, HiFiMarker, MarkerBackend, MarkerCountKind,
+    MarkerFinding, MarkerGap, MarkerGapReason, MarkerManifest, MarkerMsg, MarkerReader,
+    MarkerRecordKind, MarkerVerifier, MarkerVerifyReport, MarkerWriter, MarkerWriterConfig,
+    MemoryMarkerBackend, RedbMarkerBackend, StoredMarkerRecord, StreamCursor, StreamDictEntry,
+    StreamSlot, compute_dict_hash, compute_gap_hash, compute_hifi_hash, compute_marker_hash,
+};
+#[cfg(feature = "persistence")]
+pub use markers::{JoinedStream, join_at_entry};
+pub use nautilus_system::{
+    RegisteredComponents,
+    event_store::{
+        DEFAULT_DATA_MARKER_CHANNEL_CAPACITY, DEFAULT_DATA_MARKER_SAFETY_FLUSH_INTERVAL,
+        DataMarkerClass, DataMarkerConfig, EventStoreConfig, RetentionMode, RunIdentity,
+    },
+};
 pub use reader::{DEFAULT_SCAN_CHUNK_SIZE, EventStoreReader, RangeScan, SnapshotReplayPlan};
+#[cfg(feature = "persistence")]
+pub use replay::ParquetReplayCatalog;
 pub use replay::{
-    CacheReplayError, CacheReplayReport, apply_cache_replay_entry, replay_cache_snapshot_tail,
-    restore_cache_snapshot_and_replay_tail,
+    CacheReplayError, CacheReplayReport, CatalogReplayData, CatalogReplayRecord,
+    CatalogReplaySlice, CatalogSliceCoverage, CatalogSlicePlan, CatalogSliceQuery,
+    CatalogSliceSelector, EventStoreReplayReport, ReplayCatalog, ReplayInputError, ReplayInputPlan,
+    ReplayInputs, ReplaySeqRange, ReplayTimeRange, apply_cache_replay_entry,
+    load_catalog_replay_inputs, load_forensics_replay_inputs, open_event_store_replay_source,
+    plan_catalog_replay_inputs, plan_forensics_replay_inputs, replay_cache_snapshot_tail,
+    restore_cache_from_sealed_run, restore_cache_snapshot_and_replay_tail,
+    restore_cache_snapshot_blob, validate_event_store_replay_source,
+};
+pub use retention::{
+    RetentionPlan, RetentionRun, SnapshotAnchorStatus, list_redb_sealed_runs, plan_redb_retention,
+    plan_retention,
 };
 pub use snapshot::{SnapshotAnchor, compute_snapshot_content_hash};
 pub use verifier::{

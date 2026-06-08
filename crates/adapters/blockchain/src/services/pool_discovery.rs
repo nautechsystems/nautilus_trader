@@ -33,7 +33,10 @@ use crate::{
     contracts::erc20::Erc20Contract,
     events::pool_created::PoolCreatedEvent,
     exchanges::extended::DexExtended,
-    hypersync::{client::HyperSyncClient, helpers::extract_block_number},
+    hypersync::{
+        client::{HyperSyncClient, PoolEventStreamItem},
+        helpers::extract_block_number,
+    },
 };
 
 const BLOCKS_PROCESS_IN_SYNC_REPORT: u64 = 50_000;
@@ -209,7 +212,12 @@ impl<'a> PoolDiscoveryService<'a> {
             }
 
             result = async {
-                while let Some(log) = pools_stream.next().await {
+                while let Some(item) = pools_stream.next().await {
+                    // Pool discovery does not need block data
+                    let log = match item {
+                        PoolEventStreamItem::Block(_) => continue,
+                        PoolEventStreamItem::Log(log) => log,
+                    };
                     let block_number = extract_block_number(&log)?;
                     let blocks_progress = block_number - last_block_saved;
                     last_block_saved = block_number;
