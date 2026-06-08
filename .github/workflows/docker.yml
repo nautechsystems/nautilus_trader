@@ -345,9 +345,9 @@ jobs:
           cosign-release: v3.0.6
 
       - name: Sign image with cosign
-        run: |
-          cosign sign --yes \
-            "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
+        run: >-
+          bash ./scripts/ci/cosign-sign-retry.bash
+          "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
 
       - name: Generate SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
@@ -366,38 +366,10 @@ jobs:
         timeout-minutes: 15
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}
-          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
-          ISSUER: https://token.actions.githubusercontent.com
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          retry() {
-            local label=$1
-            shift
-            for attempt in 1 2 3; do
-              if "$@"; then
-                return 0
-              fi
-              if [ "$attempt" -eq 3 ]; then
-                echo "::error::${label} failed after 3 attempts"
-                return 1
-              fi
-              echo "::warning::${label} attempt ${attempt} failed, retrying in 30s"
-              sleep 30
-            done
-          }
-
-          retry "cosign verify" \
-            timeout 90 cosign verify "$IMAGE" \
-              --timeout=60s \
-              --certificate-identity "$IDENTITY" \
-              --certificate-oidc-issuer "$ISSUER"
-
-          retry "gh attestation verify" \
-            timeout 90 gh attestation verify "oci://${IMAGE}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --predicate-type "$SPDX_PREDICATE_TYPE" \
-              --cert-identity "$IDENTITY" \
-              --cert-oidc-issuer "$ISSUER"
+        run: bash ./scripts/ci/verify-docker-image-attestations.bash "$IMAGE"
 
   build-docker-images-jupyterlab:
     name: build-docker-images (jupyterlab-${{ matrix.platform }})
@@ -619,9 +591,9 @@ jobs:
           cosign-release: v3.0.6
 
       - name: Sign image with cosign
-        run: |
-          cosign sign --yes \
-            "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
+        run: >-
+          bash ./scripts/ci/cosign-sign-retry.bash
+          "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
 
       - name: Generate SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
@@ -640,35 +612,7 @@ jobs:
         timeout-minutes: 15
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}
-          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
-          ISSUER: https://token.actions.githubusercontent.com
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |-
-          retry() {
-            local label=$1
-            shift
-            for attempt in 1 2 3; do
-              if "$@"; then
-                return 0
-              fi
-              if [ "$attempt" -eq 3 ]; then
-                echo "::error::${label} failed after 3 attempts"
-                return 1
-              fi
-              echo "::warning::${label} attempt ${attempt} failed, retrying in 30s"
-              sleep 30
-            done
-          }
-
-          retry "cosign verify" \
-            timeout 90 cosign verify "$IMAGE" \
-              --timeout=60s \
-              --certificate-identity "$IDENTITY" \
-              --certificate-oidc-issuer "$ISSUER"
-
-          retry "gh attestation verify" \
-            timeout 90 gh attestation verify "oci://${IMAGE}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --predicate-type "$SPDX_PREDICATE_TYPE" \
-              --cert-identity "$IDENTITY" \
-              --cert-oidc-issuer "$ISSUER"
+        run: bash ./scripts/ci/verify-docker-image-attestations.bash "$IMAGE"

@@ -344,7 +344,7 @@ verify_crates() {
     published_by="$(jq -c '.published_by' <<< "$version_json")"
 
     if [[ "$published_by" != "null" ]]; then
-      echo "::error::Expected trusted publishing for ${crate_name}, got user publisher:"
+      echo "::error::Expected trusted publishing for ${crate_name}, received user publisher:"
       echo "$published_by"
       exit 1
     fi
@@ -448,7 +448,7 @@ check_crates_io_version() {
   published_by="$(jq -c '.published_by' <<< "$version_json")"
 
   if [[ "$published_by" != "null" ]]; then
-    echo "::error::Expected trusted publishing for ${crate_name}, got user publisher:"
+    echo "::error::Expected trusted publishing for ${crate_name}, received user publisher:"
     echo "$published_by"
     return 2
   fi

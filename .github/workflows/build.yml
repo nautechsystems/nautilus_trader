@@ -755,23 +755,16 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: ./.github/actions/attest-build-provenance-retry
         with:
           subject-path: "dist/nautilus_trader-*.whl"
 
       - name: Verify wheel attestations
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
-          ISSUER: https://token.actions.githubusercontent.com
-        run: |
-          set -e
-          for whl in dist/nautilus_trader-*.whl; do
-            gh attestation verify "$whl" \
-              --repo "$GITHUB_REPOSITORY" \
-              --cert-identity "$IDENTITY" \
-              --cert-oidc-issuer "$ISSUER"
-          done
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
+        run: bash ./scripts/ci/verify-gh-attestations.bash dist/nautilus_trader-*.whl
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
@@ -898,23 +891,16 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: ./.github/actions/attest-build-provenance-retry
         with:
           subject-path: "dist/nautilus_trader-*.whl"
 
       - name: Verify wheel attestations
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
-          ISSUER: https://token.actions.githubusercontent.com
-        run: |
-          set -e
-          for whl in dist/nautilus_trader-*.whl; do
-            gh attestation verify "$whl" \
-              --repo "$GITHUB_REPOSITORY" \
-              --cert-identity "$IDENTITY" \
-              --cert-oidc-issuer "$ISSUER"
-          done
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
+        run: bash ./scripts/ci/verify-gh-attestations.bash dist/nautilus_trader-*.whl
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
@@ -1094,30 +1080,21 @@ jobs:
           merge-multiple: true
 
       - name: Generate PyPI publish attestations
-        run: |
-          uv run --no-project --no-build --with "pypi-attestations==${PYPI_ATTESTATIONS_VERSION}" -- \
-            python -m pypi_attestations sign dist/nautilus_trader-*.whl
+        run: bash ./scripts/ci/sign-pypi-attestations.bash dist/nautilus_trader-*.whl
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
         id: attest-wheels
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: ./.github/actions/attest-build-provenance-retry
         with:
           subject-path: "dist/nautilus_trader-*.whl"
 
       - name: Verify wheel attestations
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
-          ISSUER: https://token.actions.githubusercontent.com
-        run: |
-          set -e
-          for whl in dist/nautilus_trader-*.whl; do
-            gh attestation verify "$whl" \
-              --repo "$GITHUB_REPOSITORY" \
-              --cert-identity "$IDENTITY" \
-              --cert-oidc-issuer "$ISSUER"
-          done
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
+        run: bash ./scripts/ci/verify-gh-attestations.bash dist/nautilus_trader-*.whl
 
       - name: Publish wheels to PyPI
         if: success()
@@ -1339,27 +1316,21 @@ jobs:
           path: dist
 
       - name: Generate PyPI publish attestation
-        run: |
-          uv run --no-project --no-build --with "pypi-attestations==${PYPI_ATTESTATIONS_VERSION}" -- \
-            python -m pypi_attestations sign dist/nautilus_trader-*.tar.gz
+        run: bash ./scripts/ci/sign-pypi-attestations.bash dist/nautilus_trader-*.tar.gz
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest sdist provenance
         id: attest-sdist
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: ./.github/actions/attest-build-provenance-retry
         with:
           subject-path: "dist/nautilus_trader-*.tar.gz"
 
       - name: Verify sdist attestation
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
-          ISSUER: https://token.actions.githubusercontent.com
-        run: |
-          gh attestation verify dist/nautilus_trader-*.tar.gz \
-            --repo "$GITHUB_REPOSITORY" \
-            --cert-identity "$IDENTITY" \
-            --cert-oidc-issuer "$ISSUER"
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
+        run: bash ./scripts/ci/verify-gh-attestations.bash dist/nautilus_trader-*.tar.gz
 
       - name: Publish sdist to PyPI
         if: success()
@@ -1502,6 +1473,9 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+
+      - name: Check Rekor readiness
+        run: bash ./scripts/ci/check-rekor-ready.bash
 
       - name: Publish GitHub release
         env:

@@ -145,6 +145,48 @@ UI dashboards, distributed orchestration, and built-in AI/ML tooling are out of 
 New integration proposals should start with an RFC issue to discuss suitability before submitting a PR.
 See [Community-contributed integrations](/ROADMAP.md#community-contributed-integrations) for guidelines.
 
+## Security
+
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/nautechsystems/nautilus_trader/badge)](https://scorecard.dev/viewer/?uri=github.com/nautechsystems/nautilus_trader)
+
+The OpenSSF Scorecard badge tracks automated repository-health signals. It complements manual
+review, CI hardening, and security audits rather than replacing them.
+
+NautilusTrader ships with signed releases, continuous vulnerability management, and transparent
+development practices, applying layered controls across the development and release lifecycle:
+
+- **Supply chain**: dependencies are pinned in lock files with checksums, third-party Python
+  packages install from wheels only (never built from source) and observe a publication cooldown
+  before entering the lock file, cargo-vet audits Rust dependency provenance, production Rust
+  dependencies come only from crates.io, and cargo-deny enforces Rust license compatibility.
+- **Code and dependency scanning**: CodeQL static analysis, cargo-audit, cargo-deny, pip-audit, and
+  OSV Scanner run on pull requests and nightly, alongside Gitleaks secret screening. cargo-fuzz
+  targets cover selected adapter and signing surfaces.
+- **Build and release integrity**: GitHub Actions are pinned to commit SHAs, CI runners are hardened
+  with egress allow-listing, Python wheels and sdists carry SLSA build provenance, container images
+  are Sigstore-signed with attested SPDX SBOMs, and PyPI and crates.io publishing uses Trusted
+  Publishing (OIDC, no long-lived tokens), gated to the protected `release` environment that never runs
+  code from pull requests or forks.
+- **Runtime cryptography**: TLS and most runtime cryptography use
+  [aws-lc-rs](https://github.com/aws/aws-lc-rs), the Rust binding for AWS-LC, with Ed25519 signing
+  via [ed25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek).
+
+### Reporting a vulnerability
+
+Report privately through
+[GitHub Security Advisories](https://github.com/nautechsystems/nautilus_trader/security/advisories/new),
+or email <security@nautechsystems.io> (PGP key available on request). We acknowledge reports within
+48 hours and patch critical vulnerabilities within 30 days.
+
+A careful vulnerability report takes real time and effort. We appreciate that, and unless you prefer
+to remain anonymous, we credit reporters in the relevant security advisory and release notes.
+
+The [Security Policy](SECURITY.md) details scope, coordinated disclosure, and step-by-step release
+verification. For the full policies, see the
+[Responsible Disclosure](https://nautilustrader.io/security/responsible-disclosure/) and
+[Supply Chain Security](https://nautilustrader.io/security/supply-chain/) policies; CI/CD security is
+documented in [.github/OVERVIEW.md](.github/OVERVIEW.md#security).
+
 ## Versioning and releases
 
 > [!WARNING]
@@ -569,20 +611,6 @@ developer looking to contribute or just want to learn more about the platform, a
 > All official updates and communications from NautilusTrader will be shared exclusively through <https://nautilustrader.io>, our [GitHub](https://github.com/nautechsystems), our [Discord server](https://discord.gg/NautilusTrader), or our verified X (Twitter) account: [@NautilusTrader](https://x.com/NautilusTrader).
 >
 > If you encounter any suspicious activity, please report it to the appropriate platform and contact us at <info@nautechsystems.io>.
-
-## Security
-
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/nautechsystems/nautilus_trader/badge)](https://scorecard.dev/viewer/?uri=github.com/nautechsystems/nautilus_trader)
-
-The OpenSSF Scorecard badge tracks automated repository-health signals. It complements manual
-review, CI hardening, and security audits rather than replacing them.
-
-NautilusTrader uses layered supply-chain and code-security controls, including CodeQL static
-analysis, pinned GitHub Actions, dependency auditing, cargo-vet, OSV scanning, fuzzing for
-selected adapter and signing surfaces, and signed release provenance for official artifacts.
-
-To report a vulnerability, see our [Security Policy](SECURITY.md). For full security policies
-including supply chain security, see <https://nautilustrader.io/security/>.
 
 ## License
 

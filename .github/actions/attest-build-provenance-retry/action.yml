@@ -1,0 +1,78 @@
+name: attest-build-provenance-retry
+description: Attest build provenance with bounded retry for transient Sigstore failures.
+
+inputs:
+  subject-path:
+    description: Artifact path or glob to attest.
+    required: true
+
+outputs:
+  bundle-path:
+    description: Path to the generated Sigstore bundle.
+    value: ${{ steps.select-bundle.outputs.bundle-path }}
+
+runs:
+  using: composite
+  steps:
+    # https://github.com/actions/attest-build-provenance
+    - name: Attest build provenance (attempt 1/3)
+      id: attest-1
+      continue-on-error: true
+      uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+      with:
+        subject-path: ${{ inputs.subject-path }}
+
+    - name: Backoff before retry 2
+      if: steps.attest-1.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::warning::build provenance attest attempt 1 failed; retrying in 30s"
+        sleep 30
+
+    - name: Attest build provenance (attempt 2/3)
+      id: attest-2
+      if: steps.attest-1.outcome == 'failure'
+      continue-on-error: true
+      uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+      with:
+        subject-path: ${{ inputs.subject-path }}
+
+    - name: Backoff before retry 3
+      if: steps.attest-1.outcome == 'failure' && steps.attest-2.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::warning::build provenance attest attempt 2 failed; retrying in 60s"
+        sleep 60
+
+    - name: Attest build provenance (attempt 3/3, final)
+      id: attest-3
+      if: steps.attest-1.outcome == 'failure' && steps.attest-2.outcome == 'failure'
+      uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+      with:
+        subject-path: ${{ inputs.subject-path }}
+
+    - name: Select bundle path
+      id: select-bundle
+      shell: bash
+      env:
+        ATTEMPT_1_OUTCOME: ${{ steps.attest-1.outcome }}
+        ATTEMPT_1_BUNDLE_PATH: ${{ steps.attest-1.outputs.bundle-path }}
+        ATTEMPT_2_OUTCOME: ${{ steps.attest-2.outcome }}
+        ATTEMPT_2_BUNDLE_PATH: ${{ steps.attest-2.outputs.bundle-path }}
+        ATTEMPT_3_OUTCOME: ${{ steps.attest-3.outcome }}
+        ATTEMPT_3_BUNDLE_PATH: ${{ steps.attest-3.outputs.bundle-path }}
+      run: |-
+        BUNDLE_PATH=""
+        if [ "$ATTEMPT_1_OUTCOME" = "success" ]; then
+          BUNDLE_PATH="$ATTEMPT_1_BUNDLE_PATH"
+        elif [ "$ATTEMPT_2_OUTCOME" = "success" ]; then
+          BUNDLE_PATH="$ATTEMPT_2_BUNDLE_PATH"
+        elif [ "$ATTEMPT_3_OUTCOME" = "success" ]; then
+          BUNDLE_PATH="$ATTEMPT_3_BUNDLE_PATH"
+        fi
+
+        if [ -z "$BUNDLE_PATH" ]; then
+          echo "::error::No build provenance bundle path was produced."
+          exit 1
+        fi
+        echo "bundle-path=$BUNDLE_PATH" >> "$GITHUB_OUTPUT"
