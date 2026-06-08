@@ -117,6 +117,9 @@ impl From<tungstenite::Error> for TransportError {
                 tungstenite::error::CapacityError::MessageTooLong { .. } => Self::MessageTooLarge,
                 e @ tungstenite::error::CapacityError::TooManyHeaders => Self::Other(e.to_string()),
             },
+            tungstenite::Error::Protocol(
+                tungstenite::error::ProtocolError::ResetWithoutClosingHandshake,
+            ) => Self::ConnectionReset,
             tungstenite::Error::Protocol(e) => Self::Protocol(e.to_string()),
             tungstenite::Error::Utf8(_) => Self::InvalidUtf8,
             tungstenite::Error::Url(e) => Self::InvalidUrl(e.to_string()),
@@ -292,6 +295,15 @@ mod tests {
     fn error_translation_closed() {
         let err: TransportError = tungstenite::Error::ConnectionClosed.into();
         assert!(matches!(err, TransportError::ConnectionClosed));
+    }
+
+    #[rstest]
+    fn error_translation_reset_without_closing_handshake() {
+        let err: TransportError = tungstenite::Error::Protocol(
+            tungstenite::error::ProtocolError::ResetWithoutClosingHandshake,
+        )
+        .into();
+        assert!(matches!(err, TransportError::ConnectionReset));
     }
 
     #[rstest]

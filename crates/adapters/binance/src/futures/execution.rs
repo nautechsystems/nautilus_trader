@@ -90,7 +90,8 @@ use crate::{
         consts::{
             BINANCE_FUTURES_DUAL_SIDE_SYNC_REJECT_CODE, BINANCE_FUTURES_USD_WS_API_TESTNET_URL,
             BINANCE_FUTURES_USD_WS_API_URL, BINANCE_GTX_ORDER_REJECT_CODE,
-            BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_VENUE,
+            BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_STATUS_UNKNOWN_CODE,
+            BINANCE_UNEXPECTED_RESPONSE_CODE, BINANCE_VENUE,
         },
         credential::resolve_credentials,
         dispatch::{OrderIdentity, PendingOperation, PendingRequest, WsDispatchState},
@@ -587,7 +588,11 @@ impl BinanceFuturesExecutionClient {
                     // Keep order registered - if HTTP failed due to timeout but order
                     // reached Binance, WebSocket updates will still arrive. The order
                     // will be cleaned up via WebSocket rejection or reconciliation.
-                    if is_structured_venue_rejection(&e) {
+                    if is_ambiguous_submit_error(&e) {
+                        log::error!(
+                            "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {e}"
+                        );
+                    } else if is_structured_venue_rejection(&e) {
                         let due_post_only = classify_submit_order_error(&e);
                         let ts_now = clock.get_time_ns();
 
@@ -895,6 +900,19 @@ pub(crate) fn classify_submit_order_error(err: &anyhow::Error) -> bool {
 fn is_structured_venue_rejection(err: &anyhow::Error) -> bool {
     err.downcast_ref::<BinanceFuturesHttpError>()
         .is_some_and(|be| matches!(be, BinanceFuturesHttpError::BinanceError { .. }))
+}
+
+fn is_ambiguous_submit_error(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<BinanceFuturesHttpError>()
+        .is_some_and(|be| {
+            matches!(
+                be,
+                BinanceFuturesHttpError::BinanceError {
+                    code: BINANCE_UNEXPECTED_RESPONSE_CODE | BINANCE_STATUS_UNKNOWN_CODE,
+                    ..
+                }
+            )
+        })
 }
 
 fn is_local_command_failure(err: &anyhow::Error) -> bool {
@@ -2241,5 +2259,21 @@ mod tests {
     fn test_classify_submit_order_error_non_binance_error_is_not_post_only() {
         let err = anyhow::anyhow!("network failure");
         assert!(!classify_submit_order_error(&err));
+    }
+
+    #[rstest]
+    #[case(BINANCE_UNEXPECTED_RESPONSE_CODE)]
+    #[case(BINANCE_STATUS_UNKNOWN_CODE)]
+    fn test_unknown_status_submit_error_is_ambiguous(#[case] code: i64) {
+        let err = http_error(code);
+        assert!(is_ambiguous_submit_error(&err));
+        assert!(is_structured_venue_rejection(&err));
+    }
+
+    #[rstest]
+    fn test_other_structured_submit_error_is_not_ambiguous() {
+        let err = http_error(BINANCE_GTX_ORDER_REJECT_CODE);
+        assert!(!is_ambiguous_submit_error(&err));
+        assert!(is_structured_venue_rejection(&err));
     }
 }

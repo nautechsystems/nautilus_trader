@@ -1605,7 +1605,7 @@ version = "0.2.186"
 criteria = "safe-to-deploy"
 
 [[exemptions.libfuzzer-sys]]
-version = "0.4.12"
+version = "0.4.13"
 criteria = "safe-to-run"
 suggest = false
 

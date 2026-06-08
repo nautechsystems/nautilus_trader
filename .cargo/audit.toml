@@ -1,10 +1,9 @@
 # cargo-audit configuration
 # https://github.com/rustsec/rustsec/blob/main/cargo-audit/audit.toml.example
 #
-# Mirrors deny.toml [advisories] ignore list, plus two advisories that
+# Mirrors deny.toml [advisories] ignore list, plus one advisory that
 # cargo-audit surfaces but cargo-deny does not match against the lockfile:
 #   - RUSTSEC-2024-0388 (derivative, unmaintained via alloy-primitives -> ruint -> ark-ff)
-#   - RUSTSEC-2023-0071 (rsa Marvin Attack, transitive via sqlx-mysql, no upstream fix)
 
 [advisories]
 ignore = [
@@ -25,6 +24,6 @@ ignore = [
   "RUSTSEC-2025-0141",
   # capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix
   "RUSTSEC-2025-0143",
-  # rsa Marvin Attack, transitive via sqlx-mysql, no fix available
-  "RUSTSEC-2023-0071",
+  # proc-macro-error2 unmaintained, transitive via alloy and tabled_derive
+  "RUSTSEC-2026-0173",
 ]

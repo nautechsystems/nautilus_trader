@@ -78,7 +78,7 @@ use crate::{
         gamma::PolymarketGammaHttpClient, parse::rebuild_instrument_with_tick_size,
         query::GetGammaMarketsParams,
     },
-    providers::{PolymarketInstrumentProvider, extract_condition_id, fetch_configured_instruments},
+    providers::{PolymarketInstrumentProvider, extract_condition_id},
     resolve::{
         PolymarketResolveRequestSummaryData, RESOLVE_REQUEST_TYPE_NAME, ResolveBatchErrorMode,
         ResolveContext, ResolveRequestSummary, ResolveWatchEntry, ResolveWatchSelectionMode,
@@ -225,7 +225,8 @@ async fn refresh_scoped_instruments(
         return Ok(0);
     };
     let refreshed =
-        fetch_configured_instruments(&http_client, &instrument_config, &filters).await?;
+        crate::providers::fetch_configured_instruments(&http_client, &instrument_config, &filters)
+            .await?;
 
     Ok(cache_and_publish_instruments(
         instruments_cache,

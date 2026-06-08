@@ -35,6 +35,8 @@ pub enum BinanceSpotPublicWsMessage {
     BookTicker(BinanceSpotBookTickerMsg),
     /// Partial depth snapshot stream event.
     DepthSnapshot(BinanceSpotPartialDepthMsg),
+    /// Depth diff stream event.
+    DepthDiff(BinanceSpotDepthDiffMsg),
     /// Kline/candlestick stream event.
     Kline(BinanceSpotKlineMsg),
     /// Server shutdown notice.
@@ -189,6 +191,32 @@ pub struct BinanceSpotPartialDepthPayload {
     /// Bid levels `[price, qty]`.
     pub bids: Vec<[String; 2]>,
     /// Ask levels `[price, qty]`.
+    pub asks: Vec<[String; 2]>,
+}
+
+/// Diff depth stream message.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BinanceSpotDepthDiffMsg {
+    /// Event type.
+    #[serde(rename = "e")]
+    pub event_type: String,
+    /// Event time in milliseconds.
+    #[serde(rename = "E")]
+    pub event_time: i64,
+    /// Symbol.
+    #[serde(rename = "s")]
+    pub symbol: Ustr,
+    /// First update ID in event.
+    #[serde(rename = "U")]
+    pub first_update_id: u64,
+    /// Final update ID in event.
+    #[serde(rename = "u")]
+    pub final_update_id: u64,
+    /// Bid updates `[price, qty]`.
+    #[serde(rename = "b")]
+    pub bids: Vec<[String; 2]>,
+    /// Ask updates `[price, qty]`.
+    #[serde(rename = "a")]
     pub asks: Vec<[String; 2]>,
 }
 

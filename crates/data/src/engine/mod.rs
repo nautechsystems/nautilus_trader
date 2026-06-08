@@ -911,6 +911,11 @@ impl DataEngine {
 
     /// Executes a `DataCommand` by delegating to subscribe, unsubscribe, or request handlers.
     ///
+    /// This is the final synchronous dispatch point for data commands. Runtime command producers
+    /// should send to `DataEngine.queue_execute`, which lets the runner sequence command execution
+    /// before this method runs. The engine also calls this method for child commands generated while
+    /// processing a parent command, where immediate in-engine ordering matters.
+    ///
     /// Errors during execution are logged.
     pub fn execute(&mut self, cmd: DataCommand) {
         match &cmd {
@@ -951,6 +956,15 @@ impl DataEngine {
     /// Returns an error if the subscription is invalid (e.g., synthetic instrument for book data),
     /// or if the underlying client operation fails.
     pub fn execute_subscribe(&mut self, cmd: SubscribeCommand) -> anyhow::Result<()> {
+        if let Some(client_id) = cmd.client_id()
+            && self.external_clients.contains(client_id)
+        {
+            if self.config.debug {
+                log::debug!("Skipping subscribe command for external client {client_id}: {cmd:?}");
+            }
+            return Ok(());
+        }
+
         // Update internal engine state
         match &cmd {
             SubscribeCommand::BookDeltas(cmd) if !self.subscribe_book_deltas(cmd)? => {
@@ -964,7 +978,12 @@ impl DataEngine {
             SubscribeCommand::Bars(cmd) if has_continuous_future_params(cmd.params.as_ref()) => {
                 return self.subscribe_continuous_future_bars(cmd);
             }
-            SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd)?,
+            SubscribeCommand::Bars(cmd) => {
+                self.subscribe_bars(cmd)?;
+                if cmd.bar_type.is_internally_aggregated() {
+                    return Ok(());
+                }
+            }
             SubscribeCommand::OptionChain(cmd) => {
                 self.subscribe_option_chain(cmd);
                 return Ok(());
@@ -998,15 +1017,6 @@ impl DataEngine {
             _ => {} // Do nothing else
         }
 
-        if let Some(client_id) = cmd.client_id()
-            && self.external_clients.contains(client_id)
-        {
-            if self.config.debug {
-                log::debug!("Skipping subscribe command for external client {client_id}: {cmd:?}");
-            }
-            return Ok(());
-        }
-
         #[cfg(feature = "streaming")]
         let cmd = self.subscribe_command_with_prefilled_start_ns(cmd)?;
 
@@ -1029,6 +1039,17 @@ impl DataEngine {
     ///
     /// Returns an error if the underlying client operation fails.
     pub fn execute_unsubscribe(&mut self, cmd: &UnsubscribeCommand) -> anyhow::Result<()> {
+        if let Some(client_id) = cmd.client_id()
+            && self.external_clients.contains(client_id)
+        {
+            if self.config.debug {
+                log::debug!(
+                    "Skipping unsubscribe command for external client {client_id}: {cmd:?}",
+                );
+            }
+            return Ok(());
+        }
+
         match &cmd {
             UnsubscribeCommand::BookDeltas(cmd) if !self.unsubscribe_book_deltas(cmd) => {
                 return Ok(());
@@ -1049,7 +1070,12 @@ impl DataEngine {
                 self.unsubscribe_continuous_future_bars(cmd);
                 return Ok(());
             }
-            UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd),
+            UnsubscribeCommand::Bars(cmd) => {
+                self.unsubscribe_bars(cmd);
+                if cmd.bar_type.is_internally_aggregated() {
+                    return Ok(());
+                }
+            }
             UnsubscribeCommand::OptionChain(cmd) => {
                 self.unsubscribe_option_chain(cmd);
                 return Ok(());
@@ -1085,17 +1111,6 @@ impl DataEngine {
                 anyhow::bail!("Cannot unsubscribe from synthetic instrument `OptionGreeks` data");
             }
             _ => {}
-        }
-
-        if let Some(client_id) = cmd.client_id()
-            && self.external_clients.contains(client_id)
-        {
-            if self.config.debug {
-                log::debug!(
-                    "Skipping unsubscribe command for external client {client_id}: {cmd:?}",
-                );
-            }
-            return Ok(());
         }
 
         // Keep client subscribed while exact-topic subscribers remain
@@ -2985,18 +3000,7 @@ impl DataEngine {
 
     fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
         match cmd.bar_type.aggregation_source() {
-            AggregationSource::Internal => {
-                let key = bar_aggregator_key(cmd.bar_type, None);
-
-                if self
-                    .bar_aggregators
-                    .get(&key)
-                    .is_none_or(|aggregator| !aggregator.borrow().is_running())
-                    || !self.bar_aggregator_handlers.contains_key(&key)
-                {
-                    self.start_bar_aggregator(cmd.bar_type, None)?;
-                }
-            }
+            AggregationSource::Internal => self.start_live_bar_aggregator(cmd)?,
             AggregationSource::External => {
                 if cmd.bar_type.instrument_id().is_synthetic() {
                     anyhow::bail!(
@@ -3110,6 +3114,15 @@ impl DataEngine {
 
         let cache = self.cache.clone();
         let handler = Box::new(move |quote: QuoteTick| {
+            let exchange_endpoint = format!(
+                "SimulatedExchange.process_new_quote.{}",
+                quote.instrument_id.venue
+            );
+            let exchange_endpoint = exchange_endpoint.into();
+            if msgbus::has_quote_endpoint(exchange_endpoint) {
+                msgbus::send_quote(exchange_endpoint, &quote);
+            }
+
             if let Err(e) = cache.borrow_mut().add_quote(quote) {
                 log_error_on_cache_insert(&e);
             }
@@ -3303,9 +3316,11 @@ impl DataEngine {
         if self
             .bar_aggregators
             .contains_key(&bar_aggregator_key(bar_type, None))
-            && let Err(e) = self.stop_bar_aggregator(bar_type, None)
         {
-            log::error!("Error stopping bar aggregator for {bar_type}: {e}");
+            match self.stop_bar_aggregator(bar_type, None) {
+                Ok(()) => self.unsubscribe_bar_aggregator(cmd),
+                Err(e) => log::error!("Error stopping bar aggregator for {bar_type}: {e}"),
+            }
         }
 
         // After stopping a composite, check if the source aggregator is now orphaned
@@ -4204,6 +4219,28 @@ impl DataEngine {
         Ok(())
     }
 
+    fn start_live_bar_aggregator(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        let key = bar_aggregator_key(cmd.bar_type, None);
+
+        if self
+            .bar_aggregators
+            .get(&key)
+            .is_some_and(|aggregator| aggregator.borrow().is_running())
+            && self.bar_aggregator_handlers.contains_key(&key)
+        {
+            log::warn!(
+                "Aggregator for {} is currently in use, subscription can't be started",
+                cmd.bar_type,
+            );
+            return Ok(());
+        }
+
+        self.start_bar_aggregator(cmd.bar_type, None)?;
+        self.subscribe_bar_aggregator(cmd);
+
+        Ok(())
+    }
+
     fn start_bar_aggregator(
         &mut self,
         bar_type: BarType,
@@ -4283,6 +4320,55 @@ impl DataEngine {
         Ok(())
     }
 
+    fn subscribe_bar_aggregator(&mut self, cmd: &SubscribeBars) {
+        let key = bar_aggregator_key(cmd.bar_type, None);
+        if !self.bar_aggregators.contains_key(&key) {
+            log::error!(
+                "Cannot subscribe bar aggregator: no aggregator found for {}",
+                cmd.bar_type,
+            );
+            return;
+        }
+
+        if cmd.bar_type.is_composite() {
+            let composite_bar_type = cmd.bar_type.composite();
+            if composite_bar_type.is_externally_aggregated() {
+                let subscribe = SubscribeBars::new(
+                    composite_bar_type,
+                    cmd.client_id,
+                    cmd.venue,
+                    UUID4::new(),
+                    cmd.ts_init,
+                    Some(cmd.command_id),
+                    cmd.params.clone(),
+                );
+                self.execute(DataCommand::Subscribe(SubscribeCommand::Bars(subscribe)));
+            }
+        } else if cmd.bar_type.spec().price_type == PriceType::Last {
+            let subscribe = SubscribeTrades::new(
+                cmd.bar_type.instrument_id(),
+                cmd.client_id,
+                cmd.venue,
+                UUID4::new(),
+                cmd.ts_init,
+                Some(cmd.command_id),
+                cmd.params.clone(),
+            );
+            self.execute(DataCommand::Subscribe(SubscribeCommand::Trades(subscribe)));
+        } else {
+            let subscribe = SubscribeQuotes::new(
+                cmd.bar_type.instrument_id(),
+                cmd.client_id,
+                cmd.venue,
+                UUID4::new(),
+                cmd.ts_init,
+                Some(cmd.command_id),
+                cmd.params.clone(),
+            );
+            self.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(subscribe)));
+        }
+    }
+
     /// Sets up a bar aggregator, matching Cython `_setup_bar_aggregator` logic.
     ///
     /// This method handles historical mode, message bus subscriptions, and time bar aggregator setup.
@@ -4330,6 +4416,52 @@ impl DataEngine {
         }
 
         Ok(())
+    }
+
+    fn unsubscribe_bar_aggregator(&mut self, cmd: &UnsubscribeBars) {
+        if cmd.bar_type.is_composite() {
+            let composite_bar_type = cmd.bar_type.composite();
+            if composite_bar_type.is_externally_aggregated() {
+                let unsubscribe = UnsubscribeBars::new(
+                    composite_bar_type,
+                    cmd.client_id,
+                    cmd.venue,
+                    UUID4::new(),
+                    cmd.ts_init,
+                    Some(cmd.command_id),
+                    cmd.params.clone(),
+                );
+                self.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(
+                    unsubscribe,
+                )));
+            }
+        } else if cmd.bar_type.spec().price_type == PriceType::Last {
+            let unsubscribe = UnsubscribeTrades::new(
+                cmd.bar_type.instrument_id(),
+                cmd.client_id,
+                cmd.venue,
+                UUID4::new(),
+                cmd.ts_init,
+                Some(cmd.command_id),
+                cmd.params.clone(),
+            );
+            self.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Trades(
+                unsubscribe,
+            )));
+        } else {
+            let unsubscribe = UnsubscribeQuotes::new(
+                cmd.bar_type.instrument_id(),
+                cmd.client_id,
+                cmd.venue,
+                UUID4::new(),
+                cmd.ts_init,
+                Some(cmd.command_id),
+                cmd.params.clone(),
+            );
+            self.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(
+                unsubscribe,
+            )));
+        }
     }
 
     fn stop_bar_aggregator(
@@ -4962,13 +5094,13 @@ fn build_continuous_future_subscribe_inner(
     source: ContinuousFutureSource,
     segment_instrument_id: InstrumentId,
     client_id: Option<ClientId>,
-    venue: Option<Venue>,
+    _venue: Option<Venue>,
     child_params: Params,
     correlation_id: UUID4,
     ts_init: UnixNanos,
 ) -> DataCommand {
     let command_id = UUID4::new();
-    let child_venue = venue.or(Some(segment_instrument_id.venue));
+    let child_venue = Some(segment_instrument_id.venue);
 
     match source {
         ContinuousFutureSource::Bars(source_bar_type) => {
@@ -5011,7 +5143,7 @@ fn build_continuous_future_unsubscribe_command(
     source: ContinuousFutureSource,
     segment_instrument_id: InstrumentId,
     client_id: Option<ClientId>,
-    venue: Option<Venue>,
+    _venue: Option<Venue>,
     parent_params: Option<&Params>,
     correlation_id: UUID4,
     ts_init: UnixNanos,
@@ -5023,7 +5155,7 @@ fn build_continuous_future_unsubscribe_command(
     child_params.shift_remove("first_pre_instrument_id");
     child_params.shift_remove("bar_types");
     let command_id = UUID4::new();
-    let child_venue = venue.or(Some(segment_instrument_id.venue));
+    let child_venue = Some(segment_instrument_id.venue);
 
     match source {
         ContinuousFutureSource::Bars(source_bar_type) => {

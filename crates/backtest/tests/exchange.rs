@@ -93,6 +93,7 @@ fn get_exchange(
     let exchange = Rc::new(RefCell::new(
         SimulatedExchange::new(config, cache.clone(), clock).unwrap(),
     ));
+    SimulatedExchange::register_spread_quote_endpoint(&exchange);
 
     let clock = TestClock::new();
     let execution_client = BacktestExecutionClient::new(
@@ -201,6 +202,45 @@ fn test_exchange_process_quote_tick(crypto_perpetual_ethusdt: CryptoPerpetual) {
         .borrow()
         .best_ask_price(crypto_perpetual_ethusdt.id);
     assert_eq!(best_ask_price, Some(Price::from("1001.00")));
+}
+
+#[rstest]
+fn test_exchange_process_quote_tick_endpoint(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let exchange = get_exchange(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        None,
+    );
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    exchange.borrow_mut().add_instrument(instrument).unwrap();
+
+    let quote_tick = QuoteTick::new(
+        crypto_perpetual_ethusdt.id,
+        Price::from("1000.00"),
+        Price::from("1001.00"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    msgbus::send_quote(
+        "SimulatedExchange.process_new_quote.BINANCE".into(),
+        &quote_tick,
+    );
+
+    assert_eq!(
+        exchange
+            .borrow()
+            .best_bid_price(crypto_perpetual_ethusdt.id),
+        Some(Price::from("1000.00"))
+    );
+    assert_eq!(
+        exchange
+            .borrow()
+            .best_ask_price(crypto_perpetual_ethusdt.id),
+        Some(Price::from("1001.00"))
+    );
 }
 
 #[rstest]

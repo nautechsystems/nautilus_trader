@@ -1830,7 +1830,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             else:
                 file_list = self._query_files(data_cls, identifiers, start, end)
 
-            directories = {os.path.dirname(file) for file in file_list}
+            directories = dict.fromkeys(os.path.dirname(file) for file in file_list)
             for directory in directories:
                 self._register_directory_table(
                     session=session,

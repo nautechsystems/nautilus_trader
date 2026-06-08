@@ -79,6 +79,7 @@ use datafusion::arrow::{
     record_batch::RecordBatch,
 };
 use futures::StreamExt;
+use indexmap::IndexSet;
 use itertools::Itertools;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{
@@ -1586,7 +1587,7 @@ impl ParquetDataCatalog {
             // Use directory-based registration for efficiency. DataFusion handles
             // reading all files in each directory, which is more memory-efficient
             // than registering many individual file tables.
-            let directories: HashSet<String> = files_list
+            let directories: IndexSet<String> = files_list
                 .iter()
                 .filter_map(|file_uri| {
                     // Extract directory path (everything except the filename)
@@ -1796,7 +1797,7 @@ impl ParquetDataCatalog {
         let mut all_records = Vec::new();
 
         if optimize_file_loading {
-            let directories: HashSet<String> = files_list
+            let directories: IndexSet<String> = files_list
                 .iter()
                 .filter_map(|file_uri| {
                     Path::new(file_uri)
@@ -2031,6 +2032,7 @@ impl ParquetDataCatalog {
                 }
             })
             .collect();
+        file_paths.sort();
 
         // Apply identifier filtering if provided
         if let Some(identifiers) = identifiers {

@@ -14,6 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Python bindings from `pyo3`.
+//!
+//! The Python v2 Polymarket boundary is configuration and factory registration.
+//! Provider, data, and execution operations stay in Rust. Add Python here only
+//! to expose Rust adapter types or register factories, not to run adapter logic.
 
 #![expect(
     clippy::missing_errors_doc,
@@ -34,6 +38,7 @@ use crate::{
     common::consts::POLYMARKET,
     config::{
         PolymarketDataClientConfig, PolymarketExecClientConfig, PolymarketInstrumentProviderConfig,
+        PolymarketUpDownEventSlugConfig,
     },
     data_types::{
         PolymarketRtdsCryptoPrice, PolymarketRtdsEquityPrice, register_polymarket_custom_data,
@@ -109,6 +114,25 @@ fn extract_string_map(
     Ok(map)
 }
 
+fn extract_event_slug_builder(
+    value: &Bound<'_, PyAny>,
+) -> PyResult<PolymarketUpDownEventSlugConfig> {
+    if let Ok(builder) = value.extract::<PolymarketUpDownEventSlugConfig>() {
+        return Ok(builder);
+    }
+
+    if value.extract::<String>().is_ok() {
+        return Err(to_pyvalue_err(
+            "Python callable event_slug_builder is not supported by the Rust Polymarket adapter; \
+             pass event_slugs, market_slugs, or PolymarketUpDownEventSlugConfig",
+        ));
+    }
+
+    Err(to_pyvalue_err(
+        "event_slug_builder must be PolymarketUpDownEventSlugConfig",
+    ))
+}
+
 fn extract_provider_config_from_pyobject(
     obj: &Bound<'_, PyAny>,
 ) -> PyResult<PolymarketInstrumentProviderConfig> {
@@ -134,7 +158,7 @@ fn extract_provider_config_from_pyobject(
         .map(|value| value.extract::<Vec<String>>())
         .transpose()?;
     let event_slug_builder = getattr_optional(obj, "event_slug_builder")?
-        .map(|value| value.extract::<String>())
+        .map(|value| extract_event_slug_builder(&value))
         .transpose()?;
     let log_warnings = getattr_optional(obj, "log_warnings")?
         .map(|value| value.extract::<bool>())
@@ -146,10 +170,7 @@ fn extract_provider_config_from_pyobject(
         .unwrap_or(default.use_gamma_markets);
 
     Ok(PolymarketInstrumentProviderConfig {
-        load_all: load_all
-            || event_slug_builder
-                .as_deref()
-                .is_some_and(|builder| !builder.trim().is_empty()),
+        load_all: load_all || event_slug_builder.is_some(),
         load_ids,
         filters,
         event_slugs,
@@ -335,6 +356,7 @@ fn extract_polymarket_exec_config(
 #[pymodule]
 pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::SignatureType>()?;
+    m.add_class::<PolymarketUpDownEventSlugConfig>()?;
     m.add_class::<PolymarketInstrumentProviderConfig>()?;
     m.add_class::<PolymarketDataClientConfig>()?;
     m.add_class::<PolymarketExecClientConfig>()?;
@@ -407,6 +429,7 @@ mod tests {
     use serde_json::json;
 
     use super::extract_data_config_from_pyobject;
+    use crate::config::PolymarketUpDownEventSlugConfig;
     use crate::data_types::{PolymarketRtdsCryptoPrice, register_polymarket_custom_data};
 
     #[rstest]
@@ -415,10 +438,20 @@ mod tests {
         Python::attach(|py| {
             let types = py.import("types").expect("types");
             let namespace = types.getattr("SimpleNamespace").expect("SimpleNamespace");
+            let event_slug_builder = Py::new(
+                py,
+                PolymarketUpDownEventSlugConfig {
+                    assets: vec!["btc".to_string(), "eth".to_string()],
+                    interval_mins: 5,
+                    periods: 2,
+                    start_offset_periods: 0,
+                },
+            )
+            .expect("event slug builder should convert to Python object");
 
             let instrument_kwargs = PyDict::new(py);
             instrument_kwargs
-                .set_item("event_slug_builder", "pkg.module:build_event_slugs")
+                .set_item("event_slug_builder", event_slug_builder)
                 .unwrap();
             instrument_kwargs
                 .set_item("event_slugs", vec!["event-a", "event-b"])
@@ -495,10 +528,16 @@ mod tests {
                 instrument_config.load_all,
                 "event_slug_builder should imply scoped load_all bootstrap"
             );
+            let event_slug_builder = instrument_config
+                .event_slug_builder
+                .expect("event_slug_builder should be extracted");
             assert_eq!(
-                instrument_config.event_slug_builder.as_deref(),
-                Some("pkg.module:build_event_slugs")
+                event_slug_builder.assets,
+                ["btc".to_string(), "eth".to_string()]
             );
+            assert_eq!(event_slug_builder.interval_mins, 5);
+            assert_eq!(event_slug_builder.periods, 2);
+            assert_eq!(event_slug_builder.start_offset_periods, 0);
             assert_eq!(
                 instrument_config.event_slugs.as_deref(),
                 Some(&["event-a".to_string(), "event-b".to_string()][..])
@@ -529,6 +568,39 @@ mod tests {
             assert_eq!(rust_config.resolve_poll_interval_secs, 45);
             assert_eq!(rust_config.resolve_poll_grace_secs, 12);
             assert_eq!(rust_config.resolve_poll_max_wait_secs, 2400);
+        });
+    }
+
+    #[rstest]
+    fn extract_data_config_rejects_python_callable_event_slug_builder() {
+        Python::initialize();
+        Python::attach(|py| {
+            let types = py.import("types").expect("types");
+            let namespace = types.getattr("SimpleNamespace").expect("SimpleNamespace");
+
+            let instrument_kwargs = PyDict::new(py);
+            instrument_kwargs
+                .set_item("event_slug_builder", "pkg.module:build_event_slugs")
+                .unwrap();
+            let instrument_config = namespace
+                .call((), Some(&instrument_kwargs))
+                .expect("instrument namespace");
+
+            let config_kwargs = PyDict::new(py);
+            config_kwargs
+                .set_item("instrument_config", instrument_config)
+                .unwrap();
+            let config_obj = namespace
+                .call((), Some(&config_kwargs))
+                .expect("config namespace");
+
+            let err = extract_data_config_from_pyobject(py, &config_obj.unbind())
+                .expect_err("Python callable event_slug_builder should be rejected");
+
+            assert!(
+                err.to_string()
+                    .contains("Python callable event_slug_builder is not supported")
+            );
         });
     }
 

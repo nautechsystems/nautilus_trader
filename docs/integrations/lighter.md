@@ -276,7 +276,7 @@ the strategy has subscribed to quotes is denied with a clear error. Override per
 | Option           | Perpetuals | Spot | Notes                                                                      |
 |------------------|------------|------|----------------------------------------------------------------------------|
 | `post_only`      | ✓          | ✓    | Maps to Lighter's post‑only time‑in‑force.                                 |
-| `reduce_only`    | ✓          | -    | Passed through to `CreateOrder`; use on derivatives only.                  |
+| `reduce_only`    | ✓          | -    | Passed through to `CreateOrder`; use only to reduce an existing position.  |
 | `quote_quantity` | -          | -    | *Not supported*; submit base quantity instead.                             |
 | `display_qty`    | -          | -    | *Not supported*; Lighter exposes no iceberg display quantity field.        |
 
@@ -318,12 +318,15 @@ also shown that very short GTD expiries can be rejected by the sequencer with
 
 ### Execution instructions
 
-| Instruction   | Perpetuals | Spot | Notes                                           |
-|---------------|------------|------|-------------------------------------------------|
-| `post_only`   | ✓          | ✓    | Overrides the TIF and sends Lighter `PostOnly`. |
-| `reduce_only` | ✓          | -    | Position‑reducing flag for derivatives.         |
+| Instruction   | Perpetuals | Spot | Notes                                                        |
+|---------------|------------|------|--------------------------------------------------------------|
+| `post_only`   | ✓          | ✓    | Overrides the TIF and sends Lighter `PostOnly`.              |
+| `reduce_only` | ✓          | -    | Position‑reducing flag for existing derivative positions.    |
 
 Use `post_only` on limit-style orders. The adapter does not synthesize maker-only market orders.
+Live mainnet testing confirms `reduce_only=true` for closing perpetual positions. Invalid
+reduce-only opens can be dropped by Lighter without a venue order report; the adapter reconciles
+them as `INFLIGHT_TIMEOUT` rather than a venue-supplied rejection reason.
 
 ### Advanced order features
 

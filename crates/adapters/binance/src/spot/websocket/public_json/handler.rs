@@ -32,10 +32,10 @@ use nautilus_network::{
 use ustr::Ustr;
 
 use super::messages::{
-    BinanceCombinedStreamEvent, BinanceSpotBookTickerMsg, BinanceSpotKlineMsg,
-    BinanceSpotPartialDepthMsg, BinanceSpotPartialDepthPayload, BinanceSpotPublicWsCommand,
-    BinanceSpotPublicWsMessage, BinanceSpotServerShutdownMsg, BinanceSpotTradeMsg,
-    BinanceSpotWsErrorResponse, BinanceSpotWsResponse, BinanceWsSubscription,
+    BinanceCombinedStreamEvent, BinanceSpotBookTickerMsg, BinanceSpotDepthDiffMsg,
+    BinanceSpotKlineMsg, BinanceSpotPartialDepthMsg, BinanceSpotPartialDepthPayload,
+    BinanceSpotPublicWsCommand, BinanceSpotPublicWsMessage, BinanceSpotServerShutdownMsg,
+    BinanceSpotTradeMsg, BinanceSpotWsErrorResponse, BinanceSpotWsResponse, BinanceWsSubscription,
 };
 use crate::common::{consts::BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION, enums::BinanceWsEventType};
 
@@ -315,6 +315,14 @@ impl BinanceSpotPublicWsHandler {
                 serde_json::from_value::<BinanceSpotBookTickerMsg>(payload)
                     .map(BinanceSpotPublicWsMessage::BookTicker)
                     .map_err(|e| log::warn!("Failed to parse Spot bookTicker: {e}"))
+                    .ok()
+                    .into_iter()
+                    .collect()
+            }
+            BinanceWsEventType::DepthUpdate => {
+                serde_json::from_value::<BinanceSpotDepthDiffMsg>(payload)
+                    .map(BinanceSpotPublicWsMessage::DepthDiff)
+                    .map_err(|e| log::warn!("Failed to parse Spot depthUpdate: {e}"))
                     .ok()
                     .into_iter()
                     .collect()

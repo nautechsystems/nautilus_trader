@@ -29,7 +29,7 @@ use nautilus_common::{
     clients::ExecutionClient,
     clock::{Clock, TestClock},
     messages::execution::{ModifyOrder, TradingCommand},
-    msgbus::{self, MessagingSwitchboard, switchboard},
+    msgbus::{self, MessagingSwitchboard, TypedHandler, switchboard},
 };
 use nautilus_core::{
     UUID4, UnixNanos,
@@ -254,6 +254,19 @@ impl SimulatedExchange {
     /// Registers the execution client for the exchange.
     pub fn register_client(&mut self, client: Rc<dyn ExecutionClient>) {
         self.exec_client = Some(client);
+    }
+
+    /// Registers the spread quote endpoint used by the data engine.
+    pub fn register_spread_quote_endpoint(exchange: &Rc<RefCell<Self>>) {
+        let venue = exchange.borrow().id;
+        let endpoint = format!("SimulatedExchange.process_new_quote.{venue}");
+        let handler_id = endpoint.clone();
+        let exchange = Rc::clone(exchange);
+        let handler = TypedHandler::from_with_id(handler_id, move |quote: &QuoteTick| {
+            exchange.borrow_mut().process_quote_tick(quote);
+        });
+
+        msgbus::register_quote_endpoint(endpoint.into(), handler);
     }
 
     /// Sets the fill model for the exchange.

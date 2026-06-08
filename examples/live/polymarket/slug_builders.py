@@ -14,11 +14,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Example slug builder functions for Polymarket event_slug_builder feature.
+Legacy slug builder functions for the Python Polymarket provider.
 
 These functions dynamically generate event slugs for niche markets with
 predictable naming patterns, allowing efficient loading without downloading
 all 151k+ markets.
+
+The Rust Python v2 adapter keeps provider logic in Rust and uses
+PolymarketUpDownEventSlugConfig for Up/Down event slug generation.
 
 Usage:
     In your PolymarketInstrumentProviderConfig:

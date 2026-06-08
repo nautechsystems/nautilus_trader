@@ -117,8 +117,6 @@ use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
 use nautilus_trading::{ExecutionAlgorithm, strategy::Strategy};
 use tabled::{Table, Tabled, settings::Style};
 
-#[cfg(feature = "plugin")]
-use crate::plugin::{NodePluginAdapter, NodePlugins, load_configured_plugin_batch};
 use crate::{
     builder::LiveNodeBuilder,
     config::{LiveNodeConfig, PluginConfig},
@@ -271,7 +269,7 @@ pub struct LiveNode {
     exec_clients: Vec<LiveExecutionClient>,
     shutdown_deadline: Option<dst::time::Instant>,
     #[cfg(feature = "plugin")]
-    plugins: NodePlugins,
+    plugins: crate::plugin::NodePlugins,
     #[cfg(feature = "python")]
     #[allow(dead_code)] // TODO: Under development
     python_actors: Vec<pyo3::Py<pyo3::PyAny>>,
@@ -298,7 +296,7 @@ impl LiveNode {
             exec_clients,
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
-            plugins: NodePlugins::default(),
+            plugins: crate::plugin::NodePlugins::default(),
             #[cfg(feature = "python")]
             python_actors: Vec::new(),
         }
@@ -371,7 +369,7 @@ impl LiveNode {
             exec_clients: Vec::new(),
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
-            plugins: NodePlugins::default(),
+            plugins: crate::plugin::NodePlugins::default(),
             #[cfg(feature = "python")]
             python_actors: Vec::new(),
         };
@@ -399,7 +397,9 @@ impl LiveNode {
             anyhow::bail!("Cannot load plug-ins after the node leaves Idle state");
         }
 
-        let (loader, adapters) = load_configured_plugin_batch(&configs)?.into_parts();
+        let (loader, adapters) =
+            crate::plugin::load_configured_plugin_batch(&configs)?.into_parts();
+
         for adapter in adapters {
             self.install_plugin_adapter(adapter)?;
         }
@@ -458,11 +458,14 @@ impl LiveNode {
     }
 
     #[cfg(feature = "plugin")]
-    fn install_plugin_adapter(&mut self, adapter: NodePluginAdapter) -> anyhow::Result<()> {
+    fn install_plugin_adapter(
+        &mut self,
+        adapter: crate::plugin::NodePluginAdapter,
+    ) -> anyhow::Result<()> {
         match adapter {
-            NodePluginAdapter::Actor(adapter) => self.add_actor(*adapter),
-            NodePluginAdapter::Strategy(adapter) => self.add_strategy(*adapter),
-            NodePluginAdapter::Controller(adapter) => {
+            crate::plugin::NodePluginAdapter::Actor(adapter) => self.add_actor(*adapter),
+            crate::plugin::NodePluginAdapter::Strategy(adapter) => self.add_strategy(*adapter),
+            crate::plugin::NodePluginAdapter::Controller(adapter) => {
                 self.plugins.push_controller(adapter);
                 Ok(())
             }
@@ -2779,7 +2782,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_flush_all_pending_drains_all_channel_types() {
+    fn test_flush_all_pending_drains_buffered_channels() {
         let (time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
         let (data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();

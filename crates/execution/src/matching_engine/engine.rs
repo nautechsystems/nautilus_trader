@@ -1132,20 +1132,6 @@ impl OrderMatchingEngine {
         quantity.raw.is_multiple_of(scale)
     }
 
-    fn quarter_bar_volume(volume: Quantity, size_increment: Quantity) -> (Quantity, Quantity) {
-        let precision_diff = FIXED_PRECISION.saturating_sub(volume.precision);
-        let scale = QuantityRaw::pow(10, u32::from(precision_diff));
-        let units = volume.raw / scale;
-        let quarter_units = units / 4;
-        let remainder_units = units % 4;
-        let quarter_raw = (quarter_units * scale).max(size_increment.raw);
-        let close_raw = ((quarter_units + remainder_units) * scale).max(size_increment.raw);
-        (
-            Quantity::from_raw(quarter_raw, volume.precision),
-            Quantity::from_raw(close_raw, volume.precision),
-        )
-    }
-
     fn normalize_price_for_current_instrument(&self, price: Price) -> Option<Price> {
         if !self.price_matches_current_instrument(price) {
             return None;
@@ -1523,9 +1509,7 @@ impl OrderMatchingEngine {
     }
 
     fn process_trade_ticks_from_bar(&mut self, bar: &Bar) {
-        // Split the bar into 4 trades at the volume's own precision scale
-        let (size, close_size) =
-            Self::quarter_bar_volume(bar.volume, self.instrument.size_increment());
+        let sizes = BarTickSizes::from_volume(bar.volume, self.instrument.size_increment());
 
         let aggressor_side = if self.core.last.is_none_or(|last| bar.open > last) {
             AggressorSide::Buyer
@@ -1533,10 +1517,126 @@ impl OrderMatchingEngine {
             AggressorSide::Seller
         };
 
-        // Create reusable trade tick
-        let mut trade_tick = TradeTick::new(
+        // Open: fill at market price (gap from previous bar)
+        if self.core.last.is_none() {
+            self.fill_at_market = true;
+
+            if !self.process_bar_trade_tick(
+                bar,
+                bar.open,
+                sizes.open,
+                aggressor_side,
+                "bar open trade tick",
+            ) {
+                return;
+            }
+            self.core.set_last_raw(bar.open);
+        } else if self.core.last.is_some_and(|last| bar.open != last) {
+            // Gap between previous close and this bar's open
+            self.fill_at_market = true;
+
+            if !self.process_bar_trade_tick(
+                bar,
+                bar.open,
+                sizes.open,
+                aggressor_side,
+                "bar gap-open trade tick",
+            ) {
+                return;
+            }
+            self.core.set_last_raw(bar.open);
+        }
+
+        // Determine high/low processing order.
+        // Default: O > H > L > C. With adaptive ordering, swap if low is closer to open.
+        let high_first = !self.config.bar_adaptive_high_low_ordering
+            || (bar.high.raw - bar.open.raw).abs() < (bar.low.raw - bar.open.raw).abs();
+
+        if high_first {
+            self.process_bar_high(bar, sizes.high);
+            self.process_bar_low(bar, sizes.low);
+        } else {
+            self.process_bar_low(bar, sizes.low);
+            self.process_bar_high(bar, sizes.high);
+        }
+
+        // Close: fill at trigger price (market moving through prices)
+        if self.core.last.is_some_and(|last| bar.close != last) {
+            self.fill_at_market = false;
+
+            let aggressor_side = if bar.close > self.core.last.unwrap() {
+                AggressorSide::Buyer
+            } else {
+                AggressorSide::Seller
+            };
+
+            if !self.process_bar_trade_tick(
+                bar,
+                bar.close,
+                sizes.close,
+                aggressor_side,
+                "bar close trade tick",
+            ) {
+                return;
+            }
+
+            self.core.set_last_raw(bar.close);
+        }
+
+        self.fill_at_market = true;
+    }
+
+    fn process_bar_high(&mut self, bar: &Bar, size: Quantity) {
+        if self.core.last.is_some_and(|last| bar.high > last) {
+            self.fill_at_market = false;
+
+            if !self.process_bar_trade_tick(
+                bar,
+                bar.high,
+                size,
+                AggressorSide::Buyer,
+                "bar high trade tick",
+            ) {
+                return;
+            }
+
+            self.core.set_last_raw(bar.high);
+        }
+    }
+
+    fn process_bar_low(&mut self, bar: &Bar, size: Quantity) {
+        if self.core.last.is_some_and(|last| bar.low < last) {
+            self.fill_at_market = false;
+
+            if !self.process_bar_trade_tick(
+                bar,
+                bar.low,
+                size,
+                AggressorSide::Seller,
+                "bar low trade tick",
+            ) {
+                return;
+            }
+
+            self.core.set_last_raw(bar.low);
+        }
+    }
+
+    fn process_bar_trade_tick(
+        &mut self,
+        bar: &Bar,
+        price: Price,
+        size: Quantity,
+        aggressor_side: AggressorSide,
+        context: &str,
+    ) -> bool {
+        if size.is_zero() {
+            return true;
+        }
+
+        let trade_tick = TradeTick::new(
             bar.instrument_id(),
-            bar.open,
+            price,
             size,
             aggressor_side,
             self.ids_generator.generate_trade_id(bar.ts_init),
@@ -1544,93 +1644,12 @@ impl OrderMatchingEngine {
             bar.ts_init,
         );
 
-        // Open: fill at market price (gap from previous bar)
-        if self.core.last.is_none() {
-            self.fill_at_market = true;
-
-            if !self.update_trade_tick_or_skip(&trade_tick, "bar open trade tick") {
-                return;
-            }
-            self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
-            self.core.set_last_raw(trade_tick.price);
-        } else if self.core.last.is_some_and(|last| bar.open != last) {
-            // Gap between previous close and this bar's open
-            self.fill_at_market = true;
-
-            if !self.update_trade_tick_or_skip(&trade_tick, "bar gap-open trade tick") {
-                return;
-            }
-            self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
-            self.core.set_last_raw(trade_tick.price);
+        if !self.update_trade_tick_or_skip(&trade_tick, context) {
+            return false;
         }
 
-        // Determine high/low processing order.
-        // Default: O→H→L→C. With adaptive ordering, swap if low is closer to open.
-        let high_first = !self.config.bar_adaptive_high_low_ordering
-            || (bar.high.raw - bar.open.raw).abs() < (bar.low.raw - bar.open.raw).abs();
-
-        if high_first {
-            self.process_bar_high(&mut trade_tick, bar);
-            self.process_bar_low(&mut trade_tick, bar);
-        } else {
-            self.process_bar_low(&mut trade_tick, bar);
-            self.process_bar_high(&mut trade_tick, bar);
-        }
-
-        // Close: fill at trigger price (market moving through prices)
-        if self.core.last.is_some_and(|last| bar.close != last) {
-            self.fill_at_market = false;
-            trade_tick.price = bar.close;
-            trade_tick.size = close_size;
-
-            if bar.close > self.core.last.unwrap() {
-                trade_tick.aggressor_side = AggressorSide::Buyer;
-            } else {
-                trade_tick.aggressor_side = AggressorSide::Seller;
-            }
-            trade_tick.trade_id = self.ids_generator.generate_trade_id(trade_tick.ts_init);
-
-            if !self.update_trade_tick_or_skip(&trade_tick, "bar close trade tick") {
-                return;
-            }
-            self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
-
-            self.core.set_last_raw(trade_tick.price);
-        }
-
-        self.fill_at_market = true;
-    }
-
-    fn process_bar_high(&mut self, trade_tick: &mut TradeTick, bar: &Bar) {
-        if self.core.last.is_some_and(|last| bar.high > last) {
-            self.fill_at_market = false;
-            trade_tick.price = bar.high;
-            trade_tick.aggressor_side = AggressorSide::Buyer;
-            trade_tick.trade_id = self.ids_generator.generate_trade_id(trade_tick.ts_init);
-
-            if !self.update_trade_tick_or_skip(trade_tick, "bar high trade tick") {
-                return;
-            }
-            self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
-
-            self.core.set_last_raw(trade_tick.price);
-        }
-    }
-
-    fn process_bar_low(&mut self, trade_tick: &mut TradeTick, bar: &Bar) {
-        if self.core.last.is_some_and(|last| bar.low < last) {
-            self.fill_at_market = false;
-            trade_tick.price = bar.low;
-            trade_tick.aggressor_side = AggressorSide::Seller;
-            trade_tick.trade_id = self.ids_generator.generate_trade_id(trade_tick.ts_init);
-
-            if !self.update_trade_tick_or_skip(trade_tick, "bar low trade tick") {
-                return;
-            }
-            self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
-
-            self.core.set_last_raw(trade_tick.price);
-        }
+        self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
+        true
     }
 
     fn process_quote_ticks_from_bar(&mut self) {
@@ -1644,18 +1663,18 @@ impl OrderMatchingEngine {
         let bid_bar = self.last_bar_bid.unwrap();
         let ask_bar = self.last_bar_ask.unwrap();
 
-        // Split each bar's volume into 4 quotes at its own precision scale
         let size_increment = self.instrument.size_increment();
-        let (bid_size, bid_close_size) = Self::quarter_bar_volume(bid_bar.volume, size_increment);
-        let (ask_size, ask_close_size) = Self::quarter_bar_volume(ask_bar.volume, size_increment);
+        let bid_sizes = BarTickSizes::from_volume(bid_bar.volume, size_increment);
+        let ask_sizes = BarTickSizes::from_volume(ask_bar.volume, size_increment);
+        let mut has_current_bid = false;
+        let mut has_current_ask = false;
 
-        // Create reusable quote tick
         let mut quote_tick = QuoteTick::new(
             self.book.instrument_id,
             bid_bar.open,
             ask_bar.open,
-            bid_size,
-            ask_size,
+            bid_sizes.open,
+            ask_sizes.open,
             bid_bar.ts_init,
             bid_bar.ts_init,
         );
@@ -1663,48 +1682,179 @@ impl OrderMatchingEngine {
         // Open: fill at market price (gap from previous bar)
         self.fill_at_market = true;
 
-        if !self.update_quote_tick_or_skip(&quote_tick, "bar open quote tick") {
+        if !self.process_bar_quote_tick(
+            &quote_tick,
+            "bar open quote tick",
+            &mut has_current_bid,
+            &mut has_current_ask,
+        ) {
             return;
         }
-        self.iterate(quote_tick.ts_init, AggressorSide::NoAggressor);
 
         // High: fill at trigger price (market moving through prices)
         self.fill_at_market = false;
         quote_tick.bid_price = bid_bar.high;
         quote_tick.ask_price = ask_bar.high;
+        quote_tick.bid_size = bid_sizes.high;
+        quote_tick.ask_size = ask_sizes.high;
 
-        if !self.update_quote_tick_or_skip(&quote_tick, "bar high quote tick") {
+        if !self.process_bar_quote_tick(
+            &quote_tick,
+            "bar high quote tick",
+            &mut has_current_bid,
+            &mut has_current_ask,
+        ) {
             return;
         }
-        self.iterate(quote_tick.ts_init, AggressorSide::NoAggressor);
 
         // Low: fill at trigger price (market moving through prices)
         self.fill_at_market = false;
         quote_tick.bid_price = bid_bar.low;
         quote_tick.ask_price = ask_bar.low;
+        quote_tick.bid_size = bid_sizes.low;
+        quote_tick.ask_size = ask_sizes.low;
 
-        if !self.update_quote_tick_or_skip(&quote_tick, "bar low quote tick") {
+        if !self.process_bar_quote_tick(
+            &quote_tick,
+            "bar low quote tick",
+            &mut has_current_bid,
+            &mut has_current_ask,
+        ) {
             return;
         }
-        self.iterate(quote_tick.ts_init, AggressorSide::NoAggressor);
 
         // Close: fill at trigger price (market moving through prices)
         self.fill_at_market = false;
         quote_tick.bid_price = bid_bar.close;
         quote_tick.ask_price = ask_bar.close;
-        quote_tick.bid_size = bid_close_size;
-        quote_tick.ask_size = ask_close_size;
+        quote_tick.bid_size = bid_sizes.close;
+        quote_tick.ask_size = ask_sizes.close;
 
-        if !self.update_quote_tick_or_skip(&quote_tick, "bar close quote tick") {
+        if !self.process_bar_quote_tick(
+            &quote_tick,
+            "bar close quote tick",
+            &mut has_current_bid,
+            &mut has_current_ask,
+        ) {
             return;
         }
-        self.last_quote_bid = Some(bid_bar.close);
-        self.last_quote_ask = Some(ask_bar.close);
-        self.iterate(quote_tick.ts_init, AggressorSide::NoAggressor);
 
         self.last_bar_bid = None;
         self.last_bar_ask = None;
         self.fill_at_market = true;
+    }
+
+    fn process_bar_quote_tick(
+        &mut self,
+        quote: &QuoteTick,
+        context: &str,
+        has_current_bid: &mut bool,
+        has_current_ask: &mut bool,
+    ) -> bool {
+        let has_bid_size = !quote.bid_size.is_zero();
+        let has_ask_size = !quote.ask_size.is_zero();
+        let mut book_changed = false;
+        let mut bid_cleared = false;
+        let mut ask_cleared = false;
+
+        match (has_bid_size, has_ask_size) {
+            (true, true) => {
+                if !self.update_quote_tick_or_skip(quote, context) {
+                    return false;
+                }
+                *has_current_bid = true;
+                *has_current_ask = true;
+                book_changed = true;
+            }
+            _ => {
+                if has_bid_size {
+                    self.update_bar_quote_bid(quote);
+                    *has_current_bid = true;
+                    book_changed = true;
+                } else if !*has_current_bid {
+                    self.clear_bar_quote_bid(quote);
+                    *has_current_bid = true;
+                    book_changed = true;
+                    bid_cleared = true;
+                }
+
+                if has_ask_size {
+                    self.update_bar_quote_ask(quote);
+                    *has_current_ask = true;
+                    book_changed = true;
+                } else if !*has_current_ask {
+                    self.clear_bar_quote_ask(quote);
+                    *has_current_ask = true;
+                    book_changed = true;
+                    ask_cleared = true;
+                }
+            }
+        }
+
+        if book_changed
+            && let (Some(best_bid), Some(best_ask)) =
+                (self.book.best_bid_price(), self.book.best_ask_price())
+            && best_bid > best_ask
+        {
+            if has_bid_size && !has_ask_size {
+                self.clear_bar_quote_ask(quote);
+                ask_cleared = true;
+            } else if has_ask_size && !has_bid_size {
+                self.clear_bar_quote_bid(quote);
+                bid_cleared = true;
+            }
+        }
+
+        if has_bid_size {
+            self.last_quote_bid = Some(quote.bid_price);
+        } else if bid_cleared {
+            self.last_quote_bid = None;
+        }
+
+        if has_ask_size {
+            self.last_quote_ask = Some(quote.ask_price);
+        } else if ask_cleared {
+            self.last_quote_ask = None;
+        }
+
+        if !book_changed {
+            return true;
+        }
+
+        self.iterate(quote.ts_init, AggressorSide::NoAggressor);
+        true
+    }
+
+    fn update_bar_quote_bid(&mut self, quote: &QuoteTick) {
+        let bid = BookOrder::new(
+            OrderSide::Buy,
+            quote.bid_price,
+            quote.bid_size,
+            OrderSide::Buy as u64,
+        );
+        self.book
+            .add(bid, 0, self.book.sequence.saturating_add(1), quote.ts_event);
+    }
+
+    fn clear_bar_quote_bid(&mut self, quote: &QuoteTick) {
+        self.book
+            .clear_bids(self.book.sequence.saturating_add(1), quote.ts_event);
+    }
+
+    fn update_bar_quote_ask(&mut self, quote: &QuoteTick) {
+        let ask = BookOrder::new(
+            OrderSide::Sell,
+            quote.ask_price,
+            quote.ask_size,
+            OrderSide::Sell as u64,
+        );
+        self.book
+            .add(ask, 0, self.book.sequence.saturating_add(1), quote.ts_event);
+    }
+
+    fn clear_bar_quote_ask(&mut self, quote: &QuoteTick) {
+        self.book
+            .clear_asks(self.book.sequence.saturating_add(1), quote.ts_event);
     }
 
     /// Processes a trade tick to update the market state.
@@ -5978,6 +6128,72 @@ impl OrderMatchingEngine {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct BarTickSizes {
+    open: Quantity,
+    high: Quantity,
+    low: Quantity,
+    close: Quantity,
+}
+
+impl BarTickSizes {
+    fn from_volume(volume: Quantity, size_increment: Quantity) -> Self {
+        let precision_diff = FIXED_PRECISION.saturating_sub(volume.precision);
+        let scale = QuantityRaw::pow(10, u32::from(precision_diff));
+        let units = volume.raw / scale;
+        let increment_units = (size_increment.raw / scale).max(1);
+        let rounded_units = (units / increment_units) * increment_units;
+        let increments = rounded_units / increment_units;
+        let zero = Quantity::zero(volume.precision);
+        let size =
+            |increments| Quantity::from_raw(increments * increment_units * scale, volume.precision);
+
+        match increments {
+            0 => Self {
+                open: zero,
+                high: zero,
+                low: zero,
+                close: zero,
+            },
+            // One increment cannot cover both high and low without exceeding the bar volume.
+            1 => Self {
+                open: zero,
+                high: zero,
+                low: zero,
+                close: size(1),
+            },
+            2 => Self {
+                open: zero,
+                high: size(1),
+                low: size(1),
+                close: zero,
+            },
+            3 => {
+                let path_size = size(1);
+
+                Self {
+                    open: path_size,
+                    high: path_size,
+                    low: path_size,
+                    close: zero,
+                }
+            }
+            _ => {
+                let path_increments = increments / 4;
+                let close_increments = increments - (path_increments * 3);
+                let path_size = size(path_increments);
+
+                Self {
+                    open: path_size,
+                    high: path_size,
+                    low: path_size,
+                    close: size(close_increments),
+                }
+            }
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -5986,85 +6202,127 @@ mod tests {
     use nautilus_model::types::{Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw};
     use rstest::rstest;
 
-    use super::OrderMatchingEngine;
+    use super::{BarTickSizes, OrderMatchingEngine};
 
-    /// Both outputs must be aligned to `volume.precision` (the matching engine
-    /// invariant the surrounding fix is designed to preserve).
-    fn assert_aligned(volume: Quantity, size_increment: Quantity) {
-        let (q, c) = OrderMatchingEngine::quarter_bar_volume(volume, size_increment);
-        assert_eq!(q.precision, volume.precision);
-        assert_eq!(c.precision, volume.precision);
-        assert!(
-            OrderMatchingEngine::quantity_matches_precision(q, volume.precision),
-            "open/high/low quantity {q} not aligned to precision {}",
-            volume.precision,
-        );
-        assert!(
-            OrderMatchingEngine::quantity_matches_precision(c, volume.precision),
-            "close quantity {c} not aligned to precision {}",
-            volume.precision,
-        );
+    fn assert_valid_bar_tick_sizes(volume: Quantity, size_increment: Quantity) {
+        let sizes = BarTickSizes::from_volume(volume, size_increment);
+        let total_raw = sizes.open.raw + sizes.high.raw + sizes.low.raw + sizes.close.raw;
+        assert!(total_raw <= volume.raw);
+
+        for quantity in [sizes.open, sizes.high, sizes.low, sizes.close] {
+            assert_eq!(quantity.precision, volume.precision);
+            assert!(
+                OrderMatchingEngine::quantity_matches_precision(quantity, volume.precision),
+                "bar tick quantity {quantity} not aligned to precision {}",
+                volume.precision,
+            );
+            assert!(
+                size_increment.raw == 0 || quantity.raw.is_multiple_of(size_increment.raw),
+                "bar tick quantity {quantity} not aligned to increment {size_increment}",
+            );
+        }
+
+        if size_increment.raw > 0 {
+            assert!(
+                volume.raw - total_raw < size_increment.raw,
+                "bar tick split left {} raw units from volume {volume} and increment {size_increment}",
+                volume.raw - total_raw,
+            );
+        }
     }
 
     #[rstest]
-    fn test_quarter_bar_volume_divisible() {
-        // precision=3, units=100_000 → exactly divisible by 4, no flooring.
+    fn test_bar_tick_sizes_divisible() {
+        // precision=3, units=100_000: exactly divisible by 4, no rounding.
         let volume = Quantity::from("100.000");
         let increment = Quantity::from("0.001");
-        let (q, c) = OrderMatchingEngine::quarter_bar_volume(volume, increment);
-        assert_eq!(q, Quantity::from("25.000"));
-        assert_eq!(c, Quantity::from("25.000"));
-        assert_aligned(volume, increment);
+        let sizes = BarTickSizes::from_volume(volume, increment);
+        assert_eq!(sizes.open, Quantity::from("25.000"));
+        assert_eq!(sizes.high, Quantity::from("25.000"));
+        assert_eq!(sizes.low, Quantity::from("25.000"));
+        assert_eq!(sizes.close, Quantity::from("25.000"));
+        assert_valid_bar_tick_sizes(volume, increment);
     }
 
     #[rstest]
-    fn test_quarter_bar_volume_indivisible_with_remainder() {
-        // precision=2, units=5 → quarter_units=1, remainder=1; close carries 2*scale.
+    fn test_bar_tick_sizes_indivisible_with_remainder() {
+        // precision=2, units=5: quarter_units=1, remainder=1; close carries 2 units.
         let volume = Quantity::from("0.05");
         let increment = Quantity::from("0.01");
-        let (q, c) = OrderMatchingEngine::quarter_bar_volume(volume, increment);
-        assert_eq!(q, Quantity::from("0.01"));
-        assert_eq!(c, Quantity::from("0.02"));
-        assert_aligned(volume, increment);
-        // Sanity: total volume preserved when units >= 4.
-        assert_eq!(q.raw * 3 + c.raw, volume.raw);
+        let sizes = BarTickSizes::from_volume(volume, increment);
+        assert_eq!(sizes.open, Quantity::from("0.01"));
+        assert_eq!(sizes.high, Quantity::from("0.01"));
+        assert_eq!(sizes.low, Quantity::from("0.01"));
+        assert_eq!(sizes.close, Quantity::from("0.02"));
+        assert_valid_bar_tick_sizes(volume, increment);
+        assert_eq!(
+            sizes.open.raw + sizes.high.raw + sizes.low.raw + sizes.close.raw,
+            volume.raw
+        );
     }
 
     #[rstest]
-    fn test_quarter_bar_volume_units_less_than_four_floors_to_size_increment() {
-        // precision=0, units=3 → quarter_units=0; floored to size_increment so the
-        // downstream `TradeTick::new(size)` invariant `size > 0` is upheld.
-        let volume = Quantity::from("3");
+    #[case("1", "0", "0", "0", "1")]
+    #[case("2", "0", "1", "1", "0")]
+    #[case("3", "1", "1", "1", "0")]
+    fn test_bar_tick_sizes_units_less_than_four_preserves_volume(
+        #[case] volume: &str,
+        #[case] open_size: &str,
+        #[case] high_size: &str,
+        #[case] low_size: &str,
+        #[case] close_size: &str,
+    ) {
+        let volume = Quantity::from(volume);
         let increment = Quantity::from("1");
-        let (q, c) = OrderMatchingEngine::quarter_bar_volume(volume, increment);
-        assert_eq!(q, Quantity::from("1"));
-        assert_eq!(c, Quantity::from("3"));
-        assert_aligned(volume, increment);
+        let sizes = BarTickSizes::from_volume(volume, increment);
+
+        assert_eq!(sizes.open, Quantity::from(open_size));
+        assert_eq!(sizes.high, Quantity::from(high_size));
+        assert_eq!(sizes.low, Quantity::from(low_size));
+        assert_eq!(sizes.close, Quantity::from(close_size));
+        assert_valid_bar_tick_sizes(volume, increment);
+        assert_eq!(
+            sizes.open.raw + sizes.high.raw + sizes.low.raw + sizes.close.raw,
+            volume.raw
+        );
     }
 
     #[rstest]
-    fn test_quarter_bar_volume_zero_volume_floors_to_size_increment() {
-        // Zero-volume bars are typically filtered upstream, but if one reaches the
-        // engine the floor still produces valid (positive-size) ticks rather than
-        // panicking via `TradeTick::new`.
+    fn test_bar_tick_sizes_zero_volume_remains_zero() {
         let volume = Quantity::zero(3);
         let increment = Quantity::from("0.001");
-        let (q, c) = OrderMatchingEngine::quarter_bar_volume(volume, increment);
-        assert_eq!(q, increment);
-        assert_eq!(c, increment);
-        assert_aligned(volume, increment);
+        let sizes = BarTickSizes::from_volume(volume, increment);
+        assert_eq!(sizes.open, Quantity::zero(3));
+        assert_eq!(sizes.high, Quantity::zero(3));
+        assert_eq!(sizes.low, Quantity::zero(3));
+        assert_eq!(sizes.close, Quantity::zero(3));
+        assert_valid_bar_tick_sizes(volume, increment);
     }
 
     #[rstest]
-    fn test_quarter_bar_volume_at_fixed_precision() {
+    fn test_bar_tick_sizes_rounds_down_to_size_increment() {
+        let volume = Quantity::from("1.07");
+        let increment = Quantity::from("0.10");
+        let sizes = BarTickSizes::from_volume(volume, increment);
+        assert_eq!(sizes.open, Quantity::from("0.20"));
+        assert_eq!(sizes.high, Quantity::from("0.20"));
+        assert_eq!(sizes.low, Quantity::from("0.20"));
+        assert_eq!(sizes.close, Quantity::from("0.40"));
+        assert_valid_bar_tick_sizes(volume, increment);
+    }
+
+    #[rstest]
+    fn test_bar_tick_sizes_at_fixed_precision() {
         // When volume.precision == FIXED_PRECISION the scale is 1 and the formula
-        // degenerates to a plain raw-space quartering. Asserts alignment + floor.
+        // degenerates to a plain raw-space quartering.
         let units: QuantityRaw = 17;
         let volume = Quantity::from_raw(units, FIXED_PRECISION);
         let increment = Quantity::from_raw(1, FIXED_PRECISION);
-        let (q, c) = OrderMatchingEngine::quarter_bar_volume(volume, increment);
-        assert_eq!(q.raw, 4);
-        assert_eq!(c.raw, 5);
-        assert_aligned(volume, increment);
+        let sizes = BarTickSizes::from_volume(volume, increment);
+        assert_eq!(sizes.open.raw, 4);
+        assert_eq!(sizes.high.raw, 4);
+        assert_eq!(sizes.low.raw, 4);
+        assert_eq!(sizes.close.raw, 5);
+        assert_valid_bar_tick_sizes(volume, increment);
     }
 }

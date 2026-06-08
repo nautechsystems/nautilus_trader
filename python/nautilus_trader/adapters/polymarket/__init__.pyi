@@ -13,6 +13,7 @@ __all__ = [
     "PolymarketInstrumentProviderConfig",
     "PolymarketRtdsCryptoPrice",
     "PolymarketRtdsEquityPrice",
+    "PolymarketUpDownEventSlugConfig",
     "SignatureType",
 ]
 
@@ -84,9 +85,19 @@ class PolymarketInstrumentProviderConfig:
         filters: typing.Mapping[str, str] | None = None,
         event_slugs: typing.Sequence[str] | None = None,
         market_slugs: typing.Sequence[str] | None = None,
-        event_slug_builder: str | None = None,
+        event_slug_builder: PolymarketUpDownEventSlugConfig | None = None,
         log_warnings: bool | None = None,
         use_gamma_markets: bool | None = None,
+    ) -> None: ...
+
+@typing.final
+class PolymarketUpDownEventSlugConfig:
+    def __init__(
+        self,
+        assets: typing.Sequence[str] | None = None,
+        interval_mins: int | None = None,
+        periods: int | None = None,
+        start_offset_periods: int | None = None,
     ) -> None: ...
 
 @typing.final

@@ -120,9 +120,9 @@ pub struct UniswapV3PoolContract {
 impl UniswapV3PoolContract {
     /// Creates a new UniswapV3Pool contract interface with the specified RPC client.
     #[must_use]
-    pub fn new(client: Arc<BlockchainHttpRpcClient>) -> Self {
+    pub fn new(client: Arc<BlockchainHttpRpcClient>, multicall_calls_per_rpc_request: u32) -> Self {
         Self {
-            base: BaseContract::new(client),
+            base: BaseContract::new_with_multicall_limit(client, multicall_calls_per_rpc_request),
         }
     }
 

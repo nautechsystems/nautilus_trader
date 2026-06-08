@@ -20,6 +20,7 @@ use crate::{
     common::enums::SignatureType,
     config::{
         PolymarketDataClientConfig, PolymarketExecClientConfig, PolymarketInstrumentProviderConfig,
+        PolymarketUpDownEventSlugConfig,
     },
 };
 
@@ -29,6 +30,41 @@ fn resolve_optional_u64_arg(value: Option<u64>, default: Option<u64>) -> Option<
     match value {
         Some(PY_OPTION_U64_MISSING_SENTINEL) => default,
         other => other,
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl PolymarketUpDownEventSlugConfig {
+    /// Rust-backed event slug builder for Polymarket Up/Down markets.
+    ///
+    /// Up/Down event slugs follow the pattern
+    /// `{asset}-updown-{interval_mins}m-{unix_timestamp}`, where the timestamp is
+    /// aligned to the start of the interval. The builder emits slugs for each
+    /// configured asset and period.
+    #[new]
+    #[pyo3(signature = (assets=None, interval_mins=None, periods=None, start_offset_periods=None))]
+    fn py_new(
+        assets: Option<Vec<String>>,
+        interval_mins: Option<u64>,
+        periods: Option<u64>,
+        start_offset_periods: Option<i64>,
+    ) -> Self {
+        let default = Self::default();
+        Self {
+            assets: assets.unwrap_or(default.assets),
+            interval_mins: interval_mins.unwrap_or(default.interval_mins),
+            periods: periods.unwrap_or(default.periods),
+            start_offset_periods: start_offset_periods.unwrap_or(default.start_offset_periods),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    fn __str__(&self) -> String {
+        format!("{self:?}")
     }
 }
 
@@ -48,7 +84,7 @@ impl PolymarketInstrumentProviderConfig {
         filters: Option<std::collections::HashMap<String, String>>,
         event_slugs: Option<Vec<String>>,
         market_slugs: Option<Vec<String>>,
-        event_slug_builder: Option<String>,
+        event_slug_builder: Option<PolymarketUpDownEventSlugConfig>,
         log_warnings: Option<bool>,
         use_gamma_markets: Option<bool>,
     ) -> Self {

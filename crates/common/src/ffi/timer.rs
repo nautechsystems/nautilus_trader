@@ -118,8 +118,8 @@ impl From<TimeEventHandler> for TimeEventHandler_API {
     /// since only Python callbacks are supported by `TimeEventHandler_API`.
     fn from(value: TimeEventHandler) -> Self {
         match value.callback {
-            TimeEventCallback::Python(callback_arc) => {
-                let raw_ptr = callback_arc.as_ptr().cast::<c_char>();
+            TimeEventCallback::Python(callback) => {
+                let raw_ptr = callback.callback().as_ptr().cast::<c_char>();
 
                 // Keep an explicit ref-count per raw pointer in the registry.
                 let key = raw_ptr as usize;
@@ -129,7 +129,7 @@ impl From<TimeEventHandler> for TimeEventHandler_API {
                         e.get_mut().1 += 1;
                     }
                     std::collections::hash_map::Entry::Vacant(e) => {
-                        e.insert((clone_py_object(&callback_arc), 1));
+                        e.insert((clone_py_object(callback.callback()), 1));
                     }
                 }
 

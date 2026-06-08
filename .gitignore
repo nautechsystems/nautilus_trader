@@ -130,6 +130,7 @@ env/
 !scripts/python-version.sh
 !scripts/regen-capnp.sh
 !scripts/rust-toolchain.sh
+!scripts/soak-network-turmoil.sh
 !scripts/test-coverage.sh
 !scripts/test-examples.sh
 !scripts/test-performance.sh

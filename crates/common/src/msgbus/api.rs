@@ -98,6 +98,15 @@ pub fn register_quote_endpoint(endpoint: MStr<Endpoint>, handler: TypedHandler<Q
         .register(endpoint, handler);
 }
 
+/// Returns whether a quote tick handler is registered for the given endpoint.
+#[must_use]
+pub fn has_quote_endpoint(endpoint: MStr<Endpoint>) -> bool {
+    get_message_bus()
+        .borrow()
+        .endpoints_quotes
+        .is_registered(endpoint)
+}
+
 /// Registers a trade tick handler at an endpoint.
 pub fn register_trade_endpoint(endpoint: MStr<Endpoint>, handler: TypedHandler<TradeTick>) {
     get_message_bus()
@@ -2410,6 +2419,19 @@ mod tests {
         clear_bus_tap();
 
         assert_eq!(tap.send_endpoints(), vec!["endpoint.send.quote.test"]);
+    }
+
+    #[rstest]
+    fn has_quote_endpoint_returns_registration_state() {
+        let _msgbus = get_message_bus();
+        let endpoint: MStr<Endpoint> = "endpoint.has.quote.registered".into();
+
+        assert!(!has_quote_endpoint(endpoint));
+
+        let handler = TypedHandler::from_with_id(endpoint, |_quote: &QuoteTick| {});
+        register_quote_endpoint(endpoint, handler);
+
+        assert!(has_quote_endpoint(endpoint));
     }
 
     #[rstest]

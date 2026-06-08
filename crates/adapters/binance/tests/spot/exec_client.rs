@@ -36,7 +36,10 @@ use axum::{
     routing::{delete, get, post},
 };
 use nautilus_binance::{
-    common::consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
+    common::consts::{
+        BINANCE_CLIENT_ID, BINANCE_STATUS_UNKNOWN_CODE, BINANCE_UNEXPECTED_RESPONSE_CODE,
+        BINANCE_VENUE,
+    },
     config::BinanceExecClientConfig,
     spot::{
         execution::BinanceSpotExecutionClient,
@@ -1288,6 +1291,45 @@ async fn test_ambiguous_submit_failure_does_not_emit_order_rejected() {
         .await;
 
     let client_order_id = ClientOrderId::new("ambiguous-submit-test-001");
+    let order_any = add_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::Rejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[case(
+    BINANCE_UNEXPECTED_RESPONSE_CODE,
+    "An unexpected response was received from the message bus"
+)]
+#[case(
+    BINANCE_STATUS_UNKNOWN_CODE,
+    "Timeout waiting for response from backend server"
+)]
+#[tokio::test]
+async fn test_unknown_status_submit_rejection_does_not_emit_order_rejected(
+    #[case] code: i64,
+    #[case] msg: &'static str,
+) {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: CommandResponse::VenueReject { code, msg },
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("status-unknown-submit-test-001");
     let order_any = add_limit_order_to_cache(&cache, client_order_id);
 
     client

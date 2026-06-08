@@ -35,7 +35,8 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use super::messages::{
-    BinanceSpotBookTickerMsg, BinanceSpotKlineMsg, BinanceSpotPartialDepthMsg, BinanceSpotTradeMsg,
+    BinanceSpotBookTickerMsg, BinanceSpotDepthDiffMsg, BinanceSpotKlineMsg,
+    BinanceSpotPartialDepthMsg, BinanceSpotTradeMsg,
 };
 use crate::common::{
     enums::BinanceKlineInterval,
@@ -202,6 +203,81 @@ pub fn parse_depth_snapshot(
     }
 
     Some(OrderBookDeltas::new(instrument_id, deltas))
+}
+
+/// Parses a depth diff message into `OrderBookDeltas`.
+///
+/// # Errors
+///
+/// Returns an error if any price or quantity update cannot be parsed.
+pub fn parse_depth_diff(
+    msg: &BinanceSpotDepthDiffMsg,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Option<OrderBookDeltas>> {
+    let instrument_id = instrument.id();
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
+    let sequence = msg.final_update_id;
+
+    let mut deltas = Vec::with_capacity(msg.bids.len() + msg.asks.len());
+
+    for (i, level) in msg.bids.iter().enumerate() {
+        let price = parse_positive_price(&level[0], price_precision, "bid price")?;
+        let size = parse_non_negative_quantity(&level[1], size_precision, "bid quantity")?;
+        let action = if size.is_zero() {
+            BookAction::Delete
+        } else {
+            BookAction::Update
+        };
+        let flags = if i == msg.bids.len() - 1 && msg.asks.is_empty() {
+            RecordFlag::F_LAST as u8
+        } else {
+            0
+        };
+
+        deltas.push(OrderBookDelta::new(
+            instrument_id,
+            action,
+            BookOrder::new(OrderSide::Buy, price, size, 0),
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        ));
+    }
+
+    for (i, level) in msg.asks.iter().enumerate() {
+        let price = parse_positive_price(&level[0], price_precision, "ask price")?;
+        let size = parse_non_negative_quantity(&level[1], size_precision, "ask quantity")?;
+        let action = if size.is_zero() {
+            BookAction::Delete
+        } else {
+            BookAction::Update
+        };
+        let flags = if i == msg.asks.len() - 1 {
+            RecordFlag::F_LAST as u8
+        } else {
+            0
+        };
+
+        deltas.push(OrderBookDelta::new(
+            instrument_id,
+            action,
+            BookOrder::new(OrderSide::Sell, price, size, 0),
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        ));
+    }
+
+    if deltas.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(OrderBookDeltas::new(instrument_id, deltas)))
 }
 
 fn interval_to_bar_spec(interval: BinanceKlineInterval) -> BarSpecification {
@@ -446,5 +522,46 @@ mod tests {
 
         let last = deltas.deltas.last().expect("at least one delta");
         assert_ne!(last.flags & RecordFlag::F_LAST as u8, 0);
+    }
+
+    #[rstest]
+    fn test_parse_depth_diff_sets_delete_actions_and_last_flag_on_final_ask() {
+        let instrument = sample_instrument();
+        let msg = BinanceSpotDepthDiffMsg {
+            event_type: "depthUpdate".to_string(),
+            event_time: 1_700_000_000_000,
+            symbol: Ustr::from("ETHUSDT"),
+            first_update_id: 10,
+            final_update_id: 12,
+            bids: vec![
+                ["100.00000000".to_string(), "1.00000000".to_string()],
+                ["99.00000000".to_string(), "0.00000000".to_string()],
+            ],
+            asks: vec![
+                ["101.00000000".to_string(), "2.00000000".to_string()],
+                ["102.00000000".to_string(), "0.00000000".to_string()],
+            ],
+        };
+
+        let deltas = parse_depth_diff(&msg, &instrument, UnixNanos::from(1))
+            .unwrap()
+            .expect("depth diff should produce deltas");
+
+        assert_eq!(deltas.sequence, 12);
+        assert_eq!(deltas.deltas.len(), 4);
+        assert_eq!(deltas.deltas[0].action, BookAction::Update);
+        assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[0].flags, 0);
+        assert_eq!(deltas.deltas[1].action, BookAction::Delete);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[1].order.size.as_decimal(), Decimal::ZERO);
+        assert_eq!(deltas.deltas[1].flags, 0);
+        assert_eq!(deltas.deltas[2].action, BookAction::Update);
+        assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[2].flags, 0);
+        assert_eq!(deltas.deltas[3].action, BookAction::Delete);
+        assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[3].order.size.as_decimal(), Decimal::ZERO);
+        assert_eq!(deltas.deltas[3].flags, RecordFlag::F_LAST as u8);
     }
 }

@@ -67,6 +67,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let exec_engine_config = LiveExecEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
+        // Example client order ID filtering for historical rows
+        filtered_client_order_ids: Some(vec![
+            "1793664468".to_string(),
+            "1062637805503".to_string(),
+        ]),
         ..Default::default()
     };
 

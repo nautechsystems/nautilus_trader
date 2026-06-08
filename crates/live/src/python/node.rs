@@ -61,6 +61,12 @@ use crate::{
     python::config::coerce_json_config,
 };
 
+struct SendPtr<T>(*mut T);
+
+// SAFETY: `py_run` has exclusive access to `LiveNode` through `&mut self`.
+#[allow(unsafe_code)]
+unsafe impl<T> Send for SendPtr<T> {}
+
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl LiveNode {
@@ -153,8 +159,7 @@ impl LiveNode {
         signal_module.call_method1("signal", (2, signal_callback))?;
 
         // Run the node and restore signal handler afterward
-        let result =
-            { get_runtime().block_on(async { self.run().await.map_err(to_pyruntime_err) }) };
+        let result = run_live_node_detached(py, self);
 
         // Restore original signal handler
         signal_module.call_method1("signal", (2, original_handler))?;
@@ -720,6 +725,22 @@ impl LiveNode {
             self.is_running()
         )
     }
+}
+
+#[allow(unsafe_code)]
+fn run_live_node_detached(py: Python<'_>, node: &mut LiveNode) -> PyResult<()> {
+    let node_ptr = SendPtr(std::ptr::from_mut::<LiveNode>(node));
+
+    // SAFETY: `py_run` holds the only mutable reference to `LiveNode` until
+    // `run()` returns, and the detached closure completes before `py_run` can
+    // access `node` again.
+    unsafe {
+        py.detach(move || {
+            let ptr = node_ptr;
+            get_runtime().block_on(async { (*ptr.0).run().await })
+        })
+    }
+    .map_err(to_pyruntime_err)
 }
 
 #[cfg(feature = "examples")]
@@ -1297,8 +1318,10 @@ mod tests {
         sync::{
             Arc,
             atomic::{AtomicBool, AtomicUsize, Ordering},
+            mpsc,
         },
-        time::Duration,
+        thread,
+        time::{Duration, Instant},
     };
 
     use async_trait::async_trait;
@@ -1326,7 +1349,6 @@ mod tests {
         Python,
         types::{PyAnyMethods, PyDict, PyModule, PyModuleMethods},
     };
-    #[cfg(feature = "examples")]
     use rstest::rstest;
 
     use super::LiveNode;
@@ -1588,6 +1610,131 @@ class HistoricalBarsStrategy(Strategy):
         (on_start, on_historical_bars, historical_bar_count)
     }
 
+    fn install_timer_strategy_module(py: Python<'_>, module_name: &str) {
+        let module = PyModule::new(py, module_name).expect("test module should create");
+        module
+            .setattr("Strategy", py.get_type::<PyStrategy>())
+            .expect("Strategy type should bind");
+        module
+            .setattr("RESULTS", PyDict::new(py))
+            .expect("RESULTS should bind");
+
+        let code = CString::new(
+            r#"
+RESULTS["on_start"] = 0
+RESULTS["callback_timer_count"] = 0
+RESULTS["default_timer_count"] = 0
+RESULTS["callback_event_type"] = ""
+RESULTS["default_event_type"] = ""
+RESULTS["callback_event_name"] = ""
+RESULTS["default_event_name"] = ""
+
+class LiveTimerStrategy(Strategy):
+    def __init__(self):
+        super().__init__()
+
+    def on_start(self):
+        RESULTS["on_start"] += 1
+        self.clock.set_timer_ns(
+            "explicit_timer",
+            1_000_000,
+            callback=self._on_timer,
+            fire_immediately=True,
+        )
+        self.clock.set_timer_ns(
+            "default_timer",
+            1_000_000,
+            fire_immediately=True,
+        )
+
+    def on_stop(self):
+        pass
+
+    def _on_timer(self, event):
+        RESULTS["callback_timer_count"] += 1
+        RESULTS["callback_event_type"] = type(event).__name__
+        RESULTS["callback_event_name"] = event.name
+
+    def on_time_event(self, event):
+        RESULTS["default_timer_count"] += 1
+        RESULTS["default_event_type"] = type(event).__name__
+        RESULTS["default_event_name"] = event.name
+"#,
+        )
+        .expect("python test code should be valid CString");
+
+        py.run(code.as_c_str(), Some(&module.dict()), None)
+            .expect("test strategy code should execute");
+
+        let sys_modules = py
+            .import("sys")
+            .expect("sys should import")
+            .getattr("modules")
+            .expect("sys.modules should exist");
+        sys_modules
+            .set_item(module_name, module)
+            .expect("test strategy module should register");
+    }
+
+    #[derive(Debug)]
+    struct TimerStrategyResults {
+        on_start: usize,
+        callback_timer_count: usize,
+        default_timer_count: usize,
+        callback_event_type: String,
+        default_event_type: String,
+        callback_event_name: String,
+        default_event_name: String,
+    }
+
+    fn get_timer_results(py: Python<'_>, module_name: &str) -> TimerStrategyResults {
+        let module = py
+            .import(module_name)
+            .expect("test strategy module should import");
+        let results_obj = module.getattr("RESULTS").expect("RESULTS should exist");
+        let results = results_obj
+            .cast::<PyDict>()
+            .expect("RESULTS should be a dict");
+
+        TimerStrategyResults {
+            on_start: results
+                .get_item("on_start")
+                .expect("on_start key should exist")
+                .extract::<usize>()
+                .expect("on_start should extract"),
+            callback_timer_count: results
+                .get_item("callback_timer_count")
+                .expect("callback_timer_count key should exist")
+                .extract::<usize>()
+                .expect("callback_timer_count should extract"),
+            default_timer_count: results
+                .get_item("default_timer_count")
+                .expect("default_timer_count key should exist")
+                .extract::<usize>()
+                .expect("default_timer_count should extract"),
+            callback_event_type: results
+                .get_item("callback_event_type")
+                .expect("callback_event_type key should exist")
+                .extract::<String>()
+                .expect("callback_event_type should extract"),
+            default_event_type: results
+                .get_item("default_event_type")
+                .expect("default_event_type key should exist")
+                .extract::<String>()
+                .expect("default_event_type should extract"),
+            callback_event_name: results
+                .get_item("callback_event_name")
+                .expect("callback_event_name key should exist")
+                .extract::<String>()
+                .expect("callback_event_name should extract"),
+            default_event_name: results
+                .get_item("default_event_name")
+                .expect("default_event_name key should exist")
+                .extract::<String>()
+                .expect("default_event_name should extract"),
+        }
+    }
+
     #[cfg(feature = "examples")]
     #[rstest]
     #[case("CompositeMarketMaker")]
@@ -1653,6 +1800,124 @@ class HistoricalBarsStrategy(Strategy):
 
             assert!(error.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
         });
+    }
+
+    #[rstest]
+    fn test_run_live_node_detached_releases_gil() {
+        Python::initialize();
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .build()
+            .unwrap();
+
+        let handle = node.handle();
+        let (gil_tx, gil_rx) = mpsc::channel();
+        let acquired_before_stop = Arc::new(AtomicBool::new(false));
+        let acquired_before_stop_for_thread = acquired_before_stop.clone();
+
+        let stop_thread = thread::spawn(move || {
+            if gil_rx.recv_timeout(Duration::from_secs(1)).is_ok() {
+                acquired_before_stop_for_thread.store(true, Ordering::SeqCst);
+            }
+            handle.stop();
+        });
+
+        let gil_thread = thread::spawn(move || {
+            Python::attach(|_| {});
+            let _ = gil_tx.send(());
+        });
+
+        Python::attach(|py| {
+            super::run_live_node_detached(py, &mut node).expect("node should run cleanly");
+        });
+
+        stop_thread.join().expect("stop thread should join");
+        gil_thread.join().expect("GIL thread should join");
+
+        assert!(
+            acquired_before_stop.load(Ordering::SeqCst),
+            "worker thread should acquire the GIL while LiveNode::run is blocked"
+        );
+    }
+
+    #[rstest]
+    fn test_live_node_pystrategy_timer_callbacks_run_on_event_loop() {
+        Python::initialize();
+
+        let module_name = "test_live_node_timer_strategy";
+        Python::attach(|py| install_timer_strategy_module(py, module_name));
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .build()
+            .unwrap();
+
+        let importable = ImportableStrategyConfig {
+            strategy_path: format!("{module_name}:LiveTimerStrategy"),
+            config_path: String::new(),
+            config: HashMap::new(),
+        };
+
+        Python::attach(|py| {
+            node.py_add_strategy_from_config(py, importable)
+                .expect("strategy should register");
+        });
+
+        let handle = node.handle();
+        let stop_handle = handle.clone();
+        let watchdog_handle = handle;
+        let (done_tx, done_rx) = mpsc::channel();
+        let module_name_for_stop = module_name.to_string();
+
+        let stop_thread = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+
+            loop {
+                let fired = Python::attach(|py| {
+                    let results = get_timer_results(py, &module_name_for_stop);
+                    results.callback_timer_count > 0 && results.default_timer_count > 0
+                });
+
+                if fired || Instant::now() >= deadline {
+                    break;
+                }
+
+                thread::sleep(Duration::from_millis(20));
+            }
+
+            stop_handle.stop();
+        });
+
+        let watchdog_thread = thread::spawn(move || {
+            if done_rx.recv_timeout(Duration::from_secs(5)).is_err() {
+                watchdog_handle.stop();
+            }
+        });
+
+        Python::attach(|py| {
+            super::run_live_node_detached(py, &mut node).expect("node should run cleanly");
+        });
+
+        let _ = done_tx.send(());
+        stop_thread.join().expect("stop thread should join");
+        watchdog_thread.join().expect("watchdog thread should join");
+
+        let results = Python::attach(|py| get_timer_results(py, module_name));
+
+        assert_eq!(results.on_start, 1);
+        assert!(results.callback_timer_count > 0);
+        assert!(results.default_timer_count > 0);
+        assert_eq!(results.callback_event_type, "TimeEvent");
+        assert_eq!(results.default_event_type, "TimeEvent");
+        assert_eq!(results.callback_event_name, "explicit_timer");
+        assert_eq!(results.default_event_name, "default_timer");
     }
 
     #[tokio::test(flavor = "current_thread")]

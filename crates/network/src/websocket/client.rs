@@ -80,7 +80,7 @@ use crate::{
     RECONNECTED,
     backoff::ExponentialBackoff,
     dst,
-    error::SendError,
+    error::{SendError, is_connection_drop_io_error},
     logging::{log_task_aborted, log_task_started, log_task_stopped},
     mode::ConnectionMode,
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
@@ -660,6 +660,42 @@ impl WebSocketClientInner {
     }
 }
 
+fn is_connection_drop_transport_error(err: &TransportError) -> bool {
+    err.is_closed() || matches!(err, TransportError::Io(e) if is_connection_drop_io_error(e))
+}
+
+#[cfg(test)]
+mod connection_error_tests {
+    use std::io;
+
+    use rstest::rstest;
+
+    use super::*;
+    use crate::transport::CloseFrame;
+
+    #[rstest]
+    #[case(TransportError::ConnectionClosed, true)]
+    #[case(TransportError::ConnectionReset, true)]
+    #[case(TransportError::ClosedByPeer(Some(CloseFrame::new(1000, "bye"))), true)]
+    #[case(
+        TransportError::Io(io::Error::from(io::ErrorKind::ConnectionReset)),
+        true
+    )]
+    #[case(
+        TransportError::Io(io::Error::from(io::ErrorKind::InvalidInput)),
+        false
+    )]
+    #[case(TransportError::Handshake("bad".into()), false)]
+    #[case(TransportError::Protocol("bad opcode".into()), false)]
+    #[case(TransportError::InvalidUtf8, false)]
+    fn connection_drop_transport_error_classification(
+        #[case] err: TransportError,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(is_connection_drop_transport_error(&err), expected);
+    }
+}
+
 /// Complete the WebSocket handshake over a stream that has already been
 /// tunneled through an HTTP `CONNECT` proxy. Generic over the concrete
 /// stream type so the four [`super::proxy::ProxiedStream`] variants share
@@ -975,7 +1011,11 @@ impl WebSocketClientInner {
                         break;
                     }
                     Ok(Some(Err(e))) => {
-                        log::error!("Received error message - terminating: {e}");
+                        if is_connection_drop_transport_error(&e) {
+                            log::warn!("Received connection error, terminating: {e}");
+                        } else {
+                            log::error!("Received transport error, terminating: {e}");
+                        }
                         break;
                     }
                     Ok(None) => {
@@ -1024,10 +1064,17 @@ impl WebSocketClientInner {
             let msg_to_send = buffered_msg.clone();
 
             if let Err(e) = writer.send(msg_to_send).await {
-                log::error!(
-                    "Failed to send buffered message after reconnection: {e}, {} messages remain in buffer",
-                    buffer.len()
-                );
+                if is_connection_drop_transport_error(&e) {
+                    log::warn!(
+                        "Failed to send buffered message after reconnection: {e}, {} messages remain in buffer",
+                        buffer.len()
+                    );
+                } else {
+                    log::error!(
+                        "Failed to send buffered message after reconnection: {e}, {} messages remain in buffer",
+                        buffer.len()
+                    );
+                }
                 send_error_occurred = true;
                 break; // Stop processing buffer, remaining messages preserved for next reconnection
             }
@@ -1191,7 +1238,11 @@ impl WebSocketClientInner {
                             }
                             WriterCommand::Send(msg) => {
                                 if let Err(e) = active_writer.send(msg.clone()).await {
-                                    log::error!("Failed to send message: {e}");
+                                    if is_connection_drop_transport_error(&e) {
+                                        log::warn!("Failed to send message: {e}");
+                                    } else {
+                                        log::error!("Failed to send message: {e}");
+                                    }
                                     log::warn!("Writer triggering reconnect");
                                     reconnect_buffer.push_back(msg);
 
@@ -4329,9 +4380,18 @@ mod turmoil_tests {
     use super::*;
     use crate::websocket::types::channel_message_handler;
 
+    const AUTH_BUFFER_WAIT_SEED: u64 = 0xA17B_0001;
+    const AUTH_BUFFER_DISCARD_SEED: u64 = 0xA17B_0002;
+
+    fn seeded_turmoil_builder(seed: u64) -> Builder {
+        let mut builder = Builder::new();
+        builder.rng_seed(seed);
+        builder
+    }
+
     #[rstest]
     fn test_turmoil_reconnect_buffer_waits_for_auth() {
-        let mut sim = Builder::new().build();
+        let mut sim = seeded_turmoil_builder(AUTH_BUFFER_WAIT_SEED).build();
         let messages = Arc::new(tokio::sync::Mutex::new(Vec::new()));
         let server_messages = Arc::clone(&messages);
 
@@ -4402,7 +4462,7 @@ mod turmoil_tests {
 
     #[rstest]
     fn test_turmoil_reconnect_buffer_discards_after_auth_failure() {
-        let mut sim = Builder::new().build();
+        let mut sim = seeded_turmoil_builder(AUTH_BUFFER_DISCARD_SEED).build();
         let messages = Arc::new(tokio::sync::Mutex::new(Vec::new()));
         let server_messages = Arc::clone(&messages);
 

@@ -254,6 +254,7 @@ impl BacktestEngine {
         let exchange =
             SimulatedExchange::new(config, self.kernel.cache.clone(), self.kernel.clock.clone())?;
         let exchange = Rc::new(RefCell::new(exchange));
+        SimulatedExchange::register_spread_quote_endpoint(&exchange);
         self.venues.insert(venue, exchange.clone());
 
         let account_id = AccountId::from(format!("{venue}-001").as_str());

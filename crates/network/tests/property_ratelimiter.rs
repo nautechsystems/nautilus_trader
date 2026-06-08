@@ -28,11 +28,149 @@
 
 use std::{num::NonZeroU32, time::Duration};
 
-use nautilus_network::ratelimiter::{RateLimiter, quota::Quota};
+use nautilus_network::ratelimiter::{RateLimiter, clock::FakeRelativeClock, quota::Quota};
 use proptest::prelude::*;
 use rstest::rstest;
 
+#[derive(Debug, Clone)]
+enum RateLimitOp {
+    Check(usize),
+    Advance(u64),
+}
+
+#[derive(Debug, Clone)]
+struct GcraReference {
+    now_ns: u128,
+    cell_ns: u128,
+    burst_ns: u128,
+    tat_by_key: Vec<Option<u128>>,
+}
+
+impl GcraReference {
+    fn new(quota: Quota, keys: usize) -> Self {
+        let cell_ns = quota.replenish_interval().as_nanos();
+        let burst_ns = cell_ns * u128::from(quota.burst_size().get());
+        Self {
+            now_ns: 0,
+            cell_ns,
+            burst_ns,
+            tat_by_key: vec![None; keys],
+        }
+    }
+
+    fn advance(&mut self, millis: u64) {
+        self.now_ns += Duration::from_millis(millis).as_nanos();
+    }
+
+    fn check(&mut self, key_index: usize) -> bool {
+        let tat = self.tat_by_key[key_index].unwrap_or(self.now_ns + self.cell_ns);
+        let earliest_time = tat.saturating_sub(self.burst_ns);
+
+        if self.now_ns < earliest_time {
+            false
+        } else {
+            self.tat_by_key[key_index] = Some(tat.max(self.now_ns) + self.cell_ns);
+            true
+        }
+    }
+}
+
+fn rate_limit_op_strategy() -> impl Strategy<Value = RateLimitOp> {
+    prop_oneof![
+        (0usize..5).prop_map(RateLimitOp::Check),
+        (0u64..=2_000).prop_map(RateLimitOp::Advance),
+    ]
+}
+
 proptest! {
+    /// Property: exact GCRA decisions match a reference model under deterministic time.
+    #[rstest]
+    fn rate_limiter_matches_reference_trace(
+        rate in 1u32..=20u32,
+        key_count in 1usize..=5,
+        ops in proptest::collection::vec(rate_limit_op_strategy(), 1..120)
+    ) {
+        let quota = Quota::per_second(NonZeroU32::new(rate).unwrap()).unwrap();
+        let clock = FakeRelativeClock::default();
+        let rate_limiter = RateLimiter::new_with_clock(Some(quota), vec![], clock);
+        let keys = (0..key_count)
+            .map(|index| format!("key-{index}"))
+            .collect::<Vec<_>>();
+        let mut reference = GcraReference::new(quota, key_count);
+
+        for (step, op) in ops.iter().enumerate() {
+            match *op {
+                RateLimitOp::Check(raw_key_index) => {
+                    let key_index = raw_key_index % key_count;
+                    let actual = rate_limiter.check_key(&keys[key_index]).is_ok();
+                    let expected = reference.check(key_index);
+                    prop_assert_eq!(
+                        actual,
+                        expected,
+                        "GCRA decision mismatch at step {}, op {:?}, rate={}, key_count={}",
+                        step,
+                        op,
+                        rate,
+                        key_count
+                    );
+                }
+                RateLimitOp::Advance(millis) => {
+                    rate_limiter.advance_clock(Duration::from_millis(millis));
+                    reference.advance(millis);
+                }
+            }
+        }
+    }
+
+    /// Property: keyed quotas override the default quota under deterministic time.
+    #[rstest]
+    fn rate_limiter_keyed_quota_overrides_default_trace(
+        default_rate in 1u32..=20u32,
+        keyed_rate_offset in 1u32..20u32,
+        ops in proptest::collection::vec(rate_limit_op_strategy(), 1..120)
+    ) {
+        let keyed_rate = 1 + ((default_rate + keyed_rate_offset - 1) % 20);
+        let default_quota = Quota::per_second(NonZeroU32::new(default_rate).unwrap()).unwrap();
+        let keyed_quota = Quota::per_second(NonZeroU32::new(keyed_rate).unwrap()).unwrap();
+        let clock = FakeRelativeClock::default();
+        let default_key = "default-key".to_string();
+        let keyed_key = "keyed-key".to_string();
+        let rate_limiter = RateLimiter::new_with_clock(
+            Some(default_quota),
+            vec![(keyed_key.clone(), keyed_quota)],
+            clock,
+        );
+        let mut default_reference = GcraReference::new(default_quota, 1);
+        let mut keyed_reference = GcraReference::new(keyed_quota, 1);
+
+        for (step, op) in ops.iter().enumerate() {
+            match *op {
+                RateLimitOp::Check(raw_key_index) => {
+                    let (key, reference, rate) = if raw_key_index % 2 == 0 {
+                        (&keyed_key, &mut keyed_reference, keyed_rate)
+                    } else {
+                        (&default_key, &mut default_reference, default_rate)
+                    };
+                    let actual = rate_limiter.check_key(key).is_ok();
+                    let expected = reference.check(0);
+                    prop_assert_eq!(
+                        actual,
+                        expected,
+                        "GCRA override mismatch at step {}, op {:?}, rate={}",
+                        step,
+                        op,
+                        rate
+                    );
+                }
+                RateLimitOp::Advance(millis) => {
+                    rate_limiter.advance_clock(Duration::from_millis(millis));
+                    default_reference.advance(millis);
+                    keyed_reference.advance(millis);
+                }
+            }
+        }
+    }
+
     /// Property: Rate limiter should never allow more requests than quota permits initially.
     #[rstest]
     fn rate_limiter_respects_quota_bounds(

@@ -133,6 +133,12 @@ criteria = "safe-to-deploy"
 delta = "2.11.1 -> 2.12.1"
 notes = "Adds bitflags flag_name support and all_named flag aggregation. Macro changes and tests reviewed; no new dependencies, build script, filesystem, network, or unsafe code."
 
+[[audits.bitflags]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.12.1 -> 2.13.0"
+notes = "Adds IterEqualNames and iter_equal_names for exact flag-value names, plus tests and docs. No new dependencies, build script, filesystem, network, or unsafe code changes; existing bytemuck unsafe impl macro is unchanged."
+
 [[audits.borsh]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -183,6 +189,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.25.2 -> 0.25.3"
 notes = "pub -> pub(crate) visibility narrowing in generated code and codegen internals. No logic changes, no new unsafe."
+
+[[audits.chrono]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.44 -> 0.4.45"
+notes = "Expands Android tzdata path lookup and rejects POSIX TZ offsets whose hour is 24 so they fit FixedOffset. Reviewed touched local-time files; no new network, process, or build-script behavior. Existing filesystem and env access remains limited to local timezone discovery."
 
 [[audits.cmake]]
 who = "Chris Sellers <chris@cjdsellers.io>"
@@ -309,6 +321,12 @@ criteria = "safe-to-deploy"
 delta = "2.4.0 -> 2.4.1"
 notes = "JS feature build fix, getrandom::getrandom renamed to getrandom::fill."
 
+[[audits.hashlink]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.11.0 -> 0.11.1"
+notes = "Fixes retain removal to match nodes by pointer identity and makes unsafe value-node dropping panic-safe. Reviewed unsafe linked-list delta; no new dependencies, build script, filesystem, or network behavior."
+
 [[audits.hyper]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -350,6 +368,12 @@ criteria = "safe-to-deploy"
 delta = "0.4.30 -> 0.4.31"
 notes = "Adds static string handling for structured log keys and macro plumbing, plus documentation updates. No new dependencies, build script, filesystem, network, or unsafe code."
 
+[[audits.log]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.31 -> 0.4.32"
+notes = "Moves structured Value standard-library conversions under the std feature while keeping to_cow_str gated by kv_std. No new dependencies, build script, filesystem, network, or unsafe code changes."
+
 [[audits.lz4_flex]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -367,6 +391,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.7.5 -> 0.7.6"
 notes = "Adds byte literal (Lit::Byte) support for enum discriminants"
+
+[[audits.papergrid]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.17.0 -> 0.18.0"
+notes = "Fixes vertical border rendering when a cell is covered by both row and column spans, and derives extra traits for EntityIterator. No new dependencies, build script, filesystem, network, or unsafe code changes."
 
 [[audits.portable-atomic-util]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -422,6 +452,18 @@ criteria = "safe-to-deploy"
 delta = "1.1.0 -> 1.1.1"
 notes = "Version bump only: serde_core dep 1.0.225 -> 1.0.228"
 
+[[audits.serde_with]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "3.20.0 -> 3.21.0"
+notes = "Adds cautious capacity sizing for deserialized collections, NoneAsZero support for NonZero types, and smallvec/schema refactors. Existing MaybeUninit array utility is unchanged; no new build script, filesystem, network, or process behavior."
+
+[[audits.serde_with_macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "3.20.0 -> 3.21.0"
+notes = "Proc-macro crate remains forbid(unsafe_code). Delta is doc URL updates, example docs, and Result::err cleanup. No new dependencies, build script, filesystem, network, or process behavior."
+
 [[audits.sysinfo]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -439,6 +481,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.39.2 -> 0.39.3"
 notes = "Two bug fixes: Unix Network::mac_addr retrieval; Linux process-info retrieval race when a process terminates mid-read."
+
+[[audits.tabled]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.20.0 -> 0.21.0"
+notes = "Adds Settings::modify, Color::is_empty, ColumnNames padding and RowNames split, LineText limit support, and table rendering fixes. Removes TabSize and adjusts Charset APIs. No new dependencies, build script, filesystem, network, process, or production unsafe code."
 
 [[audits.tempfile]]
 who = "Chris Sellers <chris@cjdsellers.io>"

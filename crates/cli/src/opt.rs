@@ -115,7 +115,7 @@ pub enum BlockchainCommand {
         /// Reset sync progress and start from the beginning, ignoring last synced block
         #[arg(long)]
         reset: bool,
-        /// Maximum number of Multicall calls per RPC request (optional, defaults to 100)
+        /// Maximum number of Multicall calls per RPC request (optional, defaults to 200)
         #[arg(long)]
         multicall_calls_per_rpc_request: Option<u32>,
         /// Database configuration options
@@ -145,11 +145,132 @@ pub enum BlockchainCommand {
         /// Reset sync progress and start from the beginning, ignoring last synced block
         #[arg(long)]
         reset: bool,
-        /// Maximum number of Multicall calls per RPC request (optional, defaults to 100)
+        /// Maximum number of Multicall calls per RPC request (optional, defaults to 200)
         #[arg(long)]
         multicall_calls_per_rpc_request: Option<u32>,
         /// Database configuration options
         #[clap(flatten)]
         database: DatabaseConfig,
     },
+    /// Analyze several DEX pools in one runtime.
+    AnalyzePools {
+        /// The blockchain chain name (case-insensitive). Examples: ethereum, arbitrum, base, polygon, bsc
+        #[arg(long)]
+        chain: String,
+        /// The DEX name (case-insensitive). Examples: UniswapV3, uniswapv3, SushiSwapV2, PancakeSwapV3
+        #[arg(long)]
+        dex: String,
+        /// Pool contract address. Can be repeated.
+        #[arg(long = "address")]
+        addresses: Vec<String>,
+        /// File containing one pool contract address per line. Empty lines and comment lines are ignored.
+        #[arg(long)]
+        addresses_file: Option<String>,
+        /// Starting block number to sync from (optional)
+        #[arg(long)]
+        from_block: Option<u64>,
+        /// Ending block number to sync to (optional, defaults to current chain head)
+        #[arg(long)]
+        to_block: Option<u64>,
+        /// RPC HTTP URL for blockchain calls (optional, falls back to RPC_HTTP_URL env var)
+        #[arg(long)]
+        rpc_url: Option<String>,
+        /// Reset sync progress and start from the beginning, ignoring last synced block
+        #[arg(long)]
+        reset: bool,
+        /// Maximum number of Multicall calls per RPC request (optional, defaults to 200)
+        #[arg(long)]
+        multicall_calls_per_rpc_request: Option<u32>,
+        /// Database configuration options
+        #[clap(flatten)]
+        database: DatabaseConfig,
+    },
+}
+
+#[cfg(all(test, feature = "defi"))]
+mod tests {
+    use clap::Parser;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn analyze_pools_cli_parses_repeated_addresses_file_and_shared_options() {
+        let cli = NautilusCli::try_parse_from([
+            "nautilus",
+            "blockchain",
+            "analyze-pools",
+            "--chain",
+            "ethereum",
+            "--dex",
+            "UniswapV3",
+            "--address",
+            "0x1111111111111111111111111111111111111111",
+            "--address",
+            "0x2222222222222222222222222222222222222222",
+            "--addresses-file",
+            "/tmp/pools.txt",
+            "--from-block",
+            "100",
+            "--to-block",
+            "200",
+            "--rpc-url",
+            "http://localhost:8545",
+            "--reset",
+            "--multicall-calls-per-rpc-request",
+            "25",
+            "--host",
+            "localhost",
+            "--port",
+            "5433",
+            "--username",
+            "postgres",
+            "--database",
+            "nautilus",
+            "--password",
+            "secret",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Commands::Blockchain(BlockchainOpt {
+                command:
+                    BlockchainCommand::AnalyzePools {
+                        chain,
+                        dex,
+                        addresses,
+                        addresses_file,
+                        from_block,
+                        to_block,
+                        rpc_url,
+                        reset,
+                        multicall_calls_per_rpc_request,
+                        database,
+                    },
+            }) => {
+                assert_eq!(chain, "ethereum");
+                assert_eq!(dex, "UniswapV3");
+                assert_eq!(
+                    addresses,
+                    vec![
+                        "0x1111111111111111111111111111111111111111".to_string(),
+                        "0x2222222222222222222222222222222222222222".to_string(),
+                    ]
+                );
+                assert_eq!(addresses_file.as_deref(), Some("/tmp/pools.txt"));
+                assert_eq!(from_block, Some(100));
+                assert_eq!(to_block, Some(200));
+                assert_eq!(rpc_url.as_deref(), Some("http://localhost:8545"));
+                assert!(reset);
+                assert_eq!(multicall_calls_per_rpc_request, Some(25));
+                assert_eq!(database.host.as_deref(), Some("localhost"));
+                assert_eq!(database.port, Some(5433));
+                assert_eq!(database.username.as_deref(), Some("postgres"));
+                assert_eq!(database.database.as_deref(), Some("nautilus"));
+                assert_eq!(database.password.as_deref(), Some("secret"));
+                assert_eq!(database.schema, None);
+            }
+            _ => panic!("Expected analyze-pools blockchain command"),
+        }
+    }
 }

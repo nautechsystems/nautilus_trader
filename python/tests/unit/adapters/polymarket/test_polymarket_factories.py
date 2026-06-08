@@ -38,8 +38,14 @@ SMOKE_API_KEY = "test_api_key"
 SMOKE_API_SECRET = base64.urlsafe_b64encode(b"test_secret").decode()
 SMOKE_PASSPHRASE = "test_passphrase"
 SMOKE_FUNDER = "0x0000000000000000000000000000000000000000"
+UPDOWN_FIXTURE_INSTRUMENT = (
+    "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b-"
+    "104239898038807136052399800151408521467737075933964991162589336683346093173875."
+    f"{POLYMARKET}"
+)
 polymarket_data_tester = load_example_module("polymarket", "data_tester")
 polymarket_exec_tester = load_example_module("polymarket", "exec_tester")
+polymarket_updown_smoke_tester = load_example_module("polymarket", "updown_smoke_tester")
 
 
 def test_polymarket_factories_expose_python_names() -> None:
@@ -139,3 +145,91 @@ def test_polymarket_exec_tester_gates_live_orders(
     assert kwargs["enable_stop_buys"] is False
     assert kwargs["enable_stop_sells"] is False
     assert "run_called" not in captured
+
+
+def test_polymarket_updown_smoke_tester_uses_event_slug_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = capture_exec_tester_main(
+        monkeypatch,
+        polymarket_updown_smoke_tester,
+        ["--instrument", UPDOWN_FIXTURE_INSTRUMENT],
+    )
+    data_client_config = captured["data_client_args"][2]
+    exec_kwargs = captured["exec_tester_kwargs"]
+
+    assert "event_slug_builder: Some" in repr(data_client_config)
+    assert 'assets: ["btc"]' in repr(data_client_config)
+    assert exec_kwargs["dry_run"] is True
+    assert exec_kwargs["enable_limit_buys"] is False
+    assert exec_kwargs["enable_limit_sells"] is False
+    assert exec_kwargs["open_position_on_start_qty"] is None
+    assert exec_kwargs["open_position_on_first_quote"] is False
+    assert "run_called" not in captured
+
+
+def test_polymarket_updown_smoke_tester_live_orders_are_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = capture_exec_tester_main(
+        monkeypatch,
+        polymarket_updown_smoke_tester,
+        [
+            "--instrument",
+            UPDOWN_FIXTURE_INSTRUMENT,
+            "--live-orders",
+            "--limit-sells",
+        ],
+    )
+    exec_kwargs = captured["exec_tester_kwargs"]
+
+    assert exec_kwargs["dry_run"] is False
+    assert exec_kwargs["enable_limit_buys"] is True
+    assert exec_kwargs["enable_limit_sells"] is True
+    assert exec_kwargs["open_position_on_start_qty"] is not None
+    assert exec_kwargs["open_position_on_first_quote"] is True
+    assert exec_kwargs["cancel_orders_on_stop"] is True
+    assert exec_kwargs["close_positions_on_stop"] is True
+    assert "run_called" not in captured
+
+
+def test_polymarket_updown_smoke_tester_builds_aligned_slugs() -> None:
+    slugs = polymarket_updown_smoke_tester.build_updown_event_slugs(
+        assets=["BTC", " eth ", "btc"],
+        interval_mins=5,
+        periods=2,
+        start_offset_periods=0,
+        unix_secs=1_700_000_000,
+    )
+
+    assert slugs == [
+        "btc-updown-5m-1699999800",
+        "eth-updown-5m-1699999800",
+        "btc-updown-5m-1700000100",
+        "eth-updown-5m-1700000100",
+    ]
+
+
+def test_polymarket_updown_smoke_tester_finds_outcome_token() -> None:
+    events = [
+        {
+            "markets": [
+                {
+                    "conditionId": "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b",
+                    "active": True,
+                    "closed": False,
+                    "acceptingOrders": True,
+                    "enableOrderBook": True,
+                    "outcomes": '["Up", "Down"]',
+                    "clobTokenIds": '["111", "222"]',
+                },
+            ],
+        },
+    ]
+
+    instrument_id = polymarket_updown_smoke_tester.find_updown_instrument_id(events, "down")
+
+    assert (
+        str(instrument_id)
+        == "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b-222.POLYMARKET"
+    )

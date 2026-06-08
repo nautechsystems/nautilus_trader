@@ -992,6 +992,11 @@ fn test_rust_query_files_with_multiple_files() {
         .unwrap();
 
     assert_eq!(files.len(), 3);
+    assert_eq!(files, {
+        let mut sorted = files.clone();
+        sorted.sort();
+        sorted
+    });
 }
 
 #[rstest]
@@ -3137,6 +3142,41 @@ fn test_query_directory_based_registration() {
 
     // Verify data is properly ordered
     assert!(is_monotonically_increasing_by_init(&data));
+}
+
+#[rstest]
+fn test_query_directory_based_registration_preserves_equal_timestamp_order() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+    catalog
+        .write_to_parquet(
+            create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 1000, 1),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    catalog
+        .write_to_parquet(
+            create_quote_ticks_for_instrument("AUD/USD.SIM", 1000, 1),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+    let result = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    let instrument_ids: Vec<String> = result
+        .map(|data| match data {
+            Data::Quote(quote) => quote.instrument_id.to_string(),
+            _ => panic!("Invalid test"),
+        })
+        .collect();
+
+    assert_eq!(instrument_ids, vec!["AUD/USD.SIM", "ETH/USDT.BINANCE"]);
 }
 
 #[rstest]

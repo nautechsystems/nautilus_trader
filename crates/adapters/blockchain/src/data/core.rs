@@ -125,6 +125,7 @@ impl BlockchainDataClientCore {
             config.rpc_requests_per_second,
             config.proxy_url.clone(),
         ));
+        let multicall_calls_per_rpc_request = config.multicall_calls_per_rpc_request;
         let erc20_contract = Erc20Contract::new(
             http_rpc_client.clone(),
             config.pool_filters.remove_pools_with_empty_erc20fields,
@@ -137,7 +138,10 @@ impl BlockchainDataClientCore {
             config,
             rpc_client,
             tokens: erc20_contract,
-            univ3_pool: UniswapV3PoolContract::new(http_rpc_client),
+            univ3_pool: UniswapV3PoolContract::new(
+                http_rpc_client,
+                multicall_calls_per_rpc_request,
+            ),
             cache,
             hypersync_client,
             subscription_manager: DefiDataSubscriptionManager::new(),

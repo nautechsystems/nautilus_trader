@@ -21,6 +21,7 @@ use std::{
         Arc, RwLock,
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
+    time::Duration,
 };
 
 use ahash::AHashMap;
@@ -97,6 +98,11 @@ use crate::{
         },
     },
 };
+
+const MAX_SNAPSHOT_RETRIES: u32 = 5;
+const MAX_BUFFERED_DEPTH_UPDATES: usize = 10_000;
+const SNAPSHOT_RETRY_BACKOFF_BASE_MS: u64 = 250;
+const SNAPSHOT_RETRY_BACKOFF_CAP_MS: u64 = 3_000;
 
 #[derive(Debug, Clone)]
 struct BufferedDepthUpdate {
@@ -515,6 +521,7 @@ impl BinanceFuturesDataClient {
                                             final_update_id,
                                             prev_final_update_id,
                                         });
+                                        trim_buffered_depth_updates(&mut buffer.updates);
                                         was_buffered = true;
                                     }
                                 });
@@ -744,7 +751,12 @@ impl BinanceFuturesDataClient {
         clock: &'static AtomicTime,
         retry_count: u32,
     ) {
-        const MAX_RETRIES: u32 = 3;
+        if wait_for_buffered_update(&buffers, instrument_id, epoch)
+            .await
+            .is_none()
+        {
+            return;
+        }
 
         let symbol = format_binance_stream_symbol(&instrument_id).to_uppercase();
         let params = BinanceDepthParams {
@@ -793,65 +805,57 @@ impl BinanceFuturesDataClient {
                     }
                 };
 
-                // Validate first applicable update per Binance spec:
-                // First update must satisfy: U <= lastUpdateId+1 AND u >= lastUpdateId+1
-                let first_valid = {
-                    let guard = buffers.load();
-                    guard.get(&instrument_id).and_then(|buffer| {
-                        buffer
-                            .updates
-                            .iter()
-                            .find(|u| u.final_update_id > last_update_id)
-                            .cloned()
-                    })
+                let Some(first) = wait_for_first_applicable_update(
+                    &buffers,
+                    instrument_id,
+                    epoch,
+                    last_update_id,
+                )
+                .await
+                else {
+                    return;
                 };
 
-                if let Some(first) = &first_valid {
-                    let target = last_update_id + 1;
-                    let valid_overlap =
-                        first.first_update_id <= target && first.final_update_id >= target;
+                // Validate first applicable update per Binance Futures spec:
+                // First update must satisfy: U <= lastUpdateId AND u >= lastUpdateId
+                let target = last_update_id;
+                let valid_overlap =
+                    first.first_update_id <= target && first.final_update_id >= target;
 
-                    if !valid_overlap {
-                        if retry_count < MAX_RETRIES {
-                            log::warn!(
-                                "OrderBook overlap validation failed for {instrument_id}: \
-                                lastUpdateId={last_update_id}, first_update_id={}, \
-                                final_update_id={} (need U <= {} <= u), \
-                                retrying snapshot (attempt {}/{})",
-                                first.first_update_id,
-                                first.final_update_id,
-                                target,
-                                retry_count + 1,
-                                MAX_RETRIES
-                            );
-
-                            buffers.rcu(|m| {
-                                if let Some(buffer) = m.get_mut(&instrument_id)
-                                    && buffer.epoch == epoch
-                                {
-                                    buffer.updates.clear();
-                                }
-                            });
-
-                            Box::pin(Self::fetch_and_emit_snapshot_inner(
-                                http,
-                                sender,
-                                buffers,
-                                instruments,
-                                instrument_id,
-                                depth,
-                                epoch,
-                                clock,
-                                retry_count + 1,
-                            ))
-                            .await;
-                            return;
-                        }
-                        log::error!(
-                            "OrderBook overlap validation failed for {instrument_id} after \
-                            {MAX_RETRIES} retries; book may be inconsistent"
+                if !valid_overlap {
+                    if retry_count < MAX_SNAPSHOT_RETRIES {
+                        log::warn!(
+                            "OrderBook overlap validation failed for {instrument_id}: \
+                            lastUpdateId={last_update_id}, first_update_id={}, \
+                            final_update_id={} (need U <= {} <= u), \
+                            retrying snapshot (attempt {}/{})",
+                            first.first_update_id,
+                            first.final_update_id,
+                            target,
+                            retry_count + 1,
+                            MAX_SNAPSHOT_RETRIES
                         );
+
+                        tokio::time::sleep(futures_snapshot_retry_backoff(retry_count)).await;
+
+                        Box::pin(Self::fetch_and_emit_snapshot_inner(
+                            http,
+                            sender,
+                            buffers,
+                            instruments,
+                            instrument_id,
+                            depth,
+                            epoch,
+                            clock,
+                            retry_count + 1,
+                        ))
+                        .await;
+                        return;
                     }
+                    log::error!(
+                        "OrderBook overlap validation failed for {instrument_id} after \
+                        {MAX_SNAPSHOT_RETRIES} retries; book may be inconsistent"
+                    );
                 }
 
                 let snapshot_deltas = parse_order_book_snapshot(
@@ -861,12 +865,6 @@ impl BinanceFuturesDataClient {
                     size_precision,
                     ts_init,
                 );
-
-                if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(
-                    OrderBookDeltas_API::new(snapshot_deltas),
-                ))) {
-                    log::error!("Failed to send snapshot: {e}");
-                }
 
                 // Take buffered updates but keep buffer entry during replay
                 let buffered = {
@@ -893,33 +891,35 @@ impl BinanceFuturesDataClient {
                 // Replay buffered updates with continuity validation
                 let mut replayed = 0;
                 let mut last_final_update_id = last_update_id;
+                let mut is_first = true;
+                let mut replay_ready = Vec::with_capacity(buffered.len());
 
                 for update in buffered {
-                    // Drop updates where u <= lastUpdateId
-                    if update.final_update_id <= last_update_id {
+                    if update.final_update_id < last_update_id {
                         continue;
                     }
 
-                    // Validate continuity: pu should equal last emitted final_update_id
-                    // (for first update, this validates pu == snapshot lastUpdateId)
-                    if update.prev_final_update_id != last_final_update_id {
-                        if retry_count < MAX_RETRIES {
+                    if update.final_update_id == last_update_id {
+                        last_final_update_id = update.final_update_id;
+                        is_first = false;
+                        continue;
+                    }
+
+                    // The first diff is anchored by the snapshot overlap check. After that,
+                    // Binance Futures requires each diff's pu to match the previous diff's u.
+                    if !is_first && update.prev_final_update_id != last_final_update_id {
+                        if retry_count < MAX_SNAPSHOT_RETRIES {
                             log::warn!(
                                 "OrderBook continuity break for {instrument_id}: \
                                 expected pu={last_final_update_id}, was pu={}, \
                                 triggering resync (attempt {}/{})",
                                 update.prev_final_update_id,
                                 retry_count + 1,
-                                MAX_RETRIES
+                                MAX_SNAPSHOT_RETRIES
                             );
 
-                            buffers.rcu(|m| {
-                                if let Some(buffer) = m.get_mut(&instrument_id)
-                                    && buffer.epoch == epoch
-                                {
-                                    buffer.updates.clear();
-                                }
-                            });
+                            reset_book_sync_buffer(&buffers, instrument_id, epoch);
+                            tokio::time::sleep(futures_snapshot_retry_backoff(retry_count)).await;
 
                             Box::pin(Self::fetch_and_emit_snapshot_inner(
                                 http,
@@ -936,16 +936,26 @@ impl BinanceFuturesDataClient {
                             return;
                         }
                         log::error!(
-                            "OrderBook continuity break for {instrument_id} after {MAX_RETRIES} \
-                            retries: expected pu={last_final_update_id}, was pu={}; \
-                            book may be inconsistent",
+                            "OrderBook continuity break for {instrument_id} after \
+                            {MAX_SNAPSHOT_RETRIES} retries: expected pu={last_final_update_id}, \
+                            was pu={}; book may be inconsistent",
                             update.prev_final_update_id
                         );
                     }
 
                     last_final_update_id = update.final_update_id;
+                    is_first = false;
                     replayed += 1;
+                    replay_ready.push(update);
+                }
 
+                if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(
+                    OrderBookDeltas_API::new(snapshot_deltas),
+                ))) {
+                    log::error!("Failed to send snapshot: {e}");
+                }
+
+                for update in replay_ready {
                     if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(
                         OrderBookDeltas_API::new(update.deltas),
                     ))) {
@@ -987,23 +997,19 @@ impl BinanceFuturesDataClient {
                         }
 
                         if update.prev_final_update_id != last_final_update_id {
-                            if retry_count < MAX_RETRIES {
+                            if retry_count < MAX_SNAPSHOT_RETRIES {
                                 log::warn!(
                                     "OrderBook continuity break for {instrument_id}: \
                                     expected pu={last_final_update_id}, was pu={}, \
                                     triggering resync (attempt {}/{})",
                                     update.prev_final_update_id,
                                     retry_count + 1,
-                                    MAX_RETRIES
+                                    MAX_SNAPSHOT_RETRIES
                                 );
 
-                                buffers.rcu(|m| {
-                                    if let Some(buffer) = m.get_mut(&instrument_id)
-                                        && buffer.epoch == epoch
-                                    {
-                                        buffer.updates.clear();
-                                    }
-                                });
+                                reset_book_sync_buffer(&buffers, instrument_id, epoch);
+                                tokio::time::sleep(futures_snapshot_retry_backoff(retry_count))
+                                    .await;
 
                                 Box::pin(Self::fetch_and_emit_snapshot_inner(
                                     http,
@@ -1021,7 +1027,7 @@ impl BinanceFuturesDataClient {
                             }
                             log::error!(
                                 "OrderBook continuity break for {instrument_id} after \
-                                {MAX_RETRIES} retries; book may be inconsistent"
+                                {MAX_SNAPSHOT_RETRIES} retries; book may be inconsistent"
                             );
                         }
 
@@ -1042,7 +1048,35 @@ impl BinanceFuturesDataClient {
                 );
             }
             Err(e) => {
-                log::error!("Failed to request order book snapshot for {instrument_id}: {e}");
+                if retry_count < MAX_SNAPSHOT_RETRIES {
+                    log::warn!(
+                        "Failed to request order book snapshot for {instrument_id}: {e}; \
+                        retrying snapshot (attempt {}/{})",
+                        retry_count + 1,
+                        MAX_SNAPSHOT_RETRIES
+                    );
+
+                    tokio::time::sleep(futures_snapshot_retry_backoff(retry_count)).await;
+
+                    Box::pin(Self::fetch_and_emit_snapshot_inner(
+                        http,
+                        sender,
+                        buffers,
+                        instruments,
+                        instrument_id,
+                        depth,
+                        epoch,
+                        clock,
+                        retry_count + 1,
+                    ))
+                    .await;
+                    return;
+                }
+
+                log::error!(
+                    "Failed to request order book snapshot for {instrument_id} after \
+                    {MAX_SNAPSHOT_RETRIES} retries: {e}"
+                );
                 buffers.remove(&instrument_id);
             }
         }
@@ -1054,6 +1088,93 @@ fn upsert_instrument(
     instrument: InstrumentAny,
 ) {
     cache.insert(instrument.id(), instrument);
+}
+
+fn reset_book_sync_buffer(
+    buffers: &Arc<AtomicMap<InstrumentId, BookBuffer>>,
+    instrument_id: InstrumentId,
+    epoch: u64,
+) {
+    buffers.rcu(|m| {
+        if let Some(buffer) = m.get_mut(&instrument_id)
+            && buffer.epoch == epoch
+        {
+            buffer.updates.clear();
+        }
+    });
+}
+
+fn trim_buffered_depth_updates(updates: &mut Vec<BufferedDepthUpdate>) {
+    let excess = updates.len().saturating_sub(MAX_BUFFERED_DEPTH_UPDATES);
+    if excess > 0 {
+        updates.drain(..excess);
+    }
+}
+
+async fn wait_for_buffered_update(
+    buffers: &Arc<AtomicMap<InstrumentId, BookBuffer>>,
+    instrument_id: InstrumentId,
+    epoch: u64,
+) -> Option<()> {
+    loop {
+        let guard = buffers.load();
+        match guard.get(&instrument_id) {
+            Some(buffer) if buffer.epoch == epoch && !buffer.updates.is_empty() => return Some(()),
+            Some(buffer) if buffer.epoch == epoch => {}
+            _ => return None,
+        }
+
+        drop(guard);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+async fn wait_for_first_applicable_update(
+    buffers: &Arc<AtomicMap<InstrumentId, BookBuffer>>,
+    instrument_id: InstrumentId,
+    epoch: u64,
+    last_update_id: u64,
+) -> Option<BufferedDepthUpdate> {
+    loop {
+        let mut first = None;
+        let mut waiting = false;
+        buffers.rcu(|m| {
+            first = None;
+            waiting = false;
+
+            if let Some(buffer) = m.get_mut(&instrument_id)
+                && buffer.epoch == epoch
+            {
+                buffer
+                    .updates
+                    .retain(|update| update.final_update_id >= last_update_id);
+                first = buffer
+                    .updates
+                    .iter()
+                    .find(|update| update.final_update_id >= last_update_id)
+                    .cloned();
+                waiting = first.is_none();
+            }
+        });
+
+        if first.is_some() {
+            return first;
+        }
+
+        if !waiting {
+            return None;
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+fn futures_snapshot_retry_backoff(retry_count: u32) -> Duration {
+    let multiplier = 1_u64 << retry_count.min(4);
+    let millis = SNAPSHOT_RETRY_BACKOFF_BASE_MS
+        .saturating_mul(multiplier)
+        .min(SNAPSHOT_RETRY_BACKOFF_CAP_MS);
+    Duration::from_millis(millis)
 }
 
 fn parse_order_book_snapshot(
@@ -1581,7 +1702,7 @@ impl DataClient for BinanceFuturesDataClient {
 
         log::info!("OrderBook snapshot rebuild for {instrument_id} @ depth {depth} starting");
 
-        // Subscribe to WebSocket depth stream (0ms = unthrottled for Futures)
+        // Subscribe to the unthrottled diff depth stream for Futures.
         let ws = self.ws_public_client.clone();
         let stream = format!("{}@depth@0ms", format_binance_stream_symbol(&instrument_id));
 
@@ -1815,7 +1936,6 @@ impl DataClient for BinanceFuturesDataClient {
             format!("{symbol_lower}@depth"),
             format!("{symbol_lower}@depth@0ms"),
             format!("{symbol_lower}@depth@100ms"),
-            format!("{symbol_lower}@depth@250ms"),
             format!("{symbol_lower}@depth@500ms"),
         ];
 
@@ -2516,6 +2636,23 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[rstest]
+    #[case(0, 250)]
+    #[case(1, 500)]
+    #[case(2, 1_000)]
+    #[case(3, 2_000)]
+    #[case(4, 3_000)]
+    #[case(5, 3_000)]
+    fn test_snapshot_retry_backoff_exponentially_increases_then_caps(
+        #[case] retry_count: u32,
+        #[case] expected_ms: u64,
+    ) {
+        assert_eq!(
+            futures_snapshot_retry_backoff(retry_count),
+            Duration::from_millis(expected_ms)
+        );
+    }
 
     #[rstest]
     fn test_parse_order_book_snapshot_skips_invalid_levels() {
