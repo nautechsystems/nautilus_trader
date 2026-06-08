@@ -1,0 +1,79 @@
+name: generate-sbom-retry
+description: Generate an SPDX SBOM with bounded retry around transient Syft failures.
+
+inputs:
+  image:
+    description: Container image reference to scan.
+    required: true
+  output-file:
+    description: Path to write the generated SBOM.
+    required: true
+  format:
+    description: SBOM format to export.
+    required: false
+    default: spdx-json
+  syft-version:
+    description: Syft version to use. Leave empty to use the pinned action default.
+    required: false
+    default: ""
+  upload-artifact:
+    description: Upload the generated SBOM as a workflow artifact.
+    required: false
+    default: "true"
+  upload-release-assets:
+    description: Upload matching SBOM artifacts as release assets when the action runs on a release ref.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Generate SBOM (attempt 1/3)
+      id: sbom1
+      continue-on-error: true
+      uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+      with:
+        image: ${{ inputs.image }}
+        output-file: ${{ inputs.output-file }}
+        format: ${{ inputs.format }}
+        syft-version: ${{ inputs.syft-version }}
+        upload-artifact: ${{ inputs.upload-artifact }}
+        upload-release-assets: ${{ inputs.upload-release-assets }}
+
+    - name: Backoff before retry 2
+      if: steps.sbom1.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::warning::SBOM generation attempt 1 failed; retrying in 30s"
+        sleep 30
+
+    - name: Generate SBOM (attempt 2/3)
+      id: sbom2
+      if: steps.sbom1.outcome == 'failure'
+      continue-on-error: true
+      uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+      with:
+        image: ${{ inputs.image }}
+        output-file: ${{ inputs.output-file }}
+        format: ${{ inputs.format }}
+        syft-version: ${{ inputs.syft-version }}
+        upload-artifact: ${{ inputs.upload-artifact }}
+        upload-release-assets: ${{ inputs.upload-release-assets }}
+
+    - name: Backoff before retry 3
+      if: steps.sbom2.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::warning::SBOM generation attempt 2 failed; retrying in 60s"
+        sleep 60
+
+    - name: Generate SBOM (attempt 3/3, final)
+      if: steps.sbom2.outcome == 'failure'
+      uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+      with:
+        image: ${{ inputs.image }}
+        output-file: ${{ inputs.output-file }}
+        format: ${{ inputs.format }}
+        syft-version: ${{ inputs.syft-version }}
+        upload-artifact: ${{ inputs.upload-artifact }}
+        upload-release-assets: ${{ inputs.upload-release-assets }}

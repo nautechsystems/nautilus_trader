@@ -15,6 +15,7 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **common-test-data**: caches large test data under `tests/test_data/large`.
 - **common-wheel-build**: builds and installs Python wheels across Linux, macOS, and Windows for
   multiple Python versions.
+- **generate-sbom-retry**: wraps Docker SBOM generation with bounded retries.
 - **install-capnp**: installs the Cap'n Proto compiler with caching across Linux, macOS, and Windows.
 - **publish-wheels**: publishes built wheels to Cloudflare R2, manages old wheel cleanup and index generation.
 - **upload-artifact-wheel**: uploads the latest wheel artifact to GitHub Actions.

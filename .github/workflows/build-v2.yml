@@ -297,7 +297,6 @@ jobs:
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
-            # Sigstore TUF trust root (for gh attestation verify)
             tuf-repo-cdn.sigstore.dev:443
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
