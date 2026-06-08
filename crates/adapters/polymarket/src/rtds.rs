@@ -1010,13 +1010,13 @@ mod tests {
             r#"{
                 "topic":"equity_prices",
                 "type":"subscribe",
-                "timestamp":1711382400000,
+                "timestamp":1780907896598,
                 "payload":{
                     "symbol":"aapl",
                     "data":[
-                        {"timestamp":1711382280000,"value":198.30},
-                        {"timestamp":1711382281000,"value":198.32},
-                        {"timestamp":1711382340000,"value":198.41}
+                        {"timestamp":1780907777000,"value":307.91499},
+                        {"timestamp":1780907778000,"value":307.91578},
+                        {"timestamp":1780907779000,"value":307.91547}
                     ]
                 }
             }"#,
@@ -1027,9 +1027,9 @@ mod tests {
         let third = rx.try_recv().expect("third custom data event");
 
         for (event, expected_ts, expected_value) in [
-            (first, 1711382280000_u64, "198.30"),
-            (second, 1711382281000_u64, "198.32"),
-            (third, 1711382340000_u64, "198.41"),
+            (first, 1780907777000_u64, "307.91499"),
+            (second, 1780907778000_u64, "307.91578"),
+            (third, 1780907779000_u64, "307.91547"),
         ] {
             let DataEvent::Data(NautilusData::Custom(custom)) = event else {
                 panic!("expected custom data event");
@@ -1048,7 +1048,7 @@ mod tests {
                 Decimal::from_str(expected_value).unwrap()
             );
             assert_eq!(payload.price_timestamp_ms, expected_ts);
-            assert_eq!(payload.message_timestamp_ms, 1711382400000);
+            assert_eq!(payload.message_timestamp_ms, 1780907896598);
             assert_eq!(payload.received_at_ms, None);
             assert!(!payload.is_carried_forward);
         }
