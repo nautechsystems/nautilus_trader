@@ -251,6 +251,13 @@ impl WebSocketClientInner {
         let is_stream_mode = message_handler.is_none();
         let reconnect_max_attempts = config.reconnect_max_attempts;
 
+        if !is_stream_mode && config.reconnect_timeout_ms == Some(0) {
+            return Err(TransportError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Reconnect timeout cannot be zero",
+            )));
+        }
+
         let (writer, reader) = Box::pin(Self::connect_with_server(
             &config.url,
             config.headers.clone(),
@@ -3284,6 +3291,45 @@ mod rust_tests {
             err_msg.contains("Handler mode requires message_handler"),
             "Error should mention missing message_handler, was: {err_msg}"
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_connect_url_rejects_invalid_reconnect_timing_before_connect() {
+        let (handler, _rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: "ws://127.0.0.1:1".to_string(),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(0),
+            reconnect_delay_initial_ms: Some(100),
+            reconnect_delay_max_ms: Some(500),
+            reconnect_backoff_factor: Some(1.5),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
+            proxy_url: None,
+        };
+
+        let err = WebSocketClientInner::connect_url(config, Some(handler), None)
+            .await
+            .expect_err("invalid reconnect timing should be rejected");
+
+        match err {
+            TransportError::Io(error) => {
+                assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+                assert!(
+                    error
+                        .to_string()
+                        .contains("Reconnect timeout cannot be zero"),
+                    "error should mention zero reconnect timeout, was: {error}"
+                );
+            }
+            other => panic!("expected InvalidInput IO error, was: {other:?}"),
+        }
     }
 
     #[rstest]

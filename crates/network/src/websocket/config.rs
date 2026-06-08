@@ -103,6 +103,7 @@ pub struct WebSocketConfig {
     pub heartbeat_msg: Option<String>,
     /// The timeout (milliseconds) for reconnection attempts.
     /// **Note**: Only applies to handler mode. Ignored in stream mode.
+    /// Must be non-zero when set.
     #[serde(default)]
     pub reconnect_timeout_ms: Option<u64>,
     /// The initial reconnection delay (milliseconds) for reconnects.
