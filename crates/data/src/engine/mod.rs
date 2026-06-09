@@ -2701,7 +2701,7 @@ impl DataEngine {
             .as_any()
             .downcast_ref::<BinaryOptionScopeSlice>()
         {
-            let scope_topic = switchboard::get_binary_option_scope_topic(slice.scope_id);
+            let scope_topic = switchboard::get_binary_option_scope_topic(slice.scope());
             msgbus::publish_binary_option_scope(scope_topic, slice);
         }
         let topic = switchboard::get_custom_topic(&custom.data_type);
@@ -2834,14 +2834,6 @@ impl DataEngine {
 
     fn handle_custom_data_pipeline(&self, custom: &CustomData) {
         log::debug!("Pipeline custom data: {}", custom.data.type_name());
-        if let Some(slice) = custom
-            .data
-            .as_any()
-            .downcast_ref::<BinaryOptionScopeSlice>()
-        {
-            let scope_topic = switchboard::get_binary_option_scope_topic(slice.scope_id);
-            msgbus::publish_binary_option_scope(scope_topic, slice);
-        }
         let topic = switchboard::get_pipeline_custom_topic(&custom.data_type);
         msgbus::publish_any(topic, custom);
     }
@@ -5640,4 +5632,79 @@ fn rebind_response_correlation(mut resp: DataResponse, new_id: UUID4) -> DataRes
         DataResponse::Bars(r) => r.correlation_id = new_id,
     }
     resp
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, rc::Rc, sync::Arc};
+
+    use nautilus_common::{
+        cache::Cache,
+        clock::TestClock,
+        msgbus::{
+            MessageBus, get_message_bus, set_message_bus,
+            stubs::get_any_saving_handler,
+            subscribe_any, subscribe_binary_option_scope,
+            switchboard::{self, MessagingSwitchboard},
+            typed_handler::TypedHandler,
+        },
+    };
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        data::{BinaryOptionScopeMember, BinaryOptionScopeSlice, CustomData, Data},
+        identifiers::{InstrumentId, Venue},
+    };
+    use rstest::rstest;
+    use ustr::Ustr;
+
+    use super::DataEngine;
+    use crate::engine::config::DataEngineConfig;
+
+    fn sample_binary_option_scope_slice() -> BinaryOptionScopeSlice {
+        BinaryOptionScopeSlice {
+            scope_id: Ustr::from("POLYMARKET.UPDOWN.BTC.5m"),
+            venue: Venue::from("POLYMARKET"),
+            members: vec![BinaryOptionScopeMember {
+                instrument_id: InstrumentId::from("BTC-UPDOWN-YES.POLYMARKET"),
+                outcome: Some(Ustr::from("YES")),
+                expiration_ns: 1_711_036_800_000_000_000u64.into(),
+            }],
+            window_start_ns: 1_711_036_500_000_000_000u64.into(),
+            window_end_ns: 1_711_036_800_000_000_000u64.into(),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
+        }
+    }
+
+    #[rstest]
+    fn process_pipeline_custom_binary_option_scope_does_not_publish_live_typed_topic() {
+        let msgbus = Rc::new(RefCell::new(MessageBus::default()));
+        set_message_bus(msgbus);
+
+        let slice = sample_binary_option_scope_slice();
+        let custom = CustomData::from_arc(Arc::new(slice.clone()));
+        let live_hits = Rc::new(RefCell::new(0usize));
+        let live_hits_clone = live_hits.clone();
+        let live_handler = TypedHandler::from(move |_slice: &BinaryOptionScopeSlice| {
+            *live_hits_clone.borrow_mut() += 1;
+        });
+        let live_topic = switchboard::get_binary_option_scope_topic(slice.scope());
+        subscribe_binary_option_scope(live_topic.into(), live_handler, None);
+
+        let (pipeline_handler, pipeline_saver) = get_any_saving_handler::<CustomData>(None);
+        let pipeline_topic =
+            MessagingSwitchboard::default().get_pipeline_custom_topic(&custom.data_type);
+        subscribe_any(pipeline_topic.into(), pipeline_handler, None);
+
+        let mut engine = DataEngine::new(
+            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(Cache::default())),
+            Some(DataEngineConfig::default()),
+        );
+        engine.process_pipeline(Data::Custom(custom.clone()));
+
+        assert_eq!(*live_hits.borrow(), 0);
+        assert_eq!(pipeline_saver.get_messages(), vec![custom]);
+        assert_eq!(get_message_bus().borrow().pub_count(), 1);
+    }
 }

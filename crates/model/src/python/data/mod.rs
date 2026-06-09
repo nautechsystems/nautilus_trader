@@ -20,6 +20,7 @@ use std::ffi::{CStr, CString};
 
 pub mod bar;
 pub mod bet;
+pub mod binary_option_scope;
 pub mod close;
 #[cfg(feature = "python")]
 pub mod custom;

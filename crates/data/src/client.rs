@@ -23,7 +23,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use nautilus_common::{
     clients::{DataClient, log_command_error},
     messages::data::{
@@ -44,7 +44,7 @@ use nautilus_common::{
 #[cfg(feature = "defi")]
 use nautilus_model::defi::Blockchain;
 use nautilus_model::{
-    data::{BarType, BinaryOptionScope, DataType},
+    data::{BarType, BinaryOptionScope, BinaryOptionScopeStreams, DataType},
     identifiers::{ClientId, InstrumentId, Venue},
 };
 
@@ -73,7 +73,7 @@ pub struct DataClientAdapter {
     pub subscriptions_index_prices: AHashSet<InstrumentId>,
     pub subscriptions_funding_rates: AHashSet<InstrumentId>,
     pub subscriptions_option_greeks: AHashSet<InstrumentId>,
-    pub subscriptions_binary_option_scope: AHashSet<BinaryOptionScope>,
+    pub subscriptions_binary_option_scope: AHashMap<BinaryOptionScope, BinaryOptionScopeStreams>,
     #[cfg(feature = "defi")]
     pub subscriptions_blocks: AHashSet<Blockchain>,
     #[cfg(feature = "defi")]
@@ -151,7 +151,7 @@ impl DataClientAdapter {
             subscriptions_index_prices: AHashSet::new(),
             subscriptions_funding_rates: AHashSet::new(),
             subscriptions_option_greeks: AHashSet::new(),
-            subscriptions_binary_option_scope: AHashSet::new(),
+            subscriptions_binary_option_scope: AHashMap::new(),
             subscriptions_bars: AHashSet::new(),
             subscriptions_instrument_status: AHashSet::new(),
             subscriptions_instrument_close: AHashSet::new(),
@@ -284,7 +284,11 @@ impl DataClientAdapter {
         &mut self,
         cmd: &UnsubscribeBinaryOptionScope,
     ) -> anyhow::Result<()> {
-        if self.subscriptions_binary_option_scope.remove(&cmd.scope) {
+        if self
+            .subscriptions_binary_option_scope
+            .remove(&cmd.scope)
+            .is_some()
+        {
             self.client.unsubscribe_binary_option_scope(cmd)?;
         }
         Ok(())
@@ -306,12 +310,26 @@ impl DataClientAdapter {
 
     fn subscribe_binary_option_scope(
         &mut self,
-        cmd: SubscribeBinaryOptionScope,
+        mut cmd: SubscribeBinaryOptionScope,
     ) -> anyhow::Result<()> {
-        if self
+        let merged_streams = self
             .subscriptions_binary_option_scope
-            .insert(cmd.scope.clone())
-        {
+            .get(&cmd.scope)
+            .copied()
+            .map_or(cmd.streams, |existing| {
+                merge_binary_option_scope_streams(existing, cmd.streams)
+            });
+
+        let should_forward = self
+            .subscriptions_binary_option_scope
+            .get(&cmd.scope)
+            .is_none_or(|existing| *existing != merged_streams);
+
+        self.subscriptions_binary_option_scope
+            .insert(cmd.scope.clone(), merged_streams);
+
+        if should_forward {
+            cmd.streams = merged_streams;
             self.client.subscribe_binary_option_scope(cmd)?;
         }
 
@@ -777,5 +795,170 @@ impl DataClientAdapter {
     /// Returns an error if the client fails to process the order book depths request.
     pub fn request_book_depth(&self, req: RequestBookDepth) -> anyhow::Result<()> {
         self.client.request_book_depth(req)
+    }
+}
+
+#[inline]
+fn merge_binary_option_scope_streams(
+    left: BinaryOptionScopeStreams,
+    right: BinaryOptionScopeStreams,
+) -> BinaryOptionScopeStreams {
+    BinaryOptionScopeStreams {
+        quotes: left.quotes || right.quotes,
+        trades: left.trades || right.trades,
+        book_deltas: left.book_deltas || right.book_deltas,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use async_trait::async_trait;
+    use nautilus_common::messages::data::{
+        SubscribeBinaryOptionScope, UnsubscribeBinaryOptionScope,
+    };
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::{
+        data::{BinaryOptionScope, BinaryOptionScopeStreams},
+        identifiers::{ClientId, Venue},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    #[derive(Debug)]
+    struct RecordingDataClient {
+        client_id: ClientId,
+        venue: Venue,
+        subscribes: Rc<RefCell<Vec<SubscribeBinaryOptionScope>>>,
+        unsubscribes: Rc<RefCell<Vec<UnsubscribeBinaryOptionScope>>>,
+    }
+
+    #[async_trait(?Send)]
+    impl DataClient for RecordingDataClient {
+        fn client_id(&self) -> ClientId {
+            self.client_id
+        }
+
+        fn venue(&self) -> Option<Venue> {
+            Some(self.venue)
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn reset(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn dispose(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        fn is_disconnected(&self) -> bool {
+            false
+        }
+
+        fn subscribe_binary_option_scope(
+            &mut self,
+            cmd: SubscribeBinaryOptionScope,
+        ) -> anyhow::Result<()> {
+            self.subscribes.borrow_mut().push(cmd);
+            Ok(())
+        }
+
+        fn unsubscribe_binary_option_scope(
+            &mut self,
+            cmd: &UnsubscribeBinaryOptionScope,
+        ) -> anyhow::Result<()> {
+            self.unsubscribes.borrow_mut().push(cmd.clone());
+            Ok(())
+        }
+    }
+
+    fn subscribe_cmd(
+        scope: &BinaryOptionScope,
+        streams: BinaryOptionScopeStreams,
+    ) -> SubscribeBinaryOptionScope {
+        SubscribeBinaryOptionScope::new(
+            scope.clone(),
+            streams,
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(ClientId::from("POLYMARKET")),
+            Some(scope.venue()),
+            None,
+        )
+    }
+
+    #[rstest]
+    fn subscribe_binary_option_scope_forwards_widened_stream_intent() {
+        let subscribes = Rc::new(RefCell::new(Vec::new()));
+        let unsubscribes = Rc::new(RefCell::new(Vec::new()));
+        let client = RecordingDataClient {
+            client_id: ClientId::from("POLYMARKET"),
+            venue: Venue::from("POLYMARKET"),
+            subscribes: subscribes.clone(),
+            unsubscribes,
+        };
+        let mut adapter = DataClientAdapter::new(
+            ClientId::from("POLYMARKET"),
+            Some(Venue::from("POLYMARKET")),
+            false,
+            false,
+            Box::new(client),
+        );
+        let scope = BinaryOptionScope::new("BTC.5M", Venue::from("POLYMARKET"));
+
+        adapter
+            .subscribe_binary_option_scope(subscribe_cmd(
+                &scope,
+                BinaryOptionScopeStreams {
+                    quotes: true,
+                    trades: false,
+                    book_deltas: false,
+                },
+            ))
+            .unwrap();
+
+        adapter
+            .subscribe_binary_option_scope(subscribe_cmd(
+                &scope,
+                BinaryOptionScopeStreams {
+                    quotes: true,
+                    trades: true,
+                    book_deltas: false,
+                },
+            ))
+            .unwrap();
+
+        let recorded = subscribes.borrow();
+        assert_eq!(recorded.len(), 2);
+        assert_eq!(
+            recorded[1].streams,
+            BinaryOptionScopeStreams {
+                quotes: true,
+                trades: true,
+                book_deltas: false,
+            }
+        );
+        assert_eq!(
+            adapter.subscriptions_binary_option_scope.get(&scope),
+            Some(&BinaryOptionScopeStreams {
+                quotes: true,
+                trades: true,
+                book_deltas: false,
+            })
+        );
     }
 }

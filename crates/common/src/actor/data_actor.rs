@@ -1532,7 +1532,7 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let topic = get_binary_option_scope_topic(scope.scope_id());
+        let topic = get_binary_option_scope_topic(scope.clone());
 
         let handler = TypedHandler::from(move |slice: &BinaryOptionScopeSlice| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
@@ -4259,7 +4259,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        let topic = get_binary_option_scope_topic(scope.scope_id());
+        let topic = get_binary_option_scope_topic(scope.clone());
         self.remove_binary_option_scope_subscription(topic);
 
         let command = UnsubscribeCommand::BinaryOptionScope(

@@ -29,15 +29,13 @@
 
 use std::{num::NonZeroUsize, sync::OnceLock};
 
-use ahash::AHashMap;
-use nautilus_model::{
-    data::{BarType, DataType},
-    identifiers::{ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId, Venue},
-};
-use ustr::Ustr;
-
 use super::mstr::{Endpoint, MStr, Pattern, Topic};
 use crate::msgbus::get_message_bus;
+use ahash::AHashMap;
+use nautilus_model::{
+    data::{BarType, BinaryOptionScope, DataType},
+    identifiers::{ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId, Venue},
+};
 
 pub const CLOSE_TOPIC: &str = "CLOSE";
 pub const TIME_EVENT_TOPIC: &str = "clock.time_event";
@@ -414,9 +412,9 @@ define_switchboard! {
     get_option_chain_topic(series_id: OptionSeriesId) -> series_id,
     "data.option_chain.{}", series_id;
 
-    binary_option_scope_topics: Ustr,
-    get_binary_option_scope_topic(scope_id: Ustr) -> scope_id,
-    "data.binary_option_scope.{}", scope_id;
+    binary_option_scope_topics: BinaryOptionScope,
+    get_binary_option_scope_topic(scope: BinaryOptionScope) -> scope.clone(),
+    "data.binary_option_scope.{}.{}", scope.venue, scope.scope_id;
 
     order_fills_topics: InstrumentId,
     get_order_fills_topic(instrument_id: InstrumentId) -> instrument_id,
@@ -619,7 +617,7 @@ define_wrappers! {
     get_instrument_close_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_option_greeks_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_option_chain_topic(series_id: OptionSeriesId) -> MStr<Topic>,
-    get_binary_option_scope_topic(scope_id: Ustr) -> MStr<Topic>,
+    get_binary_option_scope_topic(scope: BinaryOptionScope) -> MStr<Topic>,
     get_pipeline_custom_topic(data_type: &DataType) -> MStr<Topic>,
     get_pipeline_book_deltas_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_book_depth10_topic(instrument_id: InstrumentId) -> MStr<Topic>,
@@ -706,7 +704,7 @@ pub fn get_signal_pattern(name: &str) -> MStr<Pattern> {
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        data::{BarType, DataType},
+        data::{BarType, BinaryOptionScope, DataType},
         identifiers::{InstrumentId, Venue},
     };
     use rstest::*;
@@ -841,6 +839,31 @@ mod tests {
         let result = switchboard.get_bars_topic(bar_type);
         assert_eq!(result, expected_topic);
         assert!(switchboard.bar_topics.contains_key(&bar_type));
+    }
+
+    #[rstest]
+    fn test_get_binary_option_scope_topic_includes_venue(mut switchboard: MessagingSwitchboard) {
+        let scope = BinaryOptionScope::new("BTC.5M", Venue::from("POLYMARKET"));
+        let expected_topic = "data.binary_option_scope.POLYMARKET.BTC.5M".into();
+
+        let result = switchboard.get_binary_option_scope_topic(scope.clone());
+
+        assert_eq!(result, expected_topic);
+        assert!(switchboard.binary_option_scope_topics.contains_key(&scope));
+    }
+
+    #[rstest]
+    fn test_get_binary_option_scope_topic_does_not_collide_across_venues(
+        mut switchboard: MessagingSwitchboard,
+    ) {
+        let polymarket_scope = BinaryOptionScope::new("BTC.5M", Venue::from("POLYMARKET"));
+        let hyperliquid_scope = BinaryOptionScope::new("BTC.5M", Venue::from("HYPERLIQUID"));
+
+        let polymarket_topic = switchboard.get_binary_option_scope_topic(polymarket_scope);
+        let hyperliquid_topic = switchboard.get_binary_option_scope_topic(hyperliquid_scope);
+
+        assert_ne!(polymarket_topic, hyperliquid_topic);
+        assert_eq!(switchboard.binary_option_scope_topics.len(), 2);
     }
 
     #[rstest]
