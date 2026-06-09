@@ -20,7 +20,13 @@
 
 #![cfg(feature = "turmoil")]
 
-use std::time::Duration;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use futures_util::{SinkExt, StreamExt};
 use nautilus_network::{
@@ -48,6 +54,7 @@ const DISCONNECT_DURING_RECONNECT_SEED: u64 = 0x57EB_0004;
 const DISCONNECT_DURING_BACKOFF_SEED: u64 = 0x57EB_0005;
 const PROXY_REJECTION_SEED: u64 = 0x57EB_0006;
 const QUEUED_WRITE_DROP_SEED: u64 = 0x57EB_2001;
+const POST_RECONNECT_ACTIVE_DROP_SEED: u64 = 0x57EB_2002;
 
 // Small sleep steps advance turmoil's simulated clock so the receiver drains
 // between ticks instead of relying on a single fixed wait.
@@ -494,6 +501,25 @@ fn test_turmoil_websocket_sockudo_queued_write_drop_preserves_later_message_orde
 }
 
 #[rstest]
+fn test_turmoil_websocket_post_reconnect_active_drop_preserves_later_message_order() {
+    run_websocket_post_reconnect_active_drop_preserves_later_message_order(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        POST_RECONNECT_ACTIVE_DROP_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_post_reconnect_active_drop_preserves_later_message_order() {
+    run_websocket_post_reconnect_active_drop_preserves_later_message_order(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        POST_RECONNECT_ACTIVE_DROP_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
 #[ignore = "continuous seed sweep; run scripts/soak-network-turmoil.sh"]
 fn test_turmoil_websocket_repeated_drops_backend_pair_soak() {
     for (iteration, seed) in seed_sweep_from_env() {
@@ -574,6 +600,112 @@ fn run_websocket_repeated_drops_preserve_message_order(
         assert_eq!(
             received, expected,
             "{label} seed {seed:#018x} should preserve message order"
+        );
+
+        client.disconnect().await;
+        assert!(
+            client.is_disconnected(),
+            "{label} seed {seed:#018x} should disconnect after scenario"
+        );
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_post_reconnect_active_drop_preserves_later_message_order(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(100);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+
+    let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
+    let drop_reconnected_connection = Arc::new(AtomicBool::new(false));
+    let server_drop_reconnected_connection = Arc::clone(&drop_reconnected_connection);
+
+    sim.host("server", move || {
+        let server_drop_reconnected_connection = Arc::clone(&server_drop_reconnected_connection);
+        async move {
+            ws_echo_first_then_drop_when_reconnect_active_then_echo_server(
+                server_drop_reconnected_connection,
+            )
+            .await
+        }
+    });
+
+    sim.client("client", async move {
+        let (handler, mut rx) = channel_message_handler();
+        let trigger_reconnected_drop = Arc::clone(&drop_reconnected_connection);
+        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            trigger_reconnected_drop.store(true, Ordering::SeqCst);
+        });
+
+        let client = WebSocketClient::connect(
+            websocket_config,
+            Some(handler),
+            None,
+            Some(post_reconnection),
+            vec![],
+            None,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        let first_msg = "before-post-reconnect-active-drop".to_string();
+        client
+            .send_text(first_msg.clone(), None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should enqueue first: {e}"));
+
+        assert!(
+            recv_text(&mut rx, &first_msg).await,
+            "{label} seed {seed:#018x} should receive first echo"
+        );
+
+        assert!(
+            recv_text(&mut rx, RECONNECTED).await,
+            "{label} seed {seed:#018x} should complete the first reconnect"
+        );
+        assert!(
+            recv_text(&mut rx, RECONNECTED).await,
+            "{label} seed {seed:#018x} should reconnect again after active drop"
+        );
+
+        let expected = (0..4)
+            .map(|i| format!("after-active-drop-{i}"))
+            .collect::<Vec<_>>();
+        let mut received = Vec::with_capacity(expected.len());
+
+        for msg in &expected {
+            client
+                .send_text(msg.clone(), None)
+                .await
+                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should enqueue {msg}: {e}"));
+        }
+
+        while received.len() < expected.len() {
+            let received_msg = recv_application_text(&mut rx).await.unwrap_or_else(|| {
+                panic!("{label} seed {seed:#018x} should receive later application text")
+            });
+
+            let expected_msg = &expected[received.len()];
+            assert_eq!(
+                &received_msg, expected_msg,
+                "{label} seed {seed:#018x} should preserve later message order"
+            );
+            received.push(received_msg);
+        }
+
+        assert_eq!(
+            received, expected,
+            "{label} seed {seed:#018x} should preserve later message sequence"
         );
 
         client.disconnect().await;
@@ -670,6 +802,72 @@ fn run_websocket_queued_write_drop_preserves_later_message_order(
 
     sim.run()
         .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+async fn ws_echo_first_then_drop_when_reconnect_active_then_echo_server(
+    drop_reconnected_connection: Arc<AtomicBool>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+    let mut connection_index = 0;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let current_connection = connection_index;
+        connection_index += 1;
+        let drop_reconnected_connection = Arc::clone(&drop_reconnected_connection);
+
+        tokio::spawn(async move {
+            if let Ok(mut ws_stream) = accept_async(stream).await {
+                match current_connection {
+                    0 => {
+                        if let Some(Ok(msg)) = ws_stream.next().await {
+                            match msg {
+                                Message::Text(text) => {
+                                    let _ = ws_stream.send(Message::Text(text)).await;
+                                }
+                                Message::Binary(data) => {
+                                    let _ = ws_stream.send(Message::Binary(data)).await;
+                                }
+                                Message::Ping(ping_data) => {
+                                    let _ = ws_stream.send(Message::Pong(ping_data)).await;
+                                }
+                                Message::Close(_) => {
+                                    let _ = ws_stream.close(None).await;
+                                }
+                                Message::Pong(_) | Message::Frame(_) => {}
+                            }
+                        }
+                    }
+                    1 => {
+                        while !drop_reconnected_connection.load(Ordering::SeqCst) {
+                            tokio::time::sleep(POLL_STEP).await;
+                        }
+                    }
+                    _ => {
+                        while let Some(msg) = ws_stream.next().await {
+                            match msg {
+                                Ok(Message::Text(text)) => {
+                                    let _ = ws_stream.send(Message::Text(text)).await;
+                                }
+                                Ok(Message::Binary(data)) => {
+                                    let _ = ws_stream.send(Message::Binary(data)).await;
+                                }
+                                Ok(Message::Ping(ping_data)) => {
+                                    let _ = ws_stream.send(Message::Pong(ping_data)).await;
+                                }
+                                Ok(Message::Close(_)) => {
+                                    let _ = ws_stream.close(None).await;
+                                    break;
+                                }
+                                Ok(Message::Pong(_) | Message::Frame(_)) => {}
+                                Err(_) => break,
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
 }
 
 async fn ws_drop_first_write_then_echo_server() -> Result<(), Box<dyn std::error::Error>> {
