@@ -52,10 +52,10 @@ use crate::{
         },
         models::{
             LighterAccountDetail, LighterAccountsResponse, LighterCandle, LighterCandles,
-            LighterFundings, LighterNextNonce, LighterOrderBookDetails, LighterOrderBookOrders,
-            LighterOrderBooks, LighterOrders, LighterResultCode, LighterSendTxBatchRequest,
-            LighterSendTxBatchResponse, LighterSendTxRequest, LighterSendTxResponse, LighterTrade,
-            LighterTrades,
+            LighterFundings, LighterMakerOnlyApiKeys, LighterNextNonce, LighterOrderBookDetails,
+            LighterOrderBookOrders, LighterOrderBooks, LighterOrders, LighterResultCode,
+            LighterSendTxBatchRequest, LighterSendTxBatchResponse, LighterSendTxRequest,
+            LighterSendTxResponse, LighterTrade, LighterTrades,
         },
         parse::{
             parse_candle_bar, parse_funding_rate_update,
@@ -66,8 +66,9 @@ use crate::{
         query::{
             LighterAccountActiveOrdersQuery, LighterAccountInactiveOrdersQuery,
             LighterAccountLookup, LighterAccountQuery, LighterCandlesQuery, LighterFundingsQuery,
-            LighterNextNonceQuery, LighterOrderBookDetailsQuery, LighterOrderBookOrdersQuery,
-            LighterOrderBooksQuery, LighterRecentTradesQuery, LighterTradesQuery,
+            LighterMakerOnlyApiKeysQuery, LighterNextNonceQuery, LighterOrderBookDetailsQuery,
+            LighterOrderBookOrdersQuery, LighterOrderBooksQuery, LighterRecentTradesQuery,
+            LighterTradesQuery,
         },
     },
 };
@@ -78,6 +79,7 @@ const ENDPOINT_ACCOUNT_ACTIVE_ORDERS: &str = "/api/v1/accountActiveOrders";
 const ENDPOINT_ACCOUNT_INACTIVE_ORDERS: &str = "/api/v1/accountInactiveOrders";
 const ENDPOINT_CANDLES: &str = "/api/v1/candles";
 const ENDPOINT_FUNDINGS: &str = "/api/v1/fundings";
+const ENDPOINT_MAKER_ONLY_API_KEYS: &str = "/api/v1/getMakerOnlyApiKeys";
 const ENDPOINT_NEXT_NONCE: &str = "/api/v1/nextNonce";
 const ENDPOINT_ORDER_BOOK_DETAILS: &str = "/api/v1/orderBookDetails";
 const ENDPOINT_ORDER_BOOK_ORDERS: &str = "/api/v1/orderBookOrders";
@@ -124,6 +126,7 @@ impl_lighter_response_check!(
     LighterAccountsResponse,
     LighterCandles,
     LighterFundings,
+    LighterMakerOnlyApiKeys,
     LighterNextNonce,
     LighterOrderBookDetails,
     LighterOrderBookOrders,
@@ -375,6 +378,19 @@ impl LighterRawHttpClient {
         query: &LighterNextNonceQuery,
     ) -> LighterHttpResult<LighterNextNonce> {
         self.send_get_request(ENDPOINT_NEXT_NONCE, Some(query))
+            .await
+    }
+
+    /// Calls `GET /api/v1/getMakerOnlyApiKeys`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
+    pub async fn get_maker_only_api_keys(
+        &self,
+        query: &LighterMakerOnlyApiKeysQuery,
+    ) -> LighterHttpResult<LighterMakerOnlyApiKeys> {
+        self.send_get_request(ENDPOINT_MAKER_ONLY_API_KEYS, Some(query))
             .await
     }
 
@@ -816,6 +832,27 @@ impl LighterHttpClient {
             api_key_index,
         };
         self.inner.get_next_nonce(&query).await
+    }
+
+    /// Calls `GET /api/v1/getMakerOnlyApiKeys` for `account_index`.
+    ///
+    /// `auth_token` is the canonical Lighter auth string minted from the
+    /// caller's credential.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
+    pub async fn get_maker_only_api_keys(
+        &self,
+        account_index: i64,
+        auth_token: impl Into<String>,
+    ) -> LighterHttpResult<LighterMakerOnlyApiKeys> {
+        let query = LighterMakerOnlyApiKeysQuery {
+            authorization: None,
+            auth: Some(auth_token.into()),
+            account_index,
+        };
+        self.inner.get_maker_only_api_keys(&query).await
     }
 
     /// Calls `POST /api/v1/sendTx`.

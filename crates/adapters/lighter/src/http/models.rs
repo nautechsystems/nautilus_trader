@@ -70,6 +70,22 @@ pub struct LighterAccountsResponse {
     pub accounts: Vec<LighterAccountDetail>,
 }
 
+/// Response payload of `GET /api/v1/getMakerOnlyApiKeys`.
+///
+/// Lighter restricts maker-only keys to the 0ms speed-bump lane (PostOnly
+/// creates, modifies on ALO orders, cancel / cancel-all). Any tx kind outside
+/// that allowlist — for example `ApproveIntegrator` (tx_type 45) — is rejected
+/// with venue code `62007`. The adapter pre-flights this endpoint before
+/// submitting the integrator auto-approval so it can skip the doomed tx with
+/// a clear log line instead of swallowing the misleading 62007.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LighterMakerOnlyApiKeys {
+    pub code: i32,
+    pub message: Option<String>,
+    #[serde(default)]
+    pub api_key_indexes: Vec<i64>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LighterSendTxRequest {
     pub tx_type: u8,

@@ -117,6 +117,20 @@ pub struct LighterNextNonceQuery {
     pub api_key_index: u8,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, Builder, PartialEq, Eq)]
+#[builder(setter(strip_option))]
+pub struct LighterMakerOnlyApiKeysQuery {
+    #[builder(default)]
+    #[builder(setter(into, strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorization: Option<String>,
+    #[builder(default)]
+    #[builder(setter(into, strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth: Option<String>,
+    pub account_index: i64,
+}
+
 #[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum LighterAccountLookup {
@@ -419,6 +433,21 @@ mod tests {
         assert_eq!(value["auth"], "auth-token");
         assert_eq!(value["account_index"], 123);
         assert_eq!(value["market_id"], 0);
+        assert!(value.get("authorization").is_none());
+    }
+
+    #[rstest]
+    fn test_maker_only_api_keys_query_serializes_auth_and_account_index() {
+        let query = LighterMakerOnlyApiKeysQueryBuilder::default()
+            .auth("auth-token")
+            .account_index(42)
+            .build()
+            .unwrap();
+
+        let value = serde_json::to_value(query).unwrap();
+
+        assert_eq!(value["auth"], "auth-token");
+        assert_eq!(value["account_index"], 42);
         assert!(value.get("authorization").is_none());
     }
 

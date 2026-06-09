@@ -76,6 +76,7 @@ use crate::{
     config::LighterExecClientConfig,
     http::{
         client::{LIGHTER_REST_PAGE_SIZE, LighterHttpClient, LighterRawHttpClient},
+        error::LighterHttpError,
         models::{LighterSendTxBatchRequest, LighterSendTxRequest},
         query::{
             LighterAccountActiveOrdersQuery, LighterAccountInactiveOrdersQuery,
@@ -411,10 +412,46 @@ impl LighterExecutionClient {
         }
     }
 
+    /// Returns `Ok(true)` if this credential's `api_key_index` is maker-only.
+    /// Maker-only keys cannot submit `ApproveIntegrator`, so the caller skips
+    /// the integrator auto-approval when `true`.
+    async fn is_maker_only_api_key(&self, credential: &Credential) -> anyhow::Result<bool> {
+        let auth_token = build_auth_token_for(credential)
+            .context("failed to mint Lighter auth token for maker-only check")?;
+        let response = self
+            .http_client
+            .get_maker_only_api_keys(credential.account_index(), auth_token)
+            .await
+            .context("failed to query getMakerOnlyApiKeys")?;
+        let api_key_index = i64::from(credential.api_key_index());
+        Ok(response.api_key_indexes.contains(&api_key_index))
+    }
+
     async fn submit_integrator_auto_approval(&self) -> anyhow::Result<()> {
         let Some(credential) = &self.credential else {
             return Ok(());
         };
+
+        let mut maker_only_check_failed = false;
+
+        match self.is_maker_only_api_key(credential).await {
+            Ok(true) => {
+                log::warn!(
+                    "Skipping Lighter integrator auto-approval: api_key_index={} is maker-only; \
+                     ensure the account has been approved by a non-maker-only key",
+                    credential.api_key_index(),
+                );
+                return Ok(());
+            }
+            Ok(false) => {}
+            Err(e) => {
+                maker_only_check_failed = true;
+                log::debug!(
+                    "Lighter maker-only api key check failed; attempting integrator approval \
+                     anyway: {e:?}"
+                );
+            }
+        }
 
         let approval = self.prepare_integrator_auto_approval(credential)?;
         let request = LighterSendTxRequest::new(
@@ -422,8 +459,14 @@ impl LighterExecutionClient {
             approval.tx_info.clone(),
         );
         let response = self.http_client.send_tx(&request).await.with_context(|| {
+            let hint = if maker_only_check_failed {
+                " (maker-only pre-flight check failed earlier; venue may reject with 62007 \
+                 if this key is maker-only)"
+            } else {
+                ""
+            };
             format!(
-                "failed to submit Lighter integrator approval nonce={} api_key_index={}",
+                "failed to submit Lighter integrator approval nonce={} api_key_index={}{hint}",
                 approval.nonce, approval.api_key_index,
             )
         })?;
@@ -1877,7 +1920,24 @@ impl ExecutionClient for LighterExecutionClient {
         self.detect_account_tier().await;
 
         if let Err(e) = self.submit_integrator_auto_approval().await {
-            log::debug!("Lighter integrator approval failed; continuing startup: {e:?}");
+            // Bail on venue 21149 ("integrator is not approved") so the
+            // operator catches it at startup rather than at first order.
+            // Other failures are tolerated: approval is account-scoped and
+            // may already be in place, or a reconnect can retry.
+            let is_unapproved = e.chain().any(|cause| {
+                matches!(
+                    cause.downcast_ref::<LighterHttpError>(),
+                    Some(LighterHttpError::Venue { code: 21149, .. }),
+                )
+            });
+
+            if is_unapproved {
+                return Err(e.context(
+                    "Lighter account is not integrator-approved (venue 21149); \
+                     orders cannot be placed",
+                ));
+            }
+            log::error!("Lighter integrator approval failed; continuing startup: {e:?}");
         }
 
         if let Err(e) = self.refresh_nonce().await {
