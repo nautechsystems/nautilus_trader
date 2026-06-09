@@ -763,6 +763,8 @@ impl ParsedSubscription {
                 wire: RtdsWireSubscription {
                     topic: RtdsTopic::CryptoPrices.as_str(),
                     msg_type: "update",
+                    // Live RTDS currently accepts the crypto filter in the same JSON-string
+                    // shape as equity filters; regression tests lock this wire format in.
                     filters: Some(format!(
                         r#"{{"symbol":"{}"}}"#,
                         symbol_lower.to_ascii_uppercase()
@@ -808,6 +810,15 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    const RTDS_CRYPTO_UPDATE_FIXTURE: &str =
+        include_str!("../test_data/rtds_crypto_prices_update.json");
+    const RTDS_CRYPTO_SUBSCRIBE_FIXTURE: &str =
+        include_str!("../test_data/rtds_crypto_prices_subscribe.json");
+    const RTDS_EQUITY_UPDATE_FIXTURE: &str =
+        include_str!("../test_data/rtds_equity_prices_update.json");
+    const RTDS_EQUITY_SUBSCRIBE_FIXTURE: &str =
+        include_str!("../test_data/rtds_equity_prices_subscribe.json");
 
     fn crypto_data_type(symbol: &str) -> DataType {
         let mut metadata = Params::new();
@@ -881,20 +892,7 @@ mod tests {
         feed.track_subscribe(data_type.clone())
             .expect("track subscribe");
 
-        // Captured from the live Polymarket RTDS `crypto_prices` feed on 2026-06-06.
-        feed.handle_text_for_test(
-            r#"{
-                "topic":"crypto_prices",
-                "type":"update",
-                "timestamp":1780730269142,
-                "payload":{
-                    "symbol":"btcusdt",
-                    "timestamp":1780730269000,
-                    "value":61035.86,
-                    "full_accuracy_value":"61035.86000000"
-                }
-            }"#,
-        );
+        feed.handle_text_for_test(RTDS_CRYPTO_UPDATE_FIXTURE);
 
         let event = rx.try_recv().expect("custom data event");
         let DataEvent::Data(NautilusData::Custom(custom)) = event else {
@@ -920,22 +918,7 @@ mod tests {
         feed.track_subscribe(data_type.clone())
             .expect("track subscribe");
 
-        // Captured from the live Polymarket RTDS `crypto_prices` feed on 2026-06-06.
-        feed.handle_text_for_test(
-            r#"{
-                "topic":"crypto_prices",
-                "type":"subscribe",
-                "timestamp":1780726213178,
-                "payload":{
-                    "symbol":"btcusdt",
-                    "data":[
-                        {"timestamp":1780726209000,"value":61164.12},
-                        {"timestamp":1780726210000,"value":61161.07},
-                        {"timestamp":1780726211000,"value":61150.89}
-                    ]
-                }
-            }"#,
-        );
+        feed.handle_text_for_test(RTDS_CRYPTO_SUBSCRIBE_FIXTURE);
 
         let first = rx.try_recv().expect("first custom data event");
         let second = rx.try_recv().expect("second custom data event");
@@ -970,20 +953,7 @@ mod tests {
         feed.track_subscribe(data_type.clone())
             .expect("track subscribe");
 
-        feed.handle_text_for_test(
-            r#"{
-                "topic":"equity_prices",
-                "type":"update",
-                "timestamp":1711382400000,
-                "payload":{
-                    "symbol":"aapl",
-                    "value":198.45,
-                    "full_accuracy_value":"198.4523",
-                    "timestamp":1711382400000,
-                    "received_at":1711382400005
-                }
-            }"#,
-        );
+        feed.handle_text_for_test(RTDS_EQUITY_UPDATE_FIXTURE);
 
         let event = rx.try_recv().expect("custom data event");
         let DataEvent::Data(NautilusData::Custom(custom)) = event else {
@@ -1010,21 +980,7 @@ mod tests {
         feed.track_subscribe(data_type.clone())
             .expect("track subscribe");
 
-        feed.handle_text_for_test(
-            r#"{
-                "topic":"equity_prices",
-                "type":"subscribe",
-                "timestamp":1780907896598,
-                "payload":{
-                    "symbol":"aapl",
-                    "data":[
-                        {"timestamp":1780907777000,"value":307.91499},
-                        {"timestamp":1780907778000,"value":307.91578},
-                        {"timestamp":1780907779000,"value":307.91547}
-                    ]
-                }
-            }"#,
-        );
+        feed.handle_text_for_test(RTDS_EQUITY_SUBSCRIBE_FIXTURE);
 
         let first = rx.try_recv().expect("first custom data event");
         let second = rx.try_recv().expect("second custom data event");

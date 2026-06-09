@@ -1,0 +1,22 @@
+{
+  "topic": "equity_prices",
+  "type": "subscribe",
+  "timestamp": 1780907896598,
+  "payload": {
+    "symbol": "aapl",
+    "data": [
+      {
+        "timestamp": 1780907777000,
+        "value": 307.91499
+      },
+      {
+        "timestamp": 1780907778000,
+        "value": 307.91578
+      },
+      {
+        "timestamp": 1780907779000,
+        "value": 307.91547
+      }
+    ]
+  }
+}

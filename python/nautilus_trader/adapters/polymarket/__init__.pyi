@@ -24,7 +24,6 @@ class PolymarketDataClientConfig:
         instrument_config: PolymarketInstrumentProviderConfig | None = ...,
         base_url_http: str | None = ...,
         base_url_ws: str | None = ...,
-        base_url_rtds: str | None = ...,
         base_url_gamma: str | None = ...,
         base_url_data_api: str | None = ...,
         http_timeout_secs: int | None = ...,
@@ -42,6 +41,7 @@ class PolymarketDataClientConfig:
         resolve_poll_interval_secs: int | None = None,
         resolve_poll_grace_secs: int | None = None,
         resolve_poll_max_wait_secs: int | None = None,
+        base_url_rtds: str | None = None,
     ) -> None: ...
 
 @typing.final
@@ -88,16 +88,6 @@ class PolymarketInstrumentProviderConfig:
         event_slug_builder: PolymarketUpDownEventSlugConfig | None = None,
         log_warnings: bool | None = None,
         use_gamma_markets: bool | None = None,
-    ) -> None: ...
-
-@typing.final
-class PolymarketUpDownEventSlugConfig:
-    def __init__(
-        self,
-        assets: typing.Sequence[str] | None = None,
-        interval_mins: int | None = None,
-        periods: int | None = None,
-        start_offset_periods: int | None = None,
     ) -> None: ...
 
 @typing.final
@@ -162,6 +152,16 @@ class PolymarketRtdsEquityPrice:
     def to_json(self) -> str: ...
     @classmethod
     def from_json(cls, data: typing.Any) -> typing.Any: ...
+
+@typing.final
+class PolymarketUpDownEventSlugConfig:
+    def __init__(
+        self,
+        assets: typing.Sequence[str] | None = None,
+        interval_mins: int | None = None,
+        periods: int | None = None,
+        start_offset_periods: int | None = None,
+    ) -> None: ...
 
 @typing.final
 class SignatureType(enum.Enum):
