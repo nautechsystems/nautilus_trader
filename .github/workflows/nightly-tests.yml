@@ -305,6 +305,8 @@ jobs:
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
             crates.io:443
+            index.crates.io:443
+            static.crates.io:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -326,3 +328,6 @@ jobs:
 
       - name: Check Cargo crate publish plan
         run: bash scripts/ci/publish-cargo-crates.sh --check
+
+      - name: Dry-run Cargo crate publishing
+        run: bash scripts/ci/publish-cargo-crates.sh --dry-run

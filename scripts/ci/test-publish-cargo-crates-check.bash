@@ -26,6 +26,57 @@ if [[ "$*" == "metadata --no-deps --format-version=1" ]]; then
   exit 0
 fi
 
+if [[ "${1:-}" == "publish" ]]; then
+  command_line="$*"
+  cargo_log=${MOCK_CARGO_LOG:-}
+  crate_name=""
+  dry_run=false
+
+  if [[ -n "$cargo_log" ]]; then
+    printf '%s\n' "$command_line" >> "$cargo_log"
+  fi
+
+  case "$command_line" in
+    "publish --dry-run --locked --no-verify --package "*)
+      dry_run=true
+      ;;
+    "publish --locked --no-verify --package "*)
+      ;;
+    *)
+      echo "unexpected cargo args: $command_line" >&2
+      exit 2
+      ;;
+  esac
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --package)
+        crate_name=$2
+        shift 2
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  if [[ -z "$crate_name" ]]; then
+    echo "cargo publish mock missing --package" >&2
+    exit 2
+  fi
+
+  if [[ "$dry_run" == false ]]; then
+    crate_version="$(
+      jq -r --arg name "$crate_name" \
+        '.packages[] | select(.name == $name) | .version' \
+        "${MOCK_CARGO_METADATA:?}"
+    )"
+    printf '%s %s\n' "$crate_name" "$crate_version" >> "${MOCK_CRATES_IO_EXISTS_FILE:?}"
+  fi
+
+  exit 0
+fi
+
 echo "unexpected cargo args: $*" >&2
 exit 2
 MOCK
@@ -83,6 +134,19 @@ case "$url" in
       printf '200'
     else
       printf '{"errors":[{"detail":"Not Found"}]}\n' > "$output"
+      printf '404'
+    fi
+    ;;
+  https://index.crates.io/*)
+    crate_name=${url##*/}
+    if awk -v name="$crate_name" '$1 == name { found = 1 } END { exit !found }' \
+      "${MOCK_CRATES_IO_EXISTS_FILE:?}"; then
+      awk -v name="$crate_name" \
+        '$1 == name { printf "{\"vers\":\"%s\"}\n", $2 }' \
+        "${MOCK_CRATES_IO_EXISTS_FILE:?}" > "$output"
+      printf '200'
+    else
+      : > "$output"
       printf '404'
     fi
     ;;
@@ -283,24 +347,55 @@ write_crates_io_dependency_metadata() {
 JSON
 }
 
+run_publish_script() {
+  local mode=$1
+  local metadata_file=$2
+  local exists_file=$3
+  local curl_log=$4
+  local cargo_log=${5:-}
+  local cargo_registry_token=${6:-}
+
+  (
+    cd "$repo_root"
+    if [[ -n "$mode" ]]; then
+      env \
+        PATH="${mock_bin}:${PATH}" \
+        CARGO_PUBLISH_SUCCESS_DELAY_SECONDS=0 \
+        CARGO_REGISTRY_TOKEN="$cargo_registry_token" \
+        MOCK_CARGO_LOG="$cargo_log" \
+        MOCK_CARGO_METADATA="$metadata_file" \
+        MOCK_CRATES_IO_ERROR_FILE="$error_file" \
+        MOCK_CRATES_IO_EXISTS_FILE="$exists_file" \
+        MOCK_CURL_LOG="$curl_log" \
+        CURL_CONNECT_TIMEOUT=1 \
+        CURL_MAX_TIME=1 \
+        CURL_RETRIES=1 \
+        bash "${script_dir}/publish-cargo-crates.sh" "$mode"
+    else
+      env \
+        PATH="${mock_bin}:${PATH}" \
+        CARGO_PUBLISH_SUCCESS_DELAY_SECONDS=0 \
+        CARGO_REGISTRY_TOKEN="$cargo_registry_token" \
+        MOCK_CARGO_LOG="$cargo_log" \
+        MOCK_CARGO_METADATA="$metadata_file" \
+        MOCK_CRATES_IO_ERROR_FILE="$error_file" \
+        MOCK_CRATES_IO_EXISTS_FILE="$exists_file" \
+        MOCK_CURL_LOG="$curl_log" \
+        CURL_CONNECT_TIMEOUT=1 \
+        CURL_MAX_TIME=1 \
+        CURL_RETRIES=1 \
+        bash "${script_dir}/publish-cargo-crates.sh"
+    fi
+  )
+}
+
 run_publish_check() {
   local metadata_file=$1
   local exists_file=$2
   local curl_log=$3
+  local cargo_log=${4:-}
 
-  (
-    cd "$repo_root"
-    env \
-      PATH="${mock_bin}:${PATH}" \
-      MOCK_CARGO_METADATA="$metadata_file" \
-      MOCK_CRATES_IO_ERROR_FILE="$error_file" \
-      MOCK_CRATES_IO_EXISTS_FILE="$exists_file" \
-      MOCK_CURL_LOG="$curl_log" \
-      CURL_CONNECT_TIMEOUT=1 \
-      CURL_MAX_TIME=1 \
-      CURL_RETRIES=1 \
-      bash "${script_dir}/publish-cargo-crates.sh" --check
-  )
+  run_publish_script "--check" "$metadata_file" "$exists_file" "$curl_log" "$cargo_log"
 }
 
 assert_contains() {
@@ -308,7 +403,7 @@ assert_contains() {
   local pattern=$2
   local message=$3
 
-  if ! grep -Fq "$pattern" "$file"; then
+  if ! grep -Fq -- "$pattern" "$file"; then
     echo "expected pattern: $pattern" >&2
     echo "actual output:" >&2
     cat "$file" >&2
@@ -321,7 +416,7 @@ assert_not_contains() {
   local pattern=$2
   local message=$3
 
-  if grep -Fq "$pattern" "$file"; then
+  if grep -Fq -- "$pattern" "$file"; then
     echo "unexpected pattern: $pattern" >&2
     echo "actual output:" >&2
     cat "$file" >&2
@@ -341,8 +436,10 @@ dev_build_metadata="${work_dir}/dev-build-metadata.json"
 write_dev_build_metadata "$dev_build_metadata"
 dev_build_output="${work_dir}/dev-build-output.txt"
 dev_build_curl_log="${work_dir}/dev-build-curl.log"
+dev_build_cargo_log="${work_dir}/dev-build-cargo.log"
 : > "$dev_build_curl_log"
-run_publish_check "$dev_build_metadata" "$exists_file" "$dev_build_curl_log" \
+: > "$dev_build_cargo_log"
+run_publish_check "$dev_build_metadata" "$exists_file" "$dev_build_curl_log" "$dev_build_cargo_log" \
   > "$dev_build_output" 2>&1
 
 assert_contains "$dev_build_output" $'1. mock-dev\t1.0.0' \
@@ -358,6 +455,106 @@ if [[ -s "$dev_build_curl_log" ]]; then
   cat "$dev_build_curl_log" >&2
   fail "dev/build publishable graph should not query crates.io versions."
 fi
+
+if [[ -s "$dev_build_cargo_log" ]]; then
+  cat "$dev_build_cargo_log" >&2
+  fail "--check mode should not run cargo publish."
+fi
+
+dry_run_exists_file="${work_dir}/dry-run-existing-crates.txt"
+dry_run_output="${work_dir}/dry-run-output.txt"
+dry_run_curl_log="${work_dir}/dry-run-curl.log"
+dry_run_cargo_log="${work_dir}/dry-run-cargo.log"
+dry_run_expected_cargo_log="${work_dir}/dry-run-expected-cargo.log"
+: > "$dry_run_exists_file"
+: > "$dry_run_curl_log"
+: > "$dry_run_cargo_log"
+run_publish_script "--dry-run" "$dev_build_metadata" "$dry_run_exists_file" \
+  "$dry_run_curl_log" "$dry_run_cargo_log" \
+  > "$dry_run_output" 2>&1
+
+cat > "$dry_run_expected_cargo_log" << 'EXPECTED'
+publish --dry-run --locked --no-verify --package mock-dev
+publish --dry-run --locked --no-verify --package mock-build
+publish --dry-run --locked --no-verify --package mock-root
+EXPECTED
+
+if ! cmp -s "$dry_run_expected_cargo_log" "$dry_run_cargo_log"; then
+  echo "expected cargo commands:" >&2
+  cat "$dry_run_expected_cargo_log" >&2
+  echo "actual cargo commands:" >&2
+  cat "$dry_run_cargo_log" >&2
+  fail "--dry-run mode did not run cargo publish --dry-run in publish order."
+fi
+assert_contains "$dry_run_output" "Finished dry-running Cargo crates." \
+  "--dry-run mode did not finish successfully."
+assert_not_contains "$dry_run_output" "CARGO_REGISTRY_TOKEN not set." \
+  "--dry-run mode should not require CARGO_REGISTRY_TOKEN."
+
+if [[ -s "$dry_run_curl_log" ]]; then
+  cat "$dry_run_curl_log" >&2
+  fail "--dry-run mode should not query crates.io versions for a publishable graph."
+fi
+
+publish_no_token_exists_file="${work_dir}/publish-no-token-existing-crates.txt"
+publish_no_token_output="${work_dir}/publish-no-token-output.txt"
+publish_no_token_curl_log="${work_dir}/publish-no-token-curl.log"
+publish_no_token_cargo_log="${work_dir}/publish-no-token-cargo.log"
+: > "$publish_no_token_exists_file"
+: > "$publish_no_token_curl_log"
+: > "$publish_no_token_cargo_log"
+set +e
+run_publish_script "" "$dev_build_metadata" "$publish_no_token_exists_file" \
+  "$publish_no_token_curl_log" "$publish_no_token_cargo_log" \
+  > "$publish_no_token_output" 2>&1
+publish_no_token_status=$?
+set -e
+
+if [[ "$publish_no_token_status" -eq 0 ]]; then
+  fail "publish mode without CARGO_REGISTRY_TOKEN should fail."
+fi
+assert_contains "$publish_no_token_output" "CARGO_REGISTRY_TOKEN not set." \
+  "publish mode without a token did not report the missing token."
+
+if [[ -s "$publish_no_token_cargo_log" ]]; then
+  cat "$publish_no_token_cargo_log" >&2
+  fail "publish mode without a token should not run cargo publish."
+fi
+
+if [[ -s "$publish_no_token_curl_log" ]]; then
+  cat "$publish_no_token_curl_log" >&2
+  fail "publish mode without a token should not query crates.io."
+fi
+
+publish_exists_file="${work_dir}/publish-existing-crates.txt"
+publish_output="${work_dir}/publish-output.txt"
+publish_curl_log="${work_dir}/publish-curl.log"
+publish_cargo_log="${work_dir}/publish-cargo.log"
+publish_expected_cargo_log="${work_dir}/publish-expected-cargo.log"
+: > "$publish_exists_file"
+: > "$publish_curl_log"
+: > "$publish_cargo_log"
+run_publish_script "" "$dev_build_metadata" "$publish_exists_file" \
+  "$publish_curl_log" "$publish_cargo_log" "mock-token" \
+  > "$publish_output" 2>&1
+
+cat > "$publish_expected_cargo_log" << 'EXPECTED'
+publish --locked --no-verify --package mock-dev
+publish --locked --no-verify --package mock-build
+publish --locked --no-verify --package mock-root
+EXPECTED
+
+if ! cmp -s "$publish_expected_cargo_log" "$publish_cargo_log"; then
+  echo "expected cargo commands:" >&2
+  cat "$publish_expected_cargo_log" >&2
+  echo "actual cargo commands:" >&2
+  cat "$publish_cargo_log" >&2
+  fail "publish mode did not run cargo publish in publish order."
+fi
+assert_contains "$publish_output" "Finished publishing Cargo crates." \
+  "publish mode did not finish successfully."
+assert_not_contains "$publish_cargo_log" "--dry-run" \
+  "publish mode should not pass --dry-run to cargo publish."
 
 git_only_metadata="${work_dir}/git-only-metadata.json"
 write_git_only_metadata "$git_only_metadata"

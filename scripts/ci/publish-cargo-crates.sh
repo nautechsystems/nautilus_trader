@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Publish workspace crates to crates.io one at a time in dependency order.
+# Validate or publish workspace crates to crates.io one at a time in dependency order.
 #
 # Usage:
-#   publish-cargo-crates.sh [--check]
+#   publish-cargo-crates.sh [--check|--dry-run]
 #
 # Required env for publishing:
 #   CARGO_REGISTRY_TOKEN - crates.io token, preferably from trusted publishing
@@ -19,14 +19,26 @@
 #   CARGO_PUBLISH_USER_AGENT           - crates.io API User-Agent header
 set -euo pipefail
 
-check_only=false
-if [[ "${1:-}" == "--check" ]]; then
-  check_only=true
-  shift
-fi
+publish_mode=publish
+case "${1:-}" in
+  "")
+    ;;
+  --check)
+    publish_mode=check
+    shift
+    ;;
+  --dry-run)
+    publish_mode=dry_run
+    shift
+    ;;
+  *)
+    echo "Usage: $0 [--check|--dry-run]" >&2
+    exit 1
+    ;;
+esac
 
 if [[ "$#" -ne 0 ]]; then
-  echo "Usage: $0 [--check]" >&2
+  echo "Usage: $0 [--check|--dry-run]" >&2
   exit 1
 fi
 
@@ -48,7 +60,7 @@ github_run_id="${GITHUB_RUN_ID:-local}"
 default_user_agent="nautilus-trader-ci (${github_url}/${github_repository}/actions/runs/${github_run_id})"
 cargo_publish_user_agent="${CARGO_PUBLISH_USER_AGENT:-$default_user_agent}"
 
-if [[ "$check_only" == false && -z "${CARGO_REGISTRY_TOKEN:-}" ]]; then
+if [[ "$publish_mode" == publish && -z "${CARGO_REGISTRY_TOKEN:-}" ]]; then
   echo "::error::CARGO_REGISTRY_TOKEN not set."
   exit 1
 fi
@@ -497,6 +509,14 @@ publish_crate() {
   return "$status"
 }
 
+dry_run_crate() {
+  local crate_name=$1
+  local crate_version=$2
+
+  echo "Dry-running ${crate_name} ${crate_version}"
+  cargo publish --dry-run --locked --no-verify --package "$crate_name"
+}
+
 if [[ ! -s "$publish_plan_file" ]]; then
   echo "::error::No publishable workspace crates found."
   exit 1
@@ -508,13 +528,21 @@ check_blocked_dependencies
 echo "Publishing crates in dependency order:"
 nl -w1 -s'. ' "$publish_plan_file"
 
-if [[ "$check_only" == true ]]; then
-  echo "Cargo crate publish plan is valid."
-  exit 0
-fi
+case "$publish_mode" in
+  check)
+    echo "Cargo crate publish plan is valid."
+    ;;
+  dry_run)
+    while IFS=$'\t' read -r crate_name crate_version; do
+      dry_run_crate "$crate_name" "$crate_version"
+    done < "$publish_plan_file"
+    echo "Finished dry-running Cargo crates."
+    ;;
+  publish)
+    while IFS=$'\t' read -r crate_name crate_version; do
+      publish_crate "$crate_name" "$crate_version"
+    done < "$publish_plan_file"
 
-while IFS=$'\t' read -r crate_name crate_version; do
-  publish_crate "$crate_name" "$crate_version"
-done < "$publish_plan_file"
-
-echo "Finished publishing Cargo crates."
+    echo "Finished publishing Cargo crates."
+    ;;
+esac
