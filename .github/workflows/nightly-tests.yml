@@ -286,3 +286,43 @@ jobs:
       - name: Run tests
         run: |-
           uv run --no-sync python -m pytest --ignore=tests/performance_tests --reruns 2 --reruns-delay 1
+
+  cargo-publish-plan:
+    name: cargo publish plan
+    runs-on: ubuntu-latest
+    needs:
+      - turmoil
+      - build-macos
+      - build-linux-arm
+      - build-windows
+    if: ${{ !cancelled() }}
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            crates.io:443
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          build-type: "test"
+          free-disk-space: "true"
+          uv-cache-enabled: "false"
+          prek-cache-enabled: "false"
+          capnp-cache-enabled: "false"
+          rust-cache-enabled: "false"
+          rust-cache-save-if: "false"
+
+      - name: Check Cargo crate publish plan
+        run: bash scripts/ci/publish-cargo-crates.sh --check
