@@ -47,6 +47,7 @@ const NETWORK_PARTITION_SEED: u64 = 0x57EB_0003;
 const DISCONNECT_DURING_RECONNECT_SEED: u64 = 0x57EB_0004;
 const DISCONNECT_DURING_BACKOFF_SEED: u64 = 0x57EB_0005;
 const PROXY_REJECTION_SEED: u64 = 0x57EB_0006;
+const QUEUED_WRITE_DROP_SEED: u64 = 0x57EB_2001;
 
 // Small sleep steps advance turmoil's simulated clock so the receiver drains
 // between ticks instead of relying on a single fixed wait.
@@ -474,6 +475,25 @@ fn test_turmoil_websocket_repeated_drops_preserve_message_order(
 }
 
 #[rstest]
+fn test_turmoil_websocket_queued_write_drop_preserves_later_message_order() {
+    run_websocket_queued_write_drop_preserves_later_message_order(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        QUEUED_WRITE_DROP_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_queued_write_drop_preserves_later_message_order() {
+    run_websocket_queued_write_drop_preserves_later_message_order(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        QUEUED_WRITE_DROP_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
 #[ignore = "continuous seed sweep; run scripts/soak-network-turmoil.sh"]
 fn test_turmoil_websocket_repeated_drops_backend_pair_soak() {
     for (iteration, seed) in seed_sweep_from_env() {
@@ -567,4 +587,127 @@ fn run_websocket_repeated_drops_preserve_message_order(
 
     sim.run()
         .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_queued_write_drop_preserves_later_message_order(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(100);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+
+    let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
+
+    sim.host("server", ws_drop_first_write_then_echo_server);
+
+    sim.client("client", async move {
+        let (handler, mut rx) = channel_message_handler();
+
+        let client =
+            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+                .await
+                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        let in_flight_msg = "queued-before-drop".to_string();
+        client
+            .send_text(in_flight_msg.clone(), None)
+            .await
+            .unwrap_or_else(|e| {
+                panic!("{label} seed {seed:#018x} should enqueue pre-drop message: {e}")
+            });
+
+        assert!(
+            recv_text(&mut rx, RECONNECTED).await,
+            "{label} seed {seed:#018x} should reconnect after pre-echo drop"
+        );
+
+        let expected = (0..4)
+            .map(|i| format!("after-queued-drop-{i}"))
+            .collect::<Vec<_>>();
+        let mut received = Vec::with_capacity(expected.len());
+
+        for msg in &expected {
+            client
+                .send_text(msg.clone(), None)
+                .await
+                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should enqueue {msg}: {e}"));
+        }
+
+        while received.len() < expected.len() {
+            let received_msg = recv_application_text(&mut rx).await.unwrap_or_else(|| {
+                panic!("{label} seed {seed:#018x} should receive later application text")
+            });
+
+            if received_msg == in_flight_msg {
+                continue;
+            }
+
+            let expected_msg = &expected[received.len()];
+            assert_eq!(
+                &received_msg, expected_msg,
+                "{label} seed {seed:#018x} should preserve later message order"
+            );
+            received.push(received_msg);
+        }
+
+        assert_eq!(
+            received, expected,
+            "{label} seed {seed:#018x} should preserve later message sequence"
+        );
+
+        client.disconnect().await;
+        assert!(
+            client.is_disconnected(),
+            "{label} seed {seed:#018x} should disconnect after scenario"
+        );
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+async fn ws_drop_first_write_then_echo_server() -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+    let mut drop_next_connection = true;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let drop_before_echo = drop_next_connection;
+        drop_next_connection = false;
+
+        tokio::spawn(async move {
+            if let Ok(mut ws_stream) = accept_async(stream).await {
+                if drop_before_echo {
+                    let _ = ws_stream.next().await;
+                    return;
+                }
+
+                while let Some(msg) = ws_stream.next().await {
+                    match msg {
+                        Ok(Message::Text(text)) => {
+                            let _ = ws_stream.send(Message::Text(text)).await;
+                        }
+                        Ok(Message::Binary(data)) => {
+                            let _ = ws_stream.send(Message::Binary(data)).await;
+                        }
+                        Ok(Message::Ping(ping_data)) => {
+                            let _ = ws_stream.send(Message::Pong(ping_data)).await;
+                        }
+                        Ok(Message::Close(_)) => {
+                            let _ = ws_stream.close(None).await;
+                            break;
+                        }
+                        Ok(Message::Pong(_) | Message::Frame(_)) => {}
+                        Err(_) => break,
+                    }
+                }
+            }
+        });
+    }
 }
