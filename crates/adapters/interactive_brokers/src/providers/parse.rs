@@ -17,6 +17,7 @@
 
 use std::str::FromStr;
 
+use anyhow::Context;
 use ibapi::contracts::SecurityType;
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
@@ -449,7 +450,13 @@ fn parse_option_contract(
         .unwrap_or(UnixNanos::from(0)); // -90 days or 0 if underflow
 
     // Parse option kind (CALL or PUT)
-    let option_kind = IbOptionRight::from_str(details.contract.right.as_str())?.option_kind();
+    let option_kind = details
+        .contract
+        .right
+        .map(|right| IbOptionRight::from_str(right.as_str()))
+        .transpose()?
+        .context("Option contract missing right")?
+        .option_kind();
 
     let multiplier = parse_contract_multiplier(&details.contract.multiplier, 100.0);
     let asset_class = sec_type_to_asset_class(details.under_security_type.as_str());
@@ -494,7 +501,9 @@ fn parse_option_contract(
 #[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
-    use ibapi::contracts::{Contract, ContractDetails, Currency, Exchange, SecurityType, Symbol};
+    use ibapi::contracts::{
+        Contract, ContractDetails, Currency, Exchange, OptionRight, SecurityType, Symbol,
+    };
     use nautilus_model::{
         enums::AssetClass,
         identifiers::{InstrumentId, Symbol as NautilusSymbol, Venue},
@@ -519,7 +528,7 @@ mod tests {
                 currency: Currency::from("USD"),
                 local_symbol: "SPXW  260313P06630000".to_string(),
                 last_trade_date_or_contract_month: "20260313".to_string(),
-                right: "P".to_string(),
+                right: Some(OptionRight::Put),
                 strike: 6630.0,
                 multiplier: "100".to_string(),
                 ..Default::default()

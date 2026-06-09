@@ -14,17 +14,18 @@ use anyhow::Context;
 use ibapi::{
     contracts::tick_types::TickType,
     market_data::{
-        TradingHours,
+        IgnoreSize, SmartDepth, TradingHours,
         historical::{
             Bar as HistoricalBar, BarSize as HistoricalBarSize, HistoricalBarUpdate,
             WhatToShow as HistoricalWhatToShow,
         },
         realtime::{
-            Bar as RealtimeBar, BarSize as RealtimeBarSize, MarketDepths, TickGeneric, TickPrice,
-            TickPriceSize, TickSize, TickTypes, WhatToShow as RealtimeWhatToShow,
+            Bar as RealtimeBar, MarketDepths, TickGeneric, TickPrice, TickPriceSize, TickSize,
+            TickTypes, WhatToShow as RealtimeWhatToShow,
         },
     },
-    subscriptions::Subscription,
+    prelude::StreamExt,
+    subscriptions::{Subscription, SubscriptionItem},
 };
 use nautilus_common::messages::DataEvent;
 use nautilus_core::{UnixNanos, time::AtomicTime};
@@ -48,6 +49,22 @@ use crate::data::{
 enum StreamAction {
     Continue,
     Stop,
+}
+
+trait IntoSubscriptionTick {
+    fn into_subscription_item(self) -> SubscriptionItem<TickTypes>;
+}
+
+impl IntoSubscriptionTick for TickTypes {
+    fn into_subscription_item(self) -> SubscriptionItem<TickTypes> {
+        SubscriptionItem::Data(self)
+    }
+}
+
+impl IntoSubscriptionTick for SubscriptionItem<TickTypes> {
+    fn into_subscription_item(self) -> SubscriptionItem<TickTypes> {
+        self
+    }
 }
 
 const HISTORICAL_BAR_MIN_COUNT: i64 = 300;
@@ -150,14 +167,11 @@ pub(super) async fn handle_historical_bars_subscription(
             TradingHours::Extended
         };
         let mut subscription = match client
-            .historical_data_streaming(
-                &contract,
-                request_duration,
-                bar_type_to_historical_bar_size(bar_type)?,
-                Some(what_to_show),
-                trading_hours,
-                true,
-            )
+            .historical_data(&contract, bar_type_to_historical_bar_size(bar_type)?)
+            .duration(request_duration)
+            .what_to_show(what_to_show)
+            .trading_hours(trading_hours)
+            .stream()
             .await
         {
             Ok(subscription) => subscription,
@@ -186,7 +200,7 @@ pub(super) async fn handle_historical_bars_subscription(
                 }
                 update = subscription.next() => {
                     match update {
-                        Some(HistoricalBarUpdate::Historical(data)) => {
+                        Some(Ok(SubscriptionItem::Data(HistoricalBarUpdate::Historical(data)))) => {
                             had_connection = true;
 
                             for ib_bar in &data.bars {
@@ -204,7 +218,7 @@ pub(super) async fn handle_historical_bars_subscription(
                                 }
                             }
                         }
-                        Some(HistoricalBarUpdate::Update(ib_bar)) => {
+                        Some(Ok(SubscriptionItem::Data(HistoricalBarUpdate::Update(ib_bar)))) => {
                             had_connection = true;
 
                             if !handle_revised_bars {
@@ -224,24 +238,37 @@ pub(super) async fn handle_historical_bars_subscription(
                                 return Ok(());
                             }
                         }
-                        Some(HistoricalBarUpdate::End { .. }) => {}
+                        Some(Ok(SubscriptionItem::Data(HistoricalBarUpdate::End { .. }))) => {}
+                        Some(Ok(SubscriptionItem::Notice(notice))) => {
+                            tracing::debug!(
+                                "IB historical bars notice for {}: {} - {}",
+                                bar_type,
+                                notice.code,
+                                notice.message
+                            );
+                        }
+                        Some(Err(e)) => {
+                            tracing::warn!(
+                                "Historical bars subscription ended for {}: {:?}",
+                                bar_type,
+                                e
+                            );
+
+                            if had_connection {
+                                last_disconnection_ns = Some(clock.get_time_ns());
+                            }
+
+                            break;
+                        }
                         None => {
                             if cancellation_token.is_cancelled() {
                                 return Ok(());
                             }
 
-                            if let Some(error) = subscription.error() {
-                                tracing::warn!(
-                                    "Historical bars subscription ended for {}: {:?}",
-                                    bar_type,
-                                    error
-                                );
-                            } else {
-                                tracing::warn!(
-                                    "Historical bars subscription ended unexpectedly for {}",
-                                    bar_type
-                                );
-                            }
+                            tracing::warn!(
+                                "Historical bars subscription ended unexpectedly for {}",
+                                bar_type
+                            );
 
                             if had_connection {
                                 last_disconnection_ns = Some(clock.get_time_ns());
@@ -449,7 +476,8 @@ pub(super) async fn handle_tick_by_tick_quote_subscription(
     );
 
     let mut subscription = client
-        .tick_by_tick_bid_ask(&contract, 0, false)
+        .tick_by_tick(&contract, 0)
+        .bid_ask(IgnoreSize::No)
         .await
         .context("Failed to create tick-by-tick bid/ask subscription")?;
 
@@ -462,7 +490,7 @@ pub(super) async fn handle_tick_by_tick_quote_subscription(
             }
             tick_result = subscription.next() => {
                 match tick_result {
-                    Some(Ok(bid_ask)) => {
+                    Some(Ok(SubscriptionItem::Data(bid_ask))) => {
                         let ts_event = ib_timestamp_to_unix_nanos(&bid_ask.time);
                         let ts_init = clock.get_time_ns();
 
@@ -491,6 +519,14 @@ pub(super) async fn handle_tick_by_tick_quote_subscription(
                             Err(e) => tracing::warn!("Failed to parse quote tick: {:?}", e),
                         }
                     }
+                    Some(Ok(SubscriptionItem::Notice(notice))) => {
+                        tracing::debug!(
+                            "IB tick-by-tick quote notice for {}: {} - {}",
+                            instrument_id,
+                            notice.code,
+                            notice.message
+                        );
+                    }
                     Some(Err(e)) => {
                         tracing::error!("Subscription error for {}: {:?}", instrument_id, e);
                         anyhow::bail!("Subscription error: {e:?}");
@@ -518,7 +554,8 @@ pub(super) async fn handle_trade_subscription(
     tracing::debug!("Starting trade subscription for {}", instrument_id);
 
     let mut subscription = client
-        .tick_by_tick_all_last(&contract, 0, false)
+        .tick_by_tick(&contract, 0)
+        .all_last()
         .await
         .context("Failed to create tick-by-tick trade subscription")?;
 
@@ -561,12 +598,10 @@ pub(super) async fn handle_realtime_bars_subscription(
     };
 
     let mut subscription = client
-        .realtime_bars(
-            &contract,
-            RealtimeBarSize::Sec5,
-            RealtimeWhatToShow::Trades,
-            trading_hours,
-        )
+        .realtime_bars(&contract)
+        .what_to_show(RealtimeWhatToShow::Trades)
+        .trading_hours(trading_hours)
+        .subscribe()
         .await
         .context("Failed to create realtime bars subscription")?;
 
@@ -619,7 +654,7 @@ async fn process_trade_stream(
             }
             tick_result = subscription.next() => {
                 match tick_result {
-                    Some(Ok(tick)) => {
+                    Some(Ok(SubscriptionItem::Data(tick))) => {
                         let ts_event = ib_timestamp_to_unix_nanos(&tick.time);
                         let ts_init = clock.get_time_ns();
 
@@ -640,6 +675,14 @@ async fn process_trade_stream(
                             }
                             Err(e) => tracing::warn!("Failed to parse trade tick: {:?}", e),
                         }
+                    }
+                    Some(Ok(SubscriptionItem::Notice(notice))) => {
+                        tracing::debug!(
+                            "IB trade notice for {}: {} - {}",
+                            instrument_id,
+                            notice.code,
+                            notice.message
+                        );
                     }
                     Some(Err(e)) => {
                         tracing::error!("Trade subscription error for {}: {:?}", instrument_id, e);
@@ -676,10 +719,10 @@ async fn process_realtime_bar_stream(
             }
             bar_result = subscription.next() => {
                 match bar_result {
-                    Some(Ok(bar)) => {
+                    Some(Ok(SubscriptionItem::Data(bar))) => {
                         let parsed_bar = ib_bar_to_nautilus_bar(
                             &HistoricalBar {
-                                date: bar.date,
+                                date: bar.date.into(),
                                 open: bar.open,
                                 high: bar.high,
                                 low: bar.low,
@@ -706,6 +749,14 @@ async fn process_realtime_bar_stream(
                             )
                             .await;
                         }
+                    }
+                    Some(Ok(SubscriptionItem::Notice(notice))) => {
+                        tracing::debug!(
+                            "IB realtime bar notice for {}: {} - {}",
+                            bar_type,
+                            notice.code,
+                            notice.message
+                        );
                     }
                     Some(Err(e)) => {
                         tracing::error!("Bars subscription error for {}: {:?}", bar_type, e);
@@ -740,7 +791,7 @@ async fn process_market_depth_stream(
             }
             depth_result = subscription.next() => {
                 match depth_result {
-                    Some(Ok(MarketDepths::MarketDepth(depth))) => {
+                    Some(Ok(SubscriptionItem::Data(MarketDepths::MarketDepth(depth)))) => {
                         let ts_event = clock.get_time_ns();
                         let ts_init = ts_event;
                         sequence += 1;
@@ -764,7 +815,7 @@ async fn process_market_depth_stream(
                             break;
                         }
                     }
-                    Some(Ok(MarketDepths::MarketDepthL2(depth))) => {
+                    Some(Ok(SubscriptionItem::Data(MarketDepths::MarketDepthL2(depth)))) => {
                         let ts_event = clock.get_time_ns();
                         let ts_init = ts_event;
                         sequence += 1;
@@ -796,7 +847,7 @@ async fn process_market_depth_stream(
                             break;
                         }
                     }
-                    Some(Ok(MarketDepths::Notice(notice))) => {
+                    Some(Ok(SubscriptionItem::Notice(notice))) => {
                         tracing::debug!(
                             "IB market depth notice for {}: {} - {}",
                             instrument_id,
@@ -828,7 +879,13 @@ pub(super) async fn handle_market_depth_subscription(
     cancellation_token: CancellationToken,
 ) -> anyhow::Result<()> {
     let mut subscription = client
-        .market_depth(&contract, depth_rows, is_smart_depth)
+        .market_depth(&contract, depth_rows)
+        .smart_depth(if is_smart_depth {
+            SmartDepth::Yes
+        } else {
+            SmartDepth::No
+        })
+        .subscribe()
         .await
         .context("Failed to create market depth subscription")?;
 
@@ -847,8 +904,8 @@ pub(super) async fn handle_market_depth_subscription(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn process_quote_tick_result<E: Debug>(
-    tick_result: Result<TickTypes, E>,
+async fn process_quote_tick_result<I, E>(
+    tick_result: Result<I, E>,
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
@@ -856,9 +913,13 @@ async fn process_quote_tick_result<E: Debug>(
     quote_cache: &Arc<tokio::sync::Mutex<QuoteCache>>,
     clock: &'static AtomicTime,
     ignore_size_updates: bool,
-) -> anyhow::Result<StreamAction> {
-    match tick_result {
-        Ok(TickTypes::Price(price)) => {
+) -> anyhow::Result<StreamAction>
+where
+    I: IntoSubscriptionTick,
+    E: Debug,
+{
+    match tick_result.map(IntoSubscriptionTick::into_subscription_item) {
+        Ok(SubscriptionItem::Data(TickTypes::Price(price))) => {
             let ts_event = clock.get_time_ns();
             let ts_init = ts_event;
 
@@ -877,7 +938,7 @@ async fn process_quote_tick_result<E: Debug>(
 
             Ok(send_quote_tick(quote, data_sender, instrument_id))
         }
-        Ok(TickTypes::Size(size)) => {
+        Ok(SubscriptionItem::Data(TickTypes::Size(size))) => {
             let ts_event = clock.get_time_ns();
             let ts_init = ts_event;
 
@@ -897,7 +958,7 @@ async fn process_quote_tick_result<E: Debug>(
 
             Ok(send_quote_tick(quote, data_sender, instrument_id))
         }
-        Ok(TickTypes::PriceSize(price_size)) => {
+        Ok(SubscriptionItem::Data(TickTypes::PriceSize(price_size))) => {
             let ts_event = clock.get_time_ns();
             let ts_init = ts_event;
 
@@ -916,7 +977,7 @@ async fn process_quote_tick_result<E: Debug>(
 
             Ok(send_quote_tick(quote, data_sender, instrument_id))
         }
-        Ok(TickTypes::Notice(notice)) => {
+        Ok(SubscriptionItem::Notice(notice)) => {
             tracing::debug!(
                 "IB notice for {}: {} - {}",
                 instrument_id,
@@ -930,11 +991,11 @@ async fn process_quote_tick_result<E: Debug>(
             }
             Ok(StreamAction::Continue)
         }
-        Ok(TickTypes::SnapshotEnd) => {
+        Ok(SubscriptionItem::Data(TickTypes::SnapshotEnd)) => {
             tracing::debug!("Snapshot end received for {}", instrument_id);
             Ok(StreamAction::Continue)
         }
-        Ok(_) => Ok(StreamAction::Continue),
+        Ok(SubscriptionItem::Data(_)) => Ok(StreamAction::Continue),
         Err(e) => {
             tracing::error!("Subscription error for {}: {:?}", instrument_id, e);
             anyhow::bail!("Subscription error: {e:?}");
@@ -942,15 +1003,19 @@ async fn process_quote_tick_result<E: Debug>(
     }
 }
 
-async fn process_option_greeks_tick_result<E: Debug>(
-    tick_result: Result<TickTypes, E>,
+async fn process_option_greeks_tick_result<I, E>(
+    tick_result: Result<I, E>,
     instrument_id: InstrumentId,
     data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
     option_greeks_cache: &Arc<tokio::sync::Mutex<OptionGreeksCache>>,
     clock: &'static AtomicTime,
-) -> anyhow::Result<StreamAction> {
-    match tick_result {
-        Ok(TickTypes::OptionComputation(computation)) => {
+) -> anyhow::Result<StreamAction>
+where
+    I: IntoSubscriptionTick,
+    E: Debug,
+{
+    match tick_result.map(IntoSubscriptionTick::into_subscription_item) {
+        Ok(SubscriptionItem::Data(TickTypes::OptionComputation(computation))) => {
             let ts_event = clock.get_time_ns();
             let ts_init = ts_event;
 
@@ -961,7 +1026,7 @@ async fn process_option_greeks_tick_result<E: Debug>(
 
             Ok(send_option_greeks(greeks, data_sender, instrument_id))
         }
-        Ok(TickTypes::Generic(TickGeneric { tick_type, value })) => {
+        Ok(SubscriptionItem::Data(TickTypes::Generic(TickGeneric { tick_type, value }))) => {
             process_option_open_interest_tick(
                 instrument_id,
                 tick_type,
@@ -972,7 +1037,7 @@ async fn process_option_greeks_tick_result<E: Debug>(
             )
             .await
         }
-        Ok(TickTypes::Size(TickSize { tick_type, size })) => {
+        Ok(SubscriptionItem::Data(TickTypes::Size(TickSize { tick_type, size }))) => {
             process_option_open_interest_tick(
                 instrument_id,
                 tick_type,
@@ -983,7 +1048,7 @@ async fn process_option_greeks_tick_result<E: Debug>(
             )
             .await
         }
-        Ok(TickTypes::Notice(notice)) => {
+        Ok(SubscriptionItem::Notice(notice)) => {
             tracing::debug!(
                 "IB option greeks notice for {}: {} - {}",
                 instrument_id,
@@ -997,11 +1062,11 @@ async fn process_option_greeks_tick_result<E: Debug>(
             }
             Ok(StreamAction::Continue)
         }
-        Ok(TickTypes::SnapshotEnd) => {
+        Ok(SubscriptionItem::Data(TickTypes::SnapshotEnd)) => {
             tracing::debug!("Option greeks snapshot end received for {}", instrument_id);
             Ok(StreamAction::Continue)
         }
-        Ok(_) => Ok(StreamAction::Continue),
+        Ok(SubscriptionItem::Data(_)) => Ok(StreamAction::Continue),
         Err(e) => {
             tracing::error!(
                 "Option greeks subscription error for {}: {:?}",
@@ -1014,16 +1079,22 @@ async fn process_option_greeks_tick_result<E: Debug>(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn process_index_price_tick_result<E: Debug>(
-    tick_result: Result<TickTypes, E>,
+async fn process_index_price_tick_result<I, E>(
+    tick_result: Result<I, E>,
     instrument_id: InstrumentId,
     price_precision: u8,
     price_magnifier: i32,
     data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
     clock: &'static AtomicTime,
-) -> anyhow::Result<StreamAction> {
-    match tick_result {
-        Ok(TickTypes::Price(price)) if matches!(price.tick_type, TickType::Last) => {
+) -> anyhow::Result<StreamAction>
+where
+    I: IntoSubscriptionTick,
+    E: Debug,
+{
+    match tick_result.map(IntoSubscriptionTick::into_subscription_item) {
+        Ok(SubscriptionItem::Data(TickTypes::Price(price)))
+            if matches!(price.tick_type, TickType::Last) =>
+        {
             let ts_event = clock.get_time_ns();
             let ts_init = ts_event;
             let index_price = parse_index_price(
@@ -1043,7 +1114,7 @@ async fn process_index_price_tick_result<E: Debug>(
             }
             Ok(StreamAction::Continue)
         }
-        Ok(TickTypes::PriceSize(price_size))
+        Ok(SubscriptionItem::Data(TickTypes::PriceSize(price_size)))
             if matches!(price_size.price_tick_type, TickType::Last) =>
         {
             let ts_event = clock.get_time_ns();
@@ -1065,7 +1136,7 @@ async fn process_index_price_tick_result<E: Debug>(
             }
             Ok(StreamAction::Continue)
         }
-        Ok(_) => Ok(StreamAction::Continue),
+        Ok(SubscriptionItem::Data(_) | SubscriptionItem::Notice(_)) => Ok(StreamAction::Continue),
         Err(e) => {
             tracing::error!(
                 "Index price subscription stream error for {}: {:?}",
@@ -1266,13 +1337,13 @@ mod tests {
 
     use ahash::AHashMap;
     use ibapi::{
+        Notice,
         contracts::{OptionComputation, tick_types::TickType},
         market_data::realtime::{
             Bar as RealtimeBar, MarketDepth, MarketDepthL2, MarketDepths, TickAttribute,
             TickGeneric, TickPrice, TickPriceSize, TickSize, TickTypes, Trade, TradeAttribute,
         },
-        messages::Notice,
-        subscriptions::Subscription,
+        subscriptions::{Subscription, SubscriptionItem},
     };
     use nautilus_common::messages::DataEvent;
     use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
@@ -1571,10 +1642,11 @@ mod tests {
         let quote_cache = Arc::new(tokio::sync::Mutex::new(QuoteCache::new()));
 
         let action = process_quote_tick_result(
-            Ok::<_, &'static str>(TickTypes::Notice(Notice {
+            Ok::<_, &'static str>(SubscriptionItem::Notice(Notice {
                 code: 162,
                 message: String::from("Market data subscription cancelled"),
                 error_time: None,
+                advanced_order_reject_json: String::new(),
             })),
             instrument_id,
             2,
@@ -1740,10 +1812,11 @@ mod tests {
         let greeks_cache = Arc::new(tokio::sync::Mutex::new(OptionGreeksCache::new()));
 
         let action = process_option_greeks_tick_result(
-            Ok::<_, &'static str>(TickTypes::Notice(Notice {
+            Ok::<_, &'static str>(SubscriptionItem::Notice(Notice {
                 code: 162,
                 message: String::from("Market data subscription cancelled"),
                 error_time: None,
+                advanced_order_reject_json: String::new(),
             })),
             instrument_id,
             &sender,

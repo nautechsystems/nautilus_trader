@@ -70,12 +70,14 @@ audit-as-crates-io = true
 [policy.nautilus-deribit]
 audit-as-crates-io = true
 
-[policy.nautilus-derive-fuzz]
+[policy.nautilus-derive]
 audit-as-crates-io = false
-criteria = "safe-to-run"
 
 [policy.nautilus-dydx]
 audit-as-crates-io = true
+
+[policy.nautilus-event-store]
+audit-as-crates-io = false
 
 [policy.nautilus-execution]
 audit-as-crates-io = true
@@ -92,9 +94,8 @@ audit-as-crates-io = true
 [policy.nautilus-kraken]
 audit-as-crates-io = true
 
-[policy.nautilus-lighter-fuzz]
+[policy.nautilus-lighter]
 audit-as-crates-io = false
-criteria = "safe-to-run"
 
 [policy.nautilus-live]
 audit-as-crates-io = true
@@ -113,6 +114,9 @@ audit-as-crates-io = true
 
 [policy.nautilus-persistence-macros]
 audit-as-crates-io = true
+
+[policy.nautilus-plugin]
+audit-as-crates-io = false
 
 [policy.nautilus-polymarket]
 audit-as-crates-io = false
@@ -310,8 +314,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.arbitrary]]
 version = "1.4.2"
-criteria = "safe-to-run"
-suggest = false
+criteria = "safe-to-deploy"
 
 [[exemptions.arc-swap]]
 version = "1.9.0"
@@ -819,8 +822,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.crypto-common]]
 version = "0.1.7"
-criteria = "safe-to-run"
-suggest = false
+criteria = "safe-to-deploy"
 
 [[exemptions.crypto-common]]
 version = "0.2.2"
@@ -1379,7 +1381,7 @@ version = "0.1.65"
 criteria = "safe-to-deploy"
 
 [[exemptions.ibapi]]
-version = "2.11.4"
+version = "3.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.icu_collections]]
@@ -1492,8 +1494,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.js-sys]]
 version = "0.3.99"
-criteria = "safe-to-run"
-suggest = false
+criteria = "safe-to-deploy"
 
 [[exemptions.js-sys]]
 version = "0.3.100"
@@ -1561,8 +1562,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.libfuzzer-sys]]
 version = "0.4.13"
-criteria = "safe-to-run"
-suggest = false
+criteria = "safe-to-deploy"
 
 [[exemptions.libm]]
 version = "0.2.16"
@@ -1980,12 +1980,20 @@ criteria = "safe-to-deploy"
 version = "0.8.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.prost]]
+version = "0.14.3"
+criteria = "safe-to-deploy"
+
 [[exemptions.prost-build]]
 version = "0.13.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.prost-derive]]
 version = "0.8.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.prost-derive]]
+version = "0.14.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.prost-types]]
@@ -2766,8 +2774,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen]]
 version = "0.2.122"
-criteria = "safe-to-run"
-suggest = false
+criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen]]
 version = "0.2.123"
@@ -2775,8 +2782,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-futures]]
 version = "0.4.72"
-criteria = "safe-to-run"
-suggest = false
+criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-futures]]
 version = "0.4.73"
@@ -2784,8 +2790,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-macro]]
 version = "0.2.122"
-criteria = "safe-to-run"
-suggest = false
+criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-macro]]
 version = "0.2.123"
@@ -2793,8 +2798,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-macro-support]]
 version = "0.2.122"
-criteria = "safe-to-run"
-suggest = false
+criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-macro-support]]
 version = "0.2.123"
@@ -2802,8 +2806,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-shared]]
 version = "0.2.122"
-criteria = "safe-to-run"
-suggest = false
+criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-shared]]
 version = "0.2.123"
@@ -2823,8 +2826,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.web-sys]]
 version = "0.3.99"
-criteria = "safe-to-run"
-suggest = false
+criteria = "safe-to-deploy"
 
 [[exemptions.web-sys]]
 version = "0.3.100"

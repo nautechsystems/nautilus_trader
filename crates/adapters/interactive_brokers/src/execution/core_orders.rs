@@ -306,9 +306,10 @@ impl InteractiveBrokersExecutionClient {
         request_timeout_secs: u64,
     ) -> anyhow::Result<()> {
         let timeout_dur = Duration::from_secs(request_timeout_secs);
-        let mut subscription = tokio::time::timeout(timeout_dur, client.all_open_orders())
+        let subscription = tokio::time::timeout(timeout_dur, client.all_open_orders())
             .await
             .context("Timeout requesting open orders for modify")??;
+        let mut subscription = subscription.filter_data();
 
         let client_order_id = cmd.client_order_id.to_string();
 

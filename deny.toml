@@ -216,6 +216,10 @@ skip = [
   { crate = "reqwest" },
   { crate = "wasm-streams" },
 
+  # Protobuf runtime - dYdX/cosmos/tonic use 0.13, ibapi uses 0.14
+  { crate = "prost" },
+  { crate = "prost-derive" },
+
   # WASI bindings - getrandom pulls distinct wit-bindgen generations via wasip2/wasip3
   { crate = "wit-bindgen" },
 

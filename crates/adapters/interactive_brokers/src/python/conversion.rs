@@ -127,9 +127,18 @@ pub fn contract_to_pydict<'py>(
     )?;
     dict.set_item("multiplier", &contract.multiplier)?;
     dict.set_item("strike", contract.strike)?;
-    dict.set_item("right", &contract.right)?;
+    dict.set_item(
+        "right",
+        contract.right.as_ref().map_or("", |right| right.as_str()),
+    )?;
     dict.set_item("includeExpired", contract.include_expired)?;
-    dict.set_item("secIdType", &contract.security_id_type)?;
+    dict.set_item(
+        "secIdType",
+        contract
+            .security_id_type
+            .as_ref()
+            .map_or("", |security_id_type| security_id_type.as_str()),
+    )?;
     dict.set_item("secId", &contract.security_id)?;
     dict.set_item("description", &contract.description)?;
     dict.set_item("issuerId", &contract.issuer_id)?;
@@ -141,7 +150,7 @@ pub fn contract_to_pydict<'py>(
             let leg_dict = PyDict::new(py);
             leg_dict.set_item("conId", leg.contract_id)?;
             leg_dict.set_item("ratio", leg.ratio)?;
-            leg_dict.set_item("action", &leg.action)?;
+            leg_dict.set_item("action", leg.action.as_str())?;
             leg_dict.set_item("exchange", &leg.exchange)?;
             leg_dict.set_item("openClose", combo_leg_open_close_to_i32(leg.open_close))?;
             leg_dict.set_item("shortSaleSlot", leg.short_sale_slot)?;
