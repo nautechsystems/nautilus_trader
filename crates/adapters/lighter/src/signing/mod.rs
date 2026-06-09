@@ -31,13 +31,12 @@
 //! reproduced as fixtures so equivalence with the upstream behaviour is
 //! verifiable end-to-end.
 //!
-//! Pornin's reference is also pulled in as a `#[cfg(test)]` dev-dep
-//! (zero transitive deps; pinned by commit) and consumed by the
-//! `pornin_diff` proptest module plus the `fuzz_pornin_diff_*` fuzz
-//! targets. Every public algebra operation (`Fp5` add/sub/mul/neg/invert,
+//! Pornin's reference stays in the publish=false fuzz crate so the crates.io
+//! package graph does not depend on a git source. The `fuzz_pornin_diff_*`
+//! targets assert public algebra operations (`Fp5` add/sub/mul/neg/invert,
 //! `Scalar` add/sub/mul/neg, `Point` decode/double/add, scalar mul on
-//! arbitrary bases) is asserted byte-for-byte against the reference on
-//! every random sample. The two implementations share no code lineage:
+//! arbitrary bases) byte-for-byte against the reference. The two
+//! implementations share no code lineage:
 //! Pornin's accompanies the design paper (IACR ePrint 2022/274) and has
 //! been public and reused by downstream zero-knowledge projects since
 //! 2022; ours is written from the paper using his code as a reading
@@ -62,6 +61,3 @@ pub mod tx;
 
 #[cfg(test)]
 pub(crate) mod fixtures;
-
-#[cfg(test)]
-mod pornin_diff;

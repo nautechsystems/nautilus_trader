@@ -166,12 +166,6 @@ derive_builder = { version = "0.20.2", default-features = false, features = [
   "alloc",
 ] }
 dotenvy = "0.15.7"
-# `ecgfp5` is the upstream reference Rust implementation of the curve and field
-# (Pornin's design paper, MIT-licensed). Dev-only differential dependency for
-# the Lighter signing module's proptest suite. The crate itself has no
-# transitive deps (`[dependencies]` is empty); pinned by commit for build
-# reproducibility.
-ecgfp5 = { git = "https://github.com/pornin/ecgfp5", rev = "ce059c6d1e1662db437aecbf3db6bb67fe63c716", version = "0.1.0" }
 ed25519-dalek = "2.2.0"
 enum_dispatch = "0.3.13"
 futures = { version = "0.3.32", default-features = false, features = [

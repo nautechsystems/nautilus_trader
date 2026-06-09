@@ -71,6 +71,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "fuzz_pornin_diff_algebra"
+path = "fuzz_targets/fuzz_pornin_diff_algebra.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "fuzz_pornin_diff_decode"
 path = "fuzz_targets/fuzz_pornin_diff_decode.rs"
 test = false

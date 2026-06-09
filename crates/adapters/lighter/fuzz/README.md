@@ -57,6 +57,7 @@ workspace, so it does not affect the parent stable build.
 | `fuzz_scalar_mul_ct_diff`     | `scalar_mul_ct` vs `scalar_mul` differential on every `(scalar, base)` pair. |
 | `fuzz_pornin_diff_decode`     | `Point::decode` vs Pornin's upstream Rust reference on every `Fp5`.          |
 | `fuzz_pornin_diff_scalar_mul` | `Point::scalar_mul` vs Pornin's reference on every `(s, base)` pair.         |
+| `fuzz_pornin_diff_algebra`    | Field, scalar, and curve algebra vs Pornin's reference implementation.       |
 
 ## Running
 

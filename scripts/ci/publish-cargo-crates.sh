@@ -102,6 +102,7 @@ trap 'rm -rf "$work_dir"' EXIT
 metadata_file="${work_dir}/metadata.json"
 publish_plan_file="${work_dir}/publish-plan.tsv"
 blocked_dependencies_file="${work_dir}/blocked-dependencies.tsv"
+blocked_dependency_sources_file="${work_dir}/blocked-dependency-sources.tsv"
 response_file="${work_dir}/response.json"
 index_response_file="${work_dir}/sparse-index.json"
 
@@ -117,7 +118,7 @@ jq -r '
         name,
         version,
         deps: ([.dependencies[]
-          | select(.path != null and (.kind != "dev"))
+          | select(.path != null)
           | .name
         ] | unique)
       }
@@ -157,8 +158,8 @@ jq -r '
         version,
         publish,
         deps: [.dependencies[]
-          | select(.path != null and (.kind != "dev"))
-          | {name, optional}
+          | select(.path != null)
+          | {name, kind: (.kind // "normal"), optional}
         ]
       }
   ] as $packages
@@ -174,10 +175,30 @@ jq -r '
       $package.version,
       $dependency.name,
       $dependency_package.version,
+      $dependency.kind,
       ($dependency.optional | tostring)
     ]
   | @tsv
 ' "$metadata_file" > "$blocked_dependencies_file"
+
+jq -r '
+  def crates_io_publishable:
+    .publish == null or (.publish | index("crates-io"));
+
+  .packages[]
+  | select(.source == null and crates_io_publishable) as $package
+  | $package.dependencies[]?
+  | select(.source != null and (.source | startswith("registry+https://github.com/rust-lang/crates.io-index") | not))
+  | [
+      $package.name,
+      $package.version,
+      .name,
+      (.kind // "normal"),
+      .req,
+      .source
+    ]
+  | @tsv
+' "$metadata_file" > "$blocked_dependency_sources_file"
 
 curl_crate_version() {
   local crate_name=$1
@@ -278,6 +299,31 @@ index_version_exists() {
   esac
 }
 
+check_dependency_sources() {
+  local failed=false
+  local package_name
+  local package_version
+  local dependency_name
+  local dependency_kind
+  local dependency_req
+  local dependency_source
+
+  while IFS=$'\t' read -r package_name package_version dependency_name dependency_kind dependency_req dependency_source; do
+    if [[ -z "$package_name" ]]; then
+      continue
+    fi
+
+    echo "::error::Cannot publish ${package_name} ${package_version}: dependency"
+    echo "::error::${dependency_name} ${dependency_req} uses ${dependency_source}."
+    echo "::error::kind=${dependency_kind}. Publishable crates must resolve dependencies from crates.io."
+    failed=true
+  done < "$blocked_dependency_sources_file"
+
+  if [[ "$failed" == true ]]; then
+    exit 1
+  fi
+}
+
 check_blocked_dependencies() {
   local failed=false
   local exists_status=0
@@ -285,9 +331,10 @@ check_blocked_dependencies() {
   local package_version
   local dependency_name
   local dependency_version
+  local dependency_kind
   local optional
 
-  while IFS=$'\t' read -r package_name package_version dependency_name dependency_version optional; do
+  while IFS=$'\t' read -r package_name package_version dependency_name dependency_version dependency_kind optional; do
     if [[ -z "$package_name" ]]; then
       continue
     fi
@@ -306,7 +353,7 @@ check_blocked_dependencies() {
 
     echo "::error::Cannot publish ${package_name} ${package_version}: local dependency"
     echo "::error::${dependency_name} ${dependency_version} is marked publish=false and is absent from crates.io."
-    echo "::error::optional=${optional}. Publish the dependency first or mark ${package_name} publish=false."
+    echo "::error::kind=${dependency_kind}, optional=${optional}. Publish the dependency first or mark ${package_name} publish=false."
     failed=true
   done < "$blocked_dependencies_file"
 
@@ -412,9 +459,9 @@ publish_crate() {
     echo "Publishing ${crate_name} ${crate_version} (attempt ${attempt}/${cargo_publish_attempts})"
 
     set +e
-    # --no-verify: the verify build resolves [dev-dependencies] from crates.io,
-    # which fails for crates whose dev-deps appear later in the publish plan.
-    # CI already verifies the workspace builds before this script runs.
+    # CI already verifies the workspace builds before this script runs. The
+    # publish plan still orders normal, dev, and build path dependencies because
+    # Cargo resolves them during package preparation.
     cargo publish --locked --no-verify --package "$crate_name"
     status=$?
     set -e
@@ -455,6 +502,7 @@ if [[ ! -s "$publish_plan_file" ]]; then
   exit 1
 fi
 
+check_dependency_sources
 check_blocked_dependencies
 
 echo "Publishing crates in dependency order:"

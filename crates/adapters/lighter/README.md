@@ -66,14 +66,14 @@ gated by independent layers:
   `lighter-python` SDK, covering end-to-end outputs for the four supported tx
   kinds.
 - **Differential parity** with Thomas Pornin's MIT-licensed Rust reference
-  (`pornin/ecgfp5`), pulled in as a zero-transitive-dep `#[cfg(test)]`
-  dev-dep. Every public algebra operation is asserted byte-for-byte against
-  it under proptest, with a coverage-guided fuzz soak in
-  [`fuzz/`](fuzz/README.md) for continuous validation. Pornin's reference
-  accompanies the curve's design paper (IACR ePrint 2022/274), has been
-  public and reused by downstream zero-knowledge projects since 2022, and
-  shares no code lineage with our implementation: a bug that slips the
-  gate would have to be present in both implementations in the same way.
+  (`pornin/ecgfp5`), kept in the publish=false fuzz crate so the crates.io
+  package graph has no git dependencies. The fuzz targets assert every public
+  algebra operation byte-for-byte against it and soak point decode and scalar
+  multiplication under coverage guidance. Pornin's reference accompanies the
+  curve's design paper (IACR ePrint 2022/274), has been public and reused by
+  downstream zero-knowledge projects since 2022, and shares no code lineage
+  with our implementation: a bug that slips the gate would have to be present
+  in both implementations in the same way.
 - **Property tests** covering ring axioms, group laws, and Frobenius
   identities on the cryptographic primitives.
 

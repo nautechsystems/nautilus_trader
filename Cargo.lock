@@ -3605,11 +3605,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ecgfp5"
-version = "0.1.0"
-source = "git+https://github.com/pornin/ecgfp5?rev=ce059c6d1e1662db437aecbf3db6bb67fe63c716#ce059c6d1e1662db437aecbf3db6bb67fe63c716"
-
-[[package]]
 name = "ed25519"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6262,7 +6257,6 @@ dependencies = [
  "dashmap",
  "derive_builder",
  "dotenvy",
- "ecgfp5",
  "futures-util",
  "iai",
  "log",
