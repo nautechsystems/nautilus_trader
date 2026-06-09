@@ -105,8 +105,7 @@ impl PostgresCacheDatabase {
         let pool = connect_pg(pg_connect_options.clone().into()).await.unwrap();
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<DatabaseQuery>();
 
-        // Spawn a task to handle messages
-        let handle = tokio::spawn(async move {
+        let handle = get_runtime().spawn(async move {
             Box::pin(Self::process_commands(
                 rx,
                 pg_connect_options.clone().into(),
