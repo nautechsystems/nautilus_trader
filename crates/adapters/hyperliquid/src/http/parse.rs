@@ -708,6 +708,12 @@ fn is_outcome_side_token(symbol: &str) -> bool {
     !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit())
 }
 
+/// Venue-wide minimum order notional. Hyperliquid documents a $10 floor on
+/// perp and spot orders. The universe metadata doesn't carry this per-asset,
+/// so we hard code the venue rule here and surface it via the Nautilus
+/// instrument.
+const MIN_NOTIONAL_USDC: f64 = 10.0;
+
 /// Converts a single Hyperliquid instrument definition into a Nautilus `InstrumentAny`.
 ///
 /// Returns `None` if the conversion fails (e.g., unsupported market type).
@@ -747,7 +753,7 @@ pub fn create_instrument_from_def(
                 None,
                 None,
                 None,
-                None,
+                Some(Money::new(MIN_NOTIONAL_USDC, get_currency("USDC"))),
                 None,
                 None,
                 None,
@@ -780,7 +786,7 @@ pub fn create_instrument_from_def(
                 None,
                 None,
                 None,
-                None,
+                Some(Money::new(MIN_NOTIONAL_USDC, get_currency("USDC"))),
                 None,
                 None,
                 None,
@@ -1272,6 +1278,32 @@ mod tests {
         assert_eq!(atom.base, "ATOM");
         assert_eq!(atom.size_decimals, 2);
         assert_eq!(atom.max_leverage, Some(5));
+    }
+
+    #[rstest]
+    fn test_create_instrument_from_def_perp_builds_crypto_perpetual() {
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+
+        let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+
+        match instrument {
+            InstrumentAny::CryptoPerpetual(perp) => {
+                assert_eq!(perp.id.to_string(), "BTC-USD-PERP.HYPERLIQUID");
+                assert_eq!(perp.raw_symbol.as_str(), "BTC");
+                assert_eq!(perp.base_currency.code.as_str(), "BTC");
+                assert_eq!(perp.quote_currency.code.as_str(), "USD");
+                assert_eq!(perp.settlement_currency.code.as_str(), "USDC");
+                assert!(!perp.is_inverse);
+                assert_eq!(perp.price_increment, Price::from("0.1"));
+                assert_eq!(perp.size_increment, Quantity::from("0.00001"));
+                assert_eq!(
+                    perp.min_notional,
+                    Some(Money::new(10.0, get_currency("USDC"))),
+                );
+            }
+            other => panic!("Expected CryptoPerpetual, was {other:?}"),
+        }
     }
 
     #[rstest]
