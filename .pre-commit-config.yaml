@@ -266,6 +266,14 @@ repos:
         files: "Cargo\\.toml$"
         pass_filenames: false
 
+      - id: check-cargo-crates-publish
+        name: check cargo crates publish
+        description: Checks Cargo publish planning with mocked metadata and registry lookups
+        entry: bash scripts/ci/test-publish-cargo-crates-check.bash
+        language: system
+        files: "^scripts/ci/(publish-cargo-crates\\.sh|test-publish-cargo-crates-check\\.bash)$"
+        pass_filenames: false
+
       - id: fmt
         name: cargo fmt
         description: Format files with cargo fmt
