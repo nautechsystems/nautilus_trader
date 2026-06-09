@@ -50,6 +50,19 @@ pub(crate) fn determine_position_side(
     })
 }
 
+#[must_use]
+pub(crate) const fn reduce_only_param(
+    reduce_only: bool,
+    position_side: Option<BinancePositionSide>,
+) -> Option<bool> {
+    // Binance rejects reduceOnly when positionSide is present in hedge mode
+    if reduce_only && position_side.is_none() {
+        Some(true)
+    } else {
+        None
+    }
+}
+
 /// Converts a Nautilus trailing offset (percent) into a Binance `callbackRate` decimal.
 ///
 /// # Errors
@@ -138,5 +151,19 @@ mod tests {
             determine_position_side(is_hedge_mode, order_side, reduce_only),
             expected,
         );
+    }
+
+    #[rstest]
+    #[case::one_way(false, None, None)]
+    #[case::one_way_reduce(true, None, Some(true))]
+    #[case::hedge_open(false, Some(BinancePositionSide::Long), None)]
+    #[case::hedge_close_long(true, Some(BinancePositionSide::Long), None)]
+    #[case::hedge_close_short(true, Some(BinancePositionSide::Short), None)]
+    fn test_reduce_only_param(
+        #[case] reduce_only: bool,
+        #[case] position_side: Option<BinancePositionSide>,
+        #[case] expected: Option<bool>,
+    ) {
+        assert_eq!(reduce_only_param(reduce_only, position_side), expected);
     }
 }

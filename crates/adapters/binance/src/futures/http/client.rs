@@ -66,25 +66,28 @@ use super::{
         BinanceTradesParams, BinanceUserTradesParams, ListenKeyParams,
     },
 };
-use crate::common::{
-    consts::{
-        BINANCE_API_KEY_HEADER, BINANCE_DAPI_PATH, BINANCE_DAPI_RATE_LIMITS, BINANCE_FAPI_PATH,
-        BINANCE_FAPI_RATE_LIMITS, BINANCE_NAUTILUS_FUTURES_BROKER_ID, BinanceRateLimitQuota,
+use crate::{
+    common::{
+        consts::{
+            BINANCE_API_KEY_HEADER, BINANCE_DAPI_PATH, BINANCE_DAPI_RATE_LIMITS, BINANCE_FAPI_PATH,
+            BINANCE_FAPI_RATE_LIMITS, BINANCE_NAUTILUS_FUTURES_BROKER_ID, BinanceRateLimitQuota,
+        },
+        credential::SigningCredential,
+        encoder::encode_broker_id,
+        enums::{
+            BinanceAlgoType, BinanceEnvironment, BinanceFuturesOrderType, BinancePositionSide,
+            BinancePriceMatch, BinanceProductType, BinanceRateLimitInterval, BinanceRateLimitType,
+            BinanceSide, BinanceTimeInForce, BinanceWorkingType,
+        },
+        models::BinanceErrorResponse,
+        parse::{
+            parse_coinm_instrument, parse_required_price_at_precision,
+            parse_required_quantity_at_precision, parse_usdm_instrument,
+        },
+        symbol::{format_binance_symbol, format_instrument_id},
+        urls::get_http_base_url,
     },
-    credential::SigningCredential,
-    encoder::encode_broker_id,
-    enums::{
-        BinanceAlgoType, BinanceEnvironment, BinanceFuturesOrderType, BinancePositionSide,
-        BinancePriceMatch, BinanceProductType, BinanceRateLimitInterval, BinanceRateLimitType,
-        BinanceSide, BinanceTimeInForce, BinanceWorkingType,
-    },
-    models::BinanceErrorResponse,
-    parse::{
-        parse_coinm_instrument, parse_required_price_at_precision,
-        parse_required_quantity_at_precision, parse_usdm_instrument,
-    },
-    symbol::{format_binance_symbol, format_instrument_id},
-    urls::get_http_base_url,
+    futures::conversions::reduce_only_param,
 };
 
 const BINANCE_GLOBAL_RATE_KEY: &str = "binance:global";
@@ -1748,7 +1751,7 @@ impl BinanceFuturesHttpClient {
             price: price_str,
             new_client_order_id: Some(client_id_str),
             stop_price: stop_price_str,
-            reduce_only: if reduce_only { Some(true) } else { None },
+            reduce_only: reduce_only_param(reduce_only, position_side),
             position_side,
             close_position: None,
             activation_price: None,
@@ -1833,11 +1836,7 @@ impl BinanceFuturesHttpClient {
         } else {
             trigger_price.map(|p| p.to_string())
         };
-        let reduce_only = if reduce_only && position_side.is_none() {
-            Some(true)
-        } else {
-            None
-        };
+        let reduce_only = reduce_only_param(reduce_only, position_side);
         let client_id_str = encode_broker_id(&client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
 
         // closePosition is mutually exclusive with quantity and reduceOnly

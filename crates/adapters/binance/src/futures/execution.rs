@@ -106,7 +106,7 @@ use crate::{
     config::BinanceExecClientConfig,
     futures::{
         conversions::{
-            determine_position_side, trailing_offset_to_callback_rate,
+            determine_position_side, reduce_only_param, trailing_offset_to_callback_rate,
             trailing_offset_to_callback_rate_string,
         },
         http::{
@@ -493,7 +493,7 @@ impl BinanceFuturesExecutionClient {
                 },
                 new_client_order_id: Some(client_id_str),
                 stop_price: trigger_price.map(|p| p.to_string()),
-                reduce_only: if reduce_only { Some(true) } else { None },
+                reduce_only: reduce_only_param(reduce_only, position_side),
                 position_side,
                 close_position: None,
                 activation_price: activation_price.map(|p| p.to_string()),
