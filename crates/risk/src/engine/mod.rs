@@ -299,9 +299,8 @@ impl RiskEngine {
                     reason
                 );
 
-                let order = match Self::get_existing_order(&cache, &order) {
-                    Some(order) => order,
-                    None => return,
+                let Some(order) = Self::get_existing_order(&cache, &order) else {
+                    return;
                 };
 
                 let rejected = Self::create_modify_rejected(&order, reason, &clock);
@@ -394,7 +393,10 @@ impl RiskEngine {
     }
 
     /// Processes an order event for risk monitoring and state updates.
-    #[expect(clippy::needless_pass_by_value)] // Required by message bus dispatch
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "message bus dispatch passes owned order events"
+    )]
     pub fn process(&mut self, event: OrderEventAny) {
         self.event_count += 1;
 
@@ -546,7 +548,7 @@ impl RiskEngine {
             }
             TradingCommand::ModifyOrder(modify_order) => self.handle_modify_order(modify_order),
             TradingCommand::QueryAccount(query_account) => {
-                self.send_to_execution(TradingCommand::QueryAccount(query_account));
+                Self::send_to_execution(TradingCommand::QueryAccount(query_account));
             }
             _ => {
                 log::error!("Cannot handle command: {command}");
@@ -556,22 +558,20 @@ impl RiskEngine {
 
     fn handle_submit_order(&mut self, command: SubmitOrder) {
         if self.config.bypass {
-            self.send_to_execution(TradingCommand::SubmitOrder(command));
+            Self::send_to_execution(TradingCommand::SubmitOrder(command));
             return;
         }
 
         let order = {
             let cache = self.cache.borrow();
-            match cache.order(&command.client_order_id) {
-                Some(order) => order.clone(),
-                None => {
-                    log::error!(
-                        "Cannot handle submit order: order not found in cache for {}",
-                        command.client_order_id
-                    );
-                    return;
-                }
-            }
+            let Some(order) = cache.order(&command.client_order_id) else {
+                log::error!(
+                    "Cannot handle submit order: order not found in cache for {}",
+                    command.client_order_id
+                );
+                return;
+            };
+            order.clone()
         };
 
         if let Some(position_id) = command.position_id
@@ -606,9 +606,7 @@ impl RiskEngine {
             cache.instrument(&command.instrument_id).cloned()
         };
 
-        let instrument = if let Some(instrument) = instrument_exists {
-            instrument
-        } else {
+        let Some(instrument) = instrument_exists else {
             self.deny_command(
                 TradingCommand::SubmitOrder(command.clone()),
                 &format!("Instrument for {} not found", command.instrument_id),
@@ -630,7 +628,7 @@ impl RiskEngine {
 
     fn handle_submit_order_list(&mut self, command: SubmitOrderList) {
         if self.config.bypass {
-            self.send_to_execution(TradingCommand::SubmitOrderList(command));
+            Self::send_to_execution(TradingCommand::SubmitOrderList(command));
             return;
         }
 
@@ -658,18 +656,14 @@ impl RiskEngine {
                 continue;
             }
             let resolved = self.cache.borrow().instrument(&instrument_id).cloned();
-            match resolved {
-                Some(instrument) => {
-                    instruments.insert(instrument_id, instrument);
-                }
-                None => {
-                    self.deny_command(
-                        TradingCommand::SubmitOrderList(command),
-                        &format!("no instrument found for {instrument_id}"),
-                    );
-                    return; // Denied
-                }
-            }
+            let Some(instrument) = resolved else {
+                self.deny_command(
+                    TradingCommand::SubmitOrderList(command),
+                    &format!("no instrument found for {instrument_id}"),
+                );
+                return; // Denied
+            };
+            instruments.insert(instrument_id, instrument);
         }
 
         for order in &orders {
@@ -716,9 +710,7 @@ impl RiskEngine {
             cache.order(&command.client_order_id).map(|o| o.clone())
         };
 
-        let order = if let Some(order) = order_exists {
-            order
-        } else {
+        let Some(order) = order_exists else {
             log::error!(
                 "ModifyOrder DENIED: Order with command.client_order_id: {} not found",
                 command.client_order_id
@@ -751,9 +743,7 @@ impl RiskEngine {
             cache.instrument(&command.instrument_id).cloned()
         };
 
-        let instrument = if let Some(instrument) = maybe_instrument {
-            instrument
-        } else {
+        let Some(instrument) = maybe_instrument else {
             self.reject_modify_order(
                 &order,
                 &format!("no instrument found for {:?}", command.instrument_id),
@@ -762,21 +752,21 @@ impl RiskEngine {
         };
 
         // Check Price
-        let mut risk_msg = self.check_price(&instrument, command.price);
+        let mut risk_msg = Self::check_price(&instrument, command.price);
         if let Some(risk_msg) = risk_msg {
             self.reject_modify_order(&order, &risk_msg);
             return; // Denied
         }
 
         // Check Trigger
-        risk_msg = self.check_price(&instrument, command.trigger_price);
+        risk_msg = Self::check_price(&instrument, command.trigger_price);
         if let Some(risk_msg) = risk_msg {
             self.reject_modify_order(&order, &risk_msg);
             return; // Denied
         }
 
         // Check Quantity
-        risk_msg = self.check_quantity(&instrument, command.quantity, order.is_quote_quantity());
+        risk_msg = Self::check_quantity(&instrument, command.quantity, order.is_quote_quantity());
         if let Some(risk_msg) = risk_msg {
             self.reject_modify_order(&order, &risk_msg);
             return; // Denied
@@ -804,7 +794,7 @@ impl RiskEngine {
                     return;
                 }
             }
-            _ => {}
+            TradingState::Active => {}
         }
 
         self.throttled_modify_order.send(command);
@@ -837,7 +827,7 @@ impl RiskEngine {
 
     fn check_order_price(&self, instrument: &InstrumentAny, order: &OrderAny) -> bool {
         if order.price().is_some() {
-            let risk_msg = self.check_price(instrument, order.price());
+            let risk_msg = Self::check_price(instrument, order.price());
             if let Some(risk_msg) = risk_msg {
                 self.deny_order(order, &risk_msg);
                 return false; // Denied
@@ -845,7 +835,7 @@ impl RiskEngine {
         }
 
         if order.trigger_price().is_some() {
-            let risk_msg = self.check_price(instrument, order.trigger_price());
+            let risk_msg = Self::check_price(instrument, order.trigger_price());
             if let Some(risk_msg) = risk_msg {
                 self.deny_order(order, &format!("trigger {risk_msg}"));
                 return false; // Denied
@@ -856,7 +846,7 @@ impl RiskEngine {
     }
 
     fn check_order_quantity(&self, instrument: &InstrumentAny, order: &OrderAny) -> bool {
-        let risk_msg = self.check_quantity(
+        let risk_msg = Self::check_quantity(
             instrument,
             Some(order.quantity()),
             order.is_quote_quantity(),
@@ -888,6 +878,10 @@ impl RiskEngine {
         true
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "risk checks keep related denial branches together for auditability"
+    )]
     fn check_orders_risk_for_account(
         &self,
         instrument: &InstrumentAny,
@@ -926,9 +920,7 @@ impl RiskEngine {
             }
         };
 
-        let mut account = if let Some(account) = resolved_account {
-            account
-        } else {
+        let Some(mut account) = resolved_account else {
             log::debug!(
                 "Cannot find account for venue {} (account_id={account_id:?})",
                 instrument.id().venue
@@ -944,9 +936,8 @@ impl RiskEngine {
             AccountAny::Betting(betting) => betting.balance_free(Some(instrument.quote_currency())),
         };
         let allow_borrowing = match &account {
-            AccountAny::Margin(_) => false,
             AccountAny::Cash(cash) => cash.allow_borrowing,
-            AccountAny::Betting(_) => false,
+            AccountAny::Margin(_) | AccountAny::Betting(_) => false,
         };
 
         if self.config.debug {
@@ -1197,9 +1188,7 @@ impl RiskEngine {
                 _ => order.price(),
             };
 
-            let last_px = if let Some(px) = last_px {
-                px
-            } else {
+            let Some(last_px) = last_px else {
                 log::error!("Cannot check order risk: no price available");
                 continue;
             };
@@ -1217,7 +1206,7 @@ impl RiskEngine {
                         OrderSide::Buy => last_px.min(quote_tick.ask_price),
                         // SELL: could execute at best bid if above limit (but less quantity, so use limit)
                         OrderSide::Sell => last_px.max(quote_tick.bid_price),
-                        _ => last_px,
+                        OrderSide::NoOrderSide => last_px,
                     }
                 } else {
                     last_px // No market data, use limit price
@@ -1354,17 +1343,14 @@ impl RiskEngine {
                     _ => unreachable!(),
                 };
 
-                let margin_free_val = match margin_free {
-                    Some(val) => val,
-                    None => {
-                        if self.config.debug {
-                            log::debug!(
-                                "No balance for margin currency {}, skipping margin check",
-                                margin_req.currency
-                            );
-                        }
-                        continue;
+                let Some(margin_free_val) = margin_free else {
+                    if self.config.debug {
+                        log::debug!(
+                            "No balance for margin currency {}, skipping margin check",
+                            margin_req.currency
+                        );
                     }
+                    continue;
                 };
 
                 // Per-order margin check
@@ -1636,7 +1622,7 @@ impl RiskEngine {
         true // Passed
     }
 
-    fn check_price(&self, instrument: &InstrumentAny, price: Option<Price>) -> Option<String> {
+    fn check_price(instrument: &InstrumentAny, price: Option<Price>) -> Option<String> {
         let price_val = price?;
 
         if price_val.precision > instrument.price_precision() {
@@ -1656,7 +1642,6 @@ impl RiskEngine {
     }
 
     fn check_quantity(
-        &self,
         instrument: &InstrumentAny,
         quantity: Option<Quantity>,
         is_quote_quantity: bool,
@@ -1895,7 +1880,7 @@ impl RiskEngine {
         }
     }
 
-    fn send_to_execution(&self, command: TradingCommand) {
+    fn send_to_execution(command: TradingCommand) {
         let endpoint = MessagingSwitchboard::exec_engine_queue_execute();
         msgbus::send_trading_command(endpoint, command);
     }

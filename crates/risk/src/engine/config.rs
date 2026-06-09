@@ -31,6 +31,13 @@ use serde::{Deserialize, Serialize};
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.risk")
 )]
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "config deserializes plain fields; unsafe methods come from generated PyO3 integration"
+    )
+)]
 #[derive(Debug, Clone, Deserialize, Serialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 pub struct RiskEngineConfig {

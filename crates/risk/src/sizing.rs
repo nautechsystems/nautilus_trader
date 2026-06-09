@@ -30,7 +30,10 @@ use rust_decimal::{
 /// Panics if converting `units` to a decimal fails,
 /// or if converting the final size to `f64` fails.
 #[must_use]
-#[expect(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "position sizing API mirrors fixed-risk inputs used by callers"
+)]
 pub fn calculate_fixed_risk_position_size(
     instrument: &InstrumentAny,
     entry: Price,
@@ -140,7 +143,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_with_zero_exchange_rate(instrument_gbpusd: InstrumentAny) {
-        let equity = Money::new(100000.0, instrument_gbpusd.quote_currency());
+        let equity = Money::new(100_000.0, instrument_gbpusd.quote_currency());
         let entry = Price::new(1.00100, instrument_gbpusd.price_precision());
         let stop_loss = Price::new(1.00000, instrument_gbpusd.price_precision());
 
@@ -162,7 +165,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_with_zero_risk(instrument_gbpusd: InstrumentAny) {
-        let equity = Money::new(100000.0, instrument_gbpusd.quote_currency());
+        let equity = Money::new(100_000.0, instrument_gbpusd.quote_currency());
         let price = Price::new(1.00100, instrument_gbpusd.price_precision());
 
         let result = calculate_fixed_risk_position_size(
@@ -227,7 +230,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_single_unit_size_when_risk_too_high(instrument_gbpusd: InstrumentAny) {
-        let equity = Money::new(100000.0, Currency::USD());
+        let equity = Money::new(100_000.0, Currency::USD());
         let entry = Price::new(3.00000, instrument_gbpusd.price_precision());
         let stop_loss = Price::new(1.00000, instrument_gbpusd.price_precision());
 
@@ -261,7 +264,7 @@ mod tests {
             Decimal::new(1, 2), // 1%
             Decimal::ZERO,
             EXCHANGE_RATE,
-            Some(Decimal::from(500000)),
+            Some(Decimal::from(500_000)),
             Decimal::from(1000),
             1,
         );
@@ -324,9 +327,9 @@ mod tests {
             entry,
             stop_loss,
             equity,
-            Decimal::new(1, 2),                   // 1%
-            Decimal::new(2, 4),                   // 0.0002
-            Decimal::from_f64(0.009931).unwrap(), // 1/107.403
+            Decimal::new(1, 2),                    // 1%
+            Decimal::new(2, 4),                    // 0.0002
+            Decimal::from_f64(0.009_931).unwrap(), // 1/107.403
             None,
             Decimal::from(1000),
             1,
