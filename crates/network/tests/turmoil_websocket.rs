@@ -32,7 +32,9 @@ use futures_util::{SinkExt, StreamExt};
 use nautilus_network::{
     RECONNECTED,
     error::SendError,
-    websocket::{TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler},
+    websocket::{
+        AuthTracker, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
+    },
 };
 use rstest::{fixture, rstest};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
@@ -64,6 +66,7 @@ const PARTITION_DURING_BACKOFF_SEED: u64 = 0x57EB_3004;
 const SILENT_UNTIL_IDLE_TIMEOUT_SEED: u64 = 0x57EB_3005;
 const NO_READ_BACKPRESSURE_SEED: u64 = 0x57EB_3006;
 const DISCONNECT_WHILE_SEND_WAITS_FOR_RECONNECT_SEED: u64 = 0x57EB_3007;
+const DISCONNECT_WHILE_WAITING_FOR_AUTH_SEED: u64 = 0x57EB_3008;
 const LARGE_WEBSOCKET_MESSAGE_LEN: usize = 16 * 1024;
 const BACKPRESSURE_TCP_CAPACITY: usize = 4;
 const BACKPRESSURE_MESSAGE_COUNT: usize = 16;
@@ -679,6 +682,25 @@ fn test_turmoil_websocket_sockudo_disconnect_while_send_waits_for_reconnect_clos
     run_websocket_disconnect_while_send_waits_for_reconnect_closes_send(
         websocket_config_for_backend(TransportBackend::Sockudo),
         DISCONNECT_WHILE_SEND_WAITS_FOR_RECONNECT_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
+fn test_turmoil_websocket_disconnect_while_waiting_for_auth_closes_client() {
+    run_websocket_disconnect_while_waiting_for_auth_closes_client(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        DISCONNECT_WHILE_WAITING_FOR_AUTH_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_disconnect_while_waiting_for_auth_closes_client() {
+    run_websocket_disconnect_while_waiting_for_auth_closes_client(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        DISCONNECT_WHILE_WAITING_FOR_AUTH_SEED,
         "websocket/sockudo",
     );
 }
@@ -1448,6 +1470,114 @@ fn run_websocket_disconnect_while_send_waits_for_reconnect_closes_send(
         );
 
         release_reconnect_attempt.store(true, Ordering::SeqCst);
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_disconnect_while_waiting_for_auth_closes_client(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(100);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+
+    let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
+    let first_connection_dropped = Arc::new(AtomicBool::new(false));
+    let server_first_connection_dropped = Arc::clone(&first_connection_dropped);
+
+    sim.host("server", move || {
+        let server_first_connection_dropped = Arc::clone(&server_first_connection_dropped);
+        async move {
+            ws_drop_first_connection_before_read_then_echo_server(server_first_connection_dropped)
+                .await
+        }
+    });
+
+    sim.client("client", async move {
+        let tracker = AuthTracker::new();
+        let (handler, _rx) = channel_message_handler();
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let client_reconnected = Arc::clone(&reconnected);
+        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            client_reconnected.store(true, Ordering::SeqCst);
+        });
+
+        let client = WebSocketClient::connect(
+            websocket_config,
+            Some(handler),
+            None,
+            Some(post_reconnection),
+            vec![],
+            None,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        client.set_auth_tracker(tracker.clone(), true);
+        tracker.succeed();
+
+        assert!(
+            wait_for(|| first_connection_dropped.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should drop the first connection"
+        );
+        assert!(
+            wait_for(|| reconnected.load(Ordering::SeqCst) && client.is_active()).await,
+            "{label} seed {seed:#018x} should reconnect before auth wait"
+        );
+
+        let _auth_receiver = tracker.begin();
+        let wait_tracker = tracker.clone();
+        let auth_wait = tokio::spawn(async move {
+            wait_tracker
+                .wait_for_authenticated(Duration::from_secs(10))
+                .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            !auth_wait.is_finished(),
+            "{label} seed {seed:#018x} auth wait should be pending before disconnect"
+        );
+
+        client.disconnect().await;
+
+        let authenticated = tokio::time::timeout(Duration::from_secs(2), auth_wait)
+            .await
+            .unwrap_or_else(|_| {
+                panic!("{label} seed {seed:#018x} auth wait should finish promptly")
+            })
+            .unwrap_or_else(|e| {
+                panic!("{label} seed {seed:#018x} auth wait task should not panic: {e}")
+            });
+
+        assert!(
+            !authenticated,
+            "{label} seed {seed:#018x} auth wait should be interrupted by disconnect"
+        );
+        assert!(
+            client.is_disconnected(),
+            "{label} seed {seed:#018x} should finish controller after disconnect"
+        );
+        assert!(
+            client.is_closed(),
+            "{label} seed {seed:#018x} should enter closed state after disconnect"
+        );
+        assert!(
+            !client.is_reconnecting(),
+            "{label} seed {seed:#018x} should not stay reconnecting after disconnect"
+        );
+        assert!(
+            !client.is_active(),
+            "{label} seed {seed:#018x} should not stay active after disconnect"
+        );
 
         Ok(())
     });

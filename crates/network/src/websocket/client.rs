@@ -1603,7 +1603,8 @@ impl WebSocketClient {
     ///
     /// When the controller detects a dead connection and transitions to
     /// `Reconnect`, it calls `invalidate()` on the tracker so that any
-    /// pending authenticated sends see the state change immediately.
+    /// pending authenticated sends see the state change immediately. Explicit
+    /// disconnect fails the tracker so pending auth waits can terminate.
     /// Set `reconnect_buffer_waits_for_auth` for clients that must not replay
     /// buffered messages until the next session authenticates.
     ///
@@ -1748,6 +1749,10 @@ impl WebSocketClient {
         log::debug!("Disconnecting");
         self.connection_mode
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
+
+        if let Some(tracker) = self.auth_tracker.get() {
+            tracker.fail("WebSocket client disconnected");
+        }
         self.state_notify.notify_waiters();
 
         if dst::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {

@@ -36,7 +36,8 @@
 //!    This waits for re-auth after reconnection instead of rejecting immediately.
 //! 2. **Reconnection flow**: Authenticate BEFORE resubscribing to topics.
 //! 3. **Event propagation**: Send auth failures through event channels to consumers.
-//! 4. **State lifecycle**: Call `invalidate()` on disconnect, `succeed()`/`fail()` handle auth results.
+//! 4. **State lifecycle**: Call `invalidate()` on connection drops, and `fail()` on
+//!    terminal auth rejection or explicit client shutdown.
 
 use std::{
     sync::{
@@ -139,8 +140,8 @@ impl AuthTracker {
 
     /// Clears the authentication state without affecting pending auth attempts.
     ///
-    /// Call this on disconnect or when the connection is closed to ensure
-    /// operations requiring authentication are properly guarded.
+    /// Call this when a live connection drops and reconnect may authenticate
+    /// again, so operations requiring authentication are properly guarded.
     pub fn invalidate(&self) {
         self.state
             .store(AuthState::Unauthenticated.as_u8(), Ordering::Release);
