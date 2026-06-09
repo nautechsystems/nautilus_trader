@@ -54,6 +54,15 @@ L2 account. See the
 [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution)
 for approval and revocation details.
 
+### Maker-only API keys
+
+Lighter restricts maker-only API keys to the 0ms speed-bump lane (PostOnly orders, modifies on
+ALO orders, and cancels), so they cannot submit `ApproveIntegrator` themselves. The execution
+client detects maker-only keys at startup via `getMakerOnlyApiKeys` and skips the approval with
+a WARN log. Approval is account-scoped: a single `ApproveIntegrator` from any non-maker-only
+key on the same account permanently unlocks orders for every key on that account, including
+maker-only ones.
+
 ## L2 transaction signer
 
 The crate ships an in-tree implementation of the Lighter L2 signer (Schnorr
