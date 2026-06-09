@@ -166,8 +166,8 @@ async def test_generate_order_status_reports_raises_on_disconnected(exec_client,
     """
     Test that ConnectionError is raised when get_positions() returns None.
 
-    Verifies fix for issue #4228: same guard applied to generate_order_status_reports
-    so the exec engine skips order reconciliation when IB is unreachable.
+    Verifies fix for issue #4228: same guard applied to generate_order_status_reports so
+    the exec engine skips order reconciliation when IB is unreachable.
 
     """
     # Arrange
