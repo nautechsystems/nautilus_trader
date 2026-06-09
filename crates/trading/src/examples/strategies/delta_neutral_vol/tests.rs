@@ -20,6 +20,7 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
 };
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{QuoteTick, greeks::OptionGreekValues, option_chain::OptionGreeks},
     enums::{OrderSide, TimeInForce},
@@ -74,8 +75,8 @@ fn quote_tick(instrument_id: InstrumentId, bid: &str, ask: &str) -> QuoteTick {
         Price::from(ask),
         Quantity::from("1"),
         Quantity::from("1"),
-        Default::default(),
-        Default::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 

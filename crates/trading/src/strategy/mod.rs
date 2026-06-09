@@ -1549,7 +1549,7 @@ pub trait Strategy: DataActor {
 
     /// Finalizes the market exit process.
     ///
-    /// Cancels the market exit timer, resets state, calls the post_market_exit hook,
+    /// Cancels the market exit timer, resets state, calls the `post_market_exit` hook,
     /// and stops the strategy if a stop was pending.
     fn finalize_market_exit(&mut self) {
         let (strategy_id, should_stop) = {
@@ -1588,7 +1588,7 @@ pub trait Strategy: DataActor {
 
     /// Cancels an active market exit without calling hooks.
     ///
-    /// Used when stop() is called during an active market exit to avoid state leaks.
+    /// Used when `stop()` is called during an active market exit to avoid state leaks.
     fn cancel_market_exit(&mut self) {
         let core = self.core_mut();
         let timer_name = core.market_exit_timer_name;
@@ -1665,9 +1665,9 @@ pub trait Strategy: DataActor {
         true // Proceed with stop
     }
 
-    /// Denies an order by generating an OrderDenied event.
+    /// Denies an order by generating an `OrderDenied` event.
     ///
-    /// This method creates an OrderDenied event, applies it to the order,
+    /// This method creates an `OrderDenied` event, applies it to the order,
     /// and updates the cache.
     fn deny_order(&mut self, order: &OrderAny, reason: Ustr) {
         let core = self.core_mut();

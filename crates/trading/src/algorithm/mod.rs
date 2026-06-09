@@ -32,7 +32,7 @@
 //! 2. The order is routed to the algorithm's `{id}.execute` endpoint.
 //! 3. The algorithm receives the order via `on_order()`.
 //! 4. The algorithm spawns child orders using `spawn_market()`, `spawn_limit()`, etc.
-//! 5. Spawned orders are submitted through the RiskEngine.
+//! 5. Spawned orders are submitted through the `RiskEngine`.
 //! 6. The algorithm receives fill events and manages remaining quantity.
 
 pub mod config;
@@ -224,7 +224,7 @@ pub trait ExecutionAlgorithm: DataActor {
         Ok(())
     }
 
-    /// Generates an OrderCanceled event for an order.
+    /// Generates an `OrderCanceled` event for an order.
     fn generate_order_canceled(&mut self, order: &OrderAny) -> OrderCanceled {
         let ts_now = self.core_mut().clock().timestamp_ns();
 
@@ -242,7 +242,7 @@ pub trait ExecutionAlgorithm: DataActor {
         )
     }
 
-    /// Generates an OrderPendingUpdate event for an order.
+    /// Generates an `OrderPendingUpdate` event for an order.
     fn generate_order_pending_update(&mut self, order: &OrderAny) -> OrderPendingUpdate {
         let ts_now = self.core_mut().clock().timestamp_ns();
 
@@ -262,7 +262,7 @@ pub trait ExecutionAlgorithm: DataActor {
         )
     }
 
-    /// Generates an OrderPendingCancel event for an order.
+    /// Generates an `OrderPendingCancel` event for an order.
     fn generate_order_pending_cancel(&mut self, order: &OrderAny) -> OrderPendingCancel {
         let ts_now = self.core_mut().clock().timestamp_ns();
 
@@ -287,8 +287,8 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Creates a new market order with:
     /// - A unique client order ID: `{primary_id}-E{sequence}`.
     /// - The primary order's trader ID, strategy ID, and instrument ID.
-    /// - The algorithm's exec_algorithm_id.
-    /// - exec_spawn_id set to the primary order's client order ID.
+    /// - The algorithm's `exec_algorithm_id`.
+    /// - `exec_spawn_id` set to the primary order's client order ID.
     ///
     /// If `reduce_primary` is true, the primary order's quantity will be reduced
     /// by the spawned quantity. If the spawned order is subsequently denied or
@@ -343,8 +343,8 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Creates a new limit order with:
     /// - A unique client order ID: `{primary_id}-E{sequence}`
     /// - The primary order's trader ID, strategy ID, and instrument ID
-    /// - The algorithm's exec_algorithm_id
-    /// - exec_spawn_id set to the primary order's client order ID
+    /// - The algorithm's `exec_algorithm_id`
+    /// - `exec_spawn_id` set to the primary order's client order ID
     ///
     /// If `reduce_primary` is true, the primary order's quantity will be reduced
     /// by the spawned quantity. If the spawned order is subsequently denied or
@@ -411,8 +411,8 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Creates a new market-to-limit order with:
     /// - A unique client order ID: `{primary_id}-E{sequence}`
     /// - The primary order's trader ID, strategy ID, and instrument ID
-    /// - The algorithm's exec_algorithm_id
-    /// - exec_spawn_id set to the primary order's client order ID
+    /// - The algorithm's `exec_algorithm_id`
+    /// - `exec_spawn_id` set to the primary order's client order ID
     ///
     /// If `reduce_primary` is true, the primary order's quantity will be reduced
     /// by the spawned quantity. If the spawned order is subsequently denied or
@@ -531,7 +531,7 @@ pub trait ExecutionAlgorithm: DataActor {
     ///
     /// This is called when a spawned order fails before acceptance. The quantity
     /// that was deducted from the primary order is restored (up to the spawned
-    /// order's leaves_qty to handle partial fills).
+    /// order's `leaves_qty` to handle partial fills).
     fn restore_primary_order_quantity(&mut self, order: &OrderAny) {
         let Some(exec_spawn_id) = order.exec_spawn_id() else {
             return;

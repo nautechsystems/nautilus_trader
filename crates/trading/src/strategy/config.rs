@@ -23,6 +23,13 @@ use nautilus_model::{
 use serde::{Deserialize, Serialize};
 
 /// The base model for all trading strategy configurations.
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "config deserializes plain fields; unsafe methods come from generated PyO3 integration"
+    )
+)]
 #[derive(Clone, Debug, Deserialize, Serialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
@@ -69,8 +76,8 @@ pub struct StrategyConfig {
     #[builder(default)]
     pub manage_gtd_expiry: bool,
     /// If the strategy should automatically perform a market exit when stopped.
-    /// If true, calling stop() will first cancel all orders and close all positions
-    /// before the strategy transitions to the STOPPED state.
+    /// If true, calling `stop()` first cancels all orders and closes all positions
+    /// before the strategy transitions to the `STOPPED` state.
     #[serde(default = "default_false")]
     #[builder(default)]
     pub manage_stop: bool,
@@ -121,6 +128,13 @@ const fn default_market_exit_time_in_force() -> TimeInForce {
 }
 
 /// Configuration for creating strategies from importable paths.
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "config deserializes plain fields; unsafe methods come from generated PyO3 integration"
+    )
+)]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(

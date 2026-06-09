@@ -251,7 +251,7 @@ impl DataActor for CompositeMarketMaker {
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         if quote.instrument_id == self.config.signal_instrument_id {
-            let signal_mid = (quote.bid_price.as_f64() + quote.ask_price.as_f64()) / 2.0;
+            let signal_mid = f64::midpoint(quote.bid_price.as_f64(), quote.ask_price.as_f64());
             self.last_signal = Some(signal_mid);
             if self.signal_baseline.is_none() {
                 self.signal_baseline = Some(signal_mid);
@@ -263,7 +263,7 @@ impl DataActor for CompositeMarketMaker {
             return Ok(());
         }
 
-        let anchor_f64 = (quote.bid_price.as_f64() + quote.ask_price.as_f64()) / 2.0;
+        let anchor_f64 = f64::midpoint(quote.bid_price.as_f64(), quote.ask_price.as_f64());
         let price_precision = self.price_precision.ok_or_else(|| {
             anyhow::anyhow!("Cannot handle quote: price_precision is not resolved")
         })?;

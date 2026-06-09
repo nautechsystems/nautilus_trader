@@ -55,7 +55,7 @@ pub enum ForexSession {
 
 impl ForexSession {
     /// Returns the timezone associated with the session.
-    const fn timezone(&self) -> Tz {
+    const fn timezone(self) -> Tz {
         match self {
             Self::Sydney => Sydney,
             Self::Tokyo => Tokyo,
@@ -65,7 +65,7 @@ impl ForexSession {
     }
 
     /// Returns the start and end times for the session in local time.
-    const fn session_times(&self) -> (NaiveTime, NaiveTime) {
+    const fn session_times(self) -> (NaiveTime, NaiveTime) {
         match self {
             Self::Sydney => (
                 NaiveTime::from_hms_opt(7, 0, 0).unwrap(),

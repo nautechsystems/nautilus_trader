@@ -305,11 +305,11 @@ impl HurstVpinDirectional {
             .is_empty()
     }
 
-    fn clear_latch_for(&mut self, client_order_id: &ClientOrderId) {
-        if self.entry_order_id.as_ref() == Some(client_order_id) {
+    fn clear_latch_for(&mut self, client_order_id: ClientOrderId) {
+        if self.entry_order_id == Some(client_order_id) {
             self.entry_order_id = None;
         }
-        self.exit_order_ids.remove(client_order_id);
+        self.exit_order_ids.remove(&client_order_id);
     }
 }
 
@@ -328,19 +328,19 @@ nautilus_strategy!(HurstVpinDirectional, {
 
     fn on_order_rejected(&mut self, event: OrderRejected) {
         if event.instrument_id == self.config.instrument_id {
-            self.clear_latch_for(&event.client_order_id);
+            self.clear_latch_for(event.client_order_id);
         }
     }
 
     fn on_order_expired(&mut self, event: OrderExpired) {
         if event.instrument_id == self.config.instrument_id {
-            self.clear_latch_for(&event.client_order_id);
+            self.clear_latch_for(event.client_order_id);
         }
     }
 
     fn on_order_denied(&mut self, event: OrderDenied) {
         if event.instrument_id == self.config.instrument_id {
-            self.clear_latch_for(&event.client_order_id);
+            self.clear_latch_for(event.client_order_id);
         }
     }
 });
@@ -493,7 +493,7 @@ impl DataActor for HurstVpinDirectional {
             .order(&event.client_order_id)
             .is_some_and(|o| o.is_closed());
         if closed {
-            self.clear_latch_for(&event.client_order_id);
+            self.clear_latch_for(event.client_order_id);
         }
         Ok(())
     }
@@ -502,7 +502,7 @@ impl DataActor for HurstVpinDirectional {
         if event.instrument_id != self.config.instrument_id {
             return Ok(());
         }
-        self.clear_latch_for(&event.client_order_id);
+        self.clear_latch_for(event.client_order_id);
         Ok(())
     }
 

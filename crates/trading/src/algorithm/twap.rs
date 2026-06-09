@@ -72,12 +72,12 @@ impl TwapAlgorithm {
     }
 
     /// Completes the execution sequence for a primary order.
-    fn complete_sequence(&mut self, primary_id: &ClientOrderId) {
+    fn complete_sequence(&mut self, primary_id: ClientOrderId) {
         let timer_name = primary_id.as_str();
         if self.core.clock().timer_names().contains(&timer_name) {
             self.core.clock().cancel_timer(timer_name);
         }
-        self.scheduled_sizes.remove(primary_id);
+        self.scheduled_sizes.remove(&primary_id);
         log::info!("Completed TWAP execution for {primary_id}");
     }
 }
@@ -232,7 +232,7 @@ impl ExecutionAlgorithm for TwapAlgorithm {
         // Single slice: submit the primary order directly
         if is_single_slice {
             self.submit_order(order, None, None)?;
-            self.complete_sequence(&primary_id);
+            self.complete_sequence(primary_id);
             return Ok(());
         }
 
@@ -284,7 +284,7 @@ impl ExecutionAlgorithm for TwapAlgorithm {
         };
 
         if primary.is_closed() {
-            self.complete_sequence(&primary_id);
+            self.complete_sequence(primary_id);
             return Ok(());
         }
 
@@ -304,7 +304,7 @@ impl ExecutionAlgorithm for TwapAlgorithm {
         // Final slice: submit the primary order (already reduced to remaining quantity)
         if is_final_slice {
             self.submit_order(primary, None, None)?;
-            self.complete_sequence(&primary_id);
+            self.complete_sequence(primary_id);
             return Ok(());
         }
 

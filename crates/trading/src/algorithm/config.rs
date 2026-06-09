@@ -48,6 +48,13 @@ impl Default for ExecutionAlgorithmConfig {
 }
 
 /// Configuration for creating execution algorithms from importable paths.
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "config deserializes plain fields; unsafe methods come from generated PyO3 integration"
+    )
+)]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(

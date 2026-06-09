@@ -101,7 +101,11 @@ impl StrategyConfig {
         log_rejected_due_post_only_as_warning=true,
         **_kwargs
     ))]
-    #[expect(clippy::too_many_arguments)]
+    #[expect(
+        clippy::fn_params_excessive_bools,
+        clippy::too_many_arguments,
+        reason = "constructor mirrors the existing Python keyword API"
+    )]
     fn py_new(
         strategy_id: Option<StrategyId>,
         order_id_tag: Option<String>,
@@ -246,7 +250,7 @@ impl ImportableStrategyConfig {
     }
 }
 
-/// Inner state of PyStrategy, shared between Python wrapper and Rust registries.
+/// Inner state of `PyStrategy`, shared between Python wrapper and Rust registries.
 pub struct PyStrategyInner {
     core: StrategyCore,
     py_self: Option<Py<PyAny>>,
@@ -265,7 +269,10 @@ impl Debug for PyStrategyInner {
     }
 }
 
-#[expect(clippy::needless_pass_by_ref_mut)]
+#[expect(
+    clippy::needless_pass_by_ref_mut,
+    reason = "dispatch methods share receiver shape with mutable DataActor hooks"
+)]
 impl PyStrategyInner {
     fn dispatch_on_start(&self) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
@@ -458,10 +465,10 @@ impl PyStrategyInner {
         Ok(())
     }
 
-    fn dispatch_on_order_updated(&self, event: OrderUpdated) -> PyResult<()> {
+    fn dispatch_on_order_updated(&self, event: &OrderUpdated) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_order_updated", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_order_updated", ((*event).into_py_any_unwrap(py),))
             })?;
         }
         Ok(())
@@ -476,10 +483,10 @@ impl PyStrategyInner {
         Ok(())
     }
 
-    fn dispatch_on_order_filled(&self, event: OrderFilled) -> PyResult<()> {
+    fn dispatch_on_order_filled(&self, event: &OrderFilled) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_order_filled", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_order_filled", ((*event).into_py_any_unwrap(py),))
             })?;
         }
         Ok(())
@@ -560,10 +567,14 @@ impl PyStrategyInner {
         Ok(())
     }
 
-    fn dispatch_on_book_deltas(&mut self, deltas: OrderBookDeltas) -> PyResult<()> {
+    fn dispatch_on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_book_deltas", (deltas.into_py_any_unwrap(py),))
+                py_self.call_method1(
+                    py,
+                    "on_book_deltas",
+                    (deltas.clone().into_py_any_unwrap(py),),
+                )
             })?;
         }
         Ok(())
@@ -636,10 +647,14 @@ impl PyStrategyInner {
         Ok(())
     }
 
-    fn dispatch_on_option_chain(&mut self, slice: OptionChainSlice) -> PyResult<()> {
+    fn dispatch_on_option_chain(&mut self, slice: &OptionChainSlice) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_option_chain", (slice.into_py_any_unwrap(py),))
+                py_self.call_method1(
+                    py,
+                    "on_option_chain",
+                    (slice.clone().into_py_any_unwrap(py),),
+                )
             })?;
         }
         Ok(())
@@ -816,7 +831,7 @@ impl Strategy for PyStrategyInner {
     }
 
     fn on_order_updated(&mut self, event: OrderUpdated) {
-        let _ = self.dispatch_on_order_updated(event);
+        let _ = self.dispatch_on_order_updated(&event);
     }
 
     fn on_position_opened(&mut self, event: PositionOpened) {
@@ -914,7 +929,7 @@ impl DataActor for PyStrategyInner {
     }
 
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
-        self.dispatch_on_book_deltas(deltas.clone())
+        self.dispatch_on_book_deltas(deltas)
             .map_err(|e| anyhow::anyhow!("Python on_book_deltas failed: {e}"))
     }
 
@@ -954,7 +969,7 @@ impl DataActor for PyStrategyInner {
     }
 
     fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
-        self.dispatch_on_option_chain(slice.clone())
+        self.dispatch_on_option_chain(slice)
             .map_err(|e| anyhow::anyhow!("Python on_option_chain failed: {e}"))
     }
 
@@ -1007,7 +1022,7 @@ impl DataActor for PyStrategyInner {
     }
 
     fn on_order_filled(&mut self, event: &OrderFilled) -> anyhow::Result<()> {
-        self.dispatch_on_order_filled(*event)
+        self.dispatch_on_order_filled(event)
             .map_err(|e| anyhow::anyhow!("Python on_order_filled failed: {e}"))
     }
 
@@ -1057,7 +1072,8 @@ impl PyStrategy {
 }
 
 impl PyStrategy {
-    /// Creates a new PyStrategy instance.
+    /// Creates a new `PyStrategy` instance.
+    #[must_use]
     pub fn new(config: Option<StrategyConfig>) -> Self {
         let config = config.unwrap_or_default();
         let core = StrategyCore::new(config);
@@ -1097,24 +1113,26 @@ impl PyStrategy {
         Ok(())
     }
 
-    /// Updates the runtime log_events setting.
+    /// Updates the runtime `log_events` setting.
     pub fn set_log_events(&mut self, log_events: bool) {
         let inner = self.inner_mut();
         inner.core.actor.config.log_events = log_events;
     }
 
-    /// Updates the runtime log_commands setting.
+    /// Updates the runtime `log_commands` setting.
     pub fn set_log_commands(&mut self, log_commands: bool) {
         let inner = self.inner_mut();
         inner.core.actor.config.log_commands = log_commands;
     }
 
     /// Returns the strategy ID.
+    #[must_use]
     pub fn strategy_id(&self) -> StrategyId {
         StrategyId::from(self.inner().core.actor.actor_id.inner().as_str())
     }
 
     /// Returns a value indicating whether the strategy has been registered with a trader.
+    #[must_use]
     pub fn is_registered(&self) -> bool {
         self.inner().core.actor.is_registered()
     }
@@ -1170,6 +1188,11 @@ impl PyStrategy {
 
 #[pyo3::pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[expect(
+    clippy::large_types_passed_by_value,
+    clippy::unused_self,
+    reason = "default PyO3 callbacks must remain instance methods and accept Python-owned event values"
+)]
 impl PyStrategy {
     /// Creates a new [`PyStrategy`] instance.
     ///
@@ -2625,7 +2648,7 @@ impl PyStrategy {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc, str::FromStr};
+    use std::{cell::RefCell, collections::BTreeMap, rc::Rc, str::FromStr};
 
     use nautilus_common::{
         actor::DataActor,
@@ -2931,8 +2954,8 @@ class TrackingStrategy:
                 UnixNanos::from(1_711_036_800_000_000_000),
             ),
             atm_strike: None,
-            calls: Default::default(),
-            puts: Default::default(),
+            calls: BTreeMap::default(),
+            puts: BTreeMap::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
         }

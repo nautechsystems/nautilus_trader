@@ -77,6 +77,7 @@ impl Debug for StrategyCore {
 
 impl StrategyCore {
     /// Creates a new [`StrategyCore`] instance.
+    #[must_use]
     pub fn new(config: StrategyConfig) -> Self {
         let configured_strategy_id = config.strategy_id;
         let configured_order_id_tag = normalize_order_id_tag(config.order_id_tag.as_deref());
@@ -222,6 +223,7 @@ impl StrategyCore {
     /// # Panics
     ///
     /// Panics if the strategy has not been registered.
+    #[must_use]
     pub fn portfolio(&self) -> &Rc<RefCell<Portfolio>> {
         self.portfolio
             .as_ref()
