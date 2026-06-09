@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let account_id = AccountId::from("LIGHTER-001");
     let node_name = "LIGHTER-EXEC-TESTER-001".to_string();
     let client_id = ClientId::new("LIGHTER");
-    let instrument_id = InstrumentId::from("DOGE-PERP.LIGHTER");
+    let instrument_id = InstrumentId::from("ETH-PERP.LIGHTER");
 
     let data_config = LighterDataClientConfig {
         environment: lighter_environment,
@@ -85,7 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let order_qty = Quantity::from("200");
+    let order_qty = Quantity::from("0.01");
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
@@ -99,13 +99,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .subscribe_trades(false)
         .subscribe_book(false)
         .enable_limit_buys(true)
-        .enable_limit_sells(false)
+        .enable_limit_sells(true)
         .enable_stop_buys(false)
         .enable_stop_sells(false)
-        .tob_offset_ticks(10_000)
+        .tob_offset_ticks(1_000)
         .use_post_only(true)
         .cancel_orders_on_stop(true)
-        .close_positions_on_stop(false)
+        .close_positions_on_stop(true)
         .log_data(false)
         .build();
 

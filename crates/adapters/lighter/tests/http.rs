@@ -15,9 +15,12 @@
 
 //! Integration tests for the Lighter HTTP client using a mock Axum server.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering},
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use axum::{
@@ -46,11 +49,12 @@ use nautilus_lighter::{
             LighterAccountActiveOrdersQuery, LighterAccountActiveOrdersQueryBuilder,
             LighterAccountInactiveOrdersQuery, LighterAccountInactiveOrdersQueryBuilder,
             LighterAccountLookup, LighterAccountQuery, LighterCandlesQuery,
-            LighterCandlesQueryBuilder, LighterFundingsQuery, LighterNextNonceQuery,
-            LighterOrderBookDetailsQuery, LighterOrderBookDetailsQueryBuilder,
-            LighterOrderBookOrdersQuery, LighterOrderBooksQuery, LighterOrderBooksQueryBuilder,
-            LighterRecentTradesQuery, LighterSortDirection, LighterTradeQueryType,
-            LighterTradeRole, LighterTradeSortBy, LighterTradesQuery, LighterTradesQueryBuilder,
+            LighterCandlesQueryBuilder, LighterFundingsQuery, LighterMakerOnlyApiKeysQueryBuilder,
+            LighterNextNonceQuery, LighterOrderBookDetailsQuery,
+            LighterOrderBookDetailsQueryBuilder, LighterOrderBookOrdersQuery,
+            LighterOrderBooksQuery, LighterOrderBooksQueryBuilder, LighterRecentTradesQuery,
+            LighterSortDirection, LighterTradeQueryType, LighterTradeRole, LighterTradeSortBy,
+            LighterTradesQuery, LighterTradesQueryBuilder,
         },
     },
 };
@@ -305,6 +309,45 @@ async fn raw_client_get_next_nonce_sends_query_and_parses_response() {
 
     assert_eq!(response.code, 200);
     assert_eq!(response.nonce, 1_234_567_890);
+}
+
+#[tokio::test]
+async fn domain_client_get_maker_only_api_keys_sends_authorization_header() {
+    let base_url = spawn_server(Router::new().route(
+        "/api/v1/getMakerOnlyApiKeys",
+        get(handle_maker_only_api_keys),
+    ))
+    .await;
+    let client =
+        LighterHttpClient::new(LighterEnvironment::Mainnet, Some(base_url), 10, None).unwrap();
+
+    let response = client
+        .get_maker_only_api_keys(712_440, "auth-token")
+        .await
+        .unwrap();
+
+    assert_eq!(response.code, 200);
+    assert_eq!(response.api_key_indexes, vec![5]);
+}
+
+#[tokio::test]
+async fn raw_client_get_maker_only_api_keys_maps_auth_query_field_to_authorization_header() {
+    let base_url = spawn_server(Router::new().route(
+        "/api/v1/getMakerOnlyApiKeys",
+        get(handle_maker_only_api_keys),
+    ))
+    .await;
+    let client = raw_client(base_url);
+    let query = LighterMakerOnlyApiKeysQueryBuilder::default()
+        .auth("auth-token")
+        .account_index(712_440)
+        .build()
+        .unwrap();
+
+    let response = client.get_maker_only_api_keys(&query).await.unwrap();
+
+    assert_eq!(response.code, 200);
+    assert_eq!(response.api_key_indexes, vec![5]);
 }
 
 #[tokio::test]
@@ -1072,6 +1115,29 @@ async fn handle_next_nonce(Query(query): Query<LighterNextNonceQuery>) -> Respon
     assert_eq!(query.account_index, 12_345);
     assert_eq!(query.api_key_index, 5);
     (StatusCode::OK, HTTP_NEXT_NONCE).into_response()
+}
+
+async fn handle_maker_only_api_keys(
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    let authorization = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok());
+
+    if authorization != Some("auth-token")
+        || query.get("account_index").map(String::as_str) != Some("712440")
+        || query.contains_key("auth")
+        || query.contains_key("authorization")
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            r#"{"code":400,"message":"unexpected maker-only request"}"#,
+        )
+            .into_response();
+    }
+
+    (StatusCode::OK, r#"{"code":200,"api_key_indexes":[5]}"#).into_response()
 }
 
 async fn handle_send_tx(headers: HeaderMap, body: Bytes) -> Response {

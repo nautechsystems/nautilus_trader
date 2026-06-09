@@ -17,9 +17,9 @@
 //!
 //! These tests stand up a unified Axum mock that serves the Lighter REST
 //! endpoints (`/api/v1/orderBookDetails`, `/api/v1/nextNonce`,
-//! `/api/v1/accountActiveOrders`, `/api/v1/accountInactiveOrders`,
-//! `/api/v1/trades`) and the venue WebSocket (`/stream`). The harness
-//! mirrors the data-client scaffolding in `tests/data_client.rs`: the same
+//! `/api/v1/getMakerOnlyApiKeys`, `/api/v1/accountActiveOrders`,
+//! `/api/v1/accountInactiveOrders`, `/api/v1/trades`) and the venue WebSocket (`/stream`). The
+//! harness mirrors the data-client scaffolding in `tests/data_client.rs`: the same
 //! `TestServerState` records every inbound WS message, including signed
 //! `jsonapi/sendtx` frames. Two primitives drive in-test pushes:
 //! [`TestServerState::push_frame`] flushes a frame to the live socket via
@@ -52,7 +52,7 @@ use axum::{
         Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -165,12 +165,16 @@ struct TestServerState {
     unsubscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
     send_txs: Arc<tokio::sync::Mutex<Vec<Value>>>,
     rest_send_txs: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    maker_only_calls: Arc<AtomicUsize>,
+    maker_only_api_key_indexes: Arc<tokio::sync::Mutex<Vec<i64>>>,
+    maker_only_authorizations: Arc<tokio::sync::Mutex<Vec<String>>>,
     active_orders_calls: Arc<AtomicUsize>,
     inactive_orders_calls: Arc<AtomicUsize>,
     trades_calls: Arc<AtomicUsize>,
     active_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     inactive_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     trades_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    next_rest_send_tx_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     next_send_tx_ack: Arc<tokio::sync::Mutex<Option<Value>>>,
     inbox_tx: tokio::sync::broadcast::Sender<String>,
     close_after_next_frame: Arc<AtomicBool>,
@@ -191,12 +195,16 @@ impl Default for TestServerState {
             unsubscribes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             send_txs: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             rest_send_txs: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            maker_only_calls: Arc::new(AtomicUsize::new(0)),
+            maker_only_api_key_indexes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            maker_only_authorizations: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             active_orders_calls: Arc::new(AtomicUsize::new(0)),
             inactive_orders_calls: Arc::new(AtomicUsize::new(0)),
             trades_calls: Arc::new(AtomicUsize::new(0)),
             active_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             inactive_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             trades_response: Arc::new(tokio::sync::Mutex::new(None)),
+            next_rest_send_tx_response: Arc::new(tokio::sync::Mutex::new(None)),
             next_send_tx_ack: Arc::new(tokio::sync::Mutex::new(None)),
             inbox_tx,
             close_after_next_frame: Arc::new(AtomicBool::new(false)),
@@ -217,6 +225,10 @@ impl TestServerState {
 
     async fn rest_send_txs(&self) -> Vec<Value> {
         self.rest_send_txs.lock().await.clone()
+    }
+
+    async fn maker_only_authorizations(&self) -> Vec<String> {
+        self.maker_only_authorizations.lock().await.clone()
     }
 
     fn push_frame(&self, frame: &Value) {
@@ -243,6 +255,44 @@ async fn next_nonce() -> Response {
             "nonce": TEST_NEXT_NONCE,
         })
         .to_string(),
+    )
+        .into_response()
+}
+
+async fn maker_only_api_keys(
+    State(state): State<Arc<TestServerState>>,
+    headers: HeaderMap,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    state.maker_only_calls.fetch_add(1, Ordering::Relaxed);
+    let authorization = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+
+    if authorization.is_empty()
+        || query.get("account_index").map(String::as_str) != Some("12345")
+        || query.contains_key("auth")
+        || query.contains_key("authorization")
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            json!({"code":400,"message":"unexpected maker-only request"}).to_string(),
+        )
+            .into_response();
+    }
+
+    state
+        .maker_only_authorizations
+        .lock()
+        .await
+        .push(authorization);
+    let api_key_indexes = state.maker_only_api_key_indexes.lock().await.clone();
+
+    (
+        StatusCode::OK,
+        json!({"code":200,"api_key_indexes":api_key_indexes}).to_string(),
     )
         .into_response()
 }
@@ -474,6 +524,7 @@ fn build_router(state: Arc<TestServerState>) -> Router {
         .route("/api/v1/orderBookDetails", get(order_book_details))
         .route("/api/v1/account", get(account))
         .route("/api/v1/nextNonce", get(next_nonce))
+        .route("/api/v1/getMakerOnlyApiKeys", get(maker_only_api_keys))
         .route("/api/v1/accountActiveOrders", get(account_active_orders))
         .route(
             "/api/v1/accountInactiveOrders",
@@ -500,17 +551,21 @@ async fn send_tx_post_stub(State(state): State<Arc<TestServerState>>, body: Byte
         .await
         .push(json!({"tx_type": tx_type, "tx_info": tx_info}));
 
-    (
-        StatusCode::OK,
-        json!({
-            "code": 200,
-            "tx_hash": "deadbeef",
-            "predicted_execution_time_ms": 1,
-            "volume_quota_remaining": 123,
-        })
-        .to_string(),
-    )
-        .into_response()
+    let response = state
+        .next_rest_send_tx_response
+        .lock()
+        .await
+        .take()
+        .unwrap_or_else(|| {
+            json!({
+                "code": 200,
+                "tx_hash": "deadbeef",
+                "predicted_execution_time_ms": 1,
+                "volume_quota_remaining": 123,
+            })
+        });
+
+    (StatusCode::OK, response.to_string()).into_response()
 }
 
 async fn send_tx_batch_post_stub(
@@ -1353,6 +1408,50 @@ async fn connect_submits_l2_only_integrator_auto_approval() {
     );
 
     client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_skips_integrator_auto_approval_for_maker_only_api_key() {
+    let (addr, state) = start_server().await;
+    state
+        .maker_only_api_key_indexes
+        .lock()
+        .await
+        .push(i64::from(TEST_API_KEY_INDEX));
+    let (mut client, _rx, _cache) = build_client(addr);
+
+    client.connect().await.expect("connect");
+
+    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.maker_only_authorizations().await.len(), 1);
+    assert_eq!(state.rest_send_txs().await.len(), 0);
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_bails_when_integrator_auto_approval_reports_unapproved() {
+    let (addr, state) = start_server().await;
+    *state.next_rest_send_tx_response.lock().await = Some(json!({
+        "code": 21149,
+        "message": "integrator is not approved",
+    }));
+    let (mut client, _rx, _cache) = build_client(addr);
+
+    let err = client.connect().await.unwrap_err();
+    let msg = format!("{err:#}");
+
+    assert!(
+        msg.contains("Lighter account is not integrator-approved (venue 21149)"),
+        "unexpected error: {msg}",
+    );
+    assert!(msg.contains("orders cannot be placed"));
+    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.rest_send_txs().await.len(), 1);
+    assert!(!client.is_connected());
+    assert_eq!(*state.connection_count.lock().await, 0);
 }
 
 /// Pins the per-stream marker dispatch in the execution consumption loop.

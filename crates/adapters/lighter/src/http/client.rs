@@ -88,6 +88,7 @@ const ENDPOINT_RECENT_TRADES: &str = "/api/v1/recentTrades";
 const ENDPOINT_SEND_TX: &str = "/api/v1/sendTx";
 const ENDPOINT_SEND_TX_BATCH: &str = "/api/v1/sendTxBatch";
 const ENDPOINT_TRADES: &str = "/api/v1/trades";
+const HEADER_AUTHORIZATION: &str = "authorization";
 const MULTIPART_BOUNDARY: &str = "nautilus-lighter-form-boundary";
 
 /// Maximum page size accepted by Lighter REST list endpoints (`/api/v1/trades`,
@@ -390,7 +391,15 @@ impl LighterRawHttpClient {
         &self,
         query: &LighterMakerOnlyApiKeysQuery,
     ) -> LighterHttpResult<LighterMakerOnlyApiKeys> {
-        self.send_get_request(ENDPOINT_MAKER_ONLY_API_KEYS, Some(query))
+        let params = LighterMakerOnlyApiKeysParams {
+            account_index: query.account_index,
+        };
+        let headers = query
+            .authorization
+            .as_ref()
+            .or(query.auth.as_ref())
+            .map(|auth| HashMap::from([(HEADER_AUTHORIZATION.to_string(), auth.clone())]));
+        self.send_get_request_with_headers(ENDPOINT_MAKER_ONLY_API_KEYS, Some(&params), headers)
             .await
     }
 
@@ -429,6 +438,20 @@ impl LighterRawHttpClient {
         T: DeserializeOwned + LighterResponseCheck,
         P: Serialize,
     {
+        self.send_get_request_with_headers(endpoint, params, None)
+            .await
+    }
+
+    async fn send_get_request_with_headers<T, P>(
+        &self,
+        endpoint: &str,
+        params: Option<&P>,
+        headers: Option<HashMap<String, String>>,
+    ) -> LighterHttpResult<T>
+    where
+        T: DeserializeOwned + LighterResponseCheck,
+        P: Serialize,
+    {
         let url = self.url(endpoint);
         let rate_limit_keys = Self::rate_limit_keys(endpoint);
         self.retry_manager
@@ -437,6 +460,8 @@ impl LighterRawHttpClient {
                 || {
                     let url = url.clone();
                     let rate_limit_keys = rate_limit_keys.clone();
+                    let headers = headers.clone();
+
                     async move {
                         let response = self
                             .client
@@ -444,7 +469,7 @@ impl LighterRawHttpClient {
                                 Method::GET,
                                 url,
                                 params,
-                                None,
+                                headers,
                                 None,
                                 None,
                                 Some(rate_limit_keys),
@@ -571,6 +596,11 @@ impl LighterRawHttpClient {
     fn default_headers() -> HashMap<String, String> {
         HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())])
     }
+}
+
+#[derive(Serialize)]
+struct LighterMakerOnlyApiKeysParams {
+    account_index: i64,
 }
 
 fn multipart_headers() -> HashMap<String, String> {
@@ -848,8 +878,8 @@ impl LighterHttpClient {
         auth_token: impl Into<String>,
     ) -> LighterHttpResult<LighterMakerOnlyApiKeys> {
         let query = LighterMakerOnlyApiKeysQuery {
-            authorization: None,
-            auth: Some(auth_token.into()),
+            authorization: Some(auth_token.into()),
+            auth: None,
             account_index,
         };
         self.inner.get_maker_only_api_keys(&query).await

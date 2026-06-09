@@ -437,21 +437,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_maker_only_api_keys_query_serializes_auth_and_account_index() {
-        let query = LighterMakerOnlyApiKeysQueryBuilder::default()
-            .auth("auth-token")
-            .account_index(42)
-            .build()
-            .unwrap();
-
-        let value = serde_json::to_value(query).unwrap();
-
-        assert_eq!(value["auth"], "auth-token");
-        assert_eq!(value["account_index"], 42);
-        assert!(value.get("authorization").is_none());
-    }
-
-    #[rstest]
     fn test_account_inactive_orders_query_serializes_optional_filters() {
         let query = LighterAccountInactiveOrdersQueryBuilder::default()
             .authorization("bearer-token")
