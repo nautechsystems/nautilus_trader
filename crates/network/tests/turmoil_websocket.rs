@@ -55,6 +55,8 @@ const DISCONNECT_DURING_BACKOFF_SEED: u64 = 0x57EB_0005;
 const PROXY_REJECTION_SEED: u64 = 0x57EB_0006;
 const QUEUED_WRITE_DROP_SEED: u64 = 0x57EB_2001;
 const POST_RECONNECT_ACTIVE_DROP_SEED: u64 = 0x57EB_2002;
+const ALTERNATING_TEXT_BINARY_SEED: u64 = 0x57EB_2003;
+const LARGE_WEBSOCKET_MESSAGE_LEN: usize = 16 * 1024;
 
 // Small sleep steps advance turmoil's simulated clock so the receiver drains
 // between ticks instead of relying on a single fixed wait.
@@ -520,6 +522,25 @@ fn test_turmoil_websocket_sockudo_post_reconnect_active_drop_preserves_later_mes
 }
 
 #[rstest]
+fn test_turmoil_websocket_alternating_text_binary_preserves_message_order() {
+    run_websocket_alternating_text_binary_preserves_message_order(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        ALTERNATING_TEXT_BINARY_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_alternating_text_binary_preserves_message_order() {
+    run_websocket_alternating_text_binary_preserves_message_order(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        ALTERNATING_TEXT_BINARY_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
 #[ignore = "continuous seed sweep; run scripts/soak-network-turmoil.sh"]
 fn test_turmoil_websocket_repeated_drops_backend_pair_soak() {
     for (iteration, seed) in seed_sweep_from_env() {
@@ -719,6 +740,141 @@ fn run_websocket_post_reconnect_active_drop_preserves_later_message_order(
 
     sim.run()
         .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_alternating_text_binary_preserves_message_order(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(100);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+
+    let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
+
+    sim.host("server", ws_echo_server);
+
+    sim.client("client", async move {
+        let (handler, mut rx) = channel_message_handler();
+
+        let client =
+            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+                .await
+                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        let expected = alternating_text_binary_messages();
+        let mut received = Vec::with_capacity(expected.len());
+
+        for (index, msg) in expected.iter().enumerate() {
+            match msg {
+                ApplicationMessage::Text(text) => client
+                    .send_text(text.clone(), None)
+                    .await
+                    .unwrap_or_else(|e| {
+                        panic!("{label} seed {seed:#018x} should enqueue text {index}: {e}")
+                    }),
+                ApplicationMessage::Binary(data) => client
+                    .send_bytes(data.clone(), None)
+                    .await
+                    .unwrap_or_else(|e| {
+                        panic!("{label} seed {seed:#018x} should enqueue binary {index}: {e}")
+                    }),
+            }
+        }
+
+        while received.len() < expected.len() {
+            let received_msg = recv_application_message(&mut rx).await.unwrap_or_else(|| {
+                panic!("{label} seed {seed:#018x} should receive application message")
+            });
+
+            let expected_msg = &expected[received.len()];
+            assert_eq!(
+                &received_msg, expected_msg,
+                "{label} seed {seed:#018x} should preserve text/binary order"
+            );
+            received.push(received_msg);
+        }
+
+        assert_eq!(
+            received, expected,
+            "{label} seed {seed:#018x} should preserve full text/binary sequence"
+        );
+
+        client.disconnect().await;
+        assert!(
+            client.is_disconnected(),
+            "{label} seed {seed:#018x} should disconnect after scenario"
+        );
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ApplicationMessage {
+    Text(String),
+    Binary(Vec<u8>),
+}
+
+async fn recv_application_message(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<Message>,
+) -> Option<ApplicationMessage> {
+    for _ in 0..POLL_ITERS {
+        while let Ok(msg) = rx.try_recv() {
+            match msg {
+                Message::Text(text) if text.as_str() != RECONNECTED => {
+                    return Some(ApplicationMessage::Text(text.to_string()));
+                }
+                Message::Binary(data) => {
+                    return Some(ApplicationMessage::Binary(data.to_vec()));
+                }
+                _ => {}
+            }
+        }
+        tokio::time::sleep(POLL_STEP).await;
+    }
+    None
+}
+
+fn alternating_text_binary_messages() -> Vec<ApplicationMessage> {
+    vec![
+        ApplicationMessage::Text("small-text-0".to_string()),
+        ApplicationMessage::Binary(vec![0x00, 0x7f, 0x80, 0xff]),
+        ApplicationMessage::Text(repeated_text("large-text-0:", LARGE_WEBSOCKET_MESSAGE_LEN)),
+        ApplicationMessage::Binary(patterned_bytes(0x10, LARGE_WEBSOCKET_MESSAGE_LEN)),
+        ApplicationMessage::Text("small-text-1".to_string()),
+        ApplicationMessage::Binary(vec![0xfe, 0xed, 0xfa, 0xce]),
+        ApplicationMessage::Text(repeated_text(
+            "large-text-1:",
+            LARGE_WEBSOCKET_MESSAGE_LEN + 257,
+        )),
+        ApplicationMessage::Binary(patterned_bytes(0x40, LARGE_WEBSOCKET_MESSAGE_LEN + 257)),
+    ]
+}
+
+fn repeated_text(pattern: &str, len: usize) -> String {
+    let mut text = String::with_capacity(len);
+    while text.len() < len {
+        text.push_str(pattern);
+    }
+    text.truncate(len);
+    text
+}
+
+fn patterned_bytes(start: u8, len: usize) -> Vec<u8> {
+    (0..len)
+        .scan(start, |byte, _| {
+            let value = *byte;
+            *byte = byte.wrapping_add(31);
+            Some(value)
+        })
+        .collect()
 }
 
 fn run_websocket_queued_write_drop_preserves_later_message_order(
