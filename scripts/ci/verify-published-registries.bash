@@ -70,6 +70,7 @@ curl_max_time="${CURL_MAX_TIME:-300}"
 cargo_publish_user_agent="${CARGO_PUBLISH_USER_AGENT:-nautilus-trader-release-verifier}"
 registry_propagation_timeout_seconds="${REGISTRY_PROPAGATION_TIMEOUT_SECONDS:-600}"
 registry_propagation_poll_seconds="${REGISTRY_PROPAGATION_POLL_SECONDS:-15}"
+registry_propagation_sleep_command="${REGISTRY_PROPAGATION_SLEEP_COMMAND:-sleep}"
 crates_io_manual_publish_exceptions="${CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS:-}"
 
 if ! [[ "$registry_propagation_timeout_seconds" =~ ^[0-9]+$ ]] ||
@@ -644,7 +645,7 @@ wait_for_registry_state() {
 
     remaining=$((registry_propagation_timeout_seconds - elapsed))
     echo "Waiting for ${description} to propagate (${remaining}s remaining)."
-    sleep "$registry_propagation_poll_seconds"
+    "$registry_propagation_sleep_command" "$registry_propagation_poll_seconds"
   done
 }
 

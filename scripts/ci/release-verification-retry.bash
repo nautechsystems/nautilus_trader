@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Retry release verification commands only for transient Sigstore/Rekor lag.
+# Retry release verification commands only for transient verifier lag.
 set -euo pipefail
 
 release_verification_validate_positive_integer() {
@@ -21,8 +21,8 @@ release_verification_failure_is_fail_fast() {
   mismatch_terms="mismatch|did not match|does not match|unexpected|no matching|not trusted|wrong"
   identity_terms="provenance|publisher|repository|workflow|environment|cert-identity|certificate identity|issuer|predicate"
   exact_mismatch_terms="subject.*([[:space:]-]mismatch|did not match|does not match|differs)"
-  exact_mismatch_terms="${exact_mismatch_terms}|artifact.*(digest|sha256|hash).*([[:space:]-]mismatch|did not match|does not match|differs)"
-  exact_mismatch_terms="${exact_mismatch_terms}|(digest|sha256|hash).*([[:space:]-]mismatch|did not match|does not match|differs).*(artifact|bundle)"
+  exact_mismatch_terms="${exact_mismatch_terms}|artifact.*(digest|sha256|hash|checksum).*([[:space:]-]mismatch|did not match|does not match|differs)"
+  exact_mismatch_terms="${exact_mismatch_terms}|(digest|sha256|hash|checksum).*([[:space:]-]mismatch|did not match|does not match|differs).*(artifact|bundle)"
 
   grep -Eiq "(${identity_terms}).*(${mismatch_terms})|(${mismatch_terms}).*(${identity_terms})|${exact_mismatch_terms}" "$output_file"
 }
@@ -83,7 +83,7 @@ run_release_verification_with_retry() {
 
     if [[ "$attempt" -lt "$attempts" ]]; then
       cat "$output_file" >&2
-      echo "${description} failed with a retryable Sigstore/Rekor error (exit=${status}), retry (${attempt}/${attempts}) after ${delay_seconds}s" >&2
+      echo "${description} failed with a retryable verification error (exit=${status}), retry (${attempt}/${attempts}) after ${delay_seconds}s" >&2
       "${RELEASE_VERIFICATION_SLEEP_COMMAND:-sleep}" "$delay_seconds"
       delay_seconds=$((delay_seconds * 2))
       if [[ "$delay_seconds" -gt "$max_delay_seconds" ]]; then

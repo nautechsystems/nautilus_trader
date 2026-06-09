@@ -88,6 +88,18 @@ digest_mismatch_with_rekor() {
   return 14
 }
 
+publisher_mismatch_with_tuf() {
+  increment_attempt_count > /dev/null
+  echo "publisher identity does not match expected workflow environment; TUF is fresh" >&2
+  return 18
+}
+
+checksum_mismatch_with_sigstore() {
+  increment_attempt_count > /dev/null
+  echo "Sigstore bundle: artifact checksum mismatch for signed subject" >&2
+  return 20
+}
+
 checkpoint_root_hash_then_success() {
   local count
 
@@ -241,6 +253,52 @@ if [[ "$(attempt_count)" != "1" ]]; then
 fi
 if ! grep -q "non-retryable verification error" "$digest_mismatch_output"; then
   fail "digest mismatch case did not report a non-retryable error."
+fi
+
+attempt_file="${work_dir}/publisher-mismatch-count"
+set_attempt_count 0
+publisher_mismatch_output="${work_dir}/publisher-mismatch-output.txt"
+set +e
+run_release_verification_with_retry \
+  "mock PyPI publisher verification" \
+  4 \
+  1 \
+  1 \
+  publisher_mismatch_with_tuf > "$publisher_mismatch_output" 2>&1
+publisher_mismatch_status=$?
+set -e
+
+if [[ "$publisher_mismatch_status" -eq 0 ]]; then
+  fail "publisher mismatch case should fail."
+fi
+if [[ "$(attempt_count)" != "1" ]]; then
+  fail "publisher mismatch case should fail fast after one attempt."
+fi
+if ! grep -q "non-retryable verification error" "$publisher_mismatch_output"; then
+  fail "publisher mismatch case did not report a non-retryable error."
+fi
+
+attempt_file="${work_dir}/checksum-mismatch-count"
+set_attempt_count 0
+checksum_mismatch_output="${work_dir}/checksum-mismatch-output.txt"
+set +e
+run_release_verification_with_retry \
+  "mock Sigstore checksum verification" \
+  4 \
+  1 \
+  1 \
+  checksum_mismatch_with_sigstore > "$checksum_mismatch_output" 2>&1
+checksum_mismatch_status=$?
+set -e
+
+if [[ "$checksum_mismatch_status" -eq 0 ]]; then
+  fail "checksum mismatch case should fail."
+fi
+if [[ "$(attempt_count)" != "1" ]]; then
+  fail "checksum mismatch case should fail fast after one attempt."
+fi
+if ! grep -q "non-retryable verification error" "$checksum_mismatch_output"; then
+  fail "checksum mismatch case did not report a non-retryable error."
 fi
 
 attempt_file="${work_dir}/checkpoint-root-hash-count"
