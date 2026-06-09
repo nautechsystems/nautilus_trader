@@ -58,6 +58,7 @@ const POST_RECONNECT_ACTIVE_DROP_SEED: u64 = 0x57EB_2002;
 const ALTERNATING_TEXT_BINARY_SEED: u64 = 0x57EB_2003;
 const HANDSHAKE_DROP_SEED: u64 = 0x57EB_3001;
 const FIRST_READ_TASK_DROP_SEED: u64 = 0x57EB_3002;
+const PARTITION_DURING_RECONNECT_SEED: u64 = 0x57EB_3003;
 const LARGE_WEBSOCKET_MESSAGE_LEN: usize = 16 * 1024;
 
 // Small sleep steps advance turmoil's simulated clock so the receiver drains
@@ -581,6 +582,25 @@ fn test_turmoil_websocket_sockudo_first_read_task_drop_reaches_active_state() {
 }
 
 #[rstest]
+fn test_turmoil_websocket_partition_while_reconnecting_reaches_active_state() {
+    run_websocket_partition_while_reconnecting_reaches_active_state(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        PARTITION_DURING_RECONNECT_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_partition_while_reconnecting_reaches_active_state() {
+    run_websocket_partition_while_reconnecting_reaches_active_state(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        PARTITION_DURING_RECONNECT_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
 #[ignore = "continuous seed sweep; run scripts/soak-network-turmoil.sh"]
 fn test_turmoil_websocket_repeated_drops_backend_pair_soak() {
     for (iteration, seed) in seed_sweep_from_env() {
@@ -885,6 +905,91 @@ fn run_websocket_first_read_task_drop_reaches_active_state(
         assert!(
             wait_for(|| reconnected.load(Ordering::SeqCst) && client.is_active()).await,
             "{label} seed {seed:#018x} should become active after first read task drop"
+        );
+
+        client.disconnect().await;
+        assert!(
+            client.is_disconnected(),
+            "{label} seed {seed:#018x} should disconnect after scenario"
+        );
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_partition_while_reconnecting_reaches_active_state(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.reconnect_timeout_ms = Some(1_000);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(100);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+
+    let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
+    let first_connection_dropped = Arc::new(AtomicBool::new(false));
+    let reconnect_repaired = Arc::new(AtomicBool::new(false));
+    let server_first_connection_dropped = Arc::clone(&first_connection_dropped);
+    let server_reconnect_repaired = Arc::clone(&reconnect_repaired);
+
+    sim.host("server", move || {
+        let server_first_connection_dropped = Arc::clone(&server_first_connection_dropped);
+        let server_reconnect_repaired = Arc::clone(&server_reconnect_repaired);
+        async move {
+            ws_drop_first_connection_wait_for_repair_then_echo_server(
+                server_first_connection_dropped,
+                server_reconnect_repaired,
+            )
+            .await
+        }
+    });
+
+    sim.client("client", async move {
+        let (handler, _rx) = channel_message_handler();
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let client_reconnected = Arc::clone(&reconnected);
+        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            client_reconnected.store(true, Ordering::SeqCst);
+        });
+
+        let client = WebSocketClient::connect(
+            websocket_config,
+            Some(handler),
+            None,
+            Some(post_reconnection),
+            vec![],
+            None,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        assert!(
+            wait_for(|| first_connection_dropped.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should drop the first connection"
+        );
+        assert!(
+            wait_for(|| client.is_reconnecting()).await,
+            "{label} seed {seed:#018x} should enter reconnect before partition"
+        );
+
+        turmoil::partition("client", "server");
+        tokio::time::sleep(Duration::from_millis(1_200)).await;
+        assert!(
+            client.is_reconnecting(),
+            "{label} seed {seed:#018x} should stay reconnecting while partitioned"
+        );
+
+        turmoil::repair("client", "server");
+        reconnect_repaired.store(true, Ordering::SeqCst);
+
+        assert!(
+            wait_for(|| reconnected.load(Ordering::SeqCst) && client.is_active()).await,
+            "{label} seed {seed:#018x} should become active after partition repair"
         );
 
         client.disconnect().await;
@@ -1294,6 +1399,60 @@ async fn ws_drop_first_connection_before_read_then_echo_server(
                     }
                 }
                 _ => {
+                    if let Ok(mut ws_stream) = accept_async(stream).await {
+                        while let Some(msg) = ws_stream.next().await {
+                            match msg {
+                                Ok(Message::Text(text)) => {
+                                    let _ = ws_stream.send(Message::Text(text)).await;
+                                }
+                                Ok(Message::Binary(data)) => {
+                                    let _ = ws_stream.send(Message::Binary(data)).await;
+                                }
+                                Ok(Message::Ping(ping_data)) => {
+                                    let _ = ws_stream.send(Message::Pong(ping_data)).await;
+                                }
+                                Ok(Message::Close(_)) => {
+                                    let _ = ws_stream.close(None).await;
+                                    break;
+                                }
+                                Ok(Message::Pong(_) | Message::Frame(_)) => {}
+                                Err(_) => break,
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+async fn ws_drop_first_connection_wait_for_repair_then_echo_server(
+    first_connection_dropped: Arc<AtomicBool>,
+    reconnect_repaired: Arc<AtomicBool>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+    let mut connection_index = 0;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let current_connection = connection_index;
+        connection_index += 1;
+        let first_connection_dropped = Arc::clone(&first_connection_dropped);
+        let reconnect_repaired = Arc::clone(&reconnect_repaired);
+
+        tokio::spawn(async move {
+            match current_connection {
+                0 => {
+                    if let Ok(ws_stream) = accept_async(stream).await {
+                        first_connection_dropped.store(true, Ordering::SeqCst);
+                        drop(ws_stream);
+                    }
+                }
+                _ => {
+                    while !reconnect_repaired.load(Ordering::SeqCst) {
+                        tokio::time::sleep(POLL_STEP).await;
+                    }
+
                     if let Ok(mut ws_stream) = accept_async(stream).await {
                         while let Some(msg) = ws_stream.next().await {
                             match msg {
