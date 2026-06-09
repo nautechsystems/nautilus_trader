@@ -135,7 +135,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         else:
             self._log.debug(f"Subscription doesn't exist for {name}")
 
-    async def get_positions(self, account_id: str) -> list[Position]:
+    async def get_positions(self, account_id: str) -> list[Position] | None:
         """
         Fetch open positions for a specified account.
 
@@ -146,7 +146,10 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
 
         Returns
         -------
-        list[Position]
+        list[Position] or None
+            Returns ``None`` when the request fails due to a connection error or timeout,
+            indicating the result is unknown.  An empty list means IB explicitly confirmed
+            no open positions.  Callers **must not** treat ``None`` as confirmed-zero.
 
         """
         self._log.debug(f"Requesting open positions for {account_id}")
@@ -166,6 +169,9 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
             all_positions = await self._await_request(request, self._request_timeout_secs)
         else:
             all_positions = await self._await_request(request, self._request_timeout_secs)
+
+        if all_positions is None:
+            return None  # request failed — caller must not infer "no positions"
 
         if not all_positions:
             return []

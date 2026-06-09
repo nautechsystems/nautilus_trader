@@ -146,3 +146,24 @@ async def test_get_positions_simulates_two_positions(ib_client):
     assert Counter(results_1) == Counter([position_1])
     assert Counter(results_2) == Counter([position_2, position_3])
     ib_client._eclient.reqPositions.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_get_positions_returns_none_on_connection_error(ib_client):
+    """
+    Test that get_positions() returns None when the underlying request fails.
+
+    Verifies fix for issue #4228: a socket disconnect during reqPositions previously
+    returned [] via the request default, which callers treated as "IB confirmed flat".
+    None now propagates as "venue state unknown" so reconciliation is skipped.
+
+    """
+    # Arrange
+    ib_client._eclient.reqPositions = MagicMock()
+    ib_client._await_request = AsyncMock(return_value=None)
+
+    # Act
+    result = await ib_client.get_positions("DU1234567")
+
+    # Assert
+    assert result is None

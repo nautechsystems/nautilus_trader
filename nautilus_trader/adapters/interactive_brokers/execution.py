@@ -561,9 +561,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # periodic checks causes filled_qty mismatches because the position may have
         # changed due to partial fills on exit orders.
         if not command.open_only:
-            positions: list[IBPosition] = await self._client.get_positions(
+            positions = await self._client.get_positions(
                 self.account_id.get_id(),
             )
+
+            if positions is None:
+                raise ConnectionError(
+                    "get_positions() disconnected during reqPositions — "
+                    "skipping order status reconciliation to avoid false discrepancy",
+                )
 
             ts_init = self._clock.timestamp_ns()
 
@@ -765,11 +771,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         last_qty = Quantity(execution.shares, precision=instrument.size_precision)
         last_px = Price(converted_execution_price, precision=instrument.price_precision)
 
-        # Create commission
-        commission = Money(
-            commission_report.commissionAndFees,
-            Currency.from_str(commission_report.currency),
-        )
+        # Create commission — guard None/-1 (IB sends -1 or None for pending commissions)
+        commission_fees = commission_report.commissionAndFees
+        if commission_fees is None or commission_fees < 0:
+            commission_fees = 0.0
+        commission = Money(commission_fees, Currency.from_str(commission_report.currency))
 
         # Determine liquidity side (IB doesn't provide this directly, so we use NO_LIQUIDITY_SIDE)
         liquidity_side = LiquiditySide.NO_LIQUIDITY_SIDE
@@ -802,9 +808,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
         report = []
-        positions: list[IBPosition] = await self._client.get_positions(
+        positions: list[IBPosition] | None = await self._client.get_positions(
             self.account_id.get_id(),
         )
+
+        if positions is None:
+            raise ConnectionError(
+                "get_positions() disconnected during reqPositions — "
+                "skipping position status reconciliation to avoid false discrepancy",
+            )
 
         # Handle case when specific instrument requested but no positions found
         if command.instrument_id and not positions:
@@ -1936,6 +1948,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         if nautilus_order.client_order_id in self._order_avg_prices:
             info["avg_px"] = self._order_avg_prices[nautilus_order.client_order_id]
 
+        # Guard None/-1 commission (IB sends -1 or None for pending commissions)
+        commission_fees = commission_report.commissionAndFees
+        if commission_fees is None or commission_fees < 0:
+            commission_fees = 0.0
+
         self.generate_order_filled(
             strategy_id=nautilus_order.strategy_id,
             instrument_id=nautilus_order.instrument_id,
@@ -1948,10 +1965,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             last_qty=Quantity(execution.shares, precision=instrument.size_precision),
             last_px=Price(converted_execution_price, precision=instrument.price_precision),
             quote_currency=instrument.quote_currency,
-            commission=Money(
-                commission_report.commissionAndFees,
-                Currency.from_str(commission_report.currency),
-            ),
+            commission=Money(commission_fees, Currency.from_str(commission_report.currency)),
             liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             ts_event=timestring_to_timestamp(execution.time).value,
             info=info or None,
@@ -2186,8 +2200,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
 
             # Combo commission scaled to the number of legs of the combo
+            # Guard None/-1 (IB sends -1 or None for pending commissions)
+            commission_fees = commission_report.commissionAndFees
+            if commission_fees is None or commission_fees < 0:
+                commission_fees = 0.0
             combo_commission = (
-                commission_report.commissionAndFees
+                commission_fees
                 * generic_spread_id_n_legs(nautilus_order.instrument_id)
                 / abs(ratio)
             )
@@ -2297,10 +2315,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
             order_side = OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]]
 
-            commission = Money(
-                commission_report.commissionAndFees,
-                Currency.from_str(commission_report.currency),
-            )
+            # Guard None/-1 (IB sends -1 or None for pending commissions)
+            commission_fees = commission_report.commissionAndFees
+            if commission_fees is None or commission_fees < 0:
+                commission_fees = 0.0
+            commission = Money(commission_fees, Currency.from_str(commission_report.currency))
 
             # Include avg_px in info if we have it stored for the parent order
             info = {}
