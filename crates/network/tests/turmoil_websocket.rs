@@ -61,7 +61,10 @@ const FIRST_READ_TASK_DROP_SEED: u64 = 0x57EB_3002;
 const PARTITION_DURING_RECONNECT_SEED: u64 = 0x57EB_3003;
 const PARTITION_DURING_BACKOFF_SEED: u64 = 0x57EB_3004;
 const SILENT_UNTIL_IDLE_TIMEOUT_SEED: u64 = 0x57EB_3005;
+const NO_READ_BACKPRESSURE_SEED: u64 = 0x57EB_3006;
 const LARGE_WEBSOCKET_MESSAGE_LEN: usize = 16 * 1024;
+const BACKPRESSURE_TCP_CAPACITY: usize = 4;
+const BACKPRESSURE_MESSAGE_COUNT: usize = 16;
 
 // Small sleep steps advance turmoil's simulated clock so the receiver drains
 // between ticks instead of relying on a single fixed wait.
@@ -641,6 +644,25 @@ fn test_turmoil_websocket_sockudo_silent_until_idle_timeout_reconnects_to_active
 }
 
 #[rstest]
+fn test_turmoil_websocket_no_read_backpressure_reconnects_to_active_state() {
+    run_websocket_no_read_backpressure_reconnects_to_active_state(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        NO_READ_BACKPRESSURE_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_no_read_backpressure_reconnects_to_active_state() {
+    run_websocket_no_read_backpressure_reconnects_to_active_state(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        NO_READ_BACKPRESSURE_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
 #[ignore = "continuous seed sweep; run scripts/soak-network-turmoil.sh"]
 fn test_turmoil_websocket_repeated_drops_backend_pair_soak() {
     for (iteration, seed) in seed_sweep_from_env() {
@@ -1187,6 +1209,110 @@ fn run_websocket_silent_until_idle_timeout_reconnects_to_active_state(
         assert!(
             wait_for(|| reconnected.load(Ordering::SeqCst) && client.is_active()).await,
             "{label} seed {seed:#018x} should become active after idle-timeout reconnect"
+        );
+
+        client.disconnect().await;
+        assert!(
+            client.is_disconnected(),
+            "{label} seed {seed:#018x} should disconnect after scenario"
+        );
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_no_read_backpressure_reconnects_to_active_state(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(100);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+
+    let mut builder = stressed_builder(seed, Duration::from_secs(20));
+    builder.tcp_capacity(BACKPRESSURE_TCP_CAPACITY);
+    let mut sim = builder.build();
+
+    let first_connection_held = Arc::new(AtomicBool::new(false));
+    let release_first_connection = Arc::new(AtomicBool::new(false));
+    let server_first_connection_held = Arc::clone(&first_connection_held);
+    let server_release_first_connection = Arc::clone(&release_first_connection);
+
+    sim.host("server", move || {
+        let server_first_connection_held = Arc::clone(&server_first_connection_held);
+        let server_release_first_connection = Arc::clone(&server_release_first_connection);
+        async move {
+            ws_hold_first_connection_until_release_then_echo_server(
+                server_first_connection_held,
+                server_release_first_connection,
+            )
+            .await
+        }
+    });
+
+    sim.client("client", async move {
+        let (handler, _rx) = channel_message_handler();
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let client_reconnected = Arc::clone(&reconnected);
+        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            client_reconnected.store(true, Ordering::SeqCst);
+        });
+
+        let client = WebSocketClient::connect(
+            websocket_config,
+            Some(handler),
+            None,
+            Some(post_reconnection),
+            vec![],
+            None,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        assert!(
+            wait_for(|| first_connection_held.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should hold the first connection without reads"
+        );
+
+        for index in 0..BACKPRESSURE_MESSAGE_COUNT {
+            client
+                .send_bytes(
+                    patterned_bytes(index as u8, LARGE_WEBSOCKET_MESSAGE_LEN),
+                    None,
+                )
+                .await
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "{label} seed {seed:#018x} should enqueue backpressure message {index}: {e}"
+                    )
+                });
+        }
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            client.is_active(),
+            "{label} seed {seed:#018x} should stay active while the no-read peer is connected"
+        );
+        assert!(
+            !reconnected.load(Ordering::SeqCst),
+            "{label} seed {seed:#018x} should not reconnect before the no-read peer releases"
+        );
+
+        release_first_connection.store(true, Ordering::SeqCst);
+
+        assert!(
+            wait_for(|| client.is_reconnecting() || reconnected.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should enter reconnect after no-read peer releases"
+        );
+        assert!(
+            wait_for(|| reconnected.load(Ordering::SeqCst) && client.is_active()).await,
+            "{label} seed {seed:#018x} should become active after no-read backpressure clears"
         );
 
         client.disconnect().await;
@@ -1754,6 +1880,65 @@ async fn ws_silent_first_connection_then_echo_server(
                             match msg {
                                 Ok(Message::Close(_)) | Err(_) => break,
                                 Ok(_) => {}
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    if let Ok(mut ws_stream) = accept_async(stream).await {
+                        while let Some(msg) = ws_stream.next().await {
+                            match msg {
+                                Ok(Message::Text(text)) => {
+                                    let _ = ws_stream.send(Message::Text(text)).await;
+                                }
+                                Ok(Message::Binary(data)) => {
+                                    let _ = ws_stream.send(Message::Binary(data)).await;
+                                }
+                                Ok(Message::Ping(ping_data)) => {
+                                    let _ = ws_stream.send(Message::Pong(ping_data)).await;
+                                }
+                                Ok(Message::Close(_)) => {
+                                    let _ = ws_stream.close(None).await;
+                                    break;
+                                }
+                                Ok(Message::Pong(_) | Message::Frame(_)) => {}
+                                Err(_) => break,
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+async fn ws_hold_first_connection_until_release_then_echo_server(
+    first_connection_held: Arc<AtomicBool>,
+    release_first_connection: Arc<AtomicBool>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+    let mut connection_index = 0;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let current_connection = connection_index;
+        connection_index += 1;
+        let first_connection_held = Arc::clone(&first_connection_held);
+        let release_first_connection = Arc::clone(&release_first_connection);
+
+        tokio::spawn(async move {
+            match current_connection {
+                0 => {
+                    if let Ok(mut ws_stream) = accept_async(stream).await {
+                        first_connection_held.store(true, Ordering::SeqCst);
+
+                        while !release_first_connection.load(Ordering::SeqCst) {
+                            tokio::time::sleep(POLL_STEP).await;
+                        }
+
+                        for _ in 0..BACKPRESSURE_MESSAGE_COUNT {
+                            if ws_stream.next().await.is_none() {
+                                return;
                             }
                         }
                     }
