@@ -109,11 +109,13 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   repo `nautechsystems/nautilus_trader`, workflow `build.yml`, and environment `release`; the
   job uses a short-lived token from `rust-lang/crates-io-auth-action` and no long-lived cargo token.
 - **Post-publish verification**: `publish-release-integrity` verifies PyPI files against
-  `dist-manifest.json`, verifies PyPI provenance publisher metadata, verifies crates.io entries
-  were trusted-published by this repository, records whether each crate matches the release commit
-  or was already published, uploads `crates-manifest.json`, attaches attestation siblings, and
-  cleans up release workflow artifacts. `publish-github-release` then publishes the draft release
-  and verifies GitHub's release attestation.
+  `dist-manifest.json`, verifies PyPI provenance publisher metadata, and verifies crates.io entries
+  were trusted-published by this repository. These verifier calls retry transient
+  Sigstore/Rekor/TUF lag, while provenance and identity mismatches fail fast. The job records
+  whether each crate matches the release commit or was already published, uploads
+  `crates-manifest.json`, attaches attestation siblings, and cleans up release workflow artifacts.
+  `publish-github-release` then publishes the draft release and verifies GitHub's release
+  attestation.
 - **Caching**: Rust target directory cache (`Swatinem/rust-cache`), prek hook environments, and test
   data caches speed up workflows while preserving hermetic builds. Rust cache saves are restricted
   to push events to prevent PR cache pollution.

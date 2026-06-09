@@ -8,6 +8,10 @@
 # This script writes crates-manifest.json into the same directory
 set -euo pipefail
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ci/release-verification-retry.bash
+source "${script_dir}/release-verification-retry.bash"
+
 asset_dir="${1:-release-assets}"
 dist_manifest="${asset_dir}/dist-manifest.json"
 
@@ -52,6 +56,9 @@ pypi_publisher_repository="${PYPI_PUBLISHER_REPOSITORY:-$github_repository}"
 pypi_publisher_workflow="${PYPI_PUBLISHER_WORKFLOW:-build.yml}"
 pypi_publisher_environment="${PYPI_PUBLISHER_ENVIRONMENT:-release}"
 pypi_attestations_version="${PYPI_ATTESTATIONS_VERSION:-$(bash scripts/tool-version.sh pypi-attestations)}"
+pypi_attestation_verify_attempts="${PYPI_ATTESTATION_VERIFY_ATTEMPTS:-7}"
+pypi_attestation_verify_retry_delay_seconds="${PYPI_ATTESTATION_VERIFY_RETRY_DELAY_SECONDS:-15}"
+pypi_attestation_verify_max_retry_delay_seconds="${PYPI_ATTESTATION_VERIFY_MAX_RETRY_DELAY_SECONDS:-120}"
 
 cargo_registry_api_url="${CARGO_REGISTRY_API_URL:-https://crates.io/api/v1}"
 cargo_sparse_index_url="${CARGO_SPARSE_INDEX_URL:-https://index.crates.io}"
@@ -73,6 +80,15 @@ if ! [[ "$registry_propagation_poll_seconds" =~ ^[0-9]+$ ]] ||
   echo "::error::REGISTRY_PROPAGATION_POLL_SECONDS must be a positive integer."
   exit 1
 fi
+release_verification_validate_positive_integer \
+  PYPI_ATTESTATION_VERIFY_ATTEMPTS \
+  "$pypi_attestation_verify_attempts"
+release_verification_validate_positive_integer \
+  PYPI_ATTESTATION_VERIFY_RETRY_DELAY_SECONDS \
+  "$pypi_attestation_verify_retry_delay_seconds"
+release_verification_validate_positive_integer \
+  PYPI_ATTESTATION_VERIFY_MAX_RETRY_DELAY_SECONDS \
+  "$pypi_attestation_verify_max_retry_delay_seconds"
 
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
@@ -156,7 +172,11 @@ verify_pypi() {
       "$filename" \
       "$provenance_file"
 
-    retry_with_backoff "pypi-attestations verify ${filename}" 3 15 \
+    run_release_verification_with_retry \
+      "pypi-attestations verify ${filename}" \
+      "$pypi_attestation_verify_attempts" \
+      "$pypi_attestation_verify_retry_delay_seconds" \
+      "$pypi_attestation_verify_max_retry_delay_seconds" \
       uv run --no-project --no-build --with "pypi-attestations==${pypi_attestations_version}" -- \
       pypi-attestations verify pypi \
       --repository "https://github.com/${pypi_publisher_repository}" \
@@ -541,36 +561,6 @@ wait_for_registry_state() {
     echo "Waiting for ${description} to propagate (${remaining}s remaining)."
     sleep "$registry_propagation_poll_seconds"
   done
-}
-
-# Retry a command with exponential backoff for transient network failures (e.g. Sigstore TUF flakes)
-retry_with_backoff() {
-  local description=$1
-  local attempts=$2
-  local initial_delay=$3
-  shift 3
-
-  local delay="$initial_delay"
-  local status=0
-  for i in $(seq 1 "$attempts"); do
-    set +e
-    "$@"
-    status=$?
-    set -e
-
-    if [[ "$status" -eq 0 ]]; then
-      return 0
-    fi
-
-    if [[ "$i" -lt "$attempts" ]]; then
-      echo "${description} failed (exit=${status}), retry (${i}/${attempts}) after ${delay}s"
-      sleep "$delay"
-      delay=$((delay * 2))
-    fi
-  done
-
-  echo "::error::${description} failed after ${attempts} attempts."
-  return "$status"
 }
 
 verify_pypi
