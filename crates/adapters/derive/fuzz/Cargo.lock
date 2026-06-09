@@ -2122,9 +2122,9 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "1.4.1"
+version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8be7462df143984c4598a256ef469b251d7d7f9e271135073e78fc535414f3d0"
+checksum = "6970f50e31d6fc17d3fa27329444bfa74e196cf62e95052a3f6fee181dba6425"
 dependencies = [
  "bytes",
  "itoa",
@@ -2687,7 +2687,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.58.0"
+version = "0.59.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -2717,7 +2717,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.58.0"
+version = "0.59.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -2739,7 +2739,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cryptography"
-version = "0.58.0"
+version = "0.59.0"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -2754,7 +2754,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-derive"
-version = "0.58.0"
+version = "0.59.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy",
@@ -2799,7 +2799,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.58.0"
+version = "0.59.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -2824,7 +2824,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-live"
-version = "0.58.0"
+version = "0.59.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -2846,7 +2846,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.58.0"
+version = "0.59.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -2872,7 +2872,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.58.0"
+version = "0.59.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",

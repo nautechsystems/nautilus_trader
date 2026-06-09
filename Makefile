@@ -32,7 +32,7 @@ VERBOSE ?= true
 # Set UV_SYNC_FLAGS= to make uv prune packages not in uv.lock
 UV_SYNC_FLAGS ?= --inexact
 
-PIP_AUDIT_IGNORE_FLAGS := --ignore-vuln GHSA-jg22-mg44-37j8 --ignore-vuln GHSA-hg6j-4rv6-33pg
+PIP_AUDIT_IGNORE_FLAGS :=
 
 # TARGET_DIR controls where cargo places build artifacts.
 # Can be overridden to use a separate directory: make build-debug TARGET_DIR=target-python
@@ -421,8 +421,6 @@ security-audit: check-audit-installed check-deny-installed check-vet-installed c
 	@$(call audit_step,cargo vet,cargo vet --locked)
 	@$(call audit_step,cargo vet lighter fuzz,cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/Cargo.toml --store-path .supply-chain)
 	@$(call audit_step,cargo vet derive fuzz,cargo vet --locked --manifest-path crates/adapters/derive/fuzz/Cargo.toml --store-path .supply-chain)
-	@# aiohttp 3.14.0 fixes these advisories, but remains inside uv's 3-day
-	@# exclude-newer window while aiohttp source builds are disabled.
 	@$(call audit_step,pip-audit,uv export --no-hashes --frozen | uv run --no-project --with pip-audit -- pip-audit --disable-pip --no-deps -r /dev/stdin $(PIP_AUDIT_IGNORE_FLAGS))
 	@$(call audit_step,osv-scanner,osv-scanner --config=osv-scanner.toml --lockfile=Cargo.lock --lockfile=crates/adapters/lighter/fuzz/Cargo.lock --lockfile=crates/adapters/derive/fuzz/Cargo.lock --lockfile=uv.lock --lockfile=python/uv.lock)
 

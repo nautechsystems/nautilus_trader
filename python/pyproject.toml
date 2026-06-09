@@ -31,7 +31,7 @@ repository = "https://github.com/nautechsystems/nautilus_trader"
 docs = "https://nautilustrader.io/docs"
 
 [build-system]
-requires = ["maturin>=1.12.6", "patchelf"]
+requires = ["maturin>=1.13.3", "patchelf"]
 build-backend = "maturin"
 
 [tool.maturin]
@@ -85,10 +85,10 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin>=1.13.3", "mypy>=1.20.2,<2.0.0", "ruff>=0.15.12"]
+dev = ["maturin>=1.13.3", "mypy>=1.20.2,<2.0.0", "ruff>=0.15.16"]
 test = [
   "pytest>=9.0.3",
-  "pytest-asyncio>=1.3.0",
+  "pytest-asyncio>=1.4.0",
   "pytest-cov>=7.1.0",
   "pytest-xdist[psutil]>=3.8.0",
 ]
