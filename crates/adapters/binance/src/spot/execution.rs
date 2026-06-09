@@ -120,6 +120,7 @@ pub struct BinanceSpotExecutionClient {
     ws_trading_client: Option<BinanceSpotWsTradingClient>,
     ws_trading_handle: Mutex<Option<JoinHandle<()>>>,
     ws_authenticated: Arc<tokio::sync::Notify>,
+    ws_user_data_subscribed: Arc<tokio::sync::Notify>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
 }
 
@@ -180,6 +181,7 @@ impl BinanceSpotExecutionClient {
             ws_trading_client,
             ws_trading_handle: Mutex::new(None),
             ws_authenticated: Arc::new(tokio::sync::Notify::new()),
+            ws_user_data_subscribed: Arc::new(tokio::sync::Notify::new()),
             pending_tasks: Mutex::new(Vec::new()),
         })
     }
@@ -211,9 +213,17 @@ impl BinanceSpotExecutionClient {
 
     /// Returns whether the WS trading client is connected and active.
     fn ws_trading_active(&self) -> bool {
+        let dispatch_running = self
+            .ws_trading_handle
+            .lock()
+            .expect(MUTEX_POISONED)
+            .as_ref()
+            .is_some_and(|handle| !handle.is_finished());
+
         self.ws_trading_client
             .as_ref()
-            .is_some_and(|c| c.is_active())
+            .is_some_and(|client| client.is_active())
+            && dispatch_running
     }
 
     fn submit_order_internal(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
@@ -482,6 +492,22 @@ impl BinanceSpotExecutionClient {
     fn abort_pending_tasks(&self) {
         crate::common::execution::abort_pending_tasks(&self.pending_tasks);
     }
+
+    async fn enter_http_only_execution_mode(
+        &mut self,
+        mut ws_trading: BinanceSpotWsTradingClient,
+        reason: &str,
+    ) {
+        log::error!(
+            "{reason}; entering Spot HTTP-only execution mode. Order commands use HTTP responses; execution reconciliation requires explicit queries until WS trading is re-enabled"
+        );
+
+        if let Some(handle) = self.ws_trading_handle.lock().expect(MUTEX_POISONED).take() {
+            handle.abort();
+        }
+        ws_trading.disconnect().await;
+        self.ws_trading_client = Some(ws_trading);
+    }
 }
 
 #[async_trait(?Send)]
@@ -553,7 +579,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             .await?;
 
         // Connect WS trading client (primary order transport)
-        if let Some(ref mut ws_trading) = self.ws_trading_client {
+        if let Some(mut ws_trading) = self.ws_trading_client.take() {
             match ws_trading.connect().await {
                 Ok(()) => {
                     log::info!("Connected to Binance Spot WS trading API");
@@ -565,6 +591,9 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     let http_client = self.http_client.clone();
                     let dispatch_state = self.dispatch_state.clone();
                     let ws_authenticated = self.ws_authenticated.clone();
+                    let ws_user_data_subscribed = self.ws_user_data_subscribed.clone();
+                    let (ws_setup_error_tx, mut ws_setup_error_rx) =
+                        tokio::sync::mpsc::unbounded_channel();
                     let seen_trade_ids = std::sync::Arc::new(Mutex::new(FifoCache::new()));
 
                     let handle = get_runtime().spawn(async move {
@@ -579,6 +608,8 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                                         clock,
                                         &dispatch_state,
                                         &ws_authenticated,
+                                        &ws_user_data_subscribed,
+                                        &ws_setup_error_tx,
                                         &seen_trade_ids,
                                     );
                                 }
@@ -592,39 +623,48 @@ impl ExecutionClient for BinanceSpotExecutionClient {
 
                     *self.ws_trading_handle.lock().expect(MUTEX_POISONED) = Some(handle);
 
-                    // Block until session is authenticated before signaling connected
                     if let Err(e) = ws_trading.session_logon().await {
-                        log::error!("WS session logon failed: {e}");
+                        let reason = format!("WS session logon failed: {e}");
+                        self.enter_http_only_execution_mode(ws_trading, &reason)
+                            .await;
                     } else {
-                        let auth_result = tokio::time::timeout(
+                        let auth_result = wait_for_ws_setup_response(
                             Duration::from_secs(10),
                             self.ws_authenticated.notified(),
+                            &mut ws_setup_error_rx,
+                            "WS session authentication timed out",
                         )
                         .await;
 
-                        if auth_result.is_err() {
-                            log::error!(
-                                "WS session authentication timed out, \
-                                 order operations will use HTTP fallback"
-                            );
-
-                            if let Some(handle) =
-                                self.ws_trading_handle.lock().expect(MUTEX_POISONED).take()
-                            {
-                                handle.abort();
-                            }
-                            ws_trading.disconnect().await;
-                            self.ws_trading_client = None;
+                        if let Err(e) = auth_result {
+                            self.enter_http_only_execution_mode(ws_trading, &e.to_string())
+                                .await;
                         } else if let Err(e) = ws_trading.subscribe_user_data().await {
-                            log::error!("WS user data subscribe failed: {e}");
+                            let reason = format!("WS user data subscribe failed: {e}");
+                            self.enter_http_only_execution_mode(ws_trading, &reason)
+                                .await;
+                        } else {
+                            let subscribe_result = wait_for_ws_setup_response(
+                                Duration::from_secs(10),
+                                self.ws_user_data_subscribed.notified(),
+                                &mut ws_setup_error_rx,
+                                "WS user data subscription timed out",
+                            )
+                            .await;
+
+                            if let Err(e) = subscribe_result {
+                                self.enter_http_only_execution_mode(ws_trading, &e.to_string())
+                                    .await;
+                            } else {
+                                self.ws_trading_client = Some(ws_trading);
+                            }
                         }
                     }
                 }
                 Err(e) => {
-                    log::error!(
-                        "Failed to connect WS trading API: {e}. \
-                         Order operations will use HTTP fallback"
-                    );
+                    let reason = format!("Failed to connect WS trading API: {e}");
+                    self.enter_http_only_execution_mode(ws_trading, &reason)
+                        .await;
                 }
             }
         }
@@ -1284,6 +1324,30 @@ impl ExecutionClient for BinanceSpotExecutionClient {
     }
 }
 
+async fn wait_for_ws_setup_response(
+    timeout: Duration,
+    success: impl Future<Output = ()>,
+    setup_errors: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
+    timeout_message: &'static str,
+) -> anyhow::Result<()> {
+    tokio::pin!(success);
+
+    let result = tokio::time::timeout(timeout, async {
+        tokio::select! {
+            () = &mut success => Ok(()),
+            err = setup_errors.recv() => {
+                anyhow::bail!(
+                    "{}",
+                    err.unwrap_or_else(|| "WS setup error channel closed".to_string()),
+                )
+            }
+        }
+    })
+    .await;
+
+    result.map_err(|_| anyhow::anyhow!(timeout_message))?
+}
+
 #[expect(clippy::too_many_arguments)]
 fn dispatch_ws_trading_message(
     msg: BinanceSpotWsTradingMessage,
@@ -1293,6 +1357,8 @@ fn dispatch_ws_trading_message(
     clock: &'static AtomicTime,
     dispatch_state: &WsDispatchState,
     ws_authenticated: &tokio::sync::Notify,
+    ws_user_data_subscribed: &tokio::sync::Notify,
+    ws_setup_error_tx: &tokio::sync::mpsc::UnboundedSender<String>,
     seen_trade_ids: &std::sync::Arc<Mutex<FifoCache<(Ustr, i64), 10_000>>>,
 ) {
     match msg {
@@ -1465,6 +1531,7 @@ fn dispatch_ws_trading_message(
         }
         BinanceSpotWsTradingMessage::UserDataSubscribed { subscription_id } => {
             log::info!("User data stream subscribed: id={subscription_id}");
+            ws_user_data_subscribed.notify_one();
         }
         BinanceSpotWsTradingMessage::ExecutionReport(report) => {
             let ts_init = clock.get_time_ns();
@@ -1518,6 +1585,7 @@ fn dispatch_ws_trading_message(
         }
         BinanceSpotWsTradingMessage::Error(err) => {
             log::error!("WS trading API error: {err}");
+            let _ = ws_setup_error_tx.send(err);
         }
     }
 }
@@ -2160,6 +2228,8 @@ mod tests {
             InstrumentId::from("BTCUSDT.BINANCE"),
         );
         let ws_authenticated = tokio::sync::Notify::new();
+        let ws_user_data_subscribed = tokio::sync::Notify::new();
+        let (ws_setup_error_tx, _ws_setup_error_rx) = tokio::sync::mpsc::unbounded_channel();
         let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
 
         dispatch_state.pending_requests.insert(
@@ -2183,6 +2253,8 @@ mod tests {
             clock,
             &dispatch_state,
             &ws_authenticated,
+            &ws_user_data_subscribed,
+            &ws_setup_error_tx,
             &seen_trade_ids,
         );
 
@@ -2221,6 +2293,8 @@ mod tests {
         let dispatch_state =
             create_tracked_dispatch_state(client_order_id, InstrumentId::from("BTCUSDT.BINANCE"));
         let ws_authenticated = tokio::sync::Notify::new();
+        let ws_user_data_subscribed = tokio::sync::Notify::new();
+        let (ws_setup_error_tx, _ws_setup_error_rx) = tokio::sync::mpsc::unbounded_channel();
         let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
 
         dispatch_state.pending_requests.insert(
@@ -2244,6 +2318,8 @@ mod tests {
             clock,
             &dispatch_state,
             &ws_authenticated,
+            &ws_user_data_subscribed,
+            &ws_setup_error_tx,
             &seen_trade_ids,
         );
 
@@ -2266,6 +2342,8 @@ mod tests {
         let dispatch_state =
             create_tracked_dispatch_state(client_order_id, InstrumentId::from("BTCUSDT.BINANCE"));
         let ws_authenticated = tokio::sync::Notify::new();
+        let ws_user_data_subscribed = tokio::sync::Notify::new();
+        let (ws_setup_error_tx, _ws_setup_error_rx) = tokio::sync::mpsc::unbounded_channel();
         let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
 
         dispatch_state.pending_requests.insert(
@@ -2289,6 +2367,8 @@ mod tests {
             clock,
             &dispatch_state,
             &ws_authenticated,
+            &ws_user_data_subscribed,
+            &ws_setup_error_tx,
             &seen_trade_ids,
         );
 
@@ -2324,6 +2404,8 @@ mod tests {
             InstrumentId::from("BTCUSDT.BINANCE"),
         );
         let ws_authenticated = tokio::sync::Notify::new();
+        let ws_user_data_subscribed = tokio::sync::Notify::new();
+        let (ws_setup_error_tx, _ws_setup_error_rx) = tokio::sync::mpsc::unbounded_channel();
         let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
 
         dispatch_state.pending_requests.insert(
@@ -2347,6 +2429,8 @@ mod tests {
             clock,
             &dispatch_state,
             &ws_authenticated,
+            &ws_user_data_subscribed,
+            &ws_setup_error_tx,
             &seen_trade_ids,
         );
 
@@ -2489,6 +2573,8 @@ mod tests {
             InstrumentId::from("ETHUSDT.BINANCE"),
         );
         let ws_authenticated = tokio::sync::Notify::new();
+        let ws_user_data_subscribed = tokio::sync::Notify::new();
+        let (ws_setup_error_tx, _ws_setup_error_rx) = tokio::sync::mpsc::unbounded_channel();
         let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
 
         let trade_json = crate::common::testing::load_fixture_string(
@@ -2504,6 +2590,8 @@ mod tests {
             clock,
             &dispatch_state,
             &ws_authenticated,
+            &ws_user_data_subscribed,
+            &ws_setup_error_tx,
             &seen_trade_ids,
         );
         dispatch_ws_trading_message(
@@ -2514,6 +2602,8 @@ mod tests {
             clock,
             &dispatch_state,
             &ws_authenticated,
+            &ws_user_data_subscribed,
+            &ws_setup_error_tx,
             &seen_trade_ids,
         );
 
@@ -2552,6 +2642,8 @@ mod tests {
             InstrumentId::from("ETHUSDT.BINANCE"),
         );
         let ws_authenticated = tokio::sync::Notify::new();
+        let ws_user_data_subscribed = tokio::sync::Notify::new();
+        let (ws_setup_error_tx, _ws_setup_error_rx) = tokio::sync::mpsc::unbounded_channel();
         let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
 
         let trade_json = crate::common::testing::load_fixture_string(
@@ -2568,6 +2660,8 @@ mod tests {
             clock,
             &dispatch_state,
             &ws_authenticated,
+            &ws_user_data_subscribed,
+            &ws_setup_error_tx,
             &seen_trade_ids,
         );
 
@@ -2593,6 +2687,8 @@ mod tests {
         let dispatch_state =
             create_tracked_dispatch_state(client_order_id, InstrumentId::from("ETHUSDT.BINANCE"));
         let ws_authenticated = tokio::sync::Notify::new();
+        let ws_user_data_subscribed = tokio::sync::Notify::new();
+        let (ws_setup_error_tx, _ws_setup_error_rx) = tokio::sync::mpsc::unbounded_channel();
         let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
 
         let encoded = encode_broker_id(&client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID);
@@ -2617,6 +2713,8 @@ mod tests {
             clock,
             &dispatch_state,
             &ws_authenticated,
+            &ws_user_data_subscribed,
+            &ws_setup_error_tx,
             &seen_trade_ids,
         );
 

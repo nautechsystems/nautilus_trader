@@ -30,7 +30,10 @@ use std::{
 use axum::{
     Router,
     body::Body,
-    extract::{Query, State},
+    extract::{
+        Query, State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
+    },
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
@@ -499,6 +502,36 @@ struct CommandResponseState {
     request_count: Arc<AtomicUsize>,
 }
 
+#[derive(Clone, Copy)]
+enum WsSetupBehavior {
+    CompleteSetup,
+    RejectFirstSessionLogon,
+    RejectSessionLogon,
+    IgnoreSessionLogon,
+    RejectUserDataSubscribe,
+}
+
+#[derive(Clone)]
+struct WsSetupState {
+    behavior: WsSetupBehavior,
+    received_methods: Arc<tokio::sync::Mutex<Vec<String>>>,
+    session_logon_rejections: Arc<AtomicUsize>,
+}
+
+impl WsSetupState {
+    fn new(behavior: WsSetupBehavior) -> Self {
+        Self {
+            behavior,
+            received_methods: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            session_logon_rejections: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    async fn received_methods(&self) -> Vec<String> {
+        self.received_methods.lock().await.clone()
+    }
+}
+
 fn create_exec_test_router(order_query_count: Option<Arc<AtomicUsize>>) -> Router {
     let order_query_count_for_order_route = order_query_count;
 
@@ -818,6 +851,128 @@ async fn handle_batch_cancel(
     command_response(state.responses.batch_cancel, json_response(&json!([])))
 }
 
+async fn handle_ws_setup(ws: WebSocketUpgrade, State(state): State<WsSetupState>) -> Response {
+    ws.on_upgrade(|socket| handle_ws_setup_socket(socket, state))
+}
+
+async fn handle_ws_setup_socket(mut socket: WebSocket, state: WsSetupState) {
+    while let Some(Ok(msg)) = socket.recv().await {
+        match msg {
+            Message::Text(text) => {
+                let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+                    continue;
+                };
+                let method = value
+                    .get("method")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default();
+                let request_id = value
+                    .get("id")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default();
+
+                state.received_methods.lock().await.push(method.to_string());
+
+                match (method, state.behavior) {
+                    ("session.logon", WsSetupBehavior::RejectFirstSessionLogon) => {
+                        if state
+                            .session_logon_rejections
+                            .fetch_add(1, Ordering::Relaxed)
+                            == 0
+                        {
+                            if send_ws_setup_error(&mut socket, request_id, -2015, "auth rejected")
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        } else if send_ws_setup_result(&mut socket, request_id, json!({}))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    ("session.logon", WsSetupBehavior::RejectSessionLogon) => {
+                        if send_ws_setup_error(&mut socket, request_id, -2015, "auth rejected")
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    ("session.logon", WsSetupBehavior::IgnoreSessionLogon) => {}
+                    ("session.logon", _) => {
+                        if send_ws_setup_result(&mut socket, request_id, json!({}))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    ("userDataStream.subscribe", WsSetupBehavior::RejectUserDataSubscribe) => {
+                        if send_ws_setup_error(&mut socket, request_id, -1000, "subscribe rejected")
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    ("userDataStream.subscribe", _) => {
+                        match send_ws_setup_result(
+                            &mut socket,
+                            request_id,
+                            json!({"subscriptionId": 1}),
+                        )
+                        .await
+                        {
+                            Ok(()) => {}
+                            Err(_) => break,
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Message::Ping(payload) => {
+                if socket.send(Message::Pong(payload)).await.is_err() {
+                    break;
+                }
+            }
+            Message::Close(_) => break,
+            _ => {}
+        }
+    }
+}
+
+async fn send_ws_setup_result(
+    socket: &mut WebSocket,
+    request_id: &str,
+    result: serde_json::Value,
+) -> Result<(), axum::Error> {
+    socket
+        .send(Message::Text(
+            json!({"id": request_id, "result": result})
+                .to_string()
+                .into(),
+        ))
+        .await
+}
+
+async fn send_ws_setup_error(
+    socket: &mut WebSocket,
+    request_id: &str,
+    code: i64,
+    msg: &str,
+) -> Result<(), axum::Error> {
+    socket
+        .send(Message::Text(
+            json!({"id": request_id, "error": {"code": code, "msg": msg}})
+                .to_string()
+                .into(),
+        ))
+        .await
+}
+
 async fn start_exec_test_server() -> SocketAddr {
     start_exec_test_server_with_order_query_count(None).await
 }
@@ -885,8 +1040,48 @@ async fn start_exec_test_server_with_command_responses(
     (addr, request_count)
 }
 
+async fn start_ws_setup_test_server(behavior: WsSetupBehavior) -> (SocketAddr, WsSetupState) {
+    let state = WsSetupState::new(behavior);
+    let router = Router::new()
+        .route("/ws-api/v3", get(handle_ws_setup))
+        .with_state(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    (addr, state)
+}
+
 fn create_test_execution_client(
     base_url: String,
+) -> (
+    BinanceSpotExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    create_test_execution_client_with_transport(base_url, false, None)
+}
+
+fn create_test_execution_client_with_ws_trading(
+    base_url_http: String,
+    base_url_ws_trading: String,
+) -> (
+    BinanceSpotExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    create_test_execution_client_with_transport(base_url_http, true, Some(base_url_ws_trading))
+}
+
+fn create_test_execution_client_with_transport(
+    base_url_http: String,
+    use_ws_trading: bool,
+    base_url_ws_trading: Option<String>,
 ) -> (
     BinanceSpotExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -912,8 +1107,9 @@ fn create_test_execution_client(
     let config = BinanceExecClientConfig {
         trader_id,
         account_id,
-        base_url_http: Some(base_url),
-        use_ws_trading: false,
+        base_url_http: Some(base_url_http),
+        base_url_ws_trading,
+        use_ws_trading,
         api_key: Some("test_api_key".to_string()),
         api_secret: Some("test_api_secret".to_string()),
         ..Default::default()
@@ -977,6 +1173,124 @@ async fn test_connect_loads_instruments_and_account() {
     client.connect().await.unwrap();
 
     assert!(client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ws_trading_success_routes_orders_over_ws() {
+    let (http_addr, request_count) =
+        start_exec_test_server_with_command_responses(CommandResponses::default()).await;
+    let (ws_addr, ws_state) = start_ws_setup_test_server(WsSetupBehavior::CompleteSetup).await;
+    let base_url_http = format!("http://{http_addr}");
+    let base_url_ws_trading = format!("ws://{ws_addr}/ws-api/v3");
+
+    let (mut client, _rx, cache) =
+        create_test_execution_client_with_ws_trading(base_url_http, base_url_ws_trading);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+
+    let client_order_id = ClientOrderId::new("ws-setup-success-test-001");
+    let order_any = add_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    wait_for_ws_method(&ws_state, "order.place").await;
+
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        ws_state.received_methods().await,
+        ["session.logon", "userDataStream.subscribe", "order.place"]
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ws_trading_reconnect_retries_ws_after_setup_failure() {
+    let (http_addr, request_count) =
+        start_exec_test_server_with_command_responses(CommandResponses::default()).await;
+    let (ws_addr, ws_state) =
+        start_ws_setup_test_server(WsSetupBehavior::RejectFirstSessionLogon).await;
+    let base_url_http = format!("http://{http_addr}");
+    let base_url_ws_trading = format!("ws://{ws_addr}/ws-api/v3");
+
+    let (mut client, _rx, cache) =
+        create_test_execution_client_with_ws_trading(base_url_http, base_url_ws_trading);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+
+    let fallback_order_id = ClientOrderId::new("ws-setup-retry-fallback-001");
+    let fallback_order = add_limit_order_to_cache(&cache, fallback_order_id);
+
+    client
+        .submit_order(submit_order_command(&fallback_order))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    client.disconnect().await.unwrap();
+    client.connect().await.unwrap();
+
+    let retry_order_id = ClientOrderId::new("ws-setup-retry-success-001");
+    let retry_order = add_limit_order_to_cache(&cache, retry_order_id);
+
+    client
+        .submit_order(submit_order_command(&retry_order))
+        .unwrap();
+
+    wait_for_ws_method(&ws_state, "order.place").await;
+
+    assert_eq!(request_count.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        ws_state.received_methods().await,
+        [
+            "session.logon",
+            "session.logon",
+            "userDataStream.subscribe",
+            "order.place",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>()
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ws_trading_session_logon_rejection_uses_http_only_mode() {
+    assert_ws_setup_failure_uses_http(WsSetupBehavior::RejectSessionLogon, &["session.logon"])
+        .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ws_trading_auth_timeout_uses_http_only_mode() {
+    assert_ws_setup_failure_uses_http(WsSetupBehavior::IgnoreSessionLogon, &["session.logon"])
+        .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ws_trading_user_data_subscribe_rejection_uses_http_only_mode() {
+    assert_ws_setup_failure_uses_http(
+        WsSetupBehavior::RejectUserDataSubscribe,
+        &["session.logon", "userDataStream.subscribe"],
+    )
+    .await;
 }
 
 #[rstest]
@@ -1999,6 +2313,83 @@ async fn wait_for_command_requests(request_count: &AtomicUsize, expected: usize)
         Duration::from_secs(5),
     )
     .await;
+}
+
+async fn wait_for_ws_method(state: &WsSetupState, expected_method: &str) {
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .received_methods()
+                    .await
+                    .iter()
+                    .any(|method| method == expected_method)
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+async fn assert_ws_setup_failure_uses_http(behavior: WsSetupBehavior, expected_methods: &[&str]) {
+    let (http_addr, request_count) =
+        start_exec_test_server_with_command_responses(CommandResponses::default()).await;
+    let (ws_addr, ws_state) = start_ws_setup_test_server(behavior).await;
+    let base_url_http = format!("http://{http_addr}");
+    let base_url_ws_trading = format!("ws://{ws_addr}/ws-api/v3");
+
+    let (mut client, mut rx, cache) =
+        create_test_execution_client_with_ws_trading(base_url_http, base_url_ws_trading);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    let connect_timeout = match behavior {
+        WsSetupBehavior::CompleteSetup | WsSetupBehavior::RejectFirstSessionLogon => {
+            unreachable!("complete setup is not a setup failure")
+        }
+        WsSetupBehavior::IgnoreSessionLogon => Duration::from_secs(12),
+        WsSetupBehavior::RejectSessionLogon | WsSetupBehavior::RejectUserDataSubscribe => {
+            Duration::from_secs(5)
+        }
+    };
+    tokio::time::timeout(connect_timeout, client.connect())
+        .await
+        .expect("Connect should finish before setup timeout")
+        .unwrap();
+    assert!(client.is_connected());
+
+    let client_order_id = ClientOrderId::new("ws-setup-fallback-test-001");
+    let order_any = add_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Accepted(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Accepted(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+        }
+        other => panic!("Expected Accepted event, was {other:?}"),
+    }
+
+    let expected_methods = expected_methods
+        .iter()
+        .map(|method| (*method).to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(ws_state.received_methods().await, expected_methods);
+
+    client.disconnect().await.unwrap();
 }
 
 async fn assert_no_order_event_matching<F>(
