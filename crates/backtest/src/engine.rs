@@ -1005,7 +1005,8 @@ impl BacktestEngine {
             snapshot_positions,
         );
 
-        let analyzer = self.build_analyzer(&cache, &positions);
+        let mut analyzer = self.build_analyzer(&cache, &positions);
+        analyzer.recorded_realized_pnls = self.kernel.portfolio.borrow().recorded_realized_pnls();
         let mut stats_pnls = AHashMap::new();
 
         for currency in analyzer.currencies() {
@@ -1708,7 +1709,8 @@ impl BacktestEngine {
             return;
         }
 
-        let analyzer = self.build_analyzer(&cache, &positions);
+        let mut analyzer = self.build_analyzer(&cache, &positions);
+        analyzer.recorded_realized_pnls = self.kernel.portfolio.borrow().recorded_realized_pnls();
         log_portfolio_performance(&analyzer);
     }
 

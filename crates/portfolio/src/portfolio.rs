@@ -39,7 +39,7 @@ use nautilus_model::{
     position::Position,
     types::{AccountBalance, Currency, MarginBalance, Money, Price},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use crate::{config::PortfolioConfig, manager::AccountsManager};
 
@@ -1479,6 +1479,12 @@ impl Portfolio {
         );
     }
 
+    /// Returns realized PnLs recorded during portfolio event processing.
+    #[must_use]
+    pub fn recorded_realized_pnls(&self) -> AHashMap<Currency, IndexMap<PositionId, f64>> {
+        self.inner.borrow().analyzer.recorded_realized_pnls.clone()
+    }
+
     /// Updates portfolio calculations based on a position event.
     ///
     /// Recalculates net positions, unrealized PnL, and margin requirements.
@@ -2479,6 +2485,8 @@ fn update_position(
         portfolio_clone.update_net_position(&instrument_id, &positions);
     }
 
+    record_closed_position_pnl(cache, inner, config, event);
+
     if let Some(calculated_unrealized_pnl) =
         portfolio_clone.calculate_unrealized_pnl(&instrument_id, None)
     {
@@ -2567,6 +2575,83 @@ fn update_position(
             &account_state,
         );
     }
+}
+
+fn record_closed_position_pnl(
+    cache: &Rc<RefCell<Cache>>,
+    inner: &Rc<RefCell<PortfolioState>>,
+    config: PortfolioConfig,
+    event: &PositionEvent,
+) {
+    let position_id = match event {
+        PositionEvent::PositionOpened(event) => event.position_id,
+        PositionEvent::PositionChanged(event) => event.position_id,
+        PositionEvent::PositionClosed(event) => event.position_id,
+        PositionEvent::PositionAdjusted(event) => event.position_id,
+    };
+
+    let cache_ref = cache.borrow();
+    let Some(position) = cache_ref.position(&position_id) else {
+        return;
+    };
+
+    if !position.is_closed() {
+        return;
+    }
+
+    let Some(realized_pnl) = position.realized_pnl else {
+        return;
+    };
+
+    inner
+        .borrow_mut()
+        .analyzer
+        .record_trade(&position.id, &realized_pnl);
+
+    let Some(account) = cache_ref.account(&event.account_id()) else {
+        return;
+    };
+    let Some(base_currency) = account.base_currency() else {
+        return;
+    };
+
+    if realized_pnl.currency == base_currency {
+        return;
+    }
+
+    let xrate = if config.use_mark_xrates {
+        cache_ref
+            .get_mark_xrate(realized_pnl.currency, base_currency)
+            .and_then(|xrate| Decimal::try_from(xrate).ok())
+    } else {
+        cache_ref.get_xrate(
+            event.instrument_id().venue,
+            realized_pnl.currency,
+            base_currency,
+            PriceType::Mid,
+        )
+    };
+
+    let Some(xrate) = xrate else {
+        log::warn!(
+            "Cannot record account-currency realized PnL for {position_id}: conversion failed from {} to {base_currency}",
+            realized_pnl.currency
+        );
+        return;
+    };
+
+    let amount = (realized_pnl.as_decimal() * xrate).round_dp(u32::from(base_currency.precision));
+    let Some(amount) = amount.to_f64() else {
+        log::warn!(
+            "Cannot record account-currency realized PnL for {position_id}: converted amount is outside f64 range"
+        );
+        return;
+    };
+
+    inner
+        .borrow_mut()
+        .analyzer
+        .record_trade(&position.id, &Money::new(amount, base_currency));
 }
 
 fn update_account(

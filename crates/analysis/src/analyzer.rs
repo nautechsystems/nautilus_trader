@@ -16,7 +16,7 @@
 use std::{collections::BTreeMap, fmt::Debug, sync::Arc};
 
 use ahash::AHashMap;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_DAY};
 use nautilus_model::{
     accounts::Account,
@@ -62,6 +62,7 @@ pub struct PortfolioAnalyzer {
     pub account_balances: IndexMap<Currency, Money>,
     pub positions: Vec<Position>,
     pub realized_pnls: AHashMap<Currency, Vec<(PositionId, f64)>>,
+    pub recorded_realized_pnls: AHashMap<Currency, IndexMap<PositionId, f64>>,
     pub position_returns: Returns,
     pub portfolio_returns: Returns,
     /// Alias for the primary returns source.
@@ -108,6 +109,7 @@ impl PortfolioAnalyzer {
             account_balances: IndexMap::new(),
             positions: Vec::new(),
             realized_pnls: AHashMap::new(),
+            recorded_realized_pnls: AHashMap::new(),
             position_returns: BTreeMap::new(),
             portfolio_returns: BTreeMap::new(),
             returns: BTreeMap::new(),
@@ -135,6 +137,7 @@ impl PortfolioAnalyzer {
         self.account_balances.clear();
         self.positions.clear();
         self.realized_pnls.clear();
+        self.recorded_realized_pnls.clear();
         self.position_returns.clear();
         self.portfolio_returns.clear();
         self.returns.clear();
@@ -175,8 +178,8 @@ impl PortfolioAnalyzer {
 
     /// Calculates statistics based on account and position data.
     ///
-    /// This clears all previous state before calculating, so can be called
-    /// multiple times without accumulating stale data.
+    /// This clears calculated state before calculating, while preserving
+    /// close-time PnLs recorded during portfolio processing.
     pub fn calculate_statistics(&mut self, account: &dyn Account, positions: &[Position]) {
         self.account_balances_starting = account.starting_balances().into_iter().collect();
         self.account_balances = account.balances_total().into_iter().collect();
@@ -216,6 +219,13 @@ impl PortfolioAnalyzer {
         let currency = pnl.currency;
         let entry = self.realized_pnls.entry(currency).or_default();
         entry.push((*position_id, pnl.as_f64()));
+    }
+
+    /// Records a trade's PnL observed during portfolio processing.
+    pub fn record_trade(&mut self, position_id: &PositionId, pnl: &Money) {
+        let currency = pnl.currency;
+        let entry = self.recorded_realized_pnls.entry(currency).or_default();
+        entry.insert(*position_id, pnl.as_f64());
     }
 
     /// Records a position return at a specific timestamp.
@@ -329,18 +339,48 @@ impl PortfolioAnalyzer {
     /// without an explicit currency specified.
     #[must_use]
     pub fn realized_pnls(&self, currency: Option<&Currency>) -> Option<Vec<(PositionId, f64)>> {
-        if self.realized_pnls.is_empty() {
+        if self.realized_pnls.is_empty() && self.recorded_realized_pnls.is_empty() {
             return None;
         }
 
         // Require explicit currency for multi-currency portfolios to avoid nondeterminism
         let currency = match currency {
-            Some(c) => c,
-            None if self.account_balances.len() == 1 => self.account_balances.keys().next()?,
-            None => return None,
+            Some(c) => *c,
+            None if self.account_balances.len() == 1 => *self.account_balances.keys().next()?,
+            None => {
+                let mut currencies: IndexSet<Currency> =
+                    self.realized_pnls.keys().copied().collect();
+                currencies.extend(self.recorded_realized_pnls.keys().copied());
+                if currencies.len() != 1 {
+                    return None;
+                }
+
+                *currencies.first()?
+            }
         };
 
-        self.realized_pnls.get(currency).cloned()
+        let realized_pnls = self.realized_pnls.get(&currency);
+        let recorded_realized_pnls = self.recorded_realized_pnls.get(&currency);
+
+        match (realized_pnls, recorded_realized_pnls) {
+            (None, None) => None,
+            (Some(realized_pnls), None) => Some(realized_pnls.clone()),
+            (None, Some(recorded_realized_pnls)) => Some(
+                recorded_realized_pnls
+                    .iter()
+                    .map(|(position_id, pnl)| (*position_id, *pnl))
+                    .collect(),
+            ),
+            (Some(realized_pnls), Some(recorded_realized_pnls)) => {
+                let mut output: IndexMap<PositionId, f64> = realized_pnls.iter().copied().collect();
+
+                for (position_id, pnl) in recorded_realized_pnls {
+                    output.insert(*position_id, *pnl);
+                }
+
+                Some(output.into_iter().collect())
+            }
+        }
     }
 
     /// Calculates total PnL including unrealized PnL if provided.
@@ -1039,6 +1079,46 @@ mod tests {
     }
 
     #[rstest]
+    fn test_calculate_statistics_preserves_recorded_realized_pnls() {
+        let mut analyzer = PortfolioAnalyzer::new();
+        let account_currency = Currency::EUR();
+        let native_currency = Currency::USD();
+        let stat: Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync> =
+            Arc::new(MockStatistic::new("test_stat"));
+        analyzer.register_statistic(Arc::clone(&stat));
+        analyzer.record_trade(
+            &PositionId::new("pos1"),
+            &Money::new(90.0, account_currency),
+        );
+
+        let positions = vec![create_mock_position("pos1", 100.0, 0.1, native_currency)];
+
+        let mut starting_balances = AHashMap::new();
+        starting_balances.insert(account_currency, Money::new(1000.0, account_currency));
+
+        let mut current_balances = AHashMap::new();
+        current_balances.insert(account_currency, Money::new(1100.0, account_currency));
+
+        let account = MockAccount {
+            starting_balances,
+            current_balances,
+            events: vec![],
+        };
+
+        analyzer.calculate_statistics(&account, &positions);
+
+        let native_pnls = analyzer.realized_pnls(Some(&native_currency)).unwrap();
+        let recorded_pnls = analyzer.realized_pnls(Some(&account_currency)).unwrap();
+        let pnl_stats = analyzer
+            .get_performance_stats_pnls(Some(&account_currency), None)
+            .unwrap();
+
+        assert_eq!(native_pnls[0].1, 100.0);
+        assert_eq!(recorded_pnls[0].1, 90.0);
+        assert_eq!(*pnl_stats.get("test_stat").unwrap(), 90.0);
+    }
+
+    #[rstest]
     fn test_formatted_output() {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
@@ -1106,6 +1186,7 @@ mod tests {
         assert!(analyzer.account_balances.is_empty());
         assert!(analyzer.positions.is_empty());
         assert!(analyzer.realized_pnls.is_empty());
+        assert!(analyzer.recorded_realized_pnls.is_empty());
         assert!(analyzer.position_returns.is_empty());
         assert!(analyzer.portfolio_returns.is_empty());
         assert!(analyzer.returns.is_empty());

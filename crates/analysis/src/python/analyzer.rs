@@ -330,6 +330,16 @@ impl PortfolioAnalyzer {
         self.add_trade(position_id, realized_pnl);
     }
 
+    /// Records a trade's PnL observed during portfolio processing.
+    #[pyo3(name = "record_trade")]
+    #[allow(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "matches underlying record_trade signature"
+    )]
+    fn py_record_trade(&mut self, position_id: &PositionId, realized_pnl: &Money) {
+        self.record_trade(position_id, realized_pnl);
+    }
+
     // Note: calculate_statistics is not exposed to Python because it requires
     // complex conversions of Account and dict types. Use the Python analyzer.py wrapper instead.
 

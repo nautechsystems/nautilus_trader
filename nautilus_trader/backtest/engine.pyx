@@ -2209,8 +2209,9 @@ cdef class BacktestEngine:
 
             # Calculate statistics
             self._kernel.portfolio.analyzer.calculate_statistics(account, venue_positions)
+            venue_currencies.update(self._kernel.portfolio.analyzer.currencies)
 
-            # Present PnL performance stats per asset
+            # Present PnL performance stats per asset and account currency
             for currency in sorted(list(venue_currencies), key=lambda x: x.code):
                 self._log.info(f" PnL Statistics ({str(currency)})")
                 self._log.info(f"{color}-----------------------------------------------------------------")

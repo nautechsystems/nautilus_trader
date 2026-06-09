@@ -541,9 +541,9 @@ def test_portfolio_realized_pnl_with_conversion():
     state = AccountState(
         account_id=account_id,
         account_type=AccountType.CASH,
-        base_currency=USD,
+        base_currency=EUR,
         reported=True,
-        balances=[AccountBalance(Money(100000, USD), Money(0, USD), Money(100000, USD))],
+        balances=[AccountBalance(Money(100000, EUR), Money(0, EUR), Money(100000, EUR))],
         margins=[],
         info={},
         event_id=UUID4(),
@@ -592,10 +592,15 @@ def test_portfolio_realized_pnl_with_conversion():
 
     # Realized PnL: 55000 - 50000 = 5000 USDT
     # Converted to EUR using the xrate from cache
+    portfolio.update_position(TestEventStubs.position_closed(pos))
+
     realized = portfolio.realized_pnl(btcusdt.id, account_id=account_id, target_currency=EUR)
+    analyzer_pnls = portfolio.analyzer.realized_pnls(EUR)
+
     assert realized is not None
     assert realized.currency == EUR
     assert realized == Money(4405.50, EUR)
+    assert analyzer_pnls["P-123"] == 4405.50
 
 
 def test_portfolio_total_pnl_with_currency_mismatch():
