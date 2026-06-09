@@ -31,6 +31,7 @@ use std::{
 use futures_util::{SinkExt, StreamExt};
 use nautilus_network::{
     RECONNECTED,
+    error::SendError,
     websocket::{TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler},
 };
 use rstest::{fixture, rstest};
@@ -62,6 +63,7 @@ const PARTITION_DURING_RECONNECT_SEED: u64 = 0x57EB_3003;
 const PARTITION_DURING_BACKOFF_SEED: u64 = 0x57EB_3004;
 const SILENT_UNTIL_IDLE_TIMEOUT_SEED: u64 = 0x57EB_3005;
 const NO_READ_BACKPRESSURE_SEED: u64 = 0x57EB_3006;
+const DISCONNECT_WHILE_SEND_WAITS_FOR_RECONNECT_SEED: u64 = 0x57EB_3007;
 const LARGE_WEBSOCKET_MESSAGE_LEN: usize = 16 * 1024;
 const BACKPRESSURE_TCP_CAPACITY: usize = 4;
 const BACKPRESSURE_MESSAGE_COUNT: usize = 16;
@@ -658,6 +660,25 @@ fn test_turmoil_websocket_sockudo_no_read_backpressure_reconnects_to_active_stat
     run_websocket_no_read_backpressure_reconnects_to_active_state(
         websocket_config_for_backend(TransportBackend::Sockudo),
         NO_READ_BACKPRESSURE_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
+fn test_turmoil_websocket_disconnect_while_send_waits_for_reconnect_closes_send() {
+    run_websocket_disconnect_while_send_waits_for_reconnect_closes_send(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        DISCONNECT_WHILE_SEND_WAITS_FOR_RECONNECT_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_disconnect_while_send_waits_for_reconnect_closes_send() {
+    run_websocket_disconnect_while_send_waits_for_reconnect_closes_send(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        DISCONNECT_WHILE_SEND_WAITS_FOR_RECONNECT_SEED,
         "websocket/sockudo",
     );
 }
@@ -1328,6 +1349,113 @@ fn run_websocket_no_read_backpressure_reconnects_to_active_state(
         .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
 }
 
+fn run_websocket_disconnect_while_send_waits_for_reconnect_closes_send(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(100);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+
+    let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
+    let first_connection_dropped = Arc::new(AtomicBool::new(false));
+    let reconnect_attempt_waiting = Arc::new(AtomicBool::new(false));
+    let release_reconnect_attempt = Arc::new(AtomicBool::new(false));
+    let server_first_connection_dropped = Arc::clone(&first_connection_dropped);
+    let server_reconnect_attempt_waiting = Arc::clone(&reconnect_attempt_waiting);
+    let server_release_reconnect_attempt = Arc::clone(&release_reconnect_attempt);
+
+    sim.host("server", move || {
+        let server_first_connection_dropped = Arc::clone(&server_first_connection_dropped);
+        let server_reconnect_attempt_waiting = Arc::clone(&server_reconnect_attempt_waiting);
+        let server_release_reconnect_attempt = Arc::clone(&server_release_reconnect_attempt);
+        async move {
+            ws_drop_first_connection_then_hold_reconnect_handshake_until_release_server(
+                server_first_connection_dropped,
+                server_reconnect_attempt_waiting,
+                server_release_reconnect_attempt,
+            )
+            .await
+        }
+    });
+
+    sim.client("client", async move {
+        let (handler, _rx) = channel_message_handler();
+
+        let client = Arc::new(
+            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+                .await
+                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}")),
+        );
+
+        assert!(
+            wait_for(|| first_connection_dropped.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should drop the first connection"
+        );
+        assert!(
+            wait_for(|| client.is_reconnecting()).await,
+            "{label} seed {seed:#018x} should enter reconnect before sending"
+        );
+        assert!(
+            wait_for(|| reconnect_attempt_waiting.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should hold the reconnect handshake"
+        );
+
+        let send_client = Arc::clone(&client);
+        let send_handle = tokio::spawn(async move {
+            send_client
+                .send_text("send-waiting-for-reconnect".to_string(), None)
+                .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            !send_handle.is_finished(),
+            "{label} seed {seed:#018x} send should wait for reconnect before disconnect"
+        );
+
+        client.disconnect().await;
+
+        let send_result = tokio::time::timeout(Duration::from_secs(2), send_handle)
+            .await
+            .unwrap_or_else(|_| panic!("{label} seed {seed:#018x} send should finish promptly"))
+            .unwrap_or_else(|e| {
+                panic!("{label} seed {seed:#018x} send task should not panic: {e}")
+            });
+
+        assert!(
+            matches!(send_result, Err(SendError::Closed)),
+            "{label} seed {seed:#018x} send should close on disconnect, was: {send_result:?}"
+        );
+        assert!(
+            client.is_disconnected(),
+            "{label} seed {seed:#018x} should finish controller after disconnect"
+        );
+        assert!(
+            client.is_closed(),
+            "{label} seed {seed:#018x} should enter closed state after disconnect"
+        );
+        assert!(
+            !client.is_reconnecting(),
+            "{label} seed {seed:#018x} should not stay reconnecting after disconnect"
+        );
+        assert!(
+            !client.is_active(),
+            "{label} seed {seed:#018x} should not stay active after disconnect"
+        );
+
+        release_reconnect_attempt.store(true, Ordering::SeqCst);
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
 fn run_websocket_alternating_text_binary_preserves_message_order(
     mut websocket_config: WebSocketConfig,
     seed: u64,
@@ -1906,6 +2034,42 @@ async fn ws_silent_first_connection_then_echo_server(
                             }
                         }
                     }
+                }
+            }
+        });
+    }
+}
+
+async fn ws_drop_first_connection_then_hold_reconnect_handshake_until_release_server(
+    first_connection_dropped: Arc<AtomicBool>,
+    reconnect_attempt_waiting: Arc<AtomicBool>,
+    release_reconnect_attempt: Arc<AtomicBool>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+    let mut connection_index = 0;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let current_connection = connection_index;
+        connection_index += 1;
+        let first_connection_dropped = Arc::clone(&first_connection_dropped);
+        let reconnect_attempt_waiting = Arc::clone(&reconnect_attempt_waiting);
+        let release_reconnect_attempt = Arc::clone(&release_reconnect_attempt);
+
+        tokio::spawn(async move {
+            match current_connection {
+                0 => {
+                    if let Ok(ws_stream) = accept_async(stream).await {
+                        first_connection_dropped.store(true, Ordering::SeqCst);
+                        drop(ws_stream);
+                    }
+                }
+                _ => {
+                    reconnect_attempt_waiting.store(true, Ordering::SeqCst);
+                    while !release_reconnect_attempt.load(Ordering::SeqCst) {
+                        tokio::time::sleep(POLL_STEP).await;
+                    }
+                    drop(stream);
                 }
             }
         });
