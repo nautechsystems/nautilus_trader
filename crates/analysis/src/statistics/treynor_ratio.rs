@@ -164,6 +164,33 @@ mod tests {
     }
 
     #[rstest]
+    fn test_name_non_default_period() {
+        let stat = TreynorRatio::new(Some(63), None);
+        assert_eq!(stat.name(), "Treynor Ratio (63 days)");
+    }
+
+    #[rstest]
+    fn test_known_value_period_ne_n_and_nonzero_rf() {
+        // period != n (so the (period / n) exponent is not 1) and rf != 0 (so rf must be
+        // annualized geometrically). n = 4, period = 252, rf = 0.0001 per period.
+        //   r = [0.02, -0.01, 0.03, 0.005], b = [0.01, 0.0, 0.015, 0.01]
+        //   beta = 2.5789473684210527
+        //   growth = prod(1 + r) = 1.04529447
+        //   annualized_geom = growth^(252/4) - 1 = 15.294278229155484
+        //   rf_annual = (1 + 0.0001)^252 - 1 = 0.025518911987694626
+        //   treynor = (annualized_geom - rf_annual) / beta = 5.920539327065061
+        // A wrong exponent (^1) gives 0.0076..., and skipping rf-annualization gives
+        // 5.9303956..., so this value discriminates against both bugs.
+        let returns = create_returns(&[0.02, -0.01, 0.03, 0.005]);
+        let benchmark = create_returns(&[0.01, 0.0, 0.015, 0.01]);
+        let stat = TreynorRatio::new(Some(252), Some(0.0001));
+        let result = stat
+            .calculate_from_returns_with_benchmark(&returns, &benchmark)
+            .unwrap();
+        assert!(approx_eq!(f64, result, 5.920539327065061, epsilon = 1e-9));
+    }
+
+    #[rstest]
     fn test_zero_beta_is_nan() {
         // Flat benchmark -> beta NaN -> NaN.
         let benchmark = create_returns(&[0.01, 0.01, 0.01, 0.01, 0.01]);

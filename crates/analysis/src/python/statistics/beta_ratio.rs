@@ -34,7 +34,7 @@ impl BetaRatio {
     }
 
     fn __repr__(&self) -> String {
-        format!("BetaRatio({})", self.name())
+        self.to_string()
     }
 
     #[getter]

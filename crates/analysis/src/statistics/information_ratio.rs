@@ -144,6 +144,96 @@ mod tests {
     }
 
     #[rstest]
+    fn test_name_non_default_period() {
+        let stat = InformationRatio::new(Some(63));
+        assert_eq!(stat.name(), "Information Ratio (63 days)");
+    }
+
+    #[rstest]
+    fn test_known_value_nonzero_benchmark() {
+        // Both strategy and benchmark non-zero so the (r - b) subtraction is exercised.
+        //   r       = [0.03, -0.01, 0.02, 0.04]
+        //   b       = [0.01, 0.005, 0.005, 0.01]
+        //   active  = [0.02, -0.015, 0.015, 0.03]
+        //   mean(active)       = 0.0125
+        //   std(active, ddof=1)= 0.019364916731037084
+        //   IR = 0.0125 / 0.019364916731037084 * sqrt(252) = 10.246950765959598
+        // A formula dropping the benchmark (active = r) would yield 14.69693845669907,
+        // so this value discriminates against that bug.
+        let returns = create_returns(&[0.03, -0.01, 0.02, 0.04]);
+        let benchmark = create_returns(&[0.01, 0.005, 0.005, 0.01]);
+        let stat = InformationRatio::new(Some(252));
+        let result = stat
+            .calculate_from_returns_with_benchmark(&returns, &benchmark)
+            .unwrap();
+        assert!(approx_eq!(f64, result, 10.246950765959598, epsilon = 1e-9));
+    }
+
+    #[rstest]
+    fn test_partial_overlap_inner_join() {
+        // Strategy on days 0..5, benchmark on days 2..7 -> overlap on days 2,3,4 only.
+        let one_day = 86_400_000_000_000_u64;
+        let start = 1_600_000_000_000_000_000_u64;
+
+        let mut returns = BTreeMap::new();
+        for (i, v) in [0.05, 0.06, 0.030, -0.010, 0.020].iter().enumerate() {
+            returns.insert(UnixNanos::from(start + i as u64 * one_day), *v);
+        }
+        let mut benchmark = BTreeMap::new();
+        for (i, v) in [0.005, 0.010, 0.015, 0.040, 0.050].iter().enumerate() {
+            benchmark.insert(UnixNanos::from(start + (i as u64 + 2) * one_day), *v);
+        }
+
+        // Overlap days 2,3,4: r = [0.030, -0.010, 0.020], b = [0.005, 0.010, 0.015].
+        //   active = [0.025, -0.020, 0.005]
+        //   IR = mean(active) / std(active, ddof=1) * sqrt(252) = 2.3469547761538725
+        let stat = InformationRatio::new(Some(252));
+        let result = stat
+            .calculate_from_returns_with_benchmark(&returns, &benchmark)
+            .unwrap();
+        assert!(approx_eq!(f64, result, 2.3469547761538725, epsilon = 1e-9));
+    }
+
+    #[rstest]
+    fn test_intraday_compounds_before_join() {
+        // Day 0 carries two intraday strategy returns that must compound into one daily
+        // bin BEFORE the inner-join: (1.02)(1.03) - 1 = 0.0506. Day 1 carries 0.01.
+        // Benchmark is one daily return per day: [0.015, 0.004].
+        //   active = [0.0506 - 0.015, 0.01 - 0.004] = [0.0356, 0.006]
+        //   IR = mean(active) / std(active, ddof=1) * sqrt(252) = 15.775636549641483
+        // Arithmetic-summing the intraday day-0 returns (0.05) would change the result,
+        // so this confirms geometric compounding happens before the join.
+        let one_day = 86_400_000_000_000_u64;
+        let one_hour = 3_600_000_000_000_u64;
+        let start = 1_600_000_000_000_000_000_u64;
+
+        let mut returns = BTreeMap::new();
+        returns.insert(UnixNanos::from(start), 0.02);
+        returns.insert(UnixNanos::from(start + one_hour), 0.03);
+        returns.insert(UnixNanos::from(start + one_day), 0.01);
+
+        let mut benchmark = BTreeMap::new();
+        benchmark.insert(UnixNanos::from(start), 0.015);
+        benchmark.insert(UnixNanos::from(start + one_day), 0.004);
+
+        let active = [(1.02_f64 * 1.03 - 1.0) - 0.015, 0.01 - 0.004];
+        let mean_active = active.iter().sum::<f64>() / active.len() as f64;
+        let var = active
+            .iter()
+            .map(|&x| (x - mean_active).powi(2))
+            .sum::<f64>()
+            / (active.len() as f64 - 1.0);
+        let expected = mean_active / var.sqrt() * 252.0_f64.sqrt();
+
+        let stat = InformationRatio::new(Some(252));
+        let result = stat
+            .calculate_from_returns_with_benchmark(&returns, &benchmark)
+            .unwrap();
+        assert!(approx_eq!(f64, result, expected, epsilon = 1e-9));
+        assert!(approx_eq!(f64, result, 15.775636549641483, epsilon = 1e-9));
+    }
+
+    #[rstest]
     fn test_known_value() {
         // active = strategy - benchmark = [0.01, 0.02, 0.03] (a clean arithmetic case).
         // mean = 0.02, sample std (ddof=1) = 0.01, ir_period = 2.0,

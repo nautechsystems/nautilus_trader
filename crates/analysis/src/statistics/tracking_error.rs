@@ -140,6 +140,31 @@ mod tests {
     }
 
     #[rstest]
+    fn test_name_non_default_period() {
+        let stat = TrackingError::new(Some(63));
+        assert_eq!(stat.name(), "Tracking Error (63 days)");
+    }
+
+    #[rstest]
+    fn test_known_value_nonzero_benchmark() {
+        // Both strategy and benchmark non-zero so the (r - b) subtraction is exercised.
+        //   r       = [0.03, -0.01, 0.02, 0.04]
+        //   b       = [0.01, 0.005, 0.005, 0.01]
+        //   active  = [0.02, -0.015, 0.015, 0.03]
+        //   std(active, ddof=1) = 0.019364916731037084
+        //   TE = std(active, ddof=1) * sqrt(252) = 0.30740852297878796
+        // A formula dropping the benchmark (active = r) would yield 0.34292856398964494,
+        // so this value discriminates against that bug.
+        let returns = create_returns(&[0.03, -0.01, 0.02, 0.04]);
+        let benchmark = create_returns(&[0.01, 0.005, 0.005, 0.01]);
+        let stat = TrackingError::new(Some(252));
+        let result = stat
+            .calculate_from_returns_with_benchmark(&returns, &benchmark)
+            .unwrap();
+        assert!(approx_eq!(f64, result, 0.30740852297878796, epsilon = 1e-9));
+    }
+
+    #[rstest]
     fn test_known_value() {
         // active = [0.01, 0.02, 0.03], sample std (ddof=1) = 0.01,
         // annualized = 0.01 * sqrt(4) = 0.02.

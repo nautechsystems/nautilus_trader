@@ -177,6 +177,34 @@ mod tests {
     }
 
     #[rstest]
+    fn test_name_non_default_period() {
+        let stat = Alpha::new(Some(4), None);
+        assert_eq!(stat.name(), "Alpha (4 days)");
+    }
+
+    #[rstest]
+    fn test_known_value_nonzero_mean_benchmark() {
+        // Non-zero-mean benchmark and a non-trivial beta so the beta * (mean_b - rf)
+        // subtraction is exercised; small period = 4 makes the geometric annualization
+        // hand-checkable. rf = 0.001 per period.
+        //   r = [0.02, -0.01, 0.03, 0.005], b = [0.01, 0.0, 0.015, 0.01]
+        //   beta = 2.5789473684210527
+        //   mean_r = 0.01125, mean_b = 0.00875
+        //   alpha_period = (mean_r - rf) - beta * (mean_b - rf)
+        //                = 0.01025 - 2.5789473684210527 * 0.00775 = -0.009736842105263162
+        //   alpha_annual = (1 + alpha_period)^4 - 1 = -0.0383822153156389
+        // Dropping the beta term gives +0.041634..., and a sqrt-style annualization
+        // (alpha_period * sqrt(4)) gives -0.019473..., so this discriminates both.
+        let returns = create_returns(&[0.02, -0.01, 0.03, 0.005]);
+        let benchmark = create_returns(&[0.01, 0.0, 0.015, 0.01]);
+        let stat = Alpha::new(Some(4), Some(0.001));
+        let result = stat
+            .calculate_from_returns_with_benchmark(&returns, &benchmark)
+            .unwrap();
+        assert!(approx_eq!(f64, result, -0.0383822153156389, epsilon = 1e-9));
+    }
+
+    #[rstest]
     fn test_flat_benchmark_is_nan() {
         let benchmark = create_returns(&[0.01, 0.01, 0.01, 0.01, 0.01]);
         let returns = create_returns(&[0.02, -0.04, 0.030, -0.010, 0.050]);
