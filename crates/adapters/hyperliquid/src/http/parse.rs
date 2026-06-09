@@ -708,6 +708,11 @@ fn is_outcome_side_token(symbol: &str) -> bool {
     !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit())
 }
 
+// Hyperliquid documents a venue-wide minimum order notional: $10 for perps,
+// and 10 quote_token for spot.
+// https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/error-responses
+const HYPERLIQUID_MIN_ORDER_NOTIONAL: Decimal = Decimal::TEN;
+
 /// Converts a single Hyperliquid instrument definition into a Nautilus `InstrumentAny`.
 ///
 /// Returns `None` if the conversion fails (e.g., unsupported market type).
@@ -732,6 +737,7 @@ pub fn create_instrument_from_def(
         HyperliquidMarketType::Spot => {
             let base_currency = get_currency(&def.base);
             let quote_currency = get_currency(&def.quote);
+            let min_notional = Some(min_order_notional(quote_currency)?);
 
             Some(InstrumentAny::CurrencyPair(CurrencyPair::new(
                 instrument_id,
@@ -747,7 +753,7 @@ pub fn create_instrument_from_def(
                 None,
                 None,
                 None,
-                None,
+                min_notional,
                 None,
                 None,
                 None,
@@ -763,6 +769,7 @@ pub fn create_instrument_from_def(
             let base_currency = get_currency(&def.base);
             let quote_currency = get_currency(&def.quote);
             let settlement_currency = get_currency("USDC");
+            let min_notional = Some(min_order_notional(quote_currency)?);
 
             Some(InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
                 instrument_id,
@@ -780,7 +787,7 @@ pub fn create_instrument_from_def(
                 None,
                 None,
                 None,
-                None,
+                min_notional,
                 None,
                 None,
                 None,
@@ -825,6 +832,10 @@ pub fn create_instrument_from_def(
             )))
         }
     }
+}
+
+fn min_order_notional(currency: Currency) -> Option<Money> {
+    Money::from_decimal(HYPERLIQUID_MIN_ORDER_NOTIONAL, currency).ok()
 }
 
 /// Convert a collection of Hyperliquid instrument definitions into Nautilus instruments,
@@ -1275,6 +1286,23 @@ mod tests {
     }
 
     #[rstest]
+    fn test_create_instrument_from_def_perp_sets_min_notional() {
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+
+        let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+
+        match instrument {
+            InstrumentAny::CryptoPerpetual(perp) => {
+                let min_notional = perp.min_notional.unwrap();
+                assert_eq!(min_notional.currency, Currency::USD());
+                assert_eq!(min_notional.as_decimal(), dec!(10));
+            }
+            other => panic!("Expected CryptoPerpetual, was {other:?}"),
+        }
+    }
+
+    #[rstest]
     fn test_deserialize_l2_book_from_real_data() {
         let book: HyperliquidL2Book = load_test_data("http_l2_book_btc.json");
 
@@ -1372,6 +1400,17 @@ mod tests {
         assert_eq!(alias.symbol, "PURR-USDC-SPOT");
         assert_eq!(alias.base, "PURR");
         assert!(!alias.active); // Non-canonical pairs are marked as inactive
+
+        let instrument = create_instrument_from_def(purr_usdc, UnixNanos::default()).unwrap();
+
+        match instrument {
+            InstrumentAny::CurrencyPair(pair) => {
+                let min_notional = pair.min_notional.unwrap();
+                assert_eq!(min_notional.currency, Currency::USDC());
+                assert_eq!(min_notional.as_decimal(), dec!(10));
+            }
+            other => panic!("Expected CurrencyPair, was {other:?}"),
+        }
     }
 
     #[rstest]
