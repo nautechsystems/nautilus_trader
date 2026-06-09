@@ -150,14 +150,18 @@ release lifecycle:
 
 ### Runtime cryptography
 
-- **Cryptography**: All TLS and cryptographic operations use
-  [aws-lc-rs](https://github.com/aws/aws-lc-rs), the Rust binding for AWS-LC. The library runs in
+- **Cryptography**: TLS and most runtime cryptography use
+  [aws-lc-rs](https://github.com/aws/aws-lc-rs), the Rust binding for AWS-LC. Ed25519 signing uses
+  [ed25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek). AWS-LC runs in
   non-FIPS mode because the FIPS 140-3 module (`aws-lc-fips-sys`) requires the Go toolchain as a
-  build dependency. The underlying cryptographic primitives (AES-GCM, SHA-2, ECDSA,
-  ChaCha20-Poly1305) are identical in both modes; the FIPS module adds runtime self-tests and
-  module boundary enforcement required for federal certification.
+  build dependency. The AWS-LC primitives used here (AES-GCM, SHA-2, ECDSA, ChaCha20-Poly1305)
+  are identical in both modes; the FIPS module adds runtime self-tests and module boundary
+  enforcement required for federal certification.
 
 For our full supply chain security policy, see <https://nautilustrader.io/security/supply-chain/>.
+
+For the end-to-end release supply chain model, see
+[Release Security Architecture](docs/developer_guide/release-security.md).
 
 For detailed CI/CD security practices, see [.github/OVERVIEW.md](.github/OVERVIEW.md#security).
 
