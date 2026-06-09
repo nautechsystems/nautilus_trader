@@ -1407,6 +1407,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PYPI_PUBLISHER_WORKFLOW: build.yml
           PYPI_PUBLISHER_ENVIRONMENT: release
+          CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS: ${{ vars.CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS }}
           CARGO_PUBLISH_USER_AGENT: >-
             nautilus-trader-release-verifier
             (${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})

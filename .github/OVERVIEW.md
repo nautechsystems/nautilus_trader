@@ -112,10 +112,13 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   `dist-manifest.json`, verifies PyPI provenance publisher metadata, and verifies crates.io entries
   were trusted-published by this repository. These verifier calls retry transient
   Sigstore/Rekor/TUF lag, while provenance and identity mismatches fail fast. The job records
-  whether each crate matches the release commit or was already published, uploads
-  `crates-manifest.json`, attaches attestation siblings, and cleans up release workflow artifacts.
-  `publish-github-release` then publishes the draft release and verifies GitHub's release
-  attestation.
+  whether each crate matches the release commit, was already published, or matched an explicit
+  `CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS` `crate@version` entry for emergency token-publish
+  recovery. Manual entries are recorded in `crates-manifest.json` with
+  `release_status: "manual_token_publish"`. Malformed or unused exception entries fail the job. The
+  job uploads `crates-manifest.json`, attaches attestation siblings, and cleans up release workflow
+  artifacts. `publish-github-release` then publishes the draft release and verifies GitHub's
+  release attestation.
 - **Caching**: Rust target directory cache (`Swatinem/rust-cache`), prek hook environments, and test
   data caches speed up workflows while preserving hermetic builds. Rust cache saves are restricted
   to push events to prevent PR cache pollution.

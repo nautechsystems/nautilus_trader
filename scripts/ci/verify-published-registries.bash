@@ -10,6 +10,7 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/ci/release-verification-retry.bash
+# shellcheck disable=SC1091
 source "${script_dir}/release-verification-retry.bash"
 
 asset_dir="${1:-release-assets}"
@@ -69,6 +70,7 @@ curl_max_time="${CURL_MAX_TIME:-300}"
 cargo_publish_user_agent="${CARGO_PUBLISH_USER_AGENT:-nautilus-trader-release-verifier}"
 registry_propagation_timeout_seconds="${REGISTRY_PROPAGATION_TIMEOUT_SECONDS:-600}"
 registry_propagation_poll_seconds="${REGISTRY_PROPAGATION_POLL_SECONDS:-15}"
+crates_io_manual_publish_exceptions="${CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS:-}"
 
 if ! [[ "$registry_propagation_timeout_seconds" =~ ^[0-9]+$ ]] ||
   [[ "$registry_propagation_timeout_seconds" -lt 1 ]]; then
@@ -92,6 +94,8 @@ release_verification_validate_positive_integer \
 
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
+manual_crate_exceptions_file="${work_dir}/manual-crate-publish-exceptions.txt"
+manual_crate_exceptions_used_file="${work_dir}/manual-crate-publish-exceptions-used.txt"
 
 curl_to_file() {
   local url=$1
@@ -109,6 +113,68 @@ curl_to_file() {
 
 sha256_file() {
   sha256sum "$1" | awk '{print $1}'
+}
+
+load_manual_crate_publish_exceptions() {
+  local raw_exceptions="${work_dir}/manual-crate-publish-exceptions-raw.txt"
+  local exception
+
+  : > "$manual_crate_exceptions_file"
+  : > "$manual_crate_exceptions_used_file"
+
+  if [[ -z "$crates_io_manual_publish_exceptions" ]]; then
+    return 0
+  fi
+
+  printf '%s\n' "$crates_io_manual_publish_exceptions" |
+    tr ',' '\n' |
+    tr '[:space:]' '\n' > "$raw_exceptions"
+
+  while IFS= read -r exception; do
+    [[ -z "$exception" ]] && continue
+
+    if ! [[ "$exception" =~ ^[A-Za-z0-9_-]+@[0-9A-Za-z][0-9A-Za-z.+_-]*$ ]]; then
+      echo "::error::Invalid CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS entry: ${exception}"
+      echo "Expected entries in crate@version form."
+      exit 1
+    fi
+
+    printf '%s\n' "$exception" >> "$manual_crate_exceptions_file"
+  done < "$raw_exceptions"
+
+  sort -u "$manual_crate_exceptions_file" -o "$manual_crate_exceptions_file"
+}
+
+is_manual_crate_publish_exception() {
+  local crate_name=$1
+  local crate_version=$2
+  local exception="${crate_name}@${crate_version}"
+
+  grep -Fx -- "$exception" "$manual_crate_exceptions_file" > /dev/null
+}
+
+record_manual_crate_publish_exception() {
+  local crate_name=$1
+  local crate_version=$2
+
+  printf '%s@%s\n' "$crate_name" "$crate_version" >> "$manual_crate_exceptions_used_file"
+}
+
+validate_manual_crate_publish_exceptions_used() {
+  local used_sorted="${work_dir}/manual-crate-publish-exceptions-used-sorted.txt"
+  local unused
+
+  if [[ ! -s "$manual_crate_exceptions_file" ]]; then
+    return 0
+  fi
+
+  sort -u "$manual_crate_exceptions_used_file" > "$used_sorted"
+  unused="$(comm -23 "$manual_crate_exceptions_file" "$used_sorted" || true)"
+  if [[ -n "$unused" ]]; then
+    echo "::error::Unused CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS entries:"
+    printf '%s\n' "$unused"
+    exit 1
+  fi
 }
 
 verify_pypi() {
@@ -335,7 +401,8 @@ verify_crates() {
     [[ -z "$crate_name" ]] && continue
 
     local versions_json version_json checksum trustpub provider repository sha
-    local published_by publish_status current_release_commit static_url downloaded_file index_file
+    local published_by publish_status current_release_commit manual_publish_exception
+    local static_url downloaded_file index_file
 
     echo "Verifying ${crate_name} ${crate_version}"
 
@@ -363,19 +430,26 @@ verify_crates() {
     sha="$(jq -r '.trustpub_data.sha // empty' <<< "$version_json")"
     published_by="$(jq -c '.published_by' <<< "$version_json")"
 
+    manual_publish_exception=false
+
     if [[ "$published_by" != "null" ]]; then
-      echo "::error::Expected trusted publishing for ${crate_name}, received user publisher:"
-      echo "$published_by"
-      exit 1
-    fi
-    if [[ "$provider" != "github" || "$repository" != "$github_repository" || -z "$sha" ]]; then
+      if ! is_manual_crate_publish_exception "$crate_name" "$crate_version"; then
+        echo "::error::Expected trusted publishing for ${crate_name}, received user publisher:"
+        echo "$published_by"
+        exit 1
+      fi
+
+      publish_status="manual_token_publish"
+      current_release_commit=false
+      manual_publish_exception=true
+      record_manual_crate_publish_exception "$crate_name" "$crate_version"
+      echo "::warning::${crate_name} ${crate_version} was manually published with a token and matched an explicit release exception."
+    elif [[ "$provider" != "github" || "$repository" != "$github_repository" || -z "$sha" ]]; then
       echo "::error::Unexpected trusted-publishing identity for ${crate_name} ${crate_version}"
       echo "expected: github ${github_repository}"
       echo "remote:   ${trustpub}"
       exit 1
-    fi
-
-    if [[ "$sha" == "$github_sha" ]]; then
+    elif [[ "$sha" == "$github_sha" ]]; then
       publish_status="current_release"
       current_release_commit=true
     else
@@ -411,17 +485,23 @@ verify_crates() {
       --arg static_url "$static_url" \
       --arg publish_status "$publish_status" \
       --argjson trustpub "$trustpub" \
+      --argjson published_by "$published_by" \
       --argjson current_release_commit "$current_release_commit" \
+      --argjson manual_publish_exception "$manual_publish_exception" \
       '{
         name: $name,
         version: $version,
         sha256: $checksum,
         url: $static_url,
         trusted_publishing: $trustpub,
+        published_by: $published_by,
         release_status: $publish_status,
-        current_release_commit: $current_release_commit
+        current_release_commit: $current_release_commit,
+        manual_publish_exception: $manual_publish_exception
       }' >> "$manifest_items"
   done < "$plan_file"
+
+  validate_manual_crate_publish_exceptions_used
 
   jq -n \
     --arg generated_at "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
@@ -468,6 +548,11 @@ check_crates_io_version() {
   published_by="$(jq -c '.published_by' <<< "$version_json")"
 
   if [[ "$published_by" != "null" ]]; then
+    if is_manual_crate_publish_exception "$crate_name" "$crate_version"; then
+      printf '%s\n' "$version_json" > "$version_json_file"
+      return 0
+    fi
+
     echo "::error::Expected trusted publishing for ${crate_name}, received user publisher:"
     echo "$published_by"
     return 2
@@ -563,6 +648,7 @@ wait_for_registry_state() {
   done
 }
 
+load_manual_crate_publish_exceptions
 verify_pypi
 verify_crates
 

@@ -200,8 +200,10 @@ above; the cooldown can be bypassed when a CVE warrants immediate response.
 Python release artifacts and Docker images are signed or attested via Sigstore-backed workflows.
 Cargo crates are published through crates.io Trusted Publishing. The release verifier records
 whether each crate version was published by the current release commit or already existed from an
-earlier trusted-published commit in this repository. You can independently verify artifacts before
-installing them.
+earlier trusted-published commit in this repository. Emergency token-publish recovery requires an
+explicit `CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS` `crate@version` entry, and the recovered crate
+version is recorded in `crates-manifest.json` with `release_status: "manual_token_publish"`. You
+can independently verify artifacts before installing them.
 
 ### Python wheels and sdist
 
