@@ -312,6 +312,10 @@ criteria = "safe-to-deploy"
 version = "1.0.102"
 criteria = "safe-to-deploy"
 
+[[exemptions.arbitrary]]
+version = "1.4.2"
+criteria = "safe-to-deploy"
+
 [[exemptions.arc-swap]]
 version = "1.9.0"
 criteria = "safe-to-deploy"
@@ -814,6 +818,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.crypto-bigint]]
 version = "0.5.5"
+criteria = "safe-to-deploy"
+
+[[exemptions.crypto-common]]
+version = "0.1.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.crypto-common]]
@@ -1485,6 +1493,10 @@ version = "0.1.34"
 criteria = "safe-to-deploy"
 
 [[exemptions.js-sys]]
+version = "0.3.99"
+criteria = "safe-to-deploy"
+
+[[exemptions.js-sys]]
 version = "0.3.100"
 criteria = "safe-to-deploy"
 
@@ -1546,6 +1558,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.libc]]
 version = "0.2.186"
+criteria = "safe-to-deploy"
+
+[[exemptions.libfuzzer-sys]]
+version = "0.4.13"
 criteria = "safe-to-deploy"
 
 [[exemptions.libm]]
@@ -2757,7 +2773,15 @@ version = "0.11.1+wasi-snapshot-preview1"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen]]
+version = "0.2.122"
+criteria = "safe-to-deploy"
+
+[[exemptions.wasm-bindgen]]
 version = "0.2.123"
+criteria = "safe-to-deploy"
+
+[[exemptions.wasm-bindgen-futures]]
+version = "0.4.72"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-futures]]
@@ -2765,11 +2789,23 @@ version = "0.4.73"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-macro]]
+version = "0.2.122"
+criteria = "safe-to-deploy"
+
+[[exemptions.wasm-bindgen-macro]]
 version = "0.2.123"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-macro-support]]
+version = "0.2.122"
+criteria = "safe-to-deploy"
+
+[[exemptions.wasm-bindgen-macro-support]]
 version = "0.2.123"
+criteria = "safe-to-deploy"
+
+[[exemptions.wasm-bindgen-shared]]
+version = "0.2.122"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-shared]]
@@ -2786,6 +2822,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.wasmtimer]]
 version = "0.4.3"
+criteria = "safe-to-deploy"
+
+[[exemptions.web-sys]]
+version = "0.3.99"
 criteria = "safe-to-deploy"
 
 [[exemptions.web-sys]]
