@@ -41,13 +41,13 @@ use axum::{
 };
 use nautilus_common::{
     clients::DataClient,
-    live::runner::set_data_event_sender,
+    live::runner::{replace_data_event_sender, set_data_event_sender},
     messages::{
-        DataEvent,
+        DataEvent, DataResponse,
         data::{
-            SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
-            SubscribeTrades, UnsubscribeTrades,
+            InstrumentResponse, RequestInstrument, SubscribeBars, SubscribeBookDeltas,
+            SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
+            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeTrades,
         },
     },
     testing::wait_until_async,
@@ -132,6 +132,25 @@ async fn collect_trade_ticks(
     trades
 }
 
+async fn drain_data_events(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    timeout: Duration,
+) -> Vec<DataEvent> {
+    let mut events = Vec::new();
+    let deadline = tokio::time::Instant::now() + timeout;
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, rx.recv()).await {
+        events.push(event);
+    }
+    events
+}
+
+fn instrument_response(events: &[DataEvent]) -> Option<&InstrumentResponse> {
+    events.iter().find_map(|event| match event {
+        DataEvent::Response(DataResponse::Instrument(response)) => Some(response.as_ref()),
+        _ => None,
+    })
+}
+
 fn trade_payload_for_channel(base_payload: &Value, channel: &str, has_combo_parent: bool) -> Value {
     let symbol = trade_symbol_from_channel(channel)
         .expect("trade channel must use trades.{instrument}.{interval} format");
@@ -175,6 +194,7 @@ struct TestServerState {
     // When true, public/get_instrument responds with a JSON-RPC error,
     // exercising the lazy-load HTTP-failure path.
     fail_get_instrument: Arc<AtomicBool>,
+    get_instrument_request_count: Arc<AtomicUsize>,
 }
 
 async fn handle_jsonrpc_request(
@@ -189,6 +209,10 @@ async fn handle_jsonrpc_request(
         "public/get_instruments" => handle_get_instruments(id, params).await,
         "public/get_combos" => handle_get_combos(id).await,
         "public/get_instrument" => {
+            state
+                .get_instrument_request_count
+                .fetch_add(1, Ordering::Relaxed);
+
             if state.fail_get_instrument.load(Ordering::Relaxed) {
                 return Json(json!({
                     "jsonrpc": "2.0",
@@ -631,6 +655,70 @@ fn create_test_config(addr: SocketAddr) -> DeribitDataClientConfig {
         proxy_url: None,
         transport_backend: Default::default(),
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_request_instrument_refetches_when_cached() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+
+    let config = create_test_config(addr);
+    let client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
+    let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+
+    let first_request_id = UUID4::new();
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*DERIBIT_CLIENT_ID),
+            first_request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("first request_instrument");
+
+    wait_until_async(
+        || async {
+            state.get_instrument_request_count.load(Ordering::Relaxed) >= 1 && !rx.is_empty()
+        },
+        TEST_TIMEOUT,
+    )
+    .await;
+    let events = drain_data_events(&mut rx, Duration::from_millis(200)).await;
+    let response = instrument_response(&events).expect("instrument response");
+    assert_eq!(response.correlation_id, first_request_id);
+    assert_eq!(response.client_id, *DERIBIT_CLIENT_ID);
+    assert_eq!(response.instrument_id, instrument_id);
+
+    state.fail_get_instrument.store(true, Ordering::Relaxed);
+
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*DERIBIT_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("second request_instrument");
+
+    wait_until_async(
+        || async { state.get_instrument_request_count.load(Ordering::Relaxed) >= 2 },
+        TEST_TIMEOUT,
+    )
+    .await;
+
+    let events = drain_data_events(&mut rx, Duration::from_millis(300)).await;
+    assert!(
+        instrument_response(&events).is_none(),
+        "request_instrument must not emit a stale cached response when Deribit returns an error; events were: {events:?}",
+    );
 }
 
 #[rstest]

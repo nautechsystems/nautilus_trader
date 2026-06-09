@@ -15,7 +15,16 @@
 
 //! Integration tests for BitMEX HTTP client using a mock server.
 
-use std::{collections::HashMap, net::SocketAddr, str::FromStr, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    str::FromStr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use axum::{
     Router,
@@ -25,7 +34,12 @@ use axum::{
     routing::get,
 };
 use nautilus_bitmex::{
-    common::enums::{BitmexEnvironment, BitmexOrderType, BitmexPegPriceType, BitmexSide},
+    common::{
+        consts::BITMEX_CLIENT_ID,
+        enums::{BitmexEnvironment, BitmexOrderType, BitmexPegPriceType, BitmexSide},
+    },
+    config::BitmexDataClientConfig,
+    data::BitmexDataClient,
     http::{
         client::{BitmexHttpClient, BitmexRawHttpClient},
         query::{
@@ -34,7 +48,16 @@ use nautilus_bitmex::{
         },
     },
 };
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{
+    clients::DataClient,
+    live::runner::replace_data_event_sender,
+    messages::{
+        DataEvent, DataResponse,
+        data::{InstrumentResponse, RequestInstrument},
+    },
+    testing::wait_until_async,
+};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId},
@@ -48,12 +71,16 @@ use serde_json::{Value, json};
 #[derive(Clone)]
 struct TestServerState {
     request_count: Arc<tokio::sync::Mutex<usize>>,
+    instrument_request_count: Arc<AtomicUsize>,
+    instrument_returns_empty: Arc<AtomicBool>,
 }
 
 impl Default for TestServerState {
     fn default() -> Self {
         Self {
             request_count: Arc::new(tokio::sync::Mutex::new(0)),
+            instrument_request_count: Arc::new(AtomicUsize::new(0)),
+            instrument_returns_empty: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -74,7 +101,18 @@ async fn handle_get_instruments() -> impl IntoResponse {
     Json(vec![instrument])
 }
 
-async fn handle_get_instrument(query: Query<HashMap<String, String>>) -> impl IntoResponse {
+async fn handle_get_instrument(
+    State(state): State<TestServerState>,
+    query: Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    state
+        .instrument_request_count
+        .fetch_add(1, Ordering::Relaxed);
+
+    if state.instrument_returns_empty.load(Ordering::Relaxed) {
+        return Json(Vec::<Value>::new());
+    }
+
     let instrument = load_test_data("http_get_instrument_xbtusd.json");
     let requested_symbol = query.get("symbol");
 
@@ -308,6 +346,39 @@ async fn start_test_server()
     Ok((addr, state))
 }
 
+async fn drain_data_events(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    timeout: Duration,
+) -> Vec<DataEvent> {
+    let mut events = Vec::new();
+    let deadline = tokio::time::Instant::now() + timeout;
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, rx.recv()).await {
+        events.push(event);
+    }
+    events
+}
+
+fn instrument_response(events: &[DataEvent]) -> Option<&InstrumentResponse> {
+    events.iter().find_map(|event| match event {
+        DataEvent::Response(DataResponse::Instrument(response)) => Some(response.as_ref()),
+        _ => None,
+    })
+}
+
+fn create_data_client(addr: SocketAddr) -> BitmexDataClient {
+    let config = BitmexDataClientConfig {
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws: Some(format!("ws://{addr}/realtime")),
+        environment: BitmexEnvironment::Mainnet,
+        max_retries: 1,
+        retry_delay_initial_ms: 10,
+        retry_delay_max_ms: 10,
+        ..BitmexDataClientConfig::default()
+    };
+
+    BitmexDataClient::new(*BITMEX_CLIENT_ID, config).expect("BitMEX data client")
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_get_instruments() {
@@ -366,6 +437,68 @@ async fn test_request_instrument() {
     assert!(instrument.is_some());
     let instrument = instrument.unwrap();
     assert_eq!(instrument.id(), instrument_id);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_request_instrument_refetches_when_cached() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let client = create_data_client(addr);
+    let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+
+    let first_request_id = UUID4::new();
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*BITMEX_CLIENT_ID),
+            first_request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("first request_instrument");
+
+    wait_until_async(
+        || async { state.instrument_request_count.load(Ordering::Relaxed) >= 1 && !rx.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+    let events = drain_data_events(&mut rx, Duration::from_millis(200)).await;
+    let response = instrument_response(&events).expect("instrument response");
+    assert_eq!(response.correlation_id, first_request_id);
+    assert_eq!(response.client_id, *BITMEX_CLIENT_ID);
+    assert_eq!(response.instrument_id, instrument_id);
+
+    state
+        .instrument_returns_empty
+        .store(true, Ordering::Relaxed);
+
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*BITMEX_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("second request_instrument");
+
+    wait_until_async(
+        || async { state.instrument_request_count.load(Ordering::Relaxed) >= 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_data_events(&mut rx, Duration::from_millis(300)).await;
+    assert!(
+        instrument_response(&events).is_none(),
+        "request_instrument must not emit a stale cached response when BitMEX returns no instrument; events were: {events:?}",
+    );
 }
 
 #[rstest]

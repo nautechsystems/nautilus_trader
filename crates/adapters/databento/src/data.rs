@@ -34,9 +34,10 @@ use nautilus_common::{
     clients::DataClient,
     live::{runner::get_data_event_sender, runtime::get_runtime},
     messages::{
-        DataEvent,
+        DataEvent, DataResponse,
         data::{
-            RequestBars, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBookDeltas,
+            InstrumentResponse, InstrumentsResponse, RequestBars, RequestInstrument,
+            RequestInstruments, RequestQuotes, RequestTrades, SubscribeBookDeltas,
             SubscribeInstrument, SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades,
             UnsubscribeBookDeltas, UnsubscribeInstrumentStatus, UnsubscribeQuotes,
             UnsubscribeTrades,
@@ -44,18 +45,20 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, Params, string::secret::REDACTED, time::AtomicTime,
+    AtomicMap, MUTEX_POISONED, Params, UnixNanos,
+    string::secret::REDACTED,
+    time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
     enums::BarAggregation,
-    identifiers::{ClientId, Symbol, Venue},
-    instruments::Instrument,
+    identifiers::{ClientId, InstrumentId, Symbol, Venue},
+    instruments::{Instrument, InstrumentAny},
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::Credential,
+    common::{Credential, DATABENTO_VENUE},
     historical::{DatabentoHistoricalClient, RangeQueryParams},
     live::{DatabentoFeedHandler, DatabentoMessage, HandlerCommand},
     loader::DatabentoDataLoader,
@@ -726,36 +729,100 @@ impl DataClient for DatabentoDataClient {
 
         let historical_client = self.historical.clone();
         let data_sender = self.data_sender.clone();
+        let dataset = request
+            .venue
+            .map(|venue| self.get_dataset_for_venue(venue))
+            .transpose()?
+            .unwrap_or_else(|| "GLBX.MDP3".to_string());
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let venue = request.venue.unwrap_or(*DATABENTO_VENUE);
+        let start_nanos = request
+            .start
+            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
+        let end_nanos = request
+            .end
+            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
+        let request_params = request.params;
 
         get_runtime().spawn(async move {
-            let symbols = vec!["ALL_SYMBOLS".to_string()]; // TODO: Improve symbol handling
+            let query_params = instruments_query_params(dataset, start_nanos, end_nanos);
 
-            let params = RangeQueryParams {
-                dataset: "GLBX.MDP3".to_string(), // TODO: Make configurable
-                symbols,
-                start: request
-                    .start
-                    .map_or(0, |dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .into(),
-                end: request
-                    .end
-                    .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .map(Into::into),
-                limit: None,
-                price_precision: None,
-            };
-
-            match historical_client.get_range_instruments(params).await {
+            match historical_client.get_range_instruments(query_params).await {
                 Ok(instruments) => {
                     log::info!("Retrieved {} instruments", instruments.len());
-                    for instrument in instruments {
-                        if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
-                            log::error!("Failed to send instrument: {e}");
-                        }
+
+                    let response = DataResponse::Instruments(InstrumentsResponse::new(
+                        request_id,
+                        client_id,
+                        venue,
+                        instruments,
+                        start_nanos,
+                        end_nanos,
+                        get_atomic_clock_realtime().get_time_ns(),
+                        request_params,
+                    ));
+
+                    if let Err(e) = data_sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send instruments response: {e}");
                     }
                 }
                 Err(e) => {
                     log::error!("Failed to request instruments: {e}");
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
+        log::debug!("Request instrument: {request:?}");
+
+        let dataset = self.get_dataset_for_venue(request.instrument_id.venue)?;
+        let historical_client = self.historical.clone();
+        let data_sender = self.data_sender.clone();
+        let instrument_id = request.instrument_id;
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let start_nanos = request
+            .start
+            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
+        let end_nanos = request
+            .end
+            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
+        let request_params = request.params;
+
+        get_runtime().spawn(async move {
+            let query_params =
+                instrument_query_params(dataset, instrument_id, start_nanos, end_nanos);
+
+            match historical_client.get_range_instruments(query_params).await {
+                Ok(instruments) => {
+                    let instrument = requested_instrument(instruments, instrument_id);
+
+                    let Some(instrument) = instrument else {
+                        log::error!("Instrument not found: {instrument_id}");
+                        return;
+                    };
+
+                    let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                        request_id,
+                        client_id,
+                        instrument.id(),
+                        instrument,
+                        start_nanos,
+                        end_nanos,
+                        get_atomic_clock_realtime().get_time_ns(),
+                        request_params,
+                    )));
+
+                    if let Err(e) = data_sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send instrument response: {e}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to request instrument {instrument_id}: {e}");
                 }
             }
         });
@@ -902,6 +969,50 @@ impl DataClient for DatabentoDataClient {
     }
 }
 
+fn instruments_query_params(
+    dataset: String,
+    start_nanos: Option<UnixNanos>,
+    end_nanos: Option<UnixNanos>,
+) -> RangeQueryParams {
+    RangeQueryParams {
+        dataset,
+        symbols: vec!["ALL_SYMBOLS".to_string()],
+        start: start_nanos.unwrap_or_default(),
+        end: end_nanos,
+        limit: None,
+        price_precision: None,
+    }
+}
+
+fn instrument_query_params(
+    dataset: String,
+    instrument_id: InstrumentId,
+    start_nanos: Option<UnixNanos>,
+    end_nanos: Option<UnixNanos>,
+) -> RangeQueryParams {
+    RangeQueryParams {
+        dataset,
+        symbols: vec![instrument_id_to_symbol_string(
+            instrument_id,
+            &mut AHashMap::new(), // TODO: Use proper symbol map
+        )],
+        start: start_nanos.unwrap_or_default(),
+        end: end_nanos,
+        limit: None,
+        price_precision: None,
+    }
+}
+
+fn requested_instrument(
+    instruments: Vec<InstrumentAny>,
+    instrument_id: InstrumentId,
+) -> Option<InstrumentAny> {
+    instruments
+        .into_iter()
+        .rev()
+        .find(|instrument| instrument.id() == instrument_id)
+}
+
 fn price_precision_from_params(params: Option<&Params>) -> anyhow::Result<Option<u8>> {
     let Some(price_precision) = params.and_then(|params| params.get_u64(PRICE_PRECISION_PARAM))
     else {
@@ -918,10 +1029,112 @@ fn price_precision_from_params(params: Option<&Params>) -> anyhow::Result<Option
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::{
+        identifiers::InstrumentId,
+        instruments::{CurrencyPair, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
     use rstest::rstest;
     use serde_json::json;
 
     use super::*;
+
+    fn currency_pair(instrument_id: &str) -> InstrumentAny {
+        currency_pair_with_ts_init(instrument_id, UnixNanos::default())
+    }
+
+    fn currency_pair_with_ts_init(instrument_id: &str, ts_init: UnixNanos) -> InstrumentAny {
+        let instrument_id = InstrumentId::from(instrument_id);
+        InstrumentAny::CurrencyPair(CurrencyPair::new(
+            instrument_id,
+            instrument_id.symbol,
+            Currency::from("BTC"),
+            Currency::from("USDT"),
+            2,
+            6,
+            Price::from("0.01"),
+            Quantity::from("0.000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            ts_init,
+        ))
+    }
+
+    #[rstest]
+    fn test_instruments_query_params_requests_all_symbols() {
+        let start = UnixNanos::from(1_000_000_000);
+        let end = UnixNanos::from(2_000_000_000);
+
+        let params = instruments_query_params("GLBX.MDP3".to_string(), Some(start), Some(end));
+
+        assert_eq!(params.dataset, "GLBX.MDP3");
+        assert_eq!(params.symbols, vec!["ALL_SYMBOLS"]);
+        assert_eq!(params.start, start);
+        assert_eq!(params.end, Some(end));
+        assert_eq!(params.limit, None);
+        assert_eq!(params.price_precision, None);
+    }
+
+    #[rstest]
+    fn test_instrument_query_params_requests_single_symbol() {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+
+        let params = instrument_query_params("GLBX.MDP3".to_string(), instrument_id, None, None);
+
+        assert_eq!(params.dataset, "GLBX.MDP3");
+        assert_eq!(params.symbols, vec!["ESM4"]);
+        assert_eq!(params.start, UnixNanos::default());
+        assert_eq!(params.end, None);
+        assert_eq!(params.limit, None);
+        assert_eq!(params.price_precision, None);
+    }
+
+    #[rstest]
+    fn test_requested_instrument_filters_exact_id() {
+        let requested_id = InstrumentId::from("BTCUSDT.BINANCE");
+        let instruments = vec![
+            currency_pair("ETHUSDT.BINANCE"),
+            currency_pair("BTCUSDT.BINANCE"),
+        ];
+
+        let instrument = requested_instrument(instruments, requested_id).expect("instrument");
+
+        assert_eq!(instrument.id(), requested_id);
+    }
+
+    #[rstest]
+    fn test_requested_instrument_returns_latest_matching_id() {
+        let requested_id = InstrumentId::from("BTCUSDT.BINANCE");
+        let instruments = vec![
+            currency_pair_with_ts_init("BTCUSDT.BINANCE", UnixNanos::from(1)),
+            currency_pair_with_ts_init("BTCUSDT.BINANCE", UnixNanos::from(2)),
+        ];
+
+        let instrument = requested_instrument(instruments, requested_id).expect("instrument");
+
+        assert_eq!(instrument.ts_init(), UnixNanos::from(2));
+    }
+
+    #[rstest]
+    fn test_requested_instrument_returns_none_on_miss() {
+        let instruments = vec![currency_pair("ETHUSDT.BINANCE")];
+
+        let instrument = requested_instrument(instruments, InstrumentId::from("BTCUSDT.BINANCE"));
+
+        assert!(instrument.is_none());
+    }
 
     #[rstest]
     fn test_price_precision_from_params() {

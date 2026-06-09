@@ -1138,24 +1138,6 @@ impl DataClient for BitmexDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        if let Some(instrument) = self.instruments.load().get(&request.instrument_id).cloned() {
-            let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
-                request.request_id,
-                request.client_id.unwrap_or(self.client_id),
-                instrument.id(),
-                instrument,
-                datetime_to_unix_nanos(request.start),
-                datetime_to_unix_nanos(request.end),
-                self.clock.get_time_ns(),
-                request.params,
-            )));
-
-            if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
-                log::error!("Failed to send instrument response: {e}");
-            }
-            return Ok(());
-        }
-
         let http_client = self.http_client.clone();
         let instruments_cache = Arc::clone(&self.instruments);
         let sender = self.data_sender.clone();

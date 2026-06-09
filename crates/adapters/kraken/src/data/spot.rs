@@ -1000,24 +1000,6 @@ impl DataClient for KrakenSpotDataClient {
         let clock = self.clock;
 
         get_runtime().spawn(async move {
-            if let Some(instrument) = instruments.load().get(&instrument_id) {
-                let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
-                    request_id,
-                    client_id,
-                    instrument.id(),
-                    instrument.clone(),
-                    start_nanos,
-                    end_nanos,
-                    clock.get_time_ns(),
-                    params,
-                )));
-
-                if let Err(e) = sender.send(DataEvent::Response(response)) {
-                    log::error!("Failed to send instrument response: {e}");
-                }
-                return;
-            }
-
             match http.request_instruments(None).await {
                 Ok(all_instruments) => {
                     instruments.rcu(|m| {

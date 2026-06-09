@@ -47,7 +47,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_network::{retry::RetryConfig, websocket::TransportBackend};
 use nautilus_polymarket::{
-    common::consts::POLYMARKET_CLIENT_ID,
+    common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
     config::PolymarketDataClientConfig,
     data::PolymarketDataClient,
     http::{
@@ -269,7 +269,7 @@ async fn test_request_instrument_publishes_event_and_response() {
         .count();
     assert_eq!(
         publish_count, 1,
-        "request_instrument must publish exactly one DataEvent::Instrument; got events: {events:?}"
+        "request_instrument must publish exactly one DataEvent::Instrument; events were: {events:?}"
     );
 
     let response_count = events
@@ -278,7 +278,7 @@ async fn test_request_instrument_publishes_event_and_response() {
         .count();
     assert_eq!(
         response_count, 1,
-        "request_instrument must also send a DataResponse::Instrument; got events: {events:?}"
+        "request_instrument must also send a DataResponse::Instrument; events were: {events:?}"
     );
 }
 
@@ -308,17 +308,13 @@ async fn test_request_instrument_not_found_emits_no_publish() {
     let events = drain_data_events(&mut rx, Duration::from_millis(500)).await;
     assert!(
         events.is_empty(),
-        "missing instrument must not produce any DataEvents; got: {events:?}",
+        "missing instrument must not produce any DataEvents; events were: {events:?}",
     );
 }
 
 #[rstest]
 #[tokio::test]
 async fn test_request_instruments_emits_response() {
-    // request_instruments should return the provider's currently loaded
-    // venue instruments rather than issuing a fresh full-universe Gamma
-    // fetch. This keeps the Rust/pyO3 path aligned with the Python
-    // adapter, where request_instruments serves provider cache contents.
     let state = TestServerState::default();
     *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_fixture()]));
     let addr = start_mock_server(state.clone()).await;
@@ -338,16 +334,15 @@ async fn test_request_instruments_emits_response() {
         .expect("request_instrument");
     let _ = drain_data_events(&mut rx, Duration::from_secs(5)).await;
 
-    // If request_instruments hits Gamma again it will now see an empty list.
-    // A correct cached implementation must still return the preloaded market.
     *state.gamma_response.lock().await = Some(serde_json::json!([]));
 
+    let request_id = UUID4::new();
     let request = RequestInstruments::new(
         None,
         None,
         Some(*POLYMARKET_CLIENT_ID),
         None,
-        UUID4::new(),
+        request_id,
         nautilus_core::UnixNanos::default(),
         None,
     );
@@ -363,7 +358,7 @@ async fn test_request_instruments_emits_response() {
         .count();
     assert_eq!(
         response_count, 1,
-        "request_instruments must send a DataResponse::Instruments; got: {events:?}",
+        "request_instruments must send a DataResponse::Instruments; events were: {events:?}",
     );
 
     let publish_count = events
@@ -376,17 +371,23 @@ async fn test_request_instruments_emits_response() {
          if it ever does, update this test deliberately",
     );
 
-    let response_instruments = events
+    let response = events
         .iter()
         .find_map(|event| match event {
-            DataEvent::Response(DataResponse::Instruments(response)) => Some(&response.data),
+            DataEvent::Response(DataResponse::Instruments(response)) => Some(response),
             _ => None,
         })
         .expect("instruments response");
+    assert_eq!(response.correlation_id, request_id);
+    assert_eq!(response.client_id, *POLYMARKET_CLIENT_ID);
+    assert_eq!(response.venue, *POLYMARKET_VENUE);
+    assert!(response.start.is_none());
+    assert!(response.end.is_none());
+    assert!(response.params.is_none());
     assert_eq!(
-        response_instruments.len(),
-        1,
-        "request_instruments should serve cached scoped instruments, not refetch an empty Gamma universe",
+        response.data.len(),
+        0,
+        "request_instruments should return the fresh Gamma response instead of the cached instrument",
     );
 }
 
@@ -433,7 +434,7 @@ async fn test_request_book_snapshot_returns_book_response() {
         .count();
     assert_eq!(
         book_response_count, 1,
-        "request_book_snapshot must send a DataResponse::Book; got: {events:?}",
+        "request_book_snapshot must send a DataResponse::Book; events were: {events:?}",
     );
 }
 
@@ -527,7 +528,7 @@ async fn test_request_trades_returns_trades_response() {
             DataEvent::Response(DataResponse::Trades(r)) => Some(r),
             _ => None,
         })
-        .unwrap_or_else(|| panic!("expected DataResponse::Trades; got: {events:?}"));
+        .unwrap_or_else(|| panic!("expected DataResponse::Trades; events were: {events:?}"));
 
     assert_eq!(
         trades_response.instrument_id, instrument_id,

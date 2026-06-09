@@ -1846,13 +1846,11 @@ impl DataClient for PolymarketDataClient {
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
         let sender = self.data_sender.clone();
-        let instruments = self
-            .instruments
-            .load()
-            .values()
-            .filter(|instrument| instrument.id().venue == *POLYMARKET_VENUE)
-            .cloned()
-            .collect::<Vec<_>>();
+        let http = self.provider.http_client().clone();
+        let filters = self.provider.filters();
+        let instrument_config = self.provider.config().clone();
+        let instruments_cache = self.instruments.clone();
+        let token_meta = self.token_meta.clone();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = *POLYMARKET_VENUE;
@@ -1862,6 +1860,27 @@ impl DataClient for PolymarketDataClient {
         let clock = self.clock;
 
         get_runtime().spawn(async move {
+            let instruments = if instrument_config.should_load_all()
+                || instrument_config.has_load_ids()
+            {
+                crate::providers::fetch_configured_instruments(&http, &instrument_config, &filters)
+                    .await
+            } else {
+                crate::providers::fetch_instruments(&http, &filters).await
+            };
+
+            let instruments = match instruments {
+                Ok(instruments) => instruments,
+                Err(e) => {
+                    log::error!("Failed to fetch Polymarket instruments: {e}");
+                    return;
+                }
+            };
+
+            for instrument in &instruments {
+                cache_instrument(&instruments_cache, &token_meta, instrument);
+            }
+
             let response = DataResponse::Instruments(InstrumentsResponse::new(
                 request_id,
                 client_id,
