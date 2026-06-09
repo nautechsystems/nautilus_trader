@@ -28,6 +28,17 @@ use serde::{Deserialize, Serialize};
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.portfolio")
 )]
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "config deserializes plain fields; unsafe methods come from generated PyO3 integration"
+    )
+)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "config fields mirror the existing Python and serialization surface"
+)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
 pub struct PortfolioConfig {

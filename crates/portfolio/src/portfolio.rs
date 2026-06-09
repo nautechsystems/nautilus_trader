@@ -329,7 +329,7 @@ impl Portfolio {
         for account_id in account_ids {
             self.clock
                 .borrow_mut()
-                .cancel_timer(&snapshot_timer_name(&account_id));
+                .cancel_timer(&snapshot_timer_name(account_id));
         }
         self.inner.borrow_mut().reset();
         log::debug!("READY");
@@ -746,8 +746,8 @@ impl Portfolio {
         let mut values: IndexMap<Currency, Decimal> = IndexMap::new();
         let mut unpriced: AHashSet<InstrumentId> = AHashSet::new();
 
-        if self.accumulate_mark_values(venue, account_id, &mut values, &mut unpriced) {
-            self.update_missing_price_state(venue, &unpriced);
+        if self.accumulate_mark_values(*venue, account_id, &mut values, &mut unpriced) {
+            self.update_missing_price_state(*venue, &unpriced);
         } else if account_id.is_none() {
             // Only clear the tracker on an unfiltered sweep; otherwise we could
             // wipe another account's flags on the same venue.
@@ -838,10 +838,10 @@ impl Portfolio {
                         }
                     }
                 }
-                self.update_missing_price_state(venue, &unpriced);
+                self.update_missing_price_state(*venue, &unpriced);
             }
-        } else if self.accumulate_mark_values(venue, account_id, &mut equity, &mut unpriced) {
-            self.update_missing_price_state(venue, &unpriced);
+        } else if self.accumulate_mark_values(*venue, account_id, &mut equity, &mut unpriced) {
+            self.update_missing_price_state(*venue, &unpriced);
         } else if account_id.is_none() {
             self.inner.borrow_mut().venues_missing_price.remove(venue);
         }
@@ -990,9 +990,9 @@ impl Portfolio {
         ids
     }
 
-    fn update_missing_price_state(&self, venue: &Venue, unpriced: &AHashSet<InstrumentId>) {
+    fn update_missing_price_state(&self, venue: Venue, unpriced: &AHashSet<InstrumentId>) {
         let mut inner = self.inner.borrow_mut();
-        let tracked = inner.venues_missing_price.entry(*venue).or_default();
+        let tracked = inner.venues_missing_price.entry(venue).or_default();
 
         // Sort first so the warn-log sequence is deterministic across runs.
         let mut ids: Vec<InstrumentId> = unpriced.iter().copied().collect();
@@ -1015,13 +1015,13 @@ impl Portfolio {
     // `unpriced` for the caller to flow into `update_missing_price_state`.
     fn accumulate_mark_values(
         &self,
-        venue: &Venue,
+        venue: Venue,
         account_id: Option<&AccountId>,
         values: &mut IndexMap<Currency, Decimal>,
         unpriced: &mut AHashSet<InstrumentId>,
     ) -> bool {
         let cache = self.cache.borrow();
-        let positions = cache.positions_open(Some(venue), None, None, account_id, None);
+        let positions = cache.positions_open(Some(&venue), None, None, account_id, None);
 
         if positions.is_empty() {
             return false;
@@ -1029,7 +1029,7 @@ impl Portfolio {
 
         let account = match account_id {
             Some(id) => cache.account(id),
-            None => cache.account_for_venue(venue),
+            None => cache.account_for_venue(&venue),
         };
         let mut xrate_cache: AHashMap<Currency, Option<Decimal>> = AHashMap::new();
 
@@ -1440,7 +1440,7 @@ impl Portfolio {
                     &self.clock,
                     &self.inner,
                     self.config,
-                    &account_id,
+                    account_id,
                 );
             }
         }
@@ -2468,7 +2468,7 @@ fn update_position(
     let instrument_id = event.instrument_id();
     let account_id = event.account_id();
 
-    update_snapshot_timer_state(cache, clock, inner, config, &account_id);
+    update_snapshot_timer_state(cache, clock, inner, config, account_id);
 
     let portfolio_clone = Portfolio {
         clock: clock.clone(),
@@ -2700,7 +2700,7 @@ fn update_account(
     }
 }
 
-fn snapshot_timer_name(account_id: &AccountId) -> String {
+fn snapshot_timer_name(account_id: AccountId) -> String {
     format!("portfolio_snapshot.{account_id}")
 }
 
@@ -2709,7 +2709,7 @@ fn update_snapshot_timer_state(
     clock: &Rc<RefCell<dyn Clock>>,
     inner: &Rc<RefCell<PortfolioState>>,
     config: PortfolioConfig,
-    account_id: &AccountId,
+    account_id: AccountId,
 ) {
     if config.snapshot_interval_ms.is_none() {
         return;
@@ -2717,20 +2717,20 @@ fn update_snapshot_timer_state(
 
     let current_count = cache
         .borrow()
-        .positions_open(None, None, None, Some(account_id), None)
+        .positions_open(None, None, None, Some(&account_id), None)
         .len();
 
     let prev_count = inner
         .borrow()
         .account_open_positions
-        .get(account_id)
+        .get(&account_id)
         .copied()
         .unwrap_or(0);
 
     inner
         .borrow_mut()
         .account_open_positions
-        .insert(*account_id, current_count);
+        .insert(account_id, current_count);
 
     if prev_count == 0 && current_count > 0 {
         arm_snapshot_timer(cache, clock, inner, config, account_id);
@@ -2746,7 +2746,7 @@ fn arm_snapshot_timer(
     clock: &Rc<RefCell<dyn Clock>>,
     inner: &Rc<RefCell<PortfolioState>>,
     config: PortfolioConfig,
-    account_id: &AccountId,
+    account_id: AccountId,
 ) {
     let interval_ms = match config.snapshot_interval_ms {
         Some(ms) if ms > 0 => ms,
@@ -2754,7 +2754,6 @@ fn arm_snapshot_timer(
     };
     let interval_ns = interval_ms * NANOSECONDS_IN_MILLISECOND;
     let timer_name = snapshot_timer_name(account_id);
-    let account_id = *account_id;
 
     let cache_weak = Rc::downgrade(cache);
     let clock_weak = Rc::downgrade(clock);
@@ -2773,7 +2772,7 @@ fn arm_snapshot_timer(
             Some(i) => i,
             None => return,
         };
-        emit_snapshot(&cache, &clock, &inner, config, &account_id, event.ts_event);
+        emit_snapshot(&cache, &clock, &inner, config, account_id, event.ts_event);
     });
 
     if let Err(e) = clock.borrow_mut().set_timer_ns(
@@ -2794,7 +2793,7 @@ fn emit_snapshot(
     clock: &Rc<RefCell<dyn Clock>>,
     inner: &Rc<RefCell<PortfolioState>>,
     config: PortfolioConfig,
-    account_id: &AccountId,
+    account_id: AccountId,
     ts_event: nautilus_core::UnixNanos,
 ) {
     let mut portfolio = Portfolio {
@@ -2804,7 +2803,7 @@ fn emit_snapshot(
         config,
     };
 
-    let mut snapshot = match portfolio.build_snapshot(account_id) {
+    let mut snapshot = match portfolio.build_snapshot(&account_id) {
         Some(snapshot) => snapshot,
         None => return,
     };
@@ -2818,7 +2817,7 @@ fn emit_snapshot(
     let mut inner_mut = inner.borrow_mut();
     push_bounded(
         &mut inner_mut.portfolio_snapshots,
-        *account_id,
+        account_id,
         snapshot,
         SNAPSHOT_BUFFER_CAP,
     );

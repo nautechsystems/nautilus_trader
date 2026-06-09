@@ -106,7 +106,7 @@ impl AccountsManager {
             }
             None => {
                 if let Ok(mut pnl_list) = pnls {
-                    self.update_balance_multi_currency(&mut account, fill, &mut pnl_list);
+                    self.update_balance_multi_currency(&mut account, &fill, &mut pnl_list);
                 }
             }
         }
@@ -815,7 +815,7 @@ impl AccountsManager {
     fn update_balance_multi_currency(
         &self,
         account: &mut AccountAny,
-        fill: OrderFilled,
+        fill: &OrderFilled,
         pnls: &mut [Money],
     ) {
         let mut new_balances = Vec::new();
@@ -2258,7 +2258,7 @@ mod tests {
         let mut account = AccountAny::Cash(account);
         let mut pnls = vec![Money::new(-100.0, usd)];
 
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         match account {
             AccountAny::Cash(cash) => {
@@ -2292,7 +2292,7 @@ mod tests {
         let mut account = AccountAny::Cash(account);
         let mut pnls = vec![Money::new(-100.0, usd)];
 
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         match account {
             AccountAny::Cash(cash) => {
@@ -2326,7 +2326,7 @@ mod tests {
         let mut account = AccountAny::Cash(account);
         let mut pnls = vec![Money::new(-100.0, usd)];
 
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         match account {
             AccountAny::Cash(cash) => {
@@ -2360,7 +2360,7 @@ mod tests {
         let mut account = AccountAny::Cash(account);
         let mut pnls = vec![Money::new(-200.0, usd)];
 
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         match account {
             AccountAny::Cash(cash) => {
@@ -2394,7 +2394,7 @@ mod tests {
         let mut account = AccountAny::Betting(account);
         let mut pnls = vec![Money::new(-100.0, gbp)];
 
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         match account {
             AccountAny::Betting(betting_account) => {
@@ -2599,7 +2599,7 @@ mod tests {
         let pnl =
             Money::from_decimal(Decimal::from_str_exact("0.00000064").unwrap(), usdt).unwrap();
         let mut pnls = [pnl];
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         let balances = account.balances();
         let balance = balances.get(&usdt).expect("USDT balance");
@@ -2629,7 +2629,7 @@ mod tests {
 
         // No PnL entries: only the commission branch runs.
         let mut pnls: [Money; 0] = [];
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         let balances = account.balances();
         let balance = balances.get(&usdt).expect("USDT balance");
@@ -2669,7 +2669,7 @@ mod tests {
             .commission(Money::new(-1.0, usd))
             .build();
         let mut pnls: [Money; 0] = [];
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         let AccountAny::Cash(cash) = account else {
             panic!("Expected CashAccount");

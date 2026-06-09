@@ -59,7 +59,7 @@ fn make_instruments(n: usize) -> Vec<InstrumentAny> {
         .collect()
 }
 
-fn make_account(account_type: AccountType, account_id: &AccountId) -> AccountState {
+fn make_account(account_type: AccountType, account_id: AccountId) -> AccountState {
     let balances = vec![
         AccountBalance::new(
             Money::new(1_000_000.0, Currency::USD()),
@@ -78,7 +78,7 @@ fn make_account(account_type: AccountType, account_id: &AccountId) -> AccountSta
         ),
     ];
     AccountState::new(
-        *account_id,
+        account_id,
         account_type,
         balances,
         Vec::new(),
@@ -169,7 +169,7 @@ fn build_portfolio(account_type: AccountType, n: usize) -> Portfolio {
         cache.add_instrument(instrument.clone()).unwrap();
     }
 
-    let state = make_account(account_type, &account_id);
+    let state = make_account(account_type, account_id);
     let account = AccountAny::from_events(std::slice::from_ref(&state)).unwrap();
     cache.add_account(account).unwrap();
 

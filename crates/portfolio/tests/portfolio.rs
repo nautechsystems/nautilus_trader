@@ -167,9 +167,9 @@ fn get_cash_account(accountid: Option<&str>) -> AccountState {
         AccountType::Cash,
         vec![
             AccountBalance::new(
-                Money::new(10.00000000, Currency::BTC()),
-                Money::new(0.00000000, Currency::BTC()),
-                Money::new(10.00000000, Currency::BTC()),
+                Money::new(10.000_000_00, Currency::BTC()),
+                Money::new(0.000_000_00, Currency::BTC()),
+                Money::new(10.000_000_00, Currency::BTC()),
             ),
             AccountBalance::new(
                 Money::new(10.000, Currency::USD()),
@@ -177,9 +177,9 @@ fn get_cash_account(accountid: Option<&str>) -> AccountState {
                 Money::new(10.000, Currency::USD()),
             ),
             AccountBalance::new(
-                Money::new(100000.000, Currency::USDT()),
+                Money::new(100_000.000, Currency::USDT()),
                 Money::new(0.000, Currency::USDT()),
-                Money::new(100000.000, Currency::USDT()),
+                Money::new(100_000.000, Currency::USDT()),
             ),
             AccountBalance::new(
                 Money::new(20.000, Currency::ETH()),
@@ -215,9 +215,9 @@ fn get_margin_account(accountid: Option<&str>) -> AccountState {
                 Money::new(20.000, Currency::ETH()),
             ),
             AccountBalance::new(
-                Money::new(100000.000, Currency::USDT()),
+                Money::new(100_000.000, Currency::USDT()),
                 Money::new(0.000, Currency::USDT()),
-                Money::new(100000.000, Currency::USDT()),
+                Money::new(100_000.000, Currency::USDT()),
             ),
             AccountBalance::new(
                 Money::new(10.000, Currency::USD()),
@@ -239,11 +239,11 @@ fn get_margin_account(accountid: Option<&str>) -> AccountState {
     )
 }
 
-fn usd_balance_total(portfolio: &Portfolio, account_id: &AccountId) -> Money {
+fn usd_balance_total(portfolio: &Portfolio, account_id: AccountId) -> Money {
     portfolio
         .cache()
         .borrow()
-        .account_owned(account_id)
+        .account_owned(&account_id)
         .unwrap()
         .balance_total(Some(Currency::USD()))
         .unwrap()
@@ -1359,7 +1359,7 @@ fn test_update_order_filled_spread_instrument_skips_balance_update(
 
     portfolio.update_order(&OrderEventAny::Filled(filled));
 
-    assert_eq!(usd_balance_total(&portfolio, &account_id), starting_usd);
+    assert_eq!(usd_balance_total(&portfolio, account_id), starting_usd);
 }
 
 #[rstest]
@@ -1625,7 +1625,7 @@ fn test_update_positions(mut portfolio: Portfolio, instrument_audusd: Instrument
     let position2 = Position::new(&instrument_audusd, fill3);
 
     // Update the last quote
-    let last = get_quote_tick(&instrument_audusd, 250001.0, 250002.0, 1.0, 1.0);
+    let last = get_quote_tick(&instrument_audusd, 250_001.0, 250_002.0, 1.0, 1.0);
 
     portfolio
         .cache()
@@ -2260,11 +2260,11 @@ fn test_opening_several_positions_updates_portfolio(
     );
     assert_eq!(
         portfolio.net_position(&instrument_audusd.id()),
-        Decimal::from_f64(100000.0).unwrap()
+        Decimal::from_f64(100_000.0).unwrap()
     );
     assert_eq!(
         portfolio.net_position(&instrument_gbpusd.id()),
-        Decimal::from_f64(100000.0).unwrap()
+        Decimal::from_f64(100_000.0).unwrap()
     );
     assert!(portfolio.is_net_long(&instrument_audusd.id()));
     assert!(!portfolio.is_net_short(&instrument_audusd.id()));
@@ -2406,7 +2406,7 @@ fn test_modifying_position_updates_portfolio(
     );
     assert_eq!(
         portfolio.net_position(&instrument_audusd.id()),
-        Decimal::from_f64(100000.0).unwrap()
+        Decimal::from_f64(100_000.0).unwrap()
     );
     assert!(portfolio.is_net_long(&instrument_audusd.id()));
     assert!(!portfolio.is_net_short(&instrument_audusd.id()));
@@ -2710,7 +2710,7 @@ fn test_order_fill_endpoint_updates_account_balance_before_position_close(
     );
 
     assert_eq!(
-        usd_balance_total(&portfolio, &account_id),
+        usd_balance_total(&portfolio, account_id),
         Money::new(1_000_008.0, Currency::USD())
     );
 
@@ -2724,7 +2724,7 @@ fn test_order_fill_endpoint_updates_account_balance_before_position_close(
     portfolio.update_order(&OrderEventAny::Filled(fill2));
 
     assert_eq!(
-        usd_balance_total(&portfolio, &account_id),
+        usd_balance_total(&portfolio, account_id),
         Money::new(1_000_008.0, Currency::USD())
     );
 }
@@ -2838,7 +2838,7 @@ fn test_order_fill_endpoint_updates_account_balance_before_position_reverse(
     );
 
     assert_eq!(
-        usd_balance_total(&portfolio, &account_id),
+        usd_balance_total(&portfolio, account_id),
         Money::new(1_000_007.0, Currency::USD())
     );
 
@@ -2855,7 +2855,7 @@ fn test_order_fill_endpoint_updates_account_balance_before_position_reverse(
     portfolio.update_order(&OrderEventAny::Filled(fill2));
 
     assert_eq!(
-        usd_balance_total(&portfolio, &account_id),
+        usd_balance_total(&portfolio, account_id),
         Money::new(1_000_007.0, Currency::USD())
     );
 }
@@ -3056,9 +3056,9 @@ fn test_realized_pnl_with_missing_exchange_rate_returns_zero_instead_of_panic(
         account_id,
         AccountType::Cash,
         vec![AccountBalance::new(
-            Money::new(100000.0, Currency::EUR()),
+            Money::new(100_000.0, Currency::EUR()),
             Money::new(0.0, Currency::EUR()),
-            Money::new(100000.0, Currency::EUR()),
+            Money::new(100_000.0, Currency::EUR()),
         )],
         vec![],
         true,
@@ -3099,10 +3099,10 @@ fn test_realized_pnl_with_missing_exchange_rate_returns_zero_instead_of_panic(
 
     let pnl = result.unwrap();
     assert_eq!(pnl.currency, Currency::EUR());
-    assert_eq!(pnl.as_f64(), 0.0);
+    assert_eq!(pnl.as_decimal(), Decimal::ZERO);
 
-    let safe_calculation = result.unwrap().as_f64() * 1.5;
-    assert_eq!(safe_calculation, 0.0);
+    let safe_calculation = pnl.as_decimal() * dec!(1.5);
+    assert_eq!(safe_calculation, Decimal::ZERO);
 
     let result2 = portfolio.realized_pnl(&instrument_audusd.id());
     assert_eq!(result2, result);
@@ -4766,6 +4766,10 @@ fn test_initialize_positions_arms_snapshot_timer_for_reconciled_venues(
     );
 }
 
+#[allow(
+    clippy::match_wildcard_for_single_variants,
+    reason = "wildcard covers dependency cfg-gated callback variants in workspace feature builds"
+)]
 #[rstest]
 fn test_emit_snapshot_publishes_and_appends_to_ring(instrument_audusd: InstrumentAny) {
     use nautilus_common::{
