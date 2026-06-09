@@ -172,7 +172,7 @@ def get_cached_interactive_brokers_instrument_provider(
     # Create a cache key based on client connection info and config
     # We use the client's connection parameters rather than the client object itself
     # to ensure consistent caching across different client instances with same connection
-    client_key = (client._host, client._port, client._client_id)
+    client_key = (client._host, client._port, client._configured_client_id)
     provider_key = (client_key, hash(config))
 
     if provider_key not in IB_INSTRUMENT_PROVIDERS:

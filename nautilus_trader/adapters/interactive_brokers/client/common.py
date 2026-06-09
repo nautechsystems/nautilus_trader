@@ -525,7 +525,10 @@ class BaseMixin:
     _msgbus: MessageBus
     _host: str
     _port: int
+    _configured_client_id: int
     _client_id: int
+    _randomize_client_id_on_next_connect: bool
+    _fetch_all_open_orders: bool
     _request_timeout_secs: int
     _requests: Requests
     _instrument_provider: (
@@ -554,6 +557,8 @@ class BaseMixin:
     # Connection
     _reconnect_attempts: int
     _reconnect_delay: int
+    _reconnect_delay_max: int
+    _reconnect_jitter_secs: int
     _max_reconnect_attempts: int
     _indefinite_reconnect: bool
     _last_disconnection_ns: int | None
