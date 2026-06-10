@@ -45,7 +45,7 @@ impl Alpha {
     }
 
     #[pyo3(name = "calculate_from_returns")]
-    fn py_calculate_from_returns(&self, _raw_returns: BTreeMap<u64, f64>) -> Option<f64> {
+    fn py_calculate_from_returns(&self, _returns: BTreeMap<u64, f64>) -> Option<f64> {
         None
     }
 

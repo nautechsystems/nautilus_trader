@@ -217,12 +217,12 @@ impl PortfolioAnalyzer {
                 let stat = statistic.extract::<LongRatio>(py)?;
                 self.register_statistic(Arc::new(stat));
             }
-            "BetaRatio" => {
-                let stat = statistic.extract::<BetaRatio>(py)?;
-                self.register_statistic(Arc::new(stat));
-            }
             "Alpha" => {
                 let stat = statistic.extract::<Alpha>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "BetaRatio" => {
+                let stat = statistic.extract::<BetaRatio>(py)?;
                 self.register_statistic(Arc::new(stat));
             }
             "InformationRatio" => {
@@ -325,12 +325,12 @@ impl PortfolioAnalyzer {
                 let stat = statistic.extract::<LongRatio>(py)?;
                 self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
-            "BetaRatio" => {
-                let stat = statistic.extract::<BetaRatio>(py)?;
-                self.deregister_statistic(&(Arc::new(stat) as Statistic));
-            }
             "Alpha" => {
                 let stat = statistic.extract::<Alpha>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "BetaRatio" => {
+                let stat = statistic.extract::<BetaRatio>(py)?;
                 self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "InformationRatio" => {

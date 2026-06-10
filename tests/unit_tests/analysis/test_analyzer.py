@@ -22,7 +22,9 @@ import pytest
 
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.analysis import CAGR
+from nautilus_trader.analysis import BetaRatio
 from nautilus_trader.analysis import CalmarRatio
+from nautilus_trader.analysis import InformationRatio
 from nautilus_trader.analysis import MaxDrawdown
 from nautilus_trader.analysis import ReturnsAverage
 from nautilus_trader.analysis import SharpeRatio
@@ -474,6 +476,47 @@ class TestPortfolioAnalyzer:
         assert self.analyzer.portfolio_returns().empty
         assert position_stats["Average (Return)"] == pytest.approx(0.30)
         assert returns_stats == position_stats
+
+    def test_get_performance_stats_returns_vs_benchmark(self):
+        # Arrange
+        self.analyzer.register_statistic(BetaRatio())
+        self.analyzer.register_statistic(InformationRatio())
+        self.analyzer.register_statistic(ReturnsAverage())  # Not benchmark-relative
+
+        timestamps = [datetime(year=2024, month=1, day=day, tzinfo=UTC) for day in (1, 2, 3, 4)]
+        for timestamp, value in zip(timestamps, [0.03, -0.01, 0.02, 0.04], strict=True):
+            self.analyzer.add_position_return(timestamp, value)
+
+        benchmark_returns = pd.Series(
+            [0.01, 0.005, 0.005, 0.01],
+            index=[pd.Timestamp(t) for t in timestamps],
+        )
+
+        # Act
+        stats = self.analyzer.get_performance_stats_returns_vs_benchmark(benchmark_returns)
+
+        # Assert: only the benchmark-relative statistics contribute
+        assert "Average (Return)" not in stats
+        assert stats == {
+            "Beta": pytest.approx(6.0),
+            "Information Ratio (252 days)": pytest.approx(10.246950765959598),
+        }
+
+    def test_get_performance_stats_returns_vs_benchmark_with_explicit_returns(self):
+        # Arrange
+        self.analyzer.register_statistic(BetaRatio())
+
+        timestamps = [pd.Timestamp(f"2024-01-0{day}", tz="UTC") for day in (1, 2, 3, 4)]
+        benchmark_returns = pd.Series([0.01, 0.005, 0.005, 0.01], index=timestamps)
+
+        # Act: the benchmark evaluated against itself must have unit beta
+        stats = self.analyzer.get_performance_stats_returns_vs_benchmark(
+            benchmark_returns,
+            returns=benchmark_returns,
+        )
+
+        # Assert
+        assert stats["Beta"] == pytest.approx(1.0)
 
     def test_portfolio_returns_skips_empty_balance_snapshots(self):
         # Arrange

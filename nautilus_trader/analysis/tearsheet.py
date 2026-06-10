@@ -308,7 +308,9 @@ def create_tearsheet(  # noqa: C901
         Configuration for tearsheet customization. If None, uses default configuration.
     benchmark_returns : pd.Series, optional
         Benchmark returns series for comparison. If provided, benchmark will be overlaid
-        on visualizations.
+        on visualizations. Benchmark-relative statistics (e.g., BetaRatio, Alpha,
+        InformationRatio, TrackingError, TreynorRatio) are included in the returns
+        statistics when registered on the analyzer.
     benchmark_name : str, default "Benchmark"
         Display name for the benchmark.
 

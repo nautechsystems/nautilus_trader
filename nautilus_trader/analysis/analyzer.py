@@ -532,12 +532,13 @@ class PortfolioAnalyzer:
         Parameters
         ----------
         benchmark_returns : pd.Series
-            The benchmark returns series for comparison.
+            The benchmark returns series for comparison. Must be indexed by
+            ``pd.Timestamp``.
         returns : pd.Series, optional
             The strategy returns series to evaluate against the benchmark. If
             ``None``, the primary `returns` series is used (portfolio returns
             when available, otherwise position returns). Callers that resolve a
-            specific series (e.g. the tearsheet's equity-curve series) should
+            specific series (e.g., the tearsheet's equity-curve series) should
             pass it explicitly so the metrics match that series.
 
         Returns
@@ -547,14 +548,21 @@ class PortfolioAnalyzer:
         """
         output: dict[str, Any] = {}
 
-        strategy_returns = self._returns if returns is None else returns
-        returns_dict = self._returns_to_dict(strategy_returns)
-        benchmark_dict = self._returns_to_dict(benchmark_returns)
+        returns_dict: dict[int, float] | None = None
+        benchmark_dict: dict[int, float] | None = None
 
         for name, stat in self._statistics.items():
+            if not _is_pyo3_statistic(stat):
+                continue  # Benchmark-relative statistics are pyo3-only
+
             calculate = getattr(stat, "calculate_from_returns_with_benchmark", None)
             if calculate is None:
                 continue  # Not a benchmark-relative statistic
+
+            if returns_dict is None or benchmark_dict is None:
+                strategy_returns = self._returns if returns is None else returns
+                returns_dict = self._returns_to_dict(strategy_returns)
+                benchmark_dict = self._returns_to_dict(benchmark_returns)
 
             value = calculate(returns_dict, benchmark_dict)
             if value is None:

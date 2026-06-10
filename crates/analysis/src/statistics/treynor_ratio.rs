@@ -27,11 +27,11 @@ use crate::{Returns, statistic::PortfolioStatistic, statistics::beta_ratio::beta
 ///
 /// `Treynor = (annualized_return - rf_annual) / beta`
 ///
-/// The strategy's annualized return is computed geometrically (CAGR-style) from the
+/// The portfolio's annualized return is computed geometrically (CAGR-style) from the
 /// aligned returns: `annualized_return = (prod(1 + r_i))^(period / n) - 1`. The
 /// per-period risk-free rate is annualized geometrically as
 /// `rf_annual = (1 + rf)^period - 1`. Beta is the sample (`ddof = 1`) beta of the
-/// strategy against the benchmark. The period defaults to 252 trading days and `rf`
+/// portfolio against the benchmark. The period defaults to 252 trading days and `rf`
 /// defaults to 0.0.
 ///
 /// # References
@@ -146,6 +146,12 @@ mod tests {
     }
 
     #[rstest]
+    fn test_name_non_default_period() {
+        let stat = TreynorRatio::new(Some(63), None);
+        assert_eq!(stat.name(), "Treynor Ratio (63 days)");
+    }
+
+    #[rstest]
     fn test_known_value() {
         // strategy = 2 * benchmark -> beta = 2 (rf = 0).
         // aligned strategy = [0.02, -0.04, 0.030, -0.010, 0.050], n = 5, period = 5.
@@ -161,12 +167,6 @@ mod tests {
         let growth = 1.02_f64 * 0.96 * 1.03 * 0.99 * 1.05;
         let expected = (growth - 1.0) / 2.0;
         assert!(approx_eq!(f64, result, expected, epsilon = 1e-12));
-    }
-
-    #[rstest]
-    fn test_name_non_default_period() {
-        let stat = TreynorRatio::new(Some(63), None);
-        assert_eq!(stat.name(), "Treynor Ratio (63 days)");
     }
 
     #[rstest]
@@ -191,10 +191,26 @@ mod tests {
     }
 
     #[rstest]
-    fn test_zero_beta_is_nan() {
+    fn test_flat_benchmark_is_nan() {
         // Flat benchmark -> beta NaN -> NaN.
         let benchmark = create_returns(&[0.01, 0.01, 0.01, 0.01, 0.01]);
         let returns = create_returns(&[0.02, -0.04, 0.030, -0.010, 0.050]);
+        let stat = TreynorRatio::new(None, None);
+        let result = stat
+            .calculate_from_returns_with_benchmark(&returns, &benchmark)
+            .unwrap();
+        assert!(result.is_nan());
+    }
+
+    #[rstest]
+    fn test_zero_beta_is_nan() {
+        // Hits the `beta.abs() < EPSILON` arm with a finite beta (not the
+        // flat-benchmark arm, where beta itself is NaN):
+        //   mean_r = 0, mean_b = 0
+        //   Cov = (0.0001 - 0.0001 - 0.0001 + 0.0001) / 3 = 0.0 exactly -> beta = 0
+        //   Var(b) = 4 * 0.0001 / 3 ~ 1.333e-4 > EPSILON
+        let returns = create_returns(&[0.01, -0.01, 0.01, -0.01]);
+        let benchmark = create_returns(&[0.01, 0.01, -0.01, -0.01]);
         let stat = TreynorRatio::new(None, None);
         let result = stat
             .calculate_from_returns_with_benchmark(&returns, &benchmark)

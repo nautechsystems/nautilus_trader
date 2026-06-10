@@ -26,9 +26,9 @@ use crate::{Returns, statistic::PortfolioStatistic, statistics::beta_ratio::beta
 /// Alpha measures the excess return of a portfolio over the return predicted by its
 /// beta exposure to the benchmark (CAPM). The per-period alpha is:
 ///
-/// `alpha = (mean_strategy - rf) - beta * (mean_benchmark - rf)`
+/// `alpha = (mean_portfolio - rf) - beta * (mean_benchmark - rf)`
 ///
-/// where `beta` is the sample (`ddof = 1`) beta of the strategy against the benchmark.
+/// where `beta` is the sample (`ddof = 1`) beta of the portfolio against the benchmark.
 /// The per-period alpha is then annualized geometrically over `period` (default 252):
 ///
 /// `alpha_annual = (1 + alpha)^period - 1`
@@ -149,6 +149,12 @@ mod tests {
     }
 
     #[rstest]
+    fn test_name_non_default_period() {
+        let stat = Alpha::new(Some(4), None);
+        assert_eq!(stat.name(), "Alpha (4 days)");
+    }
+
+    #[rstest]
     fn test_known_value_zero_alpha() {
         // strategy == 2 * benchmark with rf = 0: beta = 2,
         //   alpha_period = mean_r - 2 * mean_b = 0 (since mean_r = 2 * mean_b),
@@ -177,12 +183,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_name_non_default_period() {
-        let stat = Alpha::new(Some(4), None);
-        assert_eq!(stat.name(), "Alpha (4 days)");
-    }
-
-    #[rstest]
     fn test_known_value_nonzero_mean_benchmark() {
         // Non-zero-mean benchmark and a non-trivial beta so the beta * (mean_b - rf)
         // subtraction is exercised; small period = 4 makes the geometric annualization
@@ -194,7 +194,8 @@ mod tests {
         //                = 0.01025 - 2.5789473684210527 * 0.00775 = -0.009736842105263162
         //   alpha_annual = (1 + alpha_period)^4 - 1 = -0.0383822153156389
         // Dropping the beta term gives +0.041634..., and a sqrt-style annualization
-        // (alpha_period * sqrt(4)) gives -0.019473..., so this discriminates both.
+        // (alpha_period * sqrt(4)) gives -0.019473..., so this value discriminates
+        // against both.
         let returns = create_returns(&[0.02, -0.01, 0.03, 0.005]);
         let benchmark = create_returns(&[0.01, 0.0, 0.015, 0.01]);
         let stat = Alpha::new(Some(4), Some(0.001));

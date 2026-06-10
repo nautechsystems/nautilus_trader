@@ -23,11 +23,11 @@ use crate::{Returns, statistic::PortfolioStatistic};
 
 /// Calculates the tracking error of portfolio returns relative to a benchmark.
 ///
-/// Tracking error is the volatility of the active return (strategy minus benchmark):
+/// Tracking error is the volatility of the active return (portfolio minus benchmark):
 ///
 /// `TE = std(active) * sqrt(period)`
 ///
-/// where `active_i = strategy_i - benchmark_i`, `std` uses Bessel's correction
+/// where `active_i = portfolio_i - benchmark_i`, `std` uses Bessel's correction
 /// (`ddof = 1`), and the result is annualized by the square root of the specified period
 /// (default: 252 trading days).
 ///

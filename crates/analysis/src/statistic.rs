@@ -75,10 +75,11 @@ pub trait PortfolioStatistic: Debug {
 
     /// Calculates the statistic from time-indexed strategy returns relative to a benchmark.
     ///
-    /// Benchmark-relative statistics (beta, alpha, information ratio, tracking error,
-    /// Treynor ratio) override this method. The default returns `None` so analyzer loops
-    /// can filter by `Option` (mirroring `calculate_from_positions`) rather than panicking
-    /// for statistics that are not benchmark-relative.
+    /// Defaults to `None`; only benchmark-relative statistics (beta, alpha, information
+    /// ratio, tracking error, Treynor ratio) override this method. The `None` default
+    /// lets analyzer loops filter results by `Option` — non-benchmark statistics are
+    /// simply skipped, as `get_performance_stats_general` already does with
+    /// `calculate_from_positions` results — rather than panicking.
     fn calculate_from_returns_with_benchmark(
         &self,
         returns: &Returns,

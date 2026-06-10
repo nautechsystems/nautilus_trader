@@ -24,17 +24,18 @@ use crate::{Returns, statistic::PortfolioStatistic};
 /// Calculates the beta of portfolio returns relative to a benchmark.
 ///
 /// Beta measures the systematic risk (market sensitivity) of a portfolio and is
-/// calculated as the covariance of the strategy and benchmark returns divided by
+/// calculated as the covariance of the portfolio and benchmark returns divided by
 /// the variance of the benchmark returns:
 ///
-/// `Beta = Cov(strategy, benchmark) / Var(benchmark)`
+/// `Beta = Cov(portfolio, benchmark) / Var(benchmark)`
 ///
 /// Sample (Bessel-corrected, `ddof = 1`) covariance and variance are used to match
 /// the standard deviation convention elsewhere in this crate. Beta is not annualized.
 ///
 /// # References
 ///
-/// - Sharpe, W. F. (1964). "Capital Asset Prices". *Journal of Finance*, 19(3), 425-442.
+/// - Sharpe, W. F. (1964). "Capital Asset Prices: A Theory of Market Equilibrium under
+///   Conditions of Risk". *Journal of Finance*, 19(3), 425-442.
 /// - CFA Institute Investment Foundations, 3rd Edition
 #[repr(C)]
 #[derive(Debug, Clone, Default)]

@@ -10649,8 +10649,12 @@ class MaxDrawdown:
     def name(self) -> str: ...
     def calculate_from_returns(self, returns: dict[int, float]) -> float | None: ...
 
-class BetaRatio:
-    def __init__(self) -> None: ...
+class Alpha:
+    def __init__(
+        self,
+        period: int | None = None,
+        risk_free_rate: float | None = None,
+    ) -> None: ...
     @property
     def name(self) -> str: ...
     def calculate_from_returns_with_benchmark(
@@ -10659,12 +10663,8 @@ class BetaRatio:
         benchmark: dict[int, float],
     ) -> float | None: ...
 
-class Alpha:
-    def __init__(
-        self,
-        period: int | None = None,
-        risk_free_rate: float | None = None,
-    ) -> None: ...
+class BetaRatio:
+    def __init__(self) -> None: ...
     @property
     def name(self) -> str: ...
     def calculate_from_returns_with_benchmark(
