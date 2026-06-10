@@ -1382,9 +1382,22 @@ impl ExecutionManager {
     }
 
     /// Claims external orders for a specific strategy and instrument.
-    pub fn claim_external_orders(&mut self, instrument_id: InstrumentId, strategy_id: StrategyId) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the instrument already has a registered claim.
+    pub fn claim_external_orders(
+        &mut self,
+        instrument_id: InstrumentId,
+        strategy_id: StrategyId,
+    ) -> anyhow::Result<()> {
+        if let Some(existing) = self.external_order_claims.get(&instrument_id) {
+            anyhow::bail!("External order claim for {instrument_id} already exists for {existing}");
+        }
+
         self.external_order_claims
             .insert(instrument_id, strategy_id);
+        Ok(())
     }
 
     /// Records position activity for reconciliation tracking, scoped per (instrument, account).

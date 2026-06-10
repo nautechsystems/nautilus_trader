@@ -15,7 +15,7 @@
 
 //! Python bindings for live node.
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr};
 
 use nautilus_common::{
     actor::data_actor::ImportableActorConfig, cache::CacheConfig, enums::Environment,
@@ -27,7 +27,9 @@ use nautilus_core::{
     UUID4,
     python::{to_pyruntime_err, to_pyvalue_err},
 };
-use nautilus_model::identifiers::{ActorId, ComponentId, ExecAlgorithmId, StrategyId, TraderId};
+use nautilus_model::identifiers::{
+    ActorId, ComponentId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
+};
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_system::get_global_pyo3_registry;
 #[cfg(feature = "examples")]
@@ -409,6 +411,10 @@ impl LiveNode {
                     if let Some(val) = extract_bool_config_attr(config_obj, "log_commands") {
                         py_strategy_ref.set_log_commands(val);
                     }
+
+                    if let Some(claims) = extract_external_order_claims_config_attr(config_obj)? {
+                        py_strategy_ref.set_external_order_claims(Some(claims));
+                    }
                 }
 
                 py_strategy_ref.set_python_instance(python_strategy.clone().unbind());
@@ -477,22 +483,25 @@ impl LiveNode {
         })
         .map_err(to_pyruntime_err)?;
 
-        // TODO: Register external order claims with the execution manager
-        // once PyStrategy exposes external_order_claims publicly.
-        // Currently external_order_claims are only handled for Rust-native
-        // strategies via LiveNode::add_strategy<T>().
-        Python::attach(|py| {
+        let external_order_claims = Python::attach(|py| -> anyhow::Result<Option<Vec<_>>> {
             let py_strategy = python_strategy.bind(py);
-            if let Ok(claims) = py_strategy.getattr("external_order_claims")
-                && !claims.is_none()
-                && claims.len().unwrap_or(0) > 0
-            {
-                log::warn!(
-                    "Strategy '{strategy_id}' has external_order_claims configured, \
-                     but these are not yet supported for Python strategies on the Rust backend"
-                );
+            let py_strategy_ref = py_strategy
+                .extract::<PyRef<PyStrategy>>()
+                .map_err(Into::<PyErr>::into)
+                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
+
+            Ok(py_strategy_ref.external_order_claims())
+        })
+        .map_err(to_pyruntime_err)?;
+
+        if let Some(claims) = external_order_claims.filter(|claims| !claims.is_empty()) {
+            for instrument_id in &claims {
+                self.exec_manager_mut()
+                    .claim_external_orders(*instrument_id, strategy_id)
+                    .map_err(to_pyruntime_err)?;
             }
-        });
+            log::info!("Registered external order claims for {strategy_id}: {claims:?}");
+        }
 
         self.kernel_mut()
             .trader
@@ -1306,6 +1315,36 @@ fn extract_bool_config_attr(config_obj: &Bound<'_, PyAny>, attr: &str) -> Option
         .and_then(|val| val.extract::<bool>().ok())
 }
 
+fn extract_external_order_claims_config_attr(
+    config_obj: &Bound<'_, PyAny>,
+) -> anyhow::Result<Option<Vec<InstrumentId>>> {
+    let Ok(claims) = config_obj.getattr("external_order_claims") else {
+        return Ok(None);
+    };
+
+    if claims.is_none() {
+        return Ok(None);
+    }
+
+    if let Ok(claims) = claims.extract::<Vec<InstrumentId>>() {
+        return Ok(Some(claims));
+    }
+
+    let claim_strings = claims
+        .extract::<Vec<String>>()
+        .map_err(|e| anyhow::anyhow!("Invalid `external_order_claims` type: {e}"))?;
+    let claims = claim_strings
+        .into_iter()
+        .map(|claim| {
+            InstrumentId::from_str(&claim).map_err(|e| {
+                anyhow::anyhow!("Invalid `external_order_claims` instrument ID {claim}: {e}")
+            })
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    Ok(Some(claims))
+}
+
 #[cfg(all(test, feature = "python"))]
 mod tests {
     use std::{
@@ -1341,7 +1380,7 @@ mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         data::{Bar, BarType},
-        identifiers::{ClientId, TraderId, Venue},
+        identifiers::{ClientId, InstrumentId, StrategyId, TraderId, Venue},
         types::{Price, Quantity},
     };
     use nautilus_trading::{ImportableStrategyConfig, python::strategy::PyStrategy};
@@ -1676,6 +1715,39 @@ class LiveTimerStrategy(Strategy):
             .expect("test strategy module should register");
     }
 
+    fn install_claim_strategy_module(py: Python<'_>, module_name: &str) {
+        let module = PyModule::new(py, module_name).expect("test module should create");
+        module
+            .setattr("Strategy", py.get_type::<PyStrategy>())
+            .expect("Strategy type should bind");
+
+        let code = CString::new(
+            "
+class ClaimsConfig:
+    def __init__(self, strategy_id=None, external_order_claims=None):
+        self.strategy_id = strategy_id
+        self.external_order_claims = external_order_claims
+
+class ClaimsStrategy(Strategy):
+    def __init__(self, config):
+        super().__init__(config)
+",
+        )
+        .expect("python test code should be valid CString");
+
+        py.run(code.as_c_str(), Some(&module.dict()), None)
+            .expect("test strategy code should execute");
+
+        let sys_modules = py
+            .import("sys")
+            .expect("sys should import")
+            .getattr("modules")
+            .expect("sys.modules should exist");
+        sys_modules
+            .set_item(module_name, module)
+            .expect("test strategy module should register");
+    }
+
     #[derive(Debug)]
     struct TimerStrategyResults {
         on_start: usize,
@@ -1918,6 +1990,56 @@ class LiveTimerStrategy(Strategy):
         assert_eq!(results.default_event_type, "TimeEvent");
         assert_eq!(results.callback_event_name, "explicit_timer");
         assert_eq!(results.default_event_name, "default_timer");
+    }
+
+    #[rstest]
+    fn test_add_strategy_from_config_registers_external_order_claims() {
+        Python::initialize();
+
+        let module_name = "test_live_node_claim_strategy";
+        Python::attach(|py| install_claim_strategy_module(py, module_name));
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .build()
+            .unwrap();
+
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+        let mut config = HashMap::new();
+        config.insert(
+            "strategy_id".to_string(),
+            serde_json::json!(strategy_id.to_string()),
+        );
+        config.insert(
+            "external_order_claims".to_string(),
+            serde_json::json!([instrument_id.to_string()]),
+        );
+        let importable = ImportableStrategyConfig {
+            strategy_path: format!("{module_name}:ClaimsStrategy"),
+            config_path: format!("{module_name}:ClaimsConfig"),
+            config,
+        };
+
+        Python::attach(|py| {
+            node.py_add_strategy_from_config(py, importable)
+                .expect("strategy should register");
+        });
+
+        let result = node
+            .exec_manager_mut()
+            .claim_external_orders(instrument_id, StrategyId::from("OTHER-001"));
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("already exists for CLAIMS-001")
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]

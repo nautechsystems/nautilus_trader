@@ -1652,14 +1652,14 @@ impl LiveNode {
             .borrow()
             .prepare_strategy_for_registration(&mut strategy)?;
         if let Some(claims) = strategy.external_order_claims() {
-            for instrument_id in claims {
+            for instrument_id in &claims {
                 self.exec_manager
-                    .claim_external_orders(instrument_id, strategy_id);
+                    .claim_external_orders(*instrument_id, strategy_id)?;
             }
             log_info!(
                 "Registered external order claims for {}: {:?}",
                 strategy_id,
-                strategy.external_order_claims(),
+                claims,
                 color = LogColor::Blue
             );
         }

@@ -53,7 +53,8 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::{OmsType, OrderType},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ExecAlgorithmId, TraderId, Venue, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
+        Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     orders::{OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -99,6 +100,31 @@ impl TestStrategy {
 impl DataActor for TestStrategy {}
 
 nautilus_strategy!(TestStrategy);
+
+#[derive(Debug)]
+struct ClaimingTestStrategy {
+    core: StrategyCore,
+}
+
+impl ClaimingTestStrategy {
+    fn new(strategy_id: StrategyId, instrument_id: InstrumentId) -> Self {
+        Self {
+            core: StrategyCore::new(StrategyConfig {
+                strategy_id: Some(strategy_id),
+                external_order_claims: Some(vec![instrument_id]),
+                ..Default::default()
+            }),
+        }
+    }
+}
+
+impl DataActor for ClaimingTestStrategy {}
+
+nautilus_strategy!(ClaimingTestStrategy, {
+    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
+        self.core.config.external_order_claims.clone()
+    }
+});
 
 #[derive(Debug)]
 struct TestExecAlgorithm {
@@ -481,6 +507,27 @@ mod serial_tests {
         let result = node.add_strategy(strategy);
 
         assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_add_strategy_rejects_duplicate_external_order_claim() {
+        let mut node = LiveNode::build("TestNode".to_string(), None).unwrap();
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let first_strategy =
+            ClaimingTestStrategy::new(StrategyId::from("CLAIM-001"), instrument_id);
+        let duplicate_strategy =
+            ClaimingTestStrategy::new(StrategyId::from("CLAIM-002"), instrument_id);
+
+        node.add_strategy(first_strategy).unwrap();
+        let result = node.add_strategy(duplicate_strategy);
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("already exists for CLAIM-001")
+        );
     }
 
     #[rstest]

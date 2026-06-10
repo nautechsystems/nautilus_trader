@@ -778,6 +778,10 @@ impl Strategy for PyStrategyInner {
         &mut self.core
     }
 
+    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
+        self.core.config.external_order_claims.clone()
+    }
+
     fn on_order_initialized(&mut self, event: OrderInitialized) {
         let _ = self.dispatch_on_order_initialized(event);
     }
@@ -1095,6 +1099,17 @@ impl PyStrategy {
     /// Sets the Python instance reference for method dispatch.
     pub fn set_python_instance(&mut self, py_obj: Py<PyAny>) {
         self.inner_mut().py_self = Some(py_obj);
+    }
+
+    /// Updates configured external order claim instrument IDs before registration.
+    pub fn set_external_order_claims(&mut self, external_order_claims: Option<Vec<InstrumentId>>) {
+        self.inner_mut().core.config.external_order_claims = external_order_claims;
+    }
+
+    /// Returns the configured external order claim instrument IDs.
+    #[must_use]
+    pub fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
+        self.inner().external_order_claims()
     }
 
     /// Updates the runtime strategy ID.
@@ -2691,7 +2706,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::PyStrategy;
-    use crate::strategy::Strategy;
+    use crate::strategy::{Strategy, StrategyConfig};
 
     const TRACKING_STRATEGY_CODE: &std::ffi::CStr = c_str!(
         r#"
@@ -3060,6 +3075,20 @@ class TrackingStrategy:
             .unwrap();
 
         (py_strategy, rust_strategy)
+    }
+
+    #[rstest::rstest]
+    fn test_external_order_claims_returns_configured_instruments() {
+        let claims = vec![
+            InstrumentId::from("AUDUSD.SIM"),
+            InstrumentId::from("BTCUSDT.BINANCE"),
+        ];
+        let strategy = PyStrategy::new(Some(StrategyConfig {
+            external_order_claims: Some(claims.clone()),
+            ..Default::default()
+        }));
+
+        assert_eq!(strategy.external_order_claims(), Some(claims));
     }
 
     fn assert_python_dispatch<F>(py: Python<'_>, method_name: &str, invoke: F)
