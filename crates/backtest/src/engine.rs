@@ -117,7 +117,7 @@ impl Debug for BacktestEngine {
             .field("instance_id", &self.instance_id)
             .field("run_config_id", &self.run_config_id)
             .field("run_id", &self.run_id)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -376,10 +376,13 @@ impl BacktestEngine {
     pub fn add_data(
         &mut self,
         data: Vec<Data>,
-        _client_id: Option<ClientId>,
+        client_id: Option<ClientId>,
         validate: bool,
         sort: bool,
     ) -> anyhow::Result<()> {
+        #[cfg(not(feature = "defi"))]
+        let _ = client_id;
+
         anyhow::ensure!(!data.is_empty(), "data was empty");
 
         let count = data.len();
@@ -430,7 +433,7 @@ impl BacktestEngine {
 
         #[cfg(feature = "defi")]
         if to_add.iter().any(|item| matches!(item, Data::Defi(_))) {
-            self.add_defi_data_client_if_not_exists(_client_id);
+            self.add_defi_data_client_if_not_exists(client_id);
         }
 
         for item in &to_add {
@@ -979,15 +982,13 @@ impl BacktestEngine {
     #[must_use]
     pub fn get_result(&self) -> BacktestResult {
         let elapsed_time_secs = match (self.backtest_start, self.backtest_end) {
-            (Some(start), Some(end)) => {
-                (end.as_u64() as f64 - start.as_u64() as f64) / 1_000_000_000.0
-            }
+            (Some(start), Some(end)) => (end.as_f64() - start.as_f64()) / 1_000_000_000.0,
             _ => 0.0,
         };
 
         let cache = self.kernel.cache.borrow();
         let orders = cache.orders(None, None, None, None, None);
-        let total_events = self.kernel.exec_engine.borrow().event_count() as usize;
+        let total_events = event_count_as_usize(self.kernel.exec_engine.borrow().event_count());
         let total_orders = orders.len();
         let positions: Vec<Position> = cache
             .positions(None, None, None, None, None)
@@ -1667,7 +1668,7 @@ impl BacktestEngine {
     fn log_post_run(&self) {
         let cache = self.kernel.cache.borrow();
         let orders = cache.orders(None, None, None, None, None);
-        let total_events = self.kernel.exec_engine.borrow().event_count() as usize;
+        let total_events = event_count_as_usize(self.kernel.exec_engine.borrow().event_count());
         let total_orders = orders.len();
         let positions: Vec<Position> = cache
             .positions(None, None, None, None, None)
@@ -1779,7 +1780,11 @@ fn format_optional_nanos(nanos: Option<UnixNanos>) -> String {
 }
 
 fn format_optional_uuid(uuid: Option<&UUID4>) -> String {
-    uuid.map_or("None".to_string(), |id| id.to_string())
+    uuid.map_or("None".to_string(), ToString::to_string)
+}
+
+fn event_count_as_usize(event_count: u64) -> usize {
+    usize::try_from(event_count).expect("execution event count fits usize")
 }
 
 fn format_optional_duration(start: Option<UnixNanos>, end: Option<UnixNanos>) -> String {

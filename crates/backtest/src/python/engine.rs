@@ -172,7 +172,11 @@ impl PyBacktestEngine {
             liquidation_cancel_open_orders = true,
         )
     )]
-    #[expect(clippy::too_many_arguments)]
+    #[expect(
+        clippy::fn_params_excessive_bools,
+        clippy::too_many_arguments,
+        reason = "method mirrors the existing Python keyword API"
+    )]
     fn py_add_venue(
         &mut self,
         venue: Venue,

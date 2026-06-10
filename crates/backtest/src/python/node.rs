@@ -413,6 +413,13 @@ impl BacktestNode {
     /// The type name determines which built-in strategy is constructed.
     /// All execution happens in Rust; Python is the configuration layer.
     #[pyo3(name = "add_native_strategy")]
+    #[cfg_attr(
+        not(feature = "examples"),
+        expect(
+            clippy::unused_self,
+            reason = "PyO3 method keeps the instance API when examples are disabled"
+        )
+    )]
     fn py_add_native_strategy(
         &mut self,
         run_config_id: &str,

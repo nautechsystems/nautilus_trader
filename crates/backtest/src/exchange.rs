@@ -114,6 +114,10 @@ impl PartialOrd for InflightCommand {
 /// - Account balance and position management
 /// - Market data processing and order book maintenance
 /// - Simulation modules for custom venue behaviors
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "exchange state mirrors the existing venue configuration flags"
+)]
 pub struct SimulatedExchange {
     /// The venue identifier.
     pub id: Venue,
@@ -170,7 +174,7 @@ impl Debug for SimulatedExchange {
         f.debug_struct(stringify!(SimulatedExchange))
             .field("id", &self.id)
             .field("account_type", &self.account_type)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -395,9 +399,11 @@ impl SimulatedExchange {
             .maybe_price_protection_points(price_protection)
             .build();
         let instrument_id = instrument.id();
+        let raw_id = u32::try_from(self.instruments.len())
+            .map_err(|e| anyhow::anyhow!("number of instruments exceeds u32::MAX: {e}"))?;
         let matching_engine = OrderMatchingEngine::new(
             instrument,
-            self.instruments.len() as u32,
+            raw_id,
             self.fill_model.clone(),
             self.fee_model.clone(),
             self.book_type,
@@ -485,12 +491,12 @@ impl SimulatedExchange {
             .and_then(|id| {
                 self.matching_engines
                     .get(&id)
-                    .map(|engine| engine.get_open_bid_orders())
+                    .map(OrderMatchingEngine::get_open_bid_orders)
             })
             .unwrap_or_else(|| {
                 self.matching_engines
                     .values()
-                    .flat_map(|engine| engine.get_open_bid_orders())
+                    .flat_map(OrderMatchingEngine::get_open_bid_orders)
                     .collect()
             })
     }
@@ -502,12 +508,12 @@ impl SimulatedExchange {
             .and_then(|id| {
                 self.matching_engines
                     .get(&id)
-                    .map(|engine| engine.get_open_ask_orders())
+                    .map(OrderMatchingEngine::get_open_ask_orders)
             })
             .unwrap_or_else(|| {
                 self.matching_engines
                     .values()
-                    .flat_map(|engine| engine.get_open_ask_orders())
+                    .flat_map(OrderMatchingEngine::get_open_ask_orders)
                     .collect()
             })
     }
@@ -543,32 +549,27 @@ impl SimulatedExchange {
             let account_state = {
                 let cache = self.cache.borrow();
                 if let Some(account) = cache.account_for_venue(&venue) {
-                    match account.balance(Some(adjustment.currency)) {
-                        Some(balance) => {
-                            let mut current_balance = *balance;
-                            current_balance.total = current_balance.total + adjustment;
-                            current_balance.free = current_balance.free + adjustment;
+                    if let Some(balance) = account.balance(Some(adjustment.currency)) {
+                        let mut current_balance = *balance;
+                        current_balance.total = current_balance.total + adjustment;
+                        current_balance.free = current_balance.free + adjustment;
 
-                            let margins = match &*account {
-                                AccountAny::Margin(margin_account) => {
-                                    margin_account.margins.clone()
-                                }
-                                _ => IndexMap::new(),
-                            };
+                        let margins = match &*account {
+                            AccountAny::Margin(margin_account) => margin_account.margins.clone(),
+                            _ => IndexMap::new(),
+                        };
 
-                            Some((
-                                vec![current_balance],
-                                margins.values().copied().collect(),
-                                self.clock.borrow().timestamp_ns(),
-                            ))
-                        }
-                        None => {
-                            log::error!(
-                                "Cannot adjust account: no balance for currency {}",
-                                adjustment.currency
-                            );
-                            None
-                        }
+                        Some((
+                            vec![current_balance],
+                            margins.values().copied().collect(),
+                            self.clock.borrow().timestamp_ns(),
+                        ))
+                    } else {
+                        log::error!(
+                            "Cannot adjust account: no balance for currency {}",
+                            adjustment.currency
+                        );
+                        None
                     }
                 } else {
                     log::error!("Cannot adjust account: no account for venue {venue}");
@@ -1351,12 +1352,11 @@ impl SimulatedExchange {
 
                 for &i in indices {
                     let p = &open_positions[i];
-                    match cache.calculate_unrealized_pnl(p) {
-                        Some(pnl) => upnl += pnl.as_f64(),
-                        None => {
-                            all_priced = false;
-                            break;
-                        }
+                    if let Some(pnl) = cache.calculate_unrealized_pnl(p) {
+                        upnl += pnl.as_f64();
+                    } else {
+                        all_priced = false;
+                        break;
                     }
                 }
                 (upnl, all_priced)

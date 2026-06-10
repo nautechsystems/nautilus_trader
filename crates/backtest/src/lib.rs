@@ -49,6 +49,7 @@
 //! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
+#![warn(clippy::pedantic)]
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
@@ -56,6 +57,10 @@
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![allow(
+    clippy::too_many_lines,
+    reason = "backtest engine, node, and Python registration flows exceed the default threshold by design"
+)]
 
 pub mod accumulator;
 pub mod config;
