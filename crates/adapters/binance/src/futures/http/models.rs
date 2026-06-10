@@ -1379,10 +1379,14 @@ impl BinanceFuturesAlgoOrder {
             &self.client_algo_id,
             BINANCE_NAUTILUS_FUTURES_BROKER_ID,
         ));
-        let venue_order_id = self.actual_order_id.as_ref().map_or_else(
-            || VenueOrderId::new(self.algo_id.to_string()),
-            |id| VenueOrderId::new(id.clone()),
-        );
+        let venue_order_id = self
+            .actual_order_id
+            .as_ref()
+            .filter(|id| !id.is_empty())
+            .map_or_else(
+                || VenueOrderId::new(self.algo_id.to_string()),
+                |id| VenueOrderId::new(id.clone()),
+            );
 
         let order_side = match self.side {
             BinanceSide::Buy => OrderSide::Buy,
@@ -2015,6 +2019,54 @@ mod tests {
         assert_eq!(
             report.client_order_id,
             Some(ClientOrderId::from("my-algo-order-1")),
+        );
+    }
+
+    #[rstest]
+    #[case(None, "123456789")]
+    #[case(Some(""), "123456789")]
+    #[case(Some("987654321"), "987654321")]
+    fn test_algo_order_to_report_selects_valid_venue_order_id(
+        #[case] actual_order_id: Option<&str>,
+        #[case] expected_venue_order_id: &str,
+    ) {
+        let order = BinanceFuturesAlgoOrder {
+            algo_id: 123456789,
+            client_algo_id: "x-aHRE4BCj-Rmy-algo-order-1".to_string(),
+            algo_type: BinanceAlgoType::Conditional,
+            order_type: BinanceFuturesOrderType::StopMarket,
+            symbol: Ustr::from("BTCUSDT"),
+            side: BinanceSide::Buy,
+            position_side: Some(BinancePositionSide::Both),
+            time_in_force: Some(BinanceTimeInForce::Gtc),
+            quantity: Some("0.001".to_string()),
+            algo_status: Some(BinanceAlgoStatus::New),
+            trigger_price: Some("45000.00".to_string()),
+            price: None,
+            working_type: Some(BinanceWorkingType::MarkPrice),
+            close_position: Some(false),
+            price_protect: None,
+            reduce_only: Some(false),
+            activate_price: None,
+            callback_rate: None,
+            create_time: Some(1_625_474_304_765),
+            update_time: Some(1_625_474_304_765),
+            trigger_time: None,
+            actual_order_id: actual_order_id.map(str::to_string),
+            executed_qty: None,
+            avg_price: None,
+        };
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = order
+            .to_order_status_report(account_id, instrument_id, 3, ts_init)
+            .unwrap();
+
+        assert_eq!(
+            report.venue_order_id,
+            VenueOrderId::new(expected_venue_order_id)
         );
     }
 
