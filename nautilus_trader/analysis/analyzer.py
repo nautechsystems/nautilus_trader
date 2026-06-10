@@ -517,6 +517,49 @@ class PortfolioAnalyzer:
         """
         return self._calculate_returns_stats(self._portfolio_returns)
 
+    def get_performance_stats_returns_vs_benchmark(
+        self,
+        benchmark_returns: pd.Series,
+    ) -> dict[str, Any]:
+        """
+        Return the benchmark-relative performance statistics for the primary returns.
+
+        Only registered benchmark-relative statistics (those exposing
+        ``calculate_from_returns_with_benchmark``) contribute values; all other
+        statistics are skipped. The primary `returns` series is used (portfolio
+        returns when available, otherwise position returns).
+
+        Parameters
+        ----------
+        benchmark_returns : pd.Series
+            The benchmark returns series for comparison.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        """
+        output: dict[str, Any] = {}
+
+        returns_dict = self._returns_to_dict(self._returns)
+        benchmark_dict = self._returns_to_dict(benchmark_returns)
+
+        for name, stat in self._statistics.items():
+            calculate = getattr(stat, "calculate_from_returns_with_benchmark", None)
+            if calculate is None:
+                continue  # Not a benchmark-relative statistic
+
+            value = calculate(returns_dict, benchmark_dict)
+            if value is None:
+                continue
+
+            if not isinstance(value, int | float | str | bool):
+                value = str(value)
+
+            output[name] = value
+
+        return output
+
     def get_performance_stats_general(self) -> dict[str, Any]:
         """
         Return the `general` performance statistics.
@@ -709,6 +752,15 @@ class PortfolioAnalyzer:
             output[name] = value
 
         return output
+
+    def _returns_to_dict(self, returns: pd.Series) -> dict[int, float]:
+        returns_dict: dict[int, float] = {}
+
+        if not returns.empty:
+            for timestamp, value in returns.items():
+                returns_dict[timestamp.value] = float(value)
+
+        return returns_dict
 
     def _format_stats(self, stats: dict[str, Any]) -> list[str]:
         max_length: int = self._get_max_length_name()

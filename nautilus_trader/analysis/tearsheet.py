@@ -340,6 +340,15 @@ def create_tearsheet(  # noqa: C901
         currency=currency,
     )
 
+    # Include benchmark-relative statistics (Beta, Alpha, etc.) when a benchmark
+    # is provided, computed from the same primary returns series that backs
+    # `stats_returns` so the two stat groups stay consistent.
+    if benchmark_returns is not None and not benchmark_returns.empty:
+        stats_returns = {
+            **stats_returns,
+            **analyzer.get_performance_stats_returns_vs_benchmark(benchmark_returns),
+        }
+
     # Build title with strategy name(s) and run time
     if title == "NautilusTrader Backtest Results":
         strategies = engine.trader.strategy_ids()

@@ -546,6 +546,30 @@ impl PortfolioAnalyzer {
         self.calculate_returns_stats(self.portfolio_returns())
     }
 
+    /// Gets all benchmark-relative return statistics for the primary returns.
+    ///
+    /// This is stateless: the `benchmark` series is supplied by the caller rather
+    /// than stored on the analyzer. Only statistics that implement
+    /// [`PortfolioStatistic::calculate_from_returns_with_benchmark`] (the benchmark-relative
+    /// statistics) contribute values; all others return `None` and are skipped.
+    #[must_use]
+    pub fn get_performance_stats_returns_vs_benchmark(
+        &self,
+        benchmark: &Returns,
+    ) -> AHashMap<String, f64> {
+        let mut output = AHashMap::new();
+
+        for (name, stat) in &self.statistics {
+            if let Some(value) =
+                stat.calculate_from_returns_with_benchmark(self.returns(), benchmark)
+            {
+                output.insert(name.clone(), value);
+            }
+        }
+
+        output
+    }
+
     /// Gets general portfolio statistics.
     #[must_use]
     pub fn get_performance_stats_general(&self) -> AHashMap<String, f64> {

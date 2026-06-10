@@ -16,6 +16,7 @@ Released on TBD (UTC).
 - Added negative price support for `Commodity` instruments in risk checks (#2330), thanks for reporting @fabz1
 - Added `add_native_exec_algorithm` and `ExecutionAlgorithmConfig` bindings to the Python v2 backtest engine
 - Added `Order::to_order_status_report` conversion in Rust
+- Added benchmark-relative portfolio statistics (Beta, Alpha, Information Ratio, Tracking Error, Treynor) (#4229), thanks @mahimn01
 
 ### Breaking Changes
 - Changed plug-in loader to reject build mismatches by default; opt out with `set_allow_build_mismatch` (Rust)
