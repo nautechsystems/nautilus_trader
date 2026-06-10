@@ -33,7 +33,6 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
 - **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs to `master`, pushes to
   `nightly`, and manual dispatch.
-- **copilot-setup-steps.yml**: environment setup for GitHub Copilot coding agent.
 - **coverage.yml**: coverage report generation, currently paused and runs only on `workflow_dispatch`.
 - **docker.yml**: builds and pushes multi-platform Docker images (`nautilus_trader`, `jupyterlab`)
   using Buildx and native ARM runners.
