@@ -245,6 +245,7 @@ class InteractiveBrokersClient(
                         f"Attempt {self._connection_attempts}: attempting to reconnect in {reconnect_delay} seconds...",
                     )
                     await asyncio.sleep(reconnect_delay)
+
                     if self._is_shutting_down or self.state in _SHUTDOWN_STATES:
                         break
 
