@@ -167,7 +167,7 @@ async fn main() -> anyhow::Result<()> {
                         );
                     }
                     BinanceSpotWsMessage::Error(err) => {
-                        log::error!("WebSocket error: code={}, msg={}", err.code, err.msg);
+                        log::warn!("WebSocket error: code={}, msg={}", err.code, err.msg);
                     }
                     BinanceSpotWsMessage::Reconnected => {
                         log::warn!("WebSocket reconnected");

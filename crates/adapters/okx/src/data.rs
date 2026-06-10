@@ -62,6 +62,7 @@ use crate::{
     common::{
         consts::{
             OKX_VENUE, OKX_WS_HEARTBEAT_SECS, resolve_book_depth, resolve_instrument_families,
+            should_retry_error_code,
         },
         enums::{
             OKXBookAction, OKXBookChannel, OKXContractType, OKXGreeksType, OKXInstrumentStatus,
@@ -600,7 +601,11 @@ impl OKXDataClient {
                 log::debug!("Ignoring execution message on data client");
             }
             OKXWsMessage::Error(e) => {
-                log::error!("OKX websocket error: {e:?}");
+                if should_retry_error_code(&e.code) {
+                    log::warn!("OKX websocket error: {e:?}");
+                } else {
+                    log::error!("OKX websocket error: {e:?}");
+                }
             }
             OKXWsMessage::Reconnected => {
                 log::info!("Websocket reconnected");

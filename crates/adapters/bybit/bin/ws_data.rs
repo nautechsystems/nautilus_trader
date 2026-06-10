@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         );
                     }
                     BybitWsMessage::Error(err) => {
-                        log::error!("WebSocket error: code={}, message={}", err.code, err.message);
+                        log::warn!("WebSocket error: code={}, message={}", err.code, err.message);
                     }
                     BybitWsMessage::Reconnected => {
                         log::warn!("WebSocket reconnected");

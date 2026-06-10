@@ -299,7 +299,7 @@ fn dispatch_ws_message(
             log::info!("WebSocket reconnected");
         }
         NautilusWsMessage::Error(e) => {
-            log::error!("WebSocket error: {e}");
+            log::warn!("WebSocket error: {e}");
         }
         NautilusWsMessage::UserOrder(_) => {
             // User-channel execution reports are consumed by the execution client

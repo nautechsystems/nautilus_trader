@@ -1056,7 +1056,7 @@ fn dispatch_ws_message(
             log::debug!("Open orders response: {} orders", resp.res.len());
         }
         AxOrdersWsMessage::Error(err) => {
-            log::error!("WebSocket error: {}", err.message);
+            log::warn!("WebSocket error: {}", err.message);
         }
         AxOrdersWsMessage::Reconnected => {
             log::info!("WebSocket reconnected");

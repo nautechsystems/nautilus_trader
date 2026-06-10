@@ -287,7 +287,9 @@ class BinanceWebSocketClient:
         Handle reconnection for a specific client.
         """
         if client_id not in self._client_streams or not self._client_streams[client_id]:
-            self._log.error(f"ws-client {client_id}: Cannot reconnect: no streams for this client")
+            self._log.warning(
+                f"ws-client {client_id}: Cannot reconnect: no streams for this client",
+            )
             return
 
         self._log.warning(f"ws-client {client_id}: Reconnected to {self._base_url}")

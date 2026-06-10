@@ -1273,7 +1273,7 @@ fn handle_md_message(
         }
         AxMdMessage::SubscriptionResponse(_) => {}
         AxMdMessage::Error(error) => {
-            log::error!("WebSocket error: {}", error.message);
+            log::warn!("WebSocket error: {}", error.message);
         }
     }
 }

@@ -782,7 +782,7 @@ impl DydxWebSocketClient {
                                 });
                             }
                             DydxWsOutputMessage::Error(err) => {
-                                log::error!("dYdX WebSocket error: {err}");
+                                log::warn!("dYdX WebSocket error: {err}");
                             }
                             DydxWsOutputMessage::Reconnected => {
                                 log::info!("dYdX WebSocket reconnected");

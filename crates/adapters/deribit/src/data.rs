@@ -252,7 +252,7 @@ impl DeribitDataClient {
                 }
             }
             NautilusWsMessage::Error(e) => {
-                log::error!("WebSocket error: {e:?}");
+                log::warn!("WebSocket error: {e:?}");
             }
             NautilusWsMessage::Raw(value) => {
                 log::debug!("Unhandled raw message: {value}");

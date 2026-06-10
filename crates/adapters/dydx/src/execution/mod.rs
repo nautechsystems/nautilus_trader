@@ -771,7 +771,7 @@ impl DydxExecutionClient {
                         block_time_monitor.record_block(height, time);
                     }
                     DydxWsOutputMessage::Error(err) => {
-                        log::error!("WebSocket error: {err:?}");
+                        log::warn!("WebSocket error: {err:?}");
                     }
                     DydxWsOutputMessage::Reconnected => {
                         log::info!("WebSocket reconnected");

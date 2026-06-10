@@ -255,7 +255,7 @@ pub(crate) fn dispatch_ws_message(
             }
         }
         BinanceFuturesWsStreamsMessage::Error(err) => {
-            log::error!(
+            log::warn!(
                 "User data stream WebSocket error: code={}, msg={}",
                 err.code,
                 err.msg

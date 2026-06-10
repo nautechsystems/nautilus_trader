@@ -1647,7 +1647,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
     def _handle_msg(self, msg: Any) -> None:
         if isinstance(msg, nautilus_pyo3.BybitWebSocketError):
-            self._log.error(f"WebSocket error: {msg}")
+            self._log.warning(f"WebSocket error: {msg}")
         elif isinstance(msg, nautilus_pyo3.AccountState):
             self._handle_account_state(msg)
         elif isinstance(msg, nautilus_pyo3.OrderRejected):

@@ -602,7 +602,7 @@ impl FeedHandler {
                 {
                     log_integrator_not_approved();
                 } else {
-                    log::error!("Lighter WebSocket error frame: {value}");
+                    log::warn!("Lighter WebSocket error frame: {value}");
                 }
                 (
                     true,
@@ -618,7 +618,7 @@ impl FeedHandler {
                     if nested_code == Some(LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED) {
                         log_integrator_not_approved();
                     } else {
-                        log::error!("Lighter WebSocket error frame: {value}");
+                        log::warn!("Lighter WebSocket error frame: {value}");
                     }
                     return (
                         true,

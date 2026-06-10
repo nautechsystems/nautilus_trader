@@ -1763,7 +1763,7 @@ impl HyperliquidExecutionClient {
                         // (resubscribe_all) and never forwarded here
                         NautilusWsMessage::Reconnected => {}
                         NautilusWsMessage::Error(e) => {
-                            log::error!("WebSocket error: {e}");
+                            log::warn!("WebSocket error: {e}");
                         }
                         // Handled by data client
                         NautilusWsMessage::Trades(_)

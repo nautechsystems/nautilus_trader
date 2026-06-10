@@ -457,7 +457,11 @@ impl OKXWsFeedHandler {
                 match serde_json::from_str(&text) {
                     Ok(ws_event) => match &ws_event {
                         OKXWsFrame::Error { code, msg } => {
-                            log::error!("WebSocket error: {code} - {msg}");
+                            if should_retry_error_code(code) {
+                                log::warn!("WebSocket error: {code} - {msg}");
+                            } else {
+                                log::error!("WebSocket error: {code} - {msg}");
+                            }
                             Some(ws_event)
                         }
                         OKXWsFrame::Login {

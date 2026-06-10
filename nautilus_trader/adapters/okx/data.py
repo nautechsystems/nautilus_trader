@@ -751,7 +751,7 @@ class OKXDataClient(LiveMarketDataClient):
 
     def _handle_msg(self, msg: Any) -> None:
         if isinstance(msg, nautilus_pyo3.OKXWebSocketError):
-            self._log.error(repr(msg))
+            self._log.warning(repr(msg))
             return
 
         try:

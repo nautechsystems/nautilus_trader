@@ -677,7 +677,7 @@ impl BinanceFuturesDataClient {
             | BinanceFuturesWsStreamsMessage::AccountConfigUpdate(_)
             | BinanceFuturesWsStreamsMessage::ListenKeyExpired => {}
             BinanceFuturesWsStreamsMessage::Error(e) => {
-                log::error!(
+                log::warn!(
                     "Binance Futures WebSocket error: code={}, msg={}",
                     e.code,
                     e.msg

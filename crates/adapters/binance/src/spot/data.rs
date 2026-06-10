@@ -397,7 +397,7 @@ impl BinanceSpotDataClient {
                 log::debug!("Unhandled JSON message: {value:?}");
             }
             BinanceSpotWsMessage::Error(e) => {
-                log::error!("Binance WebSocket error: code={}, msg={}", e.code, e.msg);
+                log::warn!("Binance WebSocket error: code={}, msg={}", e.code, e.msg);
             }
             BinanceSpotWsMessage::Reconnected => {
                 log::info!("WebSocket reconnected, rebuilding order book snapshots");
@@ -497,7 +497,7 @@ impl BinanceSpotDataClient {
                 log::debug!("Unhandled Spot JSON message: {value:?}");
             }
             BinanceSpotPublicWsMessage::Error(e) => {
-                log::error!("Spot JSON WebSocket error: code={}, msg={}", e.code, e.msg);
+                log::warn!("Spot JSON WebSocket error: code={}, msg={}", e.code, e.msg);
             }
             BinanceSpotPublicWsMessage::Reconnected => {
                 log::info!("Spot JSON WebSocket reconnected, rebuilding order book snapshots");

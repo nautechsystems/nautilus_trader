@@ -297,7 +297,7 @@ impl DeribitWebSocketClient {
                             call_python_threadsafe(py, &call_soon, &callback, py_obj);
                         }),
                         NautilusWsMessage::Error(err) => {
-                            log::error!("WebSocket error: {err}");
+                            log::warn!("WebSocket error: {err}");
                         }
                         NautilusWsMessage::Reconnected => {
                             log::info!("WebSocket reconnected");

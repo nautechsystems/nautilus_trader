@@ -602,7 +602,7 @@ impl PyAxOrdersWebSocketClient {
                             );
                         }
                         AxOrdersWsMessage::Error(err) => {
-                            log::error!(
+                            log::warn!(
                                 "AX orders WebSocket error: code={:?}, message={}, rid={:?}",
                                 err.code,
                                 err.message,

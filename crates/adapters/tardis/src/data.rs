@@ -418,7 +418,7 @@ impl TardisDataClient {
                 }
                 Some(Ok(_)) => {}
                 Some(Err(e)) => {
-                    log::error!("WebSocket error: {e}");
+                    log::warn!("WebSocket error: {e}");
                     return true;
                 }
                 None => {

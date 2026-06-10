@@ -408,7 +408,7 @@ class PolymarketWebSocketClient:
 
     def _handle_reconnect(self, client_id: int) -> None:
         if client_id not in self._client_subscriptions or not self._client_subscriptions[client_id]:
-            self._log.error(f"ws-client {client_id}: Cannot reconnect: no subscriptions")
+            self._log.warning(f"ws-client {client_id}: Cannot reconnect: no subscriptions")
             return
 
         self._log.warning(f"ws-client {client_id}: Reconnected to {self._ws_url}")
