@@ -39,7 +39,7 @@ use nautilus_model::{
     position::Position,
     types::{AccountBalance, Currency, MarginBalance, Money, Price},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 
 use crate::{config::PortfolioConfig, manager::AccountsManager};
 
@@ -1103,7 +1103,7 @@ impl Portfolio {
             cache.positions_open(None, Some(instrument_id), None, account_id, None);
 
         if positions_open.is_empty() {
-            return Some(Money::new(0.0, instrument.settlement_currency()));
+            return Some(Money::zero(instrument.settlement_currency()));
         }
 
         let mut net_exposure = Decimal::ZERO;
@@ -1545,7 +1545,7 @@ impl Portfolio {
             cache.positions_open(None, Some(instrument_id), None, account_id, None);
 
         if positions_open.is_empty() {
-            return Some(Money::new(0.0, currency));
+            return Some(Money::zero(currency));
         }
 
         let mut total_pnl = Decimal::ZERO;
@@ -1856,7 +1856,7 @@ impl Portfolio {
                                     base_currency
                                 );
                                 self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                                return Some(Money::new(0.0, currency));
+                                return Some(Money::zero(currency));
                             };
 
                             pnl = (pnl * xrate).round_dp(u32::from(currency.precision));
@@ -1894,7 +1894,7 @@ impl Portfolio {
                                     base_currency
                                 );
                                 self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                                return Some(Money::new(0.0, currency));
+                                return Some(Money::zero(currency));
                             }
                         }
 
@@ -1924,7 +1924,7 @@ impl Portfolio {
                                 base_currency
                             );
                             self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                            return Some(Money::new(0.0, currency));
+                            return Some(Money::zero(currency));
                         };
 
                         pnl = (pnl * xrate).round_dp(u32::from(currency.precision));
@@ -1964,7 +1964,7 @@ impl Portfolio {
                                 base_currency
                             );
                             self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                            return Some(Money::new(0.0, currency));
+                            return Some(Money::zero(currency));
                         }
                     }
 
@@ -1993,7 +1993,7 @@ impl Portfolio {
                                 base_currency
                             );
                             self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                            return Some(Money::new(0.0, currency));
+                            return Some(Money::zero(currency));
                         };
 
                         pnl = (pnl * xrate).round_dp(u32::from(currency.precision));
@@ -2008,7 +2008,7 @@ impl Portfolio {
             Ok(money) => Some(money),
             Err(e) => {
                 log::error!("Cannot calculate realized PnL: {e}");
-                Some(Money::new(0.0, currency))
+                Some(Money::zero(currency))
             }
         }
     }
@@ -2641,17 +2641,18 @@ fn record_closed_position_pnl(
     };
 
     let amount = (realized_pnl.as_decimal() * xrate).round_dp(u32::from(base_currency.precision));
-    let Some(amount) = amount.to_f64() else {
-        log::warn!(
-            "Cannot record account-currency realized PnL for {position_id}: converted amount is outside f64 range"
-        );
-        return;
+    let amount = match Money::from_decimal(amount, base_currency) {
+        Ok(amount) => amount,
+        Err(e) => {
+            log::warn!("Cannot record account-currency realized PnL for {position_id}: {e}");
+            return;
+        }
     };
 
     inner
         .borrow_mut()
         .analyzer
-        .record_trade(&position.id, &Money::new(amount, base_currency));
+        .record_trade(&position.id, &amount);
 }
 
 fn update_account(
