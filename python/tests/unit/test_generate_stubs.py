@@ -375,6 +375,51 @@ impl UUID4 {
     assert fixups["UUID4"].staticmethods == {"_safe_constructor"}
 
 
+def test_collect_rust_class_fixups_handles_multiline_attributes_before_impl(tmp_path):
+    # Arrange
+    rust_file = tmp_path / "crates" / "trading" / "src" / "python" / "sample.rs"
+    rust_file.parent.mkdir(parents=True)
+    rust_file.write_text(
+        """
+#[pyo3::pyclass(name = "Strategy")]
+struct PyStrategy {}
+
+#[pyo3::pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[expect(
+    clippy::large_types_passed_by_value,
+    clippy::unused_self,
+    reason = "default PyO3 callbacks must remain instance methods"
+)]
+impl PyStrategy {
+    #[getter]
+    #[pyo3(name = "trader_id")]
+    fn py_trader_id(&self) -> Option<TraderId> {
+        todo!()
+    }
+}
+""".strip(),
+    )
+
+    # Act
+    fixups = generate_stubs.collect_rust_class_fixups(tmp_path)
+    updated = generate_stubs.apply_rust_class_fixups(
+        """
+@typing.final
+class PyStrategy:
+    def trader_id(self) -> model.TraderId | None: ...
+""".strip(),
+        fixups,
+    )
+    updated = generate_stubs.rename_stub_classes(updated, fixups)
+
+    # Assert
+    assert fixups["PyStrategy"].python_name == "Strategy"
+    assert fixups["PyStrategy"].getters == {"trader_id"}
+    assert "class Strategy:" in updated
+    assert "    @property\n    def trader_id(self) -> model.TraderId | None: ..." in updated
+
+
 def test_apply_rust_class_fixups_restores_properties_and_staticmethods():
     # Arrange
     content = """

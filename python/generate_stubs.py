@@ -1007,7 +1007,7 @@ def _collect_pymethod_fixups(source: str, fixups: dict[str, ClassMethodFixup]) -
 
         j = i + 1
         while j < len(lines) and lines[j].strip().startswith("#["):
-            j += 1
+            _, j = consume_rust_attribute(lines, j)
 
         if j >= len(lines):
             break
