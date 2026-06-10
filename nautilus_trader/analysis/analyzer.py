@@ -520,19 +520,25 @@ class PortfolioAnalyzer:
     def get_performance_stats_returns_vs_benchmark(
         self,
         benchmark_returns: pd.Series,
+        returns: pd.Series | None = None,
     ) -> dict[str, Any]:
         """
-        Return the benchmark-relative performance statistics for the primary returns.
+        Return the benchmark-relative performance statistics.
 
         Only registered benchmark-relative statistics (those exposing
         ``calculate_from_returns_with_benchmark``) contribute values; all other
-        statistics are skipped. The primary `returns` series is used (portfolio
-        returns when available, otherwise position returns).
+        statistics are skipped.
 
         Parameters
         ----------
         benchmark_returns : pd.Series
             The benchmark returns series for comparison.
+        returns : pd.Series, optional
+            The strategy returns series to evaluate against the benchmark. If
+            ``None``, the primary `returns` series is used (portfolio returns
+            when available, otherwise position returns). Callers that resolve a
+            specific series (e.g. the tearsheet's equity-curve series) should
+            pass it explicitly so the metrics match that series.
 
         Returns
         -------
@@ -541,7 +547,8 @@ class PortfolioAnalyzer:
         """
         output: dict[str, Any] = {}
 
-        returns_dict = self._returns_to_dict(self._returns)
+        strategy_returns = self._returns if returns is None else returns
+        returns_dict = self._returns_to_dict(strategy_returns)
         benchmark_dict = self._returns_to_dict(benchmark_returns)
 
         for name, stat in self._statistics.items():
@@ -733,13 +740,7 @@ class PortfolioAnalyzer:
 
         for name, stat in self._statistics.items():
             if _is_pyo3_statistic(stat):
-                returns_dict: dict[int, float] = {}
-
-                if not returns.empty:
-                    for timestamp, value in returns.items():
-                        returns_dict[timestamp.value] = float(value)
-
-                value = stat.calculate_from_returns(returns_dict)
+                value = stat.calculate_from_returns(self._returns_to_dict(returns))
             else:
                 value = stat.calculate_from_returns(returns)
 

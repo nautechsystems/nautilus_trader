@@ -341,12 +341,15 @@ def create_tearsheet(  # noqa: C901
     )
 
     # Include benchmark-relative statistics (Beta, Alpha, etc.) when a benchmark
-    # is provided, computed from the same primary returns series that backs
-    # `stats_returns` so the two stat groups stay consistent.
+    # is provided, computed from the same resolved `returns` series used for the
+    # equity curve so the metrics and the plotted series stay consistent.
     if benchmark_returns is not None and not benchmark_returns.empty:
         stats_returns = {
             **stats_returns,
-            **analyzer.get_performance_stats_returns_vs_benchmark(benchmark_returns),
+            **analyzer.get_performance_stats_returns_vs_benchmark(
+                benchmark_returns,
+                returns=returns,
+            ),
         }
 
     # Build title with strategy name(s) and run time
