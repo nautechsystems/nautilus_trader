@@ -165,6 +165,7 @@ def test_refine_vol_and_greeks_matches_input_price():
         ("fixed", ([Price.from_str("50000"), Price.from_str("55000")],)),
         ("atm_relative", (2, 1)),
         ("atm_percent", (0.1,)),
+        ("delta", (0.25, 0.05)),
     ],
 )
 def test_strike_range_factories(factory_name, args):
@@ -172,3 +173,9 @@ def test_strike_range_factories(factory_name, args):
     strike_range = factory(*args)
 
     assert isinstance(strike_range, StrikeRange)
+
+
+def test_strike_range_delta_kind():
+    strike_range = StrikeRange.delta(0.25, 0.05)
+
+    assert strike_range.kind == "Delta"
