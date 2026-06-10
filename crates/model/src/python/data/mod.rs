@@ -634,7 +634,7 @@ fn py_decode_record_batch_to_custom_data(
 ///
 /// # Arguments
 ///
-/// * `data_class` - The custom data class (e.g. `MarketTickPython` or `module.MarketTickData`)
+/// - `data_class` - The custom data class (e.g. `MarketTickPython` or `module.MarketTickData`)
 ///
 /// # Errors
 ///

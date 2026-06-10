@@ -4433,8 +4433,8 @@ pub fn extract_sql_safe_filename(file_path: &str) -> String {
 ///
 /// # Arguments
 ///
-/// * `base_path` - The base directory path
-/// * `components` - Path components to join
+/// - `base_path` - The base directory path
+/// - `components` - Path components to join
 ///
 /// # Returns
 ///
@@ -4463,8 +4463,8 @@ pub fn make_local_path<P: AsRef<Path>>(base_path: P, components: &[&str]) -> Pat
 ///
 /// # Arguments
 ///
-/// * `base_path` - The base path (can be empty)
-/// * `components` - Path components to join
+/// - `base_path` - The base path (can be empty)
+/// - `components` - Path components to join
 ///
 /// # Returns
 ///
@@ -4513,8 +4513,8 @@ pub fn make_object_store_path(base_path: &str, components: &[&str]) -> String {
 ///
 /// # Arguments
 ///
-/// * `base_path` - The base path (can be empty)
-/// * `components` - Path components to join (owned strings)
+/// - `base_path` - The base path (can be empty)
+/// - `components` - Path components to join (owned strings)
 ///
 /// # Returns
 ///
@@ -4556,7 +4556,7 @@ pub fn make_object_store_path_owned(base_path: &str, components: Vec<String>) ->
 ///
 /// # Arguments
 ///
-/// * `local_path` - The local `PathBuf` to convert
+/// - `local_path` - The local `PathBuf` to convert
 ///
 /// # Returns
 ///
@@ -4583,7 +4583,7 @@ pub fn local_to_object_store_path(local_path: &Path) -> String {
 ///
 /// # Arguments
 ///
-/// * `path_str` - The path string to parse
+/// - `path_str` - The path string to parse
 ///
 /// # Returns
 ///

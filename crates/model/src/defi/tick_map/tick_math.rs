@@ -32,7 +32,7 @@ pub const MAX_SQRT_RATIO: U160 = U160::from_limbs([
 ///
 /// ## Arguments
 ///
-/// * `tick`: the tick for which to compute the sqrt ratio
+/// - `tick`: the tick for which to compute the sqrt ratio
 ///
 /// ## Returns
 ///

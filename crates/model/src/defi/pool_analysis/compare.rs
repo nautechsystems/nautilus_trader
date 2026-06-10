@@ -52,8 +52,8 @@ impl PoolProfilerComparison {
 ///
 /// # Arguments
 ///
-/// * `profiler` - The pool profiler whose state should be compared
-/// * `snapshot` - The on-chain snapshot to compare against
+/// - `profiler` - The pool profiler whose state should be compared
+/// - `snapshot` - The on-chain snapshot to compare against
 ///
 /// # Panics
 ///

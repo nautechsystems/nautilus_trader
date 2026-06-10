@@ -19,13 +19,13 @@
 //! `docs/developer_guide/adapters.md` lines 1232-1296 plus the GH-3827
 //! cancel-replace handling:
 //!
-//! * Tracked orders emit typed [`OrderEventAny`] events (`OrderAccepted`,
+//! - Tracked orders emit typed [`OrderEventAny`] events (`OrderAccepted`,
 //!   `OrderCanceled`, `OrderUpdated`, `OrderFilled`, `OrderExpired`,
 //!   `OrderRejected`, `OrderTriggered`).
-//! * External / untracked orders fall through to
+//! - External / untracked orders fall through to
 //!   [`DispatchOutcome::External`] so the caller can forward the raw
 //!   [`OrderStatusReport`] / [`FillReport`].
-//! * Stale / race legs (replay, cancel-before-accept, cancel leg of a
+//! - Stale / race legs (replay, cancel-before-accept, cancel leg of a
 //!   cancel-replace) return [`DispatchOutcome::Skip`].
 
 use std::sync::Arc;

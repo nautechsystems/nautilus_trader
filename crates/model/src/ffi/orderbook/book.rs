@@ -171,10 +171,10 @@ pub extern "C" fn orderbook_apply_deltas(book: &mut OrderBook_API, deltas: &Orde
 ///
 /// # Parameters
 ///
-/// * `book` - The order book to convert.
-/// * `sequence` - The message sequence number for the snapshot.
-/// * `ts_event` - UNIX timestamp (nanoseconds) when the book event occurred.
-/// * `ts_init` - UNIX timestamp (nanoseconds) when the instance was created.
+/// - `book` - The order book to convert.
+/// - `sequence` - The message sequence number for the snapshot.
+/// - `ts_event` - UNIX timestamp (nanoseconds) when the book event occurred.
+/// - `ts_init` - UNIX timestamp (nanoseconds) when the instance was created.
 ///
 /// # Returns
 ///

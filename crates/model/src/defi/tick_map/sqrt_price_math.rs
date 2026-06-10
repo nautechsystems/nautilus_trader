@@ -354,10 +354,10 @@ pub fn decode_sqrt_price_x96_to_price(sqrt_price_x96: U160) -> anyhow::Result<Pr
 /// Converts a sqrt price X96 to a human-readable spot price adjusted for token decimals.
 ///
 /// # Arguments
-/// * `sqrt_price_x96` - The sqrt price in X96 format from the pool
-/// * `token0_decimals` - Number of decimals for token0
-/// * `token1_decimals` - Number of decimals for token1
-/// * `invert` - If true, returns token0/token1; if false, returns token1/token0
+/// - `sqrt_price_x96` - The sqrt price in X96 format from the pool
+/// - `token0_decimals` - Number of decimals for token0
+/// - `token1_decimals` - Number of decimals for token1
+/// - `invert` - If true, returns token0/token1; if false, returns token1/token0
 ///
 /// # Pool Price Format
 /// Uniswap V3 pools always store price as **token1/token0** where tokens are sorted by address.

@@ -60,12 +60,12 @@ use crate::{
 ///
 /// # Arguments
 ///
-/// * `ws_order` - The WebSocket order message to parse
-/// * `instrument_cache` - Cache for looking up instruments by clob_pair_id
-/// * `order_contexts` - Map of dYdX u32 client IDs to order contexts
-/// * `encoder` - Bidirectional encoder for ClientOrderId ↔ u32 mapping
-/// * `account_id` - Account ID for the report
-/// * `ts_init` - Timestamp for initialization
+/// - `ws_order` - The WebSocket order message to parse
+/// - `instrument_cache` - Cache for looking up instruments by clob_pair_id
+/// - `order_contexts` - Map of dYdX u32 client IDs to order contexts
+/// - `encoder` - Bidirectional encoder for ClientOrderId ↔ u32 mapping
+/// - `account_id` - Account ID for the report
+/// - `ts_init` - Timestamp for initialization
 ///
 /// # Errors
 ///

@@ -18,11 +18,11 @@
 //! The script mirrors the responsibilities of the build script in the `core` crate but is scoped
 //! to the `common` module.  In summary it:
 //!
-//! * Emits `cargo:rerun-if-*` directives so that Cargo knows when to re-execute the script.
-//! * Generates C and Cython header files with [`cbindgen`](https://github.com/mozilla/cbindgen)
+//! - Emits `cargo:rerun-if-*` directives so that Cargo knows when to re-execute the script.
+//! - Generates C and Cython header files with [`cbindgen`](https://github.com/mozilla/cbindgen)
 //!   whenever the `ffi` feature flag is enabled, outputting them into the Python package so that
 //!   the Python wheels have all the required artefacts.
-//! * Skips all generation work when it detects the docs.rs build environment because external
+//! - Skips all generation work when it detects the docs.rs build environment because external
 //!   file writes are disallowed there.
 
 #[cfg(feature = "ffi")]

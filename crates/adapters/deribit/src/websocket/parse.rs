@@ -934,10 +934,10 @@ pub fn parse_user_trade_msg(
 /// Parses a Deribit position into a Nautilus `PositionStatusReport`.
 ///
 /// # Arguments
-/// * `position` - The Deribit position data from `/private/get_positions`
-/// * `instrument` - The corresponding Nautilus instrument
-/// * `account_id` - The account ID for the report
-/// * `ts_init` - Initialization timestamp
+/// - `position` - The Deribit position data from `/private/get_positions`
+/// - `instrument` - The corresponding Nautilus instrument
+/// - `account_id` - The account ID for the report
+/// - `ts_init` - Initialization timestamp
 ///
 /// # Returns
 /// A `PositionStatusReport` representing the current position state.
@@ -1156,9 +1156,9 @@ pub fn parse_order_updated(
 /// It's used by the handler to determine which event to emit for a given order update.
 ///
 /// # Arguments
-/// * `order_state` - The Deribit order state string ("open", "filled", "cancelled", etc.)
-/// * `is_new_order` - Whether this is the first time we're seeing this order
-/// * `was_amended` - Whether this update is due to an amendment (edit) operation
+/// - `order_state` - The Deribit order state string ("open", "filled", "cancelled", etc.)
+/// - `is_new_order` - Whether this is the first time we're seeing this order
+/// - `was_amended` - Whether this update is due to an amendment (edit) operation
 ///
 /// # Returns
 /// The type of event that should be emitted, or `None` if no event should be emitted.

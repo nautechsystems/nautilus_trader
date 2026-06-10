@@ -108,7 +108,7 @@ pub static DERIBIT_RETRY_ERROR_CODES: LazyLock<AHashSet<i64>> = LazyLock::new(||
 ///
 /// # Arguments
 ///
-/// * `error_code` - The Deribit error code from the JSON-RPC error response
+/// - `error_code` - The Deribit error code from the JSON-RPC error response
 ///
 /// # Returns
 ///
