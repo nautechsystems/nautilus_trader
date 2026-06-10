@@ -1,0 +1,12 @@
+{
+  "topic": "equity_prices",
+  "type": "update",
+  "timestamp": 1711382400000,
+  "payload": {
+    "symbol": "aapl",
+    "value": 198.45,
+    "full_accuracy_value": "198.4523",
+    "timestamp": 1711382400000,
+    "received_at": 1711382400005
+  }
+}

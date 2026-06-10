@@ -6548,6 +6548,7 @@ dependencies = [
  "nautilus-live",
  "nautilus-model",
  "nautilus-network",
+ "nautilus-persistence-macros",
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",

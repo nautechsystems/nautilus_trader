@@ -1,0 +1,11 @@
+{
+  "topic": "crypto_prices",
+  "type": "update",
+  "timestamp": 1780730269142,
+  "payload": {
+    "symbol": "btcusdt",
+    "timestamp": 1780730269000,
+    "value": 61035.86,
+    "full_accuracy_value": "61035.86000000"
+  }
+}

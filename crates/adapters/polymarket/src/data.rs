@@ -43,9 +43,9 @@ use nautilus_common::{
         data::{
             BookResponse, CustomDataResponse, InstrumentResponse, InstrumentsResponse,
             RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
-            RequestTrades, SubscribeBookDeltas, SubscribeInstruments, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBookDeltas, UnsubscribeQuotes,
-            UnsubscribeTrades,
+            RequestTrades, SubscribeBookDeltas, SubscribeCustomData, SubscribeInstruments,
+            SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBookDeltas,
+            UnsubscribeCustomData, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
     msgbus::{self, TypedHandler},
@@ -71,6 +71,7 @@ use ustr::Ustr;
 use crate::{
     common::consts::{GAMMA_CONDITION_IDS_BATCH_SIZE, POLYMARKET_VENUE},
     config::PolymarketDataClientConfig,
+    data_types::register_polymarket_custom_data,
     filters::InstrumentFilter,
     http::{
         clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
@@ -86,6 +87,7 @@ use crate::{
         pause_resolve_watch_entries, request_params_has_explicit_condition_selector,
         update_resolve_watchlist_from_position_event,
     },
+    rtds::{PolymarketRtdsFeed, is_supported_rtds_data_type},
     websocket::{
         client::PolymarketWebSocketClient,
         messages::{MarketWsMessage, PolymarketNewMarket, PolymarketQuotes, PolymarketWsMessage},
@@ -305,6 +307,7 @@ pub struct PolymarketDataClient {
     pending_auto_loads: Arc<StdMutex<AHashSet<InstrumentId>>>,
     auto_load_scheduled: Arc<AtomicBool>,
     position_event_handler: Option<TypedHandler<PositionEvent>>,
+    rtds_feed: PolymarketRtdsFeed,
 }
 
 fn resolve_token_id_from(
@@ -373,6 +376,10 @@ impl PolymarketDataClient {
         }
         config.new_market_fetch_max_concurrency = fetch_max_concurrency;
 
+        let rtds_url = config.rtds_url();
+        let rtds_transport_backend = config.transport_backend;
+        let rtds_data_sender = data_sender.clone();
+
         Self {
             clock,
             client_id,
@@ -404,6 +411,12 @@ impl PolymarketDataClient {
             pending_auto_loads: Arc::new(StdMutex::new(AHashSet::new())),
             auto_load_scheduled: Arc::new(AtomicBool::new(false)),
             position_event_handler: None,
+            rtds_feed: PolymarketRtdsFeed::new(
+                rtds_url,
+                rtds_transport_backend,
+                clock,
+                rtds_data_sender,
+            ),
         }
     }
 
@@ -1588,6 +1601,7 @@ impl DataClient for PolymarketDataClient {
         // Stop the WS handler path even when reset is called without a graceful disconnect.
         self.ws_client.abort();
         self.ws_client.clear_reconnect_state();
+        self.rtds_feed.abort();
         self.resolve_poll_watchlist.store(ahash::AHashMap::new());
         self.clear_position_event_subscription();
 
@@ -1606,6 +1620,12 @@ impl DataClient for PolymarketDataClient {
         self.pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
         self.new_market_inflight_keys = Arc::new(DashMap::new());
         self.ws_open_tokens = Arc::new(AtomicSet::new());
+        self.rtds_feed = PolymarketRtdsFeed::new(
+            self.config.rtds_url(),
+            self.config.transport_backend,
+            self.clock,
+            self.data_sender.clone(),
+        );
 
         self.pending_auto_loads
             .lock()
@@ -1628,6 +1648,7 @@ impl DataClient for PolymarketDataClient {
 
         self.cancellation_token = CancellationToken::new();
         self.ensure_position_event_subscription();
+        register_polymarket_custom_data();
 
         log::info!("Connecting Polymarket data client");
 
@@ -1654,6 +1675,10 @@ impl DataClient for PolymarketDataClient {
         self.spawn_instrument_refresh_task();
         self.spawn_resolve_poll_task();
 
+        if self.rtds_feed.has_subscriptions() {
+            self.rtds_feed.connect().await?;
+        }
+
         self.is_connected.store(true, Ordering::Relaxed);
         log::info!("Connected Polymarket data client");
 
@@ -1672,6 +1697,7 @@ impl DataClient for PolymarketDataClient {
             .await;
 
         self.ws_client.disconnect().await?;
+        self.rtds_feed.disconnect().await;
 
         self.is_connected.store(false, Ordering::Relaxed);
         self.clear_position_event_subscription();
@@ -2076,6 +2102,37 @@ impl DataClient for PolymarketDataClient {
         Ok(())
     }
 
+    fn subscribe(&mut self, cmd: SubscribeCustomData) -> anyhow::Result<()> {
+        if !is_supported_rtds_data_type(&cmd.data_type) {
+            log::debug!(
+                "Ignoring unsupported Polymarket custom data subscription: {}",
+                cmd.data_type
+            );
+            return Ok(());
+        }
+
+        log::debug!(
+            "Tracking Polymarket RTDS custom data subscription: {}",
+            cmd.data_type
+        );
+        let Some(wire) = self.rtds_feed.track_subscribe(cmd.data_type)? else {
+            return Ok(());
+        };
+
+        if !self.is_connected() {
+            return Ok(());
+        }
+
+        let feed = self.rtds_feed.clone();
+        get_runtime().spawn(async move {
+            if let Err(e) = feed.subscribe_live(wire).await {
+                log::error!("Failed to subscribe RTDS custom data: {e}");
+            }
+        });
+
+        Ok(())
+    }
+
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!(
@@ -2183,6 +2240,37 @@ impl DataClient for PolymarketDataClient {
         log::debug!("Unsubscribed from trades for {instrument_id}");
         Ok(())
     }
+
+    fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
+        if !is_supported_rtds_data_type(&cmd.data_type) {
+            log::debug!(
+                "Ignoring unsupported Polymarket custom data unsubscription: {}",
+                cmd.data_type
+            );
+            return Ok(());
+        }
+
+        log::debug!(
+            "Tracking Polymarket RTDS custom data unsubscription: {}",
+            cmd.data_type
+        );
+        let Some(wire) = self.rtds_feed.track_unsubscribe(&cmd.data_type)? else {
+            return Ok(());
+        };
+
+        if !self.is_connected() {
+            return Ok(());
+        }
+
+        let feed = self.rtds_feed.clone();
+        get_runtime().spawn(async move {
+            if let Err(e) = feed.unsubscribe_live(wire).await {
+                log::error!("Failed to unsubscribe RTDS custom data: {e}");
+            }
+        });
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -2205,7 +2293,10 @@ mod tests {
     };
     use nautilus_common::{
         live::runner::replace_data_event_sender,
-        messages::{DataResponse, data::RequestCustomData},
+        messages::{
+            DataResponse,
+            data::{RequestCustomData, SubscribeCustomData, UnsubscribeCustomData},
+        },
         testing::wait_until_async,
     };
     use nautilus_core::{Params, UUID4, UnixNanos};
@@ -2272,6 +2363,18 @@ mod tests {
             .iter()
             .filter(|event| matches!(event, DataEvent::Data(NautilusData::InstrumentClose(_))))
             .count()
+    }
+
+    fn rtds_crypto_data_type(symbol: &str) -> DataType {
+        let mut metadata = Params::new();
+        metadata.insert("symbol".to_string(), Value::String(symbol.to_string()));
+        DataType::new("PolymarketRtdsCryptoPrice", Some(metadata), None)
+    }
+
+    fn rtds_equity_data_type(symbol: &str) -> DataType {
+        let mut metadata = Params::new();
+        metadata.insert("symbol".to_string(), Value::String(symbol.to_string()));
+        DataType::new("PolymarketRtdsEquityPrice", Some(metadata), None)
     }
 
     async fn collect_events_until<F>(
@@ -3731,6 +3834,146 @@ mod tests {
         assert!(
             !Arc::ptr_eq(&old_inflight_keys, &client.new_market_inflight_keys),
             "reset should replace in-flight dedupe map generation",
+        );
+    }
+
+    #[rstest]
+    fn subscribe_unsupported_custom_data_is_ignored() {
+        let mut client = make_client_for_reset_test();
+        let data_type = DataType::new("UnsupportedPolymarketCustomData", None, None);
+
+        client
+            .subscribe(SubscribeCustomData::new(
+                Some(*POLYMARKET_CLIENT_ID),
+                None,
+                data_type,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("unsupported custom data subscribe should be ignored");
+
+        assert_eq!(client.rtds_feed.tracked_subscription_count(), 0);
+    }
+
+    #[rstest]
+    fn unsubscribe_unsupported_custom_data_is_ignored() {
+        let mut client = make_client_for_reset_test();
+        let data_type = DataType::new("UnsupportedPolymarketCustomData", None, None);
+
+        client
+            .unsubscribe(&UnsubscribeCustomData::new(
+                Some(*POLYMARKET_CLIENT_ID),
+                None,
+                data_type,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("unsupported custom data unsubscribe should be ignored");
+
+        assert_eq!(client.rtds_feed.tracked_subscription_count(), 0);
+    }
+
+    #[rstest]
+    fn subscribe_custom_rtds_reuses_single_wire_subscription_for_same_symbol() {
+        let mut client = make_client_for_reset_test();
+        let crypto_upper = rtds_crypto_data_type("BTCUSDT");
+        let crypto_lower = rtds_crypto_data_type("btcusdt");
+
+        client
+            .subscribe(SubscribeCustomData::new(
+                Some(*POLYMARKET_CLIENT_ID),
+                None,
+                crypto_upper,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("first RTDS subscribe");
+        client
+            .subscribe(SubscribeCustomData::new(
+                Some(*POLYMARKET_CLIENT_ID),
+                None,
+                crypto_lower,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("second RTDS subscribe");
+
+        assert_eq!(client.rtds_feed.tracked_subscription_count(), 1);
+        assert_eq!(
+            client
+                .rtds_feed
+                .tracked_data_type_count("crypto_prices:btcusdt"),
+            2,
+        );
+    }
+
+    #[rstest]
+    fn unsubscribe_custom_rtds_last_reference_removes_wire_subscription() {
+        let mut client = make_client_for_reset_test();
+        let equity_data_type = rtds_equity_data_type("AAPL");
+
+        client
+            .subscribe(SubscribeCustomData::new(
+                Some(*POLYMARKET_CLIENT_ID),
+                None,
+                equity_data_type.clone(),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("RTDS subscribe");
+
+        client
+            .unsubscribe(&UnsubscribeCustomData::new(
+                Some(*POLYMARKET_CLIENT_ID),
+                None,
+                equity_data_type,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("RTDS unsubscribe");
+
+        assert_eq!(client.rtds_feed.tracked_subscription_count(), 0);
+    }
+
+    #[rstest]
+    fn reset_replaces_rtds_feed_generation() {
+        let mut client = make_client_for_reset_test();
+        let old_feed = client.rtds_feed.clone();
+        let data_type = rtds_crypto_data_type("btcusdt");
+
+        client
+            .subscribe(SubscribeCustomData::new(
+                Some(*POLYMARKET_CLIENT_ID),
+                None,
+                data_type,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("RTDS subscribe");
+
+        assert_eq!(old_feed.tracked_subscription_count(), 1);
+
+        client.reset().expect("reset should succeed");
+
+        assert_eq!(client.rtds_feed.tracked_subscription_count(), 0);
+        assert_eq!(
+            old_feed.tracked_subscription_count(),
+            1,
+            "old-generation RTDS state should remain isolated from the reset generation",
         );
     }
 
