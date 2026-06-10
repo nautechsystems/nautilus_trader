@@ -1026,7 +1026,7 @@ cdef class DataEngine(Component):
             return
 
         if command.data_type.type == OrderBookDelta:
-            if command.instrument_id not in client.subscribed_order_book_deltas():
+            if not client.is_subscribed_order_book_deltas(command.instrument_id):
                 client.subscribe_order_book_deltas(command)
         elif command.data_type.type == OrderBookDepth10:
             if command.instrument_id not in client.subscribed_order_book_depth():
@@ -1132,7 +1132,7 @@ cdef class DataEngine(Component):
             last_timestamp: datetime | None = self._catalog_last_timestamp(QuoteTick, str(command.instrument_id))[0]
             command.params["start_ns"] = last_timestamp.value + 1 if last_timestamp else None
 
-        if command.instrument_id not in client.subscribed_quote_ticks():
+        if not client.is_subscribed_quote_ticks(command.instrument_id):
             client.subscribe_quote_ticks(command)
 
     cpdef void _handle_subscribe_synthetic_quote_ticks(self, InstrumentId instrument_id):
@@ -1174,7 +1174,7 @@ cdef class DataEngine(Component):
             last_timestamp: datetime | None = self._catalog_last_timestamp(TradeTick, str(command.instrument_id))[0]
             command.params["start_ns"] = last_timestamp.value + 1 if last_timestamp else None
 
-        if command.instrument_id not in client.subscribed_trade_ticks():
+        if not client.is_subscribed_trade_ticks(command.instrument_id):
             client.subscribe_trade_ticks(command)
 
     cpdef void _handle_subscribe_synthetic_trade_ticks(self, InstrumentId instrument_id):
@@ -1346,7 +1346,7 @@ cdef class DataEngine(Component):
         for pyo3_id in active_ids:
             cython_id = InstrumentId.from_str(str(pyo3_id))
             # Subscribe quotes
-            if cython_id not in client.subscribed_quote_ticks():
+            if not client.is_subscribed_quote_ticks(cython_id):
                 client.subscribe_quote_ticks(
                     SubscribeQuoteTicks(
                         client_id=command.client_id,
@@ -1388,7 +1388,7 @@ cdef class DataEngine(Component):
         cdef uint64_t ts = self._clock.timestamp_ns()
         for pyo3_id in instrument_ids:
             cython_id = InstrumentId.from_str(str(pyo3_id))
-            if cython_id in client.subscribed_quote_ticks():
+            if client.is_subscribed_quote_ticks(cython_id):
                 client.unsubscribe_quote_ticks(
                     UnsubscribeQuoteTicks(
                         instrument_id=cython_id,
@@ -1734,7 +1734,7 @@ cdef class DataEngine(Component):
         # If no more subscribers to the client-backed topic, unsubscribe the client
         if not self._msgbus.has_subscribers(topic):
             if command.data_type.type == OrderBookDelta:
-                if command.instrument_id in client.subscribed_order_book_deltas():
+                if client.is_subscribed_order_book_deltas(command.instrument_id):
                     client.unsubscribe_order_book_deltas(command)
             elif command.data_type.type == OrderBookDepth10:
                 if command.instrument_id in client.subscribed_order_book_depth():
@@ -1777,7 +1777,7 @@ cdef class DataEngine(Component):
         if not self._msgbus.has_subscribers(
             self._topic_cache.get_quotes_topic(command.instrument_id),
         ):
-            if command.instrument_id in client.subscribed_quote_ticks():
+            if client.is_subscribed_quote_ticks(command.instrument_id):
                 client.unsubscribe_quote_ticks(command)
 
     cpdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, UnsubscribeTradeTicks command):
@@ -1786,7 +1786,7 @@ cdef class DataEngine(Component):
         if not self._msgbus.has_subscribers(
             self._topic_cache.get_trades_topic(command.instrument_id),
         ):
-            if command.instrument_id in client.subscribed_trade_ticks():
+            if client.is_subscribed_trade_ticks(command.instrument_id):
                 client.unsubscribe_trade_ticks(command)
 
     cpdef void _handle_unsubscribe_mark_prices(self, MarketDataClient client, UnsubscribeMarkPrices command):
