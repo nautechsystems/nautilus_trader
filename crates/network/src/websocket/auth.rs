@@ -36,8 +36,8 @@
 //!    This waits for re-auth after reconnection instead of rejecting immediately.
 //! 2. **Reconnection flow**: Authenticate BEFORE resubscribing to topics.
 //! 3. **Event propagation**: Send auth failures through event channels to consumers.
-//! 4. **State lifecycle**: Call `invalidate()` on connection drops, and `fail()` on
-//!    terminal auth rejection or explicit client shutdown.
+//! 4. **State lifecycle**: Call `invalidate()` on reconnectable connection drops,
+//!    and `fail()` on terminal auth rejection or terminal client shutdown.
 
 use std::{
     sync::{
@@ -59,7 +59,7 @@ pub enum AuthState {
     Unauthenticated = 0,
     /// Successfully authenticated (after succeed).
     Authenticated = 1,
-    /// Authentication explicitly rejected by the server (after fail).
+    /// Authentication failed or became impossible (after fail).
     Failed = 2,
 }
 
@@ -202,10 +202,10 @@ impl AuthTracker {
     ///
     /// Transitions to `Failed` and notifies any waiting receiver
     /// with `Err(message)`. This should be called when the server sends an
-    /// authentication error response.
+    /// authentication error response, or on terminal client shutdown.
     ///
     /// The state is always updated even if no receiver is waiting, since the
-    /// server has rejected authentication.
+    /// server has rejected authentication or future auth is impossible.
     pub fn fail(&self, error: impl Into<String>) {
         self.state
             .store(AuthState::Failed.as_u8(), Ordering::Release);

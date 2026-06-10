@@ -837,6 +837,10 @@ impl WebSocketClientInner {
             // Transition to CLOSED state to stop reconnection attempts
             self.connection_mode
                 .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+            fail_registered_auth(
+                self.auth_tracker.as_ref(),
+                "WebSocket stream mode cannot reconnect",
+            );
             return Ok(());
         }
 
@@ -1603,8 +1607,8 @@ impl WebSocketClient {
     ///
     /// When the controller detects a dead connection and transitions to
     /// `Reconnect`, it calls `invalidate()` on the tracker so that any
-    /// pending authenticated sends see the state change immediately. Explicit
-    /// disconnect fails the tracker so pending auth waits can terminate.
+    /// pending authenticated sends see the state change immediately. Terminal
+    /// transitions fail the tracker so pending auth waits can terminate.
     /// Set `reconnect_buffer_waits_for_auth` for clients that must not replay
     /// buffered messages until the next session authenticates.
     ///
@@ -1727,6 +1731,8 @@ impl WebSocketClient {
     /// For peer-initiated close frames (`Message::Close`), use [`disconnect`](Self::disconnect)
     /// instead so the writer can send the close reply before shutting down.
     ///
+    /// If an [`AuthTracker`] is registered, this fails pending auth waits.
+    ///
     /// This is a no-op if the connection is already closed or disconnecting.
     pub fn notify_closed(&self) {
         let mode = self.connection_mode();
@@ -1738,6 +1744,7 @@ impl WebSocketClient {
 
         self.connection_mode
             .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        fail_registered_auth(self.auth_tracker.as_ref(), "WebSocket client closed");
         self.state_notify.notify_waiters();
     }
 
@@ -1745,6 +1752,8 @@ impl WebSocketClient {
     ///
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is alive
+    ///
+    /// If an [`AuthTracker`] is registered, this fails pending auth waits.
     pub async fn disconnect(&self) {
         log::debug!("Disconnecting");
         self.connection_mode
@@ -1935,7 +1944,9 @@ impl WebSocketClient {
                         )
                         .is_ok()
                     {
-                        if let Some(tracker) = auth_tracker.get() {
+                        if target.is_closed() {
+                            fail_registered_auth(auth_tracker.as_ref(), "WebSocket client closed");
+                        } else if let Some(tracker) = auth_tracker.get() {
                             tracker.invalidate();
                         }
                         log::debug!("Detected dead connection, transitioning to {target:?}");
@@ -1952,6 +1963,10 @@ impl WebSocketClient {
                             "Max reconnection attempts ({max_attempts}) exceeded, transitioning to CLOSED"
                         );
                         connection_mode.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+                        fail_registered_auth(
+                            auth_tracker.as_ref(),
+                            "WebSocket reconnect attempts exhausted",
+                        );
                         state_notify.notify_waiters();
                         break;
                     }
@@ -2047,6 +2062,12 @@ impl WebSocketClient {
 
             log_task_stopped("controller");
         })
+    }
+}
+
+fn fail_registered_auth(auth_tracker: &OnceLock<AuthTracker>, reason: &str) {
+    if let Some(tracker) = auth_tracker.get() {
+        tracker.fail(reason);
     }
 }
 

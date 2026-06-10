@@ -67,6 +67,10 @@ const SILENT_UNTIL_IDLE_TIMEOUT_SEED: u64 = 0x57EB_3005;
 const NO_READ_BACKPRESSURE_SEED: u64 = 0x57EB_3006;
 const DISCONNECT_WHILE_SEND_WAITS_FOR_RECONNECT_SEED: u64 = 0x57EB_3007;
 const DISCONNECT_WHILE_WAITING_FOR_AUTH_SEED: u64 = 0x57EB_3008;
+const MAX_RECONNECT_ATTEMPTS_WHILE_WAITING_FOR_AUTH_SEED: u64 = 0x57EB_3009;
+const STREAM_NOTIFY_CLOSED_WHILE_WAITING_FOR_AUTH_SEED: u64 = 0x57EB_300A;
+const STREAM_DEAD_WRITE_WHILE_WAITING_FOR_AUTH_SEED: u64 = 0x57EB_300B;
+const RECONNECTABLE_DROP_WHILE_WAITING_FOR_AUTH_SEED: u64 = 0x57EB_300C;
 const LARGE_WEBSOCKET_MESSAGE_LEN: usize = 16 * 1024;
 const BACKPRESSURE_TCP_CAPACITY: usize = 4;
 const BACKPRESSURE_MESSAGE_COUNT: usize = 16;
@@ -701,6 +705,82 @@ fn test_turmoil_websocket_sockudo_disconnect_while_waiting_for_auth_closes_clien
     run_websocket_disconnect_while_waiting_for_auth_closes_client(
         websocket_config_for_backend(TransportBackend::Sockudo),
         DISCONNECT_WHILE_WAITING_FOR_AUTH_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
+fn test_turmoil_websocket_max_reconnect_attempts_while_waiting_for_auth_closes_client() {
+    run_websocket_max_reconnect_attempts_while_waiting_for_auth_closes_client(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        MAX_RECONNECT_ATTEMPTS_WHILE_WAITING_FOR_AUTH_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_max_reconnect_attempts_while_waiting_for_auth_closes_client() {
+    run_websocket_max_reconnect_attempts_while_waiting_for_auth_closes_client(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        MAX_RECONNECT_ATTEMPTS_WHILE_WAITING_FOR_AUTH_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
+fn test_turmoil_websocket_stream_notify_closed_while_waiting_for_auth_closes_client() {
+    run_websocket_stream_notify_closed_while_waiting_for_auth_closes_client(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        STREAM_NOTIFY_CLOSED_WHILE_WAITING_FOR_AUTH_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_stream_notify_closed_while_waiting_for_auth_closes_client() {
+    run_websocket_stream_notify_closed_while_waiting_for_auth_closes_client(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        STREAM_NOTIFY_CLOSED_WHILE_WAITING_FOR_AUTH_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
+fn test_turmoil_websocket_stream_dead_write_while_waiting_for_auth_closes_client() {
+    run_websocket_stream_dead_write_while_waiting_for_auth_closes_client(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        STREAM_DEAD_WRITE_WHILE_WAITING_FOR_AUTH_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_stream_dead_write_while_waiting_for_auth_closes_client() {
+    run_websocket_stream_dead_write_while_waiting_for_auth_closes_client(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        STREAM_DEAD_WRITE_WHILE_WAITING_FOR_AUTH_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
+fn test_turmoil_websocket_reconnectable_drop_while_waiting_for_auth_waits_for_reauth() {
+    run_websocket_reconnectable_drop_while_waiting_for_auth_waits_for_reauth(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        RECONNECTABLE_DROP_WHILE_WAITING_FOR_AUTH_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_reconnectable_drop_while_waiting_for_auth_waits_for_reauth() {
+    run_websocket_reconnectable_drop_while_waiting_for_auth_waits_for_reauth(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        RECONNECTABLE_DROP_WHILE_WAITING_FOR_AUTH_SEED,
         "websocket/sockudo",
     );
 }
@@ -1577,6 +1657,381 @@ fn run_websocket_disconnect_while_waiting_for_auth_closes_client(
         assert!(
             !client.is_active(),
             "{label} seed {seed:#018x} should not stay active after disconnect"
+        );
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_max_reconnect_attempts_while_waiting_for_auth_closes_client(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.reconnect_timeout_ms = Some(500);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(25);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+    websocket_config.reconnect_max_attempts = Some(1);
+
+    let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
+    let first_connection_dropped = Arc::new(AtomicBool::new(false));
+    let reconnect_attempt_waiting = Arc::new(AtomicBool::new(false));
+    let release_reconnect_attempt = Arc::new(AtomicBool::new(false));
+    let server_first_connection_dropped = Arc::clone(&first_connection_dropped);
+    let server_reconnect_attempt_waiting = Arc::clone(&reconnect_attempt_waiting);
+    let server_release_reconnect_attempt = Arc::clone(&release_reconnect_attempt);
+
+    sim.host("server", move || {
+        let server_first_connection_dropped = Arc::clone(&server_first_connection_dropped);
+        let server_reconnect_attempt_waiting = Arc::clone(&server_reconnect_attempt_waiting);
+        let server_release_reconnect_attempt = Arc::clone(&server_release_reconnect_attempt);
+        async move {
+            ws_drop_first_connection_then_hold_reconnect_handshake_until_release_server(
+                server_first_connection_dropped,
+                server_reconnect_attempt_waiting,
+                server_release_reconnect_attempt,
+            )
+            .await
+        }
+    });
+
+    sim.client("client", async move {
+        let tracker = AuthTracker::new();
+        let (handler, _rx) = channel_message_handler();
+
+        let client =
+            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+                .await
+                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        client.set_auth_tracker(tracker.clone(), true);
+        tracker.succeed();
+
+        assert!(
+            wait_for(|| first_connection_dropped.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should drop the first connection"
+        );
+        assert!(
+            wait_for(|| reconnect_attempt_waiting.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should hold the reconnect handshake"
+        );
+
+        let _auth_receiver = tracker.begin();
+        let wait_tracker = tracker.clone();
+        let auth_wait = tokio::spawn(async move {
+            wait_tracker
+                .wait_for_authenticated(Duration::from_secs(10))
+                .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            !auth_wait.is_finished(),
+            "{label} seed {seed:#018x} auth wait should be pending before max attempts"
+        );
+
+        let authenticated = tokio::time::timeout(Duration::from_secs(3), auth_wait)
+            .await
+            .unwrap_or_else(|_| {
+                panic!("{label} seed {seed:#018x} auth wait should finish promptly")
+            })
+            .unwrap_or_else(|e| {
+                panic!("{label} seed {seed:#018x} auth wait task should not panic: {e}")
+            });
+
+        assert!(
+            !authenticated,
+            "{label} seed {seed:#018x} auth wait should be interrupted by max attempts"
+        );
+        assert!(
+            wait_for(|| client.is_disconnected() && client.is_closed()).await,
+            "{label} seed {seed:#018x} should finish controller after max attempts"
+        );
+        assert!(
+            !client.is_reconnecting(),
+            "{label} seed {seed:#018x} should not stay reconnecting after max attempts"
+        );
+        assert!(
+            !client.is_active(),
+            "{label} seed {seed:#018x} should not stay active after max attempts"
+        );
+
+        release_reconnect_attempt.store(true, Ordering::SeqCst);
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_stream_notify_closed_while_waiting_for_auth_closes_client(
+    websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
+
+    sim.host("server", ws_echo_server);
+
+    sim.client("client", async move {
+        let tracker = AuthTracker::new();
+        let (_reader, client) =
+            WebSocketClient::connect_stream(websocket_config, vec![], None, None)
+                .await
+                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        client.set_auth_tracker(tracker.clone(), true);
+        tracker.succeed();
+
+        let _auth_receiver = tracker.begin();
+        let wait_tracker = tracker.clone();
+        let auth_wait = tokio::spawn(async move {
+            wait_tracker
+                .wait_for_authenticated(Duration::from_secs(10))
+                .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            !auth_wait.is_finished(),
+            "{label} seed {seed:#018x} auth wait should be pending before notify_closed"
+        );
+
+        client.notify_closed();
+
+        let authenticated = tokio::time::timeout(Duration::from_secs(2), auth_wait)
+            .await
+            .unwrap_or_else(|_| {
+                panic!("{label} seed {seed:#018x} auth wait should finish promptly")
+            })
+            .unwrap_or_else(|e| {
+                panic!("{label} seed {seed:#018x} auth wait task should not panic: {e}")
+            });
+
+        assert!(
+            !authenticated,
+            "{label} seed {seed:#018x} auth wait should be interrupted by notify_closed"
+        );
+        assert!(
+            wait_for(|| client.is_disconnected() && client.is_closed()).await,
+            "{label} seed {seed:#018x} should finish controller after notify_closed"
+        );
+        assert!(
+            !client.is_reconnecting(),
+            "{label} seed {seed:#018x} should not reconnect after notify_closed"
+        );
+        assert!(
+            !client.is_active(),
+            "{label} seed {seed:#018x} should not stay active after notify_closed"
+        );
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_stream_dead_write_while_waiting_for_auth_closes_client(
+    websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
+    let first_connection_dropped = Arc::new(AtomicBool::new(false));
+    let server_first_connection_dropped = Arc::clone(&first_connection_dropped);
+
+    sim.host("server", move || {
+        let server_first_connection_dropped = Arc::clone(&server_first_connection_dropped);
+        async move {
+            ws_drop_first_connection_before_read_then_echo_server(server_first_connection_dropped)
+                .await
+        }
+    });
+
+    sim.client("client", async move {
+        let tracker = AuthTracker::new();
+        let (_reader, client) =
+            WebSocketClient::connect_stream(websocket_config, vec![], None, None)
+                .await
+                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        client.set_auth_tracker(tracker.clone(), true);
+        tracker.succeed();
+
+        assert!(
+            wait_for(|| first_connection_dropped.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should drop the stream connection"
+        );
+
+        let _auth_receiver = tracker.begin();
+        let wait_tracker = tracker.clone();
+        let auth_wait = tokio::spawn(async move {
+            wait_tracker
+                .wait_for_authenticated(Duration::from_secs(10))
+                .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            !auth_wait.is_finished(),
+            "{label} seed {seed:#018x} auth wait should be pending before dead write"
+        );
+
+        for attempt in 0..20 {
+            if !client.is_active() || auth_wait.is_finished() {
+                break;
+            }
+            let _ = client
+                .send_text(format!("stream-dead-write-{attempt}"), None)
+                .await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        let authenticated = tokio::time::timeout(Duration::from_secs(2), auth_wait)
+            .await
+            .unwrap_or_else(|_| {
+                panic!("{label} seed {seed:#018x} auth wait should finish promptly")
+            })
+            .unwrap_or_else(|e| {
+                panic!("{label} seed {seed:#018x} auth wait task should not panic: {e}")
+            });
+
+        assert!(
+            !authenticated,
+            "{label} seed {seed:#018x} auth wait should be interrupted by stream close"
+        );
+        assert!(
+            wait_for(|| client.is_disconnected() && client.is_closed()).await,
+            "{label} seed {seed:#018x} should finish controller after stream close"
+        );
+        assert!(
+            !client.is_reconnecting(),
+            "{label} seed {seed:#018x} stream mode should not stay reconnecting"
+        );
+        assert!(
+            !client.is_active(),
+            "{label} seed {seed:#018x} stream mode should not stay active"
+        );
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_reconnectable_drop_while_waiting_for_auth_waits_for_reauth(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(100);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+    websocket_config.idle_timeout_ms = Some(500);
+
+    let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
+    let first_connection_silent = Arc::new(AtomicBool::new(false));
+    let server_first_connection_silent = Arc::clone(&first_connection_silent);
+
+    sim.host("server", move || {
+        let server_first_connection_silent = Arc::clone(&server_first_connection_silent);
+        async move {
+            ws_silent_first_connection_then_echo_server(server_first_connection_silent).await
+        }
+    });
+
+    sim.client("client", async move {
+        let tracker = AuthTracker::new();
+        let (handler, _rx) = channel_message_handler();
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let client_reconnected = Arc::clone(&reconnected);
+        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            client_reconnected.store(true, Ordering::SeqCst);
+        });
+
+        let client = WebSocketClient::connect(
+            websocket_config,
+            Some(handler),
+            None,
+            Some(post_reconnection),
+            vec![],
+            None,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        client.set_auth_tracker(tracker.clone(), true);
+        tracker.succeed();
+
+        assert!(
+            wait_for(|| first_connection_silent.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should enter the silent first connection"
+        );
+
+        let _auth_receiver = tracker.begin();
+        let wait_tracker = tracker.clone();
+        let auth_wait = tokio::spawn(async move {
+            wait_tracker
+                .wait_for_authenticated(Duration::from_secs(10))
+                .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            !auth_wait.is_finished(),
+            "{label} seed {seed:#018x} auth wait should be pending before reconnect"
+        );
+        assert!(
+            wait_for(|| reconnected.load(Ordering::SeqCst) && client.is_active()).await,
+            "{label} seed {seed:#018x} should reconnect after idle timeout"
+        );
+        assert!(
+            !auth_wait.is_finished(),
+            "{label} seed {seed:#018x} auth wait should remain pending until re-auth"
+        );
+
+        tracker.succeed();
+
+        let authenticated = tokio::time::timeout(Duration::from_secs(2), auth_wait)
+            .await
+            .unwrap_or_else(|_| {
+                panic!("{label} seed {seed:#018x} auth wait should finish after re-auth")
+            })
+            .unwrap_or_else(|e| {
+                panic!("{label} seed {seed:#018x} auth wait task should not panic: {e}")
+            });
+
+        assert!(
+            authenticated,
+            "{label} seed {seed:#018x} auth wait should complete after re-auth"
+        );
+        assert!(
+            client.is_active(),
+            "{label} seed {seed:#018x} should stay active after re-auth"
+        );
+        assert!(
+            !client.is_reconnecting(),
+            "{label} seed {seed:#018x} should not stay reconnecting after re-auth"
+        );
+        assert!(
+            !client.is_closed(),
+            "{label} seed {seed:#018x} should not close on reconnectable drop"
+        );
+
+        client.disconnect().await;
+        assert!(
+            client.is_disconnected(),
+            "{label} seed {seed:#018x} should disconnect after scenario"
         );
 
         Ok(())
