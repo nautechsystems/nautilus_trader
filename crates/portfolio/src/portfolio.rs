@@ -2310,7 +2310,13 @@ fn update_order(
         };
 
         let orders_open: Vec<OrderAny> = cache_ref
-            .orders_open(None, Some(&event.instrument_id()), None, None, None)
+            .orders_open(
+                None,
+                Some(&event.instrument_id()),
+                None,
+                Some(&account_id),
+                None,
+            )
             .iter()
             .map(|o| (*o).clone())
             .collect();
@@ -2531,8 +2537,13 @@ fn update_position(
                 if let Some(instrument) = instrument {
                     let result = {
                         let cache_ref = cache.borrow();
-                        let refs =
-                            cache_ref.positions_open(None, Some(&instrument_id), None, None, None);
+                        let refs = cache_ref.positions_open(
+                            None,
+                            Some(&instrument_id),
+                            None,
+                            Some(&account_id),
+                            None,
+                        );
                         let positions: Vec<&Position> = refs.iter().map(|r| &**r).collect();
                         inner.borrow_mut().accounts.update_positions(
                             &margin_account,

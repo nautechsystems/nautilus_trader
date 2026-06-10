@@ -855,6 +855,310 @@ fn test_margin_fill_endpoint_then_position_publishes_account_state_once(
 }
 
 #[rstest]
+fn test_cash_order_updates_use_event_account_orders(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_a = AccountId::new("SIM-001");
+    let account_b = AccountId::new("SIM-002");
+
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(simple_cache)),
+        Rc::new(RefCell::new(clock)),
+        None,
+    );
+
+    portfolio.update_account(&get_cash_account(Some(account_a.as_str())));
+    portfolio.update_account(&get_cash_account(Some(account_b.as_str())));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_a)
+        .unwrap()
+        .set_calculate_account_state(true);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_b)
+        .unwrap()
+        .set_calculate_account_state(true);
+
+    let mut order_a = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(ClientOrderId::new("CASH-ORDER-A"))
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1"))
+        .price(Price::from("1.00000"))
+        .build();
+    let mut order_b = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(ClientOrderId::new("CASH-ORDER-B"))
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2"))
+        .price(Price::from("1.00000"))
+        .build();
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order_a.clone(), None, None, false)
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order_b.clone(), None, None, false)
+        .unwrap();
+
+    let submitted_a = order_submitted(
+        order_a.trader_id(),
+        order_a.strategy_id(),
+        order_a.instrument_id(),
+        order_a.client_order_id(),
+        account_a,
+        uuid4(),
+    );
+    order_a = portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted_a))
+        .unwrap();
+    let accepted_a = order_accepted(
+        order_a.trader_id(),
+        order_a.strategy_id(),
+        order_a.instrument_id(),
+        order_a.client_order_id(),
+        account_a,
+        VenueOrderId::new("CASH-VO-A"),
+        uuid4(),
+    );
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted_a))
+        .unwrap();
+
+    let submitted_b = order_submitted(
+        order_b.trader_id(),
+        order_b.strategy_id(),
+        order_b.instrument_id(),
+        order_b.client_order_id(),
+        account_b,
+        uuid4(),
+    );
+    order_b = portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted_b))
+        .unwrap();
+    let accepted_b = order_accepted(
+        order_b.trader_id(),
+        order_b.strategy_id(),
+        order_b.instrument_id(),
+        order_b.client_order_id(),
+        account_b,
+        VenueOrderId::new("CASH-VO-B"),
+        uuid4(),
+    );
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted_b))
+        .unwrap();
+
+    portfolio.update_order(&OrderEventAny::Accepted(accepted_a));
+
+    let account = portfolio
+        .cache()
+        .borrow()
+        .account_owned(&account_a)
+        .unwrap();
+    let AccountAny::Cash(cash_account) = account else {
+        panic!("expected cash account");
+    };
+
+    let balance_locked = cash_account.balance_locked(Some(Currency::USD())).unwrap();
+    assert_eq!(balance_locked.as_decimal(), dec!(1.0));
+}
+
+#[rstest]
+fn test_account_updates_use_event_account_orders_and_positions(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_a = AccountId::new("SIM-001");
+    let account_b = AccountId::new("SIM-002");
+
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(simple_cache)),
+        Rc::new(RefCell::new(clock)),
+        None,
+    );
+
+    portfolio.update_account(&get_margin_account(Some(account_a.as_str())));
+    portfolio.update_account(&get_margin_account(Some(account_b.as_str())));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_a)
+        .unwrap()
+        .set_calculate_account_state(true);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_b)
+        .unwrap()
+        .set_calculate_account_state(true);
+
+    let mut order_a = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(ClientOrderId::new("ORDER-A"))
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100"))
+        .price(Price::from("1.00000"))
+        .build();
+    let mut order_b = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(ClientOrderId::new("ORDER-B"))
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("50"))
+        .price(Price::from("1.00000"))
+        .build();
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order_a.clone(), None, None, false)
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order_b.clone(), None, None, false)
+        .unwrap();
+
+    let submitted_a = order_submitted(
+        order_a.trader_id(),
+        order_a.strategy_id(),
+        order_a.instrument_id(),
+        order_a.client_order_id(),
+        account_a,
+        uuid4(),
+    );
+    order_a = portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted_a))
+        .unwrap();
+    let accepted_a = order_accepted(
+        order_a.trader_id(),
+        order_a.strategy_id(),
+        order_a.instrument_id(),
+        order_a.client_order_id(),
+        account_a,
+        VenueOrderId::new("VO-A"),
+        uuid4(),
+    );
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted_a))
+        .unwrap();
+
+    let submitted_b = order_submitted(
+        order_b.trader_id(),
+        order_b.strategy_id(),
+        order_b.instrument_id(),
+        order_b.client_order_id(),
+        account_b,
+        uuid4(),
+    );
+    order_b = portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted_b))
+        .unwrap();
+    let accepted_b = order_accepted(
+        order_b.trader_id(),
+        order_b.strategy_id(),
+        order_b.instrument_id(),
+        order_b.client_order_id(),
+        account_b,
+        VenueOrderId::new("VO-B"),
+        uuid4(),
+    );
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted_b))
+        .unwrap();
+
+    portfolio.update_order(&OrderEventAny::Accepted(accepted_a));
+
+    let fill_a = make_fill_for_account(
+        &instrument_audusd,
+        account_a,
+        OrderSide::Buy,
+        Quantity::from("100"),
+        Price::from("1.00000"),
+        PositionId::new("P-A-MARGIN"),
+    );
+    let fill_b = make_fill_for_account(
+        &instrument_audusd,
+        account_b,
+        OrderSide::Buy,
+        Quantity::from("50"),
+        Price::from("1.00000"),
+        PositionId::new("P-B-MARGIN"),
+    );
+    let position_a = Position::new(&instrument_audusd, fill_a);
+    let position_b = Position::new(&instrument_audusd, fill_b);
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position_a, OmsType::Hedging)
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position_b, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(
+        &position_a,
+    )));
+
+    let account = portfolio
+        .cache()
+        .borrow()
+        .account_owned(&account_a)
+        .unwrap();
+    let AccountAny::Margin(margin_account) = account else {
+        panic!("expected margin account");
+    };
+
+    let initial_margin = margin_account
+        .initial_margins()
+        .get(&instrument_audusd.id())
+        .copied()
+        .unwrap();
+    let maintenance_margin = margin_account
+        .maintenance_margins()
+        .get(&instrument_audusd.id())
+        .copied()
+        .unwrap();
+
+    assert_eq!(initial_margin.as_decimal(), dec!(3.0));
+    assert_eq!(maintenance_margin.as_decimal(), dec!(3.0));
+}
+
+#[rstest]
 fn test_cash_fill_endpoint_then_position_publishes_account_state_once(
     mut simple_cache: Cache,
     clock: TestClock,
