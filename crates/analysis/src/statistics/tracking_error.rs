@@ -92,23 +92,34 @@ impl PortfolioStatistic for TrackingError {
         benchmark: &Returns,
     ) -> Option<Self::Item> {
         let (r, b) = self.align_returns(returns, benchmark);
-        let n = r.len();
-        if n < 2 {
+        if r.len() < 2 {
             return Some(f64::NAN);
         }
 
-        let active: Vec<f64> = r.iter().zip(b.iter()).map(|(&ri, &bi)| ri - bi).collect();
-        let nf = n as f64;
-        let mean_active = active.iter().sum::<f64>() / nf;
-        let variance = active
-            .iter()
-            .map(|&x| (x - mean_active).powi(2))
-            .sum::<f64>()
-            / (nf - 1.0);
-        let te_period = variance.sqrt();
-
-        Some(te_period * (self.period as f64).sqrt())
+        let (_, std_active) = active_return_stats(&r, &b);
+        Some(std_active * (self.period as f64).sqrt())
     }
+}
+
+/// Computes the mean and sample (`ddof = 1`) standard deviation of the active
+/// return series `r - b`.
+///
+/// Callers must ensure `r.len() == b.len() >= 2`.
+pub(crate) fn active_return_stats(r: &[f64], b: &[f64]) -> (f64, f64) {
+    let n = r.len() as f64;
+    let mean = r
+        .iter()
+        .zip(b.iter())
+        .map(|(&ri, &bi)| ri - bi)
+        .sum::<f64>()
+        / n;
+    let variance = r
+        .iter()
+        .zip(b.iter())
+        .map(|(&ri, &bi)| (ri - bi - mean).powi(2))
+        .sum::<f64>()
+        / (n - 1.0);
+    (mean, variance.sqrt())
 }
 
 #[cfg(test)]

@@ -19,7 +19,9 @@ use std::fmt::Display;
 
 use nautilus_model::position::Position;
 
-use crate::{Returns, statistic::PortfolioStatistic};
+use crate::{
+    Returns, statistic::PortfolioStatistic, statistics::tracking_error::active_return_stats,
+};
 
 /// Calculates the information ratio of portfolio returns relative to a benchmark.
 ///
@@ -91,21 +93,11 @@ impl PortfolioStatistic for InformationRatio {
         benchmark: &Returns,
     ) -> Option<Self::Item> {
         let (r, b) = self.align_returns(returns, benchmark);
-        let n = r.len();
-        if n < 2 {
+        if r.len() < 2 {
             return Some(f64::NAN);
         }
 
-        let active: Vec<f64> = r.iter().zip(b.iter()).map(|(&ri, &bi)| ri - bi).collect();
-        let nf = n as f64;
-        let mean_active = active.iter().sum::<f64>() / nf;
-        let variance = active
-            .iter()
-            .map(|&x| (x - mean_active).powi(2))
-            .sum::<f64>()
-            / (nf - 1.0);
-        let std_active = variance.sqrt();
-
+        let (mean_active, std_active) = active_return_stats(&r, &b);
         if std_active < f64::EPSILON {
             return Some(f64::NAN);
         }
