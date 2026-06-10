@@ -174,6 +174,7 @@ async def test_generate_order_status_reports_raises_on_disconnected(exec_client,
     instrument = IBTestContractStubs.aapl_instrument()
     instrument_setup(exec_client, cache, instrument=instrument)
 
+    exec_client._client.get_open_orders = AsyncMock(return_value=[])
     exec_client._client.get_positions = AsyncMock(return_value=None)
 
     command = GenerateOrderStatusReports(
