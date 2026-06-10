@@ -426,7 +426,7 @@ impl DeribitWebSocketClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.close().await {
-                log::error!("Error on close: {e}");
+                log::warn!("Error on close: {e}");
             }
             Ok(())
         })

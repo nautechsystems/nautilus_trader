@@ -884,7 +884,7 @@ impl DataClient for LighterDataClient {
         }
 
         if let Err(e) = self.ws_client.disconnect().await {
-            log::error!("Error disconnecting Lighter WebSocket client: {e}");
+            log::warn!("Error disconnecting Lighter WebSocket client: {e}");
         }
 
         self.instruments.store(AHashMap::new());

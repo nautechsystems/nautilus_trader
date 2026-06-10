@@ -2013,7 +2013,7 @@ impl ExecutionClient for LighterExecutionClient {
         self.cancellation_token.cancel();
 
         if let Err(e) = self.ws_client.disconnect().await {
-            log::error!("Error disconnecting Lighter WebSocket client: {e}");
+            log::warn!("Error disconnecting Lighter WebSocket client: {e}");
         }
 
         let ws_stream_handle = { self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() };

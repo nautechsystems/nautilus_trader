@@ -909,7 +909,7 @@ fn handle_md_message(
         AxMdMessage::Heartbeat(_) => {}
         AxMdMessage::SubscriptionResponse(_) => {}
         AxMdMessage::Error(err) => {
-            log::error!("AX market data error: {err:?}");
+            log::warn!("AX market data error: {err:?}");
         }
     }
 }

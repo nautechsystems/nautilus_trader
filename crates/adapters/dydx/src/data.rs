@@ -1287,7 +1287,7 @@ impl DydxDataClient {
                 log::debug!("Ignoring block height on data client");
             }
             DydxWsOutputMessage::Error(err) => {
-                log::error!("dYdX WS error: {err}");
+                log::warn!("dYdX WS error: {err}");
             }
             DydxWsOutputMessage::Reconnected => {
                 ctx.pending_bars.clear();

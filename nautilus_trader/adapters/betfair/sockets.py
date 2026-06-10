@@ -272,7 +272,9 @@ class BetfairOrderStreamClient(BetfairStreamClient):
                 await self.send(msgspec.json.encode(subscribe_msg))
                 return
             except Exception as e:
-                self._log.error(f"Failed to send auth message({e}), retrying {i + 1}/{retries}...")
+                self._log.warning(
+                    f"Failed to send auth message({e}), retrying {i + 1}/{retries}...",
+                )
                 await asyncio.sleep(1.0)
 
         self._log.error(
@@ -410,7 +412,9 @@ class BetfairMarketStreamClient(BetfairStreamClient):
                     await self.send(self._subscription_message)
                 return
             except Exception as e:
-                self._log.error(f"Failed to send auth message({e}), retrying {i + 1}/{retries}...")
+                self._log.warning(
+                    f"Failed to send auth message({e}), retrying {i + 1}/{retries}...",
+                )
                 await asyncio.sleep(1.0)
 
         self._log.error(
@@ -462,5 +466,9 @@ class BetfairRaceStreamClient(BetfairStreamClient):
                 self._log.info("Race stream subscribed")
                 return
             except Exception as e:
-                self._log.error(f"Failed race stream setup({e}), retrying {i + 1}/{retries}...")
+                self._log.warning(f"Failed race stream setup({e}), retrying {i + 1}/{retries}...")
                 await asyncio.sleep(1.0)
+
+        self._log.error(
+            f"Failed to set up race stream after {retries} attempts, connection may be unusable",
+        )

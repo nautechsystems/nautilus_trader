@@ -351,7 +351,7 @@ class PolymarketWebSocketClient:
         Connect websocket clients to the server based on existing subscriptions.
         """
         if not self._subscriptions:
-            self._log.error("Cannot connect: no subscriptions")
+            self._log.warning("Cannot connect: no subscriptions")
             return
 
         for client_id, subs in self._client_subscriptions.items():
@@ -361,7 +361,7 @@ class PolymarketWebSocketClient:
     async def _connect_client(self, client_id: int) -> None:
         subs = self._client_subscriptions.get(client_id, [])
         if not subs:
-            self._log.error(f"ws-client {client_id}: Cannot connect: no subscriptions")
+            self._log.warning(f"ws-client {client_id}: Cannot connect: no subscriptions")
             return
 
         self._log.debug(f"ws-client {client_id}: Connecting to {self._ws_url}...")
@@ -448,7 +448,7 @@ class PolymarketWebSocketClient:
         try:
             await client.disconnect()
         except WebSocketClientError as e:
-            self._log.error(f"ws-client {client_id}: {e!s}")
+            self._log.warning(f"ws-client {client_id}: {e!s}")
 
         self._clients[client_id] = None
 

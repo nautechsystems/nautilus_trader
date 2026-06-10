@@ -455,7 +455,7 @@ class BetfairDataClient(LiveMarketDataClient):
             if self._race_stream:
                 await self._race_stream.disconnect()
         except Exception as e:
-            self._log.error(f"Race stream disconnect failed: {e}")
+            self._log.warning(f"Race stream disconnect failed: {e}")
         finally:
             self._race_stream = None
 

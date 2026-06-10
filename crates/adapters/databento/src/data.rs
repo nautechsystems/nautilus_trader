@@ -394,7 +394,7 @@ impl DataClient for DatabentoDataClient {
         let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
         for (dataset, tx) in channels.iter() {
             if let Err(e) = tx.send(HandlerCommand::Close) {
-                log::error!("Failed to send close command to dataset {dataset}: {e}");
+                log::warn!("Failed to send close command to dataset {dataset}: {e}");
             }
         }
 
@@ -435,7 +435,7 @@ impl DataClient for DatabentoDataClient {
             let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
             for (dataset, tx) in channels.iter() {
                 if let Err(e) = tx.send(HandlerCommand::Close) {
-                    log::error!("Failed to send close command to dataset {dataset}: {e}");
+                    log::warn!("Failed to send close command to dataset {dataset}: {e}");
                 }
             }
         }

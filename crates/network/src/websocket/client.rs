@@ -1779,7 +1779,7 @@ impl WebSocketClient {
         {
             log::debug!("Controller task finished");
         } else {
-            log::error!("Timeout waiting for controller task to finish");
+            log::warn!("Timeout waiting for controller task to finish");
 
             if !self.controller_task.is_finished() {
                 self.controller_task.abort();
@@ -1916,7 +1916,7 @@ impl WebSocketClient {
                     .await
                     .is_err()
                     {
-                        log::error!("Shutdown timed out after {}s", timeout.as_secs());
+                        log::warn!("Shutdown timed out after {}s", timeout.as_secs());
                     }
 
                     log::debug!("Closed");

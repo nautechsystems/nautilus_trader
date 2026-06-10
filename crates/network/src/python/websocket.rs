@@ -243,7 +243,7 @@ impl WebSocketClient {
                     .await;
 
                     if timeout.is_err() {
-                        log::error!("Timeout waiting for WebSocket to close, forcing closed state");
+                        log::warn!("Timeout waiting for WebSocket to close, forcing closed state");
                         connection_mode.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
                     }
                 }

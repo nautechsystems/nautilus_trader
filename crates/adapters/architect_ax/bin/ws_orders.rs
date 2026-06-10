@@ -151,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 AxOrdersWsMessage::Error(err) => {
-                    log::error!("Error: {}", err.message);
+                    log::warn!("Error: {}", err.message);
                 }
                 AxOrdersWsMessage::Reconnected => {
                     log::warn!("Reconnected");
