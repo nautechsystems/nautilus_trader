@@ -2233,6 +2233,27 @@ fn test_price_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
 }
 
 #[rstest]
+fn test_price_mid_uses_exact_decimal_midpoint(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let quote = QuoteTick::new(
+        audusd_sim.id,
+        Price::from("1.00000"),
+        Price::from("1.00003"),
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+    );
+
+    cache.add_quote(quote).unwrap();
+
+    let result = cache.price(&audusd_sim.id, PriceType::Mid).unwrap();
+
+    assert_eq!(result, Price::from("1.000015"));
+    assert_eq!(result.as_decimal(), dec!(1.000015));
+    assert_eq!(result.precision, 6);
+}
+
+#[rstest]
 fn test_quote_tick_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
     let result = cache.quote(&audusd_sim.id);
     assert!(result.is_none());

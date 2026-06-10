@@ -717,7 +717,7 @@ impl Cache {
         // Use exit price for mark-to-market: longs exit at bid, shorts exit at ask
         let last = match position.side {
             PositionSide::Flat | PositionSide::NoPositionSide => {
-                return Some(Money::new(0.0, position.settlement_currency));
+                return Some(Money::zero(position.settlement_currency));
             }
             PositionSide::Long => quote.bid_price,
             PositionSide::Short => quote.ask_price,
@@ -4898,6 +4898,11 @@ impl Cache {
     // -- DATA QUERIES ----------------------------------------------------------------------------
 
     /// Returns the price for the `instrument_id` and `price_type` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `price_type` is [`PriceType::Mid`] and the quote price precision is already at
+    /// the maximum fixed precision.
     #[must_use]
     pub fn price(&self, instrument_id: &InstrumentId, price_type: PriceType) -> Option<Price> {
         match price_type {
@@ -4911,10 +4916,11 @@ impl Cache {
                 .and_then(|quotes| quotes.front().map(|quote| quote.ask_price)),
             PriceType::Mid => self.quotes.get(instrument_id).and_then(|quotes| {
                 quotes.front().map(|quote| {
-                    Price::new(
-                        f64::midpoint(quote.ask_price.as_f64(), quote.bid_price.as_f64()),
-                        quote.bid_price.precision + 1,
-                    )
+                    let mid = (quote.ask_price.as_decimal() + quote.bid_price.as_decimal())
+                        / Decimal::TWO;
+
+                    Price::from_decimal_dp(mid, quote.bid_price.precision + 1)
+                        .expect("Invalid mid price for Cache::price")
                 })
             }),
             PriceType::Last => self

@@ -597,9 +597,9 @@ mod tests {
             .instrument_id(instrument_id)
             .client_order_id(client_order_id)
             .venue_order_id(None)
-            .quantity(Some(Quantity::new(100.0, 0)))
-            .price(Some(Price::new(50_000.0, 2)))
-            .trigger_price(Some(Price::new(49_000.0, 2)))
+            .quantity(Some(Quantity::from(100)))
+            .price(Some(Price::from("50000.00")))
+            .trigger_price(Some(Price::from("49000.00")))
             .command_id(command_id)
             .ts_init(ts_init)
             .params(None)
@@ -859,8 +859,8 @@ mod tests {
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
             .side(OrderSide::Buy)
-            .quantity(Quantity::new(1.0, 8))
-            .price(Price::new(50_000.0, 2))
+            .quantity(Quantity::from("1.00000000"))
+            .price(Price::from("50000.00"))
             .build();
 
         let command = SubmitOrder::new(
@@ -902,16 +902,16 @@ mod tests {
             .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
             .client_order_id(ClientOrderId::from("O-001"))
             .side(OrderSide::Buy)
-            .quantity(Quantity::new(1.0, 8))
-            .price(Price::new(50_000.0, 2))
+            .quantity(Quantity::from("1.00000000"))
+            .price(Price::from("50000.00"))
             .build();
 
         let order2 = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
             .client_order_id(ClientOrderId::from("O-002"))
             .side(OrderSide::Sell)
-            .quantity(Quantity::new(1.0, 8))
-            .price(Price::new(51_000.0, 2))
+            .quantity(Quantity::from("1.00000000"))
+            .price(Price::from("51000.00"))
             .build();
 
         let orders = [order1.clone(), order2];
