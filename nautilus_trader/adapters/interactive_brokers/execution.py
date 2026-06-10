@@ -413,6 +413,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         report = None
         ib_orders = await self._client.get_open_orders(self.account_id.get_id())
 
+        if ib_orders is None:
+            raise ConnectionError(
+                "get_open_orders() disconnected during reqOpenOrders — "
+                "skipping order status reconciliation to avoid false discrepancy",
+            )
+
         for ib_order in ib_orders:
             if (command.client_order_id and command.client_order_id.value == ib_order.orderRef) or (
                 command.venue_order_id
@@ -525,9 +531,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         # Get open orders first - needed for both startup and periodic reconciliation,
         # and to calculate open order fills for synthetic order adjustment
-        ib_orders: list[IBOrder] = await self._client.get_open_orders(
+        ib_orders: list[IBOrder] | None = await self._client.get_open_orders(
             self.account_id.get_id(),
         )
+
+        if ib_orders is None:
+            raise ConnectionError(
+                "get_open_orders() disconnected during reqOpenOrders — "
+                "skipping order status reconciliation to avoid false discrepancy",
+            )
 
         # Build a map of instrument_id -> net signed filled quantity from open orders
         # This is used to adjust synthetic position orders to avoid double-counting
@@ -686,6 +698,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 execution_filter=execution_filter,
             )
 
+            if execution_details is None:
+                raise ConnectionError(
+                    "get_executions() disconnected during reqExecutions — "
+                    "skipping fill report reconciliation to avoid missing fills",
+                )
+
             ts_init = self._clock.timestamp_ns()
 
             for exec_detail in execution_details:
@@ -773,7 +791,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         # Create commission — guard None/-1 (IB sends -1 or None for pending commissions)
         commission_fees = commission_report.commissionAndFees
-        if commission_fees is None or commission_fees < 0:
+        if commission_fees is None or commission_fees == -1.0:
             commission_fees = 0.0
         commission = Money(commission_fees, Currency.from_str(commission_report.currency))
 
@@ -1950,7 +1968,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         # Guard None/-1 commission (IB sends -1 or None for pending commissions)
         commission_fees = commission_report.commissionAndFees
-        if commission_fees is None or commission_fees < 0:
+        if commission_fees is None or commission_fees == -1.0:
             commission_fees = 0.0
 
         self.generate_order_filled(
@@ -2202,7 +2220,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # Combo commission scaled to the number of legs of the combo
             # Guard None/-1 (IB sends -1 or None for pending commissions)
             commission_fees = commission_report.commissionAndFees
-            if commission_fees is None or commission_fees < 0:
+            if commission_fees is None or commission_fees == -1.0:
                 commission_fees = 0.0
             combo_commission = (
                 commission_fees
@@ -2317,7 +2335,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
             # Guard None/-1 (IB sends -1 or None for pending commissions)
             commission_fees = commission_report.commissionAndFees
-            if commission_fees is None or commission_fees < 0:
+            if commission_fees is None or commission_fees == -1.0:
                 commission_fees = 0.0
             commission = Money(commission_fees, Currency.from_str(commission_report.currency))
 
