@@ -69,12 +69,11 @@ pub fn calculate_fixed_risk_position_size(
         position_size_batched = (position_size_batched / unit_batch_size).floor() * unit_batch_size;
     }
 
-    let final_size: Decimal = position_size_batched.min(
-        instrument
-            .max_quantity()
-            .unwrap_or_else(|| Quantity::zero(instrument.size_precision()))
-            .as_decimal(),
-    );
+    let final_size = instrument
+        .max_quantity()
+        .map_or(position_size_batched, |max_quantity| {
+            position_size_batched.min(max_quantity.as_decimal())
+        });
 
     Quantity::from_decimal_dp(final_size, instrument.size_precision())
         .expect("Error: Failed to convert final size to Quantity")
@@ -102,6 +101,7 @@ mod tests {
         identifiers::Symbol, instruments::stubs::default_fx_ccy, types::Currency,
     };
     use rstest::*;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -110,6 +110,13 @@ mod tests {
     #[fixture]
     fn instrument_gbpusd() -> InstrumentAny {
         InstrumentAny::CurrencyPair(default_fx_ccy(Symbol::from_str_unchecked("GBP/USD"), None))
+    }
+
+    #[fixture]
+    fn instrument_gbpusd_without_max_quantity() -> InstrumentAny {
+        let mut instrument = default_fx_ccy(Symbol::from_str_unchecked("GBP/USD"), None);
+        instrument.max_quantity = None;
+        InstrumentAny::CurrencyPair(instrument)
     }
 
     #[rstest]
@@ -263,6 +270,30 @@ mod tests {
         );
 
         assert_eq!(result, Quantity::from("500000.0"));
+    }
+
+    #[rstest]
+    fn test_calculate_without_max_quantity_leaves_size_uncapped(
+        instrument_gbpusd_without_max_quantity: InstrumentAny,
+    ) {
+        let equity = Money::from("1000000 USD");
+        let entry = Price::from("1.00010");
+        let stop_loss = Price::from("1.00000");
+
+        let result = calculate_fixed_risk_position_size(
+            &instrument_gbpusd_without_max_quantity,
+            entry,
+            stop_loss,
+            equity,
+            dec!(0.01),
+            Decimal::ZERO,
+            EXCHANGE_RATE,
+            None,
+            Decimal::from(1000),
+            1,
+        );
+
+        assert_eq!(result.as_decimal(), dec!(100000000));
     }
 
     #[rstest]
