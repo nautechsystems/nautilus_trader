@@ -361,6 +361,153 @@ impl CustomDataTrait for BinanceFuturesLiquidation {
     }
 }
 
+/// Binance Futures 24-hour ticker statistics from the `ticker` stream.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
+)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BinanceFuturesTicker {
+    /// The instrument for these 24-hour statistics.
+    pub instrument_id: InstrumentId,
+    /// Price change over the rolling 24-hour window.
+    pub price_change: Decimal,
+    /// Price change percentage over the rolling 24-hour window.
+    pub price_change_percent: Decimal,
+    /// Weighted average price over the rolling 24-hour window.
+    pub weighted_avg_price: Decimal,
+    /// Last traded price.
+    pub last_price: Decimal,
+    /// Last traded quantity.
+    pub last_qty: Decimal,
+    /// Open price for the rolling 24-hour window.
+    pub open_price: Decimal,
+    /// High price for the rolling 24-hour window.
+    pub high_price: Decimal,
+    /// Low price for the rolling 24-hour window.
+    pub low_price: Decimal,
+    /// Total traded base asset volume.
+    pub volume: Decimal,
+    /// Total traded quote asset volume.
+    pub quote_volume: Decimal,
+    /// Statistics open time.
+    pub open_time: UnixNanos,
+    /// Statistics close time.
+    pub close_time: UnixNanos,
+    /// First trade ID included in the statistics window.
+    pub first_trade_id: i64,
+    /// Last trade ID included in the statistics window.
+    pub last_trade_id: i64,
+    /// Total number of trades in the statistics window.
+    pub num_trades: i64,
+    /// UNIX timestamp (nanoseconds) when the ticker event occurred.
+    pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    pub ts_init: UnixNanos,
+}
+
+impl BinanceFuturesTicker {
+    /// Creates a new [`BinanceFuturesTicker`] instance.
+    #[must_use]
+    #[expect(clippy::too_many_arguments)]
+    pub fn new(
+        instrument_id: InstrumentId,
+        price_change: Decimal,
+        price_change_percent: Decimal,
+        weighted_avg_price: Decimal,
+        last_price: Decimal,
+        last_qty: Decimal,
+        open_price: Decimal,
+        high_price: Decimal,
+        low_price: Decimal,
+        volume: Decimal,
+        quote_volume: Decimal,
+        open_time: UnixNanos,
+        close_time: UnixNanos,
+        first_trade_id: i64,
+        last_trade_id: i64,
+        num_trades: i64,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            instrument_id,
+            price_change,
+            price_change_percent,
+            weighted_avg_price,
+            last_price,
+            last_qty,
+            open_price,
+            high_price,
+            low_price,
+            volume,
+            quote_volume,
+            open_time,
+            close_time,
+            first_trade_id,
+            last_trade_id,
+            num_trades,
+            ts_event,
+            ts_init,
+        }
+    }
+}
+
+impl HasTsInit for BinanceFuturesTicker {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl CustomDataTrait for BinanceFuturesTicker {
+    fn type_name(&self) -> &'static str {
+        "BinanceFuturesTicker"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    fn to_json(&self) -> anyhow::Result<String> {
+        Ok(serde_json::to_string(self)?)
+    }
+
+    fn clone_arc(&self) -> Arc<dyn CustomDataTrait> {
+        Arc::new(self.clone())
+    }
+
+    fn eq_arc(&self, other: &dyn CustomDataTrait) -> bool {
+        if let Some(o) = other.as_any().downcast_ref::<Self>() {
+            self == o
+        } else {
+            false
+        }
+    }
+
+    #[cfg(feature = "python")]
+    fn to_pyobject(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
+        nautilus_model::data::custom::clone_pyclass_to_pyobject(self, py)
+    }
+
+    fn type_name_static() -> &'static str {
+        "BinanceFuturesTicker"
+    }
+
+    fn from_json(value: serde_json::Value) -> anyhow::Result<Arc<dyn CustomDataTrait>> {
+        let json_str = serde_json::to_string(&value)?;
+        let parsed: Self = serde_json::from_str(&json_str)?;
+        Ok(Arc::new(parsed))
+    }
+}
+
 /// Registers Binance custom data types.
 ///
 /// Safe to call multiple times (idempotent via internal `Once` guards).
@@ -371,6 +518,7 @@ pub fn register_binance_custom_data() {
         BinanceFuturesOpenInterestHist,
     >();
     let _ = nautilus_model::data::ensure_custom_data_json_registered::<BinanceFuturesLiquidation>();
+    let _ = nautilus_model::data::ensure_custom_data_json_registered::<BinanceFuturesTicker>();
 }
 
 #[cfg(test)]

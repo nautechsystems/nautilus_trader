@@ -21,7 +21,7 @@ use std::{
     num::NonZeroUsize,
     str::FromStr,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
@@ -45,6 +45,7 @@ use nautilus_binance::{
     config::BinanceDataClientConfig,
     data_types::{
         BinanceFuturesLiquidation, BinanceFuturesOpenInterest, BinanceFuturesOpenInterestHist,
+        BinanceFuturesTicker,
     },
     futures::BinanceFuturesDataClient,
 };
@@ -88,6 +89,9 @@ struct DataTestServerState {
     depth_update_prev_final_update_id: u64,
     second_depth_update_prev_final_update_id: Option<u64>,
     depth_update_repetitions: usize,
+    send_ticker_on_connect: bool,
+    subscriptions: Arc<Mutex<Vec<Vec<String>>>>,
+    unsubscriptions: Arc<Mutex<Vec<Vec<String>>>>,
 }
 
 impl Default for DataTestServerState {
@@ -103,6 +107,9 @@ impl Default for DataTestServerState {
             depth_update_prev_final_update_id: 1027023,
             second_depth_update_prev_final_update_id: None,
             depth_update_repetitions: 1,
+            send_ticker_on_connect: false,
+            subscriptions: Arc::new(Mutex::new(Vec::new())),
+            unsubscriptions: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -170,6 +177,12 @@ async fn handle_ws(
 }
 
 async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState) {
+    if state.send_ticker_on_connect {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let ticker = ticker_stream_payload();
+        let _result = socket.send(Message::Text(ticker.to_string().into())).await;
+    }
+
     while let Some(Ok(msg)) = socket.recv().await {
         if let Message::Text(text) = msg
             && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text)
@@ -181,124 +194,150 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                 let resp = json!({"result": null, "id": id});
                 let _result = socket.send(Message::Text(resp.to_string().into())).await;
 
-                if let Some(params) = parsed.get("params").and_then(|p| p.as_array()) {
-                    for param in params {
-                        if let Some(stream) = param.as_str() {
-                            if stream.contains("@aggTrade") {
-                                let trade = json!({
-                                    "e": "aggTrade",
-                                    "E": 1700000000000_i64,
-                                    "s": "BTCUSDT",
-                                    "a": 1,
-                                    "p": "50000.00",
-                                    "q": "0.001",
-                                    "f": 1,
-                                    "l": 1,
-                                    "T": 1700000000000_i64,
-                                    "m": false
-                                });
-                                tokio::time::sleep(Duration::from_millis(50)).await;
-                                let _result =
-                                    socket.send(Message::Text(trade.to_string().into())).await;
-                            } else if stream.contains("@bookTicker") {
-                                let quote = json!({
-                                    "e": "bookTicker",
-                                    "u": 12345,
-                                    "E": 1700000000000_i64,
-                                    "T": 1700000000000_i64,
-                                    "s": "BTCUSDT",
-                                    "b": "50000.00",
-                                    "B": "1.000",
-                                    "a": "50001.00",
-                                    "A": "0.500"
-                                });
-                                tokio::time::sleep(Duration::from_millis(50)).await;
-                                let _result =
-                                    socket.send(Message::Text(quote.to_string().into())).await;
-                            } else if stream.contains("@depth") {
-                                for index in 0..state.depth_update_repetitions {
-                                    let update_offset = index as u64;
-                                    let first_update_id = if index == 0 {
-                                        state.depth_update_first_update_id
-                                    } else {
-                                        state.depth_update_final_update_id + update_offset
-                                    };
-                                    let prev_final_update_id = if index == 0 {
-                                        state.depth_update_prev_final_update_id
-                                    } else if index == 1 {
-                                        state
-                                            .second_depth_update_prev_final_update_id
-                                            .unwrap_or(state.depth_update_final_update_id)
-                                    } else {
-                                        state.depth_update_final_update_id + update_offset - 1
-                                    };
-                                    let depth_update = json!({
-                                        "e": "depthUpdate",
-                                        "E": 1700000000000_i64,
-                                        "T": 1700000000000_i64,
-                                        "s": "BTCUSDT",
-                                        "U": first_update_id,
-                                        "u": state.depth_update_final_update_id + update_offset,
-                                        "pu": prev_final_update_id,
-                                        "b": [["50000.00", "1.000"], ["49999.00", "2.000"]],
-                                        "a": [["50001.00", "0.500"], ["50002.00", "1.500"]]
-                                    });
-                                    tokio::time::sleep(state.depth_update_delay).await;
-                                    let _result = socket
-                                        .send(Message::Text(depth_update.to_string().into()))
-                                        .await;
-                                }
-                            } else if stream.contains("@markPrice") {
-                                let mark_price = json!({
-                                    "e": "markPriceUpdate",
-                                    "E": 1700000000000_i64,
-                                    "s": "BTCUSDT",
-                                    "p": "50000.50",
-                                    "i": "50000.25",
-                                    "P": "50000.75",
-                                    "r": "0.00010000",
-                                    "T": 1700028800000_i64
-                                });
-                                tokio::time::sleep(Duration::from_millis(50)).await;
-                                let _result = socket
-                                    .send(Message::Text(mark_price.to_string().into()))
-                                    .await;
-                            } else if stream.contains("@forceOrder")
-                                || stream.contains("!forceOrder@arr")
-                            {
-                                let last_filled_qty = if stream.contains("!forceOrder@arr") {
-                                    "0.002"
-                                } else {
-                                    "0.001"
-                                };
-                                let liquidation = json!({
-                                    "e": "forceOrder",
-                                    "E": 1700000000000_i64,
-                                    "o": {
-                                        "s": "BTCUSDT",
-                                        "S": "SELL",
-                                        "o": "LIMIT",
-                                        "f": "IOC",
-                                        "q": "0.003",
-                                        "p": "50000.10",
-                                        "ap": "50000.20",
-                                        "X": "FILLED",
-                                        "l": last_filled_qty,
-                                        "z": "0.003",
-                                        "T": 1700000000000_i64
-                                    }
-                                });
-                                tokio::time::sleep(Duration::from_millis(50)).await;
-                                let _result = socket
-                                    .send(Message::Text(liquidation.to_string().into()))
-                                    .await;
-                            }
+                let streams = parsed
+                    .get("params")
+                    .and_then(|p| p.as_array())
+                    .map(|params| {
+                        params
+                            .iter()
+                            .filter_map(|param| param.as_str().map(str::to_string))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+
+                if !streams.is_empty() {
+                    state.subscriptions.lock().unwrap().push(streams.clone());
+                }
+
+                for stream in streams {
+                    if stream.contains("@aggTrade") {
+                        let trade = json!({
+                            "e": "aggTrade",
+                            "E": 1700000000000_i64,
+                            "s": "BTCUSDT",
+                            "a": 1,
+                            "p": "50000.00",
+                            "q": "0.001",
+                            "f": 1,
+                            "l": 1,
+                            "T": 1700000000000_i64,
+                            "m": false
+                        });
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        let _result = socket.send(Message::Text(trade.to_string().into())).await;
+                    } else if stream.contains("@bookTicker") {
+                        let quote = json!({
+                            "e": "bookTicker",
+                            "u": 12345,
+                            "E": 1700000000000_i64,
+                            "T": 1700000000000_i64,
+                            "s": "BTCUSDT",
+                            "b": "50000.00",
+                            "B": "1.000",
+                            "a": "50001.00",
+                            "A": "0.500"
+                        });
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        let _result = socket.send(Message::Text(quote.to_string().into())).await;
+                    } else if stream.contains("@ticker") {
+                        let ticker = ticker_stream_payload();
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        let _result = socket.send(Message::Text(ticker.to_string().into())).await;
+                    } else if stream.contains("@depth") {
+                        for index in 0..state.depth_update_repetitions {
+                            let update_offset = index as u64;
+                            let first_update_id = if index == 0 {
+                                state.depth_update_first_update_id
+                            } else {
+                                state.depth_update_final_update_id + update_offset
+                            };
+                            let prev_final_update_id = if index == 0 {
+                                state.depth_update_prev_final_update_id
+                            } else if index == 1 {
+                                state
+                                    .second_depth_update_prev_final_update_id
+                                    .unwrap_or(state.depth_update_final_update_id)
+                            } else {
+                                state.depth_update_final_update_id + update_offset - 1
+                            };
+                            let depth_update = json!({
+                                "e": "depthUpdate",
+                                "E": 1700000000000_i64,
+                                "T": 1700000000000_i64,
+                                "s": "BTCUSDT",
+                                "U": first_update_id,
+                                "u": state.depth_update_final_update_id + update_offset,
+                                "pu": prev_final_update_id,
+                                "b": [["50000.00", "1.000"], ["49999.00", "2.000"]],
+                                "a": [["50001.00", "0.500"], ["50002.00", "1.500"]]
+                            });
+                            tokio::time::sleep(state.depth_update_delay).await;
+                            let _result = socket
+                                .send(Message::Text(depth_update.to_string().into()))
+                                .await;
                         }
+                    } else if stream.contains("@markPrice") {
+                        let mark_price = json!({
+                            "e": "markPriceUpdate",
+                            "E": 1700000000000_i64,
+                            "s": "BTCUSDT",
+                            "p": "50000.50",
+                            "i": "50000.25",
+                            "P": "50000.75",
+                            "r": "0.00010000",
+                            "T": 1700028800000_i64
+                        });
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        let _result = socket
+                            .send(Message::Text(mark_price.to_string().into()))
+                            .await;
+                    } else if stream.contains("@forceOrder") || stream.contains("!forceOrder@arr") {
+                        let last_filled_qty = if stream.contains("!forceOrder@arr") {
+                            "0.002"
+                        } else {
+                            "0.001"
+                        };
+                        let liquidation = json!({
+                            "e": "forceOrder",
+                            "E": 1700000000000_i64,
+                            "o": {
+                                "s": "BTCUSDT",
+                                "S": "SELL",
+                                "o": "LIMIT",
+                                "f": "IOC",
+                                "q": "0.003",
+                                "p": "50000.10",
+                                "ap": "50000.20",
+                                "X": "FILLED",
+                                "l": last_filled_qty,
+                                "z": "0.003",
+                                "T": 1700000000000_i64
+                            }
+                        });
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        let _result = socket
+                            .send(Message::Text(liquidation.to_string().into()))
+                            .await;
                     }
                 }
             } else if method == Some("UNSUBSCRIBE") {
                 let resp = json!({"result": null, "id": id});
                 let _result = socket.send(Message::Text(resp.to_string().into())).await;
+
+                let streams = parsed
+                    .get("params")
+                    .and_then(|p| p.as_array())
+                    .map(|params| {
+                        params
+                            .iter()
+                            .filter_map(|param| param.as_str().map(str::to_string))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+
+                if !streams.is_empty() {
+                    state.unsubscriptions.lock().unwrap().push(streams);
+                }
             }
         }
     }
@@ -1467,6 +1506,128 @@ async fn test_subscribe_mark_prices() {
 
 #[rstest]
 #[tokio::test]
+async fn test_subscribe_custom_ticker_for_instrument_emits_custom_data() {
+    let state = DataTestServerState::default();
+    let addr = start_data_test_server_with_state(state.clone()).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, mut rx) = create_test_data_client(base_url_http, base_url_ws);
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    let data_type = ticker_data_type_for_instrument(instrument_id);
+    let cmd = SubscribeCustomData::new(
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        data_type.clone(),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    client.subscribe(cmd).unwrap();
+
+    wait_until_async(
+        || {
+            let found = recorded_streams_include(&state.subscriptions, "btcusdt@ticker");
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    wait_until_async(
+        || {
+            let found = rx.try_recv().is_ok_and(|event| {
+                let DataEvent::Data(Data::Custom(custom)) = event else {
+                    return false;
+                };
+
+                custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<BinanceFuturesTicker>()
+                    .is_some_and(|ticker| {
+                        ticker.instrument_id == instrument_id
+                            && custom.data_type == data_type
+                            && ticker.last_price == dec!(50000.10000000)
+                            && ticker.volume == dec!(1234.567)
+                            && ticker.num_trades == 101
+                    })
+            });
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_unsubscribed_custom_ticker_frame_is_ignored() {
+    let state = DataTestServerState {
+        send_ticker_on_connect: true,
+        ..Default::default()
+    };
+    let addr = start_data_test_server_with_state(state).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, mut rx) = create_test_data_client(base_url_http, base_url_ws);
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let mut emitted_ticker = false;
+
+    while let Ok(event) = rx.try_recv() {
+        let DataEvent::Data(Data::Custom(custom)) = event else {
+            continue;
+        };
+
+        if custom
+            .data
+            .as_any()
+            .downcast_ref::<BinanceFuturesTicker>()
+            .is_some()
+        {
+            emitted_ticker = true;
+        }
+    }
+
+    assert!(
+        !emitted_ticker,
+        "expected unsubscribed Binance Futures ticker frames to be ignored",
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_subscribe_custom_liquidations_for_instrument() {
     let addr = start_data_test_server().await;
     let base_url_http = format!("http://{addr}");
@@ -2043,6 +2204,121 @@ async fn test_unsubscribe_quotes() {
     );
     let result = client.unsubscribe_quotes(&unsub_cmd);
     result.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_unsubscribe_custom_ticker_for_instrument_sends_stream_unsubscribe() {
+    let state = DataTestServerState::default();
+    let addr = start_data_test_server_with_state(state.clone()).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, mut rx) = create_test_data_client(base_url_http, base_url_ws);
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    let data_type = ticker_data_type_for_instrument(instrument_id);
+    let sub_cmd = SubscribeCustomData::new(
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        data_type.clone(),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    client.subscribe(sub_cmd).unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Custom(_))));
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let unsub_cmd = UnsubscribeCustomData::new(
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        data_type,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    client.unsubscribe(&unsub_cmd).unwrap();
+
+    wait_until_async(
+        || {
+            let found = recorded_streams_include(&state.unsubscriptions, "btcusdt@ticker");
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+fn ticker_data_type_for_instrument(instrument_id: InstrumentId) -> DataType {
+    let mut metadata = Params::new();
+    metadata.insert(
+        "instrument_id".to_string(),
+        serde_json::Value::String(instrument_id.to_string()),
+    );
+    DataType::new(
+        "BinanceFuturesTicker",
+        Some(metadata),
+        Some(instrument_id.to_string()),
+    )
+}
+
+fn recorded_streams_include(records: &Arc<Mutex<Vec<Vec<String>>>>, stream: &str) -> bool {
+    records
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|streams| streams.iter().any(|recorded| recorded == stream))
+}
+
+fn ticker_stream_payload() -> serde_json::Value {
+    json!({
+        "e": "24hrTicker",
+        "E": 1700000000000_i64,
+        "s": "BTCUSDT",
+        "p": "-100.10000000",
+        "P": "-0.200",
+        "w": "50050.25000000",
+        "c": "50000.10000000",
+        "Q": "0.010",
+        "o": "50100.20000000",
+        "h": "50200.30000000",
+        "l": "49900.40000000",
+        "v": "1234.567",
+        "q": "61734567.89000000",
+        "O": 1699913600000_i64,
+        "C": 1700000000000_i64,
+        "F": 100,
+        "L": 200,
+        "n": 101
+    })
 }
 
 #[rstest]

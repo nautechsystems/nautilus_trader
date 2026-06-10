@@ -15,6 +15,8 @@
 
 //! Parsing utilities for Binance Futures WebSocket JSON messages.
 
+use std::str::FromStr;
+
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     data::{
@@ -36,10 +38,14 @@ use super::{
     error::{BinanceWsError, BinanceWsResult},
     messages::{
         BinanceFuturesAggTradeMsg, BinanceFuturesBookTickerMsg, BinanceFuturesDepthUpdateMsg,
-        BinanceFuturesKlineMsg, BinanceFuturesMarkPriceMsg, BinanceFuturesTradeMsg,
+        BinanceFuturesKlineMsg, BinanceFuturesMarkPriceMsg, BinanceFuturesTickerMsg,
+        BinanceFuturesTradeMsg,
     },
 };
-use crate::common::enums::{BinanceKlineInterval, BinanceWsEventType};
+use crate::{
+    common::enums::{BinanceKlineInterval, BinanceWsEventType},
+    data_types::BinanceFuturesTicker,
+};
 
 /// Parses an aggregate trade message into a `TradeTick`.
 ///
@@ -323,6 +329,51 @@ pub fn parse_mark_price(
     Ok((mark_update, index_update, funding_update))
 }
 
+/// Parses a 24-hour ticker message into `BinanceFuturesTicker` custom data.
+///
+/// # Errors
+///
+/// Returns an error if parsing fails.
+pub fn parse_ticker(
+    msg: &BinanceFuturesTickerMsg,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> BinanceWsResult<BinanceFuturesTicker> {
+    Ok(BinanceFuturesTicker::new(
+        instrument.id(),
+        parse_ticker_decimal("price_change", &msg.price_change)?,
+        parse_ticker_decimal("price_change_percent", &msg.price_change_percent)?,
+        parse_ticker_decimal("weighted_avg_price", &msg.weighted_avg_price)?,
+        parse_ticker_decimal("last_price", &msg.last_price)?,
+        parse_ticker_decimal("last_qty", &msg.last_qty)?,
+        parse_ticker_decimal("open_price", &msg.open_price)?,
+        parse_ticker_decimal("high_price", &msg.high_price)?,
+        parse_ticker_decimal("low_price", &msg.low_price)?,
+        parse_ticker_decimal("volume", &msg.volume)?,
+        parse_ticker_decimal("quote_volume", &msg.quote_volume)?,
+        ticker_unix_nanos_from_millis("open_time", msg.open_time)?,
+        ticker_unix_nanos_from_millis("close_time", msg.close_time)?,
+        msg.first_trade_id,
+        msg.last_trade_id,
+        msg.num_trades,
+        ticker_unix_nanos_from_millis("event_time", msg.event_time)?,
+        ts_init,
+    ))
+}
+
+fn parse_ticker_decimal(field: &str, value: &str) -> BinanceWsResult<Decimal> {
+    Decimal::from_str(value).map_err(|e| {
+        BinanceWsError::ParseError(format!("invalid Binance ticker {field}='{value}': {e}"))
+    })
+}
+
+fn ticker_unix_nanos_from_millis(field: &str, value: i64) -> BinanceWsResult<UnixNanos> {
+    let millis = u64::try_from(value).map_err(|e| {
+        BinanceWsError::ParseError(format!("invalid Binance ticker {field}='{value}': {e}"))
+    })?;
+    Ok(UnixNanos::from_millis(millis))
+}
+
 /// Converts a Binance kline interval to a Nautilus `BarSpecification`.
 fn interval_to_bar_spec(interval: BinanceKlineInterval) -> BarSpecification {
     match interval {
@@ -458,6 +509,7 @@ pub fn extract_event_type(json: &serde_json::Value) -> Option<BinanceWsEventType
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use serde::de::DeserializeOwned;
     use serde_json::json;
 
@@ -747,6 +799,45 @@ mod tests {
         assert_eq!(msg.volume, "122474.816");
         assert_eq!(msg.quote_volume, "2036102085.69746400");
         assert_eq!(msg.num_trades, 142853);
+    }
+
+    #[rstest]
+    fn test_parse_ticker() {
+        let instrument = sample_instrument();
+        let msg: BinanceFuturesTickerMsg = load_market_fixture("ticker_stream.json");
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let ticker = parse_ticker(&msg, &instrument, ts_init).unwrap();
+
+        assert_eq!(ticker.instrument_id, instrument.id());
+        assert_eq!(ticker.price_change, dec!(-131.40000000));
+        assert_eq!(ticker.price_change_percent, dec!(-0.786));
+        assert_eq!(ticker.weighted_avg_price, dec!(16628.97377498));
+        assert_eq!(ticker.last_price, dec!(16584.60000000));
+        assert_eq!(ticker.last_qty, dec!(0.002));
+        assert_eq!(ticker.open_price, dec!(16716.00000000));
+        assert_eq!(ticker.high_price, dec!(16764.89000000));
+        assert_eq!(ticker.low_price, dec!(16456.51000000));
+        assert_eq!(ticker.volume, dec!(122474.816));
+        assert_eq!(ticker.quote_volume, dec!(2036102085.69746400));
+        assert_eq!(ticker.open_time, UnixNanos::from_millis(1_672_429_382_136));
+        assert_eq!(ticker.close_time, UnixNanos::from_millis(1_672_515_782_136));
+        assert_eq!(ticker.first_trade_id, 2_289_691);
+        assert_eq!(ticker.last_trade_id, 2_432_543);
+        assert_eq!(ticker.num_trades, 142_853);
+        assert_eq!(ticker.ts_event, UnixNanos::from_millis(1_672_515_782_136));
+        assert_eq!(ticker.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_ticker_rejects_invalid_numeric_field() {
+        let instrument = sample_instrument();
+        let mut msg: BinanceFuturesTickerMsg = load_market_fixture("ticker_stream.json");
+        msg.last_price = "not-a-decimal".to_string();
+
+        let result = parse_ticker(&msg, &instrument, UnixNanos::default());
+
+        assert!(result.is_err());
     }
 
     #[rstest]

@@ -66,7 +66,7 @@ multi-client ID routing pattern.
 
 The integration includes several custom data types:
 
-- `BinanceTicker`: 24-hour ticker data including price and statistical information.
+- `BinanceFuturesTicker`: Futures 24-hour ticker data including price and statistics.
 - `BinanceBar`: Bar data with additional volume metrics for historical and real-time use.
 - `BinanceFuturesMarkPriceUpdate`: Mark price updates for Binance Futures.
 - `BinanceFuturesLiquidation`: Futures liquidation events from the `forceOrder` stream.
@@ -480,6 +480,29 @@ Binance USD-M mark-price payloads may include an `ap` moving-average field. The 
 adapter parses this raw venue field but does not emit it as domain data or
 Binance custom data; Nautilus mark-price subscriptions emit mark, index, and
 funding-rate updates from the same stream.
+
+### `BinanceFuturesTicker`
+
+Subscribe to 24-hour ticker statistics for a specific Futures instrument:
+
+```python
+from nautilus_trader.core import nautilus_pyo3 as pyo3
+
+client_id = pyo3.ClientId.from_str("BINANCE")
+
+self.subscribe_data(
+    data_type=pyo3.DataType(
+        "BinanceFuturesTicker",
+        {"instrument_id": "BTCUSDT-PERP.BINANCE"},
+    ),
+    client_id=client_id,
+)
+```
+
+The adapter subscribes to the instrument `@ticker` stream and emits
+`BinanceFuturesTicker` custom data with `metadata={"instrument_id": "<instrument_id>"}`.
+Ticker custom data requires `instrument_id`; all-market ticker subscriptions are not
+supported.
 
 ### `BinanceFuturesMarkPriceUpdate`
 
