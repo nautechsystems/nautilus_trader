@@ -14,9 +14,10 @@
 # Remove the image
 # docker image rm nautilus-dev
 
+FROM rust:1.96.0-slim-bookworm@sha256:b5f842fac1e3b4ff718a652a8e0173b62d9403ec826ef4998880b9347db30684 AS rust-toolchain
+
 # Pin to specific digest for supply-chain security (ubuntu:22.04 as of 2026-04-30)
 FROM ubuntu@sha256:962f6cadeae0ea6284001009daa4cc9a8c37e75d1f5191cf0eb83fe565b63dd7
-
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV BUILD_MODE=release
@@ -39,23 +40,27 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-# Install uv
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:/root/.local/bin:${PATH}"
-
-# Install Python 3.13
-RUN uv python install
+COPY --from=rust-toolchain /usr/local/cargo /usr/local/cargo
+COPY --from=rust-toolchain /usr/local/rustup /usr/local/rustup
+ENV CARGO_HOME="/usr/local/cargo" \
+    RUSTUP_HOME="/usr/local/rustup" \
+    PATH="/usr/local/cargo/bin:${PATH}"
 
 # Set working directory
 WORKDIR /workspace
 
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.18@sha256:78bc42400d77b0678ba95765305c826652ed5431f399257271dda681d0318f03 \
+  /uv /uvx /root/.local/bin/
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Install Python 3.13
+RUN uv python install 3.13
+
 # Copy only necessary files for dependency setup
 # The actual source code will be mounted as a volume
-COPY ../scripts/rust-toolchain.sh scripts/
-COPY ../Cargo.toml Cargo.lock pyproject.toml rust-toolchain.toml ./
+COPY scripts/rust-toolchain.sh scripts/
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 
 # Set up Rust toolchain based on project requirements
 RUN bash scripts/rust-toolchain.sh > /tmp/toolchain.txt && \

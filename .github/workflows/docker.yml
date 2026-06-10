@@ -48,7 +48,6 @@ jobs:
             ghcr.io:443
             deb.debian.org:443
             security.debian.org:443
-            sh.rustup.rs:443
             static.rust-lang.org:443
             pypi.org:443
             files.pythonhosted.org:443
@@ -74,6 +73,9 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
+      - name: Verify Docker toolchain pins
+        run: bash scripts/ci/check-docker-toolchain-pins.bash
+
       - name: Start local registry
         run: docker run -d -p 5000:5000 --name registry registry:2
 
@@ -97,6 +99,7 @@ jobs:
           echo "slug=$(echo '${{ matrix.platform }}' | sed 's/\//-/g')" >> "$GITHUB_OUTPUT"
 
       - name: Build nautilus_trader (push to local registry)
+        id: build-nautilus-trader-test
         # https://github.com/docker/build-push-action
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
@@ -108,24 +111,26 @@ jobs:
           cache-from: type=gha,scope=nautilus_trader-test-${{ steps.platform-slug.outputs.slug }}
           cache-to: type=gha,mode=max,scope=nautilus_trader-test-${{ steps.platform-slug.outputs.slug }}
 
-      - name: Create temporary jupyterlab Dockerfile
+      - name: Export nautilus_trader digest
+        id: nautilus-trader-test-digest
         run: |
-          sed 's|ghcr.io/nautechsystems/nautilus_trader|localhost:5000/nautilus_trader|' \
-            .docker/jupyterlab.dockerfile > /tmp/jupyterlab-test.dockerfile
+          digest="${{ steps.build-nautilus-trader-test.outputs.digest }}"
+          echo "hex=${digest#sha256:}" >> "$GITHUB_OUTPUT"
 
       - name: Build jupyterlab (push to local registry)
         # https://github.com/docker/build-push-action
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
-          file: /tmp/jupyterlab-test.dockerfile
+          file: .docker/jupyterlab.dockerfile
           platforms: ${{ matrix.platform }}
           push: true
           tags: localhost:5000/jupyterlab:test-${{ steps.platform-slug.outputs.slug }}
           cache-from: type=gha,scope=jupyterlab-test-${{ steps.platform-slug.outputs.slug }}
           cache-to: type=gha,mode=max,scope=jupyterlab-test-${{ steps.platform-slug.outputs.slug }}
           build-args: |
-            GIT_TAG=test-${{ steps.platform-slug.outputs.slug }}
+            BASE_IMAGE_REPOSITORY=localhost:5000/nautilus_trader
+            BASE_IMAGE_DIGEST=${{ steps.nautilus-trader-test-digest.outputs.hex }}
 
   # -----------------------------------------------------------------------------------------------
   # Production builds with multi-platform support
@@ -161,7 +166,6 @@ jobs:
             ghcr.io:443
             deb.debian.org:443
             security.debian.org:443
-            sh.rustup.rs:443
             static.rust-lang.org:443
             pypi.org:443
             files.pythonhosted.org:443
@@ -186,6 +190,9 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
+
+      - name: Verify Docker toolchain pins
+        run: bash scripts/ci/check-docker-toolchain-pins.bash
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
@@ -255,6 +262,9 @@ jobs:
       id-token: write
       attestations: write
     needs: build-docker-images-nautilus-trader
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      digest_hex: ${{ steps.push.outputs.digest_hex }}
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
@@ -319,6 +329,7 @@ jobs:
           IMAGE="ghcr.io/${{ github.repository_owner }}/nautilus_trader:$TAG"
           DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' | jq -r '.digest')
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "digest_hex=${DIGEST#sha256:}" >> "$GITHUB_OUTPUT"
 
       - name: Inspect image
         run: |
@@ -388,7 +399,6 @@ jobs:
             ghcr.io:443
             deb.debian.org:443
             security.debian.org:443
-            sh.rustup.rs:443
             static.rust-lang.org:443
             pypi.org:443
             files.pythonhosted.org:443
@@ -413,6 +423,9 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
+
+      - name: Verify Docker toolchain pins
+        run: bash scripts/ci/check-docker-toolchain-pins.bash
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
@@ -469,7 +482,8 @@ jobs:
           # yamllint disable-line rule:line-length
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/jupyterlab,push-by-digest=true, name-canonical=true,push=true
           build-args: |
-            GIT_TAG=${{ steps.image-tag.outputs.tag }}
+            BASE_IMAGE_REPOSITORY=ghcr.io/${{ github.repository_owner }}/nautilus_trader
+            BASE_IMAGE_DIGEST=${{ needs.merge-nautilus-trader.outputs.digest_hex }}
 
       - name: Export digest
         run: |

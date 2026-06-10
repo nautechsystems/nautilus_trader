@@ -971,7 +971,7 @@ docker-push:  #-- Push Docker image to registry
 
 .PHONY: docker-build-jupyter
 docker-build-jupyter:  #-- Build JupyterLab Docker image
-	docker build --build-arg GIT_TAG=$(GIT_TAG) -f .docker/jupyterlab.dockerfile --platform linux/x86_64 -t $(IMAGE):jupyter .
+	docker build -f .docker/jupyterlab.dockerfile --platform linux/x86_64 -t $(IMAGE):jupyter .
 
 .PHONY: docker-push-jupyter
 docker-push-jupyter:  #-- Push JupyterLab Docker image to registry
