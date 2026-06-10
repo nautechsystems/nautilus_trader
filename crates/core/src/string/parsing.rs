@@ -136,6 +136,9 @@ pub fn min_increment_precision_from_str(s: &str) -> u8 {
 
 /// Returns a `usize` from the given bytes.
 ///
+/// Reads the first `size_of::<usize>()` bytes in little-endian order; any
+/// additional bytes are ignored.
+///
 /// # Errors
 ///
 /// Returns an error if there are not enough bytes to represent a `usize`.

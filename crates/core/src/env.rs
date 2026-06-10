@@ -22,11 +22,16 @@
 ///
 /// # Errors
 ///
-/// Returns an error if the environment variable is not set.
+/// Returns an error if the environment variable is not set or is not valid Unicode.
 pub fn get_env_var(key: &str) -> anyhow::Result<String> {
     match std::env::var(key) {
         Ok(var) => Ok(var),
-        Err(_) => anyhow::bail!("environment variable '{key}' must be set"),
+        Err(std::env::VarError::NotPresent) => {
+            anyhow::bail!("environment variable '{key}' must be set")
+        }
+        Err(std::env::VarError::NotUnicode(_)) => {
+            anyhow::bail!("environment variable '{key}' is not valid Unicode")
+        }
     }
 }
 

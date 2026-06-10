@@ -587,10 +587,6 @@ pub fn add_n_months(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateTime<
 /// # Errors
 ///
 /// Returns an error if the resulting timestamp is out of range or invalid.
-#[expect(
-    clippy::cast_sign_loss,
-    reason = "explicit `if timestamp < 0` guard before the cast"
-)]
 pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNanos> {
     let datetime = unix_nanos_to_datetime(unix_nanos)?;
     let result = subtract_n_months(datetime, n)?;
@@ -599,11 +595,9 @@ pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<
         None => anyhow::bail!("Timestamp out of range after subtracting {n} months"),
     };
 
-    if timestamp < 0 {
-        anyhow::bail!("Negative timestamp not allowed");
-    }
-
-    Ok(UnixNanos::from(timestamp as u64))
+    let nanos =
+        u64::try_from(timestamp).map_err(|_| anyhow::anyhow!("Negative timestamp not allowed"))?;
+    Ok(UnixNanos::from(nanos))
 }
 
 /// Add `n` months to a given UNIX nanoseconds timestamp.
@@ -611,10 +605,6 @@ pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<
 /// # Errors
 ///
 /// Returns an error if the resulting timestamp is out of range or invalid.
-#[expect(
-    clippy::cast_sign_loss,
-    reason = "explicit `if timestamp < 0` guard before the cast"
-)]
 pub fn add_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNanos> {
     let datetime = unix_nanos_to_datetime(unix_nanos)?;
     let result = add_n_months(datetime, n)?;
@@ -623,11 +613,9 @@ pub fn add_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixN
         None => anyhow::bail!("Timestamp out of range after adding {n} months"),
     };
 
-    if timestamp < 0 {
-        anyhow::bail!("Negative timestamp not allowed");
-    }
-
-    Ok(UnixNanos::from(timestamp as u64))
+    let nanos =
+        u64::try_from(timestamp).map_err(|_| anyhow::anyhow!("Negative timestamp not allowed"))?;
+    Ok(UnixNanos::from(nanos))
 }
 
 /// Add `n` years to a chrono `DateTime<Utc>`.
@@ -667,10 +655,6 @@ pub fn subtract_n_years(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateT
 /// # Errors
 ///
 /// Returns an error if the resulting timestamp is out of range or invalid.
-#[expect(
-    clippy::cast_sign_loss,
-    reason = "explicit `if timestamp < 0` guard before the cast"
-)]
 pub fn add_n_years_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNanos> {
     let datetime = unix_nanos_to_datetime(unix_nanos)?;
     let result = add_n_years(datetime, n)?;
@@ -679,11 +663,9 @@ pub fn add_n_years_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNa
         None => anyhow::bail!("Timestamp out of range after adding {n} years"),
     };
 
-    if timestamp < 0 {
-        anyhow::bail!("Negative timestamp not allowed");
-    }
-
-    Ok(UnixNanos::from(timestamp as u64))
+    let nanos =
+        u64::try_from(timestamp).map_err(|_| anyhow::anyhow!("Negative timestamp not allowed"))?;
+    Ok(UnixNanos::from(nanos))
 }
 
 /// Subtract `n` years from a given UNIX nanoseconds timestamp.
@@ -691,10 +673,6 @@ pub fn add_n_years_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNa
 /// # Errors
 ///
 /// Returns an error if the resulting timestamp is out of range or invalid.
-#[expect(
-    clippy::cast_sign_loss,
-    reason = "explicit `if timestamp < 0` guard before the cast"
-)]
 pub fn subtract_n_years_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNanos> {
     let datetime = unix_nanos_to_datetime(unix_nanos)?;
     let result = subtract_n_years(datetime, n)?;
@@ -703,11 +681,9 @@ pub fn subtract_n_years_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<U
         None => anyhow::bail!("Timestamp out of range after subtracting {n} years"),
     };
 
-    if timestamp < 0 {
-        anyhow::bail!("Negative timestamp not allowed");
-    }
-
-    Ok(UnixNanos::from(timestamp as u64))
+    let nanos =
+        u64::try_from(timestamp).map_err(|_| anyhow::anyhow!("Negative timestamp not allowed"))?;
+    Ok(UnixNanos::from(nanos))
 }
 
 /// Returns the last valid day of `(year, month)`.
@@ -1277,5 +1253,25 @@ mod tests {
         assert!(add_n_months_nanos(large, 1).is_err());
         assert!(add_n_years_nanos(large, 1).is_err());
         assert!(subtract_n_years_nanos(large, 1).is_err());
+    }
+
+    #[rstest]
+    fn test_subtract_n_months_nanos_pre_epoch_result_errors() {
+        let epoch = UnixNanos::from(0);
+        let err = subtract_n_months_nanos(epoch, 1).unwrap_err();
+        assert_eq!(err.to_string(), "Negative timestamp not allowed");
+    }
+
+    #[rstest]
+    fn test_subtract_n_years_nanos_pre_epoch_result_errors() {
+        let epoch = UnixNanos::from(0);
+        let err = subtract_n_years_nanos(epoch, 1).unwrap_err();
+        assert_eq!(err.to_string(), "Negative timestamp not allowed");
+    }
+
+    #[rstest]
+    fn test_subtract_n_months_nanos_at_epoch_boundary() {
+        let epoch = UnixNanos::from(0);
+        assert_eq!(subtract_n_months_nanos(epoch, 0).unwrap(), epoch);
     }
 }

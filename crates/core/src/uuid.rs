@@ -159,8 +159,8 @@ impl UUID4 {
 
     /// Returns the raw UUID bytes (16 bytes).
     ///
-    /// This method is optimized for serialization where the UUID bytes
-    /// are needed directly without string conversion overhead.
+    /// Parses the stored string representation on each call; cache the result
+    /// when the bytes are needed repeatedly in hot paths.
     ///
     /// # Panics
     ///
@@ -168,8 +168,6 @@ impl UUID4 {
     /// UTF-8 UUID v4 string produced by [`UUID4::new`] or deserialization paths.
     #[must_use]
     pub fn as_bytes(&self) -> [u8; 16] {
-        // Parse the string representation to extract the raw bytes
-        // This is done once at read time to avoid repeated parsing
         let uuid_str = self.to_cstr().to_str().expect("Valid UTF-8");
         let uuid = Uuid::parse_str(uuid_str).expect("Valid UUID4");
         *uuid.as_bytes()
