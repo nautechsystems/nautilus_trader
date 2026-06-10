@@ -23,7 +23,8 @@ use nautilus_blockchain::{
 };
 use nautilus_infrastructure::sql::pg::get_postgres_connect_options;
 use nautilus_model::defi::{
-    DexType, PoolIdentifier, chain::Chain, data::block::BlockPosition, validation::validate_address,
+    DexType, PoolIdentifier, chain::Chain, data::block::BlockPosition,
+    pool_analysis::snapshot::PoolSnapshot, validation::validate_address,
 };
 use serde_json::json;
 use ustr::Ustr;
@@ -45,9 +46,12 @@ pub(crate) async fn run_analyze_pool(
     rpc_url: Option<String>,
     database: DatabaseConfig,
     reset: bool,
+    require_existing_snapshot: bool,
     multicall_calls_per_rpc_request: Option<u32>,
 ) -> anyhow::Result<()> {
     let (chain, dex_type) = parse_chain_dex(&chain, &dex)?;
+    let chain_name = chain.name.to_string();
+    let dex_name = dex_type.to_string();
     let mut data_client = create_data_client(
         chain,
         dex_type,
@@ -58,15 +62,20 @@ pub(crate) async fn run_analyze_pool(
     .await?;
     let to_block = resolve_to_block(&data_client, to_block).await;
 
-    analyze_pool_with_client(
+    let outcome = analyze_pool_with_client(
         &mut data_client,
         dex_type,
         pool_address,
         from_block,
         to_block,
         reset,
+        require_existing_snapshot,
     )
     .await?;
+
+    if matches!(outcome, PoolAnalysisOutcome::NeedsBootstrap(_)) {
+        println!("{}", outcome.to_json(&chain_name, &dex_name));
+    }
 
     Ok(())
 }
@@ -88,6 +97,7 @@ pub(crate) async fn run_analyze_pools(
     rpc_url: Option<String>,
     database: DatabaseConfig,
     reset: bool,
+    require_existing_snapshot: bool,
     multicall_calls_per_rpc_request: Option<u32>,
 ) -> anyhow::Result<()> {
     let pool_addresses = load_pool_addresses(addresses, addresses_file)?;
@@ -114,6 +124,7 @@ pub(crate) async fn run_analyze_pools(
             from_block,
             to_block,
             reset,
+            require_existing_snapshot,
         )
         .await;
 
@@ -152,9 +163,20 @@ async fn analyze_pool_with_client(
     from_block: Option<u64>,
     to_block: u64,
     reset: bool,
+    require_existing_snapshot: bool,
 ) -> anyhow::Result<PoolAnalysisOutcome> {
     let pool_address = validate_address(&pool_address)?;
     let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
+    if require_existing_snapshot
+        && needs_bootstrap_before_target(data_client, &pool_identifier, to_block).await?
+    {
+        return Ok(PoolAnalysisOutcome::NeedsBootstrap(
+            PoolNeedsBootstrapOutcome {
+                pool_address: pool_address.to_string(),
+                target_block: to_block,
+            },
+        ));
+    }
 
     data_client
         .sync_pool_events(
@@ -200,7 +222,7 @@ async fn analyze_pool_with_client(
         liquidity_utilization_rate * 100.0
     );
 
-    Ok(PoolAnalysisOutcome {
+    Ok(PoolAnalysisOutcome::Success(PoolAnalysisSuccessOutcome {
         pool_address: pool_address.to_string(),
         target_block: to_block,
         snapshot_block_position,
@@ -209,7 +231,43 @@ async fn analyze_pool_with_client(
         valid,
         already_valid,
         liquidity_utilization_rate,
-    })
+    }))
+}
+
+async fn needs_bootstrap_before_target(
+    data_client: &BlockchainDataClientCore,
+    pool_identifier: &PoolIdentifier,
+    to_block: u64,
+) -> anyhow::Result<bool> {
+    let database = data_client
+        .cache
+        .database
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Database is not initialized"))?;
+    let snapshot = database
+        .load_latest_pool_snapshot(
+            data_client.chain.chain_id,
+            pool_identifier,
+            Some(to_block),
+            true,
+        )
+        .await?;
+
+    let Some(snapshot) = snapshot else {
+        return Ok(true);
+    };
+    let snapshot_needs_bootstrap = data_client
+        .cache
+        .get_pool(pool_identifier)
+        .is_some_and(|pool| is_empty_creation_snapshot(&snapshot, pool.creation_block));
+
+    Ok(snapshot_needs_bootstrap)
+}
+
+fn is_empty_creation_snapshot(snapshot: &PoolSnapshot, pool_creation_block: u64) -> bool {
+    snapshot.positions.is_empty()
+        && snapshot.ticks.is_empty()
+        && snapshot.block_position.number == pool_creation_block
 }
 
 async fn create_data_client(
@@ -317,7 +375,13 @@ fn load_pool_addresses(
 }
 
 #[derive(Debug)]
-struct PoolAnalysisOutcome {
+enum PoolAnalysisOutcome {
+    Success(PoolAnalysisSuccessOutcome),
+    NeedsBootstrap(PoolNeedsBootstrapOutcome),
+}
+
+#[derive(Debug)]
+struct PoolAnalysisSuccessOutcome {
     pool_address: String,
     target_block: u64,
     snapshot_block_position: BlockPosition,
@@ -328,23 +392,38 @@ struct PoolAnalysisOutcome {
     liquidity_utilization_rate: f64,
 }
 
+#[derive(Debug)]
+struct PoolNeedsBootstrapOutcome {
+    pool_address: String,
+    target_block: u64,
+}
+
 impl PoolAnalysisOutcome {
     fn to_json(&self, chain: &str, dex: &str) -> serde_json::Value {
-        json!({
-            "chain": chain,
-            "dex": dex,
-            "pool_address": self.pool_address.as_str(),
-            "target_block": self.target_block,
-            "status": "success",
-            "snapshot_block": self.snapshot_block_position.number,
-            "snapshot_transaction_index": self.snapshot_block_position.transaction_index,
-            "snapshot_log_index": self.snapshot_block_position.log_index,
-            "positions": self.positions,
-            "ticks": self.ticks,
-            "valid": self.valid,
-            "already_valid": self.already_valid,
-            "liquidity_utilization_rate": self.liquidity_utilization_rate,
-        })
+        match self {
+            Self::Success(outcome) => json!({
+                "chain": chain,
+                "dex": dex,
+                "pool_address": outcome.pool_address.as_str(),
+                "target_block": outcome.target_block,
+                "status": "success",
+                "snapshot_block": outcome.snapshot_block_position.number,
+                "snapshot_transaction_index": outcome.snapshot_block_position.transaction_index,
+                "snapshot_log_index": outcome.snapshot_block_position.log_index,
+                "positions": outcome.positions,
+                "ticks": outcome.ticks,
+                "valid": outcome.valid,
+                "already_valid": outcome.already_valid,
+                "liquidity_utilization_rate": outcome.liquidity_utilization_rate,
+            }),
+            Self::NeedsBootstrap(outcome) => json!({
+                "chain": chain,
+                "dex": dex,
+                "pool_address": outcome.pool_address.as_str(),
+                "target_block": outcome.target_block,
+                "status": "needs_bootstrap",
+            }),
+        }
     }
 }
 
@@ -356,9 +435,61 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use clap::Parser;
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        defi::pool_analysis::snapshot::{PoolAnalytics, PoolState},
+        identifiers::InstrumentId,
+    };
     use rstest::rstest;
+    use serde_json::json;
 
     use super::*;
+    use crate::opt::NautilusCli;
+
+    #[rstest]
+    fn analyze_pool_cli_parses_require_existing_snapshot() {
+        let cli = NautilusCli::try_parse_from([
+            "nautilus",
+            "blockchain",
+            "analyze-pool",
+            "--chain",
+            "ethereum",
+            "--dex",
+            "UniswapV3",
+            "--address",
+            "0x1111111111111111111111111111111111111111",
+            "--to-block",
+            "200",
+            "--rpc-url",
+            "http://localhost:8545",
+            "--require-existing-snapshot",
+            "--host",
+            "localhost",
+            "--port",
+            "5433",
+            "--username",
+            "postgres",
+            "--database",
+            "nautilus",
+            "--password",
+            "secret",
+        ])
+        .unwrap();
+
+        match cli.command {
+            crate::opt::Commands::Blockchain(crate::opt::BlockchainOpt {
+                command:
+                    crate::opt::BlockchainCommand::AnalyzePool {
+                        require_existing_snapshot,
+                        ..
+                    },
+            }) => {
+                assert!(require_existing_snapshot);
+            }
+            _ => panic!("Expected analyze-pool blockchain command"),
+        }
+    }
 
     #[rstest]
     fn load_pool_addresses_merges_cli_and_file_entries_in_order() {
@@ -396,6 +527,83 @@ mod tests {
             error
                 .to_string()
                 .contains("At least one --address or --addresses-file entry is required")
+        );
+    }
+
+    #[rstest]
+    fn pool_analysis_needs_bootstrap_json_matches_contract() {
+        let outcome = PoolAnalysisOutcome::NeedsBootstrap(PoolNeedsBootstrapOutcome {
+            pool_address: "0x1111111111111111111111111111111111111111".to_string(),
+            target_block: 25_218_797,
+        });
+
+        assert_eq!(
+            outcome.to_json("Ethereum", "UniswapV3"),
+            json!({
+                "chain": "Ethereum",
+                "dex": "UniswapV3",
+                "pool_address": "0x1111111111111111111111111111111111111111",
+                "target_block": 25_218_797,
+                "status": "needs_bootstrap",
+            })
+        );
+    }
+
+    #[rstest]
+    fn pool_analysis_success_json_matches_contract() {
+        let outcome = PoolAnalysisOutcome::Success(PoolAnalysisSuccessOutcome {
+            pool_address: "0x1111111111111111111111111111111111111111".to_string(),
+            target_block: 25_218_807,
+            snapshot_block_position: BlockPosition::new(25_218_797, "0xabc".to_string(), 3, 4),
+            positions: 2,
+            ticks: 7,
+            valid: true,
+            already_valid: false,
+            liquidity_utilization_rate: 0.25,
+        });
+
+        assert_eq!(
+            outcome.to_json("Ethereum", "UniswapV3"),
+            json!({
+                "chain": "Ethereum",
+                "dex": "UniswapV3",
+                "pool_address": "0x1111111111111111111111111111111111111111",
+                "target_block": 25_218_807,
+                "status": "success",
+                "snapshot_block": 25_218_797,
+                "snapshot_transaction_index": 3,
+                "snapshot_log_index": 4,
+                "positions": 2,
+                "ticks": 7,
+                "valid": true,
+                "already_valid": false,
+                "liquidity_utilization_rate": 0.25,
+            })
+        );
+    }
+
+    #[rstest]
+    #[case(100, 100, true)]
+    #[case(101, 100, false)]
+    fn empty_creation_snapshot_detection(
+        #[case] snapshot_block: u64,
+        #[case] creation_block: u64,
+        #[case] expected: bool,
+    ) {
+        let snapshot = PoolSnapshot::new(
+            "ETHUSDT.BINANCE".parse::<InstrumentId>().unwrap(),
+            PoolState::default(),
+            Vec::new(),
+            Vec::new(),
+            PoolAnalytics::default(),
+            BlockPosition::new(snapshot_block, "0xabc".to_string(), 0, 0),
+            UnixNanos::from(0),
+            UnixNanos::from(0),
+        );
+
+        assert_eq!(
+            is_empty_creation_snapshot(&snapshot, creation_block),
+            expected
         );
     }
 

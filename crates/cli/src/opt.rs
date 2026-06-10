@@ -145,6 +145,9 @@ pub enum BlockchainCommand {
         /// Reset sync progress and start from the beginning, ignoring last synced block
         #[arg(long)]
         reset: bool,
+        /// Return needs_bootstrap for pools without a valid snapshot before the target block
+        #[arg(long)]
+        require_existing_snapshot: bool,
         /// Maximum number of Multicall calls per RPC request (optional, defaults to 200)
         #[arg(long)]
         multicall_calls_per_rpc_request: Option<u32>,
@@ -178,6 +181,9 @@ pub enum BlockchainCommand {
         /// Reset sync progress and start from the beginning, ignoring last synced block
         #[arg(long)]
         reset: bool,
+        /// Return needs_bootstrap for pools without a valid snapshot before the target block
+        #[arg(long)]
+        require_existing_snapshot: bool,
         /// Maximum number of Multicall calls per RPC request (optional, defaults to 200)
         #[arg(long)]
         multicall_calls_per_rpc_request: Option<u32>,
@@ -217,6 +223,7 @@ mod tests {
             "--rpc-url",
             "http://localhost:8545",
             "--reset",
+            "--require-existing-snapshot",
             "--multicall-calls-per-rpc-request",
             "25",
             "--host",
@@ -244,6 +251,7 @@ mod tests {
                         to_block,
                         rpc_url,
                         reset,
+                        require_existing_snapshot,
                         multicall_calls_per_rpc_request,
                         database,
                     },
@@ -262,6 +270,7 @@ mod tests {
                 assert_eq!(to_block, Some(200));
                 assert_eq!(rpc_url.as_deref(), Some("http://localhost:8545"));
                 assert!(reset);
+                assert!(require_existing_snapshot);
                 assert_eq!(multicall_calls_per_rpc_request, Some(25));
                 assert_eq!(database.host.as_deref(), Some("localhost"));
                 assert_eq!(database.port, Some(5433));

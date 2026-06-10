@@ -146,6 +146,40 @@ For Uniswap V3 snapshots, bootstrap uses a two-stage process:
 If final RPC hydration fails, the adapter must fail closed. It must not emit a snapshot built from
 replayed events with stale price state.
 
+### Snapshot bootstrap guard
+
+Use `--require-existing-snapshot` when a pool analysis job should prepare a bounded replay only from
+the local snapshot cache. The command checks for the latest valid `pool_snapshot` at or before the
+target block before syncing pool events. If no usable snapshot exists, or the only match is the
+empty creation-block snapshot with no positions or ticks, it returns `needs_bootstrap` and skips the
+creation-to-target bootstrap for that pool.
+
+```fish
+nautilus blockchain analyze-pools \
+    --chain ethereum \
+    --dex UniswapV3 \
+    --addresses-file pools.txt \
+    --to-block 25218797 \
+    --require-existing-snapshot \
+    --rpc-url "$RPC_HTTP_URL"
+```
+
+`analyze-pools` prints one JSON result per pool. A pool that needs a first-time bootstrap has this
+shape:
+
+```json
+{
+  "chain": "Ethereum",
+  "dex": "UniswapV3",
+  "pool_address": "0x1111111111111111111111111111111111111111",
+  "target_block": 25218797,
+  "status": "needs_bootstrap"
+}
+```
+
+The single-pool `analyze-pool` command preserves its existing success behavior and prints this JSON
+only for the `needs_bootstrap` result.
+
 ### Backtest replay
 
 In backtest mode the adapter does not service live snapshot requests, so the pool profiler must
@@ -171,6 +205,10 @@ alongside the events to replay. The data engine restores the profiler from the s
 any pool events that precede it in the stream and applying them once the profiler is ready. Replay
 every pool event from the snapshot's block forward: a snapshot earlier than the first replayed event
 leaves the profiler stale.
+
+Cached block timestamps load into Nautilus data objects as UNIX nanoseconds. Cache rows written with
+second-resolution block timestamps are normalized to nanoseconds when snapshots and pool events are
+loaded, while nanosecond rows preserve their stored precision.
 
 ## Contracts
 

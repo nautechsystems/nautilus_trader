@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{num::ParseIntError, str::FromStr};
 
 use alloy::primitives::{Address, I256, U160, U256};
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_model::{
     defi::{
         PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap, SharedChain, SharedDex,
@@ -26,6 +26,8 @@ use nautilus_model::{
     identifiers::InstrumentId,
 };
 use sqlx::{FromRow, Row, postgres::PgRow};
+
+const MAX_UNIX_SECONDS_TIMESTAMP: u64 = 9_999_999_999;
 
 /// A data transfer object that maps database rows to token data.
 ///
@@ -122,11 +124,20 @@ impl FromRow<'_, PgRow> for BlockTimestampRow {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let number = row.try_get::<i64, _>("number")? as u64;
         let timestamp = row.try_get::<String, _>("timestamp")?;
-        Ok(Self {
-            number,
-            timestamp: UnixNanos::from(timestamp),
-        })
+        let timestamp = parse_cached_block_timestamp(&timestamp).map_err(|e| {
+            sqlx::Error::Decode(format!("Invalid block timestamp '{timestamp}': {e}").into())
+        })?;
+        Ok(Self { number, timestamp })
     }
+}
+
+pub(crate) fn parse_cached_block_timestamp(value: &str) -> Result<UnixNanos, ParseIntError> {
+    let timestamp = value.parse::<u64>()?;
+    if timestamp <= MAX_UNIX_SECONDS_TIMESTAMP {
+        return Ok(UnixNanos::from(timestamp * NANOSECONDS_IN_SECOND));
+    }
+
+    Ok(UnixNanos::from(timestamp))
 }
 
 /// Transforms a database row from the pool events UNION query into a DexPoolData enum variant.
@@ -152,7 +163,10 @@ pub fn transform_row_to_dex_pool_data(
     let transaction_hash = row.try_get::<String, _>("transaction_hash")?;
     let transaction_index = row.try_get::<i32, _>("transaction_index")? as u32;
     let log_index = row.try_get::<i32, _>("log_index")? as u32;
-    let timestamp = UnixNanos::from(row.try_get::<String, _>("block_timestamp")?);
+    let block_timestamp = row.try_get::<String, _>("block_timestamp")?;
+    let timestamp = parse_cached_block_timestamp(&block_timestamp).map_err(|e| {
+        sqlx::Error::Decode(format!("Invalid block timestamp '{block_timestamp}': {e}").into())
+    })?;
 
     match event_type.as_str() {
         "swap" => {
@@ -419,5 +433,30 @@ pub fn transform_row_to_dex_pool_data(
         _ => Err(sqlx::Error::Decode(
             format!("Unknown event type: {event_type}").into(),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::datetime::NANOSECONDS_IN_SECOND;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case("1700000000", 1_700_000_000 * NANOSECONDS_IN_SECOND)]
+    #[case("9999999999", 9_999_999_999 * NANOSECONDS_IN_SECOND)]
+    #[case("1700000000123456789", 1_700_000_000_123_456_789)]
+    fn parse_cached_block_timestamp_returns_unix_nanos(#[case] value: &str, #[case] expected: u64) {
+        let timestamp = parse_cached_block_timestamp(value).unwrap();
+
+        assert_eq!(timestamp, UnixNanos::from(expected));
+    }
+
+    #[rstest]
+    fn parse_cached_block_timestamp_rejects_invalid_text() {
+        let result = parse_cached_block_timestamp("not-a-timestamp");
+
+        assert!(result.is_err());
     }
 }

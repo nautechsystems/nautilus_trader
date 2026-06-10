@@ -215,6 +215,8 @@ impl WebSocketClient {
     ///
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is alive
+    ///
+    /// If an `AuthTracker` is registered, this fails pending auth waits.
     #[pyo3(name = "disconnect")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

@@ -17,7 +17,6 @@ use std::pin::Pin;
 
 use alloy::primitives::{Address, U256};
 use futures_util::{Stream, StreamExt};
-use nautilus_core::UnixNanos;
 use nautilus_model::{
     defi::{
         Block, Chain, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolSwap, SharedChain,
@@ -39,7 +38,10 @@ use crate::{
     cache::{
         consistency::CachedBlocksConsistencyStatus,
         copy::PostgresCopyHandler,
-        rows::{BlockTimestampRow, PoolRow, TokenRow, transform_row_to_dex_pool_data},
+        rows::{
+            BlockTimestampRow, PoolRow, TokenRow, parse_cached_block_timestamp,
+            transform_row_to_dex_pool_data,
+        },
         types::{U128Pg, U256Pg},
     },
     events::initialize::InitializeEvent,
@@ -1791,7 +1793,8 @@ impl BlockchainCacheDatabase {
             let transaction_index: i32 = row.get("transaction_index");
             let log_index: i32 = row.get("log_index");
             let transaction_hash: String = row.get("transaction_hash");
-            let timestamp = UnixNanos::from(row.get::<String, _>("block_timestamp"));
+            let block_timestamp = row.get::<String, _>("block_timestamp");
+            let timestamp = parse_cached_block_timestamp(&block_timestamp)?;
 
             let block_position = BlockPosition::new(
                 block as u64,
