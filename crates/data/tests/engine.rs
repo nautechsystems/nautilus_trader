@@ -14362,6 +14362,54 @@ fn test_process_pipeline_index_price_publishes_on_pipeline_topic_only(
 }
 
 #[rstest]
+fn test_process_pipeline_funding_rate_publishes_on_pipeline_topic_only(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let live_topic = switchboard::get_funding_rate_topic(instrument_id);
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
+
+    let (live_handler, live_saver) = get_typed_message_saving_handler::<FundingRateUpdate>(Some(
+        Ustr::from("pipeline-funding-live"),
+    ));
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<FundingRateUpdate>(
+        Some(Ustr::from("pipeline-funding-pipeline")),
+    );
+    msgbus::subscribe_funding_rates(live_topic.into(), live_handler, None);
+    msgbus::subscribe_funding_rates(pipeline_topic.into(), pipeline_handler, None);
+
+    let funding_rate = FundingRateUpdate::new(
+        instrument_id,
+        "0.0001".parse().unwrap(),
+        None,
+        None,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    data_engine.process_pipeline(Data::FundingRateUpdate(funding_rate));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "pipeline funding rate must not publish on the live topic",
+    );
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], funding_rate);
+    assert_eq!(
+        cache.borrow().funding_rate(&instrument_id),
+        Some(&funding_rate),
+        "pipeline funding rate must populate the cache by default",
+    );
+}
+
+#[rstest]
 fn test_process_pipeline_instrument_status_publishes_on_pipeline_topic_only(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
