@@ -64,7 +64,7 @@ async fn await_handle(handle: Option<tokio::task::JoinHandle<()>>, task_name: &s
                 }
             }
             Err(_) => {
-                log::error!("Timeout {timeout:?} awaiting task '{task_name}'");
+                log::warn!("Timeout {timeout:?} awaiting task '{task_name}'");
             }
         }
     }

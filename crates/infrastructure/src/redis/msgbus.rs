@@ -201,7 +201,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
             let msg = BusMessage::new_close();
 
             if let Err(e) = self.pub_tx.send(msg) {
-                log::error!("Failed to send close message: {e:?}");
+                log::warn!("Failed to send close message: {e:?}");
             }
         }
 

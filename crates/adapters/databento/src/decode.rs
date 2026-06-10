@@ -201,7 +201,7 @@ fn parse_currency_or_usd_default(value: Result<&str, impl std::error::Error>) ->
         }),
         Ok(_) => Currency::USD(),
         Err(e) => {
-            log::error!("Error parsing currency: {e}");
+            log::warn!("Error parsing currency: {e}");
             Currency::USD()
         }
     }

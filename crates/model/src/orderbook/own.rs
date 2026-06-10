@@ -593,7 +593,7 @@ fn group_quantities(
     is_bid: bool,
 ) -> IndexMap<Decimal, Decimal> {
     if group_size <= Decimal::ZERO {
-        log::error!("Invalid group_size: {group_size}, must be positive; returning empty map");
+        log::warn!("Invalid group_size: {group_size}, must be positive; returning empty map");
         return IndexMap::new();
     }
 

@@ -245,7 +245,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
         // Cancel message handling task
         if let Err(e) = self.tx.send(DatabaseQuery::Close) {
-            log::error!("Error sending close: {e:?}");
+            log::warn!("Error sending close: {e:?}");
         }
 
         log_task_awaiting("cache-write");

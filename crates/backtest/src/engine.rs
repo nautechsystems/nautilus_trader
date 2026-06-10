@@ -734,7 +734,7 @@ impl BacktestEngine {
             }
 
             if self.force_stop {
-                log::error!("Force stop triggered, ending backtest");
+                log::info!("Force stop triggered, ending backtest");
                 break;
             }
 
