@@ -245,8 +245,8 @@ impl InteractiveBrokersExecutionClient {
                     let mut cache = commission_cache
                         .lock()
                         .map_err(|_| anyhow::anyhow!("Failed to lock commission cache"))?;
-                    // IB sends -1.0 as a pending-sentinel before the real commission arrives;
-                    // clamp it to zero so downstream Money construction never receives a negative value.
+                    // IB uses -1.0 as a pending-sentinel before the real commission arrives;
+                    // clamp only that sentinel to zero (legitimate rebates can be negative).
                     let commission_value = if commission.commission == -1.0_f64 {
                         0.0_f64
                     } else {
