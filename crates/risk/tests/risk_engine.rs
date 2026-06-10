@@ -3804,7 +3804,7 @@ fn test_submit_order_when_betting_back_order_liability_within_free_balance_then_
         AccountType::Betting,
         vec![AccountBalance::new(
             Money::new(1_000.0, gbp),
-            Money::new(0.0, gbp),
+            Money::zero(gbp),
             Money::new(1_000.0, gbp),
         )],
         vec![],
@@ -3875,7 +3875,7 @@ fn test_submit_order_when_betting_back_order_liability_exceeds_free_balance_then
         AccountType::Betting,
         vec![AccountBalance::new(
             Money::new(999.0, gbp),
-            Money::new(0.0, gbp),
+            Money::zero(gbp),
             Money::new(999.0, gbp),
         )],
         vec![],
@@ -3960,7 +3960,7 @@ fn test_submit_order_when_betting_sell_reduces_long_position_then_accepts(
         AccountType::Betting,
         vec![AccountBalance::new(
             Money::new(10.0, gbp),
-            Money::new(0.0, gbp),
+            Money::zero(gbp),
             Money::new(10.0, gbp),
         )],
         vec![],

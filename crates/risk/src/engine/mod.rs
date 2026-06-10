@@ -52,7 +52,7 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity, quantity::QuantityRaw},
 };
 use nautilus_portfolio::Portfolio;
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 fn format_rate_limit(rate_limit: &RateLimit) -> String {
@@ -894,7 +894,9 @@ impl RiskEngine {
         // Determine max notional
         let max_notional_setting = self.max_notional_per_order.get(&instrument.id());
         if let Some(max_notional_setting_val) = max_notional_setting.copied() {
-            let Some(max_notional_f64) = max_notional_setting_val.to_f64() else {
+            let Ok(max_notional_value) =
+                Money::from_decimal(max_notional_setting_val, instrument.quote_currency())
+            else {
                 for order in orders {
                     self.deny_order(
                         order,
@@ -906,7 +908,7 @@ impl RiskEngine {
                 }
                 return false; // Denied
             };
-            max_notional = Some(Money::new(max_notional_f64, instrument.quote_currency()));
+            max_notional = Some(max_notional_value);
         }
 
         // Get account for risk checks: use explicit account_id if provided, otherwise venue lookup
@@ -1307,7 +1309,7 @@ impl RiskEngine {
                         .calculate_initial_margin(instrument, effective_quantity, last_px, None)
                         .unwrap_or_else(|e| {
                             log::error!("Failed to calculate initial margin: {e}");
-                            Money::new(0.0, instrument.quote_currency())
+                            Money::zero(instrument.quote_currency())
                         }),
                     _ => unreachable!(),
                 };
@@ -1402,7 +1404,7 @@ impl RiskEngine {
                                 )
                                 .unwrap_or_else(|e| {
                                     log::error!("Failed to calculate betting balance locked: {e}");
-                                    Money::new(0.0, instrument.quote_currency())
+                                    Money::zero(instrument.quote_currency())
                                 })
                                 .raw,
                             instrument.quote_currency(),

@@ -18,17 +18,14 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Money, Price, Quantity},
 };
-use rust_decimal::{
-    Decimal,
-    prelude::{FromPrimitive, ToPrimitive},
-};
+use rust_decimal::{Decimal, prelude::FromPrimitive};
 
 /// Calculates the position size based on fixed risk parameters.
 ///
 /// # Panics
 ///
 /// Panics if converting `units` to a decimal fails,
-/// or if converting the final size to `f64` fails.
+/// or if converting the final size to a [`Quantity`] fails.
 #[must_use]
 #[expect(
     clippy::too_many_arguments,
@@ -47,14 +44,14 @@ pub fn calculate_fixed_risk_position_size(
     units: usize,
 ) -> Quantity {
     if exchange_rate.is_zero() {
-        return instrument.make_qty(0.0, None);
+        return Quantity::zero(instrument.size_precision());
     }
 
     let risk_points = calculate_risk_ticks(entry, stop_loss, instrument);
     let risk_money = calculate_riskable_money(equity.as_decimal(), risk, commission_rate);
 
     if risk_points <= Decimal::ZERO {
-        return instrument.make_qty(0.0, None);
+        return Quantity::zero(instrument.size_precision());
     }
 
     let mut position_size =
@@ -75,16 +72,12 @@ pub fn calculate_fixed_risk_position_size(
     let final_size: Decimal = position_size_batched.min(
         instrument
             .max_quantity()
-            .unwrap_or_else(|| instrument.make_qty(0.0, None))
+            .unwrap_or_else(|| Quantity::zero(instrument.size_precision()))
             .as_decimal(),
     );
 
-    Quantity::new(
-        final_size
-            .to_f64()
-            .expect("Error: Decimal to f64 conversion failed"),
-        instrument.size_precision(),
-    )
+    Quantity::from_decimal_dp(final_size, instrument.size_precision())
+        .expect("Error: Failed to convert final size to Quantity")
 }
 
 // Helper functions
@@ -121,7 +114,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_with_zero_equity_returns_quantity_zero(instrument_gbpusd: InstrumentAny) {
-        let equity = Money::new(0.0, instrument_gbpusd.quote_currency());
+        let equity = Money::zero(instrument_gbpusd.quote_currency());
         let entry = Price::new(1.00100, instrument_gbpusd.price_precision());
         let stop_loss = Price::new(1.00000, instrument_gbpusd.price_precision());
 
