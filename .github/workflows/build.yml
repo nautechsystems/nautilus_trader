@@ -653,13 +653,8 @@ jobs:
       PARALLEL_BUILD: false
       RUST_BACKTRACE: 1
     steps:
-      # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
-        with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
-          allowed-endpoints: >-
-            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
-            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+      # Harden-Runner skips its agent on Depot Windows,
+      # and its post step assumes C:\agent exists. Keep this job out until upstream fixes cleanup.
 
       - name: Checkout repository
         # https://github.com/actions/checkout
