@@ -9,7 +9,6 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DEFAULT_TIMEOUT=100 \
     PYO3_PYTHON="/usr/local/bin/python3" \
     PYSETUP_PATH="/opt/pysetup" \
-    RUSTUP_TOOLCHAIN="1.96.0" \
     CARGO_HOME="/usr/local/cargo" \
     RUSTUP_HOME="/usr/local/rustup" \
     BUILD_MODE="release" \
