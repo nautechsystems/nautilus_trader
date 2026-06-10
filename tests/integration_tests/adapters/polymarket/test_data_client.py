@@ -65,6 +65,15 @@ class _RecordingPolymarketDataClient(PolymarketDataClient):
         if isinstance(data, BinaryOption):
             self._cache.add_instrument(data)
 
+    def subscribed_order_book_deltas(self) -> list[Any]:
+        raise AssertionError("Polymarket data paths must use direct order book membership")
+
+    def subscribed_quote_ticks(self) -> list[Any]:
+        raise AssertionError("Polymarket data paths must use direct quote membership")
+
+    def subscribed_trade_ticks(self) -> list[Any]:
+        raise AssertionError("Polymarket data paths must use direct trade membership")
+
 
 def _make_binary_option(
     price_inc: str,
