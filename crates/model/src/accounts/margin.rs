@@ -216,7 +216,7 @@ impl MarginAccount {
                 instrument_id,
                 MarginBalance::new(
                     margin_init,
-                    Money::new(0.0, margin_init.currency),
+                    Money::zero(margin_init.currency),
                     Some(instrument_id),
                 ),
             );
@@ -272,7 +272,7 @@ impl MarginAccount {
             self.margins.insert(
                 instrument_id,
                 MarginBalance::new(
-                    Money::new(0.0, margin_maintenance.currency),
+                    Money::zero(margin_maintenance.currency),
                     margin_maintenance,
                     Some(instrument_id),
                 ),
@@ -896,6 +896,14 @@ mod tests {
                 .initial,
             margin
         );
+        assert_eq!(
+            margin_account
+                .margins
+                .get(&instrument_id_aud_usd_sim)
+                .expect("AUD/USD margin should exist")
+                .maintenance,
+            Money::zero(margin.currency)
+        );
     }
 
     #[rstest]
@@ -917,6 +925,14 @@ mod tests {
                 .expect("AUD/USD margin should exist")
                 .maintenance,
             margin
+        );
+        assert_eq!(
+            margin_account
+                .margins
+                .get(&instrument_id_aud_usd_sim)
+                .expect("AUD/USD margin should exist")
+                .initial,
+            Money::zero(margin.currency)
         );
     }
 
