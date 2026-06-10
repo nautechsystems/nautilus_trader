@@ -7,6 +7,13 @@
 - `stream/` contains hand-written decoders for Binance market data stream messages (schema 1:0).
 - Generic cursor/error utilities are shared from `nautilus-serialization` behind the `sbe` feature and re-exported from this module for compatibility.
 
+## Market data streams
+
+Binance Spot SBE market data streams use SBE-specific update speeds. The SBE
+`<symbol>@depth` diff-depth stream updates every 25ms, while `<symbol>@depth20`
+partial-depth snapshots update every 50ms. Public JSON stream suffixes and update
+speeds are separate from this SBE surface.
+
 ## Licensing
 
 - The `generated/` codecs are generated using the Apache-2.0 licensed Real Logic

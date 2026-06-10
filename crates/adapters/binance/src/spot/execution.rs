@@ -43,10 +43,10 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{LiquiditySide, OmsType, OrderType},
+    enums::{LiquiditySide, OmsType, OrderStatus, OrderType},
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny,
-        OrderFilled, OrderModifyRejected, OrderRejected, OrderUpdated,
+        OrderExpired, OrderFilled, OrderModifyRejected, OrderRejected, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, Venue, VenueOrderId,
@@ -590,6 +590,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     let clock = self.clock;
                     let http_client = self.http_client.clone();
                     let dispatch_state = self.dispatch_state.clone();
+                    let treat_expired_as_canceled = self.config.treat_expired_as_canceled;
                     let ws_authenticated = self.ws_authenticated.clone();
                     let ws_user_data_subscribed = self.ws_user_data_subscribed.clone();
                     let (ws_setup_error_tx, mut ws_setup_error_rx) =
@@ -605,6 +606,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                                         &emitter,
                                         &http_client,
                                         account_id,
+                                        treat_expired_as_canceled,
                                         clock,
                                         &dispatch_state,
                                         &ws_authenticated,
@@ -707,6 +709,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         let command = cmd;
         let event_emitter = self.emitter.clone();
         let account_id = self.core.account_id;
+        let treat_expired_as_canceled = self.config.treat_expired_as_canceled;
 
         self.spawn_task("query_order", async move {
             let result = http_client
@@ -719,7 +722,8 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                 .await;
 
             match result {
-                Ok(Some(report)) => {
+                Ok(Some(mut report)) => {
+                    normalize_spot_order_status_report(&mut report, treat_expired_as_canceled);
                     event_emitter.send_order_status_report(report);
                 }
                 Ok(None) => log::debug!(
@@ -817,14 +821,20 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             .as_ref()
             .map(|id| VenueOrderId::new(id.inner()));
 
-        self.http_client
+        let report = self
+            .http_client
             .request_order_status_report(
                 self.core.account_id,
                 instrument_id,
                 venue_order_id,
                 cmd.client_order_id,
             )
-            .await
+            .await?;
+
+        Ok(report.map(|mut report| {
+            normalize_spot_order_status_report(&mut report, self.config.treat_expired_as_canceled);
+            report
+        }))
     }
 
     async fn generate_order_status_reports(
@@ -834,7 +844,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         let start_dt = cmd.start.map(|nanos| nanos.to_datetime_utc());
         let end_dt = cmd.end.map(|nanos| nanos.to_datetime_utc());
 
-        let reports = self
+        let mut reports = self
             .http_client
             .request_order_status_reports(
                 self.core.account_id,
@@ -845,6 +855,8 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                 None, // limit
             )
             .await?;
+
+        normalize_spot_order_status_reports(&mut reports, self.config.treat_expired_as_canceled);
 
         Ok(reports)
     }
@@ -1324,6 +1336,24 @@ impl ExecutionClient for BinanceSpotExecutionClient {
     }
 }
 
+fn normalize_spot_order_status_report(
+    report: &mut OrderStatusReport,
+    treat_expired_as_canceled: bool,
+) {
+    if treat_expired_as_canceled && report.order_status == OrderStatus::Expired {
+        report.order_status = OrderStatus::Canceled;
+    }
+}
+
+fn normalize_spot_order_status_reports(
+    reports: &mut [OrderStatusReport],
+    treat_expired_as_canceled: bool,
+) {
+    for report in reports {
+        normalize_spot_order_status_report(report, treat_expired_as_canceled);
+    }
+}
+
 async fn wait_for_ws_setup_response(
     timeout: Duration,
     success: impl Future<Output = ()>,
@@ -1354,6 +1384,7 @@ fn dispatch_ws_trading_message(
     emitter: &ExecutionEventEmitter,
     http_client: &BinanceSpotHttpClient,
     account_id: AccountId,
+    treat_expired_as_canceled: bool,
     clock: &'static AtomicTime,
     dispatch_state: &WsDispatchState,
     ws_authenticated: &tokio::sync::Notify,
@@ -1540,6 +1571,7 @@ fn dispatch_ws_trading_message(
                 emitter,
                 http_client,
                 account_id,
+                treat_expired_as_canceled,
                 dispatch_state,
                 seen_trade_ids,
                 ts_init,
@@ -1712,11 +1744,13 @@ fn build_cancel_replace_params(
 ///
 /// Tracked orders (with registered identity) produce proper order events.
 /// Untracked orders fall back to execution reports for reconciliation.
+#[expect(clippy::too_many_arguments)]
 fn dispatch_execution_report(
     report: &BinanceSpotExecutionReport,
     emitter: &ExecutionEventEmitter,
     http_client: &BinanceSpotHttpClient,
     account_id: AccountId,
+    treat_expired_as_canceled: bool,
     dispatch_state: &WsDispatchState,
     seen_trade_ids: &std::sync::Arc<Mutex<FifoCache<(Ustr, i64), 10_000>>>,
     ts_init: UnixNanos,
@@ -1742,6 +1776,7 @@ fn dispatch_execution_report(
             report,
             emitter,
             account_id,
+            treat_expired_as_canceled,
             dispatch_state,
             seen_trade_ids,
             client_order_id,
@@ -1757,6 +1792,7 @@ fn dispatch_execution_report(
             emitter,
             http_client,
             account_id,
+            treat_expired_as_canceled,
             seen_trade_ids,
             instrument_id,
             price_precision,
@@ -1772,6 +1808,7 @@ fn dispatch_tracked_execution_report(
     report: &BinanceSpotExecutionReport,
     emitter: &ExecutionEventEmitter,
     account_id: AccountId,
+    treat_expired_as_canceled: bool,
     state: &WsDispatchState,
     seen_trade_ids: &std::sync::Arc<Mutex<FifoCache<(Ustr, i64), 10_000>>>,
     client_order_id: ClientOrderId,
@@ -1980,9 +2017,7 @@ fn dispatch_tracked_execution_report(
                 "Order replaced: client_order_id={client_order_id}, venue_order_id={venue_order_id}"
             );
         }
-        BinanceSpotExecutionType::Canceled
-        | BinanceSpotExecutionType::Expired
-        | BinanceSpotExecutionType::TradePrevention => {
+        BinanceSpotExecutionType::Canceled | BinanceSpotExecutionType::TradePrevention => {
             ensure_accepted_emitted(
                 client_order_id,
                 account_id,
@@ -2006,6 +2041,48 @@ fn dispatch_tracked_execution_report(
             );
             state.cleanup_terminal(client_order_id);
             emitter.send_order_event(OrderEventAny::Canceled(canceled));
+        }
+        BinanceSpotExecutionType::Expired => {
+            ensure_accepted_emitted(
+                client_order_id,
+                account_id,
+                venue_order_id,
+                identity,
+                emitter,
+                state,
+                ts_init,
+            );
+            state.cleanup_terminal(client_order_id);
+
+            if treat_expired_as_canceled {
+                let canceled = OrderCanceled::new(
+                    emitter.trader_id(),
+                    identity.strategy_id,
+                    identity.instrument_id,
+                    client_order_id,
+                    UUID4::new(),
+                    ts_event,
+                    ts_init,
+                    false,
+                    Some(venue_order_id),
+                    Some(account_id),
+                );
+                emitter.send_order_event(OrderEventAny::Canceled(canceled));
+            } else {
+                let expired = OrderExpired::new(
+                    emitter.trader_id(),
+                    identity.strategy_id,
+                    identity.instrument_id,
+                    client_order_id,
+                    UUID4::new(),
+                    ts_event,
+                    ts_init,
+                    false,
+                    Some(venue_order_id),
+                    Some(account_id),
+                );
+                emitter.send_order_event(OrderEventAny::Expired(expired));
+            }
         }
         BinanceSpotExecutionType::Rejected => {
             let reason = if report.reject_reason.is_empty() {
@@ -2095,6 +2172,7 @@ fn dispatch_untracked_execution_report(
     emitter: &ExecutionEventEmitter,
     _http_client: &BinanceSpotHttpClient,
     account_id: AccountId,
+    treat_expired_as_canceled: bool,
     seen_trade_ids: &std::sync::Arc<Mutex<FifoCache<(Ustr, i64), 10_000>>>,
     instrument_id: InstrumentId,
     price_precision: u8,
@@ -2124,6 +2202,7 @@ fn dispatch_untracked_execution_report(
                 price_precision,
                 size_precision,
                 account_id,
+                treat_expired_as_canceled,
                 ts_init,
             ) {
                 Ok(status) => emitter.send_order_status_report(status),
@@ -2154,6 +2233,7 @@ fn dispatch_untracked_execution_report(
                 price_precision,
                 size_precision,
                 account_id,
+                treat_expired_as_canceled,
                 ts_init,
             ) {
                 Ok(status) => emitter.send_order_status_report(status),
@@ -2250,6 +2330,7 @@ mod tests {
             &emitter,
             &http_client,
             AccountId::from("BINANCE-001"),
+            false,
             clock,
             &dispatch_state,
             &ws_authenticated,
@@ -2315,6 +2396,7 @@ mod tests {
             &emitter,
             &http_client,
             AccountId::from("BINANCE-001"),
+            false,
             clock,
             &dispatch_state,
             &ws_authenticated,
@@ -2364,6 +2446,7 @@ mod tests {
             &emitter,
             &http_client,
             AccountId::from("BINANCE-001"),
+            false,
             clock,
             &dispatch_state,
             &ws_authenticated,
@@ -2426,6 +2509,7 @@ mod tests {
             &emitter,
             &http_client,
             AccountId::from("BINANCE-001"),
+            false,
             clock,
             &dispatch_state,
             &ws_authenticated,
@@ -2587,6 +2671,7 @@ mod tests {
             &emitter,
             &http_client,
             AccountId::from("BINANCE-001"),
+            false,
             clock,
             &dispatch_state,
             &ws_authenticated,
@@ -2599,6 +2684,7 @@ mod tests {
             &emitter,
             &http_client,
             AccountId::from("BINANCE-001"),
+            false,
             clock,
             &dispatch_state,
             &ws_authenticated,
@@ -2657,6 +2743,7 @@ mod tests {
             &emitter,
             &http_client,
             AccountId::from("BINANCE-001"),
+            false,
             clock,
             &dispatch_state,
             &ws_authenticated,
@@ -2676,6 +2763,92 @@ mod tests {
                 .all(|e| !matches!(e, ExecutionEvent::Order(OrderEventAny::Filled(_)))),
             "invalid fill quantity must not emit OrderFilled",
         );
+    }
+
+    #[rstest]
+    #[case::as_expired(false, OrderStatus::Expired)]
+    #[case::as_canceled(true, OrderStatus::Canceled)]
+    fn test_normalize_spot_order_status_report_expired_respects_config(
+        #[case] treat_expired_as_canceled: bool,
+        #[case] expected: OrderStatus,
+    ) {
+        let clock = get_atomic_clock_realtime();
+        let json = crate::common::testing::load_fixture_string(
+            "spot/user_data_json/execution_report_expired.json",
+        );
+        let msg: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
+        let mut report = parse_spot_exec_report_to_order_status(
+            &msg,
+            InstrumentId::from("ETHUSDT.BINANCE"),
+            2,
+            5,
+            AccountId::from("BINANCE-001"),
+            false,
+            clock.get_time_ns(),
+        )
+        .unwrap();
+        let mut reports = vec![report.clone()];
+
+        normalize_spot_order_status_report(&mut report, treat_expired_as_canceled);
+        normalize_spot_order_status_reports(&mut reports, treat_expired_as_canceled);
+
+        assert_eq!(report.order_status, expected);
+        assert_eq!(reports[0].order_status, expected);
+    }
+
+    #[rstest]
+    #[case::as_expired(false)]
+    #[case::as_canceled(true)]
+    fn test_dispatch_tracked_execution_report_expired_respects_config(
+        #[case] treat_expired_as_canceled: bool,
+    ) {
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let client_order_id = ClientOrderId::from("O-20200101-000000-000-000-0");
+        let instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
+        let dispatch_state = WsDispatchState::default();
+        dispatch_state.insert_accepted(client_order_id);
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+        let identity = OrderIdentity {
+            instrument_id,
+            strategy_id: StrategyId::from("TEST-STRATEGY"),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+            price: None,
+            quantity: Quantity::from("1"),
+        };
+
+        let json = crate::common::testing::load_fixture_string(
+            "spot/user_data_json/execution_report_expired.json",
+        );
+        let report: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
+
+        dispatch_tracked_execution_report(
+            &report,
+            &emitter,
+            AccountId::from("BINANCE-001"),
+            treat_expired_as_canceled,
+            &dispatch_state,
+            &seen_trade_ids,
+            client_order_id,
+            &identity,
+            instrument_id,
+            2,
+            5,
+            clock.get_time_ns(),
+        );
+
+        let event = rx.try_recv().expect("terminal order event expected");
+        match (treat_expired_as_canceled, event) {
+            (true, ExecutionEvent::Order(OrderEventAny::Canceled(event))) => {
+                assert_eq!(event.client_order_id, client_order_id);
+            }
+            (false, ExecutionEvent::Order(OrderEventAny::Expired(event))) => {
+                assert_eq!(event.client_order_id, client_order_id);
+            }
+            (_, other) => panic!("Expected terminal expired/canceled event, was {other:?}"),
+        }
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]
@@ -2710,6 +2883,7 @@ mod tests {
             &emitter,
             &http_client,
             AccountId::from("BINANCE-001"),
+            false,
             clock,
             &dispatch_state,
             &ws_authenticated,

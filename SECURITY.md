@@ -161,7 +161,7 @@ release lifecycle:
 For our full supply chain security policy, see <https://nautilustrader.io/security/supply-chain/>.
 
 For the end-to-end release supply chain model, see
-[Release Security Architecture](docs/developer_guide/release-security.md).
+[Release Security Architecture](docs/developer_guide/release_security.md).
 
 For detailed CI/CD security practices, see [.github/OVERVIEW.md](.github/OVERVIEW.md#security).
 

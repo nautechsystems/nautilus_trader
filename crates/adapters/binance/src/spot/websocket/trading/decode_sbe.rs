@@ -31,7 +31,7 @@ use crate::{
     common::enums::{BinanceOrderStatus, BinanceSide, BinanceTimeInForce},
     spot::sbe::spot::{
         ReadBuf, balance_update_event_codec, bool_enum, execution_report_event_codec,
-        execution_type, message_header_codec, order_side, order_status, order_type,
+        execution_type, expiry_reason, message_header_codec, order_side, order_status, order_type,
         outbound_account_position_event_codec, time_in_force,
     },
 };
@@ -104,6 +104,7 @@ pub fn decode_execution_report(data: &[u8]) -> anyhow::Result<BinanceSpotExecuti
     let side = map_side(dec.side())?;
     let time_in_force = map_time_in_force(dec.time_in_force());
     let order_type_str = map_order_type(dec.order_type());
+    let expiry_reason = map_expiry_reason(dec.expiry_reason());
     let is_working = dec.is_working() == bool_enum::BoolEnum::True;
     let is_maker = dec.is_maker() == bool_enum::BoolEnum::True;
 
@@ -182,6 +183,7 @@ pub fn decode_execution_report(data: &[u8]) -> anyhow::Result<BinanceSpotExecuti
             price_exp + qty_exp,
         ),
         original_client_order_id: orig_client_order_id,
+        expiry_reason,
     })
 }
 
@@ -398,6 +400,31 @@ fn map_order_type(ot: order_type::OrderType) -> &'static str {
     }
 }
 
+fn map_expiry_reason(reason: expiry_reason::ExpiryReason) -> Option<String> {
+    match reason {
+        expiry_reason::ExpiryReason::Rejected => Some("REJECTED".to_string()),
+        expiry_reason::ExpiryReason::ExchangeCanceled => Some("EXCHANGE_CANCELED".to_string()),
+        expiry_reason::ExpiryReason::OcoTrigger => Some("OCO_TRIGGER".to_string()),
+        expiry_reason::ExpiryReason::OtoPhaseOneExpired => {
+            Some("OTO_PHASE_ONE_EXPIRED".to_string())
+        }
+        expiry_reason::ExpiryReason::UnfilledIocQuantityExpired => {
+            Some("UNFILLED_IOC_QUANTITY_EXPIRED".to_string())
+        }
+        expiry_reason::ExpiryReason::UnfilledFokOrderExpired => {
+            Some("UNFILLED_FOK_ORDER_EXPIRED".to_string())
+        }
+        expiry_reason::ExpiryReason::InsufficientLiquidity => {
+            Some("INSUFFICIENT_LIQUIDITY".to_string())
+        }
+        expiry_reason::ExpiryReason::ExecutionRulePriceRangeExceeded => {
+            Some("EXECUTION_RULE_PRICE_RANGE_EXCEEDED".to_string())
+        }
+        expiry_reason::ExpiryReason::NonRepresentable => Some("NON_REPRESENTABLE".to_string()),
+        expiry_reason::ExpiryReason::NullVal => None,
+    }
+}
+
 /// Converts SBE microsecond timestamp to JSON millisecond timestamp.
 #[inline]
 fn us_to_ms(us: i64) -> i64 {
@@ -505,6 +532,7 @@ mod tests {
         event_time_us: i64,
         transact_time_us: i64,
         order_creation_time_us: Option<i64>,
+        expiry_reason: expiry_reason::ExpiryReason,
     ) -> Vec<u8> {
         let var_data_len = 6 + symbol.len() + client_order_id.len() + commission_asset.len();
         let total = 8 + execution_report_event_codec::SBE_BLOCK_LENGTH as usize + var_data_len;
@@ -577,6 +605,7 @@ mod tests {
         enc.peg_offset_type(peg_offset_type::PegOffsetType::default());
         enc.peg_offset_value(0xFF); // null
         enc.pegged_price(i64::MIN);
+        enc.expiry_reason(expiry_reason);
 
         // Variable-length fields in order
         enc.symbol(symbol);
@@ -656,6 +685,47 @@ mod tests {
     }
 
     #[rstest]
+    #[case::rejected(expiry_reason::ExpiryReason::Rejected, Some("REJECTED"))]
+    #[case::exchange_canceled(
+        expiry_reason::ExpiryReason::ExchangeCanceled,
+        Some("EXCHANGE_CANCELED")
+    )]
+    #[case::oco_trigger(expiry_reason::ExpiryReason::OcoTrigger, Some("OCO_TRIGGER"))]
+    #[case::oto_phase_one_expired(
+        expiry_reason::ExpiryReason::OtoPhaseOneExpired,
+        Some("OTO_PHASE_ONE_EXPIRED")
+    )]
+    #[case::unfilled_ioc_quantity_expired(
+        expiry_reason::ExpiryReason::UnfilledIocQuantityExpired,
+        Some("UNFILLED_IOC_QUANTITY_EXPIRED")
+    )]
+    #[case::unfilled_fok_order_expired(
+        expiry_reason::ExpiryReason::UnfilledFokOrderExpired,
+        Some("UNFILLED_FOK_ORDER_EXPIRED")
+    )]
+    #[case::insufficient_liquidity(
+        expiry_reason::ExpiryReason::InsufficientLiquidity,
+        Some("INSUFFICIENT_LIQUIDITY")
+    )]
+    #[case::execution_rule_price_range_exceeded(
+        expiry_reason::ExpiryReason::ExecutionRulePriceRangeExceeded,
+        Some("EXECUTION_RULE_PRICE_RANGE_EXCEEDED")
+    )]
+    #[case::non_representable(
+        expiry_reason::ExpiryReason::NonRepresentable,
+        Some("NON_REPRESENTABLE")
+    )]
+    #[case::null_val(expiry_reason::ExpiryReason::NullVal, None)]
+    fn test_map_expiry_reason(
+        #[case] reason: expiry_reason::ExpiryReason,
+        #[case] expected: Option<&str>,
+    ) {
+        let result = map_expiry_reason(reason);
+
+        assert_eq!(result.as_deref(), expected);
+    }
+
+    #[rstest]
     fn test_decode_execution_report_new_limit() {
         let data = encode_execution_report(
             "ETHUSDT",
@@ -684,6 +754,7 @@ mod tests {
             1709654400000000, // event_time_us
             1709654400000000, // transact_time_us
             Some(1709654400000000),
+            expiry_reason::ExpiryReason::NullVal,
         );
 
         let report = decode_execution_report(&data).unwrap();
@@ -703,6 +774,49 @@ mod tests {
         assert!(!report.is_maker);
         assert_eq!(report.event_time, 1709654400000);
         assert_eq!(report.transaction_time, 1709654400000);
+        assert!(report.expiry_reason.is_none());
+    }
+
+    #[rstest]
+    fn test_decode_execution_report_expiry_reason() {
+        let data = encode_execution_report(
+            "ETHUSDT",
+            "O-20200101-000000-000-000-0",
+            12345678,
+            None,
+            OrderSide::Buy,
+            SbeOrderType::Limit,
+            SbeTif::Ioc,
+            ExecutionType::Expired,
+            OrderStatus::Expired,
+            -2,
+            -5,
+            -8,
+            250000,
+            100000,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            "",
+            false,
+            false,
+            1709654400000000,
+            1709654400000000,
+            Some(1709654400000000),
+            expiry_reason::ExpiryReason::InsufficientLiquidity,
+        );
+
+        let report = decode_execution_report(&data).unwrap();
+
+        assert_eq!(report.execution_type, BinanceSpotExecutionType::Expired);
+        assert_eq!(report.order_status, BinanceOrderStatus::Expired);
+        assert_eq!(
+            report.expiry_reason.as_deref(),
+            Some("INSUFFICIENT_LIQUIDITY")
+        );
     }
 
     #[rstest]
@@ -734,6 +848,7 @@ mod tests {
             1709654400000000,
             1709654400000000,
             Some(1709654400000000),
+            expiry_reason::ExpiryReason::NullVal,
         );
 
         let report = decode_execution_report(&data).unwrap();
@@ -776,6 +891,7 @@ mod tests {
             1709654400000000,
             1709654400000000,
             Some(1709654400000000),
+            expiry_reason::ExpiryReason::NullVal,
         );
 
         let report = decode_execution_report(&data).unwrap();
@@ -815,6 +931,7 @@ mod tests {
             1709654400000000,
             1709654400000000,
             Some(1709654400000000),
+            expiry_reason::ExpiryReason::NullVal,
         );
 
         let report = decode_execution_report(&data).unwrap();
@@ -860,6 +977,7 @@ mod tests {
             0,
             0,
             None,
+            expiry_reason::ExpiryReason::NullVal,
         );
         // Overwrite template_id to 50
         data[2..4].copy_from_slice(&50u16.to_le_bytes());

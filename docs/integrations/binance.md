@@ -431,7 +431,8 @@ Order books can be maintained at full or partial depths. WebSocket stream
 update rates differ between Spot and Futures, with Nautilus using the highest
 available rate:
 
-- **Spot**: 100ms
+- **Spot SBE diff depth**: 25ms
+- **Spot JSON diff depth**: 100ms
 - **Futures**: 0ms (unthrottled)
 
 Only one order book per instrument per trader instance is supported. When
@@ -474,6 +475,11 @@ Bars, mark prices, index prices, and funding rates can be subscribed to in the
 normal way via the Rust adapter. The custom data subscriptions below are for
 the Python adapter.
 :::
+
+Binance USD-M mark-price payloads may include an `ap` moving-average field. The Rust
+adapter parses this raw venue field but does not emit it as domain data or
+Binance custom data; Nautilus mark-price subscriptions emit mark, index, and
+funding-rate updates from the same stream.
 
 ### `BinanceFuturesMarkPriceUpdate`
 
@@ -820,8 +826,9 @@ transport. It affects Spot only; Futures is unchanged.
 `Sbe` (default) uses Binance Simple Binary Encoding streams and requires Ed25519
 keys (see [Key types](#key-types)); the client refuses to connect without them.
 `Json` uses public streams with no credentials. Full Spot `BookDeltas`
-subscriptions use public JSON diff-depth streams with REST snapshot synchronization;
-explicit depth subscriptions use partial-book snapshots (see [Order books](#order-books)).
+subscriptions use SBE diff-depth streams at 25ms in `Sbe` mode, or public JSON
+diff-depth streams at 100ms in `Json` mode, with REST snapshot synchronization.
+Explicit depth subscriptions use partial-book snapshots (see [Order books](#order-books)).
 
 :::note
 Exposed to Python as `BinanceSpotMarketDataMode` on
