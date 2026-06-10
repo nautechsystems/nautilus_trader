@@ -158,7 +158,7 @@ impl Default for FeeModelAny {
 pub struct FixedFeeModel {
     commission: Money,
     zero_commission: Money,
-    change_commission_once: bool,
+    charge_commission_once: bool,
 }
 
 impl FixedFeeModel {
@@ -167,7 +167,7 @@ impl FixedFeeModel {
     /// # Errors
     ///
     /// Returns an error if `commission` is negative.
-    pub fn new(commission: Money, change_commission_once: Option<bool>) -> anyhow::Result<Self> {
+    pub fn new(commission: Money, charge_commission_once: Option<bool>) -> anyhow::Result<Self> {
         if commission.raw < 0 {
             anyhow::bail!("Commission must be greater than or equal to zero")
         }
@@ -175,7 +175,7 @@ impl FixedFeeModel {
         Ok(Self {
             commission,
             zero_commission,
-            change_commission_once: change_commission_once.unwrap_or(true),
+            charge_commission_once: charge_commission_once.unwrap_or(true),
         })
     }
 }
@@ -188,7 +188,7 @@ impl FeeModel for FixedFeeModel {
         _fill_px: Price,
         _instrument: &InstrumentAny,
     ) -> anyhow::Result<Money> {
-        if !self.change_commission_once || order.filled_qty().is_zero() {
+        if !self.charge_commission_once || order.filled_qty().is_zero() {
             Ok(self.commission)
         } else {
             Ok(self.zero_commission)

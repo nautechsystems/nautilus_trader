@@ -102,7 +102,10 @@ class ExecutionEngineConfig:
 @typing.final
 class FixedFeeModel:
     def __init__(
-        self, commission: model.Money, change_commission_once: bool | None = None
+        self,
+        commission: model.Money,
+        charge_commission_once: bool | None = None,
+        change_commission_once: bool | None = None,
     ) -> None: ...
 
 @typing.final
