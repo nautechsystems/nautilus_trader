@@ -4856,10 +4856,28 @@ impl OrderMatchingEngine {
             return;
         }
 
+        let fee_order;
+        let commission_order = if order.liquidity_side() == Some(liquidity_side) {
+            order
+        } else {
+            fee_order = {
+                let mut cloned = order.clone();
+                cloned.set_liquidity_side(liquidity_side);
+                cloned
+            };
+            &fee_order
+        };
+
         let underlying_px = self.fee_underlying_price();
         let commission = self
             .fee_model
-            .get_commission_with_context(order, last_qty, last_px, &self.instrument, underlying_px)
+            .get_commission_with_context(
+                commission_order,
+                last_qty,
+                last_px,
+                &self.instrument,
+                underlying_px,
+            )
             .unwrap_or_else(|e| {
                 panic!(
                     "Failed to compute commission for {}: {}",
@@ -6194,15 +6212,23 @@ impl BarTickSizes {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::types::{Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw};
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{cache::Cache, clock::TestClock};
+    use nautilus_model::{
+        enums::{AccountType, BookType, LiquiditySide, OmsType, OrderSide, OrderType},
+        events::OrderEventAny,
+        identifiers::AccountId,
+        instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+        orders::{Order, OrderTestBuilder},
+        types::{Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
+    };
     use rstest::rstest;
 
     use super::{BarTickSizes, OrderMatchingEngine};
+    use crate::models::{fee::FeeModelAny, fill::FillModelAny};
 
     fn assert_valid_bar_tick_sizes(volume: Quantity, size_increment: Quantity) {
         let sizes = BarTickSizes::from_volume(volume, size_increment);
@@ -6229,6 +6255,64 @@ mod tests {
                 volume.raw - total_raw,
             );
         }
+    }
+
+    #[rstest]
+    fn test_fill_order_calculates_commission_from_fill_liquidity_side() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelAny::default(),
+            FeeModelAny::default(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            cache,
+            Default::default(),
+        );
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let events_handler = Rc::clone(&events);
+        engine.set_event_handler(Rc::new(move |event| {
+            events_handler.borrow_mut().push(event);
+        }));
+
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .submit(true)
+            .build();
+        order.set_liquidity_side(LiquiditySide::Maker);
+        engine
+            .account_ids
+            .insert(order.trader_id(), AccountId::from("ACCOUNT-001"));
+
+        engine.fill_order(
+            &order,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            LiquiditySide::Taker,
+            None,
+            None,
+        );
+
+        let events = events.borrow();
+        assert_eq!(events.len(), 1);
+        let fill = match &events[0] {
+            OrderEventAny::Filled(fill) => fill,
+            event => panic!("Expected OrderFilled, was {event:?}"),
+        };
+        let commission = fill.commission.expect("expected commission");
+        let expected_commission =
+            fill.last_qty.as_decimal() * fill.last_px.as_decimal() * instrument.taker_fee();
+
+        assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(commission.currency, instrument.quote_currency());
+        assert_eq!(commission.as_decimal(), expected_commission);
     }
 
     #[rstest]
