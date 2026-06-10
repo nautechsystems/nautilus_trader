@@ -25,8 +25,10 @@ use ahash::AHashMap;
 use anyhow::Context;
 use nautilus_common::{live::get_runtime, messages::DataEvent};
 use nautilus_core::{UnixNanos, time::AtomicTime};
-use nautilus_model::data::{CustomData, Data as NautilusData, DataType, custom::CustomDataTrait};
-use nautilus_model::types::Price;
+use nautilus_model::{
+    data::{CustomData, Data as NautilusData, DataType, custom::CustomDataTrait},
+    types::Price,
+};
 use nautilus_network::websocket::{
     TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
 };

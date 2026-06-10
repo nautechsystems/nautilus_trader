@@ -419,9 +419,7 @@ mod tests {
 
     use nautilus_core::Params;
     use nautilus_model::{
-        data::custom::CustomDataTrait,
-        data::ensure_rust_extractor_registered,
-        data::{CustomData, DataType},
+        data::{CustomData, DataType, custom::CustomDataTrait, ensure_rust_extractor_registered},
         types::Price,
     };
     use pyo3::{prelude::*, types::PyDict};
@@ -429,8 +427,10 @@ mod tests {
     use serde_json::json;
 
     use super::extract_data_config_from_pyobject;
-    use crate::config::PolymarketUpDownEventSlugConfig;
-    use crate::data_types::{PolymarketRtdsCryptoPrice, register_polymarket_custom_data};
+    use crate::{
+        config::PolymarketUpDownEventSlugConfig,
+        data_types::{PolymarketRtdsCryptoPrice, register_polymarket_custom_data},
+    };
 
     #[rstest]
     fn extract_data_config_supports_python_style_namespace() {
