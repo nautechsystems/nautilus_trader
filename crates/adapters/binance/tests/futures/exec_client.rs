@@ -61,7 +61,7 @@ use nautilus_common::{
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
             GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
     testing::wait_until_async,
@@ -70,10 +70,18 @@ use nautilus_core::{Params, UnixNanos};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    enums::{AccountType, OmsType, OrderSide, TimeInForce, TrailingOffsetType, TriggerType},
+    enums::{
+        AccountType, ContingencyType, OmsType, OrderSide, TimeInForce, TrailingOffsetType,
+        TriggerType,
+    },
     events::{AccountState, OrderEventAny},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
-    orders::{LimitOrder, Order, OrderAny, TrailingStopMarketOrder},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
+    },
+    orders::{
+        LimitOrder, MarketIfTouchedOrder, Order, OrderAny, OrderList, StopMarketOrder,
+        TrailingStopMarketOrder,
+    },
     types::{AccountBalance, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
@@ -379,7 +387,10 @@ fn create_exec_test_router_with_command_responses(state: CommandResponseState) -
                 .put(handle_order_modify)
                 .get(handle_order_query),
         )
-        .route("/fapi/v1/batchOrders", delete(handle_batch_cancel))
+        .route(
+            "/fapi/v1/batchOrders",
+            post(handle_batch_submit).delete(handle_batch_cancel),
+        )
         .route(
             "/fapi/v1/allOpenOrders",
             delete(|headers: HeaderMap| async move {
@@ -548,6 +559,28 @@ async fn handle_batch_cancel(
     command_response(state.responses.batch_cancel, &json!([]))
 }
 
+async fn handle_batch_submit(
+    State(state): State<CommandResponseState>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    if !has_auth_headers(&headers) {
+        return unauthorized_response();
+    }
+    let count = batch_order_item_count(&query).max(1);
+    record_query(&state, "batchOrders", query);
+    state.request_count.fetch_add(1, Ordering::Relaxed);
+
+    let responses = (0..count)
+        .map(|index| {
+            let mut response = load_fixture("order_response.json");
+            response["orderId"] = json!(22542179 + index as i64);
+            response
+        })
+        .collect::<Vec<_>>();
+    command_response(state.responses.submit, &json!(responses))
+}
+
 fn batch_cancel_item_count(query: &HashMap<String, String>) -> usize {
     ["orderIdList", "origClientOrderIdList"]
         .into_iter()
@@ -555,6 +588,13 @@ fn batch_cancel_item_count(query: &HashMap<String, String>) -> usize {
         .filter_map(|value| serde_json::from_str::<Vec<serde_json::Value>>(value).ok())
         .map(|values| values.len())
         .sum()
+}
+
+fn batch_order_item_count(query: &HashMap<String, String>) -> usize {
+    query
+        .get("batchOrders")
+        .and_then(|value| serde_json::from_str::<Vec<serde_json::Value>>(value).ok())
+        .map_or(0, |values| values.len())
 }
 
 fn command_response(response: CommandResponse, success: &serde_json::Value) -> Response {
@@ -1215,6 +1255,90 @@ async fn test_submit_order_generates_submitted_event() {
         Duration::from_secs(5),
     )
     .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_posts_batch_orders_for_independent_limits() {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let first_order = add_limit_order_to_cache(&cache, ClientOrderId::new("list-limit-001"));
+    let second_order = add_limit_order_to_cache(&cache, ClientOrderId::new("list-limit-002"));
+    let orders = vec![first_order, second_order];
+
+    client
+        .submit_order_list(submit_order_list_command(&orders))
+        .unwrap();
+
+    let captured = wait_for_query(&captured_queries, "batchOrders").await;
+    let batch_orders = captured
+        .query
+        .get("batchOrders")
+        .expect("batchOrders query param");
+    let batch: Vec<serde_json::Value> =
+        serde_json::from_str(batch_orders).expect("batchOrders JSON");
+
+    assert_eq!(batch.len(), 2);
+    assert_eq!(batch[0]["symbol"], "BTCUSDT");
+    assert_eq!(batch[0]["side"], "BUY");
+    assert_eq!(batch[0]["type"], "LIMIT");
+    assert_eq!(batch[0]["timeInForce"], "GTX");
+    assert!(
+        batch[0]["newClientOrderId"]
+            .as_str()
+            .is_some_and(|value| value.contains("list-limit-001"))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_denies_linked_conditional_orders_without_batch_submit() {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, mut rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let orders = add_linked_conditional_orders_to_cache(&cache);
+
+    client
+        .submit_order_list(submit_order_list_command(&orders))
+        .unwrap();
+
+    let mut denied_count = 0;
+    wait_until_async(
+        || {
+            while let Ok(event) = rx.try_recv() {
+                if matches!(event, ExecutionEvent::Order(OrderEventAny::Denied(_))) {
+                    denied_count += 1;
+                }
+            }
+            let done = denied_count == 2;
+            async move { done }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert!(
+        captured_queries
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|query| query.path != "batchOrders")
+    );
 }
 
 #[rstest]
@@ -2391,6 +2515,77 @@ fn add_reduce_only_limit_order_to_cache(
     order_any
 }
 
+fn add_linked_conditional_orders_to_cache(cache: &Rc<RefCell<Cache>>) -> Vec<OrderAny> {
+    let order_list_id = OrderListId::from("OL-FUTURES-OCO");
+    let stop_loss_id = ClientOrderId::new("futures-oco-sl");
+    let take_profit_id = ClientOrderId::new("futures-oco-tp");
+
+    let stop_loss = OrderAny::StopMarket(StopMarketOrder::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        stop_loss_id,
+        OrderSide::Sell,
+        Quantity::from("0.001"),
+        Price::from("49000.00"),
+        TriggerType::MarkPrice,
+        TimeInForce::Gtc,
+        None,
+        true,
+        false,
+        None,
+        None,
+        None,
+        Some(ContingencyType::Oco),
+        Some(order_list_id),
+        Some(vec![take_profit_id]),
+        None,
+        None,
+        None,
+        None,
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+    ));
+
+    let take_profit = OrderAny::MarketIfTouched(MarketIfTouchedOrder::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        take_profit_id,
+        OrderSide::Sell,
+        Quantity::from("0.001"),
+        Price::from("55000.00"),
+        TriggerType::MarkPrice,
+        TimeInForce::Gtc,
+        None,
+        true,
+        false,
+        None,
+        None,
+        Some(ContingencyType::Oco),
+        Some(order_list_id),
+        Some(vec![stop_loss_id]),
+        None,
+        None,
+        None,
+        None,
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+    ));
+
+    let orders = vec![stop_loss, take_profit];
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    orders
+}
+
 fn submit_order_command(order: &OrderAny) -> SubmitOrder {
     SubmitOrder::new(
         test_trader_id(),
@@ -2399,6 +2594,34 @@ fn submit_order_command(order: &OrderAny) -> SubmitOrder {
         test_instrument_id(),
         order.client_order_id(),
         order.init_event().clone(),
+        None,
+        None,
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        None,
+    )
+}
+
+fn submit_order_list_command(orders: &[OrderAny]) -> SubmitOrderList {
+    let order_list = OrderList::new(
+        OrderListId::from("OL-FUTURES-TEST"),
+        test_instrument_id(),
+        test_strategy_id(),
+        orders.iter().map(|order| order.client_order_id()).collect(),
+        UnixNanos::default(),
+    );
+    let order_inits = orders
+        .iter()
+        .map(|order| order.init_event().clone())
+        .collect();
+
+    SubmitOrderList::new(
+        test_trader_id(),
+        Some(*BINANCE_CLIENT_ID),
+        test_strategy_id(),
+        order_list,
+        order_inits,
         None,
         None,
         None,

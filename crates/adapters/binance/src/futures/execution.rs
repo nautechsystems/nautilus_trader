@@ -47,7 +47,8 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
-        AccountType, OmsType, OrderType, PositionSideSpecified, TrailingOffsetType, TriggerType,
+        AccountType, ContingencyType, OmsType, OrderType, PositionSideSpecified,
+        TrailingOffsetType, TriggerType,
     },
     events::{
         AccountState, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderModifyRejected,
@@ -55,7 +56,7 @@ use nautilus_model::{
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue, VenueOrderId},
     instruments::Instrument,
-    orders::Order,
+    orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Quantity},
 };
@@ -97,8 +98,8 @@ use crate::{
         dispatch::{OrderIdentity, PendingOperation, PendingRequest, WsDispatchState},
         encoder::encode_broker_id,
         enums::{
-            BinanceEnvironment, BinancePriceMatch, BinanceProductType, BinanceSide,
-            BinanceTimeInForce, BinanceWorkingType,
+            BinanceEnvironment, BinanceFuturesOrderType, BinancePositionSide, BinancePriceMatch,
+            BinanceProductType, BinanceSide, BinanceTimeInForce, BinanceWorkingType,
         },
         symbol::format_binance_symbol,
         urls::{get_usdm_ws_route_base_url, get_ws_private_base_url},
@@ -113,7 +114,7 @@ use crate::{
             client::order_type_to_binance_futures,
             models::BinanceFuturesAccountInfo,
             query::{
-                BinanceCancelOrderParamsBuilder, BinanceModifyOrderParamsBuilder,
+                BatchOrderItem, BinanceCancelOrderParamsBuilder, BinanceModifyOrderParamsBuilder,
                 BinanceNewOrderParams,
             },
         },
@@ -871,6 +872,172 @@ impl BinanceFuturesExecutionClient {
         }
 
         Ok(())
+    }
+}
+
+fn build_futures_order_list_batch(
+    orders: &[OrderAny],
+    is_hedge_mode: bool,
+    close_position: bool,
+    price_match: Option<BinancePriceMatch>,
+) -> Result<Vec<BatchOrderItem>, String> {
+    if orders.len() > 5 {
+        return Err(format!(
+            "Binance Futures batch order submission supports at most 5 orders, was {}",
+            orders.len()
+        ));
+    }
+
+    if close_position {
+        return Err(
+            "`close_position` is not supported for Binance Futures batch order submission"
+                .to_string(),
+        );
+    }
+
+    if orders.iter().any(is_grouped_order) {
+        return Err(
+            "Binance Futures linked order-list contingencies require adapter-level OCO-on-fill state"
+                .to_string(),
+        );
+    }
+
+    if let Some(order) = orders
+        .iter()
+        .find(|order| is_algo_order_type(order.order_type()))
+    {
+        return Err(format!(
+            "Binance Futures batch order submission does not support conditional order type {:?}",
+            order.order_type()
+        ));
+    }
+
+    let mut batch_items = Vec::with_capacity(orders.len());
+    for order in orders {
+        if price_match.is_some() && order.is_post_only() {
+            return Err("price_match cannot be combined with post-only orders".to_string());
+        }
+
+        if price_match.is_some() && order.order_type() != OrderType::Limit {
+            return Err(format!(
+                "price_match is not supported for order type {:?}",
+                order.order_type()
+            ));
+        }
+
+        let binance_side = BinanceSide::try_from(order.order_side()).map_err(|e| e.to_string())?;
+        let binance_order_type =
+            order_type_to_binance_futures(order.order_type()).map_err(|e| e.to_string())?;
+        let binance_tif = if order.is_post_only() {
+            BinanceTimeInForce::Gtx
+        } else {
+            BinanceTimeInForce::try_from(order.time_in_force()).map_err(|e| e.to_string())?
+        };
+        let position_side =
+            determine_position_side(is_hedge_mode, order.order_side(), order.is_reduce_only());
+        let requires_time_in_force = matches!(order.order_type(), OrderType::Limit);
+
+        batch_items.push(BatchOrderItem {
+            symbol: format_binance_symbol(&order.instrument_id()),
+            side: binance_side_wire(binance_side).to_string(),
+            order_type: binance_futures_order_type_wire(binance_order_type).to_string(),
+            time_in_force: if requires_time_in_force {
+                Some(binance_time_in_force_wire(binance_tif).to_string())
+            } else {
+                None
+            },
+            quantity: Some(order.quantity().to_string()),
+            price: if price_match.is_some() {
+                None
+            } else {
+                order.price().map(|price| price.to_string())
+            },
+            reduce_only: reduce_only_param(order.is_reduce_only(), position_side),
+            new_client_order_id: Some(encode_broker_id(
+                &order.client_order_id(),
+                BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+            )),
+            stop_price: None,
+            position_side: position_side.map(|side| binance_position_side_wire(side).to_string()),
+            activation_price: None,
+            callback_rate: None,
+            working_type: None,
+            price_protect: None,
+            close_position: None,
+            good_till_date: None,
+            price_match: price_match
+                .and_then(binance_price_match_wire)
+                .map(str::to_string),
+            self_trade_prevention_mode: None,
+        });
+    }
+
+    Ok(batch_items)
+}
+
+fn is_grouped_order(order: &OrderAny) -> bool {
+    matches!(
+        order.contingency_type(),
+        Some(contingency_type) if contingency_type != ContingencyType::NoContingency
+    ) || order
+        .linked_order_ids()
+        .is_some_and(|linked_order_ids| !linked_order_ids.is_empty())
+}
+
+fn binance_side_wire(side: BinanceSide) -> &'static str {
+    match side {
+        BinanceSide::Buy => "BUY",
+        BinanceSide::Sell => "SELL",
+    }
+}
+
+fn binance_futures_order_type_wire(order_type: BinanceFuturesOrderType) -> &'static str {
+    match order_type {
+        BinanceFuturesOrderType::Limit => "LIMIT",
+        BinanceFuturesOrderType::Market => "MARKET",
+        BinanceFuturesOrderType::Stop => "STOP",
+        BinanceFuturesOrderType::StopMarket => "STOP_MARKET",
+        BinanceFuturesOrderType::TakeProfit => "TAKE_PROFIT",
+        BinanceFuturesOrderType::TakeProfitMarket => "TAKE_PROFIT_MARKET",
+        BinanceFuturesOrderType::TrailingStopMarket => "TRAILING_STOP_MARKET",
+        BinanceFuturesOrderType::Liquidation => "LIQUIDATION",
+        BinanceFuturesOrderType::Adl => "ADL",
+        BinanceFuturesOrderType::Unknown => "UNKNOWN",
+    }
+}
+
+fn binance_time_in_force_wire(time_in_force: BinanceTimeInForce) -> &'static str {
+    match time_in_force {
+        BinanceTimeInForce::Gtc => "GTC",
+        BinanceTimeInForce::Ioc => "IOC",
+        BinanceTimeInForce::Fok => "FOK",
+        BinanceTimeInForce::Gtx => "GTX",
+        BinanceTimeInForce::Gtd => "GTD",
+        BinanceTimeInForce::Rpi => "RPI",
+        BinanceTimeInForce::Unknown => "UNKNOWN",
+    }
+}
+
+fn binance_position_side_wire(position_side: BinancePositionSide) -> &'static str {
+    match position_side {
+        BinancePositionSide::Both => "BOTH",
+        BinancePositionSide::Long => "LONG",
+        BinancePositionSide::Short => "SHORT",
+        BinancePositionSide::Unknown => "UNKNOWN",
+    }
+}
+
+fn binance_price_match_wire(price_match: BinancePriceMatch) -> Option<&'static str> {
+    match price_match {
+        BinancePriceMatch::None | BinancePriceMatch::Unknown => None,
+        BinancePriceMatch::Opponent => Some("OPPONENT"),
+        BinancePriceMatch::Opponent5 => Some("OPPONENT_5"),
+        BinancePriceMatch::Opponent10 => Some("OPPONENT_10"),
+        BinancePriceMatch::Opponent20 => Some("OPPONENT_20"),
+        BinancePriceMatch::Queue => Some("QUEUE"),
+        BinancePriceMatch::Queue5 => Some("QUEUE_5"),
+        BinancePriceMatch::Queue10 => Some("QUEUE_10"),
+        BinancePriceMatch::Queue20 => Some("QUEUE_20"),
     }
 }
 
@@ -1848,10 +2015,158 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     }
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
-        log::warn!(
-            "submit_order_list not yet implemented for Binance Futures (received {} orders)",
-            cmd.order_list.client_order_ids.len()
-        );
+        if cmd.order_list.client_order_ids.is_empty() {
+            log::debug!("submit_order_list called with empty order list");
+            return Ok(());
+        }
+
+        let orders = self.core.get_orders_for_list(&cmd.order_list)?;
+
+        if let Some(order) = orders.iter().find(|order| order.is_closed()) {
+            let reason = format!("Cannot submit closed order {}", order.client_order_id());
+            for order in &orders {
+                self.emitter.emit_order_denied(order, &reason);
+            }
+            return Ok(());
+        }
+
+        let close_position = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get_bool("close_position"))
+            .unwrap_or(false);
+        let price_match = match cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get_str("price_match"))
+            .map(BinancePriceMatch::from_param)
+            .transpose()
+        {
+            Ok(price_match) => price_match,
+            Err(e) => {
+                for order in &orders {
+                    self.emitter.emit_order_denied(order, &e.to_string());
+                }
+                return Ok(());
+            }
+        };
+
+        let batch_items = match build_futures_order_list_batch(
+            &orders,
+            self.is_hedge_mode(),
+            close_position,
+            price_match,
+        ) {
+            Ok(batch_items) => batch_items,
+            Err(reason) => {
+                for order in &orders {
+                    self.emitter.emit_order_denied(order, &reason);
+                }
+                return Ok(());
+            }
+        };
+
+        for order in &orders {
+            self.dispatch_state.order_identities.insert(
+                order.client_order_id(),
+                OrderIdentity {
+                    instrument_id: order.instrument_id(),
+                    strategy_id: order.strategy_id(),
+                    order_side: order.order_side(),
+                    order_type: order.order_type(),
+                    price: order.price(),
+                    quantity: order.quantity(),
+                },
+            );
+            self.emitter.emit_order_submitted(order);
+        }
+
+        let http_client = self.http_client.clone();
+        let emitter = self.emitter.clone();
+        let trader_id = self.core.trader_id;
+        let account_id = self.core.account_id;
+        let clock = self.clock;
+
+        self.spawn_task("submit_order_list", async move {
+            match http_client.submit_order_list(&batch_items).await {
+                Ok(results) => {
+                    for (order, result) in orders.iter().zip(results.iter()) {
+                        match result {
+                            BatchOrderResult::Success(response) => {
+                                log::debug!(
+                                    "Order-list leg submit accepted: client_order_id={}, venue_order_id={}",
+                                    order.client_order_id(),
+                                    response.order_id
+                                );
+                            }
+                            BatchOrderResult::Error(error) => {
+                                let ts_now = clock.get_time_ns();
+                                let rejected = OrderRejected::new(
+                                    trader_id,
+                                    order.strategy_id(),
+                                    order.instrument_id(),
+                                    order.client_order_id(),
+                                    account_id,
+                                    format!(
+                                        "submit-order-list-error: code={}, msg={}",
+                                        error.code, error.msg
+                                    )
+                                    .into(),
+                                    UUID4::new(),
+                                    ts_now,
+                                    ts_now,
+                                    false,
+                                    false,
+                                );
+                                emitter.send_order_event(OrderEventAny::Rejected(rejected));
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let e = anyhow::Error::new(e);
+
+                    if is_ambiguous_submit_error(&e) {
+                        log::error!(
+                            "Ambiguous order-list submit failure, awaiting reconciliation: {e}"
+                        );
+                    } else if is_structured_venue_rejection(&e) {
+                        let ts_now = clock.get_time_ns();
+                        let due_post_only = classify_submit_order_error(&e);
+
+                        for order in &orders {
+                            let rejected = OrderRejected::new(
+                                trader_id,
+                                order.strategy_id(),
+                                order.instrument_id(),
+                                order.client_order_id(),
+                                account_id,
+                                format!("submit-order-list-error: {e}").into(),
+                                UUID4::new(),
+                                ts_now,
+                                ts_now,
+                                false,
+                                due_post_only,
+                            );
+                            emitter.send_order_event(OrderEventAny::Rejected(rejected));
+                        }
+                    } else if is_local_command_failure(&e) {
+                        log::warn!(
+                            "Order-list submit command failed local validation for {} orders: {e}",
+                            orders.len()
+                        );
+                    } else {
+                        log::error!(
+                            "Ambiguous order-list submit failure, awaiting reconciliation: {e}"
+                        );
+                    }
+
+                    return Err(e);
+                }
+            }
+            Ok(())
+        });
+
         Ok(())
     }
 

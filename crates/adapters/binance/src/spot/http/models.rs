@@ -569,6 +569,40 @@ pub struct TradeFee {
     pub taker_commission: String,
 }
 
+/// Response from a new OCO order-list request.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewOcoOrderListResponse {
+    /// Exchange order list ID.
+    pub order_list_id: i64,
+    /// Contingency type.
+    pub contingency_type: String,
+    /// List status type.
+    pub list_status_type: String,
+    /// List order status.
+    pub list_order_status: String,
+    /// Client order ID for the order list.
+    pub list_client_order_id: String,
+    /// Transaction time in milliseconds.
+    pub transaction_time: i64,
+    /// Trading pair symbol.
+    pub symbol: String,
+    /// Orders in the list.
+    pub orders: Vec<OrderListOrder>,
+}
+
+/// Order summary inside an order-list response.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderListOrder {
+    /// Trading pair symbol.
+    pub symbol: String,
+    /// Exchange order ID.
+    pub order_id: i64,
+    /// Client order ID.
+    pub client_order_id: String,
+}
+
 /// Result of a single order in a batch operation.
 ///
 /// Each item in a batch response can be either a success or an error.

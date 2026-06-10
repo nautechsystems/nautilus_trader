@@ -43,16 +43,17 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{LiquiditySide, OmsType, OrderStatus, OrderType},
+    enums::{ContingencyType, LiquiditySide, OmsType, OrderStatus, OrderType},
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny,
         OrderExpired, OrderFilled, OrderModifyRejected, OrderRejected, OrderUpdated,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, Venue, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
+        VenueOrderId,
     },
     instruments::Instrument,
-    orders::Order,
+    orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
@@ -98,7 +99,10 @@ use crate::{
             client::BinanceSpotHttpClient,
             error::BinanceSpotHttpError,
             models::BatchCancelResult,
-            query::{BatchCancelItem, CancelOrderParams, CancelReplaceOrderParams, NewOrderParams},
+            query::{
+                BatchCancelItem, CancelOrderParams, CancelReplaceOrderParams,
+                NewOcoOrderListParams, NewOrderParams,
+            },
         },
     },
 };
@@ -977,10 +981,109 @@ impl ExecutionClient for BinanceSpotExecutionClient {
     }
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
-        log::warn!(
-            "submit_order_list not yet implemented for Binance Spot execution client (received {} orders)",
-            cmd.order_list.client_order_ids.len()
-        );
+        if cmd.order_list.client_order_ids.is_empty() {
+            log::debug!("submit_order_list called with empty order list");
+            return Ok(());
+        }
+
+        let orders = self.core.get_orders_for_list(&cmd.order_list)?;
+
+        if let Some(order) = orders.iter().find(|order| order.is_closed()) {
+            let reason = format!("Cannot submit closed order {}", order.client_order_id());
+            for order in &orders {
+                self.emitter.emit_order_denied(order, &reason);
+            }
+            return Ok(());
+        }
+
+        let params = match build_spot_order_list_params(cmd.order_list.id.as_ref(), &orders) {
+            Ok(request) => request,
+            Err(reason) => {
+                for order in &orders {
+                    self.emitter.emit_order_denied(order, &reason);
+                }
+                return Ok(());
+            }
+        };
+
+        for order in &orders {
+            self.dispatch_state.order_identities.insert(
+                order.client_order_id(),
+                OrderIdentity {
+                    instrument_id: order.instrument_id(),
+                    strategy_id: order.strategy_id(),
+                    order_side: order.order_side(),
+                    order_type: order.order_type(),
+                    price: order.price(),
+                    quantity: order.quantity(),
+                },
+            );
+            self.emitter.emit_order_submitted(order);
+        }
+
+        let event_emitter = self.emitter.clone();
+        let trader_id = self.core.trader_id;
+        let account_id = self.core.account_id;
+        let clock = self.clock;
+        let ts_init = self.clock.get_time_ns();
+        let http_client = self.http_client.clone();
+        let dispatch_state = self.dispatch_state.clone();
+
+        self.spawn_task("submit_order_list_http", async move {
+            let response = http_client.submit_oco_order_list(&params).await;
+
+            match response {
+                Ok(response) => {
+                    for order in &orders {
+                        let encoded_client_order_id = encode_broker_id(
+                            &order.client_order_id(),
+                            BINANCE_NAUTILUS_SPOT_BROKER_ID,
+                        );
+                        let Some(report) = response
+                            .orders
+                            .iter()
+                            .find(|report| report.client_order_id == encoded_client_order_id)
+                        else {
+                            log::error!(
+                                "OCO response missing leg for {}, awaiting reconciliation",
+                                order.client_order_id()
+                            );
+                            continue;
+                        };
+
+                        let client_order_id = order.client_order_id();
+                        dispatch_state.insert_accepted(client_order_id);
+                        let accepted = OrderAccepted::new(
+                            trader_id,
+                            order.strategy_id(),
+                            order.instrument_id(),
+                            client_order_id,
+                            VenueOrderId::from(report.order_id.to_string().as_str()),
+                            account_id,
+                            UUID4::new(),
+                            ts_init,
+                            clock.get_time_ns(),
+                            false,
+                        );
+                        event_emitter.send_order_event(OrderEventAny::Accepted(accepted));
+                    }
+                }
+                Err(e) => {
+                    handle_spot_order_list_submit_error(
+                        &event_emitter,
+                        &dispatch_state,
+                        trader_id,
+                        account_id,
+                        clock,
+                        &orders,
+                        e,
+                    )?;
+                }
+            }
+
+            Ok(())
+        });
+
         Ok(())
     }
 
@@ -1681,6 +1784,215 @@ fn build_new_order_params(
         strategy_id: None,
         strategy_type: None,
     })
+}
+
+fn build_spot_order_list_params(
+    order_list_id: &str,
+    orders: &[OrderAny],
+) -> Result<NewOcoOrderListParams, String> {
+    let has_grouped_order = orders.iter().any(is_grouped_order);
+
+    if has_grouped_order {
+        return build_spot_oco_order_list_params(order_list_id, orders);
+    }
+
+    Err("Binance Spot order-list submission currently supports only OCO lists".to_string())
+}
+
+fn build_spot_oco_order_list_params(
+    order_list_id: &str,
+    orders: &[OrderAny],
+) -> Result<NewOcoOrderListParams, String> {
+    if orders.len() != 2 {
+        return Err(format!(
+            "Binance Spot OCO order-list submission requires exactly 2 orders, was {}",
+            orders.len()
+        ));
+    }
+
+    if orders
+        .iter()
+        .any(|order| order.contingency_type() != Some(ContingencyType::Oco))
+    {
+        return Err(
+            "Binance Spot grouped order-list submission currently supports only OCO lists"
+                .to_string(),
+        );
+    }
+
+    let first = &orders[0];
+    let second = &orders[1];
+    if first.instrument_id() != second.instrument_id() {
+        return Err("Binance Spot OCO order-list legs must use the same instrument".to_string());
+    }
+
+    if first.order_side() != second.order_side() {
+        return Err("Binance Spot OCO order-list legs must use the same side".to_string());
+    }
+
+    if first.quantity() != second.quantity() {
+        return Err("Binance Spot OCO order-list legs must use the same quantity".to_string());
+    }
+
+    if first.is_quote_quantity() || second.is_quote_quantity() {
+        return Err("Binance Spot OCO order-list legs do not support quote quantity".to_string());
+    }
+
+    let mut above = None;
+    let mut below = None;
+
+    for order in orders {
+        let params =
+            build_new_order_params(order, order.client_order_id(), order.is_post_only(), false)
+                .map_err(|e| e.to_string())?;
+
+        match spot_oco_leg_position(params.side, params.order_type)? {
+            SpotOcoLegPosition::Above => {
+                if above.replace(params).is_some() {
+                    return Err(
+                        "Binance Spot OCO order-list resolved more than one above leg".to_string(),
+                    );
+                }
+            }
+            SpotOcoLegPosition::Below => {
+                if below.replace(params).is_some() {
+                    return Err(
+                        "Binance Spot OCO order-list resolved more than one below leg".to_string(),
+                    );
+                }
+            }
+        }
+    }
+
+    let above = above.ok_or_else(|| "Binance Spot OCO order-list missing above leg".to_string())?;
+    let below = below.ok_or_else(|| "Binance Spot OCO order-list missing below leg".to_string())?;
+    let quantity = above
+        .quantity
+        .clone()
+        .ok_or_else(|| "Binance Spot OCO order-list requires base quantity".to_string())?;
+
+    Ok(NewOcoOrderListParams {
+        symbol: first.instrument_id().symbol.to_string(),
+        list_client_order_id: Some(order_list_id.to_string()),
+        side: above.side,
+        quantity,
+        above_type: above.order_type,
+        above_client_order_id: above.new_client_order_id,
+        above_iceberg_qty: above.iceberg_qty,
+        above_price: above.price,
+        above_stop_price: above.stop_price,
+        above_time_in_force: above.time_in_force,
+        below_type: below.order_type,
+        below_client_order_id: below.new_client_order_id,
+        below_iceberg_qty: below.iceberg_qty,
+        below_price: below.price,
+        below_stop_price: below.stop_price,
+        below_time_in_force: below.time_in_force,
+        new_order_resp_type: Some(BinanceOrderResponseType::Full),
+        self_trade_prevention_mode: None,
+    })
+}
+
+enum SpotOcoLegPosition {
+    Above,
+    Below,
+}
+
+fn spot_oco_leg_position(
+    side: BinanceSide,
+    order_type: BinanceSpotOrderType,
+) -> Result<SpotOcoLegPosition, String> {
+    match (side, order_type) {
+        (
+            BinanceSide::Sell,
+            BinanceSpotOrderType::LimitMaker
+            | BinanceSpotOrderType::TakeProfit
+            | BinanceSpotOrderType::TakeProfitLimit,
+        )
+        | (
+            BinanceSide::Buy,
+            BinanceSpotOrderType::StopLoss | BinanceSpotOrderType::StopLossLimit,
+        ) => Ok(SpotOcoLegPosition::Above),
+        (
+            BinanceSide::Sell,
+            BinanceSpotOrderType::StopLoss | BinanceSpotOrderType::StopLossLimit,
+        )
+        | (
+            BinanceSide::Buy,
+            BinanceSpotOrderType::LimitMaker
+            | BinanceSpotOrderType::TakeProfit
+            | BinanceSpotOrderType::TakeProfitLimit,
+        ) => Ok(SpotOcoLegPosition::Below),
+        (_, unsupported) => Err(format!(
+            "Unsupported Binance Spot OCO leg order type: {unsupported:?}"
+        )),
+    }
+}
+
+fn is_grouped_order(order: &OrderAny) -> bool {
+    matches!(
+        order.contingency_type(),
+        Some(contingency_type) if contingency_type != ContingencyType::NoContingency
+    ) || order
+        .linked_order_ids()
+        .is_some_and(|linked_order_ids| !linked_order_ids.is_empty())
+}
+
+fn handle_spot_order_list_submit_error(
+    event_emitter: &ExecutionEventEmitter,
+    dispatch_state: &WsDispatchState,
+    trader_id: TraderId,
+    account_id: AccountId,
+    clock: &'static AtomicTime,
+    orders: &[OrderAny],
+    error: BinanceSpotHttpError,
+) -> anyhow::Result<()> {
+    let ambiguous = matches!(
+        error,
+        BinanceSpotHttpError::BinanceError {
+            code: BINANCE_UNEXPECTED_RESPONSE_CODE | BINANCE_STATUS_UNKNOWN_CODE,
+            ..
+        }
+    );
+
+    if ambiguous {
+        log::error!("Ambiguous order-list submit failure, awaiting reconciliation: {error}");
+        return Err(error.into());
+    }
+
+    let reject_orders = matches!(
+        error,
+        BinanceSpotHttpError::BinanceError { .. }
+            | BinanceSpotHttpError::MissingCredentials
+            | BinanceSpotHttpError::ValidationError(_)
+    );
+
+    if reject_orders {
+        let ts_now = clock.get_time_ns();
+        let reason = format!("submit-order-list-error: {error}");
+        for order in orders {
+            let client_order_id = order.client_order_id();
+            dispatch_state.cleanup_terminal(client_order_id);
+            let rejected = OrderRejected::new(
+                trader_id,
+                order.strategy_id(),
+                order.instrument_id(),
+                client_order_id,
+                account_id,
+                reason.clone().into(),
+                UUID4::new(),
+                ts_now,
+                ts_now,
+                false,
+                false,
+            );
+            event_emitter.send_order_event(OrderEventAny::Rejected(rejected));
+        }
+    } else {
+        log::error!("Order-list submit failed, awaiting reconciliation: {error}");
+    }
+
+    Err(error.into())
 }
 
 fn build_cancel_order_params(cmd: &CancelOrder) -> CancelOrderParams {

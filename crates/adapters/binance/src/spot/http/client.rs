@@ -59,15 +59,15 @@ use super::{
     models::{
         AvgPrice, BatchCancelResult, BatchOrderResult, BinanceAccountInfo, BinanceAccountTrade,
         BinanceCancelOrderResponse, BinanceDepth, BinanceKlines, BinanceNewOrderResponse,
-        BinanceOrderResponse, BinanceTrades, BookTicker, ListenKeyResponse, Ticker24hr,
-        TickerPrice, TradeFee,
+        BinanceOrderResponse, BinanceTrades, BookTicker, ListenKeyResponse,
+        NewOcoOrderListResponse, Ticker24hr, TickerPrice, TradeFee,
     },
     parse,
     query::{
         AccountInfoParams, AccountTradesParams, AllOrdersParams, AvgPriceParams, BatchCancelItem,
         BatchOrderItem, CancelOpenOrdersParams, CancelOrderParams, CancelReplaceOrderParams,
-        DepthParams, KlinesParams, ListenKeyParams, NewOrderParams, OpenOrdersParams,
-        QueryOrderParams, TickerParams, TradeFeeParams, TradesParams,
+        DepthParams, KlinesParams, ListenKeyParams, NewOcoOrderListParams, NewOrderParams,
+        OpenOrdersParams, QueryOrderParams, TickerParams, TradeFeeParams, TradesParams,
     },
 };
 use crate::{
@@ -246,6 +246,33 @@ impl BinanceRawSpotHttpClient {
         self.request(Method::POST, path, params, true, true).await
     }
 
+    /// Performs a signed POST request and requests a JSON response.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing or the request fails.
+    pub async fn post_signed_json<P>(
+        &self,
+        path: &str,
+        params: Option<&P>,
+    ) -> BinanceSpotHttpResult<Vec<u8>>
+    where
+        P: Serialize + ?Sized,
+    {
+        self.request_with_extra_headers(
+            Method::POST,
+            path,
+            params,
+            true,
+            true,
+            Some(HashMap::from([(
+                "Accept".to_string(),
+                "application/json".to_string(),
+            )])),
+        )
+        .await
+    }
+
     /// Performs a signed DELETE request and returns raw response bytes.
     ///
     /// # Errors
@@ -273,13 +300,29 @@ impl BinanceRawSpotHttpClient {
     where
         P: Serialize + ?Sized,
     {
+        self.request_with_extra_headers(method, path, params, signed, use_order_quota, None)
+            .await
+    }
+
+    async fn request_with_extra_headers<P>(
+        &self,
+        method: Method,
+        path: &str,
+        params: Option<&P>,
+        signed: bool,
+        use_order_quota: bool,
+        extra_headers: Option<HashMap<String, String>>,
+    ) -> BinanceSpotHttpResult<Vec<u8>>
+    where
+        P: Serialize + ?Sized,
+    {
         let mut query = params
             .map(serde_urlencoded::to_string)
             .transpose()
             .map_err(|e| BinanceSpotHttpError::ValidationError(e.to_string()))?
             .unwrap_or_default();
 
-        let mut headers = HashMap::new();
+        let mut headers = extra_headers.unwrap_or_default();
 
         if signed {
             let cred = self
@@ -1146,6 +1189,19 @@ impl BinanceRawSpotHttpClient {
         Ok(response)
     }
 
+    /// Creates a new OCO order list.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or JSON decoding fails.
+    pub async fn new_oco_order_list(
+        &self,
+        params: &NewOcoOrderListParams,
+    ) -> BinanceSpotHttpResult<NewOcoOrderListResponse> {
+        let bytes = self.post_signed_json("orderList/oco", Some(params)).await?;
+        serde_json::from_slice(&bytes).map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))
+    }
+
     /// Cancels an existing order and places a new order atomically.
     ///
     /// # Errors
@@ -1911,6 +1967,18 @@ impl BinanceSpotHttpClient {
         orders: &[BatchOrderItem],
     ) -> BinanceSpotHttpResult<Vec<BatchOrderResult>> {
         self.inner.batch_submit_orders(orders).await
+    }
+
+    /// Submits a Spot OCO order list.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or JSON parsing fails.
+    pub async fn submit_oco_order_list(
+        &self,
+        params: &NewOcoOrderListParams,
+    ) -> BinanceSpotHttpResult<NewOcoOrderListResponse> {
+        self.inner.new_oco_order_list(params).await
     }
 
     /// Modifies an existing order (cancel and replace atomically).

@@ -57,7 +57,7 @@ use nautilus_common::{
         ExecutionEvent, ExecutionReport,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
-            SubmitOrder,
+            SubmitOrder, SubmitOrderList,
         },
     },
     testing::wait_until_async,
@@ -66,10 +66,12 @@ use nautilus_core::UnixNanos;
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, CashAccount},
-    enums::{AccountType, OmsType, OrderSide, TimeInForce},
+    enums::{AccountType, ContingencyType, OmsType, OrderSide, TimeInForce, TriggerType},
     events::{AccountState, OrderEventAny},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
-    orders::{LimitOrder, Order, OrderAny},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
+    },
+    orders::{LimitOrder, Order, OrderAny, OrderList, StopLimitOrder},
     types::{AccountBalance, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
@@ -739,6 +741,7 @@ fn create_exec_test_router_with_command_responses(state: CommandResponseState) -
                 })
                 .delete(handle_order_cancel),
         )
+        .route("/api/v3/orderList/oco", post(handle_oco_order_list_submit))
         .route("/api/v3/batchOrders", delete(handle_batch_cancel))
         .with_state(state)
 }
@@ -849,6 +852,75 @@ async fn handle_batch_cancel(
     }
     state.request_count.fetch_add(1, Ordering::Relaxed);
     command_response(state.responses.batch_cancel, json_response(&json!([])))
+}
+
+async fn handle_oco_order_list_submit(
+    State(state): State<CommandResponseState>,
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    if !has_auth_headers(&headers) {
+        return unauthorized_response().into_response();
+    }
+    state.request_count.fetch_add(1, Ordering::Relaxed);
+
+    let valid_oco = params.get("symbol").is_some_and(|value| value == "BTCUSDT")
+        && params.get("side").is_some_and(|value| value == "SELL")
+        && params.get("quantity").is_some_and(|value| value == "0.001")
+        && params
+            .get("aboveType")
+            .is_some_and(|value| value == "LIMIT_MAKER")
+        && params
+            .get("belowType")
+            .is_some_and(|value| value == "STOP_LOSS_LIMIT")
+        && params
+            .get("aboveClientOrderId")
+            .is_some_and(|value| value.contains("spot-oco-tp"))
+        && params
+            .get("belowClientOrderId")
+            .is_some_and(|value| value.contains("spot-oco-sl"));
+
+    if !valid_oco {
+        return venue_reject_response(-1102, "invalid OCO test request");
+    }
+
+    let above_client_order_id = params
+        .get("aboveClientOrderId")
+        .cloned()
+        .unwrap_or_else(|| "above".to_string());
+    let below_client_order_id = params
+        .get("belowClientOrderId")
+        .cloned()
+        .unwrap_or_else(|| "below".to_string());
+    let list_client_order_id = params
+        .get("listClientOrderId")
+        .cloned()
+        .unwrap_or_else(|| "list".to_string());
+
+    command_response(
+        state.responses.submit,
+        json_response(&json!({
+            "orderListId": 42,
+            "contingencyType": "OCO",
+            "listStatusType": "EXEC_STARTED",
+            "listOrderStatus": "EXECUTING",
+            "listClientOrderId": list_client_order_id,
+            "transactionTime": 1710485608839_i64,
+            "symbol": "BTCUSDT",
+            "orders": [
+                {
+                    "symbol": "BTCUSDT",
+                    "orderId": 1001,
+                    "clientOrderId": above_client_order_id
+                },
+                {
+                    "symbol": "BTCUSDT",
+                    "orderId": 1002,
+                    "clientOrderId": below_client_order_id
+                }
+            ]
+        })),
+    )
 }
 
 async fn handle_ws_setup(ws: WebSocketUpgrade, State(state): State<WsSetupState>) -> Response {
@@ -1389,6 +1461,97 @@ async fn test_submit_order_generates_submitted_and_accepted_events() {
         Duration::from_secs(5),
     )
     .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_oco_order_list_routes_to_order_list_oco_endpoint() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    let orders = add_spot_oco_orders_to_cache(&cache);
+    let submit_cmd = submit_order_list_command(&orders);
+
+    client.submit_order_list(submit_cmd).unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    let mut accepted_count = 0;
+    wait_until_async(
+        || {
+            while let Ok(event) = rx.try_recv() {
+                if matches!(event, ExecutionEvent::Order(OrderEventAny::Accepted(_))) {
+                    accepted_count += 1;
+                }
+            }
+            let done = accepted_count == 2;
+            async move { done }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_oco_order_list_response_parse_failure_does_not_emit_order_rejected() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: CommandResponse::MalformedSuccess,
+            ..Default::default()
+        })
+        .await;
+
+    let orders = add_spot_oco_orders_to_cache(&cache);
+    let submit_cmd = submit_order_list_command(&orders);
+    let client_order_ids = orders
+        .iter()
+        .map(|order| order.client_order_id())
+        .collect::<Vec<_>>();
+
+    client.submit_order_list(submit_cmd).unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::Rejected(event) if client_order_ids.contains(&event.client_order_id)
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_independent_order_list_is_denied_without_http_request() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    let orders = [
+        add_limit_order_to_cache(&cache, ClientOrderId::new("spot-batch-001")),
+        add_limit_order_to_cache(&cache, ClientOrderId::new("spot-batch-002")),
+    ];
+    let submit_cmd = submit_order_list_command(&orders);
+
+    client.submit_order_list(submit_cmd).unwrap();
+
+    let mut denied_count = 0;
+    wait_until_async(
+        || {
+            while let Ok(event) = rx.try_recv() {
+                if matches!(event, ExecutionEvent::Order(OrderEventAny::Denied(_))) {
+                    denied_count += 1;
+                }
+            }
+            let done = denied_count == 2;
+            async move { done }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
 }
 
 #[rstest]
@@ -2238,6 +2401,80 @@ fn add_limit_order_to_cache(
     order_any
 }
 
+fn add_spot_oco_orders_to_cache(cache: &Rc<RefCell<Cache>>) -> Vec<OrderAny> {
+    let order_list_id = OrderListId::from("OL-SPOT-OCO");
+    let take_profit_id = ClientOrderId::new("spot-oco-tp");
+    let stop_loss_id = ClientOrderId::new("spot-oco-sl");
+
+    let take_profit = OrderAny::Limit(LimitOrder::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        take_profit_id,
+        OrderSide::Sell,
+        Quantity::from("0.001"),
+        Price::from("60000.00"),
+        TimeInForce::Gtc,
+        None,
+        true,
+        false,
+        false,
+        None,
+        None,
+        None,
+        Some(ContingencyType::Oco),
+        Some(order_list_id),
+        Some(vec![stop_loss_id]),
+        None,
+        None,
+        None,
+        None,
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+    ));
+
+    let stop_loss = OrderAny::StopLimit(StopLimitOrder::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        stop_loss_id,
+        OrderSide::Sell,
+        Quantity::from("0.001"),
+        Price::from("49000.00"),
+        Price::from("50000.00"),
+        TriggerType::Default,
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        false,
+        None,
+        None,
+        None,
+        Some(ContingencyType::Oco),
+        Some(order_list_id),
+        Some(vec![take_profit_id]),
+        None,
+        None,
+        None,
+        None,
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+    ));
+
+    let orders = vec![take_profit, stop_loss];
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    orders
+}
+
 fn submit_order_command(order: &OrderAny) -> SubmitOrder {
     SubmitOrder::new(
         test_trader_id(),
@@ -2246,6 +2483,34 @@ fn submit_order_command(order: &OrderAny) -> SubmitOrder {
         test_instrument_id(),
         order.client_order_id(),
         order.init_event().clone(),
+        None,
+        None,
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        None,
+    )
+}
+
+fn submit_order_list_command(orders: &[OrderAny]) -> SubmitOrderList {
+    let order_list = OrderList::new(
+        OrderListId::from("OL-SPOT-TEST"),
+        test_instrument_id(),
+        test_strategy_id(),
+        orders.iter().map(|order| order.client_order_id()).collect(),
+        UnixNanos::default(),
+    );
+    let order_inits = orders
+        .iter()
+        .map(|order| order.init_event().clone())
+        .collect();
+
+    SubmitOrderList::new(
+        test_trader_id(),
+        Some(*BINANCE_CLIENT_ID),
+        test_strategy_id(),
+        order_list,
+        order_inits,
         None,
         None,
         None,
