@@ -370,6 +370,21 @@ fn account_subscribed_frame(channel: &str) -> Option<Value> {
             "assets": {},
             "timestamp": 1_700_000_000_000_u64,
         }))
+    } else if channel.starts_with("user_stats:") {
+        Some(json!({
+            "type": "subscribed/user_stats",
+            "channel": channel,
+            "stats": {
+                "account_trading_mode": 0,
+                "available_balance": "0",
+                "buying_power": "0",
+                "collateral": "0",
+                "leverage": "0",
+                "margin_usage": "0",
+                "portfolio_value": "0"
+            },
+            "timestamp": 1_700_000_000_000_u64,
+        }))
     } else {
         None
     }
@@ -1261,14 +1276,20 @@ async fn test_connect_disconnect_lifecycle() {
 
     // Drive the strict-await readiness gate manually so the test pins the
     // ordering contract: `connect()` must remain pending until each of the
-    // four account streams has delivered a first frame.
+    // five account streams has delivered a first frame.
     state
         .auto_emit_account_subscribed_frames
         .store(false, Ordering::Relaxed);
 
     assert!(!client.is_connected());
 
-    let channel_for = |stream: &str| format!("account_all_{stream}:{TEST_ACCOUNT_INDEX}");
+    let channel_for = |stream: &str| -> String {
+        if stream == "user_stats" {
+            format!("user_stats:{TEST_ACCOUNT_INDEX}")
+        } else {
+            format!("account_all_{stream}:{TEST_ACCOUNT_INDEX}")
+        }
+    };
     let orders_frame =
         account_subscribed_frame(&channel_for("orders")).expect("orders frame template");
     let trades_frame =
@@ -1277,22 +1298,25 @@ async fn test_connect_disconnect_lifecycle() {
         account_subscribed_frame(&channel_for("positions")).expect("positions frame template");
     let assets_frame =
         account_subscribed_frame(&channel_for("assets")).expect("assets frame template");
+    let user_stats_frame =
+        account_subscribed_frame(&channel_for("user_stats")).expect("user_stats frame template");
 
     {
         let mut connect_fut = std::pin::pin!(client.connect());
 
-        // Race connect against the first three frames; connect must stay
+        // Race connect against the first four frames; connect must stay
         // pending after each push since the strict-await gate requires all
-        // four streams to land.
-        let push_three = {
+        // five streams to land.
+        let push_four = {
             let state = Arc::clone(&state);
             let frames = [
                 orders_frame.clone(),
                 trades_frame.clone(),
                 positions_frame.clone(),
+                assets_frame.clone(),
             ];
             async move {
-                await_subscribe_count(&state, 4).await;
+                await_subscribe_count(&state, 5).await;
                 for frame in frames {
                     state.push_frame(&frame);
                     tokio::time::sleep(Duration::from_millis(80)).await;
@@ -1305,16 +1329,16 @@ async fn test_connect_disconnect_lifecycle() {
 
         tokio::select! {
             result = &mut connect_fut => {
-                panic!("connect returned with fewer than four account frames: {result:?}");
+                panic!("connect returned with fewer than five account frames: {result:?}");
             }
-            () = push_three => {}
+            () = push_four => {}
         }
 
-        // Push the fourth frame; connect must now return promptly.
-        state.push_frame(&assets_frame);
+        // Push the fifth frame; connect must now return promptly.
+        state.push_frame(&user_stats_frame);
         tokio::time::timeout(Duration::from_secs(2), &mut connect_fut)
             .await
-            .expect("connect did not return after the fourth account frame")
+            .expect("connect did not return after the fifth account frame")
             .expect("connect");
     }
 
@@ -1331,8 +1355,8 @@ async fn test_connect_disconnect_lifecycle() {
 
     let subs = state.subscribes().await;
     assert!(
-        subs.len() >= 4,
-        "expected at least 4 account subscribes, was {}",
+        subs.len() >= 5,
+        "expected at least 5 account subscribes, was {}",
         subs.len(),
     );
     let channels: Vec<&str> = subs
@@ -1343,6 +1367,7 @@ async fn test_connect_disconnect_lifecycle() {
     assert!(channels.iter().any(|c| c == &"account_all_trades/12345"));
     assert!(channels.iter().any(|c| c == &"account_all_positions/12345"));
     assert!(channels.iter().any(|c| c == &"account_all_assets/12345"));
+    assert!(channels.iter().any(|c| c == &"user_stats/12345"));
 
     // Subscribe frames must carry the L2 auth token; the data-client tests
     // pin the token shape via the REST `auth=` parameter, here the same
@@ -1456,8 +1481,8 @@ async fn connect_bails_when_integrator_auto_approval_reports_unapproved() {
 
 /// Pins the per-stream marker dispatch in the execution consumption loop.
 ///
-/// Each parametric case drives a different stream as the FOURTH (last) frame.
-/// A regression that crosses any of the four `AccountStreamFirstFrame` arms
+/// Each parametric case drives a different stream as the FIFTH (last) frame.
+/// A regression that crosses any of the five `AccountStreamFirstFrame` arms
 /// (for example, the `Assets` arm calling `mark_orders()` instead of
 /// `mark_assets()`) would leave the named stream unmarked even after its
 /// frame lands. The final `connect_fut` await would then time out, failing
@@ -1467,6 +1492,7 @@ async fn connect_bails_when_integrator_auto_approval_reports_unapproved() {
 #[case::trades_last("trades")]
 #[case::positions_last("positions")]
 #[case::assets_last("assets")]
+#[case::user_stats_last("user_stats")]
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_returns_only_after_each_distinct_stream_marks_its_own_flag(
     #[case] last_stream: &str,
@@ -1478,15 +1504,21 @@ async fn connect_returns_only_after_each_distinct_stream_marks_its_own_flag(
         .auto_emit_account_subscribed_frames
         .store(false, Ordering::Relaxed);
 
-    let channel_for = |stream: &str| format!("account_all_{stream}:{TEST_ACCOUNT_INDEX}");
+    // `user_stats` uses a flat channel name; the other four share the
+    // `account_all_*` prefix.
+    let channel_for = |stream: &str| -> String {
+        if stream == "user_stats" {
+            format!("user_stats:{TEST_ACCOUNT_INDEX}")
+        } else {
+            format!("account_all_{stream}:{TEST_ACCOUNT_INDEX}")
+        }
+    };
     let frame_for =
         |stream: &str| account_subscribed_frame(&channel_for(stream)).expect("frame template");
+    let all_streams = ["orders", "trades", "positions", "assets", "user_stats"];
     let frames: std::collections::HashMap<&str, Value> =
-        ["orders", "trades", "positions", "assets"]
-            .iter()
-            .map(|s| (*s, frame_for(s)))
-            .collect();
-    let first_three: Vec<Value> = ["orders", "trades", "positions", "assets"]
+        all_streams.iter().map(|s| (*s, frame_for(s))).collect();
+    let first_four: Vec<Value> = all_streams
         .iter()
         .filter(|s| **s != last_stream)
         .map(|s| frames[*s].clone())
@@ -1496,11 +1528,11 @@ async fn connect_returns_only_after_each_distinct_stream_marks_its_own_flag(
     {
         let mut connect_fut = std::pin::pin!(client.connect());
 
-        let push_first_three = {
+        let push_first_four = {
             let state = Arc::clone(&state);
             async move {
-                await_subscribe_count(&state, 4).await;
-                for frame in first_three {
+                await_subscribe_count(&state, 5).await;
+                for frame in first_four {
                     state.push_frame(&frame);
                     tokio::time::sleep(Duration::from_millis(80)).await;
                 }
@@ -1514,7 +1546,7 @@ async fn connect_returns_only_after_each_distinct_stream_marks_its_own_flag(
                     "connect returned before {last_stream} frame landed: {result:?}",
                 );
             }
-            () = push_first_three => {}
+            () = push_first_four => {}
         }
 
         state.push_frame(&last_frame);
@@ -2466,18 +2498,18 @@ async fn test_batch_cancel_orders_sends_one_cancel_order_batch() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_reconnect_replays_authenticated_account_subscriptions() {
     // The WS layer auto-reconnects on a server-initiated close. After the
-    // reconnect the 4 account-stream subscribes must replay with their
+    // reconnect the 5 account-stream subscribes must replay with their
     // auth token; otherwise the typed execution stream would silently
     // drop. The data-client variant of this test pins the public-channel
     // replay; this pins the authenticated path.
     let (addr, state) = start_server().await;
     let (mut client, _rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");
-    await_subscribe_count(&state, 4).await;
+    await_subscribe_count(&state, 5).await;
 
     // Arm the server-side close. The next inbound frame from the client
     // closes the socket; we then send a no-op cancel to fire that frame.
-    // Reconnect drives a full replay of the 4 tracked subscriptions.
+    // Reconnect drives a full replay of the 5 tracked subscriptions.
     state.close_after_next_frame.store(true, Ordering::Relaxed);
     let _ = client.cancel_order(CancelOrder::new(
         trader_id(),
@@ -2502,6 +2534,7 @@ async fn test_reconnect_replays_authenticated_account_subscriptions() {
                     "account_all_trades",
                     "account_all_positions",
                     "account_all_assets",
+                    "user_stats",
                 ]
                 .iter()
                 .all(|prefix| {
@@ -2519,11 +2552,8 @@ async fn test_reconnect_replays_authenticated_account_subscriptions() {
     // Sanity-check that every replayed subscribe still carries auth.
     let subs = state.subscribes().await;
     for sub in &subs {
-        if sub["channel"]
-            .as_str()
-            .unwrap_or("")
-            .starts_with("account_all_")
-        {
+        let channel = sub["channel"].as_str().unwrap_or("");
+        if channel.starts_with("account_all_") || channel.starts_with("user_stats") {
             assert!(
                 sub.get("auth").and_then(Value::as_str).is_some(),
                 "account-stream subscribe missing auth: {sub:?}",
