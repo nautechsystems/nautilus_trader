@@ -37,7 +37,7 @@ mod serial_tests {
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
         events::{PositionSnapshot, account::stubs::cash_account_state_million_usd},
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, VenueOrderId,
+            AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId,
             stubs::account_id,
         },
         instruments::{
@@ -420,6 +420,53 @@ mod serial_tests {
                 .collect::<HashSet<ClientId>>(),
             vec![client_id].into_iter().collect::<HashSet<ClientId>>()
         );
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_index_order_position_round_trip() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        let client_order_id = ClientOrderId::new("O-19700101-000000-001-001-1");
+        let position_id_1 = PositionId::new("P-19700101-000000-001-001-1");
+        let position_id_2 = PositionId::new("P-19700101-000000-001-001-2");
+
+        pg_cache
+            .index_order_position(client_order_id, position_id_1)
+            .unwrap();
+        wait_until_async(
+            || async {
+                pg_cache
+                    .load_index_order_position()
+                    .unwrap()
+                    .get(&client_order_id)
+                    == Some(&position_id_1)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        // Re-indexing the same order updates the mapping
+        pg_cache
+            .index_order_position(client_order_id, position_id_2)
+            .unwrap();
+        wait_until_async(
+            || async {
+                pg_cache
+                    .load_index_order_position()
+                    .unwrap()
+                    .get(&client_order_id)
+                    == Some(&position_id_2)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let index = pg_cache.load_index_order_position().unwrap();
+        assert_eq!(index.len(), 1);
+        assert_eq!(index.get(&client_order_id), Some(&position_id_2));
 
         pg_cache.flush().unwrap();
         pg_cache.close().unwrap();

@@ -81,6 +81,7 @@ pub enum DatabaseQuery {
     AddTrade(TradeTick),
     AddBar(Bar),
     UpdateOrder(OrderEventAny),
+    IndexOrderPosition(ClientOrderId, PositionId),
 }
 
 impl PostgresCacheDatabase {
@@ -456,8 +457,27 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, Position>> {
-        todo!()
+    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>> {
+        let pool = self.pool.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_index_order_position(&pool).await;
+            match result {
+                Ok(index) => {
+                    if let Err(e) = tx.send(index) {
+                        log::error!("Failed to send load_index_order_position result: {e:?}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to run query load_index_order_position: {e:?}");
+                    if let Err(e) = tx.send(AHashMap::new()) {
+                        log::error!("Failed to send empty load_index_order_position result: {e:?}");
+                    }
+                }
+            }
+        });
+        Ok(rx.recv()?)
     }
 
     fn load_index_order_client(&self) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>> {
@@ -934,7 +954,12 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         client_order_id: ClientOrderId,
         position_id: PositionId,
     ) -> anyhow::Result<()> {
-        todo!()
+        let query = DatabaseQuery::IndexOrderPosition(client_order_id, position_id);
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to send query index_order_position to database message handler: {e}"
+            )
+        })
     }
 
     fn update_actor(&self) -> anyhow::Result<()> {
@@ -1175,6 +1200,9 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
             DatabaseQuery::AddBar(bar) => DatabaseQueries::add_bar(pool, &bar).await,
             DatabaseQuery::UpdateOrder(event) => {
                 DatabaseQueries::add_order_event(pool, event.into_boxed(), None).await
+            }
+            DatabaseQuery::IndexOrderPosition(client_order_id, position_id) => {
+                DatabaseQueries::index_order_position(pool, client_order_id, position_id).await
             }
         };
 

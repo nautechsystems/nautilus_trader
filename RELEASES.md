@@ -3,9 +3,13 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added cache order index crash-recovery restore for Redis and Postgres adapters (Rust)
+- Added Redis cache adapter order, position, and order-index write persistence (Rust)
+- Added `order_position_index` Postgres table for the order-position index; run `make init-db` to migrate
 
 ### Breaking Changes
 - Changed plug-in loader to reject build mismatches by default; opt out with `set_allow_build_mismatch` (Rust)
+- Changed `CacheDatabaseAdapter::load_index_order_position` to return position IDs instead of positions (Rust)
 
 ### Security
 - Fixed instrument base quantity calculation panic on zero last price (Rust)
@@ -21,6 +25,7 @@ Released on TBD (UTC).
 - Fixed event-store capture duplicating order events, commands, and account states across dispatch hops (Rust)
 - Fixed event-store snapshot-anchor validation across the verifier, retention, and restore paths (Rust)
 - Fixed event-store replay, scan, marker, and halt-signal edge cases around skipped events, gaps, and reruns (Rust)
+- Fixed Postgres order-client index load panic on orders persisted without a client ID (Rust)
 
 ### Internal Improvements
 - Improved instrument validation to reject non-positive multiplier and lot size (Rust)
@@ -28,6 +33,8 @@ Released on TBD (UTC).
 - Improved plug-in ABI-mismatch reporting with manifest diagnostics instead of a null-manifest error (Rust)
 - Improved `nautilus_plugin!` macro errors for missing `name` or `version` fields (Rust)
 - Improved event-store marker writer and capture diagnostics with logged fail-stop errors (Rust)
+- Improved Postgres order-client index restore to pick the latest client ID per order (Rust)
+- Improved OTO contingency position ID recovery to persist re-indexed assignments (Rust)
 - Optimized `Cache` query filtering to scale with open orders and positions (#4242), thanks for reporting @magnified103
 
 ### Documentation Updates

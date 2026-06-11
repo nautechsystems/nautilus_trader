@@ -23,7 +23,7 @@ use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_model::{
     accounts::AccountAny,
     data::{CustomData, DataType, HasTsInit},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     instruments::{InstrumentAny, SyntheticInstrument},
     orders::OrderAny,
     position::Position,
@@ -630,6 +630,57 @@ impl DatabaseQueries {
         log::debug!("Loaded {} position(s)", positions.len());
 
         Ok(positions)
+    }
+
+    /// Loads the order ID to position ID index for `trader_key`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading or parsing the index fails.
+    pub async fn load_index_order_position(
+        con: &ConnectionManager,
+        trader_key: &str,
+    ) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>> {
+        let index = Self::read_index_hash(con, trader_key, INDEX_ORDER_POSITION).await?;
+        Ok(index
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    ClientOrderId::from(k.as_str()),
+                    PositionId::from(v.as_str()),
+                )
+            })
+            .collect())
+    }
+
+    /// Loads the order ID to execution client ID index for `trader_key`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading or parsing the index fails.
+    pub async fn load_index_order_client(
+        con: &ConnectionManager,
+        trader_key: &str,
+    ) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>> {
+        let index = Self::read_index_hash(con, trader_key, INDEX_ORDER_CLIENT).await?;
+        Ok(index
+            .into_iter()
+            .map(|(k, v)| (ClientOrderId::from(k.as_str()), ClientId::from(v.as_str())))
+            .collect())
+    }
+
+    async fn read_index_hash(
+        con: &ConnectionManager,
+        trader_key: &str,
+        key: &str,
+    ) -> anyhow::Result<HashMap<String, String>> {
+        let result = Self::read(con, trader_key, key).await?;
+        if result.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        serde_json::from_slice(&result[0])
+            .map_err(|e| anyhow::anyhow!("Failed to parse index hash '{key}': {e}"))
     }
 
     /// Loads all custom data for `trader_key` matching the given `data_type`.

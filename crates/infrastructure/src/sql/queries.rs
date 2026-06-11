@@ -39,7 +39,7 @@ use crate::sql::models::{
         AggregationSourceModel, AggressorSideModel, AssetClassModel, BarAggregationModel,
         CurrencyTypeModel, PriceTypeModel, TrailingOffsetTypeModel,
     },
-    general::{GeneralRow, OrderEventOrderClientIdCombination},
+    general::{GeneralRow, OrderEventOrderClientIdCombination, OrderPositionIndexRow},
     instruments::InstrumentAnyModel,
     orders::OrderEventAnyModel,
     types::CurrencyModel,
@@ -1120,10 +1120,12 @@ impl DatabaseQueries {
         let mut map: AHashMap<ClientOrderId, ClientId> = AHashMap::new();
         let result = sqlx::query_as::<_, OrderEventOrderClientIdCombination>(
             r#"
-            SELECT DISTINCT
+            SELECT DISTINCT ON (client_order_id)
                 client_order_id AS "client_order_id",
                 client_id AS "client_id"
             FROM "order_event"
+            WHERE client_id IS NOT NULL
+            ORDER BY client_order_id, created_at DESC
         "#,
         )
         .fetch_all(pool)
@@ -1132,6 +1134,64 @@ impl DatabaseQueries {
 
         for id in result {
             map.insert(id.client_order_id, id.client_id);
+        }
+        Ok(map)
+    }
+
+    /// Inserts or updates an order ID to position ID index entry via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL INSERT or UPDATE operation fails.
+    pub async fn index_order_position(
+        pool: &PgPool,
+        client_order_id: ClientOrderId,
+        position_id: PositionId,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO "order_position_index" (
+                client_order_id, position_id, created_at, updated_at
+            ) VALUES (
+                $1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (client_order_id)
+            DO UPDATE
+            SET
+                position_id = $2, updated_at = CURRENT_TIMESTAMP
+        "#,
+        )
+        .bind(client_order_id.to_string())
+        .bind(position_id.to_string())
+        .execute(pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into order_position_index table: {e}"))
+    }
+
+    /// Loads the order ID to position ID index via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT or iteration fails.
+    pub async fn load_index_order_position(
+        pool: &PgPool,
+    ) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>> {
+        let mut map: AHashMap<ClientOrderId, PositionId> = AHashMap::new();
+        let result = sqlx::query_as::<_, OrderPositionIndexRow>(
+            r#"
+            SELECT
+                client_order_id AS "client_order_id",
+                position_id AS "position_id"
+            FROM "order_position_index"
+        "#,
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load order position index: {e}"))?;
+
+        for row in result {
+            map.insert(row.client_order_id, row.position_id);
         }
         Ok(map)
     }

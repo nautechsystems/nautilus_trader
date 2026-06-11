@@ -59,6 +59,7 @@ use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, CustomData, DataType, FundingRateUpdate, HasTsInit, QuoteTick, TradeTick},
+    enums::TriggerType,
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
@@ -66,7 +67,7 @@ use nautilus_model::{
     },
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     position::Position,
     types::{Currency, Money},
 };
@@ -1081,12 +1082,36 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         .await
     }
 
-    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, Position>> {
-        todo!()
+    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>> {
+        let con = self.database.con.clone();
+        let trader_key = self.database.trader_key.clone();
+        let (tx, rx) = mpsc::channel();
+
+        get_runtime().spawn(async move {
+            let result = DatabaseQueries::load_index_order_position(&con, &trader_key).await;
+            if let Err(e) = tx.send(result) {
+                log::error!("Failed to send load_index_order_position result: {e:?}");
+            }
+        });
+
+        blocking_recv(&rx)
+            .map_err(|e| anyhow::anyhow!("load_index_order_position channel closed: {e}"))?
     }
 
     fn load_index_order_client(&self) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>> {
-        todo!()
+        let con = self.database.con.clone();
+        let trader_key = self.database.trader_key.clone();
+        let (tx, rx) = mpsc::channel();
+
+        get_runtime().spawn(async move {
+            let result = DatabaseQueries::load_index_order_client(&con, &trader_key).await;
+            if let Err(e) = tx.send(result) {
+                log::error!("Failed to send load_index_order_client result: {e:?}");
+            }
+        });
+
+        blocking_recv(&rx)
+            .map_err(|e| anyhow::anyhow!("load_index_order_client channel closed: {e}"))?
     }
 
     async fn load_currency(&self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
@@ -1228,7 +1253,43 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
-        todo!()
+        let client_order_id = order.client_order_id();
+        let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
+
+        // Replacements reuse the same client order ID; delete any existing
+        // entry first so the insert holds only the latest state.
+        let op = DatabaseCommand::new(DatabaseOperation::Delete, key.clone(), None);
+        self.database
+            .tx
+            .send(op)
+            .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))?;
+
+        let payload = DatabaseQueries::serialize_payload(self.encoding, order)?;
+        self.database
+            .insert(key, Some(vec![Bytes::from(payload)]))?;
+
+        let order_id_bytes = Bytes::from(client_order_id.to_string());
+        self.database
+            .insert(INDEX_ORDERS.to_string(), Some(vec![order_id_bytes.clone()]))?;
+
+        if order
+            .emulation_trigger()
+            .is_some_and(|trigger| trigger != TriggerType::NoTrigger)
+        {
+            self.database.insert(
+                INDEX_ORDERS_EMULATED.to_string(),
+                Some(vec![order_id_bytes.clone()]),
+            )?;
+        }
+
+        if let Some(client_id) = client_id {
+            self.database.insert(
+                INDEX_ORDER_CLIENT.to_string(),
+                Some(vec![order_id_bytes, Bytes::from(client_id.to_string())]),
+            )?;
+        }
+
+        Ok(())
     }
 
     fn add_order_snapshot(&self, snapshot: &OrderSnapshot) -> anyhow::Result<()> {
@@ -1236,7 +1297,32 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn add_position(&self, position: &Position) -> anyhow::Result<()> {
-        todo!()
+        let position_id = position.id;
+        let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
+
+        // In NETTING mode position flips reuse the same position ID; delete any existing
+        // entry first so the insert holds only the latest state.
+        let op = DatabaseCommand::new(DatabaseOperation::Delete, key.clone(), None);
+        self.database
+            .tx
+            .send(op)
+            .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))?;
+
+        let payload = DatabaseQueries::serialize_payload(self.encoding, position)?;
+        self.database
+            .insert(key, Some(vec![Bytes::from(payload)]))?;
+
+        let position_id_bytes = Bytes::from(position_id.to_string());
+        self.database.insert(
+            INDEX_POSITIONS.to_string(),
+            Some(vec![position_id_bytes.clone()]),
+        )?;
+        self.database.insert(
+            INDEX_POSITIONS_OPEN.to_string(),
+            Some(vec![position_id_bytes]),
+        )?;
+
+        Ok(())
     }
 
     fn add_position_snapshot(&self, snapshot: &PositionSnapshot) -> anyhow::Result<()> {
@@ -1387,7 +1473,13 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         client_order_id: ClientOrderId,
         position_id: PositionId,
     ) -> anyhow::Result<()> {
-        todo!()
+        self.database.insert(
+            INDEX_ORDER_POSITION.to_string(),
+            Some(vec![
+                Bytes::from(client_order_id.to_string()),
+                Bytes::from(position_id.to_string()),
+            ]),
+        )
     }
 
     fn update_actor(&self) -> anyhow::Result<()> {

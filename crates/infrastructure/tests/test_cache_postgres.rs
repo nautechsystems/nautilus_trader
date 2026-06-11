@@ -36,7 +36,10 @@ mod serial_tests {
             OrderEventAny,
             order::spec::{OrderCancelRejectedSpec, OrderModifyRejectedSpec},
         },
-        identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+        identifiers::{
+            AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId,
+            VenueOrderId,
+        },
         instruments::{
             Instrument, InstrumentAny,
             stubs::{crypto_perpetual_ethusdt, currency_pair_ethusdt},
@@ -129,6 +132,79 @@ mod serial_tests {
         assert_eq!(cached_order_ids.len(), 1);
         let target_order = cache.order(&market_order.client_order_id());
         assert_eq!(&*target_order.unwrap(), &market_order);
+
+        database.flush().unwrap();
+        database.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_restart_recovery_restores_order_indexes() {
+        let mut database = get_pg_cache_database().await.unwrap();
+        let mut cache = get_cache(Some(Box::new(get_pg_cache_database().await.unwrap())));
+
+        let instrument = currency_pair_ethusdt();
+        let client_id = ClientId::new("TEST");
+        let position_id = PositionId::new("P-19700101-0000-001-001-1");
+        let order_1 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-19700101-0000-001-001-1"))
+            .build();
+        let order_2 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-19700101-0000-001-001-2"))
+            .build();
+
+        // Add foreign key dependencies: instrument and currencies
+        database
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        database.add_currency(&instrument.quote_currency()).unwrap();
+        database
+            .add_instrument(&InstrumentAny::CurrencyPair(instrument))
+            .unwrap();
+
+        // Insert into database and wait
+        database.add_order(&order_1, Some(client_id)).unwrap();
+        database.add_order(&order_2, None).unwrap();
+        database
+            .index_order_position(order_1.client_order_id(), position_id)
+            .unwrap();
+        wait_until_async(
+            || async {
+                database
+                    .load_order(&order_1.client_order_id())
+                    .await
+                    .unwrap()
+                    .is_some()
+                    && database
+                        .load_order(&order_2.client_order_id())
+                        .await
+                        .unwrap()
+                        .is_some()
+                    && !database.load_index_order_position().unwrap().is_empty()
+            },
+            Duration::from_secs(3),
+        )
+        .await;
+
+        // Load orders and indexes into a fresh cache (restart simulation)
+        cache.cache_orders().await.unwrap();
+        cache.build_index();
+
+        assert_eq!(
+            cache.position_id(&order_1.client_order_id()),
+            Some(&position_id)
+        );
+        assert_eq!(
+            cache.client_id(&order_1.client_order_id()),
+            Some(&client_id)
+        );
+        assert!(cache.position_id(&order_2.client_order_id()).is_none());
+        assert!(cache.client_id(&order_2.client_order_id()).is_none());
 
         database.flush().unwrap();
         database.close().unwrap();

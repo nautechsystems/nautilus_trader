@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::identifiers::{ClientId, ClientOrderId};
+use nautilus_model::identifiers::{ClientId, ClientOrderId, PositionId};
 use sqlx::{Error, FromRow, Row, postgres::PgRow};
 
 #[derive(Debug, sqlx::FromRow)]
@@ -41,6 +41,29 @@ impl<'r> FromRow<'r, PgRow> for OrderEventOrderClientIdCombination {
         Ok(Self {
             client_order_id,
             client_id,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct OrderPositionIndexRow {
+    pub client_order_id: ClientOrderId,
+    pub position_id: PositionId,
+}
+
+impl<'r> FromRow<'r, PgRow> for OrderPositionIndexRow {
+    fn from_row(row: &'r PgRow) -> Result<Self, Error> {
+        let client_order_id = row
+            .try_get::<&str, _>("client_order_id")
+            .map(ClientOrderId::from)
+            .unwrap();
+        let position_id = row
+            .try_get::<&str, _>("position_id")
+            .map(PositionId::from)
+            .unwrap();
+        Ok(Self {
+            client_order_id,
+            position_id,
         })
     }
 }

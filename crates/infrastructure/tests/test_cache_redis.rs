@@ -21,7 +21,7 @@ mod serial_tests {
 
     use bytes::Bytes;
     use nautilus_common::{
-        cache::{CacheConfig, database::CacheDatabaseAdapter},
+        cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
         enums::SerializationEncoding,
         msgbus::database::DatabaseConfig,
         testing::wait_until_async,
@@ -33,10 +33,12 @@ mod serial_tests {
             DataType,
             stubs::{ensure_stub_custom_data_registered, stub_custom_data},
         },
-        enums::{OrderSide, OrderType},
-        identifiers::{ClientOrderId, PositionId, TraderId},
-        instruments::stubs::crypto_perpetual_ethusdt,
-        orders::{Order, builder::OrderTestBuilder},
+        enums::{OrderSide, OrderStatus, OrderType},
+        events::OrderEventAny,
+        identifiers::{AccountId, ClientId, ClientOrderId, PositionId, TraderId},
+        instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+        orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+        position::Position,
         types::Quantity,
     };
     use redis::AsyncCommands;
@@ -47,6 +49,18 @@ mod serial_tests {
     }
 
     async fn get_redis_cache_adapter()
+    -> Result<RedisCacheDatabaseAdapter, Box<dyn std::error::Error>> {
+        let mut adapter = connect_redis_cache_adapter().await?;
+
+        // Clean the database at the start of each test
+        adapter.database.flushdb().await;
+
+        Ok(adapter)
+    }
+
+    // Connects an adapter without flushing; reconnecting under the same trader
+    // key sees data written by a previous adapter (restart simulation).
+    async fn connect_redis_cache_adapter()
     -> Result<RedisCacheDatabaseAdapter, Box<dyn std::error::Error>> {
         let trader_id = TraderId::from("test-trader");
         let instance_id = UUID4::new();
@@ -70,10 +84,7 @@ mod serial_tests {
             ..Default::default()
         };
 
-        let mut database = RedisCacheDatabase::new(trader_id, instance_id, config).await?;
-
-        // Clean the database at the start of each test
-        database.flushdb().await;
+        let database = RedisCacheDatabase::new(trader_id, instance_id, config).await?;
 
         let adapter = RedisCacheDatabaseAdapter {
             encoding: SerializationEncoding::MsgPack,
@@ -833,6 +844,136 @@ mod serial_tests {
             .expect("load_custom_data failed");
         assert_eq!(loaded_id2.len(), 1);
         assert_eq!(loaded_id2[0].data_type.identifier(), Some("id2"));
+
+        let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_restart_recovery_restores_order_indexes() {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let client_id = ClientId::new("BINANCE");
+
+        let order_1 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-1"))
+            .build();
+        let order_2 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-2"))
+            .build();
+
+        let fill = match TestOrderEventStubs::filled(
+            &order_1,
+            &instrument,
+            None,
+            Some(PositionId::new("P-1")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) {
+            OrderEventAny::Filled(fill) => fill,
+            _ => unreachable!(),
+        };
+        let position = Position::new(&instrument, fill);
+
+        adapter.add_order(&order_1, Some(client_id)).unwrap();
+        adapter.add_order(&order_2, None).unwrap();
+        adapter.add_position(&position).unwrap();
+        adapter
+            .index_order_position(order_1.client_order_id(), position.id)
+            .unwrap();
+
+        // Wait until the asynchronous writes land in Redis
+        wait_until_async(
+            || async {
+                adapter.load_orders().await.unwrap().len() == 2
+                    && adapter.load_positions().await.unwrap().len() == 1
+                    && adapter.load_index_order_position().unwrap().len() == 1
+                    && adapter.load_index_order_client().unwrap().len() == 1
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        // Simulate a node restart: fresh adapter over the same trader key, fresh cache
+        let restarted_adapter = connect_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        let mut cache = Cache::new(None, Some(Box::new(restarted_adapter)));
+        cache.cache_all().await.unwrap();
+        cache.build_index();
+
+        assert_eq!(
+            cache.position_id(&order_1.client_order_id()),
+            Some(&position.id)
+        );
+        assert_eq!(
+            cache.client_id(&order_1.client_order_id()),
+            Some(&client_id)
+        );
+        assert!(cache.position_id(&order_2.client_order_id()).is_none());
+        assert!(cache.client_id(&order_2.client_order_id()).is_none());
+        assert!(cache.order(&order_1.client_order_id()).is_some());
+        assert!(cache.position(&position.id).is_some());
+
+        let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_order_replacement_reloads_latest_state() {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-1"))
+            .build();
+
+        adapter.add_order(&order, None).unwrap();
+
+        // Replacements reuse the same client order ID with updated state
+        let submitted = TestOrderEventStubs::submitted(&order, AccountId::new("BINANCE-001"));
+        order.apply(submitted).unwrap();
+        adapter.add_order(&order, None).unwrap();
+
+        wait_until_async(
+            || async {
+                adapter
+                    .load_order(&order.client_order_id())
+                    .await
+                    .unwrap()
+                    .is_some_and(|loaded| loaded.status() == OrderStatus::Submitted)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let loaded = adapter
+            .load_order(&order.client_order_id())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.status(), OrderStatus::Submitted);
+        assert_eq!(loaded, order);
 
         let mut adapter = adapter;
         adapter.flush().unwrap();

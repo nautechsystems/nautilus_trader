@@ -553,7 +553,7 @@ mod tests {
             Ok(AHashMap::new())
         }
 
-        fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, Position>> {
+        fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>> {
             Ok(AHashMap::new())
         }
 
