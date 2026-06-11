@@ -1935,12 +1935,14 @@ impl DeribitWsFeedHandler {
                                             Ok(bar_type) => {
                                                 let price_precision = instrument.price_precision();
                                                 let size_precision = instrument.size_precision();
+                                                let is_inverse = instrument.is_inverse();
 
                                                 match parse_chart_msg(
                                                     &chart_msg,
                                                     bar_type,
                                                     price_precision,
                                                     size_precision,
+                                                    is_inverse,
                                                     self.bars_timestamp_on_close,
                                                     ts_init,
                                                 ) {

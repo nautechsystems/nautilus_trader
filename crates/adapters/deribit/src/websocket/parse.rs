@@ -659,6 +659,10 @@ pub fn resolution_to_bar_type(
 /// Converts a single OHLCV data point from the `chart.trades.{instrument}.{resolution}` channel
 /// into a Nautilus Bar object.
 ///
+/// Inverse instruments use `cost` (USD) for bar volume to match the
+/// `trades.{instrument}` channel where `amount` is in USD. Linear
+/// instruments use `volume` (base currency) directly.
+///
 /// # Errors
 ///
 /// Returns an error if:
@@ -669,6 +673,7 @@ pub fn parse_chart_msg(
     bar_type: BarType,
     price_precision: u8,
     size_precision: u8,
+    is_inverse: bool,
     timestamp_on_close: bool,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Bar> {
@@ -677,8 +682,12 @@ pub fn parse_chart_msg(
     let low = Price::new_checked(chart_msg.low, price_precision).context("Invalid low price")?;
     let close =
         Price::new_checked(chart_msg.close, price_precision).context("Invalid close price")?;
-    let volume =
-        Quantity::new_checked(chart_msg.volume, size_precision).context("Invalid volume")?;
+    let raw_volume = if is_inverse {
+        chart_msg.cost
+    } else {
+        chart_msg.volume
+    };
+    let volume = Quantity::new_checked(raw_volume, size_precision).context("Invalid volume")?;
 
     // Convert timestamp from milliseconds to nanoseconds
     let mut ts_event = UnixNanos::from(chart_msg.tick * NANOSECONDS_IN_MILLISECOND);
@@ -1872,8 +1881,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_chart_msg() {
+    fn test_parse_chart_msg_inverse() {
         let instrument = test_perpetual_instrument();
+        assert!(
+            instrument.is_inverse(),
+            "test fixture is expected to be an inverse perp"
+        );
+
         let json = load_test_json("ws_chart.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
         let chart_msg: DeribitChartMsg =
@@ -1896,6 +1910,7 @@ mod tests {
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
+            true, // is_inverse
             true,
             UnixNanos::default(),
         )
@@ -1906,10 +1921,36 @@ mod tests {
         assert_eq!(bar.high, instrument.make_price(87500.0));
         assert_eq!(bar.low, instrument.make_price(87465.0));
         assert_eq!(bar.close, instrument.make_price(87474.0));
-        assert_eq!(bar.volume, instrument.make_qty(1.0, None)); // Rounded to 1.0 with size_precision=0
+        assert_eq!(bar.volume, instrument.make_qty(83970.0, None));
 
         // ts_event should be close time (open + 1 minute)
         assert_eq!(bar.ts_event, UnixNanos::new(1_767_200_100_000_000_000));
+    }
+
+    #[rstest]
+    fn test_parse_chart_msg_linear_uses_volume() {
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_chart.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let chart_msg: DeribitChartMsg =
+            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+        let bar_type = resolution_to_bar_type(instrument.id(), "1").unwrap();
+
+        // Linear path: bar volume is the raw `volume` field (base currency),
+        // matching trade `amount` semantics on linear perps. With
+        // size_precision=0 (BTC-PERPETUAL fixture), 0.95978896 rounds to 1.0.
+        let bar = parse_chart_msg(
+            &chart_msg,
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            false, // is_inverse
+            true,  // timestamp_on_close
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(bar.volume, instrument.make_qty(1.0, None));
     }
 
     #[rstest]
