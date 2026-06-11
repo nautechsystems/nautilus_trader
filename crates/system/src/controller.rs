@@ -109,7 +109,7 @@ impl Controller {
         let actor_id = actor.actor_id();
         self.trader.borrow_mut().add_actor(actor)?;
 
-        self.start_created_actor(&actor_id, start)?;
+        self.start_created_actor(actor_id, start)?;
 
         Ok(actor_id)
     }
@@ -147,7 +147,7 @@ impl Controller {
             .prepare_strategy_for_registration(&mut strategy)?;
         self.trader.borrow_mut().add_strategy(strategy)?;
 
-        self.start_created_strategy(&strategy_id, start)?;
+        self.start_created_strategy(strategy_id, start)?;
 
         Ok(strategy_id)
     }
@@ -237,24 +237,24 @@ impl Controller {
         self.trader.borrow_mut().remove_strategy(strategy_id)
     }
 
-    fn start_created_actor(&self, actor_id: &ActorId, start: bool) -> anyhow::Result<()> {
+    fn start_created_actor(&self, actor_id: ActorId, start: bool) -> anyhow::Result<()> {
         if !start {
             return Ok(());
         }
 
-        if let Err(start_err) = self.start_actor(actor_id) {
+        if let Err(start_err) = self.start_actor(&actor_id) {
             return Err(self.rollback_actor_start_failure(actor_id, start_err));
         }
 
         Ok(())
     }
 
-    fn start_created_strategy(&self, strategy_id: &StrategyId, start: bool) -> anyhow::Result<()> {
+    fn start_created_strategy(&self, strategy_id: StrategyId, start: bool) -> anyhow::Result<()> {
         if !start {
             return Ok(());
         }
 
-        if let Err(start_err) = self.start_strategy(strategy_id) {
+        if let Err(start_err) = self.start_strategy(&strategy_id) {
             return Err(self.rollback_strategy_start_failure(strategy_id, start_err));
         }
 
@@ -263,10 +263,10 @@ impl Controller {
 
     fn rollback_actor_start_failure(
         &self,
-        actor_id: &ActorId,
+        actor_id: ActorId,
         start_err: anyhow::Error,
     ) -> anyhow::Error {
-        match self.remove_actor(actor_id) {
+        match self.remove_actor(&actor_id) {
             Ok(()) => start_err,
             Err(rollback_err) => anyhow::anyhow!(
                 "Failed to start actor {actor_id}: {start_err}; rollback failed: {rollback_err}"
@@ -276,10 +276,10 @@ impl Controller {
 
     fn rollback_strategy_start_failure(
         &self,
-        strategy_id: &StrategyId,
+        strategy_id: StrategyId,
         start_err: anyhow::Error,
     ) -> anyhow::Error {
-        match self.remove_strategy(strategy_id) {
+        match self.remove_strategy(&strategy_id) {
             Ok(()) => start_err,
             Err(rollback_err) => anyhow::anyhow!(
                 "Failed to start strategy {strategy_id}: {start_err}; rollback failed: {rollback_err}"
@@ -305,7 +305,7 @@ impl Controller {
             .register(Self::execute_endpoint(), handler);
     }
 
-    fn deregister_execute_endpoint(&self) {
+    fn deregister_execute_endpoint() {
         get_message_bus()
             .borrow_mut()
             .endpoint_map::<ControllerCommand>()
@@ -342,7 +342,7 @@ impl DataActor for Controller {
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        self.deregister_execute_endpoint();
+        Self::deregister_execute_endpoint();
         Ok(())
     }
 
@@ -352,7 +352,7 @@ impl DataActor for Controller {
     }
 
     fn on_dispose(&mut self) -> anyhow::Result<()> {
-        self.deregister_execute_endpoint();
+        Self::deregister_execute_endpoint();
         Ok(())
     }
 }

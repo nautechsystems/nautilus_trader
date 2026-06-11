@@ -210,6 +210,7 @@ impl Trader {
     }
 
     /// Returns references to all component clocks for backtest time advancement.
+    #[must_use]
     pub fn get_component_clocks(&self) -> Vec<Rc<RefCell<dyn Clock>>> {
         self.clocks.values().cloned().collect()
     }
@@ -1027,20 +1028,20 @@ impl Trader {
         trader: &Rc<RefCell<Self>>,
         strategy_id: &StrategyId,
     ) -> anyhow::Result<()> {
-        let handler = trader.borrow().strategy_command_handler(strategy_id)?;
+        let handler = trader.borrow().strategy_command_handler(*strategy_id)?;
         handler.handle(&StrategyCommand::ExitMarket);
         Ok(())
     }
 
     fn strategy_command_handler(
         &self,
-        strategy_id: &StrategyId,
+        strategy_id: StrategyId,
     ) -> anyhow::Result<TypedHandler<StrategyCommand>> {
-        if !self.strategy_ids.contains(strategy_id) {
+        if !self.strategy_ids.contains(&strategy_id) {
             anyhow::bail!("Cannot market exit strategy, {strategy_id} not found");
         }
 
-        let endpoint = strategy_control_endpoint(*strategy_id);
+        let endpoint = strategy_control_endpoint(strategy_id);
         let handler = {
             let msgbus = get_message_bus();
             msgbus

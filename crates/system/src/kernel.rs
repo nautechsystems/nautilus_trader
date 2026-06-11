@@ -161,7 +161,7 @@ impl NautilusKernel {
 
         log::info!("Building system kernel");
 
-        let clock = Self::initialize_clock(&config.environment());
+        let clock = Self::initialize_clock(config.environment());
         let event_store = match event_store_factory {
             Some(factory) => Some(factory(instance_id, clock.clone())?),
             None => None,
@@ -243,7 +243,7 @@ impl NautilusKernel {
     fn register_shutdown_handler(trader_id: TraderId, shutdown_requested: Rc<Cell<bool>>) {
         let handler = ShareableMessageHandler::from_typed(move |cmd: &ShutdownSystem| {
             if cmd.trader_id != trader_id {
-                log::warn!("Received {cmd} not for this trader {trader_id}, ignoring",);
+                log::warn!("Received {cmd} not for this trader {trader_id}, ignoring");
                 return;
             }
 
@@ -303,7 +303,7 @@ impl NautilusKernel {
         Ok(log_guard)
     }
 
-    fn initialize_clock(environment: &Environment) -> Rc<RefCell<dyn Clock>> {
+    fn initialize_clock(environment: Environment) -> Rc<RefCell<dyn Clock>> {
         match environment {
             Environment::Backtest => {
                 let test_clock = TestClock::new();
@@ -582,6 +582,10 @@ impl NautilusKernel {
     }
 
     /// Starts the Nautilus system kernel asynchronously.
+    #[expect(
+        clippy::unused_async,
+        reason = "keeps the public async kernel API shape stable"
+    )]
     pub async fn start_async(&mut self) {
         self.start();
     }
@@ -620,6 +624,10 @@ impl NautilusKernel {
     ///
     /// This method should be called after the residual events grace period has elapsed
     /// and all remaining events have been processed. It disconnects clients and stops engines.
+    #[expect(
+        clippy::unused_async,
+        reason = "keeps the public async kernel API shape stable"
+    )]
     pub async fn finalize_stop(&mut self) {
         disarm_shutdown_on_error();
 

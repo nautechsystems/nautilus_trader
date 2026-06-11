@@ -47,6 +47,7 @@ impl CreateActor {
         }
     }
 
+    #[must_use]
     pub fn as_any(&self) -> &dyn Any {
         self
     }
@@ -78,6 +79,7 @@ impl CreateStrategy {
         }
     }
 
+    #[must_use]
     pub fn as_any(&self) -> &dyn Any {
         self
     }
@@ -102,6 +104,7 @@ impl StartActor {
         }
     }
 
+    #[must_use]
     pub fn as_any(&self) -> &dyn Any {
         self
     }
@@ -126,6 +129,7 @@ impl StartStrategy {
         }
     }
 
+    #[must_use]
     pub fn as_any(&self) -> &dyn Any {
         self
     }
@@ -150,6 +154,7 @@ impl StopActor {
         }
     }
 
+    #[must_use]
     pub fn as_any(&self) -> &dyn Any {
         self
     }
@@ -174,6 +179,7 @@ impl StopStrategy {
         }
     }
 
+    #[must_use]
     pub fn as_any(&self) -> &dyn Any {
         self
     }
@@ -198,6 +204,7 @@ impl RemoveActor {
         }
     }
 
+    #[must_use]
     pub fn as_any(&self) -> &dyn Any {
         self
     }
@@ -222,6 +229,7 @@ impl RemoveStrategy {
         }
     }
 
+    #[must_use]
     pub fn as_any(&self) -> &dyn Any {
         self
     }
