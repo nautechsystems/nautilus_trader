@@ -108,8 +108,9 @@ pub fn parse_execution_to_fill_report(
     let last_qty = Quantity::new(execution.shares, instrument.size_precision());
     let last_px = Price::new(execution_price, instrument.price_precision());
 
-    // Create commission
-    let commission_money = Money::new(commission, Currency::from_str(commission_currency)?);
+    // Create commission — clamp IB's -1 pending sentinel to 0.0 to avoid invalid Money values
+    let commission_clamped = if commission < 0.0 { 0.0 } else { commission };
+    let commission_money = Money::new(commission_clamped, Currency::from_str(commission_currency)?);
 
     // Parse execution time
     let ts_event = parse_execution_time(&execution.time)?;

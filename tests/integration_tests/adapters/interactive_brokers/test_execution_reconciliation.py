@@ -104,14 +104,14 @@ async def test_generate_position_status_reports_flat_when_no_positions(exec_clie
     Test that FLAT report is generated when specific instrument has no positions.
 
     Verifies fix for issue #3023 where reconciliation requests position for specific
-    instrument but IB returns no positions.
+    instrument but IB returns no positions (empty list = IB confirmed flat).
 
     """
     # Arrange
     instrument = IBTestContractStubs.aapl_instrument()
     instrument_setup(exec_client, cache, instrument=instrument)
 
-    exec_client._client.get_positions = AsyncMock(return_value=None)
+    exec_client._client.get_positions = AsyncMock(return_value=[])
 
     command = GeneratePositionStatusReports(
         instrument_id=instrument.id,
@@ -129,6 +129,66 @@ async def test_generate_position_status_reports_flat_when_no_positions(exec_clie
     assert reports[0].position_side == PositionSide.FLAT
     assert reports[0].quantity.as_decimal() == Decimal(0)
     assert reports[0].instrument_id == instrument.id
+
+
+@pytest.mark.asyncio
+async def test_generate_position_status_reports_raises_on_disconnected(exec_client, cache):
+    """
+    Test that ConnectionError is raised when get_positions() returns None.
+
+    Verifies fix for issue #4228: a socket disconnect during reqPositions previously
+    returned [] (treated as "venue confirmed flat"), triggering a ghost inferred SELL
+    and corrupting the execution cache.  None now means "venue state unknown" and must
+    propagate as ConnectionError so the exec engine skips reconciliation entirely.
+
+    """
+    # Arrange
+    instrument = IBTestContractStubs.aapl_instrument()
+    instrument_setup(exec_client, cache, instrument=instrument)
+
+    exec_client._client.get_positions = AsyncMock(return_value=None)
+
+    command = GeneratePositionStatusReports(
+        instrument_id=None,
+        start=None,
+        end=None,
+        command_id=UUID4(),
+        ts_init=0,
+    )
+
+    # Act / Assert
+    with pytest.raises(ConnectionError, match="reqPositions"):
+        await exec_client.generate_position_status_reports(command)
+
+
+@pytest.mark.asyncio
+async def test_generate_order_status_reports_raises_on_disconnected(exec_client, cache):
+    """
+    Test that ConnectionError is raised when get_positions() returns None.
+
+    Verifies fix for issue #4228: same guard applied to generate_order_status_reports so
+    the exec engine skips order reconciliation when IB is unreachable.
+
+    """
+    # Arrange
+    instrument = IBTestContractStubs.aapl_instrument()
+    instrument_setup(exec_client, cache, instrument=instrument)
+
+    exec_client._client.get_open_orders = AsyncMock(return_value=[])
+    exec_client._client.get_positions = AsyncMock(return_value=None)
+
+    command = GenerateOrderStatusReports(
+        instrument_id=None,
+        start=None,
+        end=None,
+        open_only=False,
+        command_id=UUID4(),
+        ts_init=0,
+    )
+
+    # Act / Assert
+    with pytest.raises(ConnectionError, match="reqPositions"):
+        await exec_client.generate_order_status_reports(command)
 
 
 @pytest.mark.asyncio

@@ -876,7 +876,7 @@ class LiveExecutionEngine(ExecutionEngine):
         failed_venues: set[Venue | None] = set()
 
         for client, reports_or_exception in zip(clients, position_reports_all, strict=True):
-            if isinstance(reports_or_exception, Exception):
+            if isinstance(reports_or_exception, BaseException):
                 failed_venues.add(client.venue)
                 self._log.error(
                     f"Failed to generate position status reports for venue {client.venue}: "
@@ -1207,7 +1207,7 @@ class LiveExecutionEngine(ExecutionEngine):
         had_fill_query_errors = False
 
         for fills_or_exception in fill_reports_all:
-            if isinstance(fills_or_exception, Exception):
+            if isinstance(fills_or_exception, BaseException):
                 had_fill_query_errors = True
                 self._log.error(
                     f"Failed to generate fill reports for {instrument_id}: {fills_or_exception}",
@@ -1572,7 +1572,7 @@ class LiveExecutionEngine(ExecutionEngine):
         all_order_reports: list[OrderStatusReport] = []
 
         for reports_or_exception in order_reports_all:
-            if isinstance(reports_or_exception, Exception):
+            if isinstance(reports_or_exception, BaseException):
                 self._log.error(
                     f"Failed to generate order status reports: {reports_or_exception}",
                 )
@@ -1779,7 +1779,7 @@ class LiveExecutionEngine(ExecutionEngine):
                         *report_tasks,
                         return_exceptions=True,
                     ):
-                        if isinstance(task_result_or_exception, Exception):
+                        if isinstance(task_result_or_exception, BaseException):
                             self._log.error(
                                 f"Failed to generate position status reports: {task_result_or_exception}",
                             )
