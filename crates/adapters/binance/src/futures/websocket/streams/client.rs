@@ -93,6 +93,7 @@ pub struct BinanceFuturesWebSocketClient {
     heartbeat: Option<u64>,
     signal: Arc<AtomicBool>,
     slots: Arc<Mutex<Vec<ConnectionSlot>>>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     out_tx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedSender<BinanceFuturesWsStreamsMessage>>>>,
     out_rx:
         Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BinanceFuturesWsStreamsMessage>>>>,
@@ -153,6 +154,7 @@ impl BinanceFuturesWebSocketClient {
             heartbeat,
             signal: Arc::new(AtomicBool::new(false)),
             slots: Arc::new(Mutex::new(Vec::new())),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             out_tx: Arc::new(Mutex::new(None)),
             out_rx: Arc::new(Mutex::new(None)),
             request_id_counter: Arc::new(AtomicU64::new(1)),
@@ -272,7 +274,10 @@ impl BinanceFuturesWebSocketClient {
             return Ok(());
         }
 
-        // Phase 2: create connections if needed (no lock held during async connect)
+        // Phase 2: create connections if needed.
+        // Only one task grows the pool at a time so concurrent subscribers can't race past `MAX_CONNECTIONS`.
+        let _connect_guard = self.connect_lock.lock().await;
+
         loop {
             let (remaining_capacity, slot_count) = {
                 let slots = self.slots.lock().expect("slots lock poisoned");
@@ -300,6 +305,7 @@ impl BinanceFuturesWebSocketClient {
                 self.product_type
             );
         }
+        drop(_connect_guard);
 
         // Phase 3: assign streams to slots and send commands (brief lock).
         // Stage assignments first so a capacity error leaves slots unchanged.
