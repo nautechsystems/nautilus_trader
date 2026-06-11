@@ -29,11 +29,11 @@ and won't need to work directly with these lower-level components.
 
 You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/hyperliquid/).
 
-## Builder address
+## Builder code attribution
 
-Mainnet orders submitted through the adapter include a NautilusTrader builder address with a
-**zero fee rate**, so it adds no trading cost to your orders. This helps us gauge real usage of
-the integration and prioritize ongoing maintenance and improvements.
+Submitted mainnet orders carry the NautilusTrader builder code at a **zero fee rate**, so
+attribution adds no trading cost. This helps us gauge real usage of the integration and
+prioritize ongoing maintenance.
 
 The builder address is omitted from orders in two cases:
 
@@ -42,6 +42,54 @@ The builder address is omitted from orders in two cases:
   orders never include the builder.
 - **Vault trading** (`vault_address` configured). Hyperliquid does not allow vaults to approve
   builder fees, so including the builder address would cause the exchange to reject the order.
+
+### Builder fee approval
+
+Hyperliquid requires a one-time `ApproveBuilderFee` approval before orders can carry the builder
+address: orders from a wallet that has never approved a builder fee are rejected with the reason
+`Builder fee has not been approved` (any prior approval, including at a 0% rate, satisfies the
+check). The approval must be signed by the master wallet's private key, which the adapter does
+not hold in agent (API) wallet setups, so it runs as a one-time script rather than at execution
+client startup. The 0% max fee rate permits attribution only: no builder fee is ever charged,
+and raising the rate would require a new approval signed by you.
+
+Run the approval script once per wallet (reads `HYPERLIQUID_PK`, or `HYPERLIQUID_TESTNET_PK`
+with `HYPERLIQUID_TESTNET=true`):
+
+```bash
+cargo run -p nautilus-hyperliquid --bin hyperliquid-builder-fee-approve
+```
+
+Or from Python:
+
+```python
+from nautilus_trader.adapters.hyperliquid import builder_fee_approve
+
+builder_fee_approve()
+```
+
+### Revoking the approval
+
+Use revocation to cap a previously approved builder fee at 0% (for example, an approval from a
+version that charged builder fees). Revocation caps the fee; it does not remove the approval
+record, so attribution continues.
+
+```bash
+cargo run -p nautilus-hyperliquid --bin hyperliquid-builder-fee-revoke
+```
+
+Or from Python:
+
+```python
+from nautilus_trader.adapters.hyperliquid import builder_fee_revoke
+
+builder_fee_revoke()
+```
+
+The Rust scripts print a summary of the action and pause for an Enter keypress before signing;
+abort with `Ctrl+C` if anything in the summary looks wrong, or pass `--yes` to skip the prompt.
+The Python bindings do not prompt: review the active environment variables yourself before
+calling.
 
 ## Testnet setup
 

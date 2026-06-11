@@ -46,12 +46,17 @@ pub const HYPERLIQUID_TESTNET_EXCHANGE_URL: &str = "https://api.hyperliquid-test
 // Address MUST be lowercase for msgpack serialization
 pub const NAUTILUS_BUILDER_ADDRESS: &str = "0x0c8d970c462726e014ad36f6c5a63e99db48a8e7";
 
+/// Public docs anchor for builder fee approval.
+pub const HYPERLIQUID_BUILDER_APPROVAL_DOCS_URL: &str =
+    "https://nautilustrader.io/docs/nightly/integrations/hyperliquid.html#builder-fee-approval";
+
 /// Hyperliquid signing chain ID (0x66eee = 421614 decimal).
 pub const HYPERLIQUID_CHAIN_ID: u64 = 421614;
 
 // Error message substrings for detecting specific rejection reasons
 pub const HYPERLIQUID_POST_ONLY_WOULD_MATCH: &str =
     "Post only order would have immediately matched";
+pub const HYPERLIQUID_BUILDER_FEE_NOT_APPROVED: &str = "Builder fee has not been approved";
 
 /// Hyperliquid supported order types.
 ///

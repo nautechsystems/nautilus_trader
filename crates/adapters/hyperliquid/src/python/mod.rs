@@ -36,6 +36,7 @@ use pyo3::prelude::*;
 use crate::{
     account::resolve_execution_account_address,
     common::{
+        builder_fee::{approve_from_env, revoke_from_env},
         consts::{HYPERLIQUID, HYPERLIQUID_POST_ONLY_WOULD_MATCH},
         enums::{
             HyperliquidConditionalOrderType, HyperliquidEnvironment, HyperliquidProductType,
@@ -54,6 +55,64 @@ use crate::{
     http::{HyperliquidHttpClient, models::Cloid},
     websocket::HyperliquidWebSocketClient,
 };
+
+/// Approve the Nautilus builder fee for Hyperliquid trading.
+///
+/// One-time setup signing an `ApproveBuilderFee` action at a 0% max fee rate,
+/// enabling the zero-fee builder attribution. Reads the private key from
+/// `HYPERLIQUID_PK` (mainnet) or `HYPERLIQUID_TESTNET_PK` (testnet); set
+/// `HYPERLIQUID_TESTNET=true` to use testnet.
+///
+/// Does not prompt for confirmation; review the active environment variables
+/// before calling.
+///
+/// # Errors
+///
+/// Returns an error if the async runtime cannot be created.
+#[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.hyperliquid")]
+#[pyo3(name = "builder_fee_approve")]
+fn py_builder_fee_approve() -> PyResult<bool> {
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| to_pyruntime_err(format!("Failed to create runtime: {e}")))?;
+
+        Ok(runtime.block_on(approve_from_env(true)))
+    })
+    .join()
+    .map_err(|_| to_pyruntime_err("Thread panicked"))?
+}
+
+/// Revoke the Nautilus builder fee approval for Hyperliquid trading.
+///
+/// Signs an `ApproveBuilderFee` action at a 0% max fee rate, capping any
+/// previously approved builder fee at zero. Reads the private key from
+/// `HYPERLIQUID_PK` (mainnet) or `HYPERLIQUID_TESTNET_PK` (testnet); set
+/// `HYPERLIQUID_TESTNET=true` to use testnet.
+///
+/// Does not prompt for confirmation; review the active environment variables
+/// before calling.
+///
+/// # Errors
+///
+/// Returns an error if the async runtime cannot be created.
+#[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.hyperliquid")]
+#[pyo3(name = "builder_fee_revoke")]
+fn py_builder_fee_revoke() -> PyResult<bool> {
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| to_pyruntime_err(format!("Failed to create runtime: {e}")))?;
+
+        Ok(runtime.block_on(revoke_from_env(true)))
+    })
+    .join()
+    .map_err(|_| to_pyruntime_err("Thread panicked"))?
+}
 
 /// Compute the deterministic CLOID from a client_order_id.
 ///
@@ -176,6 +235,8 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
         py_hyperliquid_resolve_execution_account_address,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(py_builder_fee_approve, m)?)?;
+    m.add_function(wrap_pyfunction!(py_builder_fee_revoke, m)?)?;
     m.add_class::<HyperliquidDataClientConfig>()?;
     m.add_class::<HyperliquidExecClientConfig>()?;
     m.add_class::<HyperliquidExecFactoryConfig>()?;

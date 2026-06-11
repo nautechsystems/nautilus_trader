@@ -53,7 +53,10 @@ use ustr::Ustr;
 use crate::{
     account::resolve_execution_account_address,
     common::{
-        consts::HYPERLIQUID_VENUE,
+        consts::{
+            HYPERLIQUID_BUILDER_APPROVAL_DOCS_URL, HYPERLIQUID_BUILDER_FEE_NOT_APPROVED,
+            HYPERLIQUID_VENUE,
+        },
         credential::Secrets,
         enums::HyperliquidProductType,
         parse::{
@@ -2129,6 +2132,13 @@ impl PostRejectionRoute {
             self.http_client
                 .remove_client_order_id_cloid(&client_order_id);
             return false;
+        }
+
+        if reason.contains(HYPERLIQUID_BUILDER_FEE_NOT_APPROVED) {
+            log::warn!(
+                "Builder fee not approved: complete the one-time 0% builder approval \
+                 (signed by the master wallet). See: {HYPERLIQUID_BUILDER_APPROVAL_DOCS_URL}",
+            );
         }
 
         self.emitter
