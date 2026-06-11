@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate or publish workspace crates to crates.io one at a time in dependency order.
+# Validate workspace crates or publish them to crates.io one at a time in dependency order.
 #
 # Usage:
 #   publish-cargo-crates.sh [--check|--dry-run]
@@ -512,14 +512,6 @@ publish_crate() {
   return "$status"
 }
 
-dry_run_crate() {
-  local crate_name=$1
-  local crate_version=$2
-
-  echo "Dry-running ${crate_name} ${crate_version}"
-  cargo publish --dry-run --locked --no-verify --package "$crate_name"
-}
-
 if [[ ! -s "$publish_plan_file" ]]; then
   echo "::error::No publishable workspace crates found."
   exit 1
@@ -536,9 +528,7 @@ case "$publish_mode" in
     echo "Cargo crate publish plan is valid."
     ;;
   dry_run)
-    while IFS=$'\t' read -r crate_name crate_version; do
-      dry_run_crate "$crate_name" "$crate_version"
-    done < "$publish_plan_file"
+    cargo publish --dry-run --workspace --locked --no-verify
     echo "Finished dry-running Cargo crates."
     ;;
   publish)

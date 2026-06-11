@@ -37,6 +37,9 @@ if [[ "${1:-}" == "publish" ]]; then
   fi
 
   case "$command_line" in
+    "publish --dry-run --workspace --locked --no-verify")
+      dry_run=true
+      ;;
     "publish --dry-run --locked --no-verify --package "*)
       dry_run=true
       ;;
@@ -60,7 +63,7 @@ if [[ "${1:-}" == "publish" ]]; then
     esac
   done
 
-  if [[ -z "$crate_name" ]]; then
+  if [[ "$dry_run" == false && -z "$crate_name" ]]; then
     echo "cargo publish mock missing --package" >&2
     exit 2
   fi
@@ -474,9 +477,7 @@ run_publish_script "--dry-run" "$dev_build_metadata" "$dry_run_exists_file" \
   > "$dry_run_output" 2>&1
 
 cat > "$dry_run_expected_cargo_log" << 'EXPECTED'
-publish --dry-run --locked --no-verify --package mock-dev
-publish --dry-run --locked --no-verify --package mock-build
-publish --dry-run --locked --no-verify --package mock-root
+publish --dry-run --workspace --locked --no-verify
 EXPECTED
 
 if ! cmp -s "$dry_run_expected_cargo_log" "$dry_run_cargo_log"; then
@@ -484,7 +485,7 @@ if ! cmp -s "$dry_run_expected_cargo_log" "$dry_run_cargo_log"; then
   cat "$dry_run_expected_cargo_log" >&2
   echo "actual cargo commands:" >&2
   cat "$dry_run_cargo_log" >&2
-  fail "--dry-run mode did not run cargo publish --dry-run in publish order."
+  fail "--dry-run mode did not run cargo publish --dry-run for the workspace."
 fi
 assert_contains "$dry_run_output" "Finished dry-running Cargo crates." \
   "--dry-run mode did not finish successfully."
