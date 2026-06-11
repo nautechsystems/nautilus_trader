@@ -469,6 +469,17 @@ cdef class Instrument(Data):
             InstrumentClass.OPTION_SPREAD,
         )
 
+    cpdef bint allows_negative_price(self):
+        """
+        Return whether the instrument allows negative prices.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.instrument_class in NEGATIVE_PRICE_INSTRUMENT_CLASSES
+
     cpdef list legs(self):
         """
         Return the list of leg tuples (instrument_id, ratio) for this spread.

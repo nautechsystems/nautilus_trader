@@ -245,6 +245,10 @@ pub trait Instrument: 'static + Send {
         self.instrument_class().has_expiration()
     }
 
+    fn allows_negative_price(&self) -> bool {
+        self.instrument_class().allows_negative_price()
+    }
+
     fn is_inverse(&self) -> bool;
     fn is_quanto(&self) -> bool {
         self.base_currency().is_some_and(|base_currency| {

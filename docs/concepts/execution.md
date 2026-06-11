@@ -157,7 +157,8 @@ execution components and do not pass through the `RiskEngine`.
 Unless specifically bypassed in the `RiskEngineConfig`, the engine validates:
 
 - Price and trigger-price precision for the instrument.
-- Positive prices, unless the instrument class allows negative prices.
+- Positive prices, unless the instrument allows negative prices (options, futures spreads,
+  option spreads, and spot commodities).
 - Quantity precision and base-quantity min/max bounds.
 - GTD orders have not already expired.
 - `reduce_only` orders do not increase the referenced position.

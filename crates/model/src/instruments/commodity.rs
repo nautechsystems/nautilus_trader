@@ -267,6 +267,11 @@ impl Instrument for Commodity {
         InstrumentClass::Spot
     }
 
+    fn allows_negative_price(&self) -> bool {
+        // Spot commodities such as electricity or oil can trade at negative prices
+        true
+    }
+
     fn underlying(&self) -> Option<Ustr> {
         None
     }
@@ -404,6 +409,7 @@ mod tests {
         assert!(!commodity_gold.is_inverse());
         assert_eq!(commodity_gold.price_precision(), 2);
         assert_eq!(commodity_gold.size_precision(), 0);
+        assert!(commodity_gold.allows_negative_price());
     }
 
     #[rstest]

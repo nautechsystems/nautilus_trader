@@ -178,6 +178,19 @@ cdef class Commodity(Instrument):
             info=info,
         )
 
+    cpdef bint allows_negative_price(self):
+        """
+        Return whether the instrument allows negative prices.
+
+        Spot commodities such as electricity or oil can trade at negative prices.
+
+        Returns
+        -------
+        bool
+
+        """
+        return True
+
     @staticmethod
     cdef Commodity from_dict_c(dict values):
         Condition.not_none(values, "values")

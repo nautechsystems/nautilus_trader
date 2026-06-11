@@ -58,10 +58,11 @@ use nautilus_model::{
         },
     },
     instruments::{
-        CryptoPerpetual, CurrencyPair, FuturesSpread, Instrument, InstrumentAny, OptionSpread,
+        Commodity, CryptoPerpetual, CurrencyPair, FuturesSpread, Instrument, InstrumentAny,
+        OptionSpread,
         stubs::{
-            audusd_sim, betting, crypto_perpetual_ethusdt, futures_spread_es, gbpusd_sim,
-            option_spread, xbtusd_bitmex,
+            audusd_sim, betting, commodity_gold, crypto_perpetual_ethusdt, futures_spread_es,
+            gbpusd_sim, option_spread, xbtusd_bitmex,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
@@ -516,6 +517,11 @@ fn instrument_futures_spread(futures_spread_es: FuturesSpread) -> InstrumentAny 
 #[fixture]
 fn instrument_option_spread(option_spread: OptionSpread) -> InstrumentAny {
     InstrumentAny::OptionSpread(option_spread)
+}
+
+#[fixture]
+fn instrument_commodity(commodity_gold: Commodity) -> InstrumentAny {
+    InstrumentAny::Commodity(commodity_gold)
 }
 
 #[fixture]
@@ -1704,6 +1710,126 @@ fn test_submit_order_when_negative_price_for_option_spread_then_allows(
     assert_eq!(
         saved_execute_messages.first().unwrap().instrument_id(),
         instrument_option_spread.id()
+    );
+}
+
+#[rstest]
+fn test_submit_order_when_negative_price_for_commodity_then_allows(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_commodity: InstrumentAny,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_commodity.clone())
+        .unwrap();
+
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_commodity.id())
+        .side(OrderSide::Buy)
+        .price(Price::new(-5.0, 2)) // Negative price is valid for spot commodities
+        .quantity(Quantity::from("1"))
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_commodity.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+    let saved_execute_messages =
+        get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(saved_execute_messages.len(), 1);
+    assert_eq!(
+        saved_execute_messages.first().unwrap().instrument_id(),
+        instrument_commodity.id()
+    );
+}
+
+#[rstest]
+fn test_submit_order_when_zero_price_for_commodity_then_allows(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_commodity: InstrumentAny,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_commodity.clone())
+        .unwrap();
+
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_commodity.id())
+        .side(OrderSide::Buy)
+        .price(Price::new(0.0, 2)) // Zero price shares the negative price gate
+        .quantity(Quantity::from("1"))
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_commodity.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+    let saved_execute_messages =
+        get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(saved_execute_messages.len(), 1);
+    assert_eq!(
+        saved_execute_messages.first().unwrap().instrument_id(),
+        instrument_commodity.id()
     );
 }
 
@@ -3771,6 +3897,125 @@ fn test_modify_order_with_default_settings_then_sends_to_client(
     let saved_execute_messages =
         get_execute_order_event_handler_messages(&execute_order_event_handler);
     assert_eq!(saved_execute_messages.len(), 2);
+    assert_eq!(
+        saved_execute_messages.first().unwrap().instrument_id(),
+        instrument_audusd.id()
+    );
+}
+
+#[rstest]
+fn test_modify_order_when_negative_price_for_commodity_then_allows(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_commodity: InstrumentAny,
+    venue_order_id: VenueOrderId,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    consume_fixture(process_order_event_handler);
+    simple_cache
+        .add_instrument(instrument_commodity.clone())
+        .unwrap();
+
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_commodity.id())
+        .side(OrderSide::Buy)
+        .price(Price::new(5.0, 2))
+        .quantity(Quantity::from("1"))
+        .build();
+
+    simple_cache
+        .add_order(order.clone(), None, Some(client_id_binance), true)
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_commodity.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
+    );
+
+    let modify_order = ModifyOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_commodity.id(),
+        order.client_order_id(),
+        Some(venue_order_id),
+        Some(Quantity::from("1")),
+        Some(Price::new(-5.0, 2)), // Negative price is valid for spot commodities
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+    risk_engine.execute(TradingCommand::ModifyOrder(modify_order));
+
+    let saved_execute_messages =
+        get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(saved_execute_messages.len(), 2);
+    assert_eq!(
+        saved_execute_messages.first().unwrap().instrument_id(),
+        instrument_commodity.id()
+    );
+}
+
+#[rstest]
+fn test_modify_order_when_risk_bypassed_sends_to_execution_engine(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    client_order_id: ClientOrderId,
+    instrument_audusd: InstrumentAny,
+    venue_order_id: VenueOrderId,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let mut risk_engine = get_risk_engine(None, None, None, true);
+
+    // Order intentionally not in the cache: bypass skips all validation
+    let modify_order = ModifyOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_audusd.id(),
+        client_order_id,
+        Some(venue_order_id),
+        Some(Quantity::from("1000")),
+        Some(Price::new(-100.0, 0)),
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::ModifyOrder(modify_order));
+
+    let saved_execute_messages =
+        get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(saved_execute_messages.len(), 1);
     assert_eq!(
         saved_execute_messages.first().unwrap().instrument_id(),
         instrument_audusd.id()

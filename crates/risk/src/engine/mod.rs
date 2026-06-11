@@ -705,6 +705,11 @@ impl RiskEngine {
     }
 
     fn handle_modify_order(&mut self, command: ModifyOrder) {
+        if self.config.bypass {
+            Self::send_to_execution(TradingCommand::ModifyOrder(command));
+            return;
+        }
+
         let order_exists = {
             let cache = self.cache.borrow();
             cache.order(&command.client_order_id).map(|o| o.clone())
@@ -1636,7 +1641,7 @@ impl RiskEngine {
             ));
         }
 
-        if !instrument.instrument_class().allows_negative_price() && price_val.raw <= 0 {
+        if !instrument.allows_negative_price() && price_val.raw <= 0 {
             return Some(format!("price {price_val} invalid (<= 0)"));
         }
 

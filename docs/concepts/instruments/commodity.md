@@ -40,6 +40,8 @@ Examples include `XAUUSD.IDEALPRO` and venue-specific commodity cash symbols.
 ## Behavior
 
 - `Commodity` has instrument class `Spot`.
+- It allows negative prices: spot markets such as electricity or oil can trade below zero,
+  and the `RiskEngine` accepts negative prices on both order submission and modification.
 - It is never inverse, and its cost currency is the quote currency.
 - It has no activation timestamp, expiry, strike, option kind, or settlement currency field.
 - Use `FuturesContract` for dated exchange-traded commodity futures.
