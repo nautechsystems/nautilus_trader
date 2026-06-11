@@ -397,7 +397,7 @@ credentials are valid and have trading permissions.
 ## Implementation notes
 
 - **Whole contracts only**: AX Exchange uses integer contract quantities. Fractional quantities
-  are not supported and will be rejected.
+  are not supported; the adapter generates `OrderDenied` locally.
 - **Rate limiting**: The adapter applies a conservative rate limit of 10 requests/second with
   automatic exponential backoff on rate limit responses.
 - **Market orders**: AX does not support native market orders. The adapter uses a preview endpoint

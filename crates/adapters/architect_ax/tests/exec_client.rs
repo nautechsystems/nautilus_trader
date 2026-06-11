@@ -718,7 +718,7 @@ async fn test_generate_position_status_reports_filters() {
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_order_without_venue_order_id_emits_rejected() {
+async fn test_modify_order_without_venue_order_id_emits_no_event() {
     let (addr, _state) = start_test_server().await.unwrap();
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("AX-001"));
@@ -749,22 +749,12 @@ async fn test_modify_order_without_venue_order_id_emits_rejected() {
         .modify_order(cmd)
         .expect("modify_order should not error");
 
-    let event = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
-        .await
-        .expect("timeout waiting for ModifyRejected")
-        .expect("channel closed");
-
-    match event {
-        ExecutionEvent::Order(OrderEventAny::ModifyRejected(r)) => {
-            assert_eq!(r.client_order_id, client_order_id);
-            assert!(
-                r.reason.as_str().contains("venue_order_id"),
-                "reason was: {}",
-                r.reason,
-            );
-        }
-        other => panic!("expected OrderModifyRejected, was {other:?}"),
-    }
+    // Local validation failure: log only, no rejection event
+    let result = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv()).await;
+    assert!(
+        !matches!(result, Ok(Some(ExecutionEvent::Order(_)))),
+        "expected no order event for local validation failure, was {result:?}",
+    );
 
     client.disconnect().await.expect("Failed to disconnect");
 }
@@ -845,7 +835,7 @@ async fn test_modify_order_success_updates_caches() {
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_order_http_error_emits_rejected() {
+async fn test_modify_order_http_error_emits_no_rejection() {
     let (addr, state) = start_test_server().await.unwrap();
     state
         .replace_order_fail
@@ -888,37 +878,39 @@ async fn test_modify_order_http_error_emits_rejected() {
         .modify_order(cmd)
         .expect("modify_order should not error");
 
-    // Find the ModifyRejected among emitted events (may follow account state events)
+    // Wait for the mock to record the failed replace_order call
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
 
-    loop {
+    while state
+        .replace_order_count
+        .load(std::sync::atomic::Ordering::Relaxed)
+        == 0
+    {
         assert!(
             tokio::time::Instant::now() < deadline,
-            "timeout waiting for ModifyRejected",
+            "timeout waiting for /replace_order",
         );
-        let Ok(Some(event)) =
-            tokio::time::timeout(std::time::Duration::from_millis(250), rx.recv()).await
-        else {
-            continue;
-        };
-
-        if let ExecutionEvent::Order(OrderEventAny::ModifyRejected(r)) = event {
-            assert_eq!(r.client_order_id, client_order_id);
-            assert!(
-                r.reason.as_str().contains("modify-order-error"),
-                "reason was: {}",
-                r.reason,
-            );
-            break;
-        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     }
+
+    // Ambiguous HTTP failure: no rejection event, outcome left to reconciliation
+    let result = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv()).await;
+    assert!(
+        !matches!(
+            result,
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::ModifyRejected(
+                _
+            ))))
+        ),
+        "expected no ModifyRejected for ambiguous HTTP failure, was {result:?}",
+    );
 
     client.disconnect().await.expect("Failed to disconnect");
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_cancel_all_orders_http_failure_emits_cancel_rejected() {
+async fn test_cancel_all_orders_http_failure_emits_no_cancel_rejected() {
     let (addr, state) = start_test_server().await.unwrap();
     state
         .cancel_all_fail
@@ -951,23 +943,32 @@ async fn test_cancel_all_orders_http_failure_emits_cancel_rejected() {
         .cancel_all_orders(cmd)
         .expect("cancel_all_orders should not return an error");
 
-    // Collect cancel-rejected events for both open orders
-    let mut rejected: Vec<ClientOrderId> = Vec::new();
+    // Wait for the mock to record the failed cancel_all call
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
-    while rejected.len() < 2 && tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(std::time::Duration::from_millis(250), rx.recv()).await {
-            Ok(Some(ExecutionEvent::Order(OrderEventAny::CancelRejected(r)))) => {
-                rejected.push(r.client_order_id);
-            }
-            Ok(Some(_)) => {}
-            Ok(None) => break,
-            Err(_) => {}
-        }
+
+    while state
+        .cancel_all_count
+        .load(std::sync::atomic::Ordering::Relaxed)
+        == 0
+    {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timeout waiting for /cancel_all_orders",
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     }
 
-    rejected.sort_by_key(|cid| cid.to_string());
-    let expected = vec![ClientOrderId::from("O-CA-1"), ClientOrderId::from("O-CA-2")];
-    assert_eq!(rejected, expected);
+    // A whole-request failure must not become one rejection per order
+    let result = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv()).await;
+    assert!(
+        !matches!(
+            result,
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::CancelRejected(
+                _
+            ))))
+        ),
+        "expected no CancelRejected for whole-request failure, was {result:?}",
+    );
 
     client.disconnect().await.expect("Failed to disconnect");
 }
@@ -1249,7 +1250,7 @@ async fn test_submit_market_order_uses_preview_price() {
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_market_order_rejects_on_empty_liquidity() {
+async fn test_submit_market_order_stays_in_flight_on_empty_liquidity() {
     let (addr, state) = start_test_server().await.unwrap();
     state
         .preview_empty
@@ -1295,22 +1296,24 @@ async fn test_submit_market_order_rejects_on_empty_liquidity() {
         "expected OrderSubmitted, was {submitted:?}",
     );
 
-    // Next: OrderRejected after preview returns null limit_price
-    let rejected = loop {
-        let event = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
-            .await
-            .expect("timeout waiting for rejected")
-            .expect("channel closed");
-
-        if let ExecutionEvent::Order(OrderEventAny::Rejected(r)) = event {
-            break r;
-        }
-    };
-    assert_eq!(rejected.client_order_id, client_order_id);
+    // A failed preview is not a venue order rejection: no OrderRejected,
+    // the order is left in flight.
+    let result = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv()).await;
     assert!(
-        rejected.reason.as_str().contains("No liquidity"),
-        "reason was: {}",
-        rejected.reason,
+        !matches!(
+            result,
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::Rejected(_))))
+        ),
+        "expected no OrderRejected for failed preview, was {result:?}",
+    );
+
+    // The order was never placed on the WS orders channel
+    let messages = state.get_messages().await;
+    assert!(
+        !messages
+            .iter()
+            .any(|m| m.get("t").and_then(|v| v.as_str()) == Some("p")),
+        "expected no WS place_order message, was {messages:?}",
     );
 
     client.disconnect().await.expect("Failed to disconnect");
