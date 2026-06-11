@@ -174,7 +174,9 @@ impl PluginStrategyAdapter {
         if handle.is_null() {
             // SAFETY: ctx came from leak_host_context above.
             unsafe { drop_host_context(ctx) };
-            anyhow::bail!("plug-in strategy '{type_name}' returned a null handle from create");
+            anyhow::bail!(
+                "plug-in strategy '{type_name}' returned a null handle from create (constructor failure or panic)"
+            );
         }
 
         Ok(Self {

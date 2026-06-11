@@ -91,6 +91,25 @@ macro_rules! nautilus_plugin {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __nautilus_plugin_impl {
+    // Required-field arms: without these, omitting `name` or `version`
+    // fails the main matcher with an opaque "no rules expected this token"
+    // error instead of naming the missing field.
+    (
+        @parse
+        name = (),
+        $($rest:tt)*
+    ) => {
+        ::core::compile_error!("`nautilus_plugin!` requires a `name` field");
+    };
+    (
+        @parse
+        name = ($name:expr),
+        vendor = ($($vendor:expr)?),
+        version = (),
+        $($rest:tt)*
+    ) => {
+        ::core::compile_error!("`nautilus_plugin!` requires a `version` field");
+    };
     (
         @parse
         name = ($name:expr),
@@ -198,12 +217,13 @@ macro_rules! __nautilus_plugin_impl {
                     if host.is_null() {
                         return ::core::ptr::null::<$crate::manifest::PluginManifest>();
                     }
-                    // SAFETY: host pointer is non-null and the host commits
-                    // to keeping the vtable live for the process lifetime.
-                    let host_ref = unsafe { &*host };
-                    if host_ref.abi_version != $crate::NAUTILUS_PLUGIN_ABI_VERSION {
-                        return ::core::ptr::null();
-                    }
+                    // The manifest is returned even when the host's ABI
+                    // version differs: init calls no host services, and the
+                    // host's own check on `PluginManifest::abi_version`
+                    // (anchored at offset zero) rejects the plug-in with a
+                    // proper `AbiMismatch` error and build diagnostics.
+                    // Returning null here would degrade that to an opaque
+                    // `NullManifest` report.
                     &*MANIFEST as *const _
                 });
 

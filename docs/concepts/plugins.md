@@ -22,12 +22,13 @@ The plug-in system is supported on Linux only.
 - Callbacks from an actor or strategy back into the host route through a single static `HostVTable`
   of function pointers.
 - Controller callbacks use a controller-specific `ControllerHostVTable`.
-- Every plug-in callback runs under `catch_unwind`. A panic in a fallible plug-in thunk surfaces as
-  a `PluginError`; a panic in an infallible plug-in thunk aborts the process. Neither path unwinds
-  across the FFI boundary. Infallible thunks include:
-  - `create`
-  - `drop_handle`
-  - custom-data `ts_event`, `ts_init`, `clone_handle`, `drop_handle`, and `eq_handles`
+- Every plug-in callback runs under `catch_unwind`, and no path unwinds across the FFI boundary:
+  - A panic in a fallible plug-in thunk surfaces as a `PluginError`.
+  - A panic in `create` or custom-data `clone_handle` returns a null handle, which the host
+    reports as a recoverable construction or clone failure.
+  - A panic in a `drop_handle` thunk is swallowed and leaks the value.
+  - A panic in custom-data `ts_event`, `ts_init`, or `eq_handles` aborts the process, because no
+    sound sentinel value exists for those signatures.
 
 :::warning
 The plug-in ABI and `LiveNodeConfig` wiring are early alpha. `NAUTILUS_PLUGIN_ABI_VERSION` and
@@ -202,8 +203,14 @@ The loader runs `ValidatedPluginManifest::new` on the manifest before exposing i
 Validation checks identifier strings, the build-id schema version, every registration vtable
 pointer, every required vtable slot, and uniqueness of type names across all plug points. It also
 checks the plug-in precision mode and fixed precision against the host, because standard-precision
-and high-precision builds use different model layouts at the boundary. The specific crate version,
-`rustc`, target triple, and build profile values stay diagnostic.
+and high-precision builds use different model layouts at the boundary.
+
+After validation the loader pins the build: a `rustc` or `nautilus-plugin` crate version that
+differs from the host fails the load with `LoadError::BuildMismatch`, because boundary payloads
+include `repr(Rust)` interiors whose layout is only guaranteed under a shared toolchain.
+`PluginLoader::set_allow_build_mismatch` downgrades the rejection to a warning. A build-id field
+that is empty on either side cannot be compared and logs a warning. Target triple and build
+profile stay diagnostic.
 
 ## Load flow
 
@@ -228,8 +235,8 @@ The operational steps are:
   `LiveNode::load_configured_plugins`, then asks the loader to `dlopen` the cdylib and resolve
   `nautilus_plugin_init`. `PluginLoader` itself does not hash the file.
 - The plug-in's init thunk receives the host's `HostVTable` pointer and returns its static manifest.
-- The loader runs structural validation. Failure produces a `LoadError` whose diagnostics include
-  the plug-in name, version, and full `PluginBuildId`.
+- The loader runs structural validation, then build pinning. Failure produces a `LoadError` whose
+  diagnostics include the plug-in name, version, and full `PluginBuildId`.
 - The node walks every loaded manifest once to register custom-data deserializers with
   `nautilus_model::data::registry`.
 - The node walks the configured entries again, resolves each `type_name` to an actor, strategy, or
@@ -239,9 +246,10 @@ The operational steps are:
 - Controller adapters stay owned by the live node. The node starts them after trader startup and
   stops them before trader shutdown.
 
-The loader stops on the first error and leaks every successfully opened `Library` for the process
-lifetime, because manifest, vtable, and `drop_fn` pointers the host has copied into its registries
-must outlive the loader.
+The loader stops on the first error and leaks every opened `Library` for the process lifetime,
+including rejected ones. Accepted manifests, vtables, and `drop_fn` pointers copied into host
+registries must outlive the loader, and a rejected plug-in has already run its static initializers
+and `nautilus_plugin_init`, so `dlclose` could unload code with live side effects.
 
 ## Actor and strategy adapter routing
 
@@ -266,6 +274,12 @@ flowchart LR
 - Reverse calls (plug-in to host) go through `HostVTable`. The host attributes each call to the
   caller via the per-instance `HostContext` pointer it handed the plug-in at create time and
   routes through the engine's cache, msgbus, clock, timer, and order pipelines.
+- Reverse-call dispatch runs under a host-side `catch_unwind`: an engine panic reached from a
+  plug-in call surfaces to the plug-in as a `PluginError` with code `Panic` instead of aborting
+  the node.
+- The host validates UTF-8 on plug-in-supplied strings at every reverse-call entry point with an
+  error channel, returning `InvalidArgument` on violation; log slots without an error channel
+  decode lossily.
 - Order-command slots reject calls from actor contexts; actors cannot submit orders.
 - The default `HostVTable` returns `NotImplemented` for stateful callbacks. Engines install a
   populated vtable via `plugin_loader()` so plug-ins reach the real execution paths.
@@ -438,12 +452,14 @@ nautilus_plugin::nautilus_plugin! {
 ```
 
 The macro emits `nautilus_plugin_init`, the `'static PluginManifest`, and the vtables for each plug
-point. Fallible thunks forward through `panic::guard`; the heavier infallible thunks
-forward through `guard_infallible`:
+point. Each generated thunk carries the panic guard that matches its signature:
 
-- `create`
-- `drop_handle`
-- custom-data `ts_event`, `ts_init`, `clone_handle`, `drop_handle`, and `eq_handles`
+- Fallible thunks forward through `panic::guard`, mapping a panic to `PluginError::Panic`.
+- `create` and custom-data `clone_handle` forward through `guard_or_null`, mapping a panic to a
+  null handle the host reports as a recoverable failure.
+- `drop_handle` thunks forward through `guard_drop`, which swallows a panic and leaks the value.
+- Custom-data `ts_event`, `ts_init`, and `eq_handles` forward through `guard_infallible`, which
+  aborts on panic because no sound sentinel value exists.
 
 Trivial slots that cannot panic (the `type_name` thunks, which just return a `BorrowedStr` over a
 `&'static str` constant) carry no guard at all.
@@ -469,14 +485,16 @@ cargo build -p nautilus-plugin --example custom_data_plugin
 ## Operating notes
 
 - Pin every plug-in build to the host's Nautilus version. The loader checks `abi_version` and the
-  build-id schema, and rejects plug-ins built with a different precision mode or fixed precision.
-  Crate version, `rustc`, target triple, and build profile travel as diagnostics in load-error
-  output.
+  build-id schema, rejects plug-ins built with a different precision mode or fixed precision, and
+  rejects a mismatched `rustc` or `nautilus-plugin` crate version unless
+  `PluginLoader::set_allow_build_mismatch` is configured. Target triple and build profile travel
+  as diagnostics in load-error output.
 - Use the optional `sha256` field on a `PluginConfig` entry as a deployment-time integrity check.
 - The node refuses to load plug-ins once it has left the `Idle` state. Config-driven load errors
   surface during node construction, and imperative `add_plugin` errors surface at the call site.
-- A plug-in panic in a fallible callback surfaces as `PluginError::Panic`. A panic in an
-  infallible callback (e.g. `create`, `drop_handle`) aborts the process; see
+- A plug-in panic in a fallible callback surfaces as `PluginError::Panic`. A panic in `create`
+  fails the instance construction, a panic in `drop_handle` leaks the value, and a panic in
+  custom-data `ts_event`, `ts_init`, or `eq_handles` aborts the process; see
   `nautilus_plugin::panic` for the rationale.
 - Loader activity logs under the `nautilus_plugin` target.
 

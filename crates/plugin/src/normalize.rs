@@ -455,6 +455,11 @@ impl BoundaryNormalize for OrderInitialized {
 
 impl BoundaryNormalize for OrderAny {
     fn boundary_normalized(&self) -> Self {
+        // Rebuilding from `OrderInitialized` would drop applied events, so a
+        // non-Initialized order clones WITHOUT re-interning its Ustr-backed
+        // identifiers. Callers must reject such orders before they reach
+        // engine state; `Strategy::submit_order` bails on them, which keeps
+        // foreign-interner identifiers out of the cache.
         if self.status() != OrderStatus::Initialized {
             return self.clone();
         }

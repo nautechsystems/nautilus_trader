@@ -76,9 +76,9 @@ impl SubmitOrderCommand {
 /// heap-owned (e.g. tag vectors, exec-algorithm params), so the plug-in
 /// wraps the whole command in this `#[repr(C)]` handle and passes a
 /// borrowed pointer to the host. Equivalent layout on both sides relies
-/// on operator-side pinning (plug-in cdylibs rebuilt to match each
-/// Nautilus version); `PluginBuildId` is recorded for load diagnostics,
-/// and precision mode is enforced during manifest validation.
+/// on toolchain pinning: the loader rejects mismatched `rustc_version` or
+/// `nautilus_plugin_version` by default, and precision mode is enforced
+/// during manifest validation.
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct SubmitOrderHandle(Box<SubmitOrderCommand>);

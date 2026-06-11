@@ -30,7 +30,7 @@ use crate::{
     boundary::{BorrowedStr, OwnedBytes, PluginError, PluginErrorCode, PluginResult},
     host::{ControllerHostContext, ControllerHostVTable},
     normalize::BoundaryNormalize,
-    panic::{guard, guard_infallible},
+    panic::{guard, guard_drop, guard_or_null},
 };
 
 /// Opaque handle to a plug-in controller instance owned by the cdylib.
@@ -202,7 +202,7 @@ unsafe extern "C" fn create_thunk<T: PluginController>(
     ctx: *const ControllerHostContext,
     config_json: BorrowedStr<'_>,
 ) -> *mut PluginControllerHandle {
-    guard_infallible("controller::create", || {
+    guard_or_null("controller::create", || {
         // SAFETY: host promises `config_json` borrows storage that is live
         // for the duration of this call.
         let cfg = unsafe { config_json.as_str() };
@@ -214,7 +214,7 @@ unsafe extern "C" fn drop_handle_thunk<T: PluginController>(handle: *mut PluginC
     if handle.is_null() {
         return;
     }
-    guard_infallible("controller::drop", || {
+    guard_drop("controller::drop", || {
         // SAFETY: handle was allocated via `Box::into_raw(Box::new(T))`.
         unsafe {
             drop(Box::from_raw(handle.cast::<T>()));

@@ -33,10 +33,13 @@
 //! erroring trait method on a real, generated vtable returns the
 //! expected [`PluginErrorCode`] and the host can inspect the message.
 //!
-//! `guard_infallible` thunks (`create`, `drop_handle`, `ts_event`,
-//! `ts_init`, `clone_handle`, `eq_handles`) abort the process on panic,
-//! so they cannot be tested from inside the same test binary; their
-//! contract is covered indirectly by the `src/panic.rs` unit tests.
+//! `create` and `clone_handle` thunks return null on panic
+//! (`guard_or_null`), and `drop_handle` thunks swallow the panic and leak
+//! the value (`guard_drop`); both paths are tested here. The remaining
+//! `guard_infallible` thunks (`ts_event`, `ts_init`, `eq_handles`) abort
+//! the process on panic because no sound sentinel value exists, so they
+//! cannot be tested from inside the same test binary; their contract is
+//! covered indirectly by the `src/panic.rs` unit tests.
 
 #![allow(unsafe_code)]
 
@@ -1838,4 +1841,200 @@ fn order_updated_value() -> OrderUpdated {
         order_stubs::account_id(),
         order_stubs::uuid4(),
     )
+}
+
+// Plug-in types whose constructors panic: the generated `create` thunks
+// must return null (`guard_or_null`) so the host surfaces a construction
+// error instead of the process aborting.
+
+struct PanicOnCreateActor;
+
+impl PluginActor for PanicOnCreateActor {
+    const TYPE_NAME: &'static str = "PanicOnCreateActor";
+
+    fn new(_host: *const HostVTable, _ctx: *const HostContext, _config_json: &str) -> Self {
+        panic!("actor-create-panic");
+    }
+}
+
+struct PanicOnCreateStrategy;
+
+impl PluginStrategy for PanicOnCreateStrategy {
+    const TYPE_NAME: &'static str = "PanicOnCreateStrategy";
+
+    fn new(_host: *const HostVTable, _ctx: *const HostContext, _config_json: &str) -> Self {
+        panic!("strategy-create-panic");
+    }
+}
+
+struct PanicOnCreateController;
+
+impl PluginController for PanicOnCreateController {
+    const TYPE_NAME: &'static str = "PanicOnCreateController";
+
+    fn new(
+        _host: *const ControllerHostVTable,
+        _ctx: *const ControllerHostContext,
+        _config_json: &str,
+    ) -> Self {
+        panic!("controller-create-panic");
+    }
+}
+
+#[rstest]
+fn actor_create_panic_returns_null() {
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*actor_vtable::<PanicOnCreateActor>() };
+    // SAFETY: the constructor panics before dereferencing host or ctx.
+    let handle = unsafe {
+        generated_slot!(vt, create)(std::ptr::null(), std::ptr::null(), BorrowedStr::empty())
+    };
+    assert!(handle.is_null(), "create thunk should return null on panic");
+}
+
+#[rstest]
+fn strategy_create_panic_returns_null() {
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*strategy_vtable::<PanicOnCreateStrategy>() };
+    // SAFETY: the constructor panics before dereferencing host or ctx.
+    let handle = unsafe {
+        generated_slot!(vt, create)(std::ptr::null(), std::ptr::null(), BorrowedStr::empty())
+    };
+    assert!(handle.is_null(), "create thunk should return null on panic");
+}
+
+#[rstest]
+fn controller_create_panic_returns_null() {
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*controller_vtable::<PanicOnCreateController>() };
+    // SAFETY: the constructor panics before dereferencing host or ctx.
+    let handle = unsafe {
+        generated_slot!(vt, create)(std::ptr::null(), std::ptr::null(), BorrowedStr::empty())
+    };
+    assert!(handle.is_null(), "create thunk should return null on panic");
+}
+
+// Custom-data type whose `clone_value` panics: the generated `clone_handle`
+// thunk must return null so the host can fail fast instead of aborting.
+#[derive(Clone, PartialEq)]
+struct PanicOnCloneTick;
+
+impl PluginCustomData for PanicOnCloneTick {
+    const TYPE_NAME: &'static str = "PanicOnCloneTick";
+
+    fn ts_event(&self) -> u64 {
+        0
+    }
+
+    fn ts_init(&self) -> u64 {
+        0
+    }
+
+    fn to_json(&self) -> anyhow::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn from_json(_payload: &[u8]) -> anyhow::Result<Self> {
+        Ok(Self)
+    }
+
+    fn schema_ipc() -> anyhow::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn encode_batch(_items: &[&Self]) -> anyhow::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn decode_batch(
+        _ipc_bytes: &[u8],
+        _metadata: &[(String, String)],
+    ) -> anyhow::Result<Vec<Self>> {
+        Ok(Vec::new())
+    }
+
+    fn clone_value(&self) -> Self {
+        panic!("clone-panic");
+    }
+}
+
+#[rstest]
+fn custom_data_clone_handle_panic_returns_null() {
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*custom_data_vtable::<PanicOnCloneTick>() };
+    let handle = Box::into_raw(Box::new(PanicOnCloneTick)).cast::<CustomDataHandle>();
+
+    // SAFETY: handle is live; clone_value panics inside the thunk guard.
+    let cloned = unsafe { generated_slot!(vt, clone_handle)(handle) };
+    assert!(cloned.is_null(), "clone thunk should return null on panic");
+
+    // SAFETY: handle is still live and owned by this test.
+    unsafe { generated_slot!(vt, drop_handle)(handle) };
+}
+
+// Custom-data type whose destructor panics: the generated `drop_handle`
+// thunk must swallow the panic and leak the value rather than abort.
+#[derive(Clone, PartialEq)]
+struct PanicOnDropTick;
+
+static PANIC_DROPS_OBSERVED: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+impl Drop for PanicOnDropTick {
+    fn drop(&mut self) {
+        PANIC_DROPS_OBSERVED.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        panic!("drop-panic");
+    }
+}
+
+impl PluginCustomData for PanicOnDropTick {
+    const TYPE_NAME: &'static str = "PanicOnDropTick";
+
+    fn ts_event(&self) -> u64 {
+        0
+    }
+
+    fn ts_init(&self) -> u64 {
+        0
+    }
+
+    fn to_json(&self) -> anyhow::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn from_json(_payload: &[u8]) -> anyhow::Result<Self> {
+        Ok(Self)
+    }
+
+    fn schema_ipc() -> anyhow::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn encode_batch(_items: &[&Self]) -> anyhow::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn decode_batch(
+        _ipc_bytes: &[u8],
+        _metadata: &[(String, String)],
+    ) -> anyhow::Result<Vec<Self>> {
+        Ok(Vec::new())
+    }
+}
+
+#[rstest]
+fn custom_data_drop_handle_panic_is_swallowed() {
+    PANIC_DROPS_OBSERVED.store(0, std::sync::atomic::Ordering::SeqCst);
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*custom_data_vtable::<PanicOnDropTick>() };
+    let handle = Box::into_raw(Box::new(PanicOnDropTick)).cast::<CustomDataHandle>();
+
+    // SAFETY: handle is live; the destructor panics inside the thunk guard.
+    unsafe { generated_slot!(vt, drop_handle)(handle) };
+
+    // The destructor ran exactly once and its panic did not unwind here.
+    assert_eq!(
+        PANIC_DROPS_OBSERVED.load(std::sync::atomic::Ordering::SeqCst),
+        1
+    );
 }

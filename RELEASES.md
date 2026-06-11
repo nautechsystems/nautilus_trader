@@ -5,19 +5,27 @@ Released on TBD (UTC).
 ### Enhancements
 
 ### Breaking Changes
+- Changed plug-in loader to reject build mismatches by default; opt out with `set_allow_build_mismatch` (Rust)
 
 ### Security
 - Fixed instrument base quantity calculation panic on zero last price (Rust)
 - Fixed tick scheme navigation panics on NaN, infinite, and out-of-range prices (Rust)
+- Fixed plug-in host callbacks to return `Panic` errors instead of aborting the node on engine panics (Rust)
+- Fixed plug-in `create`, `clone_handle`, and `drop_handle` panics to recover instead of aborting the process (Rust)
+- Fixed plug-in host thunks to validate UTF-8 on plug-in strings instead of assuming it (Rust)
+- Fixed plug-in loader rejection paths to cap diagnostic reads and never `dlclose` initialized cdylibs (Rust)
 
 ### Fixes
 
 ### Internal Improvements
 - Improved instrument validation to reject non-positive multiplier and lot size (Rust)
 - Improved `FixedTickScheme` validation to reject non-finite tick sizes (Rust)
+- Improved plug-in ABI-mismatch reporting with manifest diagnostics instead of a null-manifest error (Rust)
+- Improved `nautilus_plugin!` macro errors for missing `name` or `version` fields (Rust)
 - Optimized `Cache` query filtering to scale with open orders and positions (#4242), thanks for reporting @magnified103
 
 ### Documentation Updates
+- Updated plugins concept guide for panic recovery, build pinning, and UTF-8 validation semantics
 
 ### Deprecations
 

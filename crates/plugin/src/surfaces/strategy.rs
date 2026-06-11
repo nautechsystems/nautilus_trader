@@ -104,7 +104,7 @@ use crate::{
     boundary::{BorrowedStr, PluginError, PluginErrorCode, PluginResult, Slice},
     host::{HostContext, HostVTable},
     normalize::BoundaryNormalize,
-    panic::{guard, guard_infallible},
+    panic::{guard, guard_drop, guard_or_null},
     surfaces::{
         book::{OrderBookDeltasHandle, OrderBookHandle},
         custom_data::PluginCustomDataRef,
@@ -807,7 +807,7 @@ unsafe extern "C" fn create_thunk<T: PluginStrategy>(
     ctx: *const HostContext,
     config_json: BorrowedStr<'_>,
 ) -> *mut PluginStrategyHandle {
-    guard_infallible("strategy::create", || {
+    guard_or_null("strategy::create", || {
         // SAFETY: host promises `config_json` borrows storage that is live
         // for the duration of this call.
         let cfg = unsafe { config_json.as_str() };
@@ -819,7 +819,7 @@ unsafe extern "C" fn drop_handle_thunk<T: PluginStrategy>(handle: *mut PluginStr
     if handle.is_null() {
         return;
     }
-    guard_infallible("strategy::drop", || {
+    guard_drop("strategy::drop", || {
         // SAFETY: handle was allocated via `Box::into_raw(Box::new(T))`.
         unsafe {
             drop(Box::from_raw(handle.cast::<T>()));

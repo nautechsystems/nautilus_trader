@@ -807,11 +807,15 @@ fn nautilus_plugin_init_rejects_invalid_host_ptr(#[case] host: *const HostVTable
     assert!(m.is_null(), "init should reject the host pointer");
 }
 
+// Init returns the manifest even when the host's vtable ABI differs: the
+// host's own check on `PluginManifest::abi_version` rejects the plug-in with
+// a proper `AbiMismatch` error and build diagnostics, while a null return
+// would degrade that to an opaque `NullManifest` report.
 #[rstest]
 #[case::off_by_one(NAUTILUS_PLUGIN_ABI_VERSION.wrapping_add(1))]
 #[case::zero(0)]
 #[case::max(u32::MAX)]
-fn nautilus_plugin_init_rejects_abi_mismatch(#[case] abi: u32) {
+fn nautilus_plugin_init_returns_manifest_for_host_abi_mismatch(#[case] abi: u32) {
     let bad_host = HostVTable {
         abi_version: abi,
         clock_now_ns: test_clock_now_ns,
@@ -848,7 +852,16 @@ fn nautilus_plugin_init_rejects_abi_mismatch(#[case] abi: u32) {
         query_order: test_query_order_stub,
     };
     let m = unsafe { nautilus_plugin_init(&raw const bad_host) };
-    assert!(m.is_null(), "init should reject ABI {abi}");
+    assert!(
+        !m.is_null(),
+        "init should return the manifest for host ABI {abi} so the host can report AbiMismatch",
+    );
+    // SAFETY: the returned manifest points at the plug-in's static storage.
+    let manifest = unsafe { &*m };
+    assert_eq!(
+        manifest.abi_version, NAUTILUS_PLUGIN_ABI_VERSION,
+        "manifest must carry the plug-in's compiled ABI for the host check",
+    );
 }
 
 #[rstest]

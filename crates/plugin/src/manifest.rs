@@ -18,8 +18,10 @@
 //! The manifest enumerates every plug-point contribution the cdylib provides
 //! and points at the per-type vtables. The current unreleased surface ships
 //! custom-data, actor, and strategy plug-point families. Future released
-//! revisions should add new `Slice` fields to [`PluginManifest`] without
-//! removing existing ones.
+//! revisions must add new `Slice` fields to [`PluginManifest`] without
+//! removing or reordering existing ones: the loader reads the header prefix
+//! (name, vendor, version, build identifier) for diagnostics even when the
+//! ABI version differs, so the prefix layout is a cross-revision contract.
 
 use std::{
     collections::BTreeMap,
