@@ -37,7 +37,7 @@ use nautilus_model::{
     orderbook::OrderBook,
     orders::OrderAny,
     position::Position,
-    types::Currency,
+    types::{Currency, Money},
 };
 use ustr::Ustr;
 
@@ -521,7 +521,12 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if snapshotting position state fails.
-    fn snapshot_position_state(&self, position: &Position) -> anyhow::Result<()>;
+    fn snapshot_position_state(
+        &self,
+        position: &Position,
+        ts_snapshot: UnixNanos,
+        unrealized_pnl: Option<Money>,
+    ) -> anyhow::Result<()>;
 
     /// Records a heartbeat timestamp.
     ///

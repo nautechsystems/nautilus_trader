@@ -341,7 +341,7 @@ mod tests {
         orderbook::OrderBook,
         orders::OrderAny,
         position::Position,
-        types::Currency,
+        types::{Currency, Money},
     };
     use rstest::*;
     use ustr::Ustr;
@@ -791,7 +791,12 @@ mod tests {
             Ok(())
         }
 
-        fn snapshot_position_state(&self, _position: &Position) -> anyhow::Result<()> {
+        fn snapshot_position_state(
+            &self,
+            _position: &Position,
+            _ts_snapshot: UnixNanos,
+            _unrealized_pnl: Option<Money>,
+        ) -> anyhow::Result<()> {
             Ok(())
         }
 

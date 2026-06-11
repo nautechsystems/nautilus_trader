@@ -43,12 +43,17 @@ use nautilus_common::{
     },
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MINUTE};
+use nautilus_core::{
+    UUID4, UnixNanos,
+    datetime::{NANOSECONDS_IN_MINUTE, NANOSECONDS_IN_SECOND},
+};
 use nautilus_execution::engine::{
-    ExecutionEngine, config::ExecutionEngineConfig, stubs::StubExecutionClient,
+    ExecutionEngine, PositionStateSnapshot, config::ExecutionEngineConfig,
+    stubs::StubExecutionClient,
 };
 use nautilus_model::{
     accounts::{AccountAny, CashAccount},
+    data::QuoteTick,
     enums::{
         AccountType, AssetClass, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus,
         OrderType, PositionSide, PositionSideSpecified, TimeInForce, TriggerType,
@@ -12614,6 +12619,205 @@ fn test_purge_closed_orders_timer_fires_callback() {
             .len(),
         0
     );
+}
+
+#[rstest]
+fn test_start_snapshot_timer_registers_when_configured() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        snapshot_positions_interval_secs: Some(1.0),
+        ..Default::default()
+    };
+
+    let mut engine = ExecutionEngine::new(clock.clone(), cache, Some(config));
+    engine.start();
+
+    assert!(
+        clock
+            .borrow()
+            .timer_names()
+            .contains(&"ExecEngine_SNAPSHOT_POSITIONS")
+    );
+    assert_eq!(clock.borrow().timer_count(), 1);
+}
+
+#[rstest]
+fn test_start_snapshot_timer_zero_interval_skipped() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        snapshot_positions_interval_secs: Some(0.0),
+        ..Default::default()
+    };
+
+    let mut engine = ExecutionEngine::new(clock.clone(), cache, Some(config));
+    engine.start();
+
+    assert_eq!(clock.borrow().timer_count(), 0);
+}
+
+#[rstest]
+#[case::stop("stop")]
+#[case::reset("reset")]
+#[case::dispose("dispose")]
+fn test_snapshot_timer_canceled_on_lifecycle_transition(#[case] action: &str) {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        snapshot_positions_interval_secs: Some(1.0),
+        ..Default::default()
+    };
+
+    let mut engine = ExecutionEngine::new(clock.clone(), cache, Some(config));
+    engine.start();
+    assert_eq!(clock.borrow().timer_count(), 1);
+
+    match action {
+        "stop" => engine.stop(),
+        "reset" => engine.reset(),
+        "dispose" => engine.dispose(),
+        _ => unreachable!(),
+    }
+
+    assert_eq!(clock.borrow().timer_count(), 0);
+}
+
+#[rstest]
+fn test_snapshot_open_position_states_publishes_position_state_snapshot() {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let position = stub_position_long(audusd_sim());
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    // Wide spread so a long marking to ask instead of bid changes the rounded PnL
+    let quote = QuoteTick {
+        instrument_id: position.instrument_id,
+        bid_price: Price::from("2.00020"),
+        ask_price: Price::from("3.00020"),
+        bid_size: Quantity::from(1_000_000),
+        ask_size: Quantity::from(1_000_000),
+        ts_event: UnixNanos::default(),
+        ts_init: UnixNanos::default(),
+    };
+    cache.borrow_mut().add_quote(quote).unwrap();
+
+    let ts_snapshot = UnixNanos::from(123_456_789);
+    clock.borrow_mut().advance_time(ts_snapshot, true);
+
+    let engine = ExecutionEngine::new(clock, cache, None);
+
+    let topic = format!("snapshots.positions.{}", position.id);
+    let pattern: msgbus::MStr<msgbus::Pattern> = topic.as_str().into();
+    let (handler, saver) = get_any_saving_handler::<PositionStateSnapshot>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    engine.snapshot_open_position_states();
+
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    let snapshots = saver.get_messages();
+    assert_eq!(snapshots.len(), 1);
+    let snapshot = &snapshots[0];
+    let unrealized_pnl = snapshot
+        .unrealized_pnl
+        .expect("unrealized PnL should be present when a quote is cached");
+
+    assert_eq!(snapshot.position.id, position.id);
+    assert_eq!(snapshot.ts_snapshot, ts_snapshot);
+    assert_eq!(unrealized_pnl.currency, Currency::USD());
+    assert_eq!(unrealized_pnl.as_decimal(), dec!(1.00));
+}
+
+#[rstest]
+fn test_snapshot_open_position_states_publishes_snapshot_without_quote() {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let position = stub_position_long(audusd_sim());
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    let ts_snapshot = UnixNanos::from(987_654_321);
+    clock.borrow_mut().advance_time(ts_snapshot, true);
+
+    let engine = ExecutionEngine::new(clock, cache, None);
+
+    let topic = format!("snapshots.positions.{}", position.id);
+    let pattern: msgbus::MStr<msgbus::Pattern> = topic.as_str().into();
+    let (handler, saver) = get_any_saving_handler::<PositionStateSnapshot>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    engine.snapshot_open_position_states();
+
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    let snapshots = saver.get_messages();
+    assert_eq!(snapshots.len(), 1);
+    assert_eq!(snapshots[0].position.id, position.id);
+    assert_eq!(snapshots[0].ts_snapshot, ts_snapshot);
+    assert!(snapshots[0].unrealized_pnl.is_none());
+}
+
+#[rstest]
+fn test_snapshot_timer_fires_callback_publishes_position_state_snapshot() {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let position = stub_position_long(audusd_sim());
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    let quote = QuoteTick {
+        instrument_id: position.instrument_id,
+        bid_price: Price::from("2.00020"),
+        ask_price: Price::from("2.00030"),
+        bid_size: Quantity::from(1_000_000),
+        ask_size: Quantity::from(1_000_000),
+        ts_event: UnixNanos::default(),
+        ts_init: UnixNanos::default(),
+    };
+    cache.borrow_mut().add_quote(quote).unwrap();
+
+    let config = ExecutionEngineConfig {
+        snapshot_positions_interval_secs: Some(1.0),
+        ..Default::default()
+    };
+    let mut engine = ExecutionEngine::new(clock.clone(), cache, Some(config));
+    engine.start();
+
+    let topic = format!("snapshots.positions.{}", position.id);
+    let pattern: msgbus::MStr<msgbus::Pattern> = topic.as_str().into();
+    let (handler, saver) = get_any_saving_handler::<PositionStateSnapshot>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    let events = clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(NANOSECONDS_IN_SECOND + 1), true);
+    let handlers = clock.borrow().match_handlers(events);
+    for handler in handlers {
+        handler.callback.call(handler.event);
+    }
+
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    let snapshots = saver.get_messages();
+    assert_eq!(snapshots.len(), 1);
+    assert_eq!(snapshots[0].position.id, position.id);
 }
 
 #[rstest]

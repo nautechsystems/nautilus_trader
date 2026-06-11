@@ -57,7 +57,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     UUID4, UnixNanos, WeakCell,
-    datetime::{mins_to_nanos, mins_to_secs},
+    datetime::{mins_to_nanos, mins_to_secs, secs_to_nanos},
 };
 use nautilus_model::{
     accounts::Account,
@@ -92,9 +92,21 @@ use crate::{
     },
 };
 
+const TIMER_SNAPSHOT_POSITIONS: &str = "ExecEngine_SNAPSHOT_POSITIONS";
 const TIMER_PURGE_CLOSED_ORDERS: &str = "ExecEngine_PURGE_CLOSED_ORDERS";
 const TIMER_PURGE_CLOSED_POSITIONS: &str = "ExecEngine_PURGE_CLOSED_POSITIONS";
 const TIMER_PURGE_ACCOUNT_EVENTS: &str = "ExecEngine_PURGE_ACCOUNT_EVENTS";
+
+/// Position state snapshot published to the `snapshots.positions.{position_id}` topic.
+#[derive(Debug, Clone)]
+pub struct PositionStateSnapshot {
+    /// The position state at the time of the snapshot.
+    pub position: Position,
+    /// The unrealized PnL for the position, when a current quote is available.
+    pub unrealized_pnl: Option<Money>,
+    /// UNIX timestamp (nanoseconds) when the snapshot was taken.
+    pub ts_snapshot: UnixNanos,
+}
 
 /// Callback that anchors cache snapshot metadata in an external store.
 pub type SnapshotAnchorer = Rc<dyn Fn(CacheSnapshotRef) -> anyhow::Result<()>>;
@@ -681,18 +693,66 @@ impl ExecutionEngine {
     }
 
     /// Starts the position snapshot timer if configured.
-    ///
-    /// Timer functionality requires a live execution context with an active clock.
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "timer registration is not expected to fail"
+    )]
     pub fn start_snapshot_timer(&mut self) {
-        if let Some(interval_secs) = self.config.snapshot_positions_interval_secs {
+        if let Some(interval_secs) = self
+            .config
+            .snapshot_positions_interval_secs
+            .filter(|&secs| secs > 0.0)
+            && !self
+                .clock
+                .borrow()
+                .timer_names()
+                .contains(&TIMER_SNAPSHOT_POSITIONS)
+        {
+            let interval_ns = match secs_to_nanos(interval_secs) {
+                Ok(ns) => ns,
+                Err(e) => {
+                    log::error!("Cannot start position snapshots timer: {e}");
+                    return;
+                }
+            };
+            let clock = self.clock.clone();
+            let cache = self.cache.clone();
+            let debug = self.config.debug;
+
+            let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
+                Self::snapshot_open_positions(&clock, &cache, debug);
+            });
+            let callback = TimeEventCallback::from(callback_fn);
+
             log::info!("Starting position snapshots timer at {interval_secs} second intervals");
+            self.clock
+                .borrow_mut()
+                .set_timer_ns(
+                    TIMER_SNAPSHOT_POSITIONS,
+                    interval_ns,
+                    None,
+                    None,
+                    Some(callback),
+                    None,
+                    None,
+                )
+                .expect("Failed to set position snapshots timer");
         }
     }
 
     /// Stops the position snapshot timer if running.
     pub fn stop_snapshot_timer(&mut self) {
-        if self.config.snapshot_positions_interval_secs.is_some() {
+        let timer_registered = self
+            .clock
+            .borrow()
+            .timer_names()
+            .contains(&TIMER_SNAPSHOT_POSITIONS);
+
+        if timer_registered {
             log::info!("Canceling position snapshots timer");
+            self.clock
+                .borrow_mut()
+                .cancel_timer(TIMER_SNAPSHOT_POSITIONS);
         }
     }
 
@@ -855,8 +915,15 @@ impl ExecutionEngine {
 
     /// Creates snapshots of all open positions.
     pub fn snapshot_open_position_states(&self) {
-        let positions: Vec<Position> = self
-            .cache
+        Self::snapshot_open_positions(&self.clock, &self.cache, self.config.debug);
+    }
+
+    fn snapshot_open_positions(
+        clock: &Rc<RefCell<dyn Clock>>,
+        cache: &Rc<RefCell<Cache>>,
+        debug: bool,
+    ) {
+        let positions: Vec<Position> = cache
             .borrow()
             .positions_open(None, None, None, None, None)
             .into_iter()
@@ -864,7 +931,7 @@ impl ExecutionEngine {
             .collect();
 
         for position in positions {
-            self.create_position_state_snapshot(&position);
+            Self::publish_position_state_snapshot(clock, cache, debug, &position, true);
         }
     }
 
@@ -2303,15 +2370,50 @@ impl ExecutionEngine {
         }
     }
 
-    fn create_position_state_snapshot(&self, position: &Position) {
-        if self.config.debug {
+    fn create_position_state_snapshot(&self, position: &Position, open_only: bool) {
+        Self::publish_position_state_snapshot(
+            &self.clock,
+            &self.cache,
+            self.config.debug,
+            position,
+            open_only,
+        );
+    }
+
+    fn publish_position_state_snapshot(
+        clock: &Rc<RefCell<dyn Clock>>,
+        cache: &Rc<RefCell<Cache>>,
+        debug: bool,
+        position: &Position,
+        open_only: bool,
+    ) {
+        if debug {
             log::debug!("Creating position state snapshot for {position}");
         }
 
-        // let mut position: Position = position.clone();
-        // if let Some(pnl) = self.cache.borrow().calculate_unrealized_pnl(&position) {
-        //     position.unrealized_pnl(last)
-        // }
+        let ts_snapshot = clock.borrow().timestamp_ns();
+        let unrealized_pnl = cache.borrow().calculate_unrealized_pnl(position);
+
+        let snapshot = PositionStateSnapshot {
+            position: position.clone(),
+            unrealized_pnl,
+            ts_snapshot,
+        };
+
+        let topic = format!("snapshots.positions.{}", position.id);
+        msgbus::publish_any(topic.into(), &snapshot);
+
+        let has_backing = cache.borrow().has_backing();
+        if has_backing
+            && let Err(e) = cache.borrow_mut().snapshot_position_state(
+                position,
+                ts_snapshot,
+                unrealized_pnl,
+                Some(open_only),
+            )
+        {
+            log::error!("Failed to snapshot position state: {e}");
+        }
     }
 
     fn handle_event(&mut self, event: &OrderEventAny) {
@@ -3154,7 +3256,7 @@ impl ExecutionEngine {
         self.cache.borrow_mut().add_position(&position, oms_type)?;
 
         if self.config.snapshot_positions {
-            self.create_position_state_snapshot(&position);
+            self.create_position_state_snapshot(&position, true);
         }
 
         let ts_init = self.clock.borrow().timestamp_ns();
@@ -3223,7 +3325,7 @@ impl ExecutionEngine {
 
         // Create position state snapshot if enabled
         if self.config.snapshot_positions {
-            self.create_position_state_snapshot(position);
+            self.create_position_state_snapshot(position, false);
         }
 
         let ts_init = self.clock.borrow().timestamp_ns();

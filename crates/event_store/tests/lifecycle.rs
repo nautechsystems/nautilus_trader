@@ -68,7 +68,7 @@ use nautilus_model::{
     orders::{Order, OrderAny, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     stubs::TestDefault,
-    types::{Currency, Quantity},
+    types::{Currency, Money, Quantity},
 };
 use nautilus_system::{KernelEventStore, NautilusKernelBuilder};
 use rstest::rstest;
@@ -1495,7 +1495,12 @@ impl CacheDatabaseAdapter for StubCacheDatabase {
         Ok(())
     }
 
-    fn snapshot_position_state(&self, _position: &Position) -> anyhow::Result<()> {
+    fn snapshot_position_state(
+        &self,
+        _position: &Position,
+        _ts_snapshot: UnixNanos,
+        _unrealized_pnl: Option<Money>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 

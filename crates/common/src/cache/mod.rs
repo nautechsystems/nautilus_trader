@@ -2868,8 +2868,8 @@ impl Cache {
     pub fn snapshot_position_state(
         &mut self,
         position: &Position,
-        // ts_snapshot: u64,
-        // unrealized_pnl: Option<Money>,
+        ts_snapshot: UnixNanos,
+        unrealized_pnl: Option<Money>,
         open_only: Option<bool>,
     ) -> anyhow::Result<()> {
         let open_only = open_only.unwrap_or(true);
@@ -2879,13 +2879,15 @@ impl Cache {
         }
 
         if let Some(database) = &mut self.database {
-            database.snapshot_position_state(position).map_err(|e| {
-                log::error!(
-                    "Failed to snapshot position state for {}: {e:?}",
-                    position.id
-                );
-                e
-            })?;
+            database
+                .snapshot_position_state(position, ts_snapshot, unrealized_pnl)
+                .map_err(|e| {
+                    log::error!(
+                        "Failed to snapshot position state for {}: {e:?}",
+                        position.id
+                    );
+                    e
+                })?;
         } else {
             log::warn!(
                 "Cannot snapshot position state for {} (no database configured)",
@@ -2893,8 +2895,7 @@ impl Cache {
             );
         }
 
-        // Ok(())
-        todo!()
+        Ok(())
     }
 
     /// Gets the OMS type for the `position_id`.

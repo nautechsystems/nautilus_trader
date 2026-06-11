@@ -36,7 +36,7 @@ use nautilus_model::{
     orderbook::OrderBook,
     orders::{Order, OrderAny},
     position::Position,
-    types::Currency,
+    types::{Currency, Money},
 };
 use sqlx::{PgPool, postgres::PgConnectOptions};
 use tokio::{time::Instant, try_join};
@@ -967,7 +967,12 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn snapshot_position_state(&self, position: &Position) -> anyhow::Result<()> {
+    fn snapshot_position_state(
+        &self,
+        position: &Position,
+        ts_snapshot: UnixNanos,
+        unrealized_pnl: Option<Money>,
+    ) -> anyhow::Result<()> {
         todo!()
     }
 

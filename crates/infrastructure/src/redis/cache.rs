@@ -68,7 +68,7 @@ use nautilus_model::{
     orderbook::OrderBook,
     orders::OrderAny,
     position::Position,
-    types::Currency,
+    types::{Currency, Money},
 };
 use redis::{Pipeline, aio::ConnectionManager};
 use ustr::Ustr;
@@ -1414,7 +1414,12 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn snapshot_position_state(&self, position: &Position) -> anyhow::Result<()> {
+    fn snapshot_position_state(
+        &self,
+        position: &Position,
+        ts_snapshot: UnixNanos,
+        unrealized_pnl: Option<Money>,
+    ) -> anyhow::Result<()> {
         todo!()
     }
 
