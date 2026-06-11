@@ -84,7 +84,7 @@ impl Bet {
     ///
     /// # Panics
     ///
-    /// Panics if the side is not [`BetSide::Lay`].
+    /// Panics if the side is not [`BetSide::Lay`], or if `price` is not greater than 1.
     #[must_use]
     pub fn from_liability(price: Decimal, liability: Decimal, side: BetSide) -> Self {
         assert!(
@@ -359,6 +359,7 @@ impl BetPosition {
         self.price = Decimal::ZERO;
         self.exposure = Decimal::ZERO;
         self.realized_pnl = Decimal::ZERO;
+        self.bets.clear();
     }
 }
 
@@ -609,12 +610,14 @@ mod tests {
         let bet = Bet::new(dec!(2.0), dec!(100.0), BetSide::Back);
         position.add_bet(bet);
         assert_ne!(position.exposure, dec!(0.0));
+        assert!(!position.bets().is_empty());
         position.reset();
 
         // After reset, the position should be cleared
         assert_eq!(position.price, dec!(0.0));
         assert_eq!(position.exposure, dec!(0.0));
         assert_eq!(position.realized_pnl, dec!(0.0));
+        assert!(position.bets().is_empty());
     }
 
     #[rstest]

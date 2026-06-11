@@ -146,20 +146,30 @@ pub const BAR_SPEC_12_MONTH_LAST: BarSpecification = BarSpecification {
 ///
 /// # Panics
 ///
-/// Panics if the aggregation method of the given `bar_type` is not time based.
+/// Panics if the aggregation method of the given `bar_type` is not time based,
+/// or if `step` is too large for the interval arithmetic.
 #[must_use]
 pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
     let spec = bar_type.spec();
+    let step = step_to_i64(spec.step);
 
     match spec.aggregation {
-        BarAggregation::Millisecond => TimeDelta::milliseconds(spec.step.get() as i64),
-        BarAggregation::Second => TimeDelta::seconds(spec.step.get() as i64),
-        BarAggregation::Minute => TimeDelta::minutes(spec.step.get() as i64),
-        BarAggregation::Hour => TimeDelta::hours(spec.step.get() as i64),
-        BarAggregation::Day => TimeDelta::days(spec.step.get() as i64),
-        BarAggregation::Week => TimeDelta::days(7 * spec.step.get() as i64),
-        BarAggregation::Month => TimeDelta::days(30 * spec.step.get() as i64), // Proxy for comparing bar lengths
-        BarAggregation::Year => TimeDelta::days(365 * spec.step.get() as i64), // Proxy for comparing bar lengths
+        BarAggregation::Millisecond => TimeDelta::milliseconds(step),
+        BarAggregation::Second => TimeDelta::seconds(step),
+        BarAggregation::Minute => TimeDelta::minutes(step),
+        BarAggregation::Hour => TimeDelta::hours(step),
+        BarAggregation::Day => TimeDelta::days(step),
+        BarAggregation::Week => {
+            TimeDelta::days(step.checked_mul(7).expect("`step` overflows i64 days"))
+        }
+        BarAggregation::Month => {
+            // Proxy for comparing bar lengths
+            TimeDelta::days(step.checked_mul(30).expect("`step` overflows i64 days"))
+        }
+        BarAggregation::Year => {
+            // Proxy for comparing bar lengths
+            TimeDelta::days(step.checked_mul(365).expect("`step` overflows i64 days"))
+        }
         _ => panic!("Aggregation not time based"),
     }
 }
@@ -173,7 +183,8 @@ pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
 pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
     let interval_ns = get_bar_interval(bar_type)
         .num_nanoseconds()
-        .expect("Invalid bar interval") as u64;
+        .expect("Invalid bar interval")
+        .cast_unsigned();
     UnixNanos::from(interval_ns)
 }
 
@@ -182,6 +193,7 @@ pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
 /// # Panics
 ///
 /// Panics if computing the base `NaiveDate` or `DateTime` from `now` fails,
+/// if `step` cannot be represented for the calendar arithmetic,
 /// or if the aggregation type is unsupported.
 pub fn get_time_bar_start(
     now: DateTime<Utc>,
@@ -189,7 +201,7 @@ pub fn get_time_bar_start(
     time_bars_origin: Option<TimeDelta>,
 ) -> DateTime<Utc> {
     let spec = bar_type.spec();
-    let step = spec.step.get() as i64;
+    let step = step_to_i64(spec.step);
     let origin_offset: TimeDelta = time_bars_origin.unwrap_or_else(TimeDelta::zero);
 
     match spec.aggregation {
@@ -236,7 +248,8 @@ pub fn get_time_bar_start(
                     subtract_n_months(start_time, 12).expect("Failed to subtract 12 months");
             }
 
-            let months_step = step as u32;
+            let months_step =
+                u32::try_from(step).expect("`step` exceeds u32 range for month arithmetic");
 
             while start_time <= now {
                 start_time =
@@ -248,7 +261,8 @@ pub fn get_time_bar_start(
             start_time
         }
         BarAggregation::Year => {
-            let step_i32 = step as i32;
+            let step_i32 =
+                i32::try_from(step).expect("`step` exceeds i32 range for year arithmetic");
 
             // Reconstruct from Jan 1 + origin each time to avoid leap-day drift
             let year_start = |y: i32| {
@@ -306,6 +320,15 @@ fn find_closest_smaller_time(
         .div_euclid(period_ns);
 
     base_time + TimeDelta::nanoseconds(num_periods * period_ns)
+}
+
+/// Converts a bar specification step to `i64` for time arithmetic.
+///
+/// # Panics
+///
+/// Panics if `step` exceeds the `i64` range.
+fn step_to_i64(step: NonZeroUsize) -> i64 {
+    i64::try_from(step.get()).expect("`step` exceeds i64 range")
 }
 
 /// Represents a bar aggregation specification including a step, aggregation
@@ -418,18 +441,29 @@ impl BarSpecification {
     ///
     /// # Panics
     ///
-    /// Panics if the aggregation method is not time-based.
+    /// Panics if the aggregation method is not time-based, or if `step` is too
+    /// large for the interval arithmetic.
     #[must_use]
     pub fn timedelta(&self) -> TimeDelta {
+        let step = step_to_i64(self.step);
+
         match self.aggregation {
-            BarAggregation::Millisecond => Duration::milliseconds(self.step.get() as i64),
-            BarAggregation::Second => Duration::seconds(self.step.get() as i64),
-            BarAggregation::Minute => Duration::minutes(self.step.get() as i64),
-            BarAggregation::Hour => Duration::hours(self.step.get() as i64),
-            BarAggregation::Day => Duration::days(self.step.get() as i64),
-            BarAggregation::Week => Duration::days(self.step.get() as i64 * 7),
-            BarAggregation::Month => Duration::days(self.step.get() as i64 * 30), // Proxy for comparing bar lengths
-            BarAggregation::Year => Duration::days(self.step.get() as i64 * 365), // Proxy for comparing bar lengths
+            BarAggregation::Millisecond => Duration::milliseconds(step),
+            BarAggregation::Second => Duration::seconds(step),
+            BarAggregation::Minute => Duration::minutes(step),
+            BarAggregation::Hour => Duration::hours(step),
+            BarAggregation::Day => Duration::days(step),
+            BarAggregation::Week => {
+                Duration::days(step.checked_mul(7).expect("`step` overflows i64 days"))
+            }
+            BarAggregation::Month => {
+                // Proxy for comparing bar lengths
+                Duration::days(step.checked_mul(30).expect("`step` overflows i64 days"))
+            }
+            BarAggregation::Year => {
+                // Proxy for comparing bar lengths
+                Duration::days(step.checked_mul(365).expect("`step` overflows i64 days"))
+            }
             _ => panic!(
                 "Timedelta not supported for aggregation type: {:?}",
                 self.aggregation
@@ -696,6 +730,13 @@ impl FromStr for BarType {
     #[expect(clippy::needless_collect)] // Collect needed for .rev() and indexing
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split('@').collect();
+        if parts.len() > 2 {
+            return Err(BarTypeParseError {
+                input: s.to_string(),
+                token: parts[2].to_string(),
+                position: 5,
+            });
+        }
         let standard = parts[0];
         let composite_str = parts.get(1);
 
@@ -1028,7 +1069,12 @@ mod tests {
     #[rstest]
     fn test_bar_specification_new_invalid() {
         let result = BarSpecification::new_checked(0, BarAggregation::Tick, PriceType::Last);
-        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid step: 0 (must be non-zero)")
+        );
     }
 
     #[rstest]
@@ -1200,6 +1246,59 @@ mod tests {
 
         let interval_ns = get_bar_interval_ns(&bar_type);
         assert_eq!(interval_ns, expected);
+    }
+
+    fn bar_type_with_raw_step(step: usize, aggregation: BarAggregation) -> BarType {
+        // Bypasses `BarSpecification::new_checked` to exercise the conversion guards
+        let spec = BarSpecification {
+            step: NonZeroUsize::new(step).unwrap(),
+            aggregation,
+            price_type: PriceType::Last,
+        };
+        BarType::new(
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            spec,
+            AggregationSource::Internal,
+        )
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`step` exceeds i64 range")]
+    fn test_get_bar_interval_step_exceeds_i64_panics() {
+        let bar_type = bar_type_with_raw_step(usize::MAX, BarAggregation::Second);
+        let _ = get_bar_interval(&bar_type);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`step` overflows i64 days")]
+    fn test_get_bar_interval_week_step_overflow_panics() {
+        let step = usize::try_from(i64::MAX).unwrap();
+        let bar_type = bar_type_with_raw_step(step, BarAggregation::Week);
+        let _ = get_bar_interval(&bar_type);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`step` overflows i64 days")]
+    fn test_timedelta_year_step_overflow_panics() {
+        let step = usize::try_from(i64::MAX).unwrap();
+        let bar_type = bar_type_with_raw_step(step, BarAggregation::Year);
+        let _ = bar_type.spec().timedelta();
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`step` exceeds u32 range for month arithmetic")]
+    fn test_get_time_bar_start_month_step_exceeds_u32_panics() {
+        let bar_type = bar_type_with_raw_step(1_usize << 40, BarAggregation::Month);
+        let now = Utc.with_ymd_and_hms(2024, 7, 21, 12, 0, 0).unwrap();
+        let _ = get_time_bar_start(now, &bar_type, None);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`step` exceeds i32 range for year arithmetic")]
+    fn test_get_time_bar_start_year_step_exceeds_i32_panics() {
+        let bar_type = bar_type_with_raw_step(1_usize << 40, BarAggregation::Year);
+        let now = Utc.with_ymd_and_hms(2024, 7, 21, 12, 0, 0).unwrap();
+        let _ = get_time_bar_start(now, &bar_type, None);
     }
 
     #[rstest]
@@ -1530,6 +1629,19 @@ mod tests {
     }
 
     #[rstest]
+    fn test_bar_type_parse_rejects_extra_composite_segment() {
+        let input = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL@1-HOUR-EXTERNAL";
+        let result = BarType::from_str(input);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "Error parsing `BarType` from '{input}', invalid token: '1-HOUR-EXTERNAL' at position 5"
+            )
+        );
+    }
+
+    #[rstest]
     fn test_bar_type_equality() {
         let instrument_id1 = InstrumentId {
             symbol: Symbol::new("AUD/USD"),
@@ -1649,17 +1761,18 @@ mod tests {
     }
 
     #[rstest]
-    #[case("100.0", "90.0", "95.0", "92.0")] // high < open
-    #[case("100.0", "105.0", "110.0", "102.0")] // high < low
-    #[case("100.0", "105.0", "95.0", "110.0")] // high < close
-    #[case("100.0", "105.0", "95.0", "90.0")] // low > close
-    #[case("100.0", "110.0", "105.0", "108.0")] // low > open
-    #[case("100.0", "90.0", "110.0", "120.0")] // high < open, high < close, low > close
+    #[case("100.0", "90.0", "95.0", "92.0", "high >= open")]
+    #[case("100.0", "105.0", "110.0", "102.0", "high >= low")]
+    #[case("100.0", "105.0", "95.0", "110.0", "high >= close")]
+    #[case("100.0", "105.0", "95.0", "90.0", "low <= close")]
+    #[case("100.0", "110.0", "105.0", "108.0", "low <= open")]
+    #[case("100.0", "90.0", "110.0", "120.0", "high >= open")] // First failing predicate reported
     fn test_bar_new_checked_conditions(
         #[case] open: &str,
         #[case] high: &str,
         #[case] low: &str,
         #[case] close: &str,
+        #[case] expected: &str,
     ) {
         let bar_type = BarType::from("AAPL.XNAS-1-MINUTE-LAST-INTERNAL");
         let open = Price::from(open);
@@ -1672,7 +1785,11 @@ mod tests {
 
         let result = Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init);
 
-        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(
+            error.to_string().contains(expected),
+            "unexpected message: {error}"
+        );
     }
 
     #[rstest]

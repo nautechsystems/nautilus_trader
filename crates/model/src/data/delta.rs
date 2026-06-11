@@ -279,6 +279,7 @@ mod tests {
     }
 
     #[rstest]
+    #[should_panic(expected = "invalid `Quantity` for 'order.size' not positive, was 0")]
     fn test_order_book_delta_new_with_zero_size_panics() {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let action = BookAction::Add;
@@ -293,18 +294,15 @@ mod tests {
 
         let order = BookOrder::new(side, price, zero_size, order_id);
 
-        let result = std::panic::catch_unwind(|| {
-            let _ = OrderBookDelta::new(
-                instrument_id,
-                action,
-                order,
-                flags,
-                sequence,
-                ts_event,
-                ts_init,
-            );
-        });
-        assert!(result.is_err());
+        let _ = OrderBookDelta::new(
+            instrument_id,
+            action,
+            order,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        );
     }
 
     #[rstest]
