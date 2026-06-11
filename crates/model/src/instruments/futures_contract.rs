@@ -105,12 +105,13 @@ pub struct FuturesContract {
 impl FuturesContract {
     /// Creates a new [`FuturesContract`] instance with correctness checking.
     ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     /// # Errors
     ///
     /// Returns an error if any input validation fails.
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[expect(clippy::too_many_arguments)]
     pub fn new_checked(
         instrument_id: InstrumentId,

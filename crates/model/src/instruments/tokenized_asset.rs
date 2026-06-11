@@ -160,6 +160,14 @@ impl TokenizedAsset {
         check_positive_price(price_increment, stringify!(price_increment))?;
         check_positive_quantity(size_increment, stringify!(size_increment))?;
 
+        if let Some(multiplier) = multiplier {
+            check_positive_quantity(multiplier, stringify!(multiplier))?;
+        }
+
+        if let Some(lot_size) = lot_size {
+            check_positive_quantity(lot_size, stringify!(lot_size))?;
+        }
+
         Ok(Self {
             id: instrument_id,
             raw_symbol,
@@ -497,6 +505,44 @@ mod tests {
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("non-ASCII"));
+    }
+
+    #[rstest]
+    #[case::zero_multiplier(Some(Quantity::from("0")), None)]
+    #[case::zero_lot_size(None, Some(Quantity::from("0")))]
+    fn test_new_checked_rejects_non_positive_sizing(
+        #[case] multiplier: Option<Quantity>,
+        #[case] lot_size: Option<Quantity>,
+    ) {
+        let result = TokenizedAsset::new_checked(
+            InstrumentId::from("TEST.KRAKEN"),
+            Symbol::from("TEST"),
+            AssetClass::Equity,
+            Currency::BTC(),
+            Currency::USD(),
+            None,
+            2,
+            4,
+            Price::from("0.01"),
+            Quantity::from("0.0001"),
+            multiplier,
+            lot_size,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("not positive"), "{error}");
     }
 
     #[rstest]

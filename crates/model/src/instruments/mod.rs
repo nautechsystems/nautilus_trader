@@ -298,28 +298,33 @@ pub trait Instrument: 'static + Send {
 
     /// # Errors
     ///
-    /// Returns an error if the value is not finite or cannot be converted to a `Price`.
+    /// Returns an error if the value is not finite, not representable as a `Decimal`, or cannot
+    /// be converted to a `Price`.
     #[inline(always)]
     fn try_make_price(&self, value: f64) -> anyhow::Result<Price> {
         let dec_value = Decimal::from_str(&value.to_string())
-            .map_err(|_| anyhow::anyhow!("non-finite value passed to make_price"))?;
+            .map_err(|_| anyhow::anyhow!("invalid `value` for make_price, was {value}"))?;
         let precision = u32::from(self.min_price_increment_precision());
         let rounded_decimal =
             dec_value.round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
         Price::from_decimal_dp(rounded_decimal, self.price_precision()).map_err(Into::into)
     }
 
+    /// # Panics
+    ///
+    /// Panics if the value cannot be converted to a `Price` (see `try_make_price`).
     fn make_price(&self, value: f64) -> Price {
         self.try_make_price(value).unwrap()
     }
 
     /// # Errors
     ///
-    /// Returns an error if the value is not finite or cannot be converted to a `Quantity`.
+    /// Returns an error if the value is not finite, not representable as a `Decimal`, rounds to
+    /// zero, or cannot be converted to a `Quantity`.
     #[inline(always)]
     fn try_make_qty(&self, value: f64, round_down: Option<bool>) -> anyhow::Result<Quantity> {
         let dec_value = Decimal::from_str(&value.to_string())
-            .map_err(|_| anyhow::anyhow!("non-finite value passed to make_qty"))?;
+            .map_err(|_| anyhow::anyhow!("invalid `value` for make_qty, was {value}"))?;
         let precision = u32::from(self.min_size_increment_precision());
         let strategy = if round_down.unwrap_or(false) {
             RoundingStrategy::ToZero
@@ -333,24 +338,36 @@ pub trait Instrument: 'static + Send {
         Quantity::from_decimal_dp(rounded, self.size_precision()).map_err(Into::into)
     }
 
+    /// # Panics
+    ///
+    /// Panics if the value cannot be converted to a `Quantity` (see `try_make_qty`).
     fn make_qty(&self, value: f64, round_down: Option<bool>) -> Quantity {
         self.try_make_qty(value, round_down).unwrap()
     }
 
     /// # Errors
     ///
-    /// Returns an error if the value cannot be converted to a `Quantity`.
+    /// Returns an error if `last_price` is zero, or if the value cannot be converted to a
+    /// `Quantity`.
     fn try_calculate_base_quantity(
         &self,
         quantity: Quantity,
         last_price: Price,
     ) -> anyhow::Result<Quantity> {
+        let last_px = last_price.as_decimal();
+        if last_px.is_zero() {
+            anyhow::bail!("`last_price` was zero when calculating base quantity");
+        }
         let precision = u32::from(self.min_size_increment_precision());
-        let value = (quantity.as_decimal() / last_price.as_decimal())
+        let value = (quantity.as_decimal() / last_px)
             .round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
         Quantity::from_decimal_dp(value, self.size_precision()).map_err(Into::into)
     }
 
+    /// # Panics
+    ///
+    /// Panics if `last_price` is zero, or if the value cannot be converted to a `Quantity`
+    /// (see `try_calculate_base_quantity`).
     fn calculate_base_quantity(&self, quantity: Quantity, last_price: Price) -> Quantity {
         self.try_calculate_base_quantity(quantity, last_price)
             .unwrap()
@@ -358,7 +375,9 @@ pub trait Instrument: 'static + Send {
 
     /// # Panics
     ///
-    /// Panics if the instrument is inverse and does not have a base currency.
+    /// Panics if the instrument is inverse and does not have a base currency, if the
+    /// instrument is inverse and `price` is zero, or if the notional amount cannot be
+    /// represented as `Money`.
     #[inline(always)]
     fn calculate_notional_value(
         &self,
@@ -444,7 +463,8 @@ pub trait Instrument: 'static + Send {
         let mut prices = Vec::with_capacity(n);
 
         for i in 0..n {
-            if let Some(price) = self.next_bid_price(value, i as i32) {
+            let Ok(i) = i32::try_from(i) else { break };
+            if let Some(price) = self.next_bid_price(value, i) {
                 prices.push(price);
             } else {
                 break;
@@ -459,7 +479,8 @@ pub trait Instrument: 'static + Send {
         let mut prices = Vec::with_capacity(n);
 
         for i in 0..n {
-            if let Some(price) = self.next_ask_price(value, i as i32) {
+            let Ok(i) = i32::try_from(i) else { break };
+            if let Some(price) = self.next_ask_price(value, i) {
                 prices.push(price);
             } else {
                 break;
@@ -711,6 +732,44 @@ mod tests {
         let price = currency_pair_btcusdt.make_price(10_000.0);
         let base = currency_pair_btcusdt.calculate_base_quantity(quantity, price);
         assert_eq!(base.to_string(), "0.000200");
+    }
+
+    #[rstest]
+    fn base_quantity_zero_last_price_returns_error(currency_pair_btcusdt: CurrencyPair) {
+        let quantity = currency_pair_btcusdt.make_qty(2.0, None);
+        let error = currency_pair_btcusdt
+            .try_calculate_base_quantity(quantity, Price::new(0.0, 2))
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("`last_price` was zero"),
+            "{error}"
+        );
+    }
+
+    #[rstest]
+    #[case(f64::NAN)]
+    #[case(f64::INFINITY)]
+    #[case(1e30)] // Finite but not representable as a Decimal
+    fn make_price_invalid_value_returns_error(
+        currency_pair_btcusdt: CurrencyPair,
+        #[case] value: f64,
+    ) {
+        let error = currency_pair_btcusdt.try_make_price(value).unwrap_err();
+        assert!(
+            error.to_string().contains("invalid `value` for make_price"),
+            "{error}"
+        );
+    }
+
+    #[rstest]
+    fn make_qty_invalid_value_returns_error(currency_pair_btcusdt: CurrencyPair) {
+        let error = currency_pair_btcusdt
+            .try_make_qty(f64::NAN, None)
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("invalid `value` for make_qty"),
+            "{error}"
+        );
     }
 
     #[rstest]

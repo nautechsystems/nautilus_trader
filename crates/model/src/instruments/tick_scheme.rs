@@ -67,8 +67,13 @@ impl PartialEq for FixedTickScheme {
 impl Eq for FixedTickScheme {}
 
 impl FixedTickScheme {
-    #[expect(clippy::missing_errors_doc)]
+    /// Creates a new [`FixedTickScheme`] with the given tick size.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `tick` is not finite or not positive.
     pub fn new(tick: f64) -> anyhow::Result<Self> {
+        check_predicate_true(tick.is_finite(), "tick must be finite")?;
         check_predicate_true(tick > 0.0, "tick must be positive")?;
         Ok(Self { tick })
     }
@@ -78,13 +83,13 @@ impl TickSchemeRule for FixedTickScheme {
     #[inline(always)]
     fn next_bid_price(&self, value: f64, n: i32, precision: u8) -> Option<Price> {
         let base = (value / self.tick).floor() * self.tick;
-        Some(Price::new(base - f64::from(n) * self.tick, precision))
+        Price::new_checked(base - f64::from(n) * self.tick, precision).ok()
     }
 
     #[inline(always)]
     fn next_ask_price(&self, value: f64, n: i32, precision: u8) -> Option<Price> {
         let base = (value / self.tick).ceil() * self.tick;
-        Some(Price::new(base + f64::from(n) * self.tick, precision))
+        Price::new_checked(base + f64::from(n) * self.tick, precision).ok()
     }
 }
 
@@ -193,7 +198,7 @@ impl TieredTickScheme {
 
         for &(start, stop, step) in tiers {
             let effective_stop = if stop.is_infinite() {
-                start + ((max_ticks_per_tier + 1) as f64) * step
+                start + (max_ticks_per_tier.saturating_add(1) as f64) * step
             } else {
                 stop
             };
@@ -304,11 +309,14 @@ impl TieredTickScheme {
 
 impl TickSchemeRule for TieredTickScheme {
     fn next_bid_price(&self, value: f64, n: i32, _precision: u8) -> Option<Price> {
-        if n < 0 {
+        let n = usize::try_from(n).ok()?;
+
+        if value.is_nan() {
             return None;
         }
 
-        // Floor to get a raw value guaranteed <= true value
+        // Floor to get a raw value guaranteed <= true value, infinite values
+        // saturate at the integer bounds during the float-to-integer cast.
         let raw_floor = (value * FIXED_SCALAR).floor() as PriceRaw;
 
         if raw_floor < self.ticks[0] {
@@ -320,30 +328,24 @@ impl TickSchemeRule for TieredTickScheme {
 
         if idx < self.ticks.len() && self.ticks[idx] == raw_floor {
             // Value converts exactly to a tick
-            let target = idx as i32 - n;
-
-            if target < 0 {
-                return None;
-            }
-            return Some(self.price_at(target as usize));
+            let target = idx.checked_sub(n)?;
+            return Some(self.price_at(target));
         }
 
         // Value is beyond or between ticks; bid is the tick below
-        let effective_idx = idx.min(self.ticks.len());
-        let target = effective_idx as i32 - 1 - n;
-
-        if target < 0 {
-            return None;
-        }
-        Some(self.price_at(target as usize))
+        let target = idx.checked_sub(1)?.checked_sub(n)?;
+        Some(self.price_at(target))
     }
 
     fn next_ask_price(&self, value: f64, n: i32, _precision: u8) -> Option<Price> {
-        if n < 0 {
+        let n = usize::try_from(n).ok()?;
+
+        if value.is_nan() {
             return None;
         }
 
-        // Ceil to get a raw value guaranteed >= true value
+        // Ceil to get a raw value guaranteed >= true value, infinite values
+        // saturate at the integer bounds during the float-to-integer cast.
         let raw_ceil = (value * FIXED_SCALAR).ceil() as PriceRaw;
 
         if raw_ceil > *self.ticks.last()? {
@@ -352,12 +354,12 @@ impl TickSchemeRule for TieredTickScheme {
 
         // First index where tick >= raw_ceil
         let idx = self.ticks.partition_point(|&t| t < raw_ceil);
-        let target = idx as i32 + n;
+        let target = idx.checked_add(n)?;
 
-        if target < 0 || target >= self.ticks.len() as i32 {
+        if target >= self.ticks.len() {
             return None;
         }
-        Some(self.price_at(target as usize))
+        Some(self.price_at(target))
     }
 }
 
@@ -385,7 +387,7 @@ impl TickSchemeRule for TickScheme {
             Self::Crypto => {
                 let increment: f64 = 0.01;
                 let base = (value / increment).floor() * increment;
-                Some(Price::new(base - f64::from(n) * increment, precision))
+                Price::new_checked(base - f64::from(n) * increment, precision).ok()
             }
         }
     }
@@ -399,7 +401,7 @@ impl TickSchemeRule for TickScheme {
             Self::Crypto => {
                 let increment: f64 = 0.01;
                 let base = (value / increment).ceil() * increment;
-                Some(Price::new(base + f64::from(n) * increment, precision))
+                Price::new_checked(base + f64::from(n) * increment, precision).ok()
             }
         }
     }
@@ -496,6 +498,28 @@ mod tests {
     #[rstest]
     fn fixed_tick_zero() {
         assert!(FixedTickScheme::new(0.0).is_err());
+    }
+
+    #[rstest]
+    #[case(f64::INFINITY)]
+    #[case(f64::NAN)]
+    fn fixed_tick_non_finite_returns_error(#[case] tick: f64) {
+        let error = FixedTickScheme::new(tick).unwrap_err();
+        assert!(error.to_string().contains("tick must be finite"), "{error}");
+    }
+
+    #[rstest]
+    fn fixed_tick_scheme_nan_value_returns_none() {
+        let scheme = FixedTickScheme::new(1.0).unwrap();
+        assert!(scheme.next_bid_price(f64::NAN, 0, 2).is_none());
+        assert!(scheme.next_ask_price(f64::NAN, 0, 2).is_none());
+    }
+
+    #[rstest]
+    fn fixed_tick_scheme_out_of_range_returns_none() {
+        // Stepping one tick above PRICE_MAX must yield None rather than panicking
+        let scheme = FixedTickScheme::new(PRICE_MAX).unwrap();
+        assert!(scheme.next_ask_price(PRICE_MAX, 1, 2).is_none());
     }
 
     #[rstest]
@@ -634,6 +658,32 @@ mod tests {
         let scheme = TieredTickScheme::topix100();
         assert!(scheme.next_bid_price(500.0, -1, 4).is_none());
         assert!(scheme.next_ask_price(500.0, -1, 4).is_none());
+    }
+
+    #[rstest]
+    fn tiered_tick_scheme_nan_value_returns_none() {
+        let scheme = TieredTickScheme::topix100();
+        assert!(scheme.next_bid_price(f64::NAN, 0, 4).is_none());
+        assert!(scheme.next_ask_price(f64::NAN, 0, 4).is_none());
+    }
+
+    #[rstest]
+    fn tiered_tick_scheme_infinite_value_saturates() {
+        let scheme = TieredTickScheme::topix100();
+        assert_eq!(
+            scheme.next_bid_price(f64::INFINITY, 0, 4),
+            Some(scheme.max_price())
+        );
+        assert!(scheme.next_ask_price(f64::INFINITY, 0, 4).is_none());
+        assert!(scheme.next_bid_price(f64::NEG_INFINITY, 0, 4).is_none());
+    }
+
+    #[rstest]
+    fn crypto_tick_scheme_out_of_range_returns_none() {
+        // Values beyond the Price range must yield None rather than panicking
+        let scheme = TickScheme::Crypto;
+        assert!(scheme.next_ask_price(PRICE_MAX * 2.0, 0, 2).is_none());
+        assert!(scheme.next_bid_price(PRICE_MIN * 2.0, 0, 2).is_none());
     }
 
     #[rstest]

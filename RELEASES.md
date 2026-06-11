@@ -7,10 +7,14 @@ Released on TBD (UTC).
 ### Breaking Changes
 
 ### Security
+- Fixed instrument base quantity calculation panic on zero last price (Rust)
+- Fixed tick scheme navigation panics on NaN, infinite, and out-of-range prices (Rust)
 
 ### Fixes
 
 ### Internal Improvements
+- Improved instrument validation to reject non-positive multiplier and lot size (Rust)
+- Improved `FixedTickScheme` validation to reject non-finite tick sizes (Rust)
 - Optimized `Cache` query filtering to scale with open orders and positions (#4242), thanks for reporting @magnified103
 
 ### Documentation Updates

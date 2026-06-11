@@ -34,7 +34,7 @@ use crate::{
         currency::Currency,
         money::Money,
         price::{Price, check_positive_price},
-        quantity::Quantity,
+        quantity::{Quantity, check_positive_quantity},
     },
 };
 
@@ -91,12 +91,13 @@ pub struct Equity {
 impl Equity {
     /// Creates a new [`Equity`] instance with correctness checking.
     ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     /// # Errors
     ///
     /// Returns an error if any input validation fails.
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[expect(clippy::too_many_arguments)]
     pub fn new_checked(
         instrument_id: InstrumentId,
@@ -126,6 +127,10 @@ impl Equity {
             stringify!(price_increment.precision),
         )?;
         check_positive_price(price_increment, stringify!(price_increment))?;
+
+        if let Some(lot_size) = lot_size {
+            check_positive_quantity(lot_size, stringify!(lot_size))?;
+        }
 
         Ok(Self {
             id: instrument_id,
@@ -466,6 +471,32 @@ mod tests {
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("non-ASCII"));
+    }
+
+    #[rstest]
+    fn test_new_checked_rejects_non_positive_lot_size() {
+        let result = Equity::new_checked(
+            InstrumentId::from("AAPL.XNAS"),
+            Symbol::from("AAPL"),
+            None,
+            Currency::USD(),
+            2,
+            Price::from("0.01"),
+            Some(Quantity::from("0")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("not positive"), "{error}");
     }
 
     #[rstest]
