@@ -33,15 +33,30 @@ You can find live example scripts [here](https://github.com/nautechsystems/nauti
 
 Submitted mainnet orders carry the NautilusTrader builder code at a **zero fee rate**, so
 attribution adds no trading cost. This helps us gauge real usage of the integration and
-prioritize ongoing maintenance.
+prioritize ongoing maintenance. Users who attribute order flow may also qualify for direct
+support through the [Institutional](https://nautilustrader.io/institutional/) tier when trading
+at scale.
 
-The builder address is omitted from orders in two cases:
+You may opt out of attribution with `include_builder_attribution: false` in serialized config,
+or `include_builder_attribution=False` in Python.
 
-- **Testnet.** Hyperliquid testnet rejects orders that include a builder address the wallet has
+The builder address is omitted from orders in three cases:
+
+- **Testnet**: Hyperliquid testnet rejects orders that include a builder address the wallet has
   not explicitly approved (faucet-funded testnet wallets typically have no approval), so testnet
   orders never include the builder.
-- **Vault trading** (`vault_address` configured). Hyperliquid does not allow vaults to approve
+- **Vault trading** (`vault_address` configured): Hyperliquid does not allow vaults to approve
   builder fees, so including the builder address would cause the exchange to reject the order.
+- **Attribution disabled** (`include_builder_attribution=False`): Users who choose not to
+  attribute their order flow can disable builder attribution explicitly.
+
+```python
+from nautilus_trader.adapters.hyperliquid import HyperliquidExecClientConfig
+
+config = HyperliquidExecClientConfig(
+    include_builder_attribution=False,
+)
+```
 
 ### Builder fee approval
 
@@ -72,7 +87,7 @@ builder_fee_approve()
 
 Use revocation to cap a previously approved builder fee at 0% (for example, an approval from a
 version that charged builder fees). Revocation caps the fee; it does not remove the approval
-record, so attribution continues.
+record, so attribution continues unless `include_builder_attribution` is disabled.
 
 ```bash
 cargo run -p nautilus-hyperliquid --bin hyperliquid-builder-fee-revoke
@@ -1173,6 +1188,7 @@ match the venue limit.
 | `retry_delay_max_ms`           | `None`    | Maximum delay (milliseconds) between retries. Rust‑only. |
 | `http_timeout_secs`            | `10`      | Timeout (seconds) applied to REST calls. |
 | `normalize_prices`             | `True`    | Normalize order prices to 5 significant figures before submission. |
+| `include_builder_attribution`  | `True`    | Include zero‑fee Nautilus builder attribution on eligible mainnet orders. |
 | `market_order_slippage_bps`    | `50`      | Slippage buffer (bps) applied to MARKET and stop trigger derivations. Rust‑only. |
 | `outcome_settlement_poll_secs` | `0`       | HIP‑4 `outcomeMeta` settlement poll interval (seconds). Rust‑only; venue `Settlement` fills cover settlement, so polling is disabled by default. |
 | `proxy_url`                    | `None`    | Optional proxy URL for HTTP and WebSocket transports. |

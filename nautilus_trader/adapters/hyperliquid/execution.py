@@ -135,6 +135,10 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._log.info(f"config.environment={environment}", LogColor.BLUE)
         self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
         self._log.info(f"config.normalize_prices={config.normalize_prices}", LogColor.BLUE)
+        self._log.info(
+            f"config.include_builder_attribution={config.include_builder_attribution}",
+            LogColor.BLUE,
+        )
         self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
 
         account_id = AccountId(f"{name or HYPERLIQUID_VENUE.value}-master")

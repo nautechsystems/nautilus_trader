@@ -9359,9 +9359,13 @@ class HyperliquidHttpClient:
         timeout_secs: int = 60,
         proxy_url: str | None = None,
         normalize_prices: bool = True,
+        include_builder_attribution: bool = True,
     ) -> None: ...
     @staticmethod
-    def from_env(environment: HyperliquidEnvironment = ...) -> HyperliquidHttpClient: ...
+    def from_env(
+        environment: HyperliquidEnvironment = ...,
+        include_builder_attribution: bool = True,
+    ) -> HyperliquidHttpClient: ...
     @staticmethod
     def from_credentials(
         private_key: str,
@@ -9369,6 +9373,7 @@ class HyperliquidHttpClient:
         environment: HyperliquidEnvironment = ...,
         timeout_secs: int = 60,
         proxy_url: str | None = None,
+        include_builder_attribution: bool = True,
     ) -> HyperliquidHttpClient: ...
     def cache_instrument(self, instrument: Instrument) -> None: ...
     def set_account_id(self, account_id: str) -> None: ...

@@ -828,6 +828,7 @@ pub struct HyperliquidHttpClient {
     account_address: Option<String>,
     normalize_prices: bool,
     market_order_slippage_bps: u32,
+    include_builder_attribution: bool,
 }
 
 impl Default for HyperliquidHttpClient {
@@ -880,6 +881,7 @@ impl HyperliquidHttpClient {
             account_address: None,
             normalize_prices: true,
             market_order_slippage_bps: crate::common::parse::DEFAULT_MARKET_SLIPPAGE_BPS,
+            include_builder_attribution: true,
         }
     }
 
@@ -983,6 +985,7 @@ impl HyperliquidHttpClient {
             account_address: None,
             normalize_prices: true,
             market_order_slippage_bps: crate::common::parse::DEFAULT_MARKET_SLIPPAGE_BPS,
+            include_builder_attribution: true,
         })
     }
 
@@ -1060,6 +1063,7 @@ impl HyperliquidHttpClient {
                     account_address,
                     normalize_prices: true,
                     market_order_slippage_bps: crate::common::parse::DEFAULT_MARKET_SLIPPAGE_BPS,
+                    include_builder_attribution: true,
                 })
             }
             None => {
@@ -1103,6 +1107,7 @@ impl HyperliquidHttpClient {
             account_address: None,
             normalize_prices: true,
             market_order_slippage_bps: crate::common::parse::DEFAULT_MARKET_SLIPPAGE_BPS,
+            include_builder_attribution: true,
         })
     }
 
@@ -1134,6 +1139,17 @@ impl HyperliquidHttpClient {
         self.market_order_slippage_bps = value;
     }
 
+    /// Returns whether eligible mainnet orders include builder attribution.
+    #[must_use]
+    pub fn include_builder_attribution(&self) -> bool {
+        self.include_builder_attribution
+    }
+
+    /// Sets whether eligible mainnet orders include builder attribution.
+    pub fn set_include_builder_attribution(&mut self, value: bool) {
+        self.include_builder_attribution = value;
+    }
+
     /// Gets the user address derived from the private key (if client has credentials).
     ///
     /// # Errors
@@ -1149,11 +1165,13 @@ impl HyperliquidHttpClient {
         self.inner.has_vault_address()
     }
 
-    /// Returns the builder-attribution fee to attach to outgoing orders, or
-    /// `None` when attribution must be omitted (vault orders and testnet).
+    /// Returns the builder-attribution fee to attach to outgoing orders.
+    ///
+    /// Returns `None` when attribution is disabled, or when Hyperliquid does
+    /// not support it for the current request context (vault orders and testnet).
     #[must_use]
     pub fn builder_attribution(&self) -> Option<HyperliquidExecBuilderFee> {
-        if self.has_vault_address() || self.is_testnet() {
+        if !self.include_builder_attribution || self.has_vault_address() || self.is_testnet() {
             None
         } else {
             Some(HyperliquidExecBuilderFee {
@@ -3283,7 +3301,7 @@ mod tests {
     use super::{HyperliquidHttpClient, resolve_perp_dex_name};
     use crate::{
         common::{
-            consts::HYPERLIQUID_VENUE,
+            consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS},
             enums::{HyperliquidEnvironment, HyperliquidProductType},
         },
         http::{
@@ -3437,6 +3455,36 @@ mod tests {
             Some(first),
         );
         assert_eq!(client.cached_client_order_id_cloid(&client_order_id), None);
+    }
+
+    #[rstest]
+    fn test_builder_attribution_defaults_to_mainnet_builder() {
+        let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+        let builder = client
+            .builder_attribution()
+            .expect("mainnet client should include builder attribution by default");
+
+        assert!(client.include_builder_attribution());
+        assert_eq!(builder.address, NAUTILUS_BUILDER_ADDRESS);
+        assert_eq!(builder.fee_tenths_bp, 0);
+    }
+
+    #[rstest]
+    fn test_builder_attribution_disabled_returns_none() {
+        let mut client =
+            HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+        client.set_include_builder_attribution(false);
+
+        assert!(!client.include_builder_attribution());
+        assert!(client.builder_attribution().is_none());
+    }
+
+    #[rstest]
+    fn test_builder_attribution_omitted_on_testnet() {
+        let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Testnet, 60, None).unwrap();
+
+        assert!(client.include_builder_attribution());
+        assert!(client.builder_attribution().is_none());
     }
 
     #[rstest]

@@ -54,6 +54,7 @@ def get_cached_hyperliquid_http_client(
     environment: HyperliquidEnvironment = HyperliquidEnvironment.MAINNET,
     proxy_url: str | None = None,
     normalize_prices: bool = True,
+    include_builder_attribution: bool = True,
 ) -> nautilus_pyo3.HyperliquidHttpClient:
     """
     Cache and return a Hyperliquid HTTP client with the given parameters.
@@ -83,6 +84,8 @@ def get_cached_hyperliquid_http_client(
         Optional HTTP proxy URL.
     normalize_prices : bool, default True
         If order prices should be normalized to 5 significant figures.
+    include_builder_attribution : bool, default True
+        If eligible mainnet orders should include the zero-fee Nautilus builder code.
 
     Returns
     -------
@@ -97,6 +100,7 @@ def get_cached_hyperliquid_http_client(
         "environment": environment,
         "proxy_url": proxy_url,
         "normalize_prices": normalize_prices,
+        "include_builder_attribution": include_builder_attribution,
     }
 
     if timeout_secs is not None:
@@ -259,6 +263,7 @@ class HyperliquidLiveExecClientFactory(LiveExecClientFactory):
             environment=environment,
             proxy_url=config.proxy_url,
             normalize_prices=config.normalize_prices,
+            include_builder_attribution=config.include_builder_attribution,
         )
         provider = get_cached_hyperliquid_instrument_provider(
             client=client,

@@ -1147,6 +1147,59 @@ async fn test_ws_trading_submit_order_sends_builder_and_cloid() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
+async fn test_ws_trading_submit_order_omits_builder_when_attribution_disabled() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut signer = create_test_trade_signer(addr).await;
+    signer.set_include_builder_attribution(false);
+    let mut ws_client = HyperliquidWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        HyperliquidEnvironment::Mainnet,
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    ws_client.set_post_timeout(Duration::from_secs(1));
+    ws_client.connect().await.unwrap();
+
+    ws_client
+        .submit_order(
+            &signer,
+            InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+            ClientOrderId::new("O-WS-ATTRIBUTION-OFF"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.0001"),
+            TimeInForce::Gtc,
+            Some(Price::from("56730.0")),
+            None,
+            false,
+            false,
+        )
+        .await
+        .unwrap();
+
+    let action = state
+        .last_exchange_action
+        .lock()
+        .await
+        .clone()
+        .expect("missing WS action");
+    let order = &action["orders"][0];
+    let cloid = order
+        .get("c")
+        .and_then(|v| v.as_str())
+        .expect("order should include cloid");
+
+    assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("order"));
+    assert!(action.get("builder").is_none());
+    assert_adapter_cloid_marker(cloid);
+
+    ws_client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_ws_trading_cancel_and_modify_send_expected_actions() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
@@ -1703,6 +1756,16 @@ fn create_test_execution_client(
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     Rc<RefCell<Cache>>,
 ) {
+    create_test_execution_client_from_config(create_test_exec_config(addr))
+}
+
+fn create_test_execution_client_from_config(
+    config: HyperliquidExecClientConfig,
+) -> (
+    HyperliquidExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("HYPERLIQUID-001");
     let client_id = *HYPERLIQUID_CLIENT_ID;
@@ -1719,8 +1782,6 @@ fn create_test_execution_client(
         None,
         cache.clone(),
     );
-
-    let config = create_test_exec_config(addr);
 
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     set_exec_event_sender(tx);
@@ -2092,6 +2153,60 @@ async fn test_submit_order_ws_post_includes_builder_attribution() {
             .and_then(|v| v.as_u64()),
         Some(0),
     );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_ws_post_omits_builder_when_attribution_disabled() {
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let last_action = state.last_exchange_action.clone();
+    let addr = start_mock_server(state).await;
+    let mut config = create_test_exec_config(addr);
+    config.include_builder_attribution = false;
+
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let order = make_limit_order("O-BUILDER-OFF-WS");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let cmd = SubmitOrder::from_order(
+        &order,
+        order.trader_id(),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order(cmd).unwrap();
+
+    wait_until_async(
+        move || {
+            let exchange_count = exchange_count.clone();
+            async move { *exchange_count.lock().await >= 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let action = last_action.lock().await.clone().expect("missing WS action");
+    let order = &action["orders"][0];
+    let cloid = order
+        .get("c")
+        .and_then(|v| v.as_str())
+        .expect("order should include cloid");
+
+    assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("order"));
+    assert!(action.get("builder").is_none());
+    assert_adapter_cloid_marker(cloid);
 
     client.disconnect().await.unwrap();
 }
