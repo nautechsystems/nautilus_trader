@@ -808,10 +808,8 @@ mod tests {
         Python::attach(|py| {
             let seen = PyList::empty(py);
             let seen_obj = seen.clone().unbind().into_any();
-            let callback = PyCFunction::new_closure(
+            let callback = new_sync_py_callback(
                 py,
-                None,
-                None,
                 move |args: &Bound<'_, PyTuple>,
                       _kwargs: Option<&Bound<'_, PyDict>>|
                       -> PyResult<()> {
@@ -844,6 +842,17 @@ mod tests {
                 "PyCapsule"
             );
         });
+    }
+
+    #[cfg(feature = "python")]
+    fn new_sync_py_callback<F>(py: Python<'_>, closure: F) -> PyResult<Bound<'_, PyCFunction>>
+    where
+        F: Fn(&Bound<'_, PyTuple>, Option<&Bound<'_, PyDict>>) -> PyResult<()>
+            + Send
+            + Sync
+            + 'static,
+    {
+        PyCFunction::new_closure(py, None, None, closure)
     }
 
     #[derive(Default)]

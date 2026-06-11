@@ -80,6 +80,8 @@ cdef extern from "../includes/core.h":
     # Maximum length in characters.
     const uintptr_t StackStr_MAX_LEN # = STACKSTR_CAPACITY
 
+
+
     # Construct a new *empty* [`CVec`] value for use as initialiser/sentinel in foreign code.
     CVec cvec_new();
 

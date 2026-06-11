@@ -77,7 +77,6 @@ dotenvy = { workspace = true }
 dydx-proto = { workspace = true }
 futures-util = { workspace = true }
 log = { workspace = true }
-prost = { workspace = true }
 rust_decimal = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }

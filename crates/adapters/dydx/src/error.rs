@@ -20,7 +20,11 @@
 
 use thiserror::Error;
 
-use crate::{http::error::DydxHttpError, websocket::error::DydxWsError};
+use crate::{
+    http::error::DydxHttpError,
+    proto::cosmos_sdk_proto::prost::{DecodeError, EncodeError},
+    websocket::error::DydxWsError,
+};
 
 /// Result type for dYdX operations.
 pub type DydxResult<T> = Result<T, DydxError>;
@@ -46,11 +50,11 @@ pub enum DydxError {
 
     /// Protocol buffer encoding errors.
     #[error("Encoding error: {0}")]
-    Encoding(#[from] prost::EncodeError),
+    Encoding(#[from] EncodeError),
 
     /// Protocol buffer decoding errors.
     #[error("Decoding error: {0}")]
-    Decoding(#[from] prost::DecodeError),
+    Decoding(#[from] DecodeError),
 
     /// JSON serialization/deserialization errors.
     #[error("JSON error: {message}")]

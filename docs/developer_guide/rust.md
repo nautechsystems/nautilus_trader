@@ -87,17 +87,17 @@ The `nautilus-model` build script regenerates `nautilus_trader/core/includes/mod
 `nautilus_trader/core/rust/model.pxd` when the `ffi` feature is enabled. Those files encode
 whether the generated C/Cython bindings use high precision. The committed generated files use
 high precision. Local cargo commands that compile `nautilus-model` with `ffi` should either
-include the `high-precision` feature or set `HIGH_PRECISION=true`.
+include the `high-precision` feature or avoid regenerating those files.
 
 Make targets that use `BASE_FEATURES`, such as `make build-debug-v2`, already include
 `high-precision`. The drift risk mainly comes from ad-hoc cargo commands that enable `ffi`
 without the aligned feature set.
 
-Use an environment override for narrow checks that do not include the full aligned feature
-set:
+Use the Rust feature for narrow checks that do not include the full aligned feature set. Keep the
+environment override in the command so a stale shell value cannot force standard-precision bindings:
 
 ```fish
-env HIGH_PRECISION=true cargo check -p nautilus-model --features ffi,python
+env HIGH_PRECISION=true cargo check -p nautilus-model --features ffi,python,high-precision
 ```
 
 Before committing FFI-related work, verify those generated files did not drift:

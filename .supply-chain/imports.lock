@@ -1,6 +1,118 @@
 
 # cargo-vet imports lock
 
+[[unpublished.nautilus-analysis]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-architect-ax]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-backtest]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-binance]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-bitmex]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-blockchain]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-bybit]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-cli]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-coinbase]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-data]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-databento]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-deribit]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-dydx]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-hyperliquid]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-indicators]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-infrastructure]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-kraken]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-okx]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-persistence]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-persistence-macros]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-portfolio]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-risk]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-sandbox]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-serialization]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-system]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-tardis]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-testkit]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
+[[unpublished.nautilus-trading]]
+version = "0.59.0"
+audited_as = "0.58.0"
+
 [[publisher.anstream]]
 version = "1.0.0"
 when = "2026-02-11"
@@ -1665,26 +1777,6 @@ version = "0.10.5"
 notes = "Reviewed on https://fxrev.dev/712371."
 aggregated-from = "https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/third_party/rust_crates/supply-chain/audits.toml?format=TEXT"
 
-[[audits.google.audits.smallvec]]
-who = "Manish Goregaokar <manishearth@google.com>"
-criteria = "safe-to-deploy"
-version = "1.13.2"
-aggregated-from = "https://chromium.googlesource.com/chromium/src/+/main/third_party/rust/chromium_crates_io/supply-chain/audits.toml?format=TEXT"
-
-[[audits.google.audits.smallvec]]
-who = "Jonathan Hao <phao@chromium.org>"
-criteria = "safe-to-deploy"
-delta = "1.13.2 -> 1.14.0"
-notes = """
-WARNING: This certification is a result of a **partial** audit. The
-`malloc_size_of` feature has **not** been audited. This feature does
-not explicitly document its safety requirements.
-See also https://chromium-review.googlesource.com/c/chromium/src/+/6275133/comment/ea0d7a93_98051a2e/
-and https://github.com/servo/malloc_size_of/issues/8.
-This feature is banned in gnrt_config.toml.
-"""
-aggregated-from = "https://chromium.googlesource.com/chromium/src/+/main/third_party/rust/chromium_crates_io/supply-chain/audits.toml?format=TEXT"
-
 [[audits.google.audits.strsim]]
 who = "danakj@chromium.org"
 criteria = "safe-to-deploy"
@@ -2834,18 +2926,6 @@ As far as I can tell, it does not have any file IO or network access.
 """
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
-[[audits.mozilla.audits.regex]]
-who = "edgul <ed.guloien@gmail.com>"
-criteria = "safe-to-deploy"
-delta = "1.10.4 -> 1.11.1"
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
-
-[[audits.mozilla.audits.regex]]
-who = "Benjamin VanderSloot <bvandersloot@mozilla.com>"
-criteria = "safe-to-deploy"
-delta = "1.11.1 -> 1.12.3"
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
-
 [[audits.mozilla.audits.regex-automata]]
 who = "edgul <ed.guloien@gmail.com>"
 criteria = "safe-to-deploy"
@@ -2926,12 +3006,6 @@ aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-ch
 who = "Mark Hammond <mhammond@skippinet.com.au>"
 criteria = "safe-to-deploy"
 delta = "0.1.4 -> 0.1.7"
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
-
-[[audits.mozilla.audits.smallvec]]
-who = "Erich Gubler <erichdongubler@gmail.com>"
-criteria = "safe-to-deploy"
-delta = "1.14.0 -> 1.15.1"
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
 [[audits.mozilla.audits.strsim]]
@@ -3531,18 +3605,6 @@ aggregated-from = "https://raw.githubusercontent.com/zcash/wallet/main/supply-ch
 who = "Sean Bowe <ewillbefull@gmail.com>"
 criteria = "safe-to-deploy"
 version = "0.3.0"
-aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
-
-[[audits.zcash.audits.regex]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = "safe-to-deploy"
-delta = "1.9.5 -> 1.10.2"
-aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
-
-[[audits.zcash.audits.regex]]
-who = "Daira-Emma Hopwood <daira@jacaranda.org>"
-criteria = "safe-to-deploy"
-delta = "1.10.2 -> 1.10.4"
 aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
 
 [[audits.zcash.audits.regex-automata]]

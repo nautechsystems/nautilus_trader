@@ -3,19 +3,30 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added Binance Futures funding-rate history support in Rust
+- Added Binance Futures ticker data support in Rust
+- Added Binance order-list submission in Rust
 - Added cache order index crash-recovery restore for Redis and Postgres adapters (Rust)
+- Added Hyperliquid builder attribution opt-out
+- Added Hyperliquid minimum notional handling
+- Added Polymarket RTDS custom data subscriptions (#4214), thanks @graceyangfan
 - Added Redis cache adapter order, position, and order-index write persistence (Rust)
+- Added Tardis Lighter venue mapping
 - Added `order_position_index` Postgres table for the order-position index; run `make init-db` to migrate
 - Added negative price support for `Commodity` instruments in risk checks (#2330), thanks for reporting @fabz1
 - Added `add_native_exec_algorithm` and `ExecutionAlgorithmConfig` bindings to the Python v2 backtest engine
+- Added `Order::to_order_status_report` conversion in Rust
 
 ### Breaking Changes
 - Changed plug-in loader to reject build mismatches by default; opt out with `set_allow_build_mismatch` (Rust)
 - Changed `CacheDatabaseAdapter::load_index_order_position` to return position IDs instead of positions (Rust)
 
 ### Security
+- Hardened Docker toolchain pins
+- Fixed Interactive Brokers disconnect reconciliation corrupting position state (#4230), thanks @HKOWL
 - Fixed instrument base quantity calculation panic on zero last price (Rust)
 - Fixed tick scheme navigation panics on NaN, infinite, and out-of-range prices (Rust)
+- Fixed domain value conversions to reject invalid numeric inputs instead of panicking (Rust)
 - Fixed plug-in host callbacks to return `Panic` errors instead of aborting the node on engine panics (Rust)
 - Fixed plug-in `create`, `clone_handle`, and `drop_handle` panics to recover instead of aborting the process (Rust)
 - Fixed plug-in host thunks to validate UTF-8 on plug-in strings instead of assuming it (Rust)
@@ -23,11 +34,29 @@ Released on TBD (UTC).
 - Fixed event-store replay panic on captured fills carrying an invalid order side (Rust)
 
 ### Fixes
+- Fixed account-currency trade PnL stats for foreign-currency instruments (#4211), thanks @faysou
+- Fixed Binance Futures empty algo order IDs
+- Fixed Binance Futures hedge reduce-only orders in Rust
+- Fixed Binance Spot expired order handling
+- Fixed Binance Spot/Futures WebSocket connection pool race (#4244), thanks @filipmacek
+- Fixed Blockchain snapshot bootstrap checks
+- Fixed data option-chain delta warmup
+- Fixed Deribit chart bar volume for inverse perpetuals (#4245), thanks @filipmacek
+- Fixed `DonchianChannel` period window (#4239), thanks @KaizynX
 - Fixed event-store boot recovery to repair hard-crashed run files and skip damaged ones instead of failing (Rust)
 - Fixed event-store capture duplicating order events, commands, and account states across dispatch hops (Rust)
 - Fixed event-store snapshot-anchor validation across the verifier, retention, and restore paths (Rust)
 - Fixed event-store replay, scan, marker, and halt-signal edge cases around skipped events, gaps, and reruns (Rust)
+- Fixed Interactive Brokers reconnect startup handling (#4210), thanks @faysou
+- Fixed Lighter AccountState to include perp-side margin balance (#4246), thanks @filipmacek
+- Fixed Lighter maker-only key lookup authentication (#4234), thanks @filipmacek
+- Fixed live external order claim registration in Rust
+- Fixed matching engine fill commission side in Rust
+- Fixed OKX instrument parsing for malformed venue payloads
+- Fixed portfolio account update scoping in Rust
 - Fixed Postgres order-client index load panic on orders persisted without a client ID (Rust)
+- Fixed Postgres cache writer runtime
+- Fixed risk sizing without max quantity in Rust
 - Fixed `RiskEngine` bypass to also skip modify-order risk checks (#2330), thanks for reporting @fabz1
 - Fixed `TwapAlgorithm` rejecting primary orders already cached by the engine submit path (Rust)
 - Fixed `TwapAlgorithm` time event and lifecycle dispatch so all scheduled slices execute (Rust)
@@ -38,14 +67,18 @@ Released on TBD (UTC).
 - Fixed Lighter nonce recovery after venue rejections wedging subsequent transactions
 
 ### Internal Improvements
+- Added Cargo publish dry-run and nightly publish plan checks
+- Fixed nightly CI publish and Windows Harden-Runner checks
 - Improved instrument validation to reject non-positive multiplier and lot size (Rust)
 - Improved `FixedTickScheme` validation to reject non-finite tick sizes (Rust)
+- Improved release verifier retries and manual-publish recovery checks
 - Improved plug-in ABI-mismatch reporting with manifest diagnostics instead of a null-manifest error (Rust)
 - Improved `nautilus_plugin!` macro errors for missing `name` or `version` fields (Rust)
 - Improved event-store marker writer and capture diagnostics with logged fail-stop errors (Rust)
 - Improved Postgres order-client index restore to pick the latest client ID per order (Rust)
 - Improved OTO contingency position ID recovery to persist re-indexed assignments (Rust)
 - Optimized `Cache` query filtering to scale with open orders and positions (#4242), thanks for reporting @magnified103
+- Upgraded Interactive Brokers Rust adapter to `ibapi` 3.0.1 (#4209), thanks @faysou
 
 ### Documentation Updates
 - Updated plugins concept guide for panic recovery, build pinning, and UTF-8 validation semantics

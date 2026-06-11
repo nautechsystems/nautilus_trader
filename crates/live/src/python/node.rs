@@ -49,7 +49,7 @@ use nautilus_trading::{
 };
 use pyo3::{
     prelude::*,
-    types::{PyDict, PyTuple},
+    types::{PyCFunction, PyDict, PyTuple},
 };
 use serde_json;
 
@@ -144,10 +144,8 @@ impl LiveNode {
 
         // Set up a custom signal handler that uses our handle
         let handle_for_signal = handle;
-        let signal_callback = pyo3::types::PyCFunction::new_closure(
+        let signal_callback = new_sync_py_callback(
             py,
-            None,
-            None,
             move |_args: &pyo3::Bound<'_, PyTuple>,
                   _kwargs: Option<&pyo3::Bound<'_, PyDict>>|
                   -> PyResult<()> {
@@ -734,6 +732,13 @@ impl LiveNode {
             self.is_running()
         )
     }
+}
+
+fn new_sync_py_callback<F>(py: Python<'_>, closure: F) -> PyResult<Bound<'_, PyCFunction>>
+where
+    F: Fn(&Bound<'_, PyTuple>, Option<&Bound<'_, PyDict>>) -> PyResult<()> + Send + Sync + 'static,
+{
+    PyCFunction::new_closure(py, None, None, closure)
 }
 
 #[allow(unsafe_code)]

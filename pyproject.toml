@@ -103,7 +103,7 @@ test = [
   "aiohttp==3.14.0,<4.0.0",
   "coverage>=7.14.1,<8.0.0",
   "pytest>=7.4.4,<8.0.0", # Intentionally held at 7.x
-  "pytest-aiohttp>=1.1.0,<2.0.0",
+  "pytest-aiohttp>=1.1.1,<2.0.0",
   "pytest-asyncio==0.23.8", # Pinned to 0.23.8 for stability
   "pytest-benchmark==5.0.1", # Pinned to 5.0.1 due pytest 8.x requirement
   "pytest-codspeed==4.3.0", # Pinned to 4.3.0 for stability
@@ -121,7 +121,7 @@ docs = [
 ]
 
 [tool.uv]
-required-version = "==0.11.18"
+required-version = "==0.11.21"
 exclude-newer = "3 days"
 # Block sdist builds for every third-party package in uv.lock so unexpected loss
 # of wheel publishing fails `uv lock` instead of silently building from source.
