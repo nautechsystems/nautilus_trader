@@ -34,6 +34,8 @@ Released on TBD (UTC).
 - Fixed Architect AX to deny invalid submits locally and defer ambiguous command failures to reconciliation
 - Fixed dYdX to deny unsupported submits locally and emit rejections only for definitive CheckTx refusals
 - Fixed Interactive Brokers to deny not-ready submits locally and drop synthetic cancel/modify rejections
+- Fixed Lighter nonce exhaustion halting order flow after 16 transactions per connection
+- Fixed Lighter nonce recovery after venue rejections wedging subsequent transactions
 
 ### Internal Improvements
 - Improved instrument validation to reject non-positive multiplier and lot size (Rust)

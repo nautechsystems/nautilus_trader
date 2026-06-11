@@ -44,6 +44,9 @@ pub const LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX: u64 = 723_813;
 /// Venue error code for missing integrator approval.
 pub const LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED: u64 = 21_149;
 
+/// Venue error code for an invalid (non-contiguous) transaction nonce.
+pub const LIGHTER_ERROR_CODE_INVALID_NONCE: i64 = 21_104;
+
 /// Public docs anchor for integrator approval.
 pub const LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL: &str =
     "https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution";

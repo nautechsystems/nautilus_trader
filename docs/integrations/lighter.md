@@ -523,6 +523,10 @@ channels.
 On execution reconnect, the adapter refreshes the nonce baseline through `GET /api/v1/nextNonce`
 before it resumes signed transaction dispatch.
 
+Within a session, the adapter manages transaction nonces locally: venue confirmations advance the
+allocation window, and rejected or failed transactions roll back or trigger a resync from
+`GET /api/v1/nextNonce`, so order flow recovers from nonce desyncs without a reconnect.
+
 `LighterExecutionClient::connect()` waits up to 30 seconds for every account stream
 (`account_all_orders`, `account_all_trades`, `account_all_positions`, `account_all_assets`) to
 deliver its first frame before returning. Lighter has no REST endpoint for account or position
