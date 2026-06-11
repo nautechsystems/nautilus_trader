@@ -265,7 +265,7 @@ impl BinanceFuturesWsTradingClient {
             .await
             .send(BinanceFuturesWsTradingCommand::Disconnect)
         {
-            log::warn!("Failed to send disconnect command: {e}");
+            log::debug!("Failed to send disconnect command: {e}");
         }
 
         self.cancellation_token.cancel();

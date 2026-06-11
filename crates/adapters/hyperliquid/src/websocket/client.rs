@@ -334,7 +334,11 @@ impl HyperliquidWebSocketClient {
                     }
                     Some(msg) => {
                         if handler.send(msg).is_err() {
-                            log::error!("Failed to send message (receiver dropped)");
+                            if handler.is_stopped() {
+                                log::debug!("Failed to send message (receiver dropped)");
+                            } else {
+                                log::error!("Failed to send message (receiver dropped)");
+                            }
                             break;
                         }
                     }

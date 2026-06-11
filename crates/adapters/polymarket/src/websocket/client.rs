@@ -284,7 +284,11 @@ impl PolymarketWebSocketClient {
                     }
                     Some(msg) => {
                         if handler.send(msg).is_err() {
-                            log::error!("Output channel closed, stopping handler");
+                            if handler.is_stopped() {
+                                log::debug!("Output channel closed, stopping handler");
+                            } else {
+                                log::error!("Output channel closed, stopping handler");
+                            }
                             break;
                         }
                     }

@@ -351,13 +351,21 @@ impl LighterWebSocketClient {
                         restore_subscriptions();
 
                         if handler.send(NautilusWsMessage::Reconnected).is_err() {
-                            log::error!("Failed to forward Reconnected (receiver dropped)");
+                            if handler.is_stopped() {
+                                log::debug!("Failed to forward Reconnected (receiver dropped)");
+                            } else {
+                                log::error!("Failed to forward Reconnected (receiver dropped)");
+                            }
                             break;
                         }
                     }
                     Some(msg) => {
                         if handler.send(msg).is_err() {
-                            log::error!("Failed to send Lighter message (receiver dropped)");
+                            if handler.is_stopped() {
+                                log::debug!("Failed to send Lighter message (receiver dropped)");
+                            } else {
+                                log::error!("Failed to send Lighter message (receiver dropped)");
+                            }
                             break;
                         }
                     }
@@ -382,12 +390,12 @@ impl LighterWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the disconnect command cannot be queued.
+    /// This function currently completes best-effort shutdown and returns `Ok(())`.
     pub async fn disconnect(&mut self) -> Result<(), LighterWsError> {
         log::debug!("Disconnecting Lighter WebSocket");
 
         if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
-            log::warn!("Failed to send Lighter disconnect command: {e}");
+            log::debug!("Failed to send Lighter disconnect command: {e}");
         }
         self.signal.store(true, Ordering::Release);
 
