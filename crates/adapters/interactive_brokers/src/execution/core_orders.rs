@@ -30,22 +30,19 @@ impl InteractiveBrokersExecutionClient {
     ) -> anyhow::Result<()> {
         if cmd.order_init.post_only {
             let ts_event = clock.get_time_ns();
-            let event = OrderRejected::new(
+            let event = OrderDenied::new(
                 cmd.order_init.trader_id,
                 cmd.strategy_id,
                 cmd.instrument_id,
                 cmd.order_init.client_order_id,
-                account_id,
                 Ustr::from("`post_only` not supported by Interactive Brokers"),
                 UUID4::new(),
                 ts_event,
                 ts_event,
-                false,
-                false,
             );
             exec_sender
-                .send(ExecutionEvent::Order(OrderEventAny::Rejected(event)))
-                .map_err(|e| anyhow::anyhow!("Failed to send order rejected event: {e}"))?;
+                .send(ExecutionEvent::Order(OrderEventAny::Denied(event)))
+                .map_err(|e| anyhow::anyhow!("Failed to send order denied event: {e}"))?;
             anyhow::bail!("`post_only` not supported by Interactive Brokers");
         }
 
@@ -56,22 +53,19 @@ impl InteractiveBrokersExecutionClient {
 
         if cmd.order_init.quote_quantity && !is_inverse {
             let ts_event = clock.get_time_ns();
-            let event = OrderRejected::new(
+            let event = OrderDenied::new(
                 cmd.order_init.trader_id,
                 cmd.strategy_id,
                 cmd.instrument_id,
                 cmd.order_init.client_order_id,
-                account_id,
                 Ustr::from("UNSUPPORTED_QUOTE_QUANTITY"),
                 UUID4::new(),
                 ts_event,
                 ts_event,
-                false,
-                false,
             );
             exec_sender
-                .send(ExecutionEvent::Order(OrderEventAny::Rejected(event)))
-                .map_err(|e| anyhow::anyhow!("Failed to send order rejected event: {e}"))?;
+                .send(ExecutionEvent::Order(OrderEventAny::Denied(event)))
+                .map_err(|e| anyhow::anyhow!("Failed to send order denied event: {e}"))?;
             anyhow::bail!("UNSUPPORTED_QUOTE_QUANTITY");
         }
 
@@ -86,22 +80,19 @@ impl InteractiveBrokersExecutionClient {
                 "`TrailingOffsetType` {:?} is not supported (only PRICE is supported)",
                 trailing_offset_type
             );
-            let event = OrderRejected::new(
+            let event = OrderDenied::new(
                 cmd.order_init.trader_id,
                 cmd.strategy_id,
                 cmd.instrument_id,
                 cmd.order_init.client_order_id,
-                account_id,
                 Ustr::from(&reason),
                 UUID4::new(),
                 ts_event,
                 ts_event,
-                false,
-                false,
             );
             exec_sender
-                .send(ExecutionEvent::Order(OrderEventAny::Rejected(event)))
-                .map_err(|e| anyhow::anyhow!("Failed to send order rejected event: {e}"))?;
+                .send(ExecutionEvent::Order(OrderEventAny::Denied(event)))
+                .map_err(|e| anyhow::anyhow!("Failed to send order denied event: {e}"))?;
             anyhow::bail!("{}", reason);
         }
 

@@ -26,6 +26,9 @@ Released on TBD (UTC).
 - Fixed event-store snapshot-anchor validation across the verifier, retention, and restore paths (Rust)
 - Fixed event-store replay, scan, marker, and halt-signal edge cases around skipped events, gaps, and reruns (Rust)
 - Fixed Postgres order-client index load panic on orders persisted without a client ID (Rust)
+- Fixed Architect AX to deny invalid submits locally and defer ambiguous command failures to reconciliation
+- Fixed dYdX to deny unsupported submits locally and emit rejections only for definitive CheckTx refusals
+- Fixed Interactive Brokers to deny not-ready submits locally and drop synthetic cancel/modify rejections
 
 ### Internal Improvements
 - Improved instrument validation to reject non-positive multiplier and lot size (Rust)

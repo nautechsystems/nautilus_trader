@@ -78,9 +78,8 @@ use nautilus_model::{
         TimeInForce, TrailingOffsetType,
     },
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny,
-        OrderInitialized, OrderModifyRejected, OrderPendingCancel, OrderRejected, OrderSubmitted,
-        OrderUpdated,
+        AccountState, OrderAccepted, OrderCanceled, OrderDenied, OrderEventAny, OrderPendingCancel,
+        OrderRejected, OrderSubmitted, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
@@ -513,7 +512,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         if let Err(reason) = self.ensure_client_ready_for_order_request("submit order") {
-            self.reject_submit_order_not_ready(&cmd, &reason)?;
+            self.deny_submit_order_not_ready(&cmd, &reason)?;
             return Ok(());
         }
 
@@ -1499,7 +1498,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         if let Err(reason) = self.ensure_client_ready_for_order_request("submit order list") {
-            self.reject_submit_order_list_not_ready(&cmd, &reason)?;
+            self.deny_submit_order_list_not_ready(&cmd, &reason)?;
             return Ok(());
         }
 
@@ -1508,8 +1507,12 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     }
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
-        if let Err(reason) = self.ensure_client_ready_for_order_request("modify order") {
-            self.reject_modify_order_not_ready(&cmd, &reason)?;
+        // Not-ready warning already logged; leave the modify outcome for
+        // in-flight resolution.
+        if self
+            .ensure_client_ready_for_order_request("modify order")
+            .is_err()
+        {
             return Ok(());
         }
 
@@ -1564,8 +1567,12 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     }
 
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
-        if let Err(reason) = self.ensure_client_ready_for_order_request("cancel order") {
-            self.reject_cancel_order_not_ready(&cmd, &reason)?;
+        // Not-ready warning already logged; leave the cancel outcome for
+        // in-flight resolution.
+        if self
+            .ensure_client_ready_for_order_request("cancel order")
+            .is_err()
+        {
             return Ok(());
         }
 
@@ -1620,8 +1627,12 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             );
         }
 
-        if let Err(reason) = self.ensure_client_ready_for_order_request("cancel orders") {
-            self.reject_open_order_cancels_not_ready(&cmd, &reason)?;
+        // Not-ready warning already logged; a whole-request failure must not
+        // fan out per-order rejections.
+        if self
+            .ensure_client_ready_for_order_request("cancel orders")
+            .is_err()
+        {
             return Ok(());
         }
 
@@ -1761,28 +1772,27 @@ impl InteractiveBrokersExecutionClient {
         Err(reason)
     }
 
-    fn reject_submit_order_not_ready(&self, cmd: &SubmitOrder, reason: &str) -> anyhow::Result<()> {
-        Self::send_order_rejected(
+    fn deny_submit_order_not_ready(&self, cmd: &SubmitOrder, reason: &str) -> anyhow::Result<()> {
+        Self::send_order_denied(
             cmd.order_init.trader_id,
             cmd.strategy_id,
             cmd.instrument_id,
             cmd.order_init.client_order_id,
-            self.core.account_id,
             reason,
         )
     }
 
-    fn reject_submit_order_list_not_ready(
+    fn deny_submit_order_list_not_ready(
         &self,
         cmd: &SubmitOrderList,
         reason: &str,
     ) -> anyhow::Result<()> {
         for order_init in &cmd.order_inits {
-            Self::send_order_rejected_from_init(
-                order_init,
+            Self::send_order_denied(
+                order_init.trader_id,
                 cmd.strategy_id,
                 cmd.instrument_id,
-                self.core.account_id,
+                order_init.client_order_id,
                 reason,
             )?;
         }
@@ -1790,116 +1800,15 @@ impl InteractiveBrokersExecutionClient {
         Ok(())
     }
 
-    fn reject_modify_order_not_ready(&self, cmd: &ModifyOrder, reason: &str) -> anyhow::Result<()> {
-        let ts_event = get_atomic_clock_realtime().get_time_ns();
-        let event = OrderModifyRejected::new(
-            cmd.trader_id,
-            cmd.strategy_id,
-            cmd.instrument_id,
-            cmd.client_order_id,
-            Ustr::from(reason),
-            UUID4::new(),
-            ts_event,
-            ts_event,
-            false,
-            cmd.venue_order_id,
-            Some(self.core.account_id),
-        );
-
-        get_exec_event_sender()
-            .send(ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)))
-            .map_err(|e| anyhow::anyhow!("Failed to send order modify rejected event: {e}"))
-    }
-
-    fn reject_cancel_order_not_ready(&self, cmd: &CancelOrder, reason: &str) -> anyhow::Result<()> {
-        Self::send_order_cancel_rejected(
-            cmd.trader_id,
-            cmd.strategy_id,
-            cmd.instrument_id,
-            cmd.client_order_id,
-            cmd.venue_order_id,
-            self.core.account_id,
-            reason,
-        )
-    }
-
-    fn reject_open_order_cancels_not_ready(
-        &self,
-        cmd: &CancelAllOrders,
-        reason: &str,
-    ) -> anyhow::Result<()> {
-        let cache = self.core.cache();
-        for order in cache.orders_open(None, Some(&cmd.instrument_id), None, None, None) {
-            Self::send_order_cancel_rejected(
-                order.trader_id(),
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
-                order.venue_order_id(),
-                self.core.account_id,
-                reason,
-            )?;
-        }
-
-        Ok(())
-    }
-
-    fn send_order_rejected_from_init(
-        order_init: &OrderInitialized,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        account_id: AccountId,
-        reason: &str,
-    ) -> anyhow::Result<()> {
-        Self::send_order_rejected(
-            order_init.trader_id,
-            strategy_id,
-            instrument_id,
-            order_init.client_order_id,
-            account_id,
-            reason,
-        )
-    }
-
-    fn send_order_rejected(
+    fn send_order_denied(
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
-        account_id: AccountId,
         reason: &str,
     ) -> anyhow::Result<()> {
         let ts_event = get_atomic_clock_realtime().get_time_ns();
-        let event = OrderRejected::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            account_id,
-            Ustr::from(reason),
-            UUID4::new(),
-            ts_event,
-            ts_event,
-            false,
-            false,
-        );
-
-        get_exec_event_sender()
-            .send(ExecutionEvent::Order(OrderEventAny::Rejected(event)))
-            .map_err(|e| anyhow::anyhow!("Failed to send order rejected event: {e}"))
-    }
-
-    fn send_order_cancel_rejected(
-        trader_id: TraderId,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        venue_order_id: Option<VenueOrderId>,
-        account_id: AccountId,
-        reason: &str,
-    ) -> anyhow::Result<()> {
-        let ts_event = get_atomic_clock_realtime().get_time_ns();
-        let event = OrderCancelRejected::new(
+        let event = OrderDenied::new(
             trader_id,
             strategy_id,
             instrument_id,
@@ -1908,14 +1817,11 @@ impl InteractiveBrokersExecutionClient {
             UUID4::new(),
             ts_event,
             ts_event,
-            false,
-            venue_order_id,
-            Some(account_id),
         );
 
         get_exec_event_sender()
-            .send(ExecutionEvent::Order(OrderEventAny::CancelRejected(event)))
-            .map_err(|e| anyhow::anyhow!("Failed to send order cancel rejected event: {e}"))
+            .send(ExecutionEvent::Order(OrderEventAny::Denied(event)))
+            .map_err(|e| anyhow::anyhow!("Failed to send order denied event: {e}"))
     }
 }
 

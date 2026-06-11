@@ -25,6 +25,7 @@ use nautilus_common::{cache::Cache, live::runner::replace_exec_event_sender};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, AssetClass, LiquiditySide, OmsType, OrderSide, OrderType},
+    events::OrderInitialized,
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
         Venue, VenueOrderId,
@@ -150,7 +151,7 @@ fn ib_order_selector_parses_perm_venue_order_id() {
 }
 
 #[rstest]
-fn submit_order_rejects_when_client_not_ready() {
+fn submit_order_denies_when_client_not_ready() {
     let (client, mut rx, _) = create_test_execution_client();
     let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
     let cmd = SubmitOrder::from_order(
@@ -165,19 +166,19 @@ fn submit_order_rejects_when_client_not_ready() {
     client.submit_order(cmd).unwrap();
 
     match next_order_event(&mut rx) {
-        OrderEventAny::Rejected(event) => {
+        OrderEventAny::Denied(event) => {
             assert_eq!(event.client_order_id, order.client_order_id());
             assert_eq!(
                 event.reason.to_string(),
                 "Interactive Brokers client is not ready; refusing to submit order"
             );
         }
-        event => panic!("Expected OrderRejected, was {event:?}"),
+        event => panic!("Expected OrderDenied, was {event:?}"),
     }
 }
 
 #[rstest]
-fn submit_order_list_rejects_all_orders_when_client_not_ready() {
+fn submit_order_list_denies_all_orders_when_client_not_ready() {
     let (client, mut rx, _) = create_test_execution_client();
     let order1 = create_test_limit_order(ClientOrderId::from("O-IB-001"));
     let order2 = create_test_limit_order(ClientOrderId::from("O-IB-002"));
@@ -209,20 +210,20 @@ fn submit_order_list_rejects_all_orders_when_client_not_ready() {
 
     for expected_client_order_id in [order1.client_order_id(), order2.client_order_id()] {
         match next_order_event(&mut rx) {
-            OrderEventAny::Rejected(event) => {
+            OrderEventAny::Denied(event) => {
                 assert_eq!(event.client_order_id, expected_client_order_id);
                 assert_eq!(
                     event.reason.to_string(),
                     "Interactive Brokers client is not ready; refusing to submit order list"
                 );
             }
-            event => panic!("Expected OrderRejected, was {event:?}"),
+            event => panic!("Expected OrderDenied, was {event:?}"),
         }
     }
 }
 
 #[rstest]
-fn modify_order_rejects_when_client_not_ready() {
+fn modify_order_emits_no_event_when_client_not_ready() {
     let (client, mut rx, _) = create_test_execution_client();
     let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
     let cmd = ModifyOrder::new(
@@ -243,21 +244,12 @@ fn modify_order_rejects_when_client_not_ready() {
 
     client.modify_order(cmd).unwrap();
 
-    match next_order_event(&mut rx) {
-        OrderEventAny::ModifyRejected(event) => {
-            assert_eq!(event.client_order_id, order.client_order_id());
-            assert_eq!(event.venue_order_id, Some(VenueOrderId::from("1001")));
-            assert_eq!(
-                event.reason.to_string(),
-                "Interactive Brokers client is not ready; refusing to modify order"
-            );
-        }
-        event => panic!("Expected OrderModifyRejected, was {event:?}"),
-    }
+    // Local validation failure: no rejection event, awaiting in-flight resolution
+    assert!(rx.try_recv().is_err(), "expected no event");
 }
 
 #[rstest]
-fn cancel_order_rejects_when_client_not_ready() {
+fn cancel_order_emits_no_event_when_client_not_ready() {
     let (client, mut rx, _) = create_test_execution_client();
     let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
     let cmd = CancelOrder::new(
@@ -275,21 +267,12 @@ fn cancel_order_rejects_when_client_not_ready() {
 
     client.cancel_order(cmd).unwrap();
 
-    match next_order_event(&mut rx) {
-        OrderEventAny::CancelRejected(event) => {
-            assert_eq!(event.client_order_id, order.client_order_id());
-            assert_eq!(event.venue_order_id, Some(VenueOrderId::from("1001")));
-            assert_eq!(
-                event.reason.to_string(),
-                "Interactive Brokers client is not ready; refusing to cancel order"
-            );
-        }
-        event => panic!("Expected OrderCancelRejected, was {event:?}"),
-    }
+    // Local validation failure: no rejection event, awaiting in-flight resolution
+    assert!(rx.try_recv().is_err(), "expected no event");
 }
 
 #[rstest]
-fn cancel_all_orders_rejects_open_orders_when_client_not_ready() {
+fn cancel_all_orders_emits_no_events_when_client_not_ready() {
     let (client, mut rx, cache) = create_test_execution_client();
     let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
     let accepted = OrderEventAny::Accepted(OrderAccepted::new(
@@ -325,16 +308,8 @@ fn cancel_all_orders_rejects_open_orders_when_client_not_ready() {
 
     client.cancel_all_orders(cmd).unwrap();
 
-    match next_order_event(&mut rx) {
-        OrderEventAny::CancelRejected(event) => {
-            assert_eq!(event.client_order_id, order.client_order_id());
-            assert_eq!(
-                event.reason.to_string(),
-                "Interactive Brokers client is not ready; refusing to cancel orders"
-            );
-        }
-        event => panic!("Expected OrderCancelRejected, was {event:?}"),
-    }
+    // A whole-request local failure must not become one rejection per order
+    assert!(rx.try_recv().is_err(), "expected no events");
 }
 
 fn create_test_execution_data(
