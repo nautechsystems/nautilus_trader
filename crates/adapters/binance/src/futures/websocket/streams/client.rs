@@ -261,7 +261,11 @@ impl BinanceFuturesWebSocketClient {
     /// Returns an error if the pool is exhausted or command delivery fails.
     #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub async fn subscribe(&self, streams: Vec<String>) -> BinanceWsResult<()> {
-        // Phase 1: filter already-subscribed streams (brief lock)
+        // Serialize all phases so concurrent subscribers see a consistent
+        // pool state and can't trigger spurious `Pool exhausted`.
+        let _connect_guard = self.connect_lock.lock().await;
+
+        // Phase 1: filter already-subscribed streams (brief lock).
         let new_streams: Vec<String> = {
             let slots = self.slots.lock().expect("slots lock poisoned");
             streams
@@ -275,8 +279,6 @@ impl BinanceFuturesWebSocketClient {
         }
 
         // Phase 2: create connections if needed.
-        // Only one task grows the pool at a time so concurrent subscribers can't race past `MAX_CONNECTIONS`.
-        let _connect_guard = self.connect_lock.lock().await;
 
         loop {
             let (remaining_capacity, slot_count) = {
@@ -305,7 +307,6 @@ impl BinanceFuturesWebSocketClient {
                 self.product_type
             );
         }
-        drop(_connect_guard);
 
         // Phase 3: assign streams to slots and send commands (brief lock).
         // Stage assignments first so a capacity error leaves slots unchanged.
