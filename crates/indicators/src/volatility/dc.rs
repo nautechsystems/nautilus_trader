@@ -104,6 +104,13 @@ impl DonchianChannel {
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64) {
+        if self.upper_prices.len() >= self.period {
+            let _ = self.upper_prices.pop_front();
+        }
+        if self.lower_prices.len() >= self.period {
+            let _ = self.lower_prices.pop_front();
+        }
+
         let _ = self.upper_prices.push_back(high);
         let _ = self.lower_prices.push_back(low);
 
@@ -180,9 +187,12 @@ mod tests {
             dc_10.update_raw(high_values[i], low_values[i]);
         }
 
+        // Only the last 10 values should be in the rolling window
+        // Highs: [6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0] -> max = 15.0
+        // Lows:  [5.9, 6.9, 7.9, 8.9,  9.9, 10.1, 10.2, 10.3, 11.1, 11.4] -> min = 5.9
         assert_eq!(dc_10.upper, 15.0);
-        assert_eq!(dc_10.middle, 7.95);
-        assert_eq!(dc_10.lower, 0.9);
+        assert_eq!(dc_10.middle, 10.45);
+        assert_eq!(dc_10.lower, 5.9);
     }
 
     #[rstest]
@@ -206,5 +216,62 @@ mod tests {
         assert_eq!(dc_10.lower, 0.0);
         assert!(!dc_10.has_inputs);
         assert!(!dc_10.initialized);
+    }
+
+    #[rstest]
+    fn test_rolling_window_respects_period() {
+        // Regression test for issue #4238:
+        // DonchianChannel should only consider the last `period` values,
+        // not all historical data up to MAX_PERIOD.
+        let mut dc = DonchianChannel::new(3);
+
+        dc.update_raw(1.0, 0.0);
+        dc.update_raw(100.0, 0.0);
+        dc.update_raw(2.0, 0.0);
+        dc.update_raw(3.0, 0.0);
+        dc.update_raw(4.0, 0.0);
+
+        // After 5 updates with period=3, the window should contain only
+        // the last 3 highs: [2.0, 3.0, 4.0] and last 3 lows: [0.0, 0.0, 0.0]
+        // The stale high of 100.0 should have left the window.
+        assert_eq!(dc.upper, 4.0);
+        assert_eq!(dc.middle, 2.0);
+        assert_eq!(dc.lower, 0.0);
+    }
+
+    #[rstest]
+    fn test_rolling_window_boundary() {
+        // Test that the window holds exactly `period` elements
+        let mut dc = DonchianChannel::new(3);
+
+        dc.update_raw(10.0, 1.0);
+        dc.update_raw(20.0, 2.0);
+        dc.update_raw(30.0, 3.0);
+        assert!(dc.initialized);
+
+        // Window: [10, 20, 30] highs, [1, 2, 3] lows
+        assert_eq!(dc.upper, 30.0);
+        assert_eq!(dc.lower, 1.0);
+
+        // Push a 4th value: window should drop the oldest
+        dc.update_raw(5.0, 0.5);
+
+        // Window: [20, 30, 5] highs, [2, 3, 0.5] lows
+        assert_eq!(dc.upper, 30.0);
+        assert_eq!(dc.lower, 0.5);
+
+        // Push a 5th value
+        dc.update_raw(6.0, 4.0);
+
+        // Window: [30, 5, 6] highs, [3, 0.5, 4] lows
+        assert_eq!(dc.upper, 30.0);
+        assert_eq!(dc.lower, 0.5);
+
+        // Push a 6th value: now the old max (30) drops out
+        dc.update_raw(7.0, 5.0);
+
+        // Window: [5, 6, 7] highs, [0.5, 4, 5] lows
+        assert_eq!(dc.upper, 7.0);
+        assert_eq!(dc.lower, 0.5);
     }
 }
