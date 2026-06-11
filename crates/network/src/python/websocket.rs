@@ -421,6 +421,19 @@ impl WebSocketClient {
     }
 }
 
+async fn poll_until_closed(mode: &Arc<AtomicU8>) {
+    loop {
+        if matches!(
+            ConnectionMode::from_atomic(mode),
+            ConnectionMode::Disconnect | ConnectionMode::Closed
+        ) {
+            break;
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 #[cfg(test)]
 mod control_filter_tests {
     use bytes::Bytes;
@@ -436,19 +449,6 @@ mod control_filter_tests {
     #[case::ping(Message::ping(Bytes::new()), false)]
     fn python_reconnect_control_filter(#[case] msg: Message, #[case] expected: bool) {
         assert_eq!(is_python_reconnect_control_message(&msg), expected);
-    }
-}
-
-async fn poll_until_closed(mode: &Arc<AtomicU8>) {
-    loop {
-        if matches!(
-            ConnectionMode::from_atomic(mode),
-            ConnectionMode::Disconnect | ConnectionMode::Closed
-        ) {
-            break;
-        }
-
-        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 

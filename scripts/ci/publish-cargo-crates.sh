@@ -229,8 +229,11 @@ curl_crate_version() {
 }
 
 sparse_index_path() {
-  local crate_name=${1,,}
-  local crate_name_length=${#crate_name}
+  local crate_name
+  local crate_name_length
+
+  crate_name="$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  crate_name_length=${#crate_name}
 
   case "$crate_name_length" in
     1)
