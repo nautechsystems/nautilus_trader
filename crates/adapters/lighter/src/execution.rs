@@ -559,16 +559,22 @@ impl LighterExecutionClient {
                     .await
                     .map_err(|e| anyhow::anyhow!("failed to set Lighter execution context: {e}"))?;
 
-                // Subscribe to the four account-scoped streams the consumption
+                // Subscribe to the five account-scoped streams the consumption
                 // loop converts into typed reports. `account_all_orders` carries
                 // OrderStatusReport-shaped events; `account_all_trades` carries
                 // discrete fills; `account_all_positions` carries position
-                // snapshots; `account_all_assets` carries balance snapshots.
+                // snapshots; `account_all_assets` carries per-asset balances
+                // (spot + perp `margin_balance`); `user_stats` carries the
+                // perp-account rollup (collateral, available_balance,
+                // margin_usage). The handler's `account_state_reconciler`
+                // merges `assets` and `user_stats` into a single AccountState
+                // — see websocket/account_state.rs.
                 let channels = [
                     LighterWsChannel::AccountAllOrders(account_index),
                     LighterWsChannel::AccountAllTrades(account_index),
                     LighterWsChannel::AccountAllPositions(account_index),
                     LighterWsChannel::AccountAllAssets(account_index),
+                    LighterWsChannel::UserStats(account_index),
                 ];
 
                 for channel in channels {
@@ -867,6 +873,9 @@ impl LighterExecutionClient {
                                     AccountStream::Assets => {
                                         dispatch.account_streams_ready.mark_assets();
                                     }
+                                    AccountStream::UserStats => {
+                                        dispatch.account_streams_ready.mark_user_stats();
+                                    }
                                 }
                             }
                             // Public market data variants reach the execution
@@ -922,6 +931,7 @@ impl LighterExecutionClient {
             LighterWsChannel::AccountAllTrades(account_index),
             LighterWsChannel::AccountAllPositions(account_index),
             LighterWsChannel::AccountAllAssets(account_index),
+            LighterWsChannel::UserStats(account_index),
         ];
 
         get_runtime().spawn(async move {
@@ -5118,6 +5128,7 @@ mod tests {
         ready.mark_trades();
         ready.mark_positions();
         ready.mark_assets();
+        ready.mark_user_stats();
     }
 
     #[tokio::test]
@@ -5157,6 +5168,7 @@ mod tests {
             ready.mark_trades();
             ready.mark_positions();
             ready.mark_assets();
+            ready.mark_user_stats();
         };
 
         let (result, ()) = tokio::join!(wait, seed);
@@ -5202,6 +5214,10 @@ mod tests {
             "pending list missing positions: {msg}",
         );
         assert!(msg.contains("assets"), "pending list missing assets: {msg}");
+        assert!(
+            msg.contains("user_stats"),
+            "pending list missing user_stats: {msg}",
+        );
     }
 
     fn test_market_order(

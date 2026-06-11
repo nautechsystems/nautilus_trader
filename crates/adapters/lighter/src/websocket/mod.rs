@@ -15,6 +15,7 @@
 
 //! WebSocket client surface for Lighter streaming endpoints.
 
+pub(crate) mod account_state;
 pub mod client;
 pub(crate) mod dispatch;
 pub mod error;

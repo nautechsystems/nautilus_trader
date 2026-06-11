@@ -37,17 +37,18 @@ use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 use super::{
+    account_state::LighterAccountStateReconciler,
     error::LighterWsError,
     messages::{
-        AccountStream, ExecutionReport, LighterAsset, LighterPosition, LighterWsCandle,
-        LighterWsChannel, LighterWsChannelKind, LighterWsFrame, LighterWsOrderBook,
-        LighterWsRequest, NautilusWsMessage, SendTxRejectionSource,
+        AccountStream, ExecutionReport, LighterAsset, LighterPosition, LighterUserStats,
+        LighterWsCandle, LighterWsChannel, LighterWsChannelKind, LighterWsFrame,
+        LighterWsOrderBook, LighterWsRequest, NautilusWsMessage, SendTxRejectionSource,
     },
     parse::{
-        parse_ws_account_state, parse_ws_bar, parse_ws_funding_rate_update,
-        parse_ws_index_price_update, parse_ws_mark_price_update, parse_ws_order_book_deltas,
-        parse_ws_order_book_depth10, parse_ws_position_status_report, parse_ws_quote_tick,
-        parse_ws_spot_index_price_update, parse_ws_trade_tick,
+        parse_ws_bar, parse_ws_funding_rate_update, parse_ws_index_price_update,
+        parse_ws_mark_price_update, parse_ws_order_book_deltas, parse_ws_order_book_depth10,
+        parse_ws_position_status_report, parse_ws_quote_tick, parse_ws_spot_index_price_update,
+        parse_ws_trade_tick,
     },
 };
 use crate::{
@@ -201,6 +202,7 @@ pub(super) struct FeedHandler {
     book_states: AHashMap<i16, CachedOrderBook>,
     last_candles: AHashMap<(i16, LighterCandleResolution), LighterWsCandle>,
     exec_account: Option<(AccountId, i64)>,
+    account_state_reconciler: LighterAccountStateReconciler,
 }
 
 #[derive(Debug, Clone)]
@@ -234,6 +236,7 @@ impl FeedHandler {
             book_states: AHashMap::new(),
             last_candles: AHashMap::new(),
             exec_account: None,
+            account_state_reconciler: LighterAccountStateReconciler::new(),
         }
     }
 
@@ -454,6 +457,7 @@ impl FeedHandler {
                                 self.book_states.clear();
                                 // Resubscribe replays a fresh `subscribed/candle`; pre-disconnect cache is stale.
                                 self.last_candles.clear();
+                                self.account_state_reconciler.reset();
                                 return Some(NautilusWsMessage::Reconnected);
                             }
 
@@ -738,6 +742,20 @@ impl FeedHandler {
                 let mut msgs = self.handle_account_assets(assets, timestamp, ts_init);
                 msgs.push(NautilusWsMessage::AccountStreamFirstFrame(
                     AccountStream::Assets,
+                ));
+                msgs
+            }
+            LighterWsFrame::UserStats {
+                ref stats,
+                timestamp,
+                ..
+            } => {
+                if self.exec_account.is_none() {
+                    return raw_message(&frame);
+                }
+                let mut msgs = self.handle_user_stats(stats, timestamp, ts_init);
+                msgs.push(NautilusWsMessage::AccountStreamFirstFrame(
+                    AccountStream::UserStats,
                 ));
                 msgs
             }
@@ -1220,13 +1238,53 @@ impl FeedHandler {
             }
         };
 
-        let assets_vec: Vec<&LighterAsset> = assets.values().collect();
-        match parse_ws_account_state(&assets_vec, account_id, ts_event, ts_init) {
-            Ok(state) => vec![NautilusWsMessage::AccountState(Box::new(state))],
+        self.account_state_reconciler.update_assets(assets);
+        self.emit_unified_account_state(account_id, ts_event, ts_init)
+    }
+
+    fn handle_user_stats(
+        &self,
+        stats: &LighterUserStats,
+        timestamp_ms: u64,
+        ts_init: UnixNanos,
+    ) -> Vec<NautilusWsMessage> {
+        let Some((account_id, _)) = self.exec_account else {
+            log::debug!("Lighter user_stats frame skipped: no execution context set");
+            return Vec::new();
+        };
+
+        let ts_event = match crate::common::parse::parse_millis_to_nanos(timestamp_ms) {
+            Ok(ts) => ts,
             Err(e) => {
-                log::error!("Error parsing Lighter account state: {e}");
+                log::error!("Invalid Lighter user_stats timestamp {timestamp_ms}: {e}");
+                return Vec::new();
+            }
+        };
+
+        self.account_state_reconciler.update_user_stats(stats);
+        self.emit_unified_account_state(account_id, ts_event, ts_init)
+    }
+
+    /// Asks the reconciler for a merged [`AccountState`] and wraps it as a
+    /// `NautilusWsMessage`. Returns an empty vec when the second stream
+    /// hasn't arrived yet — the AccountStreamFirstFrame marker still gets
+    /// pushed by the caller so the startup gate progresses.
+    fn emit_unified_account_state(
+        &self,
+        account_id: AccountId,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Vec<NautilusWsMessage> {
+        match self
+            .account_state_reconciler
+            .build_state(account_id, ts_event, ts_init)
+        {
+            Some(Ok(state)) => vec![NautilusWsMessage::AccountState(Box::new(state))],
+            Some(Err(e)) => {
+                log::error!("Error building unified Lighter account state: {e}");
                 Vec::new()
             }
+            None => Vec::new(),
         }
     }
 }
@@ -1348,6 +1406,7 @@ fn frame_topic(frame: &LighterWsFrame) -> String {
         | LighterWsFrame::AccountAllTrades { channel, .. }
         | LighterWsFrame::AccountAllPositions { channel, .. }
         | LighterWsFrame::AccountAllAssets { channel, .. }
+        | LighterWsFrame::UserStats { channel, .. }
         | LighterWsFrame::Height { channel, .. }
         | LighterWsFrame::CandleSnapshot { channel, .. }
         | LighterWsFrame::Candle { channel, .. } => channel.as_str().to_string(),
@@ -1404,6 +1463,7 @@ mod tests {
     use std::time::Duration;
 
     use nautilus_model::{
+        enums::AccountType,
         identifiers::{InstrumentId, Symbol, Venue},
         instruments::{CryptoPerpetual, CurrencyPair},
         types::{Currency, Money, Price, Quantity},
@@ -1426,6 +1486,11 @@ mod tests {
         include_str!("../../test_data/ws_account_all_positions_update.json");
     const WS_ACCOUNT_ALL_ASSETS_UPDATE: &str =
         include_str!("../../test_data/ws_account_all_assets_update.json");
+    const WS_USER_STATS_UPDATE: &str = include_str!("../../test_data/ws_user_stats_update.json");
+    const WS_ACCOUNT_ALL_ASSETS_WITH_POSITION: &str =
+        include_str!("../../test_data/ws_account_all_assets_with_position.json");
+    const WS_USER_STATS_WITH_POSITION: &str =
+        include_str!("../../test_data/ws_user_stats_with_position.json");
     const WS_MARKET_STATS_UPDATE_SINGLE: &str =
         include_str!("../../test_data/ws_market_stats_update_single.json");
     const WS_MARKET_STATS_UPDATE_ALL: &str =
@@ -1816,22 +1881,104 @@ mod tests {
     }
 
     #[rstest]
-    fn handle_frame_routes_account_assets_to_account_state() {
+    fn handle_frame_emits_no_account_state_until_both_streams_seen() {
+        // Reconciler refuses to emit until both `account_all_assets` and
+        // `user_stats` have delivered. An assets frame alone produces only
+        // the AccountStreamFirstFrame marker — no AccountState payload.
         let mut handler = make_handler_with_account();
-        let frame: super::LighterWsFrame =
+        let assets_only: super::LighterWsFrame =
             serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_UPDATE).unwrap();
 
-        let messages = strip_account_marker(handler.handle_frame(frame, UnixNanos::from(11)));
+        let messages = strip_account_marker(handler.handle_frame(assets_only, UnixNanos::from(11)));
+
+        assert!(
+            messages.is_empty(),
+            "expected no AccountState before user_stats arrives, received {messages:?}"
+        );
+    }
+
+    #[rstest]
+    fn handle_frame_routes_account_assets_and_user_stats_to_unified_state() {
+        // Fixture is the captured production no-position payload (10 USDC
+        // on spot, 40 USDC pledged as perp collateral, no resting orders).
+        // Lighter runs unified margin: both legs are deployable equity, so
+        // total = balance + margin_balance, locked = locked_balance only,
+        // and MarginBalance.initial = 0 because user_stats.collateral ==
+        // available_balance (no margin in use).
+        let mut handler = make_handler_with_account();
+        let assets_frame: super::LighterWsFrame =
+            serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_UPDATE).unwrap();
+        let user_stats_frame: super::LighterWsFrame =
+            serde_json::from_str(WS_USER_STATS_UPDATE).unwrap();
+
+        let _ = handler.handle_frame(assets_frame, UnixNanos::from(11));
+        let messages =
+            strip_account_marker(handler.handle_frame(user_stats_frame, UnixNanos::from(12)));
 
         assert_eq!(messages.len(), 1);
         match &messages[0] {
             NautilusWsMessage::AccountState(state) => {
-                assert_eq!(state.balances.len(), 1);
                 let usdc = Currency::get_or_create_crypto("USDC");
+                assert_eq!(state.account_type, AccountType::Margin);
+                assert_eq!(state.base_currency, Some(usdc));
+                assert_eq!(state.balances.len(), 1);
                 assert_eq!(state.balances[0].currency, usdc);
-                assert_eq!(state.balances[0].total, Money::from("100.000000 USDC"));
-                assert_eq!(state.balances[0].locked, Money::from("1.000000 USDC"));
+                // balance 10 + margin_balance 40 = 50 total; locked = 0
+                // (no resting spot orders); free = 50 (all deployable).
+                assert_eq!(state.balances[0].total, Money::from("50.000000 USDC"));
+                assert_eq!(state.balances[0].locked, Money::from("0 USDC"));
+                assert_eq!(state.balances[0].free, Money::from("50.000000 USDC"));
+                assert_eq!(state.margins.len(), 1);
+                assert_eq!(state.margins[0].currency, usdc);
+                assert_eq!(state.margins[0].initial, Money::from("0 USDC"));
+                assert_eq!(state.margins[0].maintenance, Money::from("0 USDC"));
+                assert!(state.margins[0].instrument_id.is_none());
                 assert!(state.is_reported);
+            }
+            other => panic!("expected account state, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_frame_unified_state_reflects_open_position() {
+        // Fixture pair captured live with one open ETH-LONG position:
+        //   account_all_assets[USDC] = {balance:10, locked:0, margin_balance:39.995369556}
+        //   user_stats              = {collateral:39.995369, available:39.168314, margin_usage:2.07}
+        //
+        // The 5 mUSDC haircut on margin_balance is the entry fee. The
+        // 0.827055 USDC gap between collateral and available_balance is
+        // the initial margin pledged to the open position. AccountBalance
+        // is unchanged in shape — perp-margin-in-use lives on
+        // MarginBalance, not in `locked`. Maintenance is zero because
+        // Lighter doesn't publish a maintenance value on user_stats.
+        let mut handler = make_handler_with_account();
+        let assets_frame: super::LighterWsFrame =
+            serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_WITH_POSITION).unwrap();
+        let user_stats_frame: super::LighterWsFrame =
+            serde_json::from_str(WS_USER_STATS_WITH_POSITION).unwrap();
+
+        let _ = handler.handle_frame(assets_frame, UnixNanos::from(11));
+        let messages =
+            strip_account_marker(handler.handle_frame(user_stats_frame, UnixNanos::from(12)));
+
+        assert_eq!(messages.len(), 1);
+        match &messages[0] {
+            NautilusWsMessage::AccountState(state) => {
+                let usdc = Currency::get_or_create_crypto("USDC");
+                assert_eq!(state.account_type, AccountType::Margin);
+                assert_eq!(state.base_currency, Some(usdc));
+                assert_eq!(state.balances.len(), 1);
+                // total = 10 + 39.995369556 = 49.99536956 (Money truncates
+                // the trailing digit to 8 decimals — matches what the
+                // production log showed).
+                assert_eq!(state.balances[0].total, Money::from("49.99536956 USDC"));
+                assert_eq!(state.balances[0].locked, Money::from("0 USDC"));
+                assert_eq!(state.balances[0].free, Money::from("49.99536956 USDC"));
+                assert_eq!(state.margins.len(), 1);
+                // initial = collateral 39.995369 − available 39.168314 = 0.827055
+                assert_eq!(state.margins[0].initial, Money::from("0.82705500 USDC"));
+                assert_eq!(state.margins[0].maintenance, Money::from("0 USDC"));
+                assert!(state.margins[0].instrument_id.is_none());
             }
             other => panic!("expected account state, was {other:?}"),
         }
@@ -1853,12 +2000,15 @@ mod tests {
             serde_json::from_str(WS_ACCOUNT_ALL_POSITIONS_UPDATE).unwrap();
         let assets_frame: super::LighterWsFrame =
             serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_UPDATE).unwrap();
+        let user_stats_frame: super::LighterWsFrame =
+            serde_json::from_str(WS_USER_STATS_UPDATE).unwrap();
 
         let cases = [
             (orders_frame, AccountStream::Orders),
             (trades_frame, AccountStream::Trades),
             (positions_frame, AccountStream::Positions),
             (assets_frame, AccountStream::Assets),
+            (user_stats_frame, AccountStream::UserStats),
         ];
 
         for (frame, expected) in cases {

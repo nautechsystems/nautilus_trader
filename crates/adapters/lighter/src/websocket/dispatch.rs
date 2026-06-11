@@ -303,6 +303,7 @@ pub(crate) struct AccountStreamsReady {
     trades: AtomicBool,
     positions: AtomicBool,
     assets: AtomicBool,
+    user_stats: AtomicBool,
     notify: tokio::sync::Notify,
 }
 
@@ -313,6 +314,7 @@ impl AccountStreamsReady {
             trades: AtomicBool::new(false),
             positions: AtomicBool::new(false),
             assets: AtomicBool::new(false),
+            user_stats: AtomicBool::new(false),
             notify: tokio::sync::Notify::new(),
         }
     }
@@ -324,6 +326,7 @@ impl AccountStreamsReady {
         self.trades.store(false, Ordering::Release);
         self.positions.store(false, Ordering::Release);
         self.assets.store(false, Ordering::Release);
+        self.user_stats.store(false, Ordering::Release);
     }
 
     /// Mark the `account_all_orders` stream as having delivered a frame.
@@ -350,6 +353,12 @@ impl AccountStreamsReady {
         self.mark("assets", &self.assets);
     }
 
+    /// Mark the `user_stats` stream as having delivered a frame.
+    /// Idempotent: only the first call logs and notifies waiters.
+    pub(crate) fn mark_user_stats(&self) {
+        self.mark("user_stats", &self.user_stats);
+    }
+
     fn mark(&self, name: &str, flag: &AtomicBool) {
         if !flag.swap(true, Ordering::AcqRel) {
             log::debug!("Lighter {name}: first frame received");
@@ -363,6 +372,7 @@ impl AccountStreamsReady {
             && self.trades.load(Ordering::Acquire)
             && self.positions.load(Ordering::Acquire)
             && self.assets.load(Ordering::Acquire)
+            && self.user_stats.load(Ordering::Acquire)
     }
 
     fn pending(&self) -> Vec<&'static str> {
@@ -381,6 +391,10 @@ impl AccountStreamsReady {
 
         if !self.assets.load(Ordering::Acquire) {
             pending.push("assets");
+        }
+
+        if !self.user_stats.load(Ordering::Acquire) {
+            pending.push("user_stats");
         }
 
         pending
@@ -2368,7 +2382,7 @@ mod tests {
         assert!(!ready.all_ready());
         assert_eq!(
             ready.pending(),
-            vec!["orders", "trades", "positions", "assets"]
+            vec!["orders", "trades", "positions", "assets", "user_stats"]
         );
     }
 
@@ -2379,6 +2393,7 @@ mod tests {
         ready.mark_trades();
         ready.mark_positions();
         ready.mark_assets();
+        ready.mark_user_stats();
         assert!(ready.all_ready());
         assert!(ready.pending().is_empty());
     }
@@ -2389,7 +2404,7 @@ mod tests {
         ready.mark_orders();
         ready.mark_positions();
         assert!(!ready.all_ready());
-        assert_eq!(ready.pending(), vec!["trades", "assets"]);
+        assert_eq!(ready.pending(), vec!["trades", "assets", "user_stats"]);
     }
 
     #[tokio::test]
@@ -2399,6 +2414,7 @@ mod tests {
         ready.mark_trades();
         ready.mark_positions();
         ready.mark_assets();
+        ready.mark_user_stats();
         ready
             .await_all(Duration::from_millis(50))
             .await
@@ -2418,6 +2434,7 @@ mod tests {
             producer.mark_trades();
             producer.mark_positions();
             producer.mark_assets();
+            producer.mark_user_stats();
         });
 
         ready
@@ -2504,13 +2521,14 @@ mod tests {
         ready.mark_trades();
         ready.mark_positions();
         ready.mark_assets();
+        ready.mark_user_stats();
         assert!(ready.all_ready());
 
         ready.reset();
         assert!(!ready.all_ready());
         assert_eq!(
             ready.pending(),
-            vec!["orders", "trades", "positions", "assets"]
+            vec!["orders", "trades", "positions", "assets", "user_stats"]
         );
     }
 }

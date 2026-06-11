@@ -1,0 +1,30 @@
+{
+  "channel": "user_stats:1234",
+  "stats": {
+    "account_trading_mode": 0,
+    "available_balance": "40.000000",
+    "buying_power": "0",
+    "collateral": "40.000000",
+    "leverage": "0.00",
+    "margin_usage": "0.00",
+    "portfolio_value": "40.000000",
+    "cross_stats": {
+      "available_balance": "40.000000",
+      "buying_power": "0",
+      "collateral": "40.000000",
+      "leverage": "0.00",
+      "margin_usage": "0.00",
+      "portfolio_value": "40.000000"
+    },
+    "total_stats": {
+      "available_balance": "40.000000",
+      "buying_power": "0",
+      "collateral": "40.000000",
+      "leverage": "0.00",
+      "margin_usage": "0.00",
+      "portfolio_value": "40.000000"
+    }
+  },
+  "timestamp": 1781161199649,
+  "type": "subscribed/user_stats"
+}
