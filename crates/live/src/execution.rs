@@ -62,7 +62,7 @@ impl Debug for LiveExecutionClient {
             .field("account_id", &self.account_id)
             .field("venue", &self.venue)
             .field("oms_type", &self.oms_type)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

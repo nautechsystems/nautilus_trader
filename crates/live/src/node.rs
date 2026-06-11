@@ -734,7 +734,7 @@ impl LiveNode {
             .config
             .exec_engine
             .reconciliation_lookback_mins
-            .map(|m| m as u64);
+            .map(u64::from);
 
         let timeout = self.config.timeout_reconciliation;
         let start = dst::time::Instant::now();
@@ -945,7 +945,7 @@ impl LiveNode {
             .or_else(|| self.startup_abort_reason())
         {
             self.abort_startup(reason).await?;
-            self.drain_channels(
+            Self::drain_channels(
                 &mut time_evt_rx,
                 &mut data_evt_rx,
                 &mut data_cmd_rx,
@@ -963,7 +963,7 @@ impl LiveNode {
             #[cfg(feature = "plugin")]
             if let Err(e) = self.plugins.start_controllers() {
                 let result = self.abort_after_trader_start_failure(e).await;
-                self.drain_channels(
+                Self::drain_channels(
                     &mut time_evt_rx,
                     &mut data_evt_rx,
                     &mut data_cmd_rx,
@@ -981,7 +981,7 @@ impl LiveNode {
 
         let exec_config = &self.config.exec_engine;
         let inflight_interval_ns =
-            (exec_config.inflight_check_interval_ms as u64) * NANOSECONDS_IN_MILLISECOND;
+            u64::from(exec_config.inflight_check_interval_ms) * NANOSECONDS_IN_MILLISECOND;
         let open_interval_ns = exec_config
             .open_check_interval_secs
             .filter(|&s| s > 0.0)
@@ -1001,9 +1001,9 @@ impl LiveNode {
             let mut intervals = Vec::new();
 
             if exec_config.inflight_check_interval_ms > 0 {
-                intervals.push(Duration::from_millis(
-                    exec_config.inflight_check_interval_ms as u64,
-                ));
+                intervals.push(Duration::from_millis(u64::from(
+                    exec_config.inflight_check_interval_ms,
+                )));
             }
 
             if let Some(s) = exec_config.open_check_interval_secs.filter(|&s| s > 0.0) {
@@ -1035,7 +1035,7 @@ impl LiveNode {
 
         // Per-task `(interval, next_fire)` schedules dispatched by the
         // shared `maintenance_timer` below. See module docs for rationale.
-        let far_future = Duration::from_secs(86400 * 365 * 100);
+        let far_future = Duration::from_hours(24 * 365 * 100);
 
         let make_schedule = |opt_dur: Option<Duration>| -> (Duration, dst::time::Instant) {
             let dur = opt_dur.unwrap_or(far_future);
@@ -1052,21 +1052,21 @@ impl LiveNode {
             exec_config
                 .purge_closed_orders_interval_mins
                 .filter(|&m| m > 0)
-                .map(|m| Duration::from_secs(mins_to_secs(m as u64))),
+                .map(|m| Duration::from_secs(mins_to_secs(u64::from(m)))),
         );
 
         let (purge_positions_interval, mut purge_positions_next) = make_schedule(
             exec_config
                 .purge_closed_positions_interval_mins
                 .filter(|&m| m > 0)
-                .map(|m| Duration::from_secs(mins_to_secs(m as u64))),
+                .map(|m| Duration::from_secs(mins_to_secs(u64::from(m)))),
         );
 
         let (purge_account_interval, mut purge_account_next) = make_schedule(
             exec_config
                 .purge_account_events_interval_mins
                 .filter(|&m| m > 0)
-                .map(|m| Duration::from_secs(mins_to_secs(m as u64))),
+                .map(|m| Duration::from_secs(mins_to_secs(u64::from(m)))),
         );
 
         let (own_books_interval, mut own_books_next) = make_schedule(
@@ -1077,7 +1077,7 @@ impl LiveNode {
         );
 
         let (prune_fills_interval, mut prune_fills_next) =
-            make_schedule(Some(Duration::from_secs(60)));
+            make_schedule(Some(Duration::from_mins(1)));
 
         let mut maintenance_timer = dst::time::interval(Duration::from_millis(100));
         maintenance_timer.set_missed_tick_behavior(dst::time::MissedTickBehavior::Skip);
@@ -1231,12 +1231,8 @@ impl LiveNode {
                                     );
                                     self.exec_manager.mark_fill_processed(fill.trade_id);
                                 }
-                                OrderEventAny::Accepted(_) => {
-                                    self.exec_manager.clear_recon_tracking(
-                                        &order_evt.client_order_id(), true,
-                                    );
-                                }
-                                OrderEventAny::Rejected(_)
+                                OrderEventAny::Accepted(_)
+                                | OrderEventAny::Rejected(_)
                                 | OrderEventAny::Canceled(_)
                                 | OrderEventAny::Expired(_)
                                 | OrderEventAny::Denied(_) => {
@@ -1347,7 +1343,7 @@ impl LiveNode {
         self.finalize_stop().await?;
 
         // Handle events that arrived during finalize_stop
-        self.drain_channels(
+        Self::drain_channels(
             &mut time_evt_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
@@ -1456,7 +1452,6 @@ impl LiveNode {
     }
 
     fn drain_channels(
-        &self,
         time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventHandler>,
         data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
         data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,

@@ -1401,6 +1401,10 @@ mod tests {
     }
 
     #[derive(Debug)]
+    #[expect(
+        clippy::struct_field_names,
+        reason = "test counters intentionally share the count postfix"
+    )]
     struct TestHistoricalBarsDataClientFactory {
         request_count: Arc<AtomicUsize>,
         response_sent_count: Arc<AtomicUsize>,

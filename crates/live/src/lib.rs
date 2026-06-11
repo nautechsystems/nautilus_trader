@@ -76,6 +76,7 @@
 //! rejected at build time under this configuration.
 
 #![warn(rustc::all)]
+#![warn(clippy::pedantic)]
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
@@ -83,6 +84,26 @@
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![allow(
+    clippy::similar_names,
+    reason = "timing and plug-in identifiers such as elapsed_ms/elapsed_ns and loaded/loader are intentionally parallel"
+)]
+#![allow(
+    clippy::single_match_else,
+    reason = "match can be clearer than if-let-else for some reconciliation state transitions"
+)]
+#![allow(
+    clippy::redundant_closure_for_method_calls,
+    reason = "matches the Rust 1.94 ICE workaround in the workspace lint table"
+)]
+#![allow(
+    clippy::too_many_lines,
+    reason = "live node lifecycle and reconciliation flows exceed the default threshold by design"
+)]
+#![allow(
+    clippy::unsafe_derive_deserialize,
+    reason = "config types deserialize plain field values; unsafe in unrelated impls is sound"
+)]
 
 pub mod emitter;
 pub mod runner;

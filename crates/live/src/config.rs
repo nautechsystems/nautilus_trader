@@ -84,6 +84,10 @@ impl Default for PluginConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "config fields mirror the existing Python live data engine surface"
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 pub struct LiveDataEngineConfig {
@@ -293,6 +297,10 @@ fn parse_rate_limit(input: &str) -> anyhow::Result<RateLimit> {
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "config fields mirror the existing Python live execution engine surface"
 )]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
@@ -551,6 +559,10 @@ pub struct LiveExecClientConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "config fields mirror the existing Python live node surface"
+)]
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 pub struct LiveNodeConfig {
@@ -577,7 +589,7 @@ pub struct LiveNodeConfig {
     /// The unique instance identifier for the kernel
     pub instance_id: Option<UUID4>,
     /// The timeout for all clients to connect and initialize.
-    #[builder(default = Duration::from_secs(60))]
+    #[builder(default = Duration::from_mins(1))]
     pub timeout_connection: Duration,
     /// The timeout for execution state to reconcile.
     #[builder(default = Duration::from_secs(30))]
@@ -923,7 +935,7 @@ mod tests {
         assert_eq!(config.data_engine.qsize, 100_000);
         assert_eq!(config.risk_engine.qsize, 100_000);
         assert_eq!(config.exec_engine.qsize, 100_000);
-        assert_eq!(config.timeout_connection, Duration::from_secs(60));
+        assert_eq!(config.timeout_connection, Duration::from_mins(1));
         assert!(config.exec_engine.reconciliation);
         assert!(!config.exec_engine.filter_unclaimed_external_orders);
         assert!(config.data_clients.is_empty());
@@ -1070,7 +1082,7 @@ mod tests {
         assert_eq!(converted.time_bars_origin_offset.len(), 1);
         assert_eq!(
             converted.time_bars_origin_offset[&BarAggregation::Minute],
-            Duration::from_nanos(5_000_000_000),
+            Duration::from_secs(5),
         );
         assert!(converted.emit_quotes_from_book);
         assert!(converted.emit_quotes_from_book_depths);
@@ -1334,6 +1346,10 @@ mod tests {
     }
 
     #[rstest]
+    #[expect(
+        clippy::float_cmp,
+        reason = "asserts the exact configured default with no arithmetic involved"
+    )]
     fn test_live_exec_engine_config_defaults() {
         let config = LiveExecEngineConfig::default();
 

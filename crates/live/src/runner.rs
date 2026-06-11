@@ -177,7 +177,7 @@ pub struct AsyncRunner {
     data_evt_tx: tokio::sync::mpsc::UnboundedSender<DataEvent>,
 }
 
-/// Handle for stopping the AsyncRunner from another context.
+/// Handle for stopping the `AsyncRunner` from another context.
 #[derive(Clone, Debug)]
 pub struct AsyncRunnerHandle {
     signal_tx: tokio::sync::mpsc::UnboundedSender<()>,
@@ -367,13 +367,13 @@ impl AsyncRunner {
         handler.run();
     }
 
-    /// Handles a data command by sending to the DataEngine.
+    /// Handles a data command by sending to the `DataEngine`.
     #[inline]
     pub fn handle_data_command(cmd: DataCommand) {
         msgbus::send_data_command(MessagingSwitchboard::data_engine_execute(), cmd);
     }
 
-    /// Handles a data event by sending to the appropriate DataEngine endpoint.
+    /// Handles a data event by sending to the appropriate `DataEngine` endpoint.
     #[inline]
     pub fn handle_data_event(event: DataEvent) {
         match event {
@@ -402,7 +402,7 @@ impl AsyncRunner {
         }
     }
 
-    /// Handles an execution command by sending to the ExecEngine.
+    /// Handles an execution command by sending to the `ExecEngine`.
     #[inline]
     pub fn handle_exec_command(cmd: TradingCommand) {
         msgbus::send_trading_command(MessagingSwitchboard::exec_engine_execute(), cmd);
