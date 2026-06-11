@@ -248,6 +248,29 @@ impl DydxError {
             _ => false,
         }
     }
+
+    /// Returns true if this error is a definitive CheckTx rejection of the broadcast
+    /// transaction.
+    ///
+    /// `broadcast_tx` uses sync mode, so a `code=N` failure is the node's verdict:
+    /// the transaction never entered the mempool and no message in it executed.
+    /// Benign codes (tx already in mempool, duplicate cancel, order already gone)
+    /// mean the command was already handled, and transient errors (sequence
+    /// mismatch, timeouts) are never a final verdict; both return false, as do
+    /// transport failures that leave the outcome unknown.
+    #[must_use]
+    pub fn is_definitive_broadcast_rejection(&self) -> bool {
+        if self.is_benign_cancel_error() || self.is_transient() {
+            return false;
+        }
+
+        match self {
+            Self::Nautilus(e) => e
+                .to_string()
+                .contains("Transaction broadcast failed: code="),
+            _ => false,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -386,5 +409,49 @@ mod tests {
     fn test_benign_cancel_non_nautilus_variant() {
         let err = DydxError::Order("order rejected".to_string());
         assert!(!err.is_benign_cancel_error());
+    }
+
+    #[rstest]
+    fn test_definitive_broadcast_rejection_checktx_code() {
+        let err = DydxError::Nautilus(anyhow::anyhow!(
+            "Transaction broadcast failed: code=2000, log=insufficient margin"
+        ));
+        assert!(err.is_definitive_broadcast_rejection());
+    }
+
+    #[rstest]
+    fn test_definitive_broadcast_rejection_excludes_benign_codes() {
+        let err = DydxError::Nautilus(anyhow::anyhow!(
+            "Transaction broadcast failed: code=19, tx already in mempool cache"
+        ));
+        assert!(!err.is_definitive_broadcast_rejection());
+
+        let err = DydxError::Nautilus(anyhow::anyhow!(
+            "Transaction broadcast failed: code=3006, Order Id to cancel does not exist"
+        ));
+        assert!(!err.is_definitive_broadcast_rejection());
+    }
+
+    #[rstest]
+    fn test_definitive_broadcast_rejection_excludes_transport_errors() {
+        let status = tonic::Status::unavailable("node unavailable");
+        let err = DydxError::Grpc(Box::new(status));
+        assert!(!err.is_definitive_broadcast_rejection());
+
+        let err = DydxError::Nautilus(anyhow::anyhow!("connection reset by peer"));
+        assert!(!err.is_definitive_broadcast_rejection());
+    }
+
+    #[rstest]
+    fn test_definitive_broadcast_rejection_excludes_sequence_mismatch() {
+        let err = DydxError::Nautilus(anyhow::anyhow!(
+            "Transaction broadcast failed: code=32, log=account sequence mismatch, expected 15, received 14"
+        ));
+        assert!(!err.is_definitive_broadcast_rejection());
+
+        let err = DydxError::Nautilus(anyhow::anyhow!(
+            "Transaction broadcast failed: code=104, log=signature verification failed; please verify sequence (545)"
+        ));
+        assert!(!err.is_definitive_broadcast_rejection());
     }
 }
