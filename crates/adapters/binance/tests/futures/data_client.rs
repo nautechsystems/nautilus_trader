@@ -55,7 +55,7 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            DataResponse, RequestCustomData,
+            DataResponse, RequestCustomData, RequestFundingRates,
             subscribe::{
                 SubscribeBookDeltas, SubscribeCustomData, SubscribeMarkPrices, SubscribeQuotes,
                 SubscribeTrades,
@@ -448,6 +448,39 @@ async fn handle_open_interest_hist(raw_query: RawQuery) -> Response {
         .into_response()
 }
 
+async fn handle_funding_rate(raw_query: RawQuery) -> Response {
+    let query = raw_query.0.unwrap_or_default();
+    let params: HashMap<String, String> = serde_urlencoded::from_str(&query).unwrap_or_default();
+
+    if params
+        .get("symbol")
+        .is_some_and(|symbol| symbol == "BTCUSDT")
+        && params.get("limit").is_some_and(|limit| limit == "2")
+    {
+        return json_response(&json!([
+            {
+                "symbol": "BTCUSDT",
+                "fundingRate": "0.00010000",
+                "fundingTime": 1700000000000_i64,
+                "markPrice": "50000.00"
+            },
+            {
+                "symbol": "BTCUSDT",
+                "fundingRate": "-0.00007500",
+                "fundingTime": 1700028800000_i64,
+                "markPrice": "50100.00"
+            }
+        ]));
+    }
+
+    (
+        StatusCode::BAD_REQUEST,
+        [("content-type", "application/json")],
+        json!({"code": -1102, "msg": "Unexpected funding rate params"}).to_string(),
+    )
+        .into_response()
+}
+
 fn create_data_test_router(state: DataTestServerState) -> Router {
     Router::new()
         .route("/fapi/v1/ping", get(|| async { json_response(&json!({})) }))
@@ -493,6 +526,7 @@ fn create_data_test_router(state: DataTestServerState) -> Router {
         .route("/fapi/v1/openInterest", get(handle_open_interest))
         .route("/dapi/v1/openInterest", get(handle_open_interest_coinm))
         .route("/futures/data/openInterestHist", get(handle_open_interest_hist))
+        .route("/fapi/v1/fundingRate", get(handle_funding_rate))
         .route("/ws", get(handle_ws))
         .with_state(state)
 }
@@ -916,6 +950,50 @@ async fn test_request_unsupported_custom_data_returns_ok() {
     ));
 
     assert!(result.is_ok());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_funding_rates_emits_response() {
+    let addr = start_data_test_server().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (client, mut rx) = create_test_data_client(base_url_http, base_url_ws);
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+
+    client
+        .request_funding_rates(RequestFundingRates::new(
+            instrument_id,
+            None,
+            None,
+            Some(NonZeroUsize::new(2).unwrap()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx.try_recv().is_ok_and(|event| {
+                let DataEvent::Response(DataResponse::FundingRates(resp)) = event else {
+                    return false;
+                };
+
+                resp.instrument_id == instrument_id
+                    && resp.data.len() == 2
+                    && resp.data[0].rate == dec!(0.0001)
+                    && resp.data[0].ts_event == UnixNanos::from_millis(1700000000000)
+                    && resp.data[1].rate == dec!(-0.000075)
+                    && resp.data[1].ts_event == UnixNanos::from_millis(1700028800000)
+            });
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 }
 
 #[rstest]

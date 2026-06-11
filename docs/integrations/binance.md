@@ -131,7 +131,8 @@ Only *limit* order types support `post_only`.
 | Feature            | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
 |--------------------|------|--------|--------------|--------------|----------------------------------------------|
 | Order Modification | ✓    | -      | ✓            | ✓            | Price and quantity for `LIMIT` orders only.  |
-| Bracket/OCO Orders | -    | -      | -            | -            | *Planned*. Currently denied at submission.   |
+| OCO Orders         | ✓    | -      | -            | -            | Spot OCO submitted via `orderList/oco`.      |
+| Bracket Orders     | -    | -      | -            | -            | *Planned*. Currently denied at submission.   |
 | Iceberg Orders     | ✓    | -      | ✓            | ✓            | Large orders split into visible portions.    |
 
 ### Batch operations
@@ -248,8 +249,8 @@ the bundled fills is closed with an inferred fill from the status report's
 
 | Feature             | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
 |---------------------|------|--------|--------------|--------------|----------------------------------------------|
-| Order lists         | -    | -      | -            | -            | *Not supported*.                             |
-| OCO orders          | -    | -      | -            | -            | *Planned*. Currently denied at submission.   |
+| Order lists         | ✓    | -      | ✓            | ✓            | Spot OCO lists; Futures independent batches. |
+| OCO orders          | ✓    | -      | -            | -            | Spot only, via `orderList/oco`.              |
 | Bracket orders      | -    | -      | -            | -            | *Planned*. Currently denied at submission.   |
 | Conditional orders  | ✓    | ✓      | ✓            | ✓            | Stop and market‑if‑touched orders.           |
 
@@ -579,13 +580,21 @@ time alongside mark and index prices. All three subscriptions
 (`subscribe_mark_prices`, `subscribe_index_prices`, `subscribe_funding_rates`)
 share a single `@markPrice@1s` stream with ref-counted subscription management.
 
+Historical funding rates are available through `request_funding_rates`, which
+queries the
+[Get Funding Rate History](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Get-Funding-Rate-History)
+REST endpoint (`GET /fapi/v1/fundingRate` for USD-M, `GET /dapi/v1/fundingRate`
+for COIN-M). Each history row maps to a `FundingRateUpdate` with `ts_event` set
+to the funding time. The `next_funding_ns` field is `None` for historical rows
+because the endpoint does not provide it.
+
 The Python adapter exposes funding rate data through
 `BinanceFuturesMarkPriceUpdate` custom data subscriptions (see
 [Binance specific data](#binance-specific-data) below).
 
 The `interval` field on `FundingRateUpdate` is `None` for Binance because the
-Mark Price Stream does not include a funding interval field. Binance exposes
-`fundingIntervalHours` through the
+Mark Price Stream and the funding rate history endpoint do not include a
+funding interval field. Binance exposes `fundingIntervalHours` through the
 [Get Funding Rate Info](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Get-Funding-Rate-Info)
 REST endpoint, but the adapter does not consume it.
 
