@@ -79,6 +79,7 @@ use crate::{
         parse::{
             extract_server_timestamp, parse_account_state, parse_bars,
             parse_deribit_instrument_any, parse_order_book, parse_trade_tick,
+            use_cost_for_bar_volume,
         },
         urls::get_http_base_url,
     },
@@ -1433,11 +1434,15 @@ impl DeribitHttpClient {
             return Ok(Vec::new());
         }
 
-        // Get instrument from cache to determine precisions
+        // Get instrument from cache to determine precisions and volume-field selection.
         let instrument_id = bar_type.instrument_id();
-        let (price_precision, size_precision) =
+        let (price_precision, size_precision, use_cost_for_volume) =
             if let Some(instrument) = self.get_instrument(&instrument_id.symbol.inner()) {
-                (instrument.price_precision(), instrument.size_precision())
+                (
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                    use_cost_for_bar_volume(&instrument),
+                )
             } else {
                 log::warn!("Instrument {instrument_id} not in cache, skipping bars request");
                 anyhow::bail!("Instrument {instrument_id} not in cache");
@@ -1449,6 +1454,7 @@ impl DeribitHttpClient {
             bar_type,
             price_precision,
             size_precision,
+            use_cost_for_volume,
             ts_init,
         )?;
 

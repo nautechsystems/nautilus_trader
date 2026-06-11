@@ -515,7 +515,6 @@ pub struct DeribitTradingViewChartData {
     /// List of prices at close (one per candle)
     pub close: Vec<f64>,
     /// List of cost bars (volume in quote currency, one per candle)
-    #[serde(default)]
     pub cost: Vec<f64>,
     /// List of highest price levels (one per candle)
     pub high: Vec<f64>,
