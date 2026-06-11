@@ -202,7 +202,7 @@ where
                     }
                 }
                 Err(e) => {
-                    log::error!("Error in WebSocket stream: {e:?}");
+                    log::warn!("Error in WebSocket stream: {e:?}");
                     yield Err(e);
                     break;
                 }

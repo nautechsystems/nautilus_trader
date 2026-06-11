@@ -276,7 +276,7 @@ class BinanceWebSocketClient:
         try:
             await client.send_pong(raw)
         except WebSocketClientError as e:
-            self._log.error(f"ws-client {client_id}: {e!s}")
+            self._log.warning(f"ws-client {client_id}: {e!s}")
         except RuntimeError as e:
             # Connection raced into a non-active state between the ping arriving
             # and this task running; the Rust controller drives reconnect.
@@ -345,7 +345,7 @@ class BinanceWebSocketClient:
         try:
             await client.disconnect()
         except WebSocketClientError as e:
-            self._log.error(f"ws-client {client_id}: {e!s}")
+            self._log.warning(f"ws-client {client_id}: {e!s}")
 
         self._clients[client_id] = None  # Dispose (will go out of scope)
         self._log.debug(f"ws-client {client_id}: Disconnected from {self._base_url}")
@@ -704,7 +704,7 @@ class BinanceWebSocketClient:
     async def _send(self, client_id: int, msg: dict[str, Any]) -> None:
         client = self._clients.get(client_id)
         if client is None:
-            self._log.error(f"ws-client {client_id}: Cannot send message {msg}: not connected")
+            self._log.warning(f"ws-client {client_id}: Cannot send message {msg}: not connected")
             return
 
         self._log.debug(f"ws-client {client_id}: SENDING: {msg}")
@@ -712,4 +712,4 @@ class BinanceWebSocketClient:
         try:
             await client.send_text(msgspec.json.encode(msg))
         except WebSocketClientError as e:
-            self._log.error(f"ws-client {client_id}: {e!s}")
+            self._log.warning(f"ws-client {client_id}: {e!s}")

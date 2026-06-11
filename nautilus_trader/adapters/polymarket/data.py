@@ -613,7 +613,7 @@ class PolymarketDataClient(LiveMarketDataClient):
                 return
             self._handle_instrument_update(instrument=instrument, ws_message=msg)
         else:
-            self._log.error(f"Unknown websocket message topic: {msg}")
+            self._log.warning(f"Unknown websocket message topic: {msg}")
 
     def _handle_book_snapshot(
         self,

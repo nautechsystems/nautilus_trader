@@ -2082,7 +2082,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._add_trade_to_cache(msg, raw)
                 self._handle_ws_trade_msg(msg, wait_for_ack=True)
             else:
-                self._log.error(f"Unrecognized websocket message {msg}")
+                self._log.warning(f"Unrecognized websocket message {msg}")
         except Exception as e:
             self._log.exception(
                 f"Error handling websocket message: {e.__class__.__name__} - "
