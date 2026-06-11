@@ -11,6 +11,7 @@ Released on TBD (UTC).
 ### Fixes
 
 ### Internal Improvements
+- Optimized `Cache` query filtering to scale with open orders and positions (#4242), thanks for reporting @magnified103
 
 ### Documentation Updates
 
