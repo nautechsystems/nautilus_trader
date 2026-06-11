@@ -952,7 +952,7 @@ pub fn parse_position_status_report(
     let size_precision = instrument.size_precision();
 
     let signed_qty = Quantity::from_decimal_dp(position.size.abs(), size_precision)
-        .unwrap_or_else(|_| Quantity::new(0.0, size_precision));
+        .unwrap_or_else(|_| Quantity::zero(size_precision));
 
     let position_side = match position.direction.as_str() {
         "buy" => PositionSideSpecified::Long,
@@ -1122,7 +1122,7 @@ pub fn parse_order_updated(
     let client_order_id =
         extract_client_order_id(msg).unwrap_or_else(|| ClientOrderId::new(&msg.order_id));
     let quantity = Quantity::from_decimal_dp(msg.amount, size_precision)
-        .unwrap_or_else(|_| Quantity::new(0.0, size_precision));
+        .unwrap_or_else(|_| Quantity::zero(size_precision));
     let price = msg
         .price
         .and_then(|p| Price::from_decimal_dp(p, price_precision).ok());

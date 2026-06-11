@@ -312,7 +312,7 @@ impl BinanceAccountInfo {
         // Ensure at least one balance exists
         if balances.is_empty() {
             let zero_currency = Currency::USDT();
-            let zero_money = Money::new(0.0, zero_currency);
+            let zero_money = Money::zero(zero_currency);
             let zero_balance = AccountBalance::new(zero_money, zero_money, zero_money);
             balances.push(zero_balance);
         }

@@ -121,7 +121,7 @@ impl PositionClosed {
             avg_px_close: position.avg_px_close,
             realized_return: position.realized_return,
             realized_pnl: position.realized_pnl,
-            unrealized_pnl: Money::new(0.0, position.quote_currency),
+            unrealized_pnl: Money::zero(position.quote_currency),
             duration: position.duration_ns,
             event_id,
             ts_opened: position.ts_opened,

@@ -155,7 +155,7 @@ pub fn parse_book_deltas(
         };
 
         let (action, order_size) = if size.is_zero() {
-            (BookAction::Delete, Quantity::new(0.0, size_precision))
+            (BookAction::Delete, Quantity::zero(size_precision))
         } else {
             (BookAction::Update, size)
         };
@@ -279,7 +279,7 @@ pub fn parse_quote_from_price_change(
     let changed_price = parse_price(&quote.price, price_precision)?;
 
     let size = parse_quantity(&quote.size, size_precision)?;
-    let zero = || Quantity::new(0.0, size_precision);
+    let zero = || Quantity::zero(size_precision);
 
     // Only use the changed level's size when it matches the best price,
     // otherwise preserve the previous quote's size for that side

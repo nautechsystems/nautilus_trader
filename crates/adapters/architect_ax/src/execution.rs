@@ -1651,7 +1651,7 @@ fn create_fill_report(
     // The WS trade execution payload does not include fee data so
     // commission is zero here. The REST /fills endpoint (used during
     // reconciliation via parse_fill_report) includes accurate fees.
-    let commission = Money::new(0.0, instrument.quote_currency());
+    let commission = Money::zero(instrument.quote_currency());
 
     Some(FillReport::new(
         account_id,

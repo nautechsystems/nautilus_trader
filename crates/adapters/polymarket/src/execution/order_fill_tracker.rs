@@ -242,7 +242,7 @@ impl OrderFillTrackerMap {
                 order_side,
                 last_qty: dust_qty,
                 last_px: fill_px,
-                commission: Money::new(0.0, currency),
+                commission: Money::zero(currency),
                 liquidity_side: LiquiditySide::NoLiquiditySide,
                 avg_px: None,
                 report_id: UUID4::new(),

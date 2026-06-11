@@ -1062,7 +1062,7 @@ pub fn parse_position_status_report(
             (PositionSideSpecified::Short, qty)
         }
         BybitPositionSide::Flat => {
-            let qty = Quantity::new(0.0, instrument.size_precision());
+            let qty = Quantity::zero(instrument.size_precision());
             (PositionSideSpecified::Flat, qty)
         }
     };

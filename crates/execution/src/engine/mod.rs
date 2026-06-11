@@ -3387,10 +3387,12 @@ impl ExecutionEngine {
         };
 
         // Split commission between two positions
-        let fill_percent = position.quantity.as_f64() / fill.last_qty.as_f64();
+        let fill_percent = position.quantity.as_decimal() / fill.last_qty.as_decimal();
         let (commission1, commission2) = if let Some(commission) = fill.commission {
             let commission_currency = commission.currency;
-            let commission1 = Money::new(commission * fill_percent, commission_currency);
+            let commission1 =
+                Money::from_decimal(commission.as_decimal() * fill_percent, commission_currency)
+                    .expect("Invalid split commission");
             let commission2 = commission - commission1;
             (Some(commission1), Some(commission2))
         } else {

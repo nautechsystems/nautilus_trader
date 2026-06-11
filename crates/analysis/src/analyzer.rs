@@ -421,7 +421,7 @@ impl PortfolioAnalyzer {
             .get(currency)
             .ok_or("Specified currency not found in account balances")?;
 
-        let default_money = &Money::new(0.0, *currency);
+        let default_money = &Money::zero(*currency);
         let account_balance_starting = self
             .account_balances_starting
             .get(currency)
@@ -469,7 +469,7 @@ impl PortfolioAnalyzer {
             .get(currency)
             .ok_or("Specified currency not found in account balances")?;
 
-        let default_money = &Money::new(0.0, *currency);
+        let default_money = &Money::zero(*currency);
         let account_balance_starting = self
             .account_balances_starting
             .get(currency)

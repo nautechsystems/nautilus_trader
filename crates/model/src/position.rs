@@ -776,7 +776,7 @@ impl Position {
     #[must_use]
     pub fn unrealized_pnl(&self, last: Price) -> Money {
         if self.side == PositionSide::Flat {
-            Money::new(0.0, self.settlement_currency)
+            Money::zero(self.settlement_currency)
         } else {
             let avg_px_open = self.avg_px_open;
             let avg_px_close = last.as_f64();

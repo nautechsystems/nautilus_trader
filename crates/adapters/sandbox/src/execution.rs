@@ -730,7 +730,7 @@ impl SandboxExecutionClient {
             .borrow()
             .balances
             .values()
-            .map(|money| AccountBalance::new(*money, Money::new(0.0, money.currency), *money))
+            .map(|money| AccountBalance::new(*money, Money::zero(money.currency), *money))
             .collect()
     }
 

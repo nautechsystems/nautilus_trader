@@ -5445,7 +5445,7 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
         None,
         None,
         None,
-        None,
+        Some(Money::from("3 USD")),
         None,
         Some(AccountId::test_default()),
     );
@@ -5484,14 +5484,18 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
             original_position.is_closed(),
             "Original position should be closed after flip"
         );
+        let close_split = original_position
+            .events
+            .last()
+            .expect("closed position should include the closing split fill");
         assert_eq!(
-            original_position
-                .events
-                .last()
-                .expect("closed position should include the closing split fill")
-                .event_id,
-            flip_fill_event_id,
+            close_split.event_id, flip_fill_event_id,
             "close-side split fill should retain the original fill event ID",
+        );
+        assert_eq!(
+            close_split.commission,
+            Some(Money::from("2 USD")),
+            "close-side split fill should receive two thirds of the commission",
         );
     }
 
@@ -5530,6 +5534,15 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
             flipped_position.quantity,
             Quantity::from(50_000), // 150,000 - 100,000 = 50,000
             "Flipped position quantity should be 50,000 (150,000 - 100,000)"
+        );
+        assert_eq!(
+            flipped_position
+                .events
+                .first()
+                .expect("flipped position should include the opening split fill")
+                .commission,
+            Some(Money::from("1 USD")),
+            "open-side split fill should receive the residual commission",
         );
 
         assert_eq!(

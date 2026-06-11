@@ -59,6 +59,7 @@ use nautilus_model::{
         quantity::QuantityRaw,
     },
 };
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
@@ -2355,10 +2356,10 @@ impl OrderMatchingEngine {
 
     fn option_should_exercise(&self, underlying_price: Price) -> bool {
         let strike = match self.instrument.strike_price() {
-            Some(p) => p.as_f64(),
+            Some(p) => p.as_decimal(),
             None => return false,
         };
-        let spot = underlying_price.as_f64();
+        let spot = underlying_price.as_decimal();
         match self.instrument.option_kind() {
             Some(OptionKind::Call) => spot > strike,
             Some(OptionKind::Put) => strike > spot,
@@ -2375,13 +2376,13 @@ impl OrderMatchingEngine {
             return strike;
         }
 
-        let spot = underlying_price.as_f64();
-        let strike_f = strike.as_f64();
+        let spot = underlying_price.as_decimal();
+        let strike_value = strike.as_decimal();
         let value = match self.instrument.option_kind() {
-            Some(OptionKind::Call) => (spot - strike_f).max(0.0),
-            _ => (strike_f - spot).max(0.0),
+            Some(OptionKind::Call) => (spot - strike_value).max(Decimal::ZERO),
+            _ => (strike_value - spot).max(Decimal::ZERO),
         };
-        Price::new(value, strike.precision)
+        Price::from_decimal_dp(value, strike.precision).expect("Invalid option settlement price")
     }
 
     fn option_exercise_position(
@@ -2441,10 +2442,11 @@ impl OrderMatchingEngine {
         custom_option_price: Option<Price>,
     ) {
         let multiplier = self.instrument.multiplier();
-        let underlying_qty = Quantity::new(
-            position.quantity.as_f64() * multiplier.as_f64(),
+        let underlying_qty = Quantity::from_decimal_dp(
+            position.quantity.as_decimal() * multiplier.as_decimal(),
             underlying_instrument.size_precision(),
-        );
+        )
+        .expect("Invalid underlying settlement quantity");
 
         let underlying_side = if self.instrument.option_kind() == Some(OptionKind::Call) {
             position.side
@@ -2461,8 +2463,8 @@ impl OrderMatchingEngine {
         let close_trade_id = format!("{trade_base}-CLOSE");
         let open_trade_id = format!("{trade_base}-OPEN");
         let settlement_px = self.option_settlement_price(underlying_price, false);
-        let option_close_px = custom_option_price
-            .unwrap_or_else(|| Price::new(0.0, self.instrument.price_precision()));
+        let option_close_px =
+            custom_option_price.unwrap_or_else(|| Price::zero(self.instrument.price_precision()));
         let close_side = OrderCore::closing_side(position.side);
         let underlying_order_side = match underlying_side {
             PositionSide::Long => OrderSide::Buy,
@@ -2515,8 +2517,8 @@ impl OrderMatchingEngine {
     ) {
         let venue = self.venue;
         let trade_id = format!("{venue}-LEG-OTM-{}", &UUID4::new().to_string()[..8]);
-        let close_px = custom_option_price
-            .unwrap_or_else(|| Price::new(0.0, self.instrument.price_precision()));
+        let close_px =
+            custom_option_price.unwrap_or_else(|| Price::zero(self.instrument.price_precision()));
         let close_side = OrderCore::closing_side(position.side);
         self.option_register_settlement_order(
             position,
@@ -2613,7 +2615,7 @@ impl OrderMatchingEngine {
             ts_now,
             false,
             Some(position.id),
-            Some(Money::new(0.0, self.instrument.quote_currency())),
+            Some(Money::zero(self.instrument.quote_currency())),
         )
     }
 
@@ -2651,7 +2653,7 @@ impl OrderMatchingEngine {
             ts_now,
             false,
             None,
-            Some(Money::new(0.0, underlying_instrument.quote_currency())),
+            Some(Money::zero(underlying_instrument.quote_currency())),
         )
     }
 

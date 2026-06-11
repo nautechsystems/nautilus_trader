@@ -692,7 +692,7 @@ pub fn parse_account_state(
     // Ensure at least one balance exists (Nautilus requires non-empty balances)
     if balances.is_empty() {
         let zero_currency = Currency::USD();
-        let zero_money = Money::new(0.0, zero_currency);
+        let zero_money = Money::zero(zero_currency);
         let zero_balance = AccountBalance::new(zero_money, zero_money, zero_money);
         balances.push(zero_balance);
     }
