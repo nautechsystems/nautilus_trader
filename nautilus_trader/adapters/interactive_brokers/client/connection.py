@@ -15,6 +15,7 @@
 
 import asyncio
 import functools
+import secrets
 
 from ibapi import comm
 from ibapi import decoder
@@ -140,9 +141,23 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
 
         """
         self._eclient.reset()
+        if self._randomize_client_id_on_next_connect:
+            self._client_id = self._generate_random_client_id()
+            self._randomize_client_id_on_next_connect = False
+        else:
+            self._client_id = self._configured_client_id
         self._eclient.host = self._host
         self._eclient.port = self._port
         self._eclient.clientId = self._client_id
+
+    def _generate_random_client_id(self) -> int:
+        reserved_client_ids = {self._configured_client_id, self._client_id}
+        client_id = self._client_id
+
+        while client_id in reserved_client_ids:
+            client_id = 1000 + secrets.randbelow(9000)
+
+        return client_id
 
     async def _connect_socket(self) -> None:
         """

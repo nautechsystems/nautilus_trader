@@ -16,6 +16,7 @@
 import asyncio
 import functools
 import os
+import secrets
 import traceback
 from collections.abc import Callable
 from collections.abc import Coroutine
@@ -121,6 +122,7 @@ class InteractiveBrokersClient(
         self._cache = cache
         self._host = host
         self._port = port
+        self._configured_client_id = client_id
         self._client_id = client_id
         self._fetch_all_open_orders = fetch_all_open_orders
         self._request_timeout_secs = request_timeout_secs
@@ -166,8 +168,11 @@ class InteractiveBrokersClient(
         self._max_connection_attempts: int = int(os.getenv("IB_MAX_CONNECTION_ATTEMPTS", "0"))
         self._indefinite_reconnect: bool = not self._max_connection_attempts
         self._reconnect_delay: int = 5  # seconds
+        self._reconnect_delay_max: int = 300  # seconds
+        self._reconnect_jitter_secs: int = secrets.randbelow(4)
         self._had_ib_connection: bool = False
         self._last_disconnection_ns: int | None = None
+        self._randomize_client_id_on_next_connect: bool = False
 
         # MarketDataMixin
         self._bar_type_to_last_bar: dict[str, BarData | None] = {}
@@ -220,6 +225,10 @@ class InteractiveBrokersClient(
 
         while not self._is_ib_connected.is_set():
             try:
+                if self.state in _SHUTDOWN_STATES:
+                    break
+
+                self._is_shutting_down = False
                 self._connection_attempts += 1
 
                 if (
@@ -231,10 +240,14 @@ class InteractiveBrokersClient(
                     break
 
                 if self._connection_attempts > 1:
+                    reconnect_delay = self._get_reconnect_delay()
                     self._log.info(
-                        f"Attempt {self._connection_attempts}: attempting to reconnect in {self._reconnect_delay} seconds...",
+                        f"Attempt {self._connection_attempts}: attempting to reconnect in {reconnect_delay} seconds...",
                     )
-                    await asyncio.sleep(self._reconnect_delay)
+                    await asyncio.sleep(reconnect_delay)
+
+                    if self._is_shutting_down or self.state in _SHUTDOWN_STATES:
+                        break
 
                 await self._connect()
                 if not self._eclient.isConnected():
@@ -256,9 +269,51 @@ class InteractiveBrokersClient(
 
             except TimeoutError:
                 self._log.error("Client failed to initialize; connection timeout")
+                await self._cleanup_failed_startup_attempt()
             except Exception as e:
                 self._log.exception("Unhandled exception in client startup", e)
-                self._stop()
+                await self._cleanup_failed_startup_attempt()
+
+    def _get_reconnect_delay(self) -> int:
+        exponential_delay = self._reconnect_delay * 2 ** (self._connection_attempts - 2)
+        return min(exponential_delay, self._reconnect_delay_max) + self._reconnect_jitter_secs
+
+    async def _cleanup_failed_startup_attempt(self) -> None:
+        # A failed handshake is not a user shutdown; clean up this socket attempt
+        # without leaving `_is_shutting_down` set for the next reconnect loop.
+        if self._is_client_ready.is_set():
+            self._is_client_ready.clear()
+            self._log.debug(
+                "`_is_client_ready` unset by `_cleanup_failed_startup_attempt`",
+                LogColor.BLUE,
+            )
+
+        if self._is_ib_connected.is_set():
+            self._is_ib_connected.clear()
+            self._log.debug(
+                "`_is_ib_connected` unset by `_cleanup_failed_startup_attempt`",
+                LogColor.BLUE,
+            )
+
+        tasks = [
+            self._connection_watchdog_task,
+            self._tws_incoming_msg_reader_task,
+            self._internal_msg_queue_processor_task,
+            self._msg_handler_processor_task,
+        ]
+
+        for task in tasks:
+            if task and not task.done():
+                task.cancel()
+
+        tasks = [task for task in tasks if task is not None]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        await self._clear_bar_tracking_state()
+        if self._eclient.conn:
+            self._eclient.conn.disconnect()
+        self._is_shutting_down = False
 
     def _start_tws_incoming_msg_reader(self) -> None:
         """

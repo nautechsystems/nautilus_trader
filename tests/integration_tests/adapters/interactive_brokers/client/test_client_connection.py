@@ -16,6 +16,7 @@
 import asyncio
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import pytest
 from ibapi.const import NO_VALID_ID
@@ -69,6 +70,38 @@ async def test_connect_fail(ib_client):
     assert call_args[2] == CONNECT_FAIL.code()
     assert call_args[3] == CONNECT_FAIL.msg()
     ib_client._handle_reconnect.assert_not_awaited()
+
+
+def test_initialize_connection_params_uses_configured_client_id(ib_client):
+    # Arrange
+    ib_client._configured_client_id = 0
+    ib_client._client_id = 8765
+
+    # Act
+    ib_client._initialize_connection_params()
+
+    # Assert
+    assert ib_client._client_id == 0
+    assert ib_client._eclient.clientId == 0
+
+
+def test_initialize_connection_params_randomizes_client_id_after_326(ib_client):
+    # Arrange
+    ib_client._configured_client_id = 4321
+    ib_client._client_id = 8765
+    ib_client._randomize_client_id_on_next_connect = True
+
+    # Act
+    with patch(
+        "nautilus_trader.adapters.interactive_brokers.client.connection.secrets.randbelow",
+        side_effect=[3321, 7765, 1357],
+    ):
+        ib_client._initialize_connection_params()
+
+    # Assert
+    assert ib_client._client_id == 2357
+    assert ib_client._eclient.clientId == 2357
+    assert ib_client._randomize_client_id_on_next_connect is False
 
 
 # Test for successful reconnection
