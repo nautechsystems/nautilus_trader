@@ -31,6 +31,7 @@ pin exact values when the value itself is the public output contract under test,
 from __future__ import annotations
 
 import math
+from decimal import Decimal
 
 import pytest
 
@@ -41,6 +42,7 @@ from nautilus_trader.model import AccountType
 from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import BarType
 from nautilus_trader.model import Currency
+from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import OrderSide
@@ -52,6 +54,7 @@ from nautilus_trader.model import TradeId
 from nautilus_trader.model import TradeTick
 from nautilus_trader.model import Venue
 from nautilus_trader.risk import RiskEngineConfig
+from nautilus_trader.trading import ExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
 from tests.providers import TestDataProvider
 from tests.providers import TestInstrumentProvider
@@ -423,9 +426,54 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
     def teardown_method(self):
         self.engine.dispose()
 
-    @pytest.mark.skip(reason="v2 missing: TWAPExecAlgorithm + EMACrossTWAP example strategy")
     def test_run_ema_cross_with_minute_trade_bars(self):
-        pass
+        bars = TestDataProvider.bars_from_binance_csv(
+            self.btcusdt,
+            bar_type=BarType.from_str("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+            csv_name="btc-perp-20211231-20220201_1m.csv",
+            max_rows=5_000,
+        )
+        self.engine.add_data(bars)
+
+        self.engine.add_native_exec_algorithm(
+            "TwapAlgorithm",
+            ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("TWAP")),
+        )
+        self.engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path="strategies.ema_cross_twap:EMACrossTWAP",
+                config_path="strategies.ema_cross_twap:EMACrossTWAPConfig",
+                config={
+                    "instrument_id": str(self.btcusdt.id),
+                    "bar_type": "BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
+                    "trade_size": "0.010000",
+                    "twap_horizon_secs": 10.0,
+                    "twap_interval_secs": 2.5,
+                },
+            ),
+        )
+
+        self.engine.run()
+
+        result = self.engine.get_result()
+        orders = self.engine.cache.orders()
+        primary_orders = [o for o in orders if o.exec_spawn_id is None]
+        spawned_orders = [o for o in orders if o.exec_spawn_id is not None]
+        assert result.iterations == len(bars)
+        assert result.total_positions > 0
+        assert primary_orders
+        assert all(o.exec_algorithm_id == ExecAlgorithmId("TWAP") for o in orders)
+        # 10s horizon / 2.5s interval = 4 slices: 3 spawned children, then the
+        # reduced primary submits as the final slice.
+        assert len(spawned_orders) == 3 * len(primary_orders)
+        assert all(o.status == OrderStatus.FILLED for o in orders)
+        # Each sequence conserves the configured trade size across its slices
+        for primary in primary_orders:
+            children = [o for o in spawned_orders if o.exec_spawn_id == primary.client_order_id]
+            sequence_qty = primary.quantity.as_decimal() + sum(
+                o.quantity.as_decimal() for o in children
+            )
+            assert sequence_qty == Decimal("0.010000")
 
     def test_run_ema_cross_with_trade_ticks_from_bar_data(self):
         bars = TestDataProvider.bars_from_binance_csv(

@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added Redis cache adapter order, position, and order-index write persistence (Rust)
 - Added `order_position_index` Postgres table for the order-position index; run `make init-db` to migrate
 - Added negative price support for `Commodity` instruments in risk checks (#2330), thanks for reporting @fabz1
+- Added `add_native_exec_algorithm` and `ExecutionAlgorithmConfig` bindings to the Python v2 backtest engine
 
 ### Breaking Changes
 - Changed plug-in loader to reject build mismatches by default; opt out with `set_allow_build_mismatch` (Rust)
@@ -28,6 +29,8 @@ Released on TBD (UTC).
 - Fixed event-store replay, scan, marker, and halt-signal edge cases around skipped events, gaps, and reruns (Rust)
 - Fixed Postgres order-client index load panic on orders persisted without a client ID (Rust)
 - Fixed `RiskEngine` bypass to also skip modify-order risk checks (#2330), thanks for reporting @fabz1
+- Fixed `TwapAlgorithm` rejecting primary orders already cached by the engine submit path (Rust)
+- Fixed `TwapAlgorithm` time event and lifecycle dispatch so all scheduled slices execute (Rust)
 - Fixed Architect AX to deny invalid submits locally and defer ambiguous command failures to reconciliation
 - Fixed dYdX to deny unsupported submits locally and emit rejections only for definitive CheckTx refusals
 - Fixed Interactive Brokers to deny not-ready submits locally and drop synthetic cancel/modify rejections

@@ -9,6 +9,7 @@ from nautilus_trader import model
 from nautilus_trader import portfolio
 
 __all__ = [
+    "ExecutionAlgorithmConfig",
     "ForexSession",
     "ImportableExecAlgorithmConfig",
     "ImportableStrategyConfig",
@@ -20,6 +21,21 @@ __all__ = [
     "fx_prev_end",
     "fx_prev_start",
 ]
+
+@typing.final
+class ExecutionAlgorithmConfig:
+    def __init__(
+        self,
+        exec_algorithm_id: model.ExecAlgorithmId | None = None,
+        log_events: bool = True,
+        log_commands: bool = True,
+    ) -> None: ...
+    @property
+    def exec_algorithm_id(self) -> model.ExecAlgorithmId | None: ...
+    @property
+    def log_events(self) -> bool: ...
+    @property
+    def log_commands(self) -> bool: ...
 
 @typing.final
 class ImportableExecAlgorithmConfig:

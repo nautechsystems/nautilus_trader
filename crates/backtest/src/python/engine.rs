@@ -64,6 +64,7 @@ use nautilus_trading::examples::{
 };
 use nautilus_trading::{
     ImportableStrategyConfig,
+    algorithm::{TwapAlgorithm, TwapAlgorithmConfig},
     python::strategy::{PyStrategy, PyStrategyInner},
 };
 use pyo3::prelude::*;
@@ -662,6 +663,24 @@ impl PyBacktestEngine {
         register(&mut self.0, config)
     }
 
+    /// Adds a compiled-in native Rust execution algorithm from its type name and config.
+    ///
+    /// The type name determines which built-in execution algorithm is constructed.
+    /// All execution happens in Rust; Python is the configuration layer.
+    #[pyo3(name = "add_native_exec_algorithm")]
+    fn py_add_native_exec_algorithm(
+        &mut self,
+        type_name: &str,
+        config: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let register = native_exec_algorithm_register(type_name).ok_or_else(|| {
+            to_pytype_err(format!(
+                "Unsupported native exec algorithm type: {type_name}"
+            ))
+        })?;
+        register(&mut self.0, config)
+    }
+
     /// Runs the backtest engine.
     #[pyo3(
         name = "run",
@@ -889,6 +908,28 @@ fn native_actor_register(type_name: &str) -> Option<NativeActorRegister> {
         "BookImbalanceActor" => Some(register_book_imbalance_actor),
         _ => None,
     }
+}
+
+type NativeExecAlgorithmRegister =
+    for<'py> fn(&mut BacktestEngine, &Bound<'py, PyAny>) -> PyResult<()>;
+
+fn native_exec_algorithm_register(type_name: &str) -> Option<NativeExecAlgorithmRegister> {
+    match type_name {
+        "TwapAlgorithm" => Some(register_twap_algorithm),
+        _ => None,
+    }
+}
+
+fn register_twap_algorithm(engine: &mut BacktestEngine, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<TwapAlgorithmConfig>()?;
+    if config.exec_algorithm_id.is_none() {
+        return Err(to_pyvalue_err(
+            "TwapAlgorithm config requires `exec_algorithm_id`",
+        ));
+    }
+    engine
+        .add_exec_algorithm(TwapAlgorithm::new(config))
+        .map_err(to_pyruntime_err)
 }
 
 #[cfg(feature = "examples")]

@@ -82,7 +82,21 @@ impl TwapAlgorithm {
     }
 }
 
-impl DataActor for TwapAlgorithm {}
+// The clock and component lifecycle dispatch through the `DataActor` hooks,
+// so forward them to the `ExecutionAlgorithm` implementations.
+impl DataActor for TwapAlgorithm {
+    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+        ExecutionAlgorithm::on_time_event(self, event)
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        ExecutionAlgorithm::on_stop(self)
+    }
+
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        ExecutionAlgorithm::on_reset(self)
+    }
+}
 
 nautilus_actor!(TwapAlgorithm);
 
@@ -213,11 +227,14 @@ impl ExecutionAlgorithm for TwapAlgorithm {
 
         log::info!("Order execution size schedule: {scheduled_sizes:?}");
 
-        // Add primary order to cache so on_time_event can retrieve it
+        // Add primary order to cache so on_time_event can retrieve it,
+        // it is already present when routed through the engine's submit path.
         {
             let cache_rc = self.core.cache_rc();
             let mut cache = cache_rc.borrow_mut();
-            cache.add_order(order.clone(), None, None, false)?;
+            if !cache.order_exists(&primary_id) {
+                cache.add_order(order.clone(), None, None, false)?;
+            }
         }
 
         self.scheduled_sizes
@@ -461,7 +478,8 @@ mod tests {
 
         assert!(!algo.scheduled_sizes.is_empty());
 
-        ExecutionAlgorithm::on_reset(&mut algo).unwrap();
+        // Dispatch through the DataActor entry point the component lifecycle uses
+        DataActor::on_reset(&mut algo).unwrap();
 
         assert!(algo.scheduled_sizes.is_empty());
     }
@@ -638,6 +656,32 @@ mod tests {
     }
 
     #[rstest]
+    fn test_twap_on_order_accepts_already_cached_primary() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+
+        // The engine submit path caches the primary before routing to the algorithm
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.add_order(order.clone(), None, None, false).unwrap();
+        }
+
+        algo.on_order(order).unwrap();
+
+        assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 2);
+    }
+
+    #[rstest]
     fn test_twap_calculates_size_schedule_with_remainder() {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
@@ -701,6 +745,30 @@ mod tests {
         ExecutionAlgorithm::on_time_event(&mut algo, &event).unwrap();
 
         // One slice consumed
+        assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 1);
+    }
+
+    #[rstest]
+    fn test_twap_data_actor_dispatch_spawns_next_slice() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+
+        algo.on_order(order).unwrap();
+        assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 2);
+
+        // Dispatch through the DataActor entry point the clock callback uses
+        let event = TimeEvent::new(primary_id.inner(), UUID4::new(), 0.into(), 0.into());
+        algo.handle_time_event(&event);
+
         assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 1);
     }
 
@@ -796,8 +864,8 @@ mod tests {
                 .contains(&primary_id.as_str())
         );
 
-        // Stop the algorithm
-        ExecutionAlgorithm::on_stop(&mut algo).unwrap();
+        // Stop through the DataActor entry point the component lifecycle uses
+        DataActor::on_stop(&mut algo).unwrap();
 
         // Timer should be canceled
         assert!(algo.core.clock().timer_names().is_empty());
