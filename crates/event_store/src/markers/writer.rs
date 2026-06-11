@@ -70,7 +70,7 @@ mod imp {
     use std::{
         fmt::Debug,
         sync::{
-            Mutex,
+            Mutex, PoisonError,
             atomic::{AtomicBool, AtomicU64, Ordering},
             mpsc::{self, RecvTimeoutError, SyncSender, TrySendError},
         },
@@ -162,7 +162,10 @@ mod imp {
             config: MarkerWriterConfig,
         ) -> Result<Self, EventStoreError> {
             backend.manifest()?;
-            let (tx, rx) = mpsc::sync_channel::<MarkerMsg>(config.channel_capacity);
+            // A zero capacity would create a rendezvous channel: try_send only succeeds
+            // while the writer thread is parked in recv, so most submits would overflow
+            // and put_dict would block the engine thread on every new stream.
+            let (tx, rx) = mpsc::sync_channel::<MarkerMsg>(config.channel_capacity.max(1));
             let config_for_thread = config;
 
             let handle = thread::Builder::new()
@@ -262,19 +265,19 @@ mod imp {
         }
 
         /// Drains pending markers and seals the marker run.
-        ///
-        /// # Panics
-        ///
-        /// Panics if the pending overflow range mutex is poisoned.
         pub fn close(mut self) {
+            self.close_inner();
+        }
+
+        // Shared by close() and Drop: an implicit drop must still convert the pending
+        // overflow range into its WriterClosed gap record and drain buffered markers,
+        // or the verifier sees an unexplained marker_seq hole.
+        fn close_inner(&mut self) {
             self.closed.store(true, Ordering::Release);
 
             if let Some(tx) = self.tx.take() {
                 let close_msg = {
-                    let mut dropped = self
-                        .dropped
-                        .lock()
-                        .expect("marker dropped range mutex poisoned");
+                    let mut dropped = self.dropped.lock().unwrap_or_else(PoisonError::into_inner);
                     if let Some(range) = dropped.take() {
                         MarkerMsg::GapThen {
                             gap: range.gap(MarkerGapReason::WriterClosed),
@@ -288,20 +291,17 @@ mod imp {
                 drop(tx);
             }
 
-            if let Some(handle) = self.handle.take() {
-                let _ = handle.join();
+            if let Some(handle) = self.handle.take()
+                && handle.join().is_err()
+            {
+                log::error!("Marker writer thread panicked");
             }
         }
     }
 
     impl Drop for MarkerWriter {
         fn drop(&mut self) {
-            self.closed.store(true, Ordering::Release);
-            self.tx.take();
-
-            if let Some(handle) = self.handle.take() {
-                let _ = handle.join();
-            }
+            self.close_inner();
         }
     }
 
@@ -345,12 +345,17 @@ mod imp {
                 }
             }
 
-            if write_batch(backend.as_mut(), batch.drain(..)).is_err() {
+            if let Err(e) = write_batch(backend.as_mut(), batch.drain(..)) {
+                log::error!(
+                    "Marker writer fail-stopped, marker capture is disabled for the rest of the run: {e}"
+                );
                 return;
             }
 
             if should_close {
-                let _ = backend.seal(RunStatus::Ended);
+                if let Err(e) = backend.seal(RunStatus::Ended) {
+                    log::error!("Failed to seal marker run on close: {e}");
+                }
                 return;
             }
 
@@ -1182,6 +1187,92 @@ mod tests {
             vec![MarkerGap {
                 from_marker_seq: 3,
                 to_marker_seq: 4,
+                reason: MarkerGapReason::WriterClosed,
+            }]
+        );
+        assert_eq!(
+            backend
+                .scan_snapshots()
+                .expect("scan snapshots")
+                .into_iter()
+                .map(|snapshot| snapshot.marker_seq)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        assert_eq!(
+            backend.manifest().expect("manifest").status,
+            RunStatus::Ended
+        );
+    }
+
+    #[rstest]
+    fn drop_records_pending_drop_as_writer_closed_gap() {
+        // An implicit drop (panic unwind, owner teardown that skips close) must still
+        // convert the pending overflow range into its WriterClosed gap record; losing
+        // it leaves the verifier an unexplained marker_seq hole.
+        let inner = Arc::new(Mutex::new(MemoryMarkerBackend::new()));
+        inner
+            .lock()
+            .expect("inner marker")
+            .open_run(manifest("run-drop-gap"))
+            .expect("open marker run");
+        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let appends_seen = Arc::new(AtomicUsize::new(0));
+        let backend = BlockingMarkerBackend::new(
+            Arc::clone(&inner),
+            Arc::clone(&gate),
+            Arc::clone(&appends_seen),
+        );
+
+        let writer = MarkerWriter::spawn(
+            Box::new(backend),
+            get_atomic_clock_static(),
+            MarkerWriterConfig {
+                channel_capacity: 1,
+                max_batch: 1,
+                max_latency: Duration::from_secs(30),
+            },
+        )
+        .expect("spawn marker writer");
+
+        let first = snapshot(1);
+        assert!(
+            writer
+                .submit(MarkerMsg::Snapshot(first.clone()), first.marker_seq)
+                .expect("submit first")
+        );
+        wait_until(
+            || appends_seen.load(Ordering::SeqCst) == 1,
+            "writer to block in backend append",
+        );
+
+        let second = snapshot(2);
+        assert!(
+            writer
+                .submit(MarkerMsg::Snapshot(second.clone()), second.marker_seq)
+                .expect("submit second")
+        );
+
+        let dropped = snapshot(3);
+        assert!(
+            !writer
+                .submit(MarkerMsg::Snapshot(dropped), 3)
+                .expect("submit drop")
+        );
+
+        let drop_thread = std::thread::spawn(move || drop(writer));
+        std::thread::sleep(Duration::from_millis(20));
+        let (lock, cvar) = &*gate;
+        *lock.lock().expect("gate") = true;
+        cvar.notify_all();
+        drop_thread.join().expect("drop thread");
+
+        let backend = inner.lock().expect("inner marker");
+        assert_eq!(
+            backend.scan_gaps().expect("scan gaps"),
+            vec![MarkerGap {
+                from_marker_seq: 3,
+                to_marker_seq: 3,
                 reason: MarkerGapReason::WriterClosed,
             }]
         );

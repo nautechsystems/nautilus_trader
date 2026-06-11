@@ -135,6 +135,7 @@ impl Verifier {
         let scan = self.scan_entries(high_watermark, &mut findings)?;
 
         self.cross_check_indices(&scan, &mut findings)?;
+        check_snapshot_anchor(self.backend.as_ref(), high_watermark, &mut findings)?;
         validate_manifest(&manifest, high_watermark, &scan, &mut findings);
 
         Ok(VerifyReport {
@@ -270,6 +271,35 @@ fn classify_target(stored_seq: u64, scan: &EntryScan) -> Option<IndexDrift> {
     }
 }
 
+// The restore path reads the snapshot anchor before tail replay, so an anchor that
+// fails to decode or points past the durable watermark must not verify clean. Other
+// read failures (disk pressure, storage errors) propagate: suppressing them would
+// pass a run whose restore would fail reading the same anchor.
+fn check_snapshot_anchor(
+    backend: &dyn EventStore,
+    high_watermark: u64,
+    findings: &mut Vec<VerifyFinding>,
+) -> Result<(), VerifyError> {
+    match backend.latest_snapshot_anchor() {
+        Ok(Some(anchor)) if anchor.high_watermark > high_watermark => {
+            findings.push(VerifyFinding::SnapshotAnchorInvalid {
+                reason: format!(
+                    "snapshot anchor high_watermark {} exceeds durable high_watermark {high_watermark}",
+                    anchor.high_watermark,
+                ),
+            });
+        }
+        Ok(_) => {}
+        Err(EventStoreError::Corrupted(msg)) => {
+            findings.push(VerifyFinding::SnapshotAnchorInvalid {
+                reason: format!("snapshot anchor unreadable: {msg}"),
+            });
+        }
+        Err(other) => return Err(VerifyError::Backend(other)),
+    }
+    Ok(())
+}
+
 fn validate_manifest(
     manifest: &RunManifest,
     high_watermark: u64,
@@ -394,6 +424,12 @@ pub enum VerifyFinding {
         /// Which manifest field the finding applies to.
         kind: ManifestField,
         /// Operator-readable explanation of the mismatch.
+        reason: String,
+    },
+    /// The recorded snapshot anchor cannot support a restore: it fails to decode or
+    /// points past the durable high-watermark.
+    SnapshotAnchorInvalid {
+        /// Operator-readable explanation of the failure.
         reason: String,
     },
 }

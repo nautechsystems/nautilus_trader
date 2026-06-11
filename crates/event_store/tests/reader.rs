@@ -27,8 +27,9 @@ use nautilus_event_store::{
     AppendEntry, EntryDraft, EventStore, EventStoreEntry, EventStoreError, EventStoreReader,
     EventStoreWriter, HaltCallback, HaltReason, Headers, IndexKey, IndexKind, RedbBackend,
     RegisteredComponents, RunManifest, RunStatus, ScanDirection, Topic, WriterConfig,
-    compute_entry_hash,
+    compute_entry_hash, recover_predecessors,
 };
+use redb::Database;
 use rstest::rstest;
 use tempfile::TempDir;
 use ustr::Ustr;
@@ -75,6 +76,34 @@ fn run_ended_draft() -> EntryDraft {
         ts_init: UnixNanos::from(9_999),
         index_keys: Vec::new(),
     }
+}
+
+fn append_entry(seq: u64, ts_init: u64) -> AppendEntry {
+    let topic = Topic::from("exec.command.SubmitOrder");
+    let payload_type = Ustr::from("SubmitOrder");
+    let payload = Bytes::from_static(b"\x01\x02\x03\x04");
+    let ts_publish = UnixNanos::from(ts_init + 1);
+    let ts_init = UnixNanos::from(ts_init);
+    let hash = compute_entry_hash(
+        seq,
+        ts_init,
+        ts_publish,
+        topic.as_ref(),
+        payload_type.as_str(),
+        &payload,
+        &Headers::empty(),
+    );
+
+    AppendEntry::without_indices(EventStoreEntry::new(
+        hash,
+        seq,
+        Headers::empty(),
+        topic,
+        payload_type,
+        payload,
+        ts_init,
+        ts_publish,
+    ))
 }
 
 fn captured_halt() -> (HaltCallback, Arc<Mutex<Vec<HaltReason>>>) {
@@ -330,6 +359,62 @@ fn list_runs_returns_empty_when_directory_missing() {
     let manifests = RedbBackend::list_runs(tmp.path(), "no-such-instance").expect("list runs");
 
     assert!(manifests.is_empty(), "manifests was: {manifests:?}");
+}
+
+#[rstest]
+fn list_runs_skips_manifestless_run_file() {
+    // A crash between Database::create and the manifest commit leaves a structurally
+    // valid redb file with no manifest row. The listing must skip it instead of
+    // blocking recovery and retention over the healthy runs.
+    let tmp = TempDir::new().expect("tempdir");
+    let _ = seed_sealed_run(&tmp, "run-good", 100, vec![entry_draft(110, Vec::new())]);
+
+    let poison = tmp.path().join(INSTANCE_ID).join("poison.redb");
+    drop(Database::create(&poison).expect("create poison file"));
+
+    let manifests = RedbBackend::list_runs(tmp.path(), INSTANCE_ID).expect("list runs");
+    let ids: Vec<&str> = manifests.iter().map(|m| m.run_id.as_str()).collect();
+
+    assert_eq!(ids, vec!["run-good"]);
+}
+
+#[rstest]
+fn list_runs_repairs_hard_crashed_run_file_and_recovery_seals_it() {
+    // Every durable redb commit deletes the allocator-state table and only a clean
+    // Database::drop rewrites it, so copying the file while it is still open is
+    // byte-identical to what a hard-killed process (SIGKILL, OOM, power loss) leaves
+    // behind: a file that refuses a plain read-only open with RepairAborted. The
+    // listing must fall back to a writable repair open so boot recovery can proceed.
+    let tmp = TempDir::new().expect("tempdir");
+    let crashed = TempDir::new().expect("tempdir");
+
+    let mut backend = RedbBackend::new(tmp.path());
+    backend
+        .open_run(manifest_with("run-1", 100))
+        .expect("open run");
+    backend
+        .append_batch(&[append_entry(1, 110)])
+        .expect("append");
+
+    let live_path = backend.run_path(INSTANCE_ID, "run-1");
+    let crashed_path = crashed.path().join(INSTANCE_ID).join("run-1.redb");
+    std::fs::create_dir_all(crashed_path.parent().expect("parent")).expect("create dir");
+    std::fs::copy(&live_path, &crashed_path).expect("copy run file");
+    drop(backend);
+
+    let manifests = RedbBackend::list_runs(crashed.path(), INSTANCE_ID).expect("list runs");
+
+    assert_eq!(manifests.len(), 1);
+    assert!(matches!(manifests[0].status, RunStatus::Running));
+
+    let outcome = recover_predecessors(crashed.path(), INSTANCE_ID).expect("recovery sweep");
+
+    assert_eq!(outcome.recovered.len(), 1);
+    assert!(matches!(
+        outcome.recovered[0].status,
+        RunStatus::CrashedRecovered
+    ));
+    assert_eq!(outcome.parent_run_id.as_deref(), Some("run-1"));
 }
 
 #[rstest]

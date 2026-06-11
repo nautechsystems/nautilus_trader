@@ -103,7 +103,15 @@ where
     })?;
     let mut records = load_replayable_records(catalog, &entry, &cursor, data_cls)?;
     let candidate = records.len() != expected_count;
-    records.truncate(expected_count);
+
+    // The run observed the trailing `count` records ending at ts_init_hi, while the
+    // slice query spans the whole catalog, so a catalog that predates the run
+    // over-returns at the front: keep the trailing window. Rows sharing ts_init_hi
+    // where only a prefix was observed remain ambiguous; `candidate` stays true and
+    // an exact boundary needs the hifi same_ts_ordinal/fingerprint join.
+    if records.len() > expected_count {
+        records.drain(..records.len() - expected_count);
+    }
 
     Ok(JoinedStream {
         entry,
@@ -284,7 +292,11 @@ mod tests {
     }
 
     #[rstest]
-    fn over_count_mismatch_truncates_to_marker_count() {
+    fn over_count_mismatch_keeps_trailing_records_to_marker_count() {
+        // The cursor counted the records the run observed ending at ts_init_hi=2_000,
+        // so a record carrying that ts_init was observed by construction. A catalog
+        // that predates the run over-returns at the front of the slice; the join must
+        // keep the trailing window, never head rows the run may not have seen.
         let quote = dict(0, DataClass::Quote, "AUD/USD.SIM");
         let reader = reader_with(
             vec![quote.clone()],
@@ -312,7 +324,7 @@ mod tests {
                 .iter()
                 .map(|record| record.ts_init)
                 .collect::<Vec<_>>(),
-            vec![UnixNanos::from(1_000), UnixNanos::from(1_500)],
+            vec![UnixNanos::from(1_500), UnixNanos::from(2_000)],
         );
     }
 

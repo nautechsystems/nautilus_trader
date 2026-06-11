@@ -335,6 +335,7 @@ pub fn register_default(registry: &mut EncoderRegistry) {
     );
 
     register_default_headers(registry);
+    register_default_identities(registry);
 }
 
 /// Attaches header extractors for every type that carries `correlation_id` or
@@ -356,6 +357,54 @@ fn register_default_headers(registry: &mut EncoderRegistry) {
     registry.register_headers::<TradingCommand, _>(extract_trading_command_headers);
     registry.register_headers::<DataCommand, _>(extract_data_command_headers);
     registry.register_headers::<DataResponse, _>(extract_data_response_headers);
+}
+
+/// Attaches identity extractors for the types production dispatch pushes through more
+/// than one tap-visible boundary (portfolio endpoint send plus strategy topic publish,
+/// command hops through risk to execution, account states on both dispatch paths), so
+/// the adapter captures each logical message exactly once. The venue report types
+/// deliberately carry no extractor: the raw `reconciliation.raw.*` publish and the
+/// engine-bound dispatch are distinct capture boundaries.
+fn register_default_identities(registry: &mut EncoderRegistry) {
+    registry.register_identity::<SubmitOrder, _>(|command| Some(command.command_id));
+    registry.register_identity::<OrderFilled, _>(|event| Some(event.event_id));
+    registry.register_identity::<TradingCommand, _>(|c| Some(extract_trading_command_identity(c)));
+    registry.register_identity::<OrderEventAny, _>(|e| Some(extract_order_event_any_identity(e)));
+    registry.register_identity::<AccountState, _>(|state| Some(state.event_id));
+}
+
+fn extract_trading_command_identity(command: &TradingCommand) -> UUID4 {
+    match command {
+        TradingCommand::SubmitOrder(c) => c.command_id,
+        TradingCommand::SubmitOrderList(c) => c.command_id,
+        TradingCommand::ModifyOrder(c) => c.command_id,
+        TradingCommand::CancelOrder(c) => c.command_id,
+        TradingCommand::CancelAllOrders(c) => c.command_id,
+        TradingCommand::BatchCancelOrders(c) => c.command_id,
+        TradingCommand::QueryOrder(c) => c.command_id,
+        TradingCommand::QueryAccount(c) => c.command_id,
+    }
+}
+
+fn extract_order_event_any_identity(event: &OrderEventAny) -> UUID4 {
+    match event {
+        OrderEventAny::Initialized(e) => e.event_id,
+        OrderEventAny::Denied(e) => e.event_id,
+        OrderEventAny::Emulated(e) => e.event_id,
+        OrderEventAny::Released(e) => e.event_id,
+        OrderEventAny::Submitted(e) => e.event_id,
+        OrderEventAny::Accepted(e) => e.event_id,
+        OrderEventAny::Rejected(e) => e.event_id,
+        OrderEventAny::Canceled(e) => e.event_id,
+        OrderEventAny::Expired(e) => e.event_id,
+        OrderEventAny::Triggered(e) => e.event_id,
+        OrderEventAny::PendingUpdate(e) => e.event_id,
+        OrderEventAny::PendingCancel(e) => e.event_id,
+        OrderEventAny::ModifyRejected(e) => e.event_id,
+        OrderEventAny::CancelRejected(e) => e.event_id,
+        OrderEventAny::Updated(e) => e.event_id,
+        OrderEventAny::Filled(e) => e.event_id,
+    }
 }
 
 fn headers_from_fields(correlation_id: Option<UUID4>, causation_id: Option<UUID4>) -> Headers {

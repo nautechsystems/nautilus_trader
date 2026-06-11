@@ -248,19 +248,22 @@ impl HaltSignal {
     /// occurs.
     ///
     /// The callback records the [`HaltReason`] (preserving only the first one when
-    /// multiple submits race past the halt threshold) and flips the halted flag.
+    /// multiple submits race past the halt threshold) and then flips the halted flag,
+    /// so a poller that observes `is_halted()` never reads back an empty reason.
     #[must_use]
     pub fn callback(&self) -> HaltCallback {
         let halted = Arc::clone(&self.halted);
         let reason = Arc::clone(&self.reason);
         Arc::new(move |r| {
-            if halted
-                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                .is_ok()
-                && let Ok(mut slot) = reason.lock()
+            // The mutex gates first-reason-wins; the flag flips after the reason is
+            // stored. On the (panic-only) poisoned path the reason is lost but the
+            // halt itself must still be observable.
+            if let Ok(mut slot) = reason.lock()
+                && slot.is_none()
             {
                 *slot = Some(r);
             }
+            halted.store(true, Ordering::Release);
         })
     }
 
@@ -552,6 +555,11 @@ impl EventStoreLifecycle {
             self.seal(ts);
         }
 
+        // Re-arm the fail-stop signal: a halt is terminal for the run that fired it,
+        // not for the kernel. A stale signal fails the rerun's boot or opens it
+        // permanently halted, downgrading its graceful stop to CrashedRecovered.
+        self.halt = HaltSignal::new();
+
         let clock = Self::clock_for(environment);
         let start_ts_init = self.clock.borrow().timestamp_ns();
         let run_id = build_run_id(start_ts_init);
@@ -764,11 +772,17 @@ impl Drop for EventStoreLifecycle {
 /// Quarantined runs do not become parents: a future replay must skip the corrupted
 /// tail rather than chain through it.
 ///
+/// A predecessor that cannot be reopened, scanned, or sealed is skipped with a logged
+/// error rather than failing the sweep: recovery must never leave the trader unbootable
+/// because one run file is damaged. Skipped runs keep their on-disk status, so the next
+/// boot retries them.
+///
 /// # Errors
 ///
-/// Returns [`EventStoreError`] when the directory enumeration, open, or seal fails for
-/// reasons other than the expected [`EventStoreError::CrashedPredecessor`] handshake
-/// the backend uses to surface unsealed runs.
+/// Returns [`EventStoreError`] when the directory enumeration fails, or when a
+/// predecessor unexpectedly reopens without the
+/// [`EventStoreError::CrashedPredecessor`] handshake the backend uses to surface
+/// unsealed runs.
 pub fn recover_predecessors(
     base_dir: &Path,
     instance_id: &str,
@@ -792,7 +806,10 @@ pub fn recover_predecessors(
                     "expected CrashedPredecessor reopening {run_id}, was Ok",
                 )));
             }
-            Err(other) => return Err(other),
+            Err(other) => {
+                log::error!("Skipping recovery of run {run_id}, reopen failed: {other}");
+                continue;
+            }
         }
 
         let high_watermark = backend.high_watermark()?;
@@ -824,11 +841,17 @@ pub fn recover_predecessors(
                     | EventStoreError::Corrupted(_)
                     | EventStoreError::Gap { .. },
                 ) => RunStatus::Quarantined,
-                Err(other) => return Err(other),
+                Err(other) => {
+                    log::error!("Skipping recovery of run {run_id}, scan failed: {other}");
+                    continue;
+                }
             }
         };
 
-        backend.seal(final_status)?;
+        if let Err(e) = backend.seal(final_status) {
+            log::error!("Skipping recovery of run {run_id}, seal as {final_status:?} failed: {e}");
+            continue;
+        }
         outcome.recovered.push(RecoveredRun {
             run_id: run_id.clone(),
             status: final_status,
@@ -1197,6 +1220,9 @@ struct EventStoreBusTap {
     adapter: Arc<BusCaptureAdapter>,
     marker_capture: Option<SharedMarkerCapture>,
     clock: &'static AtomicTime,
+    // Latch for the one-time halted log: the per-message Halted arm stays silent to
+    // avoid log spam, but the transition into dropping captures must leave a trace.
+    halted_logged: AtomicBool,
 }
 
 impl Debug for EventStoreBusTap {
@@ -1246,7 +1272,13 @@ impl EventStoreBusTap {
             Ok(captured) => {
                 self.capture_marker(topic, message, ts_init, captured);
             }
-            Err(CaptureError::Halted) => {}
+            Err(CaptureError::Halted) => {
+                if !self.halted_logged.swap(true, Ordering::AcqRel) {
+                    log::error!(
+                        "Event store capture is halted; state-affecting messages are no longer recorded for this run"
+                    );
+                }
+            }
             Err(CaptureError::Submit(e)) => {
                 log::error!("Event store capture submit failed on {topic}: {e}");
             }
@@ -1283,6 +1315,7 @@ fn install_bus_tap(
         adapter,
         marker_capture,
         clock,
+        halted_logged: AtomicBool::new(false),
     });
     msgbus::set_bus_tap(tap);
 }
@@ -2394,6 +2427,64 @@ mod tests {
             .find(|m| m.run_id == run_two)
             .expect("second run present");
         assert_eq!(m1.status, RunStatus::Ended);
+        assert_eq!(m2.status, RunStatus::Ended);
+    }
+
+    #[rstest]
+    fn open_after_halt_re_arms_signal_and_next_run_seals_ended() {
+        // One halt must be terminal for the run that fired it, not for the kernel: a
+        // rerun (reset -> run) opens with a fresh signal, reports no stale halt, and
+        // its graceful stop still seals Ended.
+        let tmp = TempDir::new().expect("tempdir");
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+
+        let mut store = EventStoreLifecycle::boot(
+            Some(make_config(tmp.path().to_path_buf())),
+            instance_id,
+            clock_rc,
+        )
+        .expect("boot store");
+
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open first run");
+        let run_one = store.run_id().expect("run one open").to_string();
+
+        store.halt.callback()(HaltReason::BackendDisk("ENOSPC".to_string()));
+        assert!(store.halt.is_halted());
+
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open second run after halt");
+        let run_two = store.run_id().expect("run two open").to_string();
+
+        assert_ne!(run_one, run_two);
+        assert!(!store.halt.is_halted(), "open must re-arm the halt signal");
+        assert!(store.halt.reason().is_none());
+
+        drop(store);
+        let manifests =
+            RedbBackend::list_runs(tmp.path(), &instance_id.to_string()).expect("list runs");
+        let m1 = manifests
+            .iter()
+            .find(|m| m.run_id == run_one)
+            .expect("first run present");
+        let m2 = manifests
+            .iter()
+            .find(|m| m.run_id == run_two)
+            .expect("second run present");
+        // The halted run skips the in-process seal; the recovery sweep on next boot
+        // owns it. The post-halt rerun must close cleanly.
+        assert_eq!(m1.status, RunStatus::Running);
         assert_eq!(m2.status, RunStatus::Ended);
     }
 

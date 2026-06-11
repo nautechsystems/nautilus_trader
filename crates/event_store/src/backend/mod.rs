@@ -225,16 +225,17 @@ pub trait EventStore: Send {
 
     /// Returns the latest recorded snapshot anchor for the open run.
     ///
-    /// Returns `Ok(None)` when no snapshot anchor has been recorded yet.
+    /// Returns `Ok(None)` when no snapshot anchor has been recorded yet. The default
+    /// implementation also returns `Ok(None)`: a backend without anchor support
+    /// truthfully has no anchor to report, and consumers (the verifier, retention
+    /// planning) must be able to distinguish "no anchor" from a real read failure.
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when no run is open or when the backend
-    /// does not support snapshot anchors.
+    /// Returns [`EventStoreError::Backend`] when no run is open and
+    /// [`EventStoreError::Corrupted`] when a stored anchor fails to decode.
     fn latest_snapshot_anchor(&self) -> Result<Option<SnapshotAnchor>, EventStoreError> {
-        Err(EventStoreError::Backend(
-            "snapshot anchors are not supported by this backend".to_string(),
-        ))
+        Ok(None)
     }
 
     /// Seals the open run with the given final status and persists the manifest update.

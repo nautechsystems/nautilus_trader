@@ -25,6 +25,11 @@
 //! 1. The Rust type the encoder consumes (used as the [`std::any::TypeId`] lookup key).
 //! 2. The canonical [`crate::PayloadType`] tag stamped on every entry the encoder produces.
 //! 3. The encoder closure that produces the payload bytes plus sidecar [`crate::IndexKey`]s.
+//!
+//! A registration may additionally carry an identity extractor: production dispatch pushes
+//! the same typed message through multiple tap-visible boundaries (an order event is sent
+//! to the portfolio endpoint and published on its strategy topic), and the adapter uses the
+//! extracted identity to capture each logical message exactly once.
 
 use std::{
     any::{Any, TypeId},
@@ -33,6 +38,8 @@ use std::{
     marker::PhantomData,
     sync::Arc,
 };
+
+use nautilus_core::UUID4;
 
 use crate::{
     capture::encoder::{Encode, EncodeError, EncodedPayload, TypedEncoder},
@@ -106,12 +113,62 @@ impl HeadersExtractor for EmptyHeadersExtractor {
     }
 }
 
-// One allow-list entry: canonical payload tag, encoder, and header extractor.
+/// Extracts the logical message identity (event id, command id) from a captured message.
+///
+/// The adapter uses the identity to capture a message exactly once when dispatch pushes
+/// it through multiple tap-visible boundaries. Types without an extractor are captured
+/// per dispatch, which is correct only for types that reach the tap on a single boundary.
+pub trait IdentityExtractor: Send + Sync {
+    /// Returns the identity carried by `message`. Mismatched types yield `None` so a
+    /// stale registration cannot crash the tap.
+    fn extract(&self, message: &dyn Any) -> Option<UUID4>;
+}
+
+/// Typed adapter that downcasts to `T` and forwards to a `Fn(&T) -> Option<UUID4>` closure.
+pub struct TypedIdentityExtractor<T: 'static, F> {
+    func: F,
+    _phantom: PhantomData<fn(&T)>,
+}
+
+impl<T: 'static, F> TypedIdentityExtractor<T, F>
+where
+    F: Fn(&T) -> Option<UUID4> + Send + Sync,
+{
+    /// Wraps `func` as a typed identity extractor for `T`.
+    #[must_use]
+    pub const fn new(func: F) -> Self {
+        Self {
+            func,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<T: 'static, F> Debug for TypedIdentityExtractor<T, F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(TypedIdentityExtractor))
+            .field("type", &std::any::type_name::<T>())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<T: 'static, F> IdentityExtractor for TypedIdentityExtractor<T, F>
+where
+    F: Fn(&T) -> Option<UUID4> + Send + Sync,
+{
+    fn extract(&self, message: &dyn Any) -> Option<UUID4> {
+        message.downcast_ref::<T>().and_then(&self.func)
+    }
+}
+
+// One allow-list entry: canonical payload tag, encoder, header extractor, and optional
+// identity extractor.
 #[derive(Clone)]
 struct Registered {
     payload_type: PayloadType,
     encoder: Arc<dyn Encode>,
     headers: Arc<dyn HeadersExtractor>,
+    identity: Option<Arc<dyn IdentityExtractor>>,
 }
 
 impl Debug for Registered {
@@ -156,12 +213,14 @@ impl EncoderRegistry {
         let headers = self
             .preserved_headers::<T>()
             .unwrap_or_else(|| Arc::new(EmptyHeadersExtractor) as Arc<dyn HeadersExtractor>);
+        let identity = self.preserved_identity::<T>();
         self.by_type.insert(
             TypeId::of::<T>(),
             Registered {
                 payload_type,
                 encoder,
                 headers,
+                identity,
             },
         );
     }
@@ -181,12 +240,14 @@ impl EncoderRegistry {
         let encoder: Arc<dyn Encode> = Arc::new(TypedEncoder::<T, F>::new(func));
         let headers: Arc<dyn HeadersExtractor> =
             Arc::new(TypedHeadersExtractor::<T, H>::new(headers_fn));
+        let identity = self.preserved_identity::<T>();
         self.by_type.insert(
             TypeId::of::<T>(),
             Registered {
                 payload_type,
                 encoder,
                 headers,
+                identity,
             },
         );
     }
@@ -204,12 +265,14 @@ impl EncoderRegistry {
         let headers = self
             .preserved_headers::<T>()
             .unwrap_or_else(|| Arc::new(EmptyHeadersExtractor) as Arc<dyn HeadersExtractor>);
+        let identity = self.preserved_identity::<T>();
         self.by_type.insert(
             TypeId::of::<T>(),
             Registered {
                 payload_type,
                 encoder,
                 headers,
+                identity,
             },
         );
     }
@@ -230,10 +293,31 @@ impl EncoderRegistry {
         }
     }
 
+    /// Registers `identity_fn` as the identity extractor for `T`.
+    ///
+    /// Call after [`Self::register`]. Replaces any prior extractor for `T`. Returns
+    /// silently when `T` has no encoder registered: callers that care about the contract
+    /// should rely on [`Self::contains`].
+    pub fn register_identity<T, F>(&mut self, identity_fn: F)
+    where
+        T: 'static,
+        F: Fn(&T) -> Option<UUID4> + Send + Sync + 'static,
+    {
+        if let Some(reg) = self.by_type.get_mut(&TypeId::of::<T>()) {
+            reg.identity = Some(Arc::new(TypedIdentityExtractor::<T, F>::new(identity_fn)));
+        }
+    }
+
     fn preserved_headers<T: 'static>(&self) -> Option<Arc<dyn HeadersExtractor>> {
         self.by_type
             .get(&TypeId::of::<T>())
             .map(|reg| Arc::clone(&reg.headers))
+    }
+
+    fn preserved_identity<T: 'static>(&self) -> Option<Arc<dyn IdentityExtractor>> {
+        self.by_type
+            .get(&TypeId::of::<T>())
+            .and_then(|reg| reg.identity.clone())
     }
 
     /// Returns the number of registered encoders.
@@ -309,6 +393,17 @@ impl EncoderRegistry {
         self.by_type
             .get(&message.type_id())
             .map(|reg| reg.headers.extract(message))
+    }
+
+    /// Returns the logical identity carried by `message` if its registration has an
+    /// identity extractor. Returns `None` when the type is unregistered or carries no
+    /// extractor; the adapter then captures per dispatch.
+    #[must_use]
+    pub fn identity_for_any(&self, message: &dyn Any) -> Option<UUID4> {
+        self.by_type
+            .get(&message.type_id())
+            .and_then(|reg| reg.identity.as_ref())
+            .and_then(|identity| identity.extract(message))
     }
 }
 
@@ -516,6 +611,58 @@ mod tests {
             .headers_for_any(&Sample(1) as &dyn Any)
             .expect("hit");
         assert_eq!(headers.correlation_id, Some(correlation));
+    }
+
+    #[rstest]
+    fn identity_for_any_returns_none_without_extractor() {
+        let mut registry = EncoderRegistry::new();
+        registry.register::<Sample, _>(Ustr::from("Sample"), |s| {
+            Ok(EncodedPayload::without_indices(Bytes::copy_from_slice(&[
+                s.0,
+            ])))
+        });
+
+        assert!(registry.identity_for_any(&Sample(1) as &dyn Any).is_none());
+        assert!(registry.identity_for_any(&Other as &dyn Any).is_none());
+    }
+
+    #[rstest]
+    fn register_identity_extracts_and_survives_re_register() {
+        // The adapter dedups on the extracted identity; the extractor must survive a
+        // subsequent encoder re-registration the same way headers extractors do.
+        let mut registry = EncoderRegistry::new();
+        registry.register::<Sample, _>(Ustr::from("Old"), |s| {
+            Ok(EncodedPayload::without_indices(Bytes::copy_from_slice(&[
+                s.0,
+            ])))
+        });
+        let identity = nautilus_core::UUID4::new();
+        registry.register_identity::<Sample, _>(move |_| Some(identity));
+
+        assert_eq!(
+            registry.identity_for_any(&Sample(1) as &dyn Any),
+            Some(identity),
+        );
+
+        registry.register::<Sample, _>(Ustr::from("New"), |s| {
+            Ok(EncodedPayload::without_indices(Bytes::copy_from_slice(&[
+                s.0, s.0,
+            ])))
+        });
+
+        assert_eq!(
+            registry.identity_for_any(&Sample(1) as &dyn Any),
+            Some(identity),
+        );
+    }
+
+    #[rstest]
+    fn register_identity_for_unregistered_type_is_silent_noop() {
+        let mut registry = EncoderRegistry::new();
+        registry.register_identity::<Sample, _>(|_| Some(nautilus_core::UUID4::new()));
+
+        assert!(!registry.contains::<Sample>());
+        assert!(registry.identity_for_any(&Sample(1) as &dyn Any).is_none());
     }
 
     #[rstest]

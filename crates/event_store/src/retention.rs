@@ -127,8 +127,9 @@ pub fn list_redb_sealed_runs(
             .join(instance_id)
             .join(format!("{}.redb", manifest.run_id));
         let reader = RedbBackend::open_sealed(base_dir, instance_id, manifest.run_id.as_str())?;
+        let durable_high_watermark = reader.high_watermark()?;
         let snapshot_anchor = match reader.latest_snapshot_anchor() {
-            Ok(anchor) => snapshot_anchor_status(&manifest, anchor),
+            Ok(anchor) => snapshot_anchor_status(durable_high_watermark, anchor),
             Err(EventStoreError::Corrupted(msg)) => SnapshotAnchorStatus::Invalid(msg),
             Err(e) => return Err(e),
         };
@@ -195,67 +196,47 @@ fn latest_known_good_restore_point(sealed_runs: &[RetentionRun]) -> Option<usize
 }
 
 fn snapshot_anchor_status(
-    manifest: &RunManifest,
+    durable_high_watermark: u64,
     anchor: Option<SnapshotAnchor>,
 ) -> SnapshotAnchorStatus {
     let Some(anchor) = anchor else {
         return SnapshotAnchorStatus::Missing;
     };
 
-    if anchor.high_watermark <= manifest.high_watermark {
+    // Validate against the durable watermark, not the manifest's: a tail-trimmed run
+    // keeps its manifest value, and trusting it could anoint a restore point the
+    // restore path itself rejects while everything else is reclaimed.
+    if anchor.high_watermark <= durable_high_watermark {
         return SnapshotAnchorStatus::Valid(anchor);
     }
 
     SnapshotAnchorStatus::Invalid(format!(
-        "snapshot anchor high_watermark {} exceeds manifest high_watermark {}",
-        anchor.high_watermark, manifest.high_watermark,
+        "snapshot anchor high_watermark {} exceeds durable high_watermark {durable_high_watermark}",
+        anchor.high_watermark,
     ))
 }
 
 #[cfg(test)]
 mod tests {
-    use indexmap::IndexMap;
-    use nautilus_core::UnixNanos;
     use rstest::rstest;
 
     use super::*;
-    use crate::RegisteredComponents;
 
     #[rstest]
-    fn snapshot_anchor_status_rejects_anchor_past_manifest_watermark() {
+    fn snapshot_anchor_status_rejects_anchor_past_durable_watermark() {
         let status = snapshot_anchor_status(
-            &manifest_with_high_watermark(1),
+            1,
             Some(SnapshotAnchor::new(2, "cache://snapshots/2", "blake3:abc")),
         );
 
         match status {
             SnapshotAnchorStatus::Invalid(msg) => {
                 assert!(
-                    msg.contains("exceeds manifest high_watermark"),
+                    msg.contains("exceeds durable high_watermark"),
                     "msg was: {msg}",
                 );
             }
             other => panic!("expected Invalid, was {other:?}"),
-        }
-    }
-
-    fn manifest_with_high_watermark(high_watermark: u64) -> RunManifest {
-        RunManifest {
-            run_id: "run-1".to_string(),
-            parent_run_id: None,
-            instance_id: "trader-001".to_string(),
-            binary_hash: "deadbeef".to_string(),
-            schema_version: 1,
-            crate_versions: "feedface".to_string(),
-            feature_flags: Vec::new(),
-            adapter_versions: IndexMap::new(),
-            config_hash: "cafebabe".to_string(),
-            registered_components: RegisteredComponents::default(),
-            seed: None,
-            start_ts_init: UnixNanos::from(1),
-            end_ts_init: None,
-            high_watermark,
-            status: RunStatus::Ended,
         }
     }
 }

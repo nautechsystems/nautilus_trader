@@ -344,10 +344,16 @@ impl<'a> RangeScan<'a> {
 
                 match self.direction {
                     ScanDirection::Forward => {
-                        if chunk_hi >= self.end {
+                        // Advance from the last seq actually returned, not the
+                        // requested window end: the backend clips the window to its
+                        // high-watermark, and on a still-open run entries committed
+                        // between chunk fetches would otherwise be skipped silently.
+                        let last_seq = entries.last().map_or(chunk_hi, |entry| entry.seq);
+
+                        if last_seq >= self.end {
                             self.has_more = false;
                         } else {
-                            self.cursor = chunk_hi + 1;
+                            self.cursor = last_seq + 1;
                         }
                     }
                     ScanDirection::Reverse => {
@@ -455,6 +461,68 @@ mod tests {
 
     fn append_with(seq: u64, ts_init: u64, index_keys: Vec<IndexKey>) -> AppendEntry {
         AppendEntry::new(build_entry(seq, ts_init), index_keys)
+    }
+
+    /// Appends two entries after serving the first chunk, emulating a writer
+    /// committing between a chunked scan's fetches against a still-open run.
+    #[derive(Debug)]
+    struct GrowingBackend {
+        inner: std::cell::RefCell<MemoryBackend>,
+        grown: std::cell::Cell<bool>,
+    }
+
+    impl EventStore for GrowingBackend {
+        fn open_run(&mut self, _: RunManifest) -> Result<(), EventStoreError> {
+            unreachable!("test wrapper does not forward open_run")
+        }
+
+        fn append_batch(&mut self, entries: &[AppendEntry]) -> Result<u64, EventStoreError> {
+            self.inner.borrow_mut().append_batch(entries)
+        }
+
+        fn scan_range(
+            &self,
+            from: u64,
+            to: u64,
+            direction: ScanDirection,
+        ) -> Result<Vec<EventStoreEntry>, EventStoreError> {
+            let result = self.inner.borrow().scan_range(from, to, direction);
+
+            if !self.grown.replace(true) {
+                self.inner
+                    .borrow_mut()
+                    .append_batch(&[
+                        append_with(3, 103, Vec::new()),
+                        append_with(4, 104, Vec::new()),
+                    ])
+                    .expect("grow run between chunks");
+            }
+            result
+        }
+
+        fn scan_seq(&self, seq: u64) -> Result<Option<EventStoreEntry>, EventStoreError> {
+            self.inner.borrow().scan_seq(seq)
+        }
+
+        fn lookup(&self, kind: IndexKind, key: &str) -> Result<Option<u64>, EventStoreError> {
+            self.inner.borrow().lookup(kind, key)
+        }
+
+        fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
+            self.inner.borrow().iter_index_keys(kind)
+        }
+
+        fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
+            self.inner.borrow_mut().seal(status)
+        }
+
+        fn manifest(&self) -> Result<RunManifest, EventStoreError> {
+            self.inner.borrow().manifest()
+        }
+
+        fn high_watermark(&self) -> Result<u64, EventStoreError> {
+            self.inner.borrow().high_watermark()
+        }
     }
 
     fn populated(count: u64) -> EventStoreReader<MemoryBackend> {
@@ -795,6 +863,32 @@ mod tests {
             .collect();
 
         assert_eq!(seqs, vec![1, 2, 3, 4, 5, 6, 7]);
+    }
+
+    #[rstest]
+    fn forward_chunked_scan_includes_entries_committed_between_chunks() {
+        // The backend clips each window to its current high-watermark; the cursor
+        // must advance from the last returned seq so rows committed between chunk
+        // fetches against a still-open run are not silently skipped.
+        let mut inner = MemoryBackend::new();
+        inner.open_run(manifest("run-growing")).expect("open run");
+        inner
+            .append_batch(&[
+                append_with(1, 101, Vec::new()),
+                append_with(2, 102, Vec::new()),
+            ])
+            .expect("seed");
+        let reader = EventStoreReader::new(GrowingBackend {
+            inner: std::cell::RefCell::new(inner),
+            grown: std::cell::Cell::new(false),
+        });
+
+        let seqs: Vec<u64> = reader
+            .scan_range_chunked(1, u64::MAX, ScanDirection::Forward, 10)
+            .map(|r| r.expect("entry").seq)
+            .collect();
+
+        assert_eq!(seqs, vec![1, 2, 3, 4]);
     }
 
     #[rstest]

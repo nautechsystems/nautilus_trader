@@ -100,6 +100,12 @@ flowchart LR
 The writer uses a bounded channel. If the writer stalls past its configured threshold, Nautilus
 halts instead of dropping entries or allowing unaudited state changes.
 
+Some messages legitimately cross more than one tap-visible boundary: the execution engine sends an
+order event to the portfolio endpoint and publishes the same event on its strategy topic, and
+trading commands hop from strategy to risk to execution. The capture adapter dedups on the
+registered message identity (event id, command id), so each logical message becomes exactly one
+entry and replay never applies the same event twice.
+
 ## Lifecycle options
 
 `EventStoreConfig` remains the serializable run policy. Process-local construction policy lives in
@@ -225,6 +231,9 @@ Operationally:
   can record anchors against the durable high-watermark.
 - A clean shutdown, kernel drop, or reset/rerun seal appends `RunEnded` and seals the manifest as
   `Ended`.
+- A fail-stopped (halted) session skips the in-process seal; the recovery sweep on the next boot
+  owns it. The halt signal is scoped to the run that fired it: a later `open()` re-arms a fresh
+  signal, so one halt does not poison subsequent runs in the same process.
 
 ## Recovery sealing
 
@@ -251,6 +260,12 @@ flowchart TD
 Boot recovery scans each `Running` predecessor and chooses a final manifest status from the durable
 tail. A clean tail without `RunEnded` seals as `CrashedRecovered`, a tail ending in `RunEnded`
 seals as `Ended`, and a hash mismatch, gap, or structural corruption seals as `Quarantined`.
+
+The sweep never leaves the trader unbootable because one run file is damaged. A hard-killed
+process (SIGKILL, OOM kill, power loss) leaves a file that redb refuses to open read-only; the
+listing falls back to a writable open, which performs redb's repair pass before recovery proceeds.
+A file that still cannot be opened, or that lacks a manifest, is skipped with a logged error and
+retried on the next boot, so recovery and retention continue over the healthy runs.
 
 Only `CrashedRecovered` predecessors become `parent_run_id`. A configured `replay_from_run_id`
 overrides a recovered parent after validation. The read-only verifier is separate: it can inspect a
@@ -419,8 +434,9 @@ The planner supports three modes:
 - `SnapshotAnchored`: reclaim only sealed runs older than the newest known-good restore point.
 
 A known-good restore point is a sealed, non-`Quarantined` run with a valid snapshot anchor whose
-high-watermark does not exceed the sealed manifest high-watermark. `Running` runs are never
-listed as sealed runs or selected as reclaim candidates. Missing, corrupt, or invalid snapshot
+high-watermark does not exceed the run's durable high-watermark (the last entry actually on disk,
+not the manifest's recorded value, so a tail-trimmed run cannot pose as a restore point).
+`Running` runs are never listed as sealed runs or selected as reclaim candidates. Missing, corrupt, or invalid snapshot
 anchors do not count as restore points, so the planner returns no candidates when it cannot prove
 that at least one usable restore point remains.
 
@@ -436,16 +452,22 @@ surface:
 - Process-isolated verification reports truncated or zero-tailed run files as corrupt.
 - Cache replay reconstructs the same observed account, order, and position state as a live cache
   for generated captured event streams.
+- The same order event dispatched across multiple bus boundaries is captured once.
+- Snapshot anchors that fail to decode or point past the durable high-watermark surface as
+  verifier findings instead of verifying clean.
 - Catalog-joined replay input planning covers selected slices, missing slices, time bounds, and
   event-store `seq` ordering.
 - Crash recovery seals `Running` predecessors as `Ended`, `CrashedRecovered`, or `Quarantined`
   based on the durable tail, and only `CrashedRecovered` runs become parents.
+- Boot recovery repairs hard-crashed run files and skips unreadable ones instead of failing the
+  sweep.
 
 ## Integrity and verification
 
 Every entry carries a canonical hash over its full content. Readers and verifiers recompute the
-hash and report mismatches. The verifier also checks manifest/high-watermark status and validates
-secondary indices against the entry table.
+hash and report mismatches. The verifier also checks manifest/high-watermark status, validates
+secondary indices against the entry table, and reports snapshot anchors that fail to decode or
+point past the durable high-watermark, so a run whose restore path is broken cannot verify clean.
 
 Run verification is process-isolated. This matters because some corrupted `redb` files can panic
 on open or first read, and release builds use `panic = "abort"`. The verifier runs the scan in a
