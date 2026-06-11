@@ -18,7 +18,7 @@
 use std::fmt::{Debug, Display};
 
 use nautilus_core::correctness::{
-    CorrectnessResult, CorrectnessResultExt, FAILED, check_predicate_true,
+    CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED, check_predicate_true,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -80,7 +80,7 @@ impl AccountBalance {
             ),
         )?;
         check_predicate_true(
-            total == locked + free,
+            locked.checked_add(free) == Some(total),
             &format!("`total` ({total}) - `locked` ({locked}) != `free` ({free})"),
         )?;
         Ok(Self {
@@ -114,7 +114,7 @@ impl AccountBalance {
     /// # Errors
     ///
     /// Returns an error if `total` or `locked` cannot be represented at the currency
-    /// precision.
+    /// precision, or if the derived `free` amount falls outside the representable range.
     pub fn from_total_and_locked(
         total: Decimal,
         locked: Decimal,
@@ -128,7 +128,14 @@ impl AccountBalance {
             locked.raw
         };
         let clamped_locked = Money::from_raw(locked_raw, currency);
-        let free = Money::from_raw(total.raw - clamped_locked.raw, currency);
+        let free_raw = total.raw.checked_sub(clamped_locked.raw).ok_or_else(|| {
+            CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Derived `free` overflows MoneyRaw for `total` {total} and `locked` {clamped_locked}"
+                ),
+            }
+        })?;
+        let free = Money::from_raw_checked(free_raw, currency)?;
         Ok(Self::new(total, clamped_locked, free))
     }
 
@@ -144,7 +151,7 @@ impl AccountBalance {
     /// # Errors
     ///
     /// Returns an error if `total` or `free` cannot be represented at the currency
-    /// precision.
+    /// precision, or if the derived `locked` amount falls outside the representable range.
     pub fn from_total_and_free(
         total: Decimal,
         free: Decimal,
@@ -158,7 +165,14 @@ impl AccountBalance {
             free.raw
         };
         let clamped_free = Money::from_raw(free_raw, currency);
-        let locked = Money::from_raw(total.raw - clamped_free.raw, currency);
+        let locked_raw = total.raw.checked_sub(clamped_free.raw).ok_or_else(|| {
+            CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Derived `locked` overflows MoneyRaw for `total` {total} and `free` {clamped_free}"
+                ),
+            }
+        })?;
+        let locked = Money::from_raw_checked(locked_raw, currency)?;
         Ok(Self::new(total, locked, clamped_free))
     }
 }
@@ -626,6 +640,54 @@ mod tests {
         let too_large: Decimal = "79228162514264337593543950335".parse().unwrap();
         let result = AccountBalance::from_total_and_locked(too_large, dec!(0), btc);
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_new_checked_extreme_values_returns_error_without_panicking() {
+        use crate::types::money::MONEY_MAX;
+
+        // The raw sum of two maximum balances exceeds MoneyRaw; the invariant
+        // check must report an error rather than panicking on overflow.
+        let usd = Currency::USD();
+        let max = Money::new(MONEY_MAX, usd);
+
+        let error = AccountBalance::new_checked(max, max, max).unwrap_err();
+        assert!(
+            error.to_string().contains("`total`"),
+            "unexpected message: {error}"
+        );
+    }
+
+    #[rstest]
+    fn test_from_total_and_locked_extreme_bounds_returns_error() {
+        use crate::types::money::{MONEY_MAX, MONEY_MIN};
+
+        // Deriving free = MIN - MAX overflows MoneyRaw (or falls outside its
+        // bounds), which must surface as an error rather than a panic.
+        let usd = Currency::USD();
+        let total = Money::new(MONEY_MIN, usd).as_decimal();
+        let locked = Money::new(MONEY_MAX, usd).as_decimal();
+
+        let error = AccountBalance::from_total_and_locked(total, locked, usd).unwrap_err();
+        assert!(
+            error.to_string().contains("Money"),
+            "unexpected message: {error}"
+        );
+    }
+
+    #[rstest]
+    fn test_from_total_and_free_extreme_bounds_returns_error() {
+        use crate::types::money::{MONEY_MAX, MONEY_MIN};
+
+        let usd = Currency::USD();
+        let total = Money::new(MONEY_MIN, usd).as_decimal();
+        let free = Money::new(MONEY_MAX, usd).as_decimal();
+
+        let error = AccountBalance::from_total_and_free(total, free, usd).unwrap_err();
+        assert!(
+            error.to_string().contains("Money"),
+            "unexpected message: {error}"
+        );
     }
 
     #[rstest]

@@ -800,8 +800,7 @@ impl<'de> Deserialize<'de> for Price {
         D: Deserializer<'de>,
     {
         let price_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
-        let price: Self = price_str.as_ref().into();
-        Ok(price)
+        Self::from_str(price_str.as_ref()).map_err(serde::de::Error::custom)
     }
 }
 
@@ -1525,6 +1524,22 @@ mod tests {
         let deserialized: Price = serde_json::from_value(value).unwrap();
         assert_eq!(deserialized, price);
         assert_eq!(deserialized.precision, 4);
+    }
+
+    #[rstest]
+    fn test_price_deserialize_invalid_string_returns_error() {
+        let result = serde_json::from_str::<Price>("\"not-a-price\"");
+        let error = result.unwrap_err();
+        assert!(
+            error.to_string().contains("Error parsing"),
+            "unexpected message: {error}"
+        );
+    }
+
+    #[rstest]
+    fn test_price_deserialize_out_of_range_returns_error() {
+        let result = serde_json::from_str::<Price>("\"99999999999999999999.99\"");
+        assert!(result.is_err());
     }
 
     #[rstest]

@@ -404,7 +404,7 @@ pub fn check_fixed_raw_i64(raw: i64, precision: u8) -> anyhow::Result<()> {
     }
 
     let exp = usize::from(FIXED_PRECISION - precision);
-    let scale = POWERS_OF_10[exp] as i64;
+    let scale = POWERS_OF_10[exp].cast_signed();
     let remainder = raw % scale;
 
     if remainder != 0 {
@@ -427,6 +427,9 @@ pub fn check_fixed_raw_i64(raw: i64, precision: u8) -> anyhow::Result<()> {
 ///
 /// This corrects raw values that have spurious bits beyond the precision scale, which can occur
 /// from floating-point conversion errors during data creation.
+///
+/// Rounds half away from zero; when rounding away would overflow the integer range,
+/// rounds toward zero instead.
 #[must_use]
 pub fn correct_raw_u128(raw: u128, precision: u8) -> u128 {
     if precision >= FIXED_PRECISION {
@@ -439,7 +442,8 @@ pub fn correct_raw_u128(raw: u128, precision: u8) -> u128 {
     if remainder == 0 {
         raw
     } else if remainder >= half_scale {
-        raw + (scale - remainder)
+        raw.checked_add(scale - remainder)
+            .unwrap_or(raw - remainder)
     } else {
         raw - remainder
     }
@@ -449,6 +453,9 @@ pub fn correct_raw_u128(raw: u128, precision: u8) -> u128 {
 ///
 /// This corrects raw values that have spurious bits beyond the precision scale, which can occur
 /// from floating-point conversion errors during data creation.
+///
+/// Rounds half away from zero; when rounding away would overflow the integer range,
+/// rounds toward zero instead.
 #[must_use]
 pub fn correct_raw_u64(raw: u64, precision: u8) -> u64 {
     if precision >= FIXED_PRECISION {
@@ -461,7 +468,8 @@ pub fn correct_raw_u64(raw: u64, precision: u8) -> u64 {
     if remainder == 0 {
         raw
     } else if remainder >= half_scale {
-        raw + (scale - remainder)
+        raw.checked_add(scale - remainder)
+            .unwrap_or(raw - remainder)
     } else {
         raw - remainder
     }
@@ -471,6 +479,9 @@ pub fn correct_raw_u64(raw: u64, precision: u8) -> u64 {
 ///
 /// This corrects raw values that have spurious bits beyond the precision scale, which can occur
 /// from floating-point conversion errors during data creation.
+///
+/// Rounds half away from zero; when rounding away would overflow the integer range,
+/// rounds toward zero instead.
 #[must_use]
 pub fn correct_raw_i128(raw: i128, precision: u8) -> i128 {
     if precision >= FIXED_PRECISION {
@@ -484,14 +495,16 @@ pub fn correct_raw_i128(raw: i128, precision: u8) -> i128 {
         raw
     } else if raw >= 0 {
         if remainder >= half_scale {
-            raw + (scale - remainder)
+            raw.checked_add(scale - remainder)
+                .unwrap_or(raw - remainder)
         } else {
             raw - remainder
         }
     } else {
         // For negative values, remainder is negative
         if remainder.abs() >= half_scale {
-            raw - (scale + remainder)
+            raw.checked_sub(scale + remainder)
+                .unwrap_or(raw - remainder)
         } else {
             raw - remainder
         }
@@ -502,27 +515,32 @@ pub fn correct_raw_i128(raw: i128, precision: u8) -> i128 {
 ///
 /// This corrects raw values that have spurious bits beyond the precision scale, which can occur
 /// from floating-point conversion errors during data creation.
+///
+/// Rounds half away from zero; when rounding away would overflow the integer range,
+/// rounds toward zero instead.
 #[must_use]
 pub fn correct_raw_i64(raw: i64, precision: u8) -> i64 {
     if precision >= FIXED_PRECISION {
         return raw;
     }
     let exp = usize::from(FIXED_PRECISION - precision);
-    let scale = POWERS_OF_10[exp] as i64;
+    let scale = POWERS_OF_10[exp].cast_signed();
     let half_scale = scale / 2;
     let remainder = raw % scale;
     if remainder == 0 {
         raw
     } else if raw >= 0 {
         if remainder >= half_scale {
-            raw + (scale - remainder)
+            raw.checked_add(scale - remainder)
+                .unwrap_or(raw - remainder)
         } else {
             raw - remainder
         }
     } else {
         // For negative values, remainder is negative
         if remainder.abs() >= half_scale {
-            raw - (scale + remainder)
+            raw.checked_sub(scale + remainder)
+                .unwrap_or(raw - remainder)
         } else {
             raw - remainder
         }
@@ -619,7 +637,7 @@ pub fn mantissa_exponent_to_fixed_i128(
     let frac_digits = -i16::from(exponent);
 
     let mantissa = if frac_digits > precision_i16 {
-        let excess = (frac_digits - precision_i16) as u32;
+        let excess = u32::from((frac_digits - precision_i16).cast_unsigned());
         bankers_round(mantissa, excess)
     } else {
         mantissa
@@ -636,9 +654,9 @@ pub fn mantissa_exponent_to_fixed_i128(
     }
 
     if scale_exp >= 0 {
-        mantissa.checked_mul(10i128.pow(scale_exp as u32))
+        mantissa.checked_mul(10i128.pow(u32::from(scale_exp.cast_unsigned())))
     } else {
-        Some(mantissa / 10i128.pow((-scale_exp) as u32))
+        Some(mantissa / 10i128.pow(u32::from((-scale_exp).cast_unsigned())))
     }
     .ok_or_else(|| CorrectnessError::PredicateViolation {
         message: "Overflow when scaling mantissa to fixed precision".to_string(),
@@ -688,80 +706,142 @@ where
 /// at the user-specified precision level to ensure values are correctly represented
 /// without accumulating floating-point errors during scaling.
 ///
+/// Callers are expected to validate that `value` is finite and within range; non-finite
+/// values saturate at the integer bounds during the float-to-integer cast.
+///
 /// # Panics
 ///
-/// Panics if `precision` exceeds [`FIXED_PRECISION`].
+/// Panics if `precision` exceeds [`FIXED_PRECISION`], or if scaling the rounded value
+/// overflows the raw integer range.
 #[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "f64 to fixed-point conversion is inherently lossy; callers validate range and finiteness"
+)]
 pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
     check_fixed_precision(precision).expect_display(FAILED);
     let pow1 = 10_i64.pow(u32::from(precision));
     let pow2 = 10_i64.pow(u32::from(FIXED_PRECISION - precision));
     let rounded = (value * pow1 as f64).round() as i64;
-    rounded * pow2
+    rounded
+        .checked_mul(pow2)
+        .expect("Overflow when scaling f64 to fixed-point i64")
 }
 
 /// Converts an `f64` value to a raw fixed-point `i128` representation with a specified precision.
 ///
+/// Callers are expected to validate that `value` is finite and within range; non-finite
+/// values saturate at the integer bounds during the float-to-integer cast.
+///
 /// # Panics
 ///
-/// Panics if `precision` exceeds [`FIXED_PRECISION`].
+/// Panics if `precision` exceeds [`FIXED_PRECISION`], or if scaling the rounded value
+/// overflows the raw integer range.
 #[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "f64 to fixed-point conversion is inherently lossy; callers validate range and finiteness"
+)]
 pub fn f64_to_fixed_i128(value: f64, precision: u8) -> i128 {
     check_fixed_precision(precision).expect_display(FAILED);
     let pow1 = 10_i128.pow(u32::from(precision));
     let pow2 = 10_i128.pow(u32::from(FIXED_PRECISION - precision));
     let rounded = (value * pow1 as f64).round() as i128;
-    rounded * pow2
+    rounded
+        .checked_mul(pow2)
+        .expect("Overflow when scaling f64 to fixed-point i128")
 }
 
 /// Converts an `f64` value to a raw fixed-point `u64` representation with a specified precision.
 ///
+/// Callers are expected to validate that `value` is finite and non-negative; non-finite
+/// and negative values saturate at the integer bounds during the float-to-integer cast.
+///
 /// # Panics
 ///
-/// Panics if `precision` exceeds [`FIXED_PRECISION`].
+/// Panics if `precision` exceeds [`FIXED_PRECISION`], or if scaling the rounded value
+/// overflows the raw integer range.
 #[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "f64 to fixed-point conversion is inherently lossy; callers validate range and finiteness"
+)]
 pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
     check_fixed_precision(precision).expect_display(FAILED);
     let pow1 = 10_u64.pow(u32::from(precision));
     let pow2 = 10_u64.pow(u32::from(FIXED_PRECISION - precision));
     let rounded = (value * pow1 as f64).round() as u64;
-    rounded * pow2
+    rounded
+        .checked_mul(pow2)
+        .expect("Overflow when scaling f64 to fixed-point u64")
 }
 
 /// Converts an `f64` value to a raw fixed-point `u128` representation with a specified precision.
 ///
+/// Callers are expected to validate that `value` is finite and non-negative; non-finite
+/// and negative values saturate at the integer bounds during the float-to-integer cast.
+///
 /// # Panics
 ///
-/// Panics if `precision` exceeds [`FIXED_PRECISION`].
+/// Panics if `precision` exceeds [`FIXED_PRECISION`], or if scaling the rounded value
+/// overflows the raw integer range.
 #[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "f64 to fixed-point conversion is inherently lossy; callers validate range and finiteness"
+)]
 pub fn f64_to_fixed_u128(value: f64, precision: u8) -> u128 {
     check_fixed_precision(precision).expect_display(FAILED);
     let pow1 = 10_u128.pow(u32::from(precision));
     let pow2 = 10_u128.pow(u32::from(FIXED_PRECISION - precision));
     let rounded = (value * pow1 as f64).round() as u128;
-    rounded * pow2
+    rounded
+        .checked_mul(pow2)
+        .expect("Overflow when scaling f64 to fixed-point u128")
 }
 
 /// Converts a raw fixed-point `i64` value back to an `f64` value.
 #[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "i64 to f64 is inherently lossy above 2^53; accepted for float interop"
+)]
 pub fn fixed_i64_to_f64(value: i64) -> f64 {
     (value as f64) / FIXED_SCALAR
 }
 
 /// Converts a raw fixed-point `i128` value back to an `f64` value.
 #[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "i128 to f64 is inherently lossy above 2^53; accepted for float interop"
+)]
 pub fn fixed_i128_to_f64(value: i128) -> f64 {
     (value as f64) / FIXED_SCALAR
 }
 
 /// Converts a raw fixed-point `u64` value back to an `f64` value.
 #[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "u64 to f64 is inherently lossy above 2^53; accepted for float interop"
+)]
 pub fn fixed_u64_to_f64(value: u64) -> f64 {
     (value as f64) / FIXED_SCALAR
 }
 
 /// Converts a raw fixed-point `u128` value back to an `f64` value.
 #[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "u128 to f64 is inherently lossy above 2^53; accepted for float interop"
+)]
 pub fn fixed_u128_to_f64(value: u128) -> f64 {
     (value as f64) / FIXED_SCALAR
 }
@@ -774,7 +854,7 @@ mod tests {
 
     use super::*;
 
-    #[cfg(not(feature = "high-precision"))]
+    #[cfg(not(feature = "defi"))]
     #[rstest]
     fn test_precision_boundaries() {
         assert!(check_fixed_precision(0).is_ok());
@@ -1171,6 +1251,18 @@ mod tests {
         assert!(check_fixed_raw_i128(i128::MAX, FIXED_PRECISION).is_ok());
         assert!(check_fixed_raw_i128(i128::MIN, FIXED_PRECISION).is_ok());
     }
+
+    #[rstest]
+    #[should_panic(expected = "Overflow when scaling f64 to fixed-point i128")]
+    fn test_f64_to_fixed_i128_overflow_panics() {
+        let _ = f64_to_fixed_i128(1e30, 0);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Overflow when scaling f64 to fixed-point u128")]
+    fn test_f64_to_fixed_u128_overflow_panics() {
+        let _ = f64_to_fixed_u128(1e30, 0);
+    }
 }
 
 #[cfg(not(feature = "high-precision"))]
@@ -1467,6 +1559,18 @@ mod tests {
         assert!(check_fixed_raw_i64(i64::MAX, FIXED_PRECISION).is_ok());
         assert!(check_fixed_raw_i64(i64::MIN, FIXED_PRECISION).is_ok());
     }
+
+    #[rstest]
+    #[should_panic(expected = "Overflow when scaling f64 to fixed-point i64")]
+    fn test_f64_to_fixed_i64_overflow_panics() {
+        let _ = f64_to_fixed_i64(2e18, 0);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Overflow when scaling f64 to fixed-point u64")]
+    fn test_f64_to_fixed_u64_overflow_panics() {
+        let _ = f64_to_fixed_u64(2e19, 0);
+    }
 }
 
 #[cfg(test)]
@@ -1633,5 +1737,67 @@ mod bankers_round_tests {
                 "bankers_round disagrees with Decimal for {input} at precision {target_precision}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod correct_raw_tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    // All cases use precision = FIXED_PRECISION - 1 so the scale is 10 in both
+    // standard-precision and high-precision modes.
+
+    #[rstest]
+    #[case(0, 0)]
+    #[case(10, 10)] // Already a multiple
+    #[case(14, 10)] // Rounds down
+    #[case(15, 20)] // Half rounds up
+    #[case(16, 20)] // Rounds up
+    #[case(u64::MAX, u64::MAX - 5)] // Rounding up would overflow; rounds down instead
+    fn test_correct_raw_u64(#[case] raw: u64, #[case] expected: u64) {
+        assert_eq!(correct_raw_u64(raw, FIXED_PRECISION - 1), expected);
+    }
+
+    #[rstest]
+    #[case(0, 0)]
+    #[case(14, 10)]
+    #[case(15, 20)]
+    #[case(-14, -10)] // Rounds toward zero
+    #[case(-15, -20)] // Half rounds away from zero
+    #[case(-16, -20)] // Rounds away from zero
+    #[case(i64::MAX, i64::MAX - 7)] // Rounding up would overflow; rounds down instead
+    #[case(i64::MIN, i64::MIN + 8)] // Rounding down would overflow; rounds toward zero instead
+    fn test_correct_raw_i64(#[case] raw: i64, #[case] expected: i64) {
+        assert_eq!(correct_raw_i64(raw, FIXED_PRECISION - 1), expected);
+    }
+
+    #[rstest]
+    #[case(0, 0)]
+    #[case(14, 10)]
+    #[case(15, 20)]
+    #[case(u128::MAX, u128::MAX - 5)] // Rounding up would overflow; rounds down instead
+    fn test_correct_raw_u128(#[case] raw: u128, #[case] expected: u128) {
+        assert_eq!(correct_raw_u128(raw, FIXED_PRECISION - 1), expected);
+    }
+
+    #[rstest]
+    #[case(0, 0)]
+    #[case(14, 10)]
+    #[case(15, 20)]
+    #[case(-15, -20)]
+    #[case(i128::MAX, i128::MAX - 7)] // Rounding up would overflow; rounds down instead
+    #[case(i128::MIN, i128::MIN + 8)] // Rounding down would overflow; rounds toward zero instead
+    fn test_correct_raw_i128(#[case] raw: i128, #[case] expected: i128) {
+        assert_eq!(correct_raw_i128(raw, FIXED_PRECISION - 1), expected);
+    }
+
+    #[rstest]
+    fn test_correct_raw_identity_at_max_precision() {
+        assert_eq!(correct_raw_u64(12_345, FIXED_PRECISION), 12_345);
+        assert_eq!(correct_raw_i64(-12_345, FIXED_PRECISION), -12_345);
+        assert_eq!(correct_raw_u128(12_345, FIXED_PRECISION), 12_345);
+        assert_eq!(correct_raw_i128(-12_345, FIXED_PRECISION), -12_345);
     }
 }
