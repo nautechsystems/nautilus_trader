@@ -5336,11 +5336,19 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
         Ok(())
     }
 
-    fn update_actor(&self) -> anyhow::Result<()> {
+    fn update_actor(
+        &self,
+        _component_id: &ComponentId,
+        _state: &AHashMap<String, Bytes>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn update_strategy(&self) -> anyhow::Result<()> {
+    fn update_strategy(
+        &self,
+        _strategy_id: &StrategyId,
+        _state: &AHashMap<String, Bytes>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 

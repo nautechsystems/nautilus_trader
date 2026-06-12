@@ -479,14 +479,22 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if updating actor state fails.
-    fn update_actor(&self) -> anyhow::Result<()>;
+    fn update_actor(
+        &self,
+        component_id: &ComponentId,
+        state: &AHashMap<String, Bytes>,
+    ) -> anyhow::Result<()>;
 
     /// Updates strategy state in the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if updating strategy state fails.
-    fn update_strategy(&self) -> anyhow::Result<()>;
+    fn update_strategy(
+        &self,
+        strategy_id: &StrategyId,
+        state: &AHashMap<String, Bytes>,
+    ) -> anyhow::Result<()>;
 
     /// Updates an account in the cache.
     ///
