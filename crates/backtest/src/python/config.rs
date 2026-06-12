@@ -23,7 +23,9 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::config::DataEngineConfig;
-use nautilus_execution::engine::config::ExecutionEngineConfig;
+use nautilus_execution::{
+    engine::config::ExecutionEngineConfig, python::fee::pyobject_to_fee_model_any,
+};
 use nautilus_model::{
     data::BarSpecification,
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
@@ -37,8 +39,8 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::engine::{
-    pyobject_to_fee_model_any, pyobject_to_fill_model_any, pyobject_to_latency_model_any,
-    pyobject_to_margin_model_any, pyobject_to_simulation_module_any,
+    pyobject_to_fill_model_any, pyobject_to_latency_model_any, pyobject_to_margin_model_any,
+    pyobject_to_simulation_module_any,
 };
 use crate::config::{
     BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig,
@@ -333,7 +335,7 @@ impl BacktestVenueConfig {
             .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(py, obj.bind(py))))
             .transpose()?;
         let fee_model = fee_model
-            .map(|obj| Python::attach(|py| pyobject_to_fee_model_any(py, obj.bind(py))))
+            .map(|obj| Python::attach(|py| pyobject_to_fee_model_any(obj.bind(py))))
             .transpose()?;
 
         Ok(Self::builder()

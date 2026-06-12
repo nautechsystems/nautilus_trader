@@ -16,14 +16,19 @@
 //! Configuration for sandbox execution client.
 
 use ahash::AHashMap;
-use nautilus_execution::matching_engine::config::OrderMatchingEngineConfig;
+use nautilus_execution::{
+    matching_engine::config::OrderMatchingEngineConfig, models::fee::FeeModelAny,
+};
 use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
     identifiers::{AccountId, InstrumentId, TraderId, Venue},
     types::{Currency, Money},
 };
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
+    de::{self, IgnoredAny},
+};
 
 /// Configuration for `SandboxExecutionClient` instances.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
@@ -66,6 +71,14 @@ pub struct SandboxExecutionClientConfig {
     /// The order book type for the matching engine.
     #[builder(default = BookType::L1_MBP)]
     pub book_type: BookType,
+    /// The fee model for sandbox matching engines.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_fee_model",
+        deserialize_with = "deserialize_fee_model"
+    )]
+    pub fee_model: Option<FeeModelAny>,
     /// If True, account balances won't change (frozen).
     #[builder(default)]
     pub frozen_account: bool,
@@ -119,8 +132,35 @@ impl Default for SandboxExecutionClientConfig {
     }
 }
 
+fn serialize_fee_model<S>(fee_model: &Option<FeeModelAny>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match fee_model {
+        None => serializer.serialize_none(),
+        Some(_) => Err(serde::ser::Error::custom(
+            "SandboxExecutionClientConfig.fee_model is runtime-only and cannot be serialized",
+        )),
+    }
+}
+
+fn deserialize_fee_model<'de, D>(deserializer: D) -> Result<Option<FeeModelAny>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<IgnoredAny>::deserialize(deserializer)?;
+
+    match value {
+        None => Ok(None),
+        Some(_) => Err(de::Error::custom(
+            "SandboxExecutionClientConfig.fee_model must be configured at runtime, not deserialized",
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use nautilus_execution::models::fee::{FeeModelAny, ProbabilityPriceFeeModel};
     use rstest::rstest;
 
     use super::*;
@@ -137,8 +177,28 @@ mod tests {
         assert_eq!(config.account_type, expected.account_type);
         assert_eq!(config.default_leverage, expected.default_leverage);
         assert_eq!(config.book_type, expected.book_type);
+        assert!(config.fee_model.is_none());
         assert_eq!(config.bar_execution, expected.bar_execution);
         assert_eq!(config.trade_execution, expected.trade_execution);
         assert_eq!(config.use_position_ids, expected.use_position_ids);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_rejects_fee_model_field() {
+        let result = toml::from_str::<SandboxExecutionClientConfig>("fee_model = \"runtime-only\"");
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_rejects_serializing_runtime_fee_model() {
+        let config = SandboxExecutionClientConfig {
+            fee_model: Some(FeeModelAny::ProbabilityPrice(ProbabilityPriceFeeModel)),
+            ..SandboxExecutionClientConfig::default()
+        };
+
+        let result = toml::Value::try_from(&config);
+
+        assert!(result.is_err());
     }
 }

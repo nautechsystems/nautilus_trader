@@ -575,6 +575,12 @@ pub fn parse_timestamp(ts_str: &str) -> Option<UnixNanos> {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_execution::models::fee::{FeeModel, ProbabilityPriceFeeModel};
+    use nautilus_model::{
+        enums::OrderType,
+        instruments::{Instrument, InstrumentAny, stubs::binary_option},
+        orders::{OrderAny, builder::OrderTestBuilder, stubs::TestOrderStubs},
+    };
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use ustr::Ustr;
@@ -633,6 +639,21 @@ mod tests {
             UnixNanos::default(),
             None,
         )
+    }
+
+    fn binary_option_fill_order(
+        instrument: &InstrumentAny,
+        liquidity_side: LiquiditySide,
+        price: &str,
+    ) -> OrderAny {
+        let limit_order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .price(Price::from(price))
+            .quantity(Quantity::from("100.00"))
+            .build();
+
+        TestOrderStubs::make_filled_order(&limit_order, instrument, liquidity_side)
     }
 
     #[rstest]
@@ -768,6 +789,42 @@ mod tests {
             LiquiditySide::Maker,
         );
         assert_eq!(commission, 0.0);
+    }
+
+    #[rstest]
+    #[case::crypto_taker("0.072", "0.970", LiquiditySide::Taker)]
+    #[case::sports_taker("0.03", "0.500", LiquiditySide::Taker)]
+    #[case::politics_taker("0.04", "0.300", LiquiditySide::Taker)]
+    #[case::maker_zero("0.03", "0.500", LiquiditySide::Maker)]
+    fn test_probability_price_fee_model_matches_polymarket_commission(
+        #[case] taker_fee: &str,
+        #[case] price: &str,
+        #[case] liquidity_side: LiquiditySide,
+    ) {
+        let mut binary = binary_option();
+        binary.maker_fee = Decimal::ZERO;
+        binary.taker_fee = Decimal::from_str_exact(taker_fee).unwrap();
+        let instrument = InstrumentAny::BinaryOption(binary);
+        let order = binary_option_fill_order(&instrument, liquidity_side, price);
+        let fee_model = ProbabilityPriceFeeModel;
+
+        let commission = fee_model
+            .get_commission(
+                &order,
+                Quantity::from("100.00"),
+                Price::from(price),
+                &instrument,
+            )
+            .unwrap();
+
+        let expected = compute_commission(
+            Decimal::from_str_exact(taker_fee).unwrap(),
+            dec!(100),
+            Decimal::from_str_exact(price).unwrap(),
+            liquidity_side,
+        );
+
+        assert!((commission.as_f64() - expected).abs() < 1e-10);
     }
 
     /// Reference computations for `adjust_market_buy_amount` follow the SDK
