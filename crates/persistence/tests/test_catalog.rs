@@ -1990,8 +1990,8 @@ fn test_extract_data_cls_and_identifier_from_path_moved() {
     assert_eq!(identifier, None);
 }
 
-/// Ensures custom data path built by make_path_custom_data (via custom module) matches
-/// the format expected by extract_data_cls_and_identifier_from_path (catalog behavior unchanged after extraction).
+/// Ensures custom data path built by `make_path_custom_data` (via custom module) matches
+/// the format expected by `extract_data_cls_and_identifier_from_path`.
 #[rstest]
 fn test_make_path_custom_data_roundtrip() {
     let tmp = tempfile::tempdir().unwrap();
@@ -2095,7 +2095,7 @@ fn test_prepare_consolidation_queries_basic_moved() {
 
     // Test basic period consolidation
     let intervals = vec![(1000, 5000), (5001, 10000)];
-    let period_nanos = 86400000000000; // 1 day
+    let period_nanos = 86_400_000_000_000; // 1 day
 
     let queries = catalog
         .prepare_consolidation_queries("quotes", None, &intervals, period_nanos, None, None, true)
@@ -2123,7 +2123,7 @@ fn test_prepare_consolidation_queries_with_splits_moved() {
     // File: [1000, 5000], Request: start=2000, end=4000
     // Should result in split queries for [1000, 1999] and [4001, 5000], plus consolidation for [2000, 4000]
     let intervals = vec![(1000, 5000)];
-    let period_nanos = 86400000000000; // 1 day
+    let period_nanos = 86_400_000_000_000; // 1 day
     let start = Some(UnixNanos::from(2000));
     let end = Some(UnixNanos::from(4000));
 
@@ -3749,8 +3749,9 @@ fn test_rust_custom_data_roundtrip_with_hashmap_price_field() {
     }
 }
 
-/// Regression: write_data_enum groups custom data by full DataType (type_name + identifier + metadata).
-/// Same type_name with different identifiers must produce separate batches and be readable back.
+/// Regression: `write_data_enum` groups custom data by full `DataType`
+/// (`type_name` + identifier + metadata).
+/// Same `type_name` with different identifiers must produce separate batches and be readable back.
 #[rstest]
 #[ignore = "Slow regression test (>120s) for custom data identifier batching; run manually when changing catalog custom data write/query paths"]
 fn test_write_data_enum_mixed_custom_data_identifiers() {

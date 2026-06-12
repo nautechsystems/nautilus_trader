@@ -249,6 +249,10 @@ mod serial_tests {
         adapter.flush().unwrap();
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "integration test verifies order deletion across every Redis index"
+    )]
     #[tokio::test]
     async fn test_delete_order_cleans_up_indexes() {
         let _guard = redis_test_mutex().lock().await;
@@ -760,7 +764,8 @@ mod serial_tests {
         );
     }
 
-    /// Tests add_custom_data and load_custom_data roundtrip with filtering by type_name and identifier.
+    /// Tests `add_custom_data` and `load_custom_data` roundtrip with filtering by `type_name`
+    /// and identifier.
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_and_load_custom_data_roundtrip() {
         let _guard = redis_test_mutex().lock().await;
@@ -801,7 +806,8 @@ mod serial_tests {
         adapter.flush().unwrap();
     }
 
-    /// Tests that load_custom_data returns only items matching the requested DataType (identifier filter).
+    /// Tests that `load_custom_data` returns only items matching the requested `DataType`
+    /// (identifier filter).
     #[tokio::test(flavor = "multi_thread")]
     async fn test_load_custom_data_filters_by_identifier() {
         let _guard = redis_test_mutex().lock().await;
@@ -872,7 +878,7 @@ mod serial_tests {
             .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-2"))
             .build();
 
-        let fill = match TestOrderEventStubs::filled(
+        let OrderEventAny::Filled(fill) = TestOrderEventStubs::filled(
             &order_1,
             &instrument,
             None,
@@ -883,9 +889,8 @@ mod serial_tests {
             None,
             None,
             None,
-        ) {
-            OrderEventAny::Filled(fill) => fill,
-            _ => unreachable!(),
+        ) else {
+            unreachable!();
         };
         let position = Position::new(&instrument, fill);
 

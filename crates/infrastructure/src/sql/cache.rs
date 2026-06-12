@@ -1006,6 +1006,10 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "database command dispatch enumerates each cache query variant explicitly"
+)]
 async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
     for cmd in buffer.drain(..) {
         let result: anyhow::Result<()> = match cmd {

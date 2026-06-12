@@ -93,7 +93,7 @@ impl Debug for RedisMessageBusDatabase {
         f.debug_struct(stringify!(RedisMessageBusDatabase))
             .field("trader_id", &self.trader_id)
             .field("instance_id", &self.instance_id)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

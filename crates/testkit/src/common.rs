@@ -179,7 +179,7 @@ pub fn get_tardis_bitmex_trades_path() -> PathBuf {
 }
 
 /// Returns an AAPL equity instrument with ITCH-compatible precision
-/// (price_precision=4, price_increment=0.0001).
+/// (`price_precision=4`, `price_increment=0.0001`).
 #[must_use]
 pub fn itch_aapl_equity() -> InstrumentAny {
     InstrumentAny::Equity(equity_aapl_itch())

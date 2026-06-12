@@ -15,7 +15,7 @@
 
 use ahash::AHashSet;
 use nautilus_common::{actor::DataActor, enums::LogColor, log_info, log_warn, timer::TimeEvent};
-use nautilus_core::{UnixNanos, datetime::secs_to_nanos_unchecked};
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{ContingencyType, OrderSide, OrderType, TimeInForce},
@@ -42,6 +42,10 @@ use super::config::ExecTesterConfig;
 /// **WARNING**: This strategy has no alpha advantage whatsoever.
 /// It is not intended to be used for live trading with real money.
 #[derive(Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tester state tracks independent execution scenarios"
+)]
 pub struct ExecTester {
     pub(super) core: StrategyCore,
     pub(super) config: ExecTesterConfig,
@@ -339,7 +343,7 @@ impl ExecTester {
 
     fn expire_time_from_delta(&self, mins: u64) -> UnixNanos {
         let current_ns = self.timestamp_ns();
-        let delta_ns = secs_to_nanos_unchecked((mins * 60) as f64);
+        let delta_ns = mins.saturating_mul(60).saturating_mul(1_000_000_000);
         UnixNanos::from(current_ns.as_u64() + delta_ns)
     }
 
@@ -379,7 +383,7 @@ impl ExecTester {
         }
     }
 
-    pub(super) fn is_order_active(&self, order: &OrderAny) -> bool {
+    pub(super) fn is_order_active(order: &OrderAny) -> bool {
         order.is_active_local() || order.is_inflight() || order.is_open()
     }
 
@@ -402,7 +406,7 @@ impl ExecTester {
             || matches!(self.config.stop_order_type, OrderType::TrailingStopMarket)
     }
 
-    pub(super) fn get_order_trigger_price(&self, order: &OrderAny) -> Option<Price> {
+    pub(super) fn get_order_trigger_price(order: &OrderAny) -> Option<Price> {
         order.trigger_price()
     }
 
@@ -440,7 +444,7 @@ impl ExecTester {
         }
     }
 
-    /// Submit an order, applying order_params if configured.
+    /// Submit an order, applying `order_params` if configured.
     fn submit_order_apply_params(&mut self, order: OrderAny) -> anyhow::Result<()> {
         let client_id = self.config.client_id;
         if let Some(params) = &self.config.order_params {
@@ -486,9 +490,9 @@ impl ExecTester {
     /// latest event-driven state instead of the stale clone captured at submit.
     fn refresh_tracked_order(&mut self, side: OrderSide) {
         let cid = match side {
-            OrderSide::Buy => self.buy_order.as_ref().map(|o| o.client_order_id()),
-            OrderSide::Sell => self.sell_order.as_ref().map(|o| o.client_order_id()),
-            _ => None,
+            OrderSide::Buy => self.buy_order.as_ref().map(OrderAny::client_order_id),
+            OrderSide::Sell => self.sell_order.as_ref().map(OrderAny::client_order_id),
+            OrderSide::NoOrderSide => None,
         };
         let Some(cid) = cid else {
             return;
@@ -498,16 +502,16 @@ impl ExecTester {
             match side {
                 OrderSide::Buy => self.buy_order = Some(latest),
                 OrderSide::Sell => self.sell_order = Some(latest),
-                _ => {}
+                OrderSide::NoOrderSide => {}
             }
         }
     }
 
     fn refresh_tracked_stop_order(&mut self, side: OrderSide) {
         let cid = match side {
-            OrderSide::Buy => self.buy_stop_order.as_ref().map(|o| o.client_order_id()),
-            OrderSide::Sell => self.sell_stop_order.as_ref().map(|o| o.client_order_id()),
-            _ => None,
+            OrderSide::Buy => self.buy_stop_order.as_ref().map(OrderAny::client_order_id),
+            OrderSide::Sell => self.sell_stop_order.as_ref().map(OrderAny::client_order_id),
+            OrderSide::NoOrderSide => None,
         };
         let Some(cid) = cid else {
             return;
@@ -517,7 +521,7 @@ impl ExecTester {
             match side {
                 OrderSide::Buy => self.buy_stop_order = Some(latest),
                 OrderSide::Sell => self.sell_stop_order = Some(latest),
-                _ => {}
+                OrderSide::NoOrderSide => {}
             }
         }
     }
@@ -557,7 +561,7 @@ impl ExecTester {
 
         let needs_new_order = match &self.buy_order {
             None => true,
-            Some(order) => !self.is_order_active(order) && !self.limit_order_is_one_shot(),
+            Some(order) => !Self::is_order_active(order) && !self.limit_order_is_one_shot(),
         };
 
         if needs_new_order {
@@ -662,7 +666,7 @@ impl ExecTester {
 
         let needs_new_order = match &self.sell_order {
             None => true,
-            Some(order) => !self.is_order_active(order) && !self.limit_order_is_one_shot(),
+            Some(order) => !Self::is_order_active(order) && !self.limit_order_is_one_shot(),
         };
 
         if needs_new_order {
@@ -752,11 +756,11 @@ impl ExecTester {
 
         let buy_needs = match &self.buy_order {
             None => true,
-            Some(order) => !self.is_order_active(order) && !self.limit_order_is_one_shot(),
+            Some(order) => !Self::is_order_active(order) && !self.limit_order_is_one_shot(),
         };
         let sell_needs = match &self.sell_order {
             None => true,
-            Some(order) => !self.is_order_active(order) && !self.limit_order_is_one_shot(),
+            Some(order) => !Self::is_order_active(order) && !self.limit_order_is_one_shot(),
         };
 
         if !buy_needs || !sell_needs {
@@ -879,7 +883,7 @@ impl ExecTester {
 
         let needs_new_order = match &self.buy_stop_order {
             None => true,
-            Some(order) => !self.is_order_active(order) && !self.stop_order_is_one_shot(),
+            Some(order) => !Self::is_order_active(order) && !self.stop_order_is_one_shot(),
         };
 
         if needs_new_order {
@@ -891,7 +895,7 @@ impl ExecTester {
             && !order.is_pending_update()
             && !order.is_pending_cancel()
         {
-            let current_trigger = self.get_order_trigger_price(order);
+            let current_trigger = Self::get_order_trigger_price(order);
             if current_trigger.is_some() && current_trigger != Some(trigger_price) {
                 if self.config.modify_stop_orders_to_maintain_offset {
                     let order_clone = order.clone();
@@ -964,7 +968,7 @@ impl ExecTester {
 
         let needs_new_order = match &self.sell_stop_order {
             None => true,
-            Some(order) => !self.is_order_active(order) && !self.stop_order_is_one_shot(),
+            Some(order) => !Self::is_order_active(order) && !self.stop_order_is_one_shot(),
         };
 
         if needs_new_order {
@@ -976,7 +980,7 @@ impl ExecTester {
             && !order.is_pending_update()
             && !order.is_pending_cancel()
         {
-            let current_trigger = self.get_order_trigger_price(order);
+            let current_trigger = Self::get_order_trigger_price(order);
             if current_trigger.is_some() && current_trigger != Some(trigger_price) {
                 if self.config.modify_stop_orders_to_maintain_offset {
                     let order_clone = order.clone();
@@ -1070,6 +1074,10 @@ impl ExecTester {
     /// # Errors
     ///
     /// Returns an error if order creation or submission fails.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "stop order submission covers all supported stop order scenarios"
+    )]
     pub(super) fn submit_stop_order(
         &mut self,
         order_side: OrderSide,
@@ -1288,7 +1296,9 @@ impl ExecTester {
                 let sl = add_price_ticks(entry_price, increment, bracket_offset_ticks, precision);
                 (tp, sl)
             }
-            _ => anyhow::bail!("Invalid order side for bracket: {order_side:?}"),
+            OrderSide::NoOrderSide => {
+                anyhow::bail!("Invalid order side for bracket: {order_side:?}")
+            }
         };
         let clamp = self.config.clamp_to_instrument_price_range;
         let tp_price = clamp_price_to_range(raw_tp_price, instrument, clamp);
@@ -1520,13 +1530,22 @@ impl ExecTester {
 }
 
 fn add_price_ticks(base: Price, increment: Price, ticks: u64, precision: u8) -> Price {
-    let offset_raw = increment.raw * ticks as PriceRaw;
+    let offset_raw = tick_offset_raw(increment, ticks);
     Price::from_raw(base.raw + offset_raw, precision)
 }
 
 fn sub_price_ticks(base: Price, increment: Price, ticks: u64, precision: u8) -> Price {
-    let offset_raw = increment.raw * ticks as PriceRaw;
+    let offset_raw = tick_offset_raw(increment, ticks);
     Price::from_raw(base.raw - offset_raw, precision)
+}
+
+fn tick_offset_raw(increment: Price, ticks: u64) -> PriceRaw {
+    #[cfg(feature = "high-precision")]
+    let ticks_raw = PriceRaw::from(ticks);
+    #[cfg(not(feature = "high-precision"))]
+    let ticks_raw = PriceRaw::try_from(ticks).expect("tick offset must fit PriceRaw");
+
+    increment.raw * ticks_raw
 }
 
 // `OrderAny::is_contingency` returns true for `Some(NoContingency)` (the factory

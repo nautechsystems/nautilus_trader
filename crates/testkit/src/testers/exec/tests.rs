@@ -56,8 +56,8 @@ use rust_decimal::Decimal;
 
 use super::*;
 
-/// Register an ExecTester with all required components.
-/// This gives the tester access to OrderFactory for actual order creation.
+/// Register an `ExecTester` with all required components.
+/// This gives the tester access to `OrderFactory` for actual order creation.
 fn register_exec_tester(tester: &mut ExecTester, cache: Rc<RefCell<Cache>>) {
     let trader_id = TraderId::from("TRADER-001");
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
@@ -293,20 +293,18 @@ fn test_get_price_offset_single_tick(instrument: InstrumentAny) {
 }
 
 #[rstest]
-fn test_is_order_active_initialized(config: ExecTesterConfig) {
-    let tester = ExecTester::new(config);
+fn test_is_order_active_initialized() {
     let order = create_initialized_limit_order();
 
-    assert!(tester.is_order_active(&order));
+    assert!(ExecTester::is_order_active(&order));
     assert_eq!(order.status(), OrderStatus::Initialized);
 }
 
 #[rstest]
-fn test_get_order_trigger_price_limit_order_returns_none(config: ExecTesterConfig) {
-    let tester = ExecTester::new(config);
+fn test_get_order_trigger_price_limit_order_returns_none() {
     let order = create_initialized_limit_order();
 
-    assert!(tester.get_order_trigger_price(&order).is_none());
+    assert!(ExecTester::get_order_trigger_price(&order).is_none());
 }
 
 #[rstest]
@@ -1974,8 +1972,7 @@ fn test_modify_rejected_one_shot_guard_consumed(
 fn ack_buy_order_in_cache(tester: &ExecTester, cache: &Rc<RefCell<Cache>>) {
     let order = tester
         .buy_order
-        .as_ref()
-        .cloned()
+        .clone()
         .expect("buy order should be tracked locally");
     let cid = order.client_order_id();
     let strategy_id = order.strategy_id();
@@ -2298,7 +2295,7 @@ fn tracked_limit_order(tester: &ExecTester, side: OrderSide) -> &OrderAny {
     match side {
         OrderSide::Buy => tester.buy_order.as_ref().expect("buy order should exist"),
         OrderSide::Sell => tester.sell_order.as_ref().expect("sell order should exist"),
-        _ => panic!("Unsupported order side {side:?}"),
+        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 
@@ -2312,7 +2309,7 @@ fn tracked_stop_order(tester: &ExecTester, side: OrderSide) -> &OrderAny {
             .sell_stop_order
             .as_ref()
             .expect("sell stop order should exist"),
-        _ => panic!("Unsupported order side {side:?}"),
+        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 
@@ -2320,7 +2317,7 @@ fn cancel_replace_attempted(tester: &ExecTester, side: OrderSide) -> bool {
     match side {
         OrderSide::Buy => tester.buy_cancel_replace_attempted,
         OrderSide::Sell => tester.sell_cancel_replace_attempted,
-        _ => panic!("Unsupported order side {side:?}"),
+        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 
@@ -2328,7 +2325,7 @@ fn stop_cancel_replace_attempted(tester: &ExecTester, side: OrderSide) -> bool {
     match side {
         OrderSide::Buy => tester.buy_stop_cancel_replace_attempted,
         OrderSide::Sell => tester.sell_stop_cancel_replace_attempted,
-        _ => panic!("Unsupported order side {side:?}"),
+        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 
@@ -2419,8 +2416,7 @@ fn test_collect_cancellable_orders_dedupes_and_skips_pending_cancel(
 
     let strategy_id = StrategyId::from(tester.core.actor_id.inner().as_str());
     let candidates = tester.collect_cancellable_orders(tester.config.instrument_id, strategy_id);
-    let candidate_ids: Vec<ClientOrderId> =
-        candidates.iter().map(|o| o.client_order_id()).collect();
+    let candidate_ids: Vec<ClientOrderId> = candidates.iter().map(Order::client_order_id).collect();
 
     assert!(candidate_ids.contains(&buy_id));
     assert!(!candidate_ids.contains(&sell_id));
@@ -2736,8 +2732,7 @@ fn test_collect_cancellable_orders_excludes_contingency_group(
 
     let strategy_id = StrategyId::from(tester.core.actor_id.inner().as_str());
     let candidates = tester.collect_cancellable_orders(tester.config.instrument_id, strategy_id);
-    let candidate_ids: Vec<ClientOrderId> =
-        candidates.iter().map(|o| o.client_order_id()).collect();
+    let candidate_ids: Vec<ClientOrderId> = candidates.iter().map(Order::client_order_id).collect();
 
     assert!(
         candidate_ids.contains(&plain_id),

@@ -206,17 +206,16 @@ pub fn decode_batch_to_data(
             if allow_custom_fallback {
                 #[cfg(feature = "python")]
                 {
-                    Ok(CustomDataDecoder::decode_data_batch(metadata, batch)?)
+                    return Ok(CustomDataDecoder::decode_data_batch(metadata, batch)?);
                 }
                 #[cfg(not(feature = "python"))]
                 {
-                    anyhow::bail!("Unknown data type: {type_name}")
+                    anyhow::bail!("Unknown data type: {type_name}");
                 }
-            } else {
-                anyhow::bail!(
-                    "Unknown data type: {type_name}; custom decode only allowed in custom data context"
-                )
             }
+            anyhow::bail!(
+                "Unknown data type: {type_name}; custom decode only allowed in custom data context"
+            )
         }
     }
 }

@@ -19,7 +19,7 @@ pub mod cache;
 pub mod msgbus;
 pub mod queries;
 
-use std::time::Duration;
+use std::{fmt::Write as _, time::Duration};
 
 use nautilus_common::{
     logging::log_task_awaiting,
@@ -38,8 +38,8 @@ const REDIS_FLUSHDB: &str = "FLUSHDB";
 
 /// Extracts the index key from a full Redis key.
 ///
-/// Handles keys with instance_id prefix by finding the `:index:` pattern.
-/// e.g., "trader-id:uuid:index:order_position" -> "index:order_position"
+/// Handles keys with `instance_id` prefix by finding the `:index:` pattern.
+/// For example, `trader-id:uuid:index:order_position` -> `index:order_position`.
 pub(crate) fn get_index_key(key: &str) -> anyhow::Result<&str> {
     if let Some(pos) = key.find(REDIS_INDEX_PATTERN) {
         return Ok(&key[pos + 1..]);
@@ -156,6 +156,10 @@ pub async fn create_redis_connection(
     let connection_timeout = Duration::from_secs(u64::from(config.connection_timeout));
     let response_timeout = Duration::from_secs(u64::from(config.response_timeout));
     let number_of_retries = config.number_of_retries;
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "redis connection manager API accepts exponent base as f32"
+    )]
     let exponent_base = config.exponent_base as f32;
 
     // Use factor as min_delay base for backoff: factor * (exponent_base ^ tries)
@@ -219,7 +223,7 @@ pub fn get_stream_key(
     }
 
     if config.use_instance_id {
-        stream_key.push_str(&format!("{instance_id}"));
+        write!(stream_key, "{instance_id}").expect("writing to String cannot fail");
         stream_key.push(REDIS_DELIMITER);
     }
 
@@ -229,17 +233,14 @@ pub fn get_stream_key(
 
 async fn get_redis_version(conn: &mut redis::aio::ConnectionManager) -> anyhow::Result<SemVer> {
     let info: String = redis::cmd("INFO").query_async(conn).await?;
-    let version_str = match info.lines().find_map(|line| {
+    let Some(version_str) = info.lines().find_map(|line| {
         if line.starts_with("redis_version:") {
             line.split(':').nth(1).map(|s| s.trim().to_string())
         } else {
             None
         }
-    }) {
-        Some(info) => info,
-        None => {
-            anyhow::bail!("Redis version not available");
-        }
+    }) else {
+        anyhow::bail!("Redis version not available");
     };
 
     SemVer::parse(&version_str)

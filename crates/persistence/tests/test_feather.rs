@@ -436,7 +436,7 @@ async fn test_write_batch_partitions_by_instrument() {
 
     let deltas = vec![
         make_add(instrument_a, 1.23, 2, 100.0, 0, 1000),
-        make_add(instrument_b, 20_000.0, 4, 0.12345678, 8, 2000),
+        make_add(instrument_b, 20_000.0, 4, 0.123_456_78, 8, 2000),
         make_add(instrument_a, 1.24, 2, 50.0, 0, 3000),
         make_add(instrument_b, 20_100.0, 4, 0.25, 8, 4000),
     ];

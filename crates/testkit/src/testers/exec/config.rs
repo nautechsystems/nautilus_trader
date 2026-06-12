@@ -36,6 +36,14 @@ use serde::{Deserialize, Serialize};
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.testkit")
 )]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tester configuration exposes independent execution scenario toggles"
+)]
+#[allow(
+    clippy::unsafe_derive_deserialize,
+    reason = "config type deserializes plain field values; unsafe PyO3 methods are unrelated"
+)]
 pub struct ExecTesterConfig {
     /// Base strategy configuration.
     #[builder(default)]
@@ -99,7 +107,7 @@ pub struct ExecTesterConfig {
     pub tob_offset_ticks: u64,
     /// Override time in force for limit orders (None uses GTC/GTD logic).
     pub limit_time_in_force: Option<TimeInForce>,
-    /// Type of stop order (STOP_MARKET, STOP_LIMIT, MARKET_IF_TOUCHED, LIMIT_IF_TOUCHED).
+    /// Type of stop order (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`).
     #[builder(default = OrderType::StopMarket)]
     pub stop_order_type: OrderType,
     /// Offset from market in price ticks for stop trigger.
@@ -112,9 +120,9 @@ pub struct ExecTesterConfig {
     pub stop_trigger_type: TriggerType,
     /// Override time in force for stop orders (None uses GTC/GTD logic).
     pub stop_time_in_force: Option<TimeInForce>,
-    /// Trailing offset for TRAILING_STOP_MARKET orders.
+    /// Trailing offset for `TRAILING_STOP_MARKET` orders.
     pub trailing_offset: Option<Decimal>,
-    /// Trailing offset type (BasisPoints or Price).
+    /// Trailing offset type (`BasisPoints` or `Price`).
     #[builder(default = TrailingOffsetType::BasisPoints)]
     pub trailing_offset_type: TrailingOffsetType,
     /// Enable bracket orders (entry with TP/SL).
@@ -163,10 +171,10 @@ pub struct ExecTesterConfig {
     pub close_positions_on_stop: bool,
     /// Time in force for closing positions (None defaults to GTC).
     pub close_positions_time_in_force: Option<TimeInForce>,
-    /// Use reduce_only when closing positions.
+    /// Use `reduce_only` when closing positions.
     #[builder(default = true)]
     pub reduce_only_on_stop: bool,
-    /// Use individual cancel commands instead of cancel_all.
+    /// Use individual cancel commands instead of `cancel_all`.
     #[builder(default = false)]
     pub use_individual_cancels_on_stop: bool,
     /// Use batch cancel command when stopping.
@@ -181,7 +189,7 @@ pub struct ExecTesterConfig {
     /// Test post-only rejection by placing orders on wrong side of spread.
     #[builder(default = false)]
     pub test_reject_post_only: bool,
-    /// Test reduce-only rejection by setting reduce_only on open position order.
+    /// Test reduce-only rejection by setting `reduce_only` on open position order.
     #[builder(default = false)]
     pub test_reject_reduce_only: bool,
     /// Programmatically attempt one strategy-wide modify against the next

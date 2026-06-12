@@ -35,6 +35,14 @@ use serde::{Deserialize, Serialize};
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.testkit")
 )]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tester configuration exposes independent scenario toggles"
+)]
+#[allow(
+    clippy::unsafe_derive_deserialize,
+    reason = "config type deserializes plain field values; unsafe PyO3 methods are unrelated"
+)]
 pub struct DataTesterConfig {
     /// Base data actor configuration.
     #[builder(default)]
@@ -122,7 +130,7 @@ pub struct DataTesterConfig {
     /// Order book depth for subscriptions.
     pub book_depth: Option<NonZeroUsize>,
     // TODO: Support book_group_size when order book grouping is implemented
-    /// Order book interval in milliseconds for at_interval subscriptions.
+    /// Order book interval in milliseconds for `at_interval` subscriptions.
     #[builder(default = NonZeroUsize::new(1000).unwrap())]
     pub book_interval_ms: NonZeroUsize,
     /// Number of order book levels to print when logging.

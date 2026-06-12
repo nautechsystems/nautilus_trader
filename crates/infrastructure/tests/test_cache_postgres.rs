@@ -358,8 +358,8 @@ mod serial_tests {
         }
     }
 
-    /// Tests that data is flushed immediately with the current hardcoded buffer_interval=0.
-    /// When buffer_interval is exposed via config, this test validates the zero-interval path.
+    /// Tests that data is flushed immediately with the current hardcoded `buffer_interval=0`.
+    /// When `buffer_interval` is exposed via config, this test validates the zero-interval path.
     #[tokio::test(flavor = "multi_thread")]
     async fn test_buffer_flushes_immediately() {
         let mut database = get_pg_cache_database().await.unwrap();
@@ -389,7 +389,7 @@ mod serial_tests {
     }
 
     /// Tests that pending buffered data is drained when close is called.
-    /// With buffer_interval=0 the buffer is typically empty, but this validates the code path.
+    /// With `buffer_interval=0` the buffer is typically empty, but this validates the code path.
     #[tokio::test(flavor = "multi_thread")]
     async fn test_buffer_drains_on_close() {
         let mut database = get_pg_cache_database().await.unwrap();

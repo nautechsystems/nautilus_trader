@@ -35,7 +35,7 @@
 
 use std::{
     collections::VecDeque,
-    fmt::Debug,
+    fmt::{Debug, Write as _},
     ops::ControlFlow,
     pin::Pin,
     sync::mpsc::{self, SyncSender},
@@ -175,7 +175,7 @@ impl Debug for RedisCacheDatabase {
         f.debug_struct(stringify!(RedisCacheDatabase))
             .field("trader_id", &self.trader_id)
             .field("encoding", &self.encoding)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -635,9 +635,7 @@ async fn drain_buffer(
     pipe.atomic();
 
     for msg in buffer.drain(..) {
-        let key = if let Some(key) = msg.key {
-            key
-        } else {
+        let Some(key) = msg.key else {
             log::error!("Null key found for message: {msg:?}");
             continue;
         };
@@ -699,52 +697,12 @@ fn insert(pipe: &mut Pipeline, collection: &str, key: &str, value: &[Bytes]) -> 
 
     match collection {
         INDEX => insert_index(pipe, key, value),
-        GENERAL => {
+        GENERAL | CURRENCIES | INSTRUMENTS | SYNTHETICS | ACTORS | STRATEGIES | HEALTH | CUSTOM => {
             insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
-        CURRENCIES => {
-            insert_string(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INSTRUMENTS => {
-            insert_string(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        SYNTHETICS => {
-            insert_string(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        ACCOUNTS => {
+        ACCOUNTS | ORDERS | POSITIONS | SNAPSHOTS => {
             insert_list(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        ORDERS => {
-            insert_list(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        POSITIONS => {
-            insert_list(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        ACTORS => {
-            insert_string(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        STRATEGIES => {
-            insert_string(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        SNAPSHOTS => {
-            insert_list(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        HEALTH => {
-            insert_string(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        CUSTOM => {
-            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         _ => anyhow::bail!("Unsupported operation: `insert` for collection '{collection}'"),
@@ -754,48 +712,20 @@ fn insert(pipe: &mut Pipeline, collection: &str, key: &str, value: &[Bytes]) -> 
 fn insert_index(pipe: &mut Pipeline, key: &str, value: &[Bytes]) -> anyhow::Result<()> {
     let index_key = get_index_key(key)?;
     match index_key {
-        INDEX_ORDER_IDS => {
+        INDEX_ORDER_IDS
+        | INDEX_ORDERS
+        | INDEX_ORDERS_OPEN
+        | INDEX_ORDERS_CLOSED
+        | INDEX_ORDERS_EMULATED
+        | INDEX_ORDERS_INFLIGHT
+        | INDEX_POSITIONS
+        | INDEX_POSITIONS_OPEN
+        | INDEX_POSITIONS_CLOSED => {
             insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
-        INDEX_ORDER_POSITION => {
+        INDEX_ORDER_POSITION | INDEX_ORDER_CLIENT => {
             insert_hset(pipe, key, value[0].as_ref(), value[1].as_ref());
-            Ok(())
-        }
-        INDEX_ORDER_CLIENT => {
-            insert_hset(pipe, key, value[0].as_ref(), value[1].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS => {
-            insert_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_OPEN => {
-            insert_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_CLOSED => {
-            insert_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_EMULATED => {
-            insert_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_INFLIGHT => {
-            insert_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_POSITIONS => {
-            insert_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_POSITIONS_OPEN => {
-            insert_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_POSITIONS_CLOSED => {
-            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         _ => anyhow::bail!("Index unknown '{index_key}' on insert"),
@@ -822,15 +752,7 @@ fn update(pipe: &mut Pipeline, collection: &str, key: &str, value: &[Bytes]) -> 
     check_slice_not_empty(value, stringify!(value))?;
 
     match collection {
-        ACCOUNTS => {
-            update_list(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        ORDERS => {
-            update_list(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        POSITIONS => {
+        ACCOUNTS | ORDERS | POSITIONS => {
             update_list(pipe, key, value[0].as_ref());
             Ok(())
         }
@@ -857,23 +779,7 @@ fn delete(
 
     match collection {
         INDEX => delete_from_index(pipe, key, value),
-        ORDERS => {
-            delete_string(pipe, key);
-            Ok(())
-        }
-        POSITIONS => {
-            delete_string(pipe, key);
-            Ok(())
-        }
-        ACCOUNTS => {
-            delete_string(pipe, key);
-            Ok(())
-        }
-        ACTORS => {
-            delete_string(pipe, key);
-            Ok(())
-        }
-        STRATEGIES => {
+        ORDERS | POSITIONS | ACCOUNTS | ACTORS | STRATEGIES => {
             delete_string(pipe, key);
             Ok(())
         }
@@ -890,48 +796,20 @@ fn delete_from_index(
     let index_key = get_index_key(key)?;
 
     match index_key {
-        INDEX_ORDER_IDS => {
+        INDEX_ORDER_IDS
+        | INDEX_ORDERS
+        | INDEX_ORDERS_OPEN
+        | INDEX_ORDERS_CLOSED
+        | INDEX_ORDERS_EMULATED
+        | INDEX_ORDERS_INFLIGHT
+        | INDEX_POSITIONS
+        | INDEX_POSITIONS_OPEN
+        | INDEX_POSITIONS_CLOSED => {
             remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
-        INDEX_ORDER_POSITION => {
+        INDEX_ORDER_POSITION | INDEX_ORDER_CLIENT => {
             remove_from_hash(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDER_CLIENT => {
-            remove_from_hash(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS => {
-            remove_from_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_OPEN => {
-            remove_from_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_CLOSED => {
-            remove_from_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_EMULATED => {
-            remove_from_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_INFLIGHT => {
-            remove_from_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_POSITIONS => {
-            remove_from_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_POSITIONS_OPEN => {
-            remove_from_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_POSITIONS_CLOSED => {
-            remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         _ => anyhow::bail!("Unsupported index operation: remove from '{index_key}'"),
@@ -961,7 +839,7 @@ fn get_trader_key(trader_id: TraderId, instance_id: UUID4, config: &CacheConfig)
 
     if config.use_instance_id {
         key.push(REDIS_DELIMITER);
-        key.push_str(&format!("{instance_id}"));
+        write!(key, "{instance_id}").expect("writing to String cannot fail");
     }
 
     key

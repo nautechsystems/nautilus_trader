@@ -90,6 +90,14 @@ mod serial_tests {
         pg_cache.close().unwrap();
     }
 
+    #[expect(
+        clippy::similar_names,
+        reason = "USDC and USDT are distinct currency symbols in this integration test"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "integration test inserts all supported instrument variants"
+    )]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_currency_and_instruments() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();

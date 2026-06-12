@@ -53,6 +53,10 @@ pub struct DataTester {
 nautilus_actor!(DataTester);
 
 impl DataActor for DataTester {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "startup subscribes to each configured data scenario explicitly"
+    )]
     fn on_start(&mut self) -> anyhow::Result<()> {
         let instrument_ids = self.config.instrument_ids.clone();
         let client_id = self.config.client_id;

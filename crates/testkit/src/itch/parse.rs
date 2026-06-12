@@ -63,6 +63,7 @@ impl ItchParser {
     /// - `stock` - The ITCH stock symbol to filter for (e.g., "AAPL").
     /// - `base_ns` - Base UNIX nanoseconds for midnight of the trading day
     ///   (ITCH timestamps are nanoseconds since midnight).
+    #[must_use]
     pub fn new(instrument_id: InstrumentId, stock: &str, base_ns: u64) -> Self {
         Self {
             instrument_id,
@@ -152,10 +153,8 @@ impl ItchParser {
                     reference,
                     executed,
                     ..
-                } => {
-                    self.handle_execution(reference, executed, ts, &mut deltas);
                 }
-                itchy::Body::OrderExecutedWithPrice {
+                | itchy::Body::OrderExecutedWithPrice {
                     reference,
                     executed,
                     ..

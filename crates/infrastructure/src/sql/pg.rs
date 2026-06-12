@@ -49,6 +49,10 @@ fn escape_sql_string(value: &str) -> String {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.infrastructure")
 )]
+#[allow(
+    clippy::unsafe_derive_deserialize,
+    reason = "config type deserializes plain field values; unsafe PyO3 methods are unrelated"
+)]
 pub struct PostgresConnectOptions {
     pub host: String,
     pub port: u16,
@@ -216,6 +220,10 @@ fn get_schema_dir() -> anyhow::Result<String> {
 /// # Panics
 ///
 /// Panics if `schema_dir` is missing and cannot be determined or if other unwraps fail.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Postgres initialization follows the ordered schema and role setup steps"
+)]
 pub async fn init_postgres(
     pg: &PgPool,
     database: String,

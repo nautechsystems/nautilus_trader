@@ -224,15 +224,10 @@ impl DatabaseQueries {
 
         match collection {
             INDEX => Self::read_index(&mut con, &full_key).await,
-            GENERAL => Self::read_string(&mut con, &full_key).await,
-            CURRENCIES => Self::read_string(&mut con, &full_key).await,
-            INSTRUMENTS => Self::read_string(&mut con, &full_key).await,
-            SYNTHETICS => Self::read_string(&mut con, &full_key).await,
-            ACCOUNTS => Self::read_list(&mut con, &full_key).await,
-            ORDERS => Self::read_list(&mut con, &full_key).await,
-            POSITIONS => Self::read_list(&mut con, &full_key).await,
-            ACTORS => Self::read_string(&mut con, &full_key).await,
-            STRATEGIES => Self::read_string(&mut con, &full_key).await,
+            GENERAL | CURRENCIES | INSTRUMENTS | SYNTHETICS | ACTORS | STRATEGIES => {
+                Self::read_string(&mut con, &full_key).await
+            }
+            ACCOUNTS | ORDERS | POSITIONS => Self::read_list(&mut con, &full_key).await,
             _ => anyhow::bail!("Unsupported operation: `read` for collection '{collection}'"),
         }
     }
@@ -368,9 +363,8 @@ impl DatabaseQueries {
                             })
                         });
 
-                    let instrument_id = match instrument_id {
-                        Ok(id) => id,
-                        Err(_) => return None,
+                    let Ok(instrument_id) = instrument_id else {
+                        return None;
                     };
 
                     match Self::load_instrument(&con, trader_key, &instrument_id, encoding).await {
@@ -437,9 +431,8 @@ impl DatabaseQueries {
                             })
                         });
 
-                    let instrument_id = match instrument_id {
-                        Ok(id) => id,
-                        Err(_) => return None,
+                    let Ok(instrument_id) = instrument_id else {
+                        return None;
                     };
 
                     match Self::load_synthetic(&con, trader_key, &instrument_id, encoding).await {
@@ -685,9 +678,9 @@ impl DatabaseQueries {
 
     /// Loads all custom data for `trader_key` matching the given `data_type`.
     ///
-    /// Keys are stored as `custom:<ts_init_020>:<uuid>`; value is full CustomData JSON.
-    /// Scans all custom keys, deserializes, filters by type_name (full or short), metadata,
-    /// and identifier to match SQL semantics, then sorts by ts_init ascending.
+    /// Keys are stored as `custom:<ts_init_020>:<uuid>`; value is full `CustomData` JSON.
+    /// Scans all custom keys, deserializes, filters by `type_name` (full or short), metadata,
+    /// and identifier to match SQL semantics, then sorts by `ts_init` ascending.
     ///
     /// # Errors
     ///
@@ -744,7 +737,7 @@ impl DatabaseQueries {
             }
         }
 
-        results.sort_by_key(|c| c.ts_init());
+        results.sort_by_key(HasTsInit::ts_init);
         log::debug!("Loaded {} custom data item(s)", results.len());
         Ok(results)
     }
@@ -887,17 +880,16 @@ impl DatabaseQueries {
     async fn read_index(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
         let index_key = get_index_key(key)?;
         match index_key {
-            INDEX_ORDER_IDS => Self::read_set(conn, key).await,
-            INDEX_ORDER_POSITION => Self::read_hset(conn, key).await,
-            INDEX_ORDER_CLIENT => Self::read_hset(conn, key).await,
-            INDEX_ORDERS => Self::read_set(conn, key).await,
-            INDEX_ORDERS_OPEN => Self::read_set(conn, key).await,
-            INDEX_ORDERS_CLOSED => Self::read_set(conn, key).await,
-            INDEX_ORDERS_EMULATED => Self::read_set(conn, key).await,
-            INDEX_ORDERS_INFLIGHT => Self::read_set(conn, key).await,
-            INDEX_POSITIONS => Self::read_set(conn, key).await,
-            INDEX_POSITIONS_OPEN => Self::read_set(conn, key).await,
-            INDEX_POSITIONS_CLOSED => Self::read_set(conn, key).await,
+            INDEX_ORDER_IDS
+            | INDEX_ORDERS
+            | INDEX_ORDERS_OPEN
+            | INDEX_ORDERS_CLOSED
+            | INDEX_ORDERS_EMULATED
+            | INDEX_ORDERS_INFLIGHT
+            | INDEX_POSITIONS
+            | INDEX_POSITIONS_OPEN
+            | INDEX_POSITIONS_CLOSED => Self::read_set(conn, key).await,
+            INDEX_ORDER_POSITION | INDEX_ORDER_CLIENT => Self::read_hset(conn, key).await,
             _ => anyhow::bail!("Index unknown '{index_key}' on read"),
         }
     }
@@ -943,7 +935,7 @@ fn convert_timestamps(value: &mut Value) {
                     && let Value::Number(n) = v
                     && let Some(n) = n.as_u64()
                 {
-                    let dt = DateTime::<Utc>::from_timestamp_nanos(n as i64);
+                    let dt = DateTime::<Utc>::from_timestamp_nanos(n.cast_signed());
                     *v = Value::String(dt.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true));
                 }
                 convert_timestamps(v);
@@ -969,8 +961,9 @@ fn convert_timestamp_strings(value: &mut Value) {
                     *v = Value::Number(
                         (dt.with_timezone(&Utc)
                             .timestamp_nanos_opt()
-                            .expect("Invalid DateTime") as u64)
-                            .into(),
+                            .expect("Invalid DateTime")
+                            .cast_unsigned())
+                        .into(),
                     );
                 }
                 convert_timestamp_strings(v);

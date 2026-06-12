@@ -34,8 +34,9 @@
 //!
 //! - Struct must have named fields
 //! - Must include `ts_event` and `ts_init` fields (e.g. `nautilus_core::UnixNanos`)
-//! - Supported field types: InstrumentId, AccountId, Currency, BarType, Params, UnixNanos, f64,
-//!   f32, bool, String, u64, i64, u32, i32, `Vec<f64>`, `Vec<u8>`
+//! - Supported field types: `InstrumentId`, `AccountId`, `Currency`, `BarType`, `Params`,
+//!   `UnixNanos`, `f64`, `f32`, `bool`, `String`, `u64`, `i64`, `u32`, `i32`, `Vec<f64>`,
+//!   `Vec<u8>`
 //!
 //! # Options
 //!
@@ -85,7 +86,7 @@ fn type_path(ty: &Type) -> Option<&syn::Path> {
     }
 }
 
-/// Last path segment of a type (e.g. "InstrumentId", "UnixNanos", "f64").
+/// Last path segment of a type, such as `InstrumentId`, `UnixNanos`, or `f64`.
 fn type_last_segment(ty: &Type) -> Option<String> {
     let path = type_path(ty)?;
     path.segments.last().map(|s| s.ident.to_string())
@@ -120,8 +121,8 @@ fn vec_inner_type(ty: &Type) -> Option<&Type> {
     }
 }
 
-/// Returns (outer_type, inner_type) for Vec<T>: ("Vec", "f64") or ("Vec", "u8").
-/// For non-Vec types, returns (seg, seg) where seg is the last path segment.
+/// Returns `(outer_type, inner_type)` for `Vec<T>`: `("Vec", "f64")` or `("Vec", "u8")`.
+/// For non-`Vec` types, returns `(seg, seg)` where `seg` is the last path segment.
 fn type_for_macro(ty: &Type) -> Option<(String, String)> {
     if let Some(inner) = vec_inner_type(ty) {
         let inner_seg = type_last_segment(inner)?;
@@ -131,7 +132,7 @@ fn type_for_macro(ty: &Type) -> Option<(String, String)> {
     Some((seg.clone(), seg))
 }
 
-/// Returns (map_type, key_type, value_type) for HashMap<K, V> and IndexMap<K, V>.
+/// Returns `(map_type, key_type, value_type)` for `HashMap<K, V>` and `IndexMap<K, V>`.
 fn map_type_for_macro(ty: &Type) -> Option<(String, String, String)> {
     let path = type_path(ty)?;
     let segment = path.segments.last()?;
@@ -185,7 +186,7 @@ fn typed_json_map_kind(ty: &Type) -> Option<String> {
     None
 }
 
-/// Returns true if the field uses string extraction (Utf8 or Utf8View).
+/// Returns true if the field uses string extraction (`Utf8` or `Utf8View`).
 fn use_string_extract(ty: &Type, json: bool) -> bool {
     if json {
         return true;
@@ -206,8 +207,8 @@ fn use_string_extract(ty: &Type, json: bool) -> bool {
     }
 }
 
-/// Arrow DataType and array type for encoding/decoding. Emits token streams that reference
-/// arrow::datatypes::DataType and arrow array types.
+/// Arrow `DataType` and array type for encoding/decoding. Emits token streams that reference
+/// `arrow::datatypes::DataType` and arrow array types.
 fn arrow_type_for_rust_type(
     ty: &Type,
     json: bool,
@@ -236,12 +237,12 @@ fn arrow_type_for_rust_type(
             quote! { arrow::array::ListArray },
         ),
         _ if outer == inner => match outer.as_str() {
-            "InstrumentId" | "AccountId" | "Currency" | "BarType" | "Params" => (
+            "InstrumentId" | "AccountId" | "Currency" | "BarType" | "Params" | "String" => (
                 quote! { arrow::datatypes::DataType::Utf8 },
                 quote! { arrow::array::StringArray },
                 quote! { arrow::array::StringArray },
             ),
-            "UnixNanos" => (
+            "UnixNanos" | "u64" | "u32" => (
                 quote! { arrow::datatypes::DataType::UInt64 },
                 quote! { arrow::array::UInt64Array },
                 quote! { arrow::array::UInt64Array },
@@ -260,16 +261,6 @@ fn arrow_type_for_rust_type(
                 quote! { arrow::datatypes::DataType::Boolean },
                 quote! { arrow::array::BooleanArray },
                 quote! { arrow::array::BooleanArray },
-            ),
-            "String" => (
-                quote! { arrow::datatypes::DataType::Utf8 },
-                quote! { arrow::array::StringArray },
-                quote! { arrow::array::StringArray },
-            ),
-            "u64" | "u32" => (
-                quote! { arrow::datatypes::DataType::UInt64 },
-                quote! { arrow::array::UInt64Array },
-                quote! { arrow::array::UInt64Array },
             ),
             "i64" => (
                 quote! { arrow::datatypes::DataType::Int64 },
@@ -325,19 +316,18 @@ fn encode_field_expr(field_name: &syn::Ident, ty: &Type, json: bool) -> Option<T
                 builder.append_value(value);
             }),
             "UnixNanos" => Some(quote! { builder.append_value(item.#name.as_u64()); }),
-            "f64" | "f32" => Some(quote! { builder.append_value(item.#name); }),
-            "bool" => Some(quote! { builder.append_value(item.#name); }),
+            "f64" | "f32" | "bool" | "u64" | "i64" | "i32" => {
+                Some(quote! { builder.append_value(item.#name); })
+            }
             "String" => Some(quote! { builder.append_value(item.#name.as_str()); }),
-            "u64" | "i64" => Some(quote! { builder.append_value(item.#name); }),
             "u32" => Some(quote! { builder.append_value(item.#name as u64); }),
-            "i32" => Some(quote! { builder.append_value(item.#name); }),
             _ => None,
         },
         _ => None,
     }
 }
 
-/// RHS of a struct field when decoding from Arrow: uses col_ident.value(i) with optional conversion.
+/// RHS of a struct field when decoding from Arrow: uses `col_ident.value(i)` with optional conversion.
 fn decode_field_rhs(
     field_name: &syn::Ident,
     ty: &Type,
@@ -388,9 +378,8 @@ fn decode_field_rhs(
                 })?
             }),
             "UnixNanos" => Some(quote! { #col.value(i).into() }),
-            "f64" | "f32" | "bool" | "u64" | "i64" => Some(quote! { #col.value(i) }),
+            "f64" | "f32" | "bool" | "u64" | "i64" | "i32" => Some(quote! { #col.value(i) }),
             "u32" => Some(quote! { #col.value(i) as u32 }),
-            "i32" => Some(quote! { #col.value(i) }),
             "String" => Some(quote! { #col.value(i).to_string() }),
             _ => None,
         },
@@ -398,7 +387,8 @@ fn decode_field_rhs(
     }
 }
 
-/// Builder type and initialisation for a field (e.g. StringBuilder::new() or Float64Array::builder(len)).
+/// Builder type and initialisation for a field, such as `StringBuilder::new()` or
+/// `Float64Array::builder(len)`.
 fn encode_builder_for_field(ty: &Type, json: bool, len_var: &syn::Ident) -> Option<TokenStream> {
     if json {
         return Some(quote! { let mut builder = arrow::array::StringBuilder::new(); });
@@ -430,7 +420,8 @@ fn encode_builder_for_field(ty: &Type, json: bool, len_var: &syn::Ident) -> Opti
     }
 }
 
-/// Python constructor param type: UnixNanos -> u64, Params -> PyDict, Vec<u8> -> Vec<u8>, rest unchanged.
+/// Python constructor param type: `UnixNanos` -> `u64`, `Params` -> `PyDict`, `Vec<u8>` ->
+/// `Vec<u8>`, rest unchanged.
 fn py_param_ty(ty: &Type, json: bool) -> Option<TokenStream> {
     if json {
         return Some(quote! { pyo3::Py<pyo3::PyAny> });
@@ -455,7 +446,7 @@ fn py_param_ty(ty: &Type, json: bool) -> Option<TokenStream> {
     Some(quote! { #ty })
 }
 
-/// Python constructor body RHS: UnixNanos fields use arg.into(), rest use arg.
+/// Python constructor body RHS: `UnixNanos` fields use `arg.into()`, rest use `arg`.
 fn py_field_init(ident: &syn::Ident, ty: &Type, json: bool) -> Option<TokenStream> {
     let name = ident;
 
@@ -498,7 +489,7 @@ fn py_field_init(ident: &syn::Ident, ty: &Type, json: bool) -> Option<TokenStrea
     Some(quote! { #name })
 }
 
-/// Python getter return type: UnixNanos -> u64, rest unchanged.
+/// Python getter return type: `UnixNanos` -> `u64`, rest unchanged.
 fn py_getter_ret_ty(ty: &Type, json: bool) -> Option<TokenStream> {
     if json {
         return Some(quote! { pyo3::PyResult<pyo3::Py<pyo3::PyAny>> });
@@ -517,7 +508,8 @@ fn py_getter_ret_ty(ty: &Type, json: bool) -> Option<TokenStream> {
     Some(quote! { #ty })
 }
 
-/// Python getter body: UnixNanos -> self.x.as_u64(), Vec -> clone, String -> clone, rest -> self.x.
+/// Python getter body: `UnixNanos` -> `self.x.as_u64()`, `Vec` -> clone, `String` -> clone,
+/// rest -> `self.x`.
 fn py_getter_body(ident: &syn::Ident, ty: &Type, json: bool) -> Option<TokenStream> {
     let name = ident;
 
@@ -559,7 +551,7 @@ fn py_getter_body(ident: &syn::Ident, ty: &Type, json: bool) -> Option<TokenStre
     Some(quote! { self.#name })
 }
 
-/// Finish the builder and wrap in Arc for RecordBatch::try_new columns.
+/// Finish the builder and wrap in `Arc` for `RecordBatch::try_new` columns.
 fn encode_finish_builder(ty: &Type, json: bool) -> Option<TokenStream> {
     if json {
         return Some(quote! { std::sync::Arc::new(builder.finish()) });
@@ -569,10 +561,8 @@ fn encode_finish_builder(ty: &Type, json: bool) -> Option<TokenStream> {
     match (outer.as_str(), inner.as_str()) {
         ("Vec", "u8" | "f64") => Some(quote! { std::sync::Arc::new(builder.finish()) }),
         _ if outer == inner => match outer.as_str() {
-            "InstrumentId" | "AccountId" | "Currency" | "BarType" | "Params" | "String" => {
-                Some(quote! { std::sync::Arc::new(builder.finish()) })
-            }
-            "UnixNanos" | "u64" | "u32" | "f64" | "f32" | "bool" | "i64" | "i32" => {
+            "InstrumentId" | "AccountId" | "Currency" | "BarType" | "Params" | "String"
+            | "UnixNanos" | "u64" | "u32" | "f64" | "f32" | "bool" | "i64" | "i32" => {
                 Some(quote! { std::sync::Arc::new(builder.finish()) })
             }
             _ => None,
@@ -581,7 +571,7 @@ fn encode_finish_builder(ty: &Type, json: bool) -> Option<TokenStream> {
     }
 }
 
-/// Parsed options from #[custom_data(...)] attribute.
+/// Parsed options from the `#[custom_data(...)]` attribute.
 struct CustomDataOptions {
     pyo3: bool,
     no_display: bool,
@@ -679,7 +669,7 @@ impl Parse for OptionIdents {
     }
 }
 
-/// Parse #[custom_data(pyo3)] or #[custom_data(pyo3, no_display)] etc.
+/// Parses `#[custom_data(pyo3)]` or `#[custom_data(pyo3, no_display)]`.
 fn parse_options(attr: &TokenStream) -> Result<CustomDataOptions, syn::Error> {
     let mut options = CustomDataOptions {
         pyo3: false,
@@ -1166,6 +1156,10 @@ fn gen_catalog_path_and_conversions(
     (catalog_path_prefix_impl, from_impl, try_from_impl)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "PyO3 token generation is clearer with related methods kept together"
+)]
 fn gen_pymethods_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
     let name = ctx.name;
     let generics = ctx.generics;
@@ -1368,6 +1362,10 @@ fn gen_pymethods_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
 }
 
 #[expect(clippy::needless_pass_by_value)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "macro expansion orchestration is clearer as a single ordered assembly function"
+)]
 pub(crate) fn expand_custom_data(attr: TokenStream, item: TokenStream) -> TokenStream {
     let options = match parse_options(&attr) {
         Ok(o) => o,

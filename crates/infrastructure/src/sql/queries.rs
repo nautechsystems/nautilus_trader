@@ -328,6 +328,10 @@ impl DatabaseQueries {
     /// # Panics
     ///
     /// Panics if serialization of `snapshot.exec_algorithm_params` fails.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "order snapshot persistence maps the full database schema in one transaction"
+    )]
     pub async fn add_order_snapshot(pool: &PgPool, snapshot: OrderSnapshot) -> anyhow::Result<()> {
         let mut transaction = pool.begin().await?;
 
@@ -1060,6 +1064,9 @@ impl DatabaseQueries {
     /// Returns an error if the SQL INSERT operation fails.
     pub async fn add_bar(pool: &PgPool, bar: &Bar) -> anyhow::Result<()> {
         println!("Adding bar: {bar:?}");
+        let bar_step = i32::try_from(bar.bar_type.spec().step.get())
+            .map_err(|e| anyhow::anyhow!("invalid bar step: {e}"))?;
+
         sqlx::query(r#"
             INSERT INTO "bar" (
                 instrument_id, step, bar_aggregation, price_type, aggregation_source, open, high, low, close, volume, ts_event, ts_init, created_at, updated_at
@@ -1073,7 +1080,7 @@ impl DatabaseQueries {
                 open = $6, high = $7, low = $8, close = $9, volume = $10, ts_event = $11, ts_init = $12, updated_at = CURRENT_TIMESTAMP
         "#)
             .bind(bar.bar_type.instrument_id().to_string())
-            .bind(bar.bar_type.spec().step.get() as i32)
+            .bind(bar_step)
             .bind(BarAggregationModel(bar.bar_type.spec().aggregation))
             .bind(PriceTypeModel(bar.bar_type.spec().price_type))
             .bind(AggregationSourceModel(bar.bar_type.aggregation_source()))
@@ -1292,7 +1299,7 @@ impl DatabaseQueries {
         .bind(
             value_json
                 .get("ts_event")
-                .and_then(|v| v.as_u64())
+                .and_then(serde_json::Value::as_u64)
                 .unwrap_or_else(|| data.ts_init().as_u64())
                 .to_string(),
         )

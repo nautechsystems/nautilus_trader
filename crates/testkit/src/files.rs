@@ -75,9 +75,8 @@ where
             let jitter = rng().random_range(0..=config.jitter_ms);
             let sleep_for = delay + Duration::from_millis(jitter);
             sleep(sleep_for);
-            let next = (delay.as_millis() as f64 * config.backoff_factor) as u64;
             delay = cmp::min(
-                Duration::from_millis(next),
+                next_retry_delay(delay, config.backoff_factor),
                 Duration::from_millis(config.max_delay_ms),
             );
         }
@@ -96,6 +95,15 @@ where
     }
 
     op()
+}
+
+fn next_retry_delay(delay: Duration, backoff_factor: f64) -> Duration {
+    let next = delay.as_secs_f64() * backoff_factor;
+    if next.is_nan() || next.is_sign_negative() {
+        return Duration::ZERO;
+    }
+
+    Duration::try_from_secs_f64(next).unwrap_or(Duration::MAX)
 }
 
 /// Ensures that a file exists at the specified path by downloading it if necessary.
@@ -195,12 +203,12 @@ pub fn ensure_file_exists_or_download_http_with_config(
             if verify_sha256_checksum(filepath, checksums_file)? {
                 println!("Checksum verified");
                 return Ok(());
-            } else {
-                let new_checksum = calculate_sha256(filepath)?;
-                println!("Updating checksum for local file: {new_checksum}");
-                update_sha256_checksums(filepath, checksums_file, &new_checksum)?;
-                return Ok(());
             }
+
+            let new_checksum = calculate_sha256(filepath)?;
+            println!("Updating checksum for local file: {new_checksum}");
+            update_sha256_checksums(filepath, checksums_file, &new_checksum)?;
+            return Ok(());
         }
         return Ok(());
     }
@@ -223,13 +231,13 @@ pub fn ensure_file_exists_or_download_http_with_config(
 
     // Verify checksum after download, retry once on mismatch (corrupt download)
     if let Some(checksums_file) = checksums {
-        let _guard = lock_large_checksums()?;
+        let guard = lock_large_checksums()?;
 
         if !verify_sha256_checksum(filepath, checksums_file)? {
             let actual = calculate_sha256(filepath)?;
             println!("Checksum mismatch after download (calculated {actual}), retrying...");
             remove_file(filepath)?;
-            drop(_guard);
+            drop(guard);
 
             download_file(filepath, url, timeout_secs, retry_config)?;
 
@@ -281,7 +289,7 @@ fn download_file(
         let op_timeout_ms = timeout_secs.saturating_mul(1000);
         // Make the provided timeout a hard ceiling for total elapsed time.
         // Split it across attempts (at least 1000 ms per attempt) and cap total at op_timeout_ms.
-        let per_attempt_ms = std::cmp::max(1000u64, op_timeout_ms / (max_retries as u64 + 1));
+        let per_attempt_ms = std::cmp::max(1000u64, op_timeout_ms / (u64::from(max_retries) + 1));
         RetryConfig {
             max_retries,
             initial_delay_ms: 1_000,
@@ -467,6 +475,20 @@ mod tests {
             immediate_first: false,
             max_elapsed_ms: Some(2000),
         }
+    }
+
+    #[rstest]
+    #[case::nan(f64::NAN, Duration::ZERO)]
+    #[case::negative(-1.0, Duration::ZERO)]
+    #[case::infinite(f64::INFINITY, Duration::MAX)]
+    #[case::normal(2.0, Duration::from_millis(20))]
+    fn next_retry_delay_handles_edge_factors(
+        #[case] backoff_factor: f64,
+        #[case] expected: Duration,
+    ) {
+        let delay = Duration::from_millis(10);
+
+        assert_eq!(next_retry_delay(delay, backoff_factor), expected);
     }
 
     async fn setup_test_server(
@@ -900,9 +922,8 @@ mod tests {
 
         task::spawn(async move {
             loop {
-                let (mut sock, _) = match listener.accept().await {
-                    Ok(s) => s,
-                    Err(_) => break,
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    break;
                 };
                 let counter = counter_clone.clone();
 
@@ -988,9 +1009,8 @@ mod tests {
 
         task::spawn(async move {
             loop {
-                let (mut sock, _) = match listener.accept().await {
-                    Ok(s) => s,
-                    Err(_) => break,
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    break;
                 };
 
                 task::spawn(async move {
