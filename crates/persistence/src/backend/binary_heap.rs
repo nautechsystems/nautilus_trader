@@ -129,7 +129,8 @@ impl<T, C: Compare<T>> BinaryHeap<T, C> {
         while child <= end.saturating_sub(2) {
             // SAFETY: child < end - 1 < self.len() and
             //  child + 1 < end <= self.len(), so they're valid indexes.
-            child += unsafe { self.cmp.compares_le(hole.get(child), hole.get(child + 1)) } as usize;
+            child +=
+                usize::from(unsafe { self.cmp.compares_le(hole.get(child), hole.get(child + 1)) });
 
             // SAFETY: child is now either the old child or the old child+1
             if self
@@ -182,7 +183,8 @@ impl<T, C: Compare<T>> BinaryHeap<T, C> {
         while child <= end.saturating_sub(2) {
             // SAFETY: child < end - 1 < self.len() and
             //  child + 1 < end <= self.len(), so they're valid indexes.
-            child += unsafe { self.cmp.compares_le(hole.get(child), hole.get(child + 1)) } as usize;
+            child +=
+                usize::from(unsafe { self.cmp.compares_le(hole.get(child), hole.get(child + 1)) });
 
             // SAFETY: Same as above
             unsafe { hole.move_to(child) };
@@ -285,8 +287,14 @@ impl<T, C: Compare<T>> DerefMut for PeekMut<'_, T, C> {
     }
 }
 
-impl<'a, T, C: Compare<T>> PeekMut<'a, T, C> {
+impl<T, C: Compare<T>> PeekMut<'_, T, C> {
     /// Removes the peeked value from the heap and returns it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the wrapped heap is empty. Safe constructors only create [`PeekMut`]
+    /// for non-empty heaps.
+    #[must_use]
     pub fn pop(mut this: Self) -> T {
         let value = this.heap.pop().unwrap();
         this.sift = false;

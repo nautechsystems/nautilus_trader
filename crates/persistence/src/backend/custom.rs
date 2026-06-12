@@ -47,12 +47,16 @@ pub fn schema_with_data_type_column(base_schema: &Schema, type_name: &str) -> Sc
     Schema::new_with_metadata(fields, meta)
 }
 
-/// Appends a `data_type` column (JSON string per row) and type_name + optional metadata to the
+/// Appends a `data_type` column (JSON string per row) and `type_name` + optional metadata to the
 /// batch schema. Used by both the Parquet catalog and Feather writer for catalog-compatible output.
 ///
 /// # Errors
 ///
 /// Returns an error if the new `RecordBatch` cannot be created.
+#[expect(
+    clippy::implicit_hasher,
+    reason = "Arrow schema metadata uses the standard HashMap type"
+)]
 pub fn augment_batch_with_data_type_column(
     batch: &RecordBatch,
     data_type_json: &str,
@@ -119,7 +123,7 @@ pub fn custom_data_path_components(type_name: &str, identifier: Option<&str>) ->
     components
 }
 
-/// Prepares a batch of custom data for writing: encodes to Arrow, augments with data_type column,
+/// Prepares a batch of custom data for writing: encodes to Arrow, augments with `data_type` column,
 /// and returns type identity and timestamp range so the catalog can build path and perform I/O.
 ///
 /// # Errors
@@ -128,11 +132,10 @@ pub fn custom_data_path_components(type_name: &str, identifier: Option<&str>) ->
 pub fn prepare_custom_data_batch(
     data: Vec<CustomData>,
 ) -> anyhow::Result<(RecordBatch, String, Option<String>, UnixNanos, UnixNanos)> {
-    if data.is_empty() {
+    let Some(first_custom) = data.first() else {
         anyhow::bail!("prepare_custom_data_batch called with empty data");
-    }
+    };
 
-    let first_custom = data.first().unwrap();
     let type_name = first_custom.data.type_name();
     let identifier = first_custom.data_type.identifier().map(String::from);
     let dt_meta = first_custom.data_type.metadata_string_map();
@@ -141,12 +144,10 @@ pub fn prepare_custom_data_batch(
         .to_persistence_json()
         .map_err(|e| anyhow::anyhow!("Failed to serialize data_type for persistence: {e}"))?;
 
+    let start_ts = first_custom.data.ts_init();
+    let end_ts = data.last().map_or(start_ts, |custom| custom.data.ts_init());
     let items: Vec<Arc<dyn CustomDataTrait>> =
         data.into_iter().map(|c| Arc::clone(&c.data)).collect();
-    let first = items.first().unwrap();
-
-    let start_ts = first.ts_init();
-    let end_ts = items.last().unwrap().ts_init();
 
     let batch = encode_custom_to_arrow(type_name, &items)
         .map_err(|e| anyhow::anyhow!("Failed to encode custom data to Arrow: {e}"))?
@@ -162,7 +163,7 @@ pub fn prepare_custom_data_batch(
     Ok((batch, type_name.to_string(), identifier, start_ts, end_ts))
 }
 
-/// Decodes a RecordBatch to Data objects based on metadata.
+/// Decodes a `RecordBatch` to Data objects based on metadata.
 ///
 /// Supports both standard data types and custom data types when `allow_custom_fallback`
 /// is true (e.g. when decoding files under `custom/`). When false, unknown type names
@@ -171,6 +172,10 @@ pub fn prepare_custom_data_batch(
 /// # Errors
 ///
 /// Returns an error if decoding fails or the type is unknown (and custom fallback not allowed).
+#[expect(
+    clippy::implicit_hasher,
+    reason = "Arrow schema metadata uses the standard HashMap type"
+)]
 pub fn decode_batch_to_data(
     metadata: &HashMap<String, String>,
     batch: RecordBatch,
@@ -220,7 +225,7 @@ pub fn decode_batch_to_data(
     }
 }
 
-/// Decodes multiple RecordBatches (e.g. from custom data files) into a single `Vec<Data>`.
+/// Decodes multiple `RecordBatches` (e.g. from custom data files) into a single `Vec<Data>`.
 /// Optionally replaces `ts_init` column with `ts_event` before decoding each batch.
 ///
 /// # Errors
@@ -231,9 +236,12 @@ pub fn decode_custom_batches_to_data(
     use_ts_event_for_ts_init: bool,
 ) -> anyhow::Result<Vec<Data>> {
     let mut file_data = Vec::new();
-    let schema = batches.first().map(|b| b.schema()).ok_or_else(|| {
-        anyhow::anyhow!("decode_custom_batches_to_data called with empty batches")
-    })?;
+    let schema = batches
+        .first()
+        .map(arrow::array::RecordBatch::schema)
+        .ok_or_else(|| {
+            anyhow::anyhow!("decode_custom_batches_to_data called with empty batches")
+        })?;
 
     for mut batch in batches {
         if use_ts_event_for_ts_init {

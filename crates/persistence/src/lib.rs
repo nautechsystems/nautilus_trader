@@ -40,38 +40,10 @@
 //! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
+#![warn(clippy::pedantic)]
 #![deny(nonstandard_style)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(rustdoc::broken_intra_doc_links)]
-#![allow(
-    clippy::doc_link_with_quotes,
-    clippy::doc_markdown,
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "persistence documentation cleanup is tracked as a separate pedantic migration"
-)]
-#![allow(
-    clippy::cast_lossless,
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::unreadable_literal,
-    reason = "persistence numeric conversion cleanup is tracked as a separate pedantic migration"
-)]
-#![allow(
-    clippy::elidable_lifetime_names,
-    clippy::implicit_hasher,
-    clippy::match_same_arms,
-    clippy::missing_fields_in_debug,
-    clippy::must_use_candidate,
-    clippy::redundant_closure_for_method_calls,
-    clippy::similar_names,
-    clippy::too_many_lines,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::unsafe_derive_deserialize,
-    clippy::unused_self,
-    reason = "persistence API and structure cleanup is tracked as a separate pedantic migration"
-)]
 // #![deny(clippy::missing_errors_doc)]
 
 pub mod backend;

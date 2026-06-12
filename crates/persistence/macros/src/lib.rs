@@ -17,6 +17,8 @@
 //! with generated boilerplate (constructor, `HasTsInit`, `CustomDataTrait`, optional Arrow,
 //! derives).
 
+#![warn(clippy::pedantic)]
+
 mod custom;
 
 use proc_macro::TokenStream;

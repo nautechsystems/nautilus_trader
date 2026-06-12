@@ -74,15 +74,15 @@ impl PyStreamingFeatherWriter {
     /// # Parameters
     ///
     /// - `path`: The path to persist the stream to. Must be a directory.
-    /// - `cache`: The cache for query info (PyCache).
-    /// - `clock`: The clock to use for time-related operations (PyClock).
+    /// - `cache`: The cache for query info (`PyCache`).
+    /// - `clock`: The clock to use for time-related operations (`PyClock`).
     /// - `fs_protocol`: Optional filesystem protocol (default: "file").
     /// - `fs_storage_options`: Optional storage options for cloud backends.
-    /// - `include_types`: Optional list of type names to include (e.g., ["quotes", "trades"]).
-    /// - `rotation_mode`: Rotation mode (0=SIZE, 1=INTERVAL, 2=SCHEDULED_DATES, 3=NO_ROTATION).
+    /// - `include_types`: Optional list of type names to include (e.g., `["quotes", "trades"]`).
+    /// - `rotation_mode`: Rotation mode (0=SIZE, 1=INTERVAL, `2=SCHEDULED_DATES`, `3=NO_ROTATION`).
     /// - `max_file_size`: Maximum file size in bytes before rotation (for SIZE mode).
-    /// - `rotation_interval_ns`: Rotation interval in nanoseconds (for INTERVAL/SCHEDULED_DATES modes).
-    /// - `rotation_time_ns`: Scheduled rotation time in nanoseconds (for SCHEDULED_DATES mode).
+    /// - `rotation_interval_ns`: Rotation interval in nanoseconds (for `INTERVAL/SCHEDULED_DATES` modes).
+    /// - `rotation_time_ns`: Scheduled rotation time in nanoseconds (for `SCHEDULED_DATES` mode).
     /// - `flush_interval_ms`: Flush interval in milliseconds (default: 1000). Set to 0 to disable auto-flush.
     /// - `replace`: If existing files at the given path should be replaced (default: False).
     #[new]
@@ -187,13 +187,11 @@ impl PyStreamingFeatherWriter {
                     rotation_timezone: tz,
                 }
             }
-            3 => RotationConfig::NoRotation,
             _ => RotationConfig::NoRotation, // Default to no rotation for invalid values
         };
 
         // Convert include_types to HashSet
-        let included_types =
-            include_types.map(|types| types.into_iter().collect::<HashSet<String>>());
+        let type_filter = include_types.map(|types| types.into_iter().collect::<HashSet<String>>());
 
         // Set up per-instrument types (matching Python's _per_instrument_writers)
         let mut per_instrument_types = HashSet::new();
@@ -217,7 +215,7 @@ impl PyStreamingFeatherWriter {
             object_store,
             clock_rc,
             rotation_config,
-            included_types,
+            type_filter,
             Some(per_instrument_types),
             flush_interval_ms, // Auto-flush interval in milliseconds
         );
@@ -230,7 +228,7 @@ impl PyStreamingFeatherWriter {
 
     /// Subscribes to all messages on the message bus (pattern "*").
     ///
-    /// This matches the behavior of Python's StreamingFeatherWriter when subscribed
+    /// This matches the behavior of Python's `StreamingFeatherWriter` when subscribed
     /// via `trader.subscribe("*", writer.write)`.
     pub fn subscribe(&mut self) -> PyResult<()> {
         if self.handler.is_some() {
@@ -259,7 +257,11 @@ impl PyStreamingFeatherWriter {
     ///
     /// - `data`: The data object to write (must be a Nautilus data type from pyo3).
     ///
-    #[expect(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        clippy::too_many_lines,
+        reason = "PyO3 writer binding must downcast supported data variants inline"
+    )]
     pub fn write(&self, py: Python, data: Py<PyAny>) -> PyResult<()> {
         macro_rules! try_write {
             ($type:ty, $name:literal) => {
@@ -419,6 +421,7 @@ impl PyStreamingFeatherWriter {
 
     /// Returns whether the writer has been closed (no active writers).
     #[getter]
+    #[must_use]
     pub fn is_closed(&self) -> bool {
         self.writer.borrow().is_closed()
     }
@@ -426,12 +429,14 @@ impl PyStreamingFeatherWriter {
     /// Returns information about the current files being written.
     ///
     /// Returns a dictionary mapping writer keys to (size, path) tuples.
+    #[must_use]
     pub fn get_current_file_info(&self) -> HashMap<String, (u64, String)> {
         self.writer.borrow().get_current_file_info()
     }
 
     /// Returns the next rotation time for a writer, or None if not set.
     #[pyo3(signature = (type_str, instrument_id=None))]
+    #[must_use]
     pub fn get_next_rotation_time(
         &self,
         type_str: &str,

@@ -21,7 +21,7 @@
 use ahash::{AHashMap, AHashSet};
 use futures::StreamExt;
 use indexmap::IndexSet;
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_DAY};
 use nautilus_model::data::{
     Bar, CustomData, Data, HasTsInit, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta,
     OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose,
@@ -190,7 +190,7 @@ impl ParquetDataCatalog {
     /// # Parameters
     ///
     /// - `type_name`: The data type directory name (e.g., "quotes", "trades", "bars").
-    /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an instrument_id (e.g., "EUR/USD.SIM") or a bar_type (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     /// - `start`: Optional start timestamp to limit consolidation to files within this range.
     /// - `end`: Optional end timestamp to limit consolidation to files within this range.
     /// - `ensure_contiguous_files`: Whether to validate that consolidated intervals are contiguous (default: true).
@@ -318,10 +318,10 @@ impl ParquetDataCatalog {
 
         intervals.sort_by_key(|&(start, _)| start);
 
-        if !intervals.is_empty() {
+        if let (Some(first_interval), Some(last_interval)) = (intervals.first(), intervals.last()) {
             let file_name = timestamps_to_filename(
-                UnixNanos::from(intervals[0].0),
-                UnixNanos::from(intervals.last().unwrap().1),
+                UnixNanos::from(first_interval.0),
+                UnixNanos::from(last_interval.1),
             );
             let path = make_object_store_path(directory, &[&file_name]);
 
@@ -508,10 +508,7 @@ impl ParquetDataCatalog {
                         )?;
                     }
                     _ => {
-                        // Check if it's a custom data type (starts with "custom/")
-                        if data_cls_name.starts_with("custom/") {
-                            // Extract the custom type name (everything after "custom/")
-                            let custom_type_name = data_cls_name.strip_prefix("custom/").unwrap();
+                        if let Some(custom_type_name) = data_cls_name.strip_prefix("custom/") {
                             self.consolidate_custom_data_by_period(
                                 custom_type_name,
                                 identifier_ref,
@@ -545,6 +542,11 @@ impl ParquetDataCatalog {
     /// # Returns
     ///
     /// Returns a tuple of (`data_class`, identifier) where both are optional strings.
+    ///
+    /// # Errors
+    ///
+    /// Currently this function does not return an error; it keeps the catalog
+    /// path-parsing API shape for compatibility with callers.
     pub fn extract_data_cls_and_identifier_from_path(
         &self,
         path: &str,
@@ -743,10 +745,7 @@ impl ParquetDataCatalog {
                 )?;
             }
             _ => {
-                // Check if it's a custom data type (starts with "custom/")
-                if type_name.starts_with("custom/") {
-                    // Extract the custom type name (everything after "custom/")
-                    let custom_type_name = type_name.strip_prefix("custom/").unwrap();
+                if let Some(custom_type_name) = type_name.strip_prefix("custom/") {
                     self.consolidate_custom_data_by_period(
                         custom_type_name,
                         identifier,
@@ -784,6 +783,11 @@ impl ParquetDataCatalog {
     /// # Returns
     ///
     /// Returns `Ok(())` on success, or an error if consolidation fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if interval lookup, query preparation, file removal, or
+    /// rewritten data writes fail.
     pub fn consolidate_data_by_period_generic<T>(
         &mut self,
         identifier: Option<&str>,
@@ -800,7 +804,7 @@ impl ParquetDataCatalog {
             + TryFrom<Data>
             + Clone,
     {
-        let period_nanos = period_nanos.unwrap_or(86400000000000); // Default: 1 day
+        let period_nanos = period_nanos.unwrap_or(NANOSECONDS_IN_DAY);
         let ensure_contiguous_files = ensure_contiguous_files.unwrap_or(true);
 
         // Use get_intervals for cleaner implementation
@@ -867,12 +871,18 @@ impl ParquetDataCatalog {
                 if file_start_ns.is_none() {
                     file_start_ns = Some(query_info.query_start);
                 }
-                let start = file_start_ns.unwrap();
+                let start = *file_start_ns.get_or_insert(query_info.query_start);
                 (start, query_info.query_end)
             } else {
                 // Use actual data timestamps for file naming
-                let first_ts = period_data.first().unwrap().ts_init().as_u64();
-                let last_ts = period_data.last().unwrap().ts_init().as_u64();
+                let Some(first_data) = period_data.first() else {
+                    continue;
+                };
+                let Some(last_data) = period_data.last() else {
+                    continue;
+                };
+                let first_ts = first_data.ts_init().as_u64();
+                let last_ts = last_data.ts_init().as_u64();
                 (first_ts, last_ts)
             };
 
@@ -943,7 +953,7 @@ impl ParquetDataCatalog {
         end: Option<UnixNanos>,
         ensure_contiguous_files: Option<bool>,
     ) -> anyhow::Result<()> {
-        let period_nanos = period_nanos.unwrap_or(86400000000000); // Default: 1 day
+        let period_nanos = period_nanos.unwrap_or(NANOSECONDS_IN_DAY);
         let ensure_contiguous_files = ensure_contiguous_files.unwrap_or(true);
 
         // Get intervals for the custom data type
@@ -1009,12 +1019,18 @@ impl ParquetDataCatalog {
                 if file_start_ns.is_none() {
                     file_start_ns = Some(query_info.query_start);
                 }
-                let start = file_start_ns.unwrap();
+                let start = *file_start_ns.get_or_insert(query_info.query_start);
                 (start, query_info.query_end)
             } else {
                 // Use actual data timestamps for file naming
-                let first_ts = period_data.first().unwrap().ts_init().as_u64();
-                let last_ts = period_data.last().unwrap().ts_init().as_u64();
+                let Some(first_data) = period_data.first() else {
+                    continue;
+                };
+                let Some(last_data) = period_data.last() else {
+                    continue;
+                };
+                let first_ts = first_data.ts_init().as_u64();
+                let last_ts = last_data.ts_init().as_u64();
                 (first_ts, last_ts)
             };
 
@@ -1233,6 +1249,11 @@ impl ParquetDataCatalog {
     /// 3. Identifies and creates split operations for data preservation.
     /// 4. Generates period-based consolidation queries.
     /// 5. Checks for existing target files.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if split planning, target path construction, or object store
+    /// existence checks fail.
     #[expect(clippy::too_many_arguments)]
     pub fn prepare_consolidation_queries(
         &self,
@@ -1252,8 +1273,8 @@ impl ParquetDataCatalog {
 
         for &(interval_start, interval_end) in intervals {
             // Check if interval overlaps with the specified range
-            if (used_start.is_none() || used_start.unwrap() <= interval_end)
-                && (used_end.is_none() || interval_start <= used_end.unwrap())
+            if used_start.is_none_or(|used_start| used_start <= interval_end)
+                && used_end.is_none_or(|used_end| interval_start <= used_end)
             {
                 filtered_intervals.push((interval_start, interval_end));
             }
@@ -1542,7 +1563,7 @@ impl ParquetDataCatalog {
     /// # Parameters
     ///
     /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
-    /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an instrument_id (e.g., "EUR/USD.SIM") or a bar_type (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///
     /// # Returns
     ///
@@ -1740,7 +1761,7 @@ impl ParquetDataCatalog {
     /// # Parameters
     ///
     /// - `type_name`: The data type directory name (e.g., "quotes", "trades", "bars").
-    /// - `identifier`: Optional identifier to delete data for. Can be an instrument_id (e.g., "EUR/USD.SIM") or a bar_type (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL"). If None, deletes data across all identifiers.
+    /// - `identifier`: Optional identifier to delete data for. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL"). If None, deletes data across all identifiers.
     /// - `start`: Optional start timestamp for the deletion range. If None, deletes from the beginning.
     /// - `end`: Optional end timestamp for the deletion range. If None, deletes to the end.
     ///
@@ -1806,10 +1827,7 @@ impl ParquetDataCatalog {
                 self.delete_data_range_generic::<OrderBookDepth10>(identifier, start, end)
             }
             _ => {
-                // Check if it's a custom data type (starts with "custom/")
-                if type_name.starts_with("custom/") {
-                    // Extract the custom type name (everything after "custom/")
-                    let custom_type_name = type_name.strip_prefix("custom/").unwrap();
+                if let Some(custom_type_name) = type_name.strip_prefix("custom/") {
                     self.delete_custom_data_range(custom_type_name, identifier, start, end)
                 } else {
                     anyhow::bail!("Unsupported data type: {type_name}");
@@ -1921,6 +1939,11 @@ impl ParquetDataCatalog {
     /// # Returns
     ///
     /// Returns `Ok(())` on success, or an error if deletion fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if interval lookup, delete planning, file removal, or
+    /// rewritten data writes fail.
     pub fn delete_data_range_generic<T>(
         &mut self,
         identifier: Option<&str>,
@@ -2048,6 +2071,10 @@ impl ParquetDataCatalog {
     /// # Returns
     ///
     /// Returns a vector of `DeleteOperation` structs ready for execution.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if target path construction fails.
     pub fn prepare_delete_operations(
         &self,
         type_name: &str,
@@ -2068,8 +2095,9 @@ impl ParquetDataCatalog {
         // Process each interval (which represents an actual file)
         for &(file_start_ns, file_end_ns) in intervals {
             // Check if file intersects with deletion range
-            let intersects = (delete_start_ns.is_none() || delete_start_ns.unwrap() <= file_end_ns)
-                && (delete_end_ns.is_none() || file_start_ns <= delete_end_ns.unwrap());
+            let intersects = delete_start_ns
+                .is_none_or(|delete_start_ns| delete_start_ns <= file_end_ns)
+                && delete_end_ns.is_none_or(|delete_end_ns| file_start_ns <= delete_end_ns);
 
             if !intersects {
                 continue; // File doesn't intersect with deletion range
@@ -2083,9 +2111,9 @@ impl ParquetDataCatalog {
             let file_path = make_object_store_path(&directory, &[&filename]);
 
             // Determine what type of operation is needed
-            let file_completely_within_range = (delete_start_ns.is_none()
-                || delete_start_ns.unwrap() <= file_start_ns)
-                && (delete_end_ns.is_none() || file_end_ns <= delete_end_ns.unwrap());
+            let file_completely_within_range = delete_start_ns
+                .is_none_or(|delete_start_ns| delete_start_ns <= file_start_ns)
+                && delete_end_ns.is_none_or(|delete_end_ns| file_end_ns <= delete_end_ns);
 
             if file_completely_within_range {
                 // File is completely within deletion range - just mark for removal

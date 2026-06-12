@@ -30,19 +30,19 @@ use crate::backend::catalog::ParquetDataCatalog;
 /// Converts a single `Data` variant into a Python object for returning from catalog methods.
 fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
     match item {
-        Data::Quote(quote) => Py::new(py, quote).map(|x| x.into_any()),
-        Data::Trade(trade) => Py::new(py, trade).map(|x| x.into_any()),
-        Data::Bar(bar) => Py::new(py, bar).map(|x| x.into_any()),
-        Data::Delta(delta) => Py::new(py, delta).map(|x| x.into_any()),
-        Data::Deltas(deltas) => Py::new(py, (*deltas).clone()).map(|x| x.into_any()),
-        Data::Depth10(depth) => Py::new(py, *depth).map(|x| x.into_any()),
-        Data::IndexPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
-        Data::MarkPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
-        Data::FundingRateUpdate(funding) => Py::new(py, funding).map(|x| x.into_any()),
-        Data::InstrumentStatus(status) => Py::new(py, status).map(|x| x.into_any()),
-        Data::OptionGreeks(greeks) => Py::new(py, greeks).map(|x| x.into_any()),
-        Data::InstrumentClose(close) => Py::new(py, close).map(|x| x.into_any()),
-        Data::Custom(custom) => Py::new(py, custom).map(|x| x.into_any()),
+        Data::Quote(quote) => Py::new(py, quote).map(pyo3::Py::into_any),
+        Data::Trade(trade) => Py::new(py, trade).map(pyo3::Py::into_any),
+        Data::Bar(bar) => Py::new(py, bar).map(pyo3::Py::into_any),
+        Data::Delta(delta) => Py::new(py, delta).map(pyo3::Py::into_any),
+        Data::Deltas(deltas) => Py::new(py, (*deltas).clone()).map(pyo3::Py::into_any),
+        Data::Depth10(depth) => Py::new(py, *depth).map(pyo3::Py::into_any),
+        Data::IndexPriceUpdate(price) => Py::new(py, price).map(pyo3::Py::into_any),
+        Data::MarkPriceUpdate(price) => Py::new(py, price).map(pyo3::Py::into_any),
+        Data::FundingRateUpdate(funding) => Py::new(py, funding).map(pyo3::Py::into_any),
+        Data::InstrumentStatus(status) => Py::new(py, status).map(pyo3::Py::into_any),
+        Data::OptionGreeks(greeks) => Py::new(py, greeks).map(pyo3::Py::into_any),
+        Data::InstrumentClose(close) => Py::new(py, close).map(pyo3::Py::into_any),
+        Data::Custom(custom) => Py::new(py, custom).map(pyo3::Py::into_any),
         #[allow(unreachable_patterns)]
         _ => Err(to_pytype_err("Unsupported Data variant")),
     }
@@ -70,6 +70,10 @@ impl PyParquetDataCatalog {
     /// - `batch_size`: Optional batch size for processing (default: 5000)
     /// - `compression`: Optional compression type (0=UNCOMPRESSED, 1=SNAPPY, 2=GZIP, 3=LZO, 4=BROTLI, 5=LZ4, 6=ZSTD)
     /// - `max_row_group_size`: Optional maximum row group size (default: 5000)
+    ///
+    /// # Panics
+    ///
+    /// Panics if the underlying [`ParquetDataCatalog`] cannot be created.
     #[new]
     #[pyo3(signature = (base_path, storage_options=None, batch_size=None, compression=None, max_row_group_size=None))]
     #[must_use]
@@ -82,7 +86,6 @@ impl PyParquetDataCatalog {
     ) -> Self {
         let compression = compression.map(|c| match c {
             0 => parquet::basic::Compression::UNCOMPRESSED,
-            1 => parquet::basic::Compression::SNAPPY,
             // For GZIP, LZO, BROTLI, LZ4, ZSTD we need to use the default level
             // since we can't pass the level parameter through PyO3
             2 => {
@@ -352,7 +355,7 @@ impl PyParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data`: A Python list of instrument objects (e.g. CurrencyPair, Equity).
+    /// - `data`: A Python list of instrument objects (e.g. `CurrencyPair`, Equity).
     ///
     /// # Returns
     ///
@@ -388,7 +391,7 @@ impl PyParquetDataCatalog {
     ///
     /// # Returns
     ///
-    /// Returns a list of instrument objects (e.g. CurrencyPair, Equity).
+    /// Returns a list of instrument objects (e.g. `CurrencyPair`, Equity).
     #[pyo3(signature = (instrument_ids=None, start=None, end=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn instruments(
@@ -733,8 +736,8 @@ impl PyParquetDataCatalog {
     /// # Parameters
     ///
     /// - `data_cls`: The data class name to query
-    /// - `identifiers`: Optional list of identifiers to filter by. Can be instrument_id strings
-    ///   (e.g., "EUR/USD.SIM") or bar_type strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    /// - `identifiers`: Optional list of identifiers to filter by. Can be `instrument_id` strings
+    ///   (e.g., "EUR/USD.SIM") or `bar_type` strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///   For bars, partial matching is supported.
     /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
@@ -852,7 +855,11 @@ impl PyParquetDataCatalog {
 
     /// Query Parquet files for data matching the given criteria.
     #[pyo3(signature = (data_type, identifiers=None, start=None, end=None, where_clause=None, files=None, optimize_file_loading=true))]
-    #[expect(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        reason = "PyO3 query binding mirrors the Python catalog API"
+    )]
     pub fn query(
         &mut self,
         py: Python<'_>,
@@ -1034,8 +1041,8 @@ impl PyParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `identifiers`: Optional list of identifiers to filter by. Can be instrument_id strings
-    ///   (e.g., "EUR/USD.SIM") or bar_type strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    /// - `identifiers`: Optional list of identifiers to filter by. Can be `instrument_id` strings
+    ///   (e.g., "EUR/USD.SIM") or `bar_type` strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///   For bars, partial matching is supported.
     /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
@@ -1071,8 +1078,8 @@ impl PyParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `identifiers`: Optional list of identifiers to filter by. Can be instrument_id strings
-    ///   (e.g., "EUR/USD.SIM") or bar_type strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    /// - `identifiers`: Optional list of identifiers to filter by. Can be `instrument_id` strings
+    ///   (e.g., "EUR/USD.SIM") or `bar_type` strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///   For bars, partial matching is supported.
     /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
@@ -1108,8 +1115,8 @@ impl PyParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `identifiers`: Optional list of identifiers to filter by. Can be instrument_id strings
-    ///   (e.g., "EUR/USD.SIM") or bar_type strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    /// - `identifiers`: Optional list of identifiers to filter by. Can be `instrument_id` strings
+    ///   (e.g., "EUR/USD.SIM") or `bar_type` strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///   For bars, partial matching is supported.
     /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
@@ -1145,8 +1152,8 @@ impl PyParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `identifiers`: Optional list of identifiers to filter by. Can be instrument_id strings
-    ///   (e.g., "EUR/USD.SIM") or bar_type strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    /// - `identifiers`: Optional list of identifiers to filter by. Can be `instrument_id` strings
+    ///   (e.g., "EUR/USD.SIM") or `bar_type` strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///   For bars, partial matching is supported (e.g., "EUR/USD.SIM" will match all bar types for that instrument).
     /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)

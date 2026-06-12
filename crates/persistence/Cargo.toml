@@ -49,6 +49,7 @@ python = [
 ]
 high-precision = [
   "nautilus-model/high-precision",
+  "nautilus-testkit/high-precision",
   "nautilus-serialization/high-precision",
 ]
 

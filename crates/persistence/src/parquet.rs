@@ -131,7 +131,7 @@ pub async fn write_batches_to_parquet(
 
 /// Reads a Parquet file from an object store and returns all record batches plus
 /// the Arrow schema from the builder. The builder's schema includes metadata restored
-/// from the file's `ARROW:schema` key_value_metadata; use it for decoding instead of
+/// from the file's `ARROW:schema` `key_value_metadata`; use it for decoding instead of
 /// each batch's schema (which has metadata stripped).
 ///
 /// # Errors
@@ -162,7 +162,7 @@ pub async fn read_parquet_from_object_store(
 }
 
 /// Writes multiple `RecordBatch` items to an object store URI, with optional compression,
-/// row group sizing, and key_value_metadata (e.g. for instrument "class" so it survives roundtrip).
+/// row group sizing, and `key_value_metadata` (e.g. for instrument "class" so it survives roundtrip).
 ///
 /// # Errors
 ///
@@ -231,7 +231,10 @@ fn deduplicate_record_batches(batches: &[RecordBatch]) -> anyhow::Result<Vec<Rec
 
         for (i, row) in rows.iter().enumerate() {
             if seen.insert(row.as_ref().to_vec()) {
-                indices.push(i as u32);
+                indices.push(
+                    u32::try_from(i)
+                        .map_err(|_| anyhow::anyhow!("record batch row index exceeds u32"))?,
+                );
             }
         }
 
@@ -347,11 +350,8 @@ pub async fn combine_parquet_files_from_object_store(
     if let Some(schema) = &schema_with_metadata {
         all_batches = all_batches
             .into_iter()
-            .map(|b| {
-                RecordBatch::try_new(schema.clone(), b.columns().to_vec())
-                    .expect("schema re-application failed")
-            })
-            .collect();
+            .map(|batch| RecordBatch::try_new(schema.clone(), batch.columns().to_vec()))
+            .collect::<Result<_, _>>()?;
     }
 
     // Deduplicate rows if requested
@@ -435,16 +435,14 @@ pub async fn min_max_from_parquet_metadata_object_store(
                     if let Statistics::Int64(int64_stats) = stats {
                         // Extract min value if available
                         if let Some(&min_value) = int64_stats.min_opt()
-                            && (overall_min_value.is_none()
-                                || min_value < overall_min_value.unwrap())
+                            && overall_min_value.is_none_or(|overall_min| min_value < overall_min)
                         {
                             overall_min_value = Some(min_value);
                         }
 
                         // Extract max value if available
                         if let Some(&max_value) = int64_stats.max_opt()
-                            && (overall_max_value.is_none()
-                                || max_value > overall_max_value.unwrap())
+                            && overall_max_value.is_none_or(|overall_max| max_value > overall_max)
                         {
                             overall_max_value = Some(max_value);
                         }
@@ -462,7 +460,14 @@ pub async fn min_max_from_parquet_metadata_object_store(
 
     // Return the min/max pair if both are available
     if let (Some(min), Some(max)) = (overall_min_value, overall_max_value) {
-        Ok((min as u64, max as u64))
+        Ok((
+            u64::try_from(min).map_err(|_| {
+                anyhow::anyhow!("Negative minimum value {min} for column '{column_name}'")
+            })?,
+            u64::try_from(max).map_err(|_| {
+                anyhow::anyhow!("Negative maximum value {max} for column '{column_name}'")
+            })?,
+        ))
     } else {
         anyhow::bail!(
             "Column '{column_name}' not found or has no Int64 statistics in any row group."
@@ -488,6 +493,11 @@ pub async fn min_max_from_parquet_metadata_object_store(
 ///   - For Azure: `account_name`, `account_key`, `sas_token`, etc.
 ///
 /// Returns a tuple of (`ObjectStore`, `base_path`, `normalized_uri`)
+///
+/// # Errors
+///
+/// Returns an error if the object store URI cannot be normalized or the
+/// backend cannot be created.
 pub fn create_object_store_from_path(
     path: &str,
     storage_options: Option<AHashMap<String, String>>,
@@ -589,7 +599,8 @@ pub fn normalize_path_to_uri(path: &str) -> String {
             path_to_file_uri(path)
         } else {
             // Relative path - make it absolute first
-            let absolute_path = std::env::current_dir().unwrap().join(path);
+            let absolute_path = std::env::current_dir()
+                .map_or_else(|_| std::path::PathBuf::from(path), |cwd| cwd.join(path));
             path_to_file_uri(&absolute_path.to_string_lossy())
         }
     }
@@ -654,7 +665,7 @@ pub(crate) fn file_uri_to_native_path(uri: &str) -> String {
     without_leading.replace('/', "\\")
 }
 
-/// Converts a file:// URI to a path string for Unix (no-op; object_store accepts slash paths).
+/// Converts a file:// URI to a path string for Unix (no-op; `object_store` accepts slash paths).
 #[cfg(not(windows))]
 pub(crate) fn file_uri_to_native_path(uri: &str) -> String {
     uri.strip_prefix("file://").unwrap_or(uri).to_string()
@@ -948,6 +959,10 @@ fn extract_host(url: &url::Url, error_msg: &str) -> anyhow::Result<String> {
 mod tests {
     #[cfg(feature = "cloud")]
     use ahash::AHashMap;
+    use arrow::{
+        array::Int64Array,
+        datatypes::{DataType, Field, Schema},
+    };
     use rstest::rstest;
 
     use super::*;
@@ -1100,6 +1115,46 @@ mod tests {
         let result = extract_host(&url, "Test error");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "test-bucket");
+    }
+
+    #[tokio::test]
+    async fn test_min_max_from_parquet_metadata_rejects_negative_int64_statistics() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let object_store: Arc<dyn ObjectStore> = Arc::new(
+            object_store::local::LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap(),
+        );
+        let object_path = ObjectPath::from("negative_stats.parquet");
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "ts_init",
+            DataType::Int64,
+            false,
+        )]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![Arc::new(Int64Array::from(vec![-2_i64, -1_i64]))],
+        )
+        .unwrap();
+
+        write_batches_to_object_store(
+            &[batch],
+            object_store.clone(),
+            &object_path,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let error =
+            min_max_from_parquet_metadata_object_store(object_store, &object_path, "ts_init")
+                .await
+                .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Negative minimum value -2 for column 'ts_init'"
+        );
     }
 
     #[rstest]

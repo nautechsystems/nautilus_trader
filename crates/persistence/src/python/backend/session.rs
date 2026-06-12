@@ -37,19 +37,19 @@ unsafe impl<T> Send for SendPtr<T> {}
 /// Converts a `Data` variant into a Python object via PyO3.
 fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
     match item {
-        Data::Quote(quote) => Py::new(py, quote).map(|x| x.into_any()),
-        Data::Trade(trade) => Py::new(py, trade).map(|x| x.into_any()),
-        Data::Bar(bar) => Py::new(py, bar).map(|x| x.into_any()),
-        Data::Delta(delta) => Py::new(py, delta).map(|x| x.into_any()),
-        Data::Deltas(deltas) => Py::new(py, (*deltas).clone()).map(|x| x.into_any()),
-        Data::Depth10(depth) => Py::new(py, *depth).map(|x| x.into_any()),
-        Data::IndexPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
-        Data::MarkPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
-        Data::FundingRateUpdate(funding_rate) => Py::new(py, funding_rate).map(|x| x.into_any()),
-        Data::InstrumentStatus(status) => Py::new(py, status).map(|x| x.into_any()),
-        Data::OptionGreeks(greeks) => Py::new(py, greeks).map(|x| x.into_any()),
-        Data::InstrumentClose(close) => Py::new(py, close).map(|x| x.into_any()),
-        Data::Custom(custom) => Py::new(py, custom).map(|x| x.into_any()),
+        Data::Quote(quote) => Py::new(py, quote).map(pyo3::Py::into_any),
+        Data::Trade(trade) => Py::new(py, trade).map(pyo3::Py::into_any),
+        Data::Bar(bar) => Py::new(py, bar).map(pyo3::Py::into_any),
+        Data::Delta(delta) => Py::new(py, delta).map(pyo3::Py::into_any),
+        Data::Deltas(deltas) => Py::new(py, (*deltas).clone()).map(pyo3::Py::into_any),
+        Data::Depth10(depth) => Py::new(py, *depth).map(pyo3::Py::into_any),
+        Data::IndexPriceUpdate(price) => Py::new(py, price).map(pyo3::Py::into_any),
+        Data::MarkPriceUpdate(price) => Py::new(py, price).map(pyo3::Py::into_any),
+        Data::FundingRateUpdate(funding_rate) => Py::new(py, funding_rate).map(pyo3::Py::into_any),
+        Data::InstrumentStatus(status) => Py::new(py, status).map(pyo3::Py::into_any),
+        Data::OptionGreeks(greeks) => Py::new(py, greeks).map(pyo3::Py::into_any),
+        Data::InstrumentClose(close) => Py::new(py, close).map(pyo3::Py::into_any),
+        Data::Custom(custom) => Py::new(py, custom).map(pyo3::Py::into_any),
         #[allow(unreachable_patterns)]
         _ => Err(to_pyruntime_err("Unsupported Data variant")),
     }
@@ -74,6 +74,10 @@ pub enum NautilusDataType {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl NautilusDataType {
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "PyO3 special methods use a borrowed receiver"
+    )]
     const fn __hash__(&self) -> isize {
         *self as isize
     }
@@ -212,7 +216,7 @@ impl DataQueryResult {
 
     /// Each iteration returns a chunk of values read from the parquet file.
     ///
-    /// For built-in types, returns a PyCapsule containing a CVec of DataFFI (C layout)
+    /// For built-in types, returns a `PyCapsule` containing a `CVec` of `DataFFI` (C layout)
     /// consumed by Cython `capsule_to_list`. For custom data types (which are not
     /// FFI-safe), returns a Python list of PyO3 objects directly.
     fn __next__(mut slf: PyRefMut<'_, Self>) -> PyResult<Option<Py<PyAny>>> {
