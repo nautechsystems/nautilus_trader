@@ -44,6 +44,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot/Futures WebSocket connection pool race (#4244), thanks @filipmacek
 - Fixed blocking Python HTTP functions holding the GIL for the full request duration
 - Fixed Blockchain snapshot bootstrap checks
+- Fixed custom `DataType` metadata ordering and shared custom-data unsubscribes (Rust)
 - Fixed data option-chain delta warmup
 - Fixed Deribit chart bar volume for inverse perpetuals (#4245), thanks @filipmacek
 - Fixed `DonchianChannel` period window (#4239), thanks @KaizynX

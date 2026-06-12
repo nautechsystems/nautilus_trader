@@ -45,7 +45,7 @@ use std::{
 
 use nautilus_core::{Params, UnixNanos};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value as JsonValue, to_string};
+use serde_json::Value as JsonValue;
 
 #[cfg(feature = "defi")]
 use crate::defi::DefiData;
@@ -601,8 +601,11 @@ fn value_to_topic_string(v: &JsonValue) -> String {
 
 /// Builds the topic suffix from Params (string-only view: key=value joined by ".").
 fn params_to_topic_suffix(params: &Params) -> String {
-    params
-        .iter()
+    let mut entries = params.iter().collect::<Vec<_>>();
+    entries.sort_by_key(|(key, _)| *key);
+
+    entries
+        .into_iter()
         .map(|(k, v)| format!("{k}={}", value_to_topic_string(v)))
         .collect::<Vec<_>>()
         .join(".")
@@ -746,7 +749,17 @@ impl DataType {
     pub fn metadata_str(&self) -> String {
         self.metadata.as_ref().map_or_else(
             || "null".to_string(),
-            |metadata| to_string(metadata).unwrap_or_default(),
+            |metadata| {
+                let mut entries = metadata.iter().collect::<Vec<_>>();
+                entries.sort_by_key(|(key, _)| *key);
+
+                let mut metadata_map = serde_json::Map::new();
+                for (key, value) in entries {
+                    metadata_map.insert(key.clone(), value.clone());
+                }
+
+                serde_json::to_string(&metadata_map).unwrap_or_default()
+            },
         )
     }
 
@@ -783,11 +796,10 @@ impl DataType {
     /// # Panics
     ///
     /// This function panics if:
-    /// - There is no metadata.
     /// - The `instrument_id` value contained in the metadata is invalid.
     #[must_use]
     pub fn instrument_id(&self) -> Option<InstrumentId> {
-        let metadata = self.metadata.as_ref().expect("metadata was `None`");
+        let metadata = self.metadata.as_ref()?;
         let instrument_id = metadata.get_str("instrument_id")?;
         Some(
             InstrumentId::from_str(instrument_id)
@@ -800,11 +812,10 @@ impl DataType {
     /// # Panics
     ///
     /// This function panics if:
-    /// - There is no metadata.
     /// - The `venue` value contained in the metadata is invalid.
     #[must_use]
     pub fn venue(&self) -> Option<Venue> {
-        let metadata = self.metadata.as_ref().expect("metadata was `None`");
+        let metadata = self.metadata.as_ref()?;
         let venue_str = metadata.get_str("venue")?;
         Some(Venue::from(venue_str))
     }
@@ -814,7 +825,6 @@ impl DataType {
     /// # Panics
     ///
     /// This function panics if:
-    /// - There is no metadata.
     /// - The `start` value contained in the metadata is invalid.
     #[must_use]
     pub fn start(&self) -> Option<UnixNanos> {
@@ -828,7 +838,6 @@ impl DataType {
     /// # Panics
     ///
     /// This function panics if:
-    /// - There is no metadata.
     /// - The `end` value contained in the metadata is invalid.
     #[must_use]
     pub fn end(&self) -> Option<UnixNanos> {
@@ -842,7 +851,6 @@ impl DataType {
     /// # Panics
     ///
     /// This function panics if:
-    /// - There is no metadata.
     /// - The `limit` value contained in the metadata is invalid.
     #[must_use]
     pub fn limit(&self) -> Option<usize> {
@@ -940,6 +948,33 @@ mod tests {
         assert_eq!(data_type.type_name(), "ExampleType");
         assert_eq!(data_type.topic(), "ExampleType.key1=value1.key2=value2");
         assert_eq!(data_type.metadata(), metadata.as_ref());
+    }
+
+    #[rstest]
+    fn test_data_type_topic_identity_uses_canonical_metadata_order() {
+        let mut metadata1 = Params::new();
+        metadata1.insert("b".to_string(), json!(2));
+        metadata1.insert("a".to_string(), json!(1));
+        let mut metadata2 = Params::new();
+        metadata2.insert("a".to_string(), json!(1));
+        metadata2.insert("b".to_string(), json!(2));
+
+        let data_type1 = DataType::new("ExampleType", Some(metadata1), None);
+        let data_type2 = DataType::new("ExampleType", Some(metadata2), None);
+        let mut hasher1 = DefaultHasher::new();
+        data_type1.hash(&mut hasher1);
+        let hash1 = hasher1.finish();
+        let mut hasher2 = DefaultHasher::new();
+        data_type2.hash(&mut hasher2);
+        let hash2 = hasher2.finish();
+
+        assert_eq!(data_type1.topic(), "ExampleType.a=1.b=2");
+        assert_eq!(data_type1.topic(), data_type2.topic());
+        assert_eq!(data_type1, data_type2);
+        assert_eq!(hash1, hash2);
+        assert_eq!(format!("{data_type1}"), format!("{data_type2}"));
+        assert_eq!(data_type1.metadata_str(), r#"{"a":1,"b":2}"#);
+        assert_eq!(data_type1.metadata_str(), data_type2.metadata_str());
     }
 
     #[rstest]
@@ -1072,6 +1107,16 @@ mod tests {
     }
 
     #[rstest]
+    fn test_data_type_metadata_accessors_return_none_without_metadata() {
+        let data_type = DataType::new(stringify!(TradeTick), None, None);
+
+        assert_eq!(data_type.instrument_id(), None);
+        assert_eq!(data_type.venue(), None);
+        assert_eq!(data_type.start(), None);
+        assert_eq!(data_type.end(), None);
+    }
+
+    #[rstest]
     fn test_data_type_persistence_json_with_identifier() {
         let data_type = DataType::new("MyCustomType", None, Some("venue//symbol".to_string()));
         let json = data_type.to_persistence_json().unwrap();
@@ -1081,6 +1126,19 @@ mod tests {
         assert_eq!(restored.type_name(), "MyCustomType");
         assert_eq!(restored.identifier(), Some("venue//symbol"));
         assert_eq!(restored.topic(), "MyCustomType");
+    }
+
+    #[rstest]
+    fn test_data_type_from_persistence_json_rebuilds_canonical_topic() {
+        let json = r#"{
+            "type_name": "ExampleType",
+            "topic": "ExampleType.z=9.a=1",
+            "metadata": {"z": 9, "a": 1}
+        }"#;
+
+        let restored = DataType::from_persistence_json(json).unwrap();
+
+        assert_eq!(restored.topic(), "ExampleType.a=1.z=9");
     }
 
     #[rstest]
