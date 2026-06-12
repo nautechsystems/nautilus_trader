@@ -98,6 +98,42 @@ impl PyCache {
         self.0.borrow_mut().dispose();
     }
 
+    #[pyo3(name = "purge_closed_orders", signature = (ts_now, buffer_secs=0))]
+    fn py_purge_closed_orders(&mut self, ts_now: u64, buffer_secs: u64) {
+        self.0
+            .borrow_mut()
+            .purge_closed_orders(ts_now.into(), buffer_secs);
+    }
+
+    #[pyo3(name = "purge_closed_positions", signature = (ts_now, buffer_secs=0))]
+    fn py_purge_closed_positions(&mut self, ts_now: u64, buffer_secs: u64) {
+        self.0
+            .borrow_mut()
+            .purge_closed_positions(ts_now.into(), buffer_secs);
+    }
+
+    #[pyo3(name = "purge_order")]
+    fn py_purge_order(&mut self, client_order_id: ClientOrderId) {
+        self.0.borrow_mut().purge_order(client_order_id);
+    }
+
+    #[pyo3(name = "purge_position")]
+    fn py_purge_position(&mut self, position_id: PositionId) {
+        self.0.borrow_mut().purge_position(position_id);
+    }
+
+    #[pyo3(name = "purge_instrument")]
+    fn py_purge_instrument(&mut self, instrument_id: InstrumentId) {
+        self.0.borrow_mut().purge_instrument(instrument_id);
+    }
+
+    #[pyo3(name = "purge_account_events", signature = (ts_now, lookback_secs=0))]
+    fn py_purge_account_events(&mut self, ts_now: u64, lookback_secs: u64) {
+        self.0
+            .borrow_mut()
+            .purge_account_events(ts_now.into(), lookback_secs);
+    }
+
     #[pyo3(name = "get")]
     fn py_get(&self, key: &str) -> PyResult<Option<Vec<u8>>> {
         match self.0.borrow().get(key).map_err(to_pyvalue_err)? {
@@ -1311,6 +1347,75 @@ impl Cache {
     #[pyo3(name = "dispose")]
     fn py_dispose(&mut self) {
         self.dispose();
+    }
+
+    /// Purges all closed orders from the cache that are older than `buffer_secs`.
+    ///
+    ///
+    /// Only orders that have been closed for at least this amount of time will be purged.
+    /// A value of 0 means purge all closed orders regardless of when they were closed.
+    #[pyo3(name = "purge_closed_orders", signature = (ts_now, buffer_secs=0))]
+    fn py_purge_closed_orders(&mut self, ts_now: u64, buffer_secs: u64) {
+        self.purge_closed_orders(ts_now.into(), buffer_secs);
+    }
+
+    /// Purges all closed positions from the cache that are older than `buffer_secs`.
+    #[pyo3(name = "purge_closed_positions", signature = (ts_now, buffer_secs=0))]
+    fn py_purge_closed_positions(&mut self, ts_now: u64, buffer_secs: u64) {
+        self.purge_closed_positions(ts_now.into(), buffer_secs);
+    }
+
+    /// Purges the order with the `client_order_id` from the cache (if found).
+    ///
+    /// For safety, an order is prevented from being purged if it's open.
+    #[pyo3(name = "purge_order")]
+    fn py_purge_order(&mut self, client_order_id: ClientOrderId) {
+        self.purge_order(client_order_id);
+    }
+
+    /// Purges the position with the `position_id` from the cache (if found).
+    ///
+    /// For safety, a position is prevented from being purged if it's open.
+    #[pyo3(name = "purge_position")]
+    fn py_purge_position(&mut self, position_id: PositionId) {
+        self.purge_position(position_id);
+    }
+
+    /// Purges the instrument with the `instrument_id` from the cache (if found).
+    ///
+    /// All cache-owned data keyed by the instrument is removed: the instrument record,
+    /// any synthetic with the same id, order book and own-order-book state, quote/trade
+    /// histories, mark/index/funding price histories, instrument status, bars for any
+    /// `BarType` referencing the instrument, and the `instrument_orders` /
+    /// `instrument_positions` index entries.
+    ///
+    /// For safety, an instrument is prevented from being purged while any associated
+    /// order is non-terminal (anything not in `orders_closed`, including
+    /// initialized, submitted, accepted, emulated, released, or inflight states) or
+    /// any associated position is non-closed.
+    ///
+    /// Active subscriptions and other live data-engine state are not touched here;
+    /// those belong to the data and execution engines.
+    ///
+    /// # Warning
+    ///
+    /// Intended for actors and strategies that have their own lifecycle logic for
+    /// deciding when an instrument is no longer needed. Purging an instrument that any
+    /// other actor, strategy, or engine still relies on may cause incorrect behavior
+    /// (missing instrument lookups, lost market-data history). The caller is
+    /// responsible for ensuring the instrument is no longer in use before purging.
+    #[pyo3(name = "purge_instrument")]
+    fn py_purge_instrument(&mut self, instrument_id: InstrumentId) {
+        self.purge_instrument(instrument_id);
+    }
+
+    /// Purges all account state events which are outside the lookback window.
+    ///
+    /// Only events which are outside the lookback window will be purged.
+    /// A value of 0 means purge all account state events.
+    #[pyo3(name = "purge_account_events", signature = (ts_now, lookback_secs=0))]
+    fn py_purge_account_events(&mut self, ts_now: u64, lookback_secs: u64) {
+        self.purge_account_events(ts_now.into(), lookback_secs);
     }
 
     /// Adds the `currency` to the cache.
