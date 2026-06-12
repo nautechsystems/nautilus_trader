@@ -38,7 +38,7 @@ use crate::{
     host::{HostContext, HostLogLevel, HostVTable},
     manifest::{
         PluginBuildId, PluginInitFn, PluginManifest, PluginManifestValidationErrors,
-        ValidatedPluginManifest,
+        ValidatedCustomDataRegistration, ValidatedPluginManifest,
     },
     surfaces::commands::{
         CancelAllOrdersHandle, CancelOrderHandle, CancelOrdersHandle, CloseAllPositionsHandle,
@@ -265,7 +265,7 @@ impl Debug for LoadedPlugin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(LoadedPlugin))
             .field("path", &self.path)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -355,6 +355,11 @@ impl PluginLoader {
     }
 
     /// Loads every plug-in path in order. Stops on the first error.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`LoadError`] raised while loading the provided
+    /// paths.
     pub fn load_all<P>(&mut self, paths: impl IntoIterator<Item = P>) -> Result<(), LoadError>
     where
         P: AsRef<OsStr>,
@@ -366,6 +371,12 @@ impl PluginLoader {
     }
 
     /// Loads a single plug-in cdylib.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`LoadError`] if the library cannot be opened, the init
+    /// symbol is missing, the manifest is invalid, or the manifest conflicts
+    /// with an already loaded plug-in.
     pub fn load(&mut self, path: impl AsRef<OsStr>) -> Result<&LoadedPlugin, LoadError> {
         let path_buf = PathBuf::from(path.as_ref());
 
@@ -402,7 +413,10 @@ impl PluginLoader {
         validate_build_pinning(manifest, &path_buf, self.allow_build_mismatch)?;
 
         let collision = {
-            let new_types: Vec<&str> = manifest.custom_data().map(|e| e.type_name()).collect();
+            let new_types: Vec<&str> = manifest
+                .custom_data()
+                .map(ValidatedCustomDataRegistration::type_name)
+                .collect();
             let existing: Vec<(&str, &Path)> = self
                 .loaded
                 .iter()
@@ -441,12 +455,13 @@ impl PluginLoader {
             path_buf.display(),
         );
 
+        let loaded_index = self.loaded.len();
         self.loaded.push(LoadedPlugin {
             path: path_buf,
             _library: library,
             manifest,
         });
-        Ok(self.loaded.last().expect("just pushed"))
+        Ok(&self.loaded[loaded_index])
     }
 
     /// Returns every loaded plug-in in load order.
@@ -1635,13 +1650,12 @@ mod tests {
             _ => unreachable!(),
         };
 
-        let err = match r.into_result() {
-            Ok(_) => panic!("{method} unexpectedly succeeded"),
-            Err(e) => e,
+        let Err(e) = r.into_result() else {
+            panic!("{method} unexpectedly succeeded");
         };
-        assert_eq!(err.code, PluginErrorCode::NotImplemented);
+        assert_eq!(e.code, PluginErrorCode::NotImplemented);
         assert_eq!(
-            err.message_string(),
+            e.message_string(),
             format!("{method} is not wired into this host vtable")
         );
     }

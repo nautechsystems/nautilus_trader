@@ -478,6 +478,7 @@ impl HostVTable {
     ///
     /// The vtable pointer must originate from the host's `nautilus_plugin_init`
     /// call and the host's library must still be live.
+    #[must_use]
     pub unsafe fn now_ns(&self) -> u64 {
         // SAFETY: caller upholds liveness of the host.
         unsafe { (self.clock_now_ns)() }
@@ -529,7 +530,7 @@ mod tests {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
             .lock()
-            .unwrap_or_else(|p| p.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     unsafe extern "C" fn fixed_clock_now_ns() -> u64 {

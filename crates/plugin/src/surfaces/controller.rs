@@ -94,6 +94,15 @@ pub struct ControllerVTable {
 /// Controllers can define a static [`PluginController::prepare`] hook and
 /// runtime lifecycle callbacks. Every callback has a no-op default. Override
 /// only what you need.
+///
+/// # Errors
+///
+/// Hook implementations may return an error to abort the current callback.
+/// Default hook implementations never error.
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "hook error behavior is documented once at the trait level"
+)]
 pub trait PluginController: 'static + Send + Sized {
     /// Canonical type name. Must be unique across a Nautilus deployment.
     const TYPE_NAME: &'static str;

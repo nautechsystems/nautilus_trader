@@ -79,7 +79,7 @@ impl PluginStrategy for ExecTestStrategy {
 
     fn new(host: *const HostVTable, ctx: *const HostContext, config_json: &str) -> Self {
         let config = serde_json::from_str::<serde_json::Value>(config_json)
-            .unwrap_or_else(|_| serde_json::Value::Object(Default::default()));
+            .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::default()));
         let strategy_id = config
             .get("strategy_id")
             .and_then(serde_json::Value::as_str)

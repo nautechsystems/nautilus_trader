@@ -22,7 +22,10 @@
 
 #![allow(unsafe_code)]
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{
+    Mutex,
+    atomic::{AtomicU64, Ordering},
+};
 
 use nautilus_common::timer::TimeEvent;
 use nautilus_core::{UUID4, UnixNanos};
@@ -32,7 +35,7 @@ use nautilus_model::{
     events::PositionOpened,
     identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
     orders::{MarketOrder, OrderAny},
-    types::{Quantity, fixed::FIXED_PRECISION},
+    types::{Price, Quantity, fixed::FIXED_PRECISION},
 };
 use nautilus_plugin::{
     NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION,
@@ -154,7 +157,7 @@ impl PluginCustomData for TestTick {
 static TEST_ACTOR_START_COUNT: AtomicU64 = AtomicU64::new(0);
 static TEST_ACTOR_STOP_COUNT: AtomicU64 = AtomicU64::new(0);
 static TEST_ACTOR_QUOTE_COUNT: AtomicU64 = AtomicU64::new(0);
-static TEST_ACTOR_LAST_BID_RAW: AtomicU64 = AtomicU64::new(0);
+static TEST_ACTOR_LAST_BID: Mutex<Option<Price>> = Mutex::new(None);
 
 #[derive(Default)]
 struct TestActor;
@@ -178,7 +181,9 @@ impl PluginActor for TestActor {
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         TEST_ACTOR_QUOTE_COUNT.fetch_add(1, Ordering::SeqCst);
-        TEST_ACTOR_LAST_BID_RAW.store(quote.bid_price.raw as u64, Ordering::SeqCst);
+        *TEST_ACTOR_LAST_BID
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(quote.bid_price);
         Ok(())
     }
 }
@@ -1003,18 +1008,20 @@ fn decode_batch_round_trips_through_drop_handle_array() {
     // final `drop(decoded)` invokes `drop_handle_array` which deallocates
     // with the correct `Vec<*mut CustomDataHandle>` layout.
     // SAFETY: buffer is live and contains `count` aligned handle pointers.
-    let buf_ptr = unsafe { decoded.as_bytes() }.as_ptr();
-    let handle_ptr = buf_ptr.cast::<*mut CustomDataHandle>();
+    let buf = unsafe { decoded.as_bytes() };
+    // SAFETY: `decode_batch` returns an OwnedBytes buffer backed by a
+    // Vec<*mut CustomDataHandle>.
+    let (prefix, handles, suffix) = unsafe { buf.align_to::<*mut CustomDataHandle>() };
+    assert!(prefix.is_empty(), "decoded handle buffer prefix");
+    assert!(suffix.is_empty(), "decoded handle buffer suffix");
+    assert_eq!(handles.len(), count, "decoded handle slice length");
 
-    for i in 0..count {
-        // SAFETY: i < count and the buffer is `count * elem_size` bytes.
-        let slot = unsafe { handle_ptr.add(i) };
-        // SAFETY: slot points at a freshly-decoded handle pointer.
-        let h = unsafe { slot.read() };
+    for (i, &h) in handles.iter().enumerate() {
         // SAFETY: handle is live (decode just produced it).
         let ts_init = unsafe { generated_slot!(vtable, ts_init)(h) };
         // Decoded order matches encoded order: ts_init was 2 then 4.
-        assert_eq!(ts_init, ((i as u64) + 1) * 2);
+        let i = u64::try_from(i).expect("decoded handle index fits in u64");
+        assert_eq!(ts_init, (i + 1) * 2);
         // SAFETY: handle is live.
         unsafe {
             generated_slot!(vtable, drop_handle)(h);
@@ -1079,10 +1086,7 @@ fn actor_lifecycle_callbacks_dispatch_to_trait() {
 #[rstest]
 fn actor_on_quote_dispatches_typed_pointer() {
     use nautilus_core::UnixNanos;
-    use nautilus_model::{
-        identifiers::InstrumentId,
-        types::{Price, Quantity},
-    };
+    use nautilus_model::identifiers::InstrumentId;
 
     // Verifies the on_quote thunk receives the typed `*const QuoteTick`
     // pointer and routes it into the actor's typed `on_quote` method.
@@ -1095,7 +1099,9 @@ fn actor_on_quote_dispatches_typed_pointer() {
     let vtable = unsafe { &*entry.vtable };
 
     TEST_ACTOR_QUOTE_COUNT.store(0, Ordering::SeqCst);
-    TEST_ACTOR_LAST_BID_RAW.store(0, Ordering::SeqCst);
+    *TEST_ACTOR_LAST_BID
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
 
     let quote = QuoteTick::new(
         InstrumentId::from("ETH-USDT.BINANCE"),
@@ -1117,8 +1123,10 @@ fn actor_on_quote_dispatches_typed_pointer() {
 
     assert_eq!(TEST_ACTOR_QUOTE_COUNT.load(Ordering::SeqCst), 1);
     assert_eq!(
-        TEST_ACTOR_LAST_BID_RAW.load(Ordering::SeqCst),
-        quote.bid_price.raw as u64,
+        *TEST_ACTOR_LAST_BID
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+        Some(quote.bid_price),
     );
 
     // SAFETY: handle is live.
@@ -1167,7 +1175,9 @@ fn strategy_lifecycle_dispatches_to_trait() {
     assert!(!handle.is_null(), "create returned null");
 
     // The strategy must have stored the context pointer during `new`.
-    let stored = TEST_STRATEGY_CONTEXT_PTR.load(Ordering::SeqCst) as *const HostContext;
+    let stored = TEST_STRATEGY_CONTEXT_PTR
+        .load(Ordering::SeqCst)
+        .cast_const();
     assert!(
         std::ptr::eq(stored, ctx),
         "strategy did not store host context"
@@ -1191,7 +1201,7 @@ fn strategy_on_position_opened_invokes_host_submit() {
         enums::{OrderSide, PositionSide},
         events::PositionOpened,
         identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
-        types::{Currency, Price, Quantity},
+        types::{Currency, Quantity},
     };
 
     // Drives an on_position_opened callback with a typed pointer and
@@ -1241,7 +1251,9 @@ fn strategy_on_position_opened_invokes_host_submit() {
         1
     );
     assert_eq!(TEST_HOST_SUBMIT_COUNT.load(Ordering::SeqCst), 1);
-    let last_ctx = TEST_HOST_LAST_SUBMIT_CTX.load(Ordering::SeqCst) as *const HostContext;
+    let last_ctx = TEST_HOST_LAST_SUBMIT_CTX
+        .load(Ordering::SeqCst)
+        .cast_const();
     assert!(
         std::ptr::eq(last_ctx, ctx),
         "submit_order received the wrong host context"

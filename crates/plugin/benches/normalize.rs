@@ -92,8 +92,10 @@ fn quote_ticks(count: usize) -> Vec<QuoteTick> {
 
 fn order_book_deltas(count: usize) -> OrderBookDeltas {
     let instrument_id = InstrumentId::from("ETH-USDT.BINANCE");
+    let count = u32::try_from(count).expect("benchmark count fits in u32");
     let deltas = (0..count)
         .map(|i| {
+            let sequence = u64::from(i);
             let side = if i % 2 == 0 {
                 OrderSide::Buy
             } else {
@@ -104,14 +106,14 @@ fn order_book_deltas(count: usize) -> OrderBookDeltas {
                 BookAction::Add,
                 BookOrder::new(
                     side,
-                    Price::new(100.0 + (i as f64 * 0.01), 2),
-                    Quantity::new(1.0 + (i as f64 * 0.001), 3),
-                    i as u64 + 1,
+                    Price::new(100.0 + (f64::from(i) * 0.01), 2),
+                    Quantity::new(1.0 + (f64::from(i) * 0.001), 3),
+                    sequence + 1,
                 ),
                 0,
-                i as u64,
-                UnixNanos::from(i as u64),
-                UnixNanos::from(i as u64),
+                sequence,
+                UnixNanos::from(sequence),
+                UnixNanos::from(sequence),
             )
         })
         .collect();

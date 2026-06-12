@@ -265,6 +265,10 @@ impl_normalize_fields!(OptionStrikeData, [quote, greeks]);
 impl_normalize_fields!(OptionChainSlice, [series_id, calls, puts]);
 
 impl BoundaryNormalize for InstrumentAny {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "normalization mirrors every InstrumentAny variant explicitly"
+    )]
     fn boundary_normalized(&self) -> Self {
         let mut value = self.clone();
         match &mut value {
@@ -877,10 +881,9 @@ mod tests {
 
         // SAFETY: layout is non-zero and valid. The allocation is intentionally
         // leaked for the test process, matching ustr's never-free interner.
-        let base = unsafe { alloc(layout) };
-        assert!(!base.is_null(), "foreign ustr allocation failed");
+        let base = NonNull::new(unsafe { alloc(layout) }).expect("foreign ustr allocation failed");
 
-        let header = base.cast::<ForeignUstrHeader>();
+        let header = base.cast::<ForeignUstrHeader>().as_ptr();
         // SAFETY: `base` points to `size` writable bytes with the requested
         // alignment. The layout matches the header shape that `ustr` reads.
         unsafe {
@@ -891,14 +894,14 @@ mod tests {
         }
 
         // SAFETY: `base` points to `size` bytes and `header_size` is in bounds.
-        let value_ptr = unsafe { base.add(header_size) };
+        let value_ptr = unsafe { base.as_ptr().add(header_size) };
         // SAFETY: `value_ptr` points to `value.len()` writable bytes.
         unsafe {
             std::ptr::copy_nonoverlapping(value.as_ptr(), value_ptr, value.len());
         }
 
         // SAFETY: the allocation includes one trailing byte after `value`.
-        let terminator = unsafe { base.add(header_size + value.len()) };
+        let terminator = unsafe { base.as_ptr().add(header_size + value.len()) };
         // SAFETY: `terminator` points to the trailing writable byte.
         unsafe {
             terminator.write(0);
@@ -1037,6 +1040,10 @@ mod tests {
         assert_local_symbol(raw_symbol);
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "test fixture mirrors every InstrumentAny variant explicitly"
+    )]
     fn foreign_instrument_any(mut instrument: InstrumentAny) -> InstrumentAny {
         match &mut instrument {
             InstrumentAny::Betting(instrument) => {
@@ -1187,6 +1194,10 @@ mod tests {
         instrument
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "assertion table mirrors every InstrumentAny variant explicitly"
+    )]
     fn assert_instrument_any_normalized(instrument: InstrumentAny) {
         match instrument {
             InstrumentAny::Betting(instrument) => {
@@ -1705,12 +1716,14 @@ mod tests {
                 Price::from("0.01"),
                 Quantity::from("0.000001"),
             )),
+            InstrumentAny::CryptoFuturesSpread(stubs::crypto_futures_spread_btc_deribit()),
             InstrumentAny::CryptoOption(stubs::crypto_option_btc_deribit(
                 3,
                 1,
                 Price::from("0.001"),
                 Quantity::from("0.1"),
             )),
+            InstrumentAny::CryptoOptionSpread(stubs::crypto_option_spread_btc_deribit()),
             InstrumentAny::CryptoPerpetual(stubs::crypto_perpetual_ethusdt()),
             InstrumentAny::CurrencyPair(stubs::currency_pair_ethusdt()),
             InstrumentAny::Equity(stubs::equity_aapl()),

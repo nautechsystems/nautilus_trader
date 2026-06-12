@@ -19,8 +19,8 @@
 //! strategies call back into. The vtable struct is defined in this crate
 //! but the function pointers come from the host (the live node) at load
 //! time. A wiring mistake at the host's vtable-init site (e.g. assigning
-//! the cancel handler to `submit_order`) compiles but routes commands to
-//! the wrong service, with no compiler help.
+//! the `unsubscribe_quotes` handler to `subscribe_quotes`) compiles but
+//! routes commands to the wrong service, with no compiler help.
 //!
 //! These tests build a fake host vtable whose every handler bumps a
 //! per-slot atomic counter and records the [`HostContext`] pointer the
@@ -31,8 +31,10 @@
 //! Covers every callable field of [`HostVTable`]: `clock_now_ns`, `log`,
 //! the six `cache_*` snapshots, every subscribe/unsubscribe pair, the
 //! message bus publish, the three clock alert/timer entries, and the
-//! three order command entries (`submit_order`, `cancel_order`,
-//! `modify_order`).
+//! ten order command entries (`submit_order`, `cancel_order`,
+//! `modify_order`, `submit_order_list`, `cancel_orders`,
+//! `cancel_all_orders`, `close_position`, `close_all_positions`,
+//! `query_account`, `query_order`).
 
 #![allow(unsafe_code)]
 
@@ -126,7 +128,7 @@ fn dispatch_lock() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
         .lock()
-        .unwrap_or_else(|p| p.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn reset_all() {
@@ -171,7 +173,7 @@ fn assert_only_hook(expected: HostHook) {
 }
 
 fn assert_ctx(hook: HostHook, expected: *const HostContext) {
-    let last = LAST_CTX[hook as usize].load(Ordering::SeqCst) as *const HostContext;
+    let last = LAST_CTX[hook as usize].load(Ordering::SeqCst).cast_const();
     assert!(
         std::ptr::eq(last, expected),
         "host context not threaded through to {hook:?}: expected {expected:?}, was {last:?}",
@@ -182,7 +184,7 @@ unsafe extern "C" fn test_clock_now_ns() -> u64 {
     HOOK_CALLS[HostHook::ClockNowNs as usize].fetch_add(1, Ordering::SeqCst);
     // ClockNowNs has no ctx parameter; do not touch LAST_CTX so its
     // assertion is skipped for this slot.
-    0xC0FFEE_u64
+    0x00C0_FFEE_u64
 }
 
 unsafe extern "C" fn test_log(
@@ -255,7 +257,10 @@ unsafe extern "C" fn test_subscribe_book_deltas(
 ) -> PluginResult<()> {
     record(ctx, HostHook::SubscribeBookDeltas);
     LAST_BOOK_TYPE.store(book_type, Ordering::SeqCst);
-    LAST_BOOK_DEPTH.store(depth as u64, Ordering::SeqCst);
+    LAST_BOOK_DEPTH.store(
+        u64::try_from(depth).expect("book depth fits in u64"),
+        Ordering::SeqCst,
+    );
     LAST_MANAGED.store(managed, Ordering::SeqCst);
     PluginResult::Ok(())
 }
@@ -271,8 +276,14 @@ unsafe extern "C" fn test_subscribe_book_at_interval(
 ) -> PluginResult<()> {
     record(ctx, HostHook::SubscribeBookAtInterval);
     LAST_BOOK_TYPE.store(book_type, Ordering::SeqCst);
-    LAST_BOOK_DEPTH.store(depth as u64, Ordering::SeqCst);
-    LAST_BOOK_INTERVAL_MS.store(interval_ms as u64, Ordering::SeqCst);
+    LAST_BOOK_DEPTH.store(
+        u64::try_from(depth).expect("book depth fits in u64"),
+        Ordering::SeqCst,
+    );
+    LAST_BOOK_INTERVAL_MS.store(
+        u64::try_from(interval_ms).expect("interval fits in u64"),
+        Ordering::SeqCst,
+    );
     PluginResult::Ok(())
 }
 
@@ -284,7 +295,10 @@ unsafe extern "C" fn test_unsubscribe_book_at_interval(
     _params_json: BorrowedStr<'_>,
 ) -> PluginResult<()> {
     record(ctx, HostHook::UnsubscribeBookAtInterval);
-    LAST_BOOK_INTERVAL_MS.store(interval_ms as u64, Ordering::SeqCst);
+    LAST_BOOK_INTERVAL_MS.store(
+        u64::try_from(interval_ms).expect("interval fits in u64"),
+        Ordering::SeqCst,
+    );
     PluginResult::Ok(())
 }
 
@@ -294,7 +308,10 @@ unsafe extern "C" fn test_msgbus_publish(
     payload: Slice<'_, u8>,
 ) -> PluginResult<()> {
     record(ctx, HostHook::MsgbusPublish);
-    LAST_PAYLOAD_LEN.store(payload.len as u64, Ordering::SeqCst);
+    LAST_PAYLOAD_LEN.store(
+        u64::try_from(payload.len).expect("payload length fits in u64"),
+        Ordering::SeqCst,
+    );
     PluginResult::Ok(())
 }
 
@@ -502,7 +519,7 @@ fn clock_now_ns_slot_invokes_bound_handler() {
     reset_all();
     // SAFETY: TEST_HOST is process-lifetime static.
     let ns = unsafe { (TEST_HOST.clock_now_ns)() };
-    assert_eq!(ns, 0xC0FFEE_u64);
+    assert_eq!(ns, 0x00C0_FFEE_u64);
     assert_only_hook(HostHook::ClockNowNs);
 }
 
@@ -818,7 +835,7 @@ fn msgbus_publish_slot_invokes_bound_handler_with_payload_len() {
     assert_ctx(HostHook::MsgbusPublish, ctx);
     assert_eq!(
         LAST_PAYLOAD_LEN.load(Ordering::SeqCst),
-        payload.len() as u64
+        u64::try_from(payload.len()).expect("payload length fits in u64")
     );
 }
 

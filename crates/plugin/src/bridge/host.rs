@@ -627,14 +627,11 @@ unsafe extern "C" fn host_subscribe_book_at_interval(
         };
     let actor_args = args.clone();
     let strategy_args = args;
-    let interval_ms = match NonZeroUsize::new(interval_ms) {
-        Some(value) => value,
-        None => {
-            return PluginResult::Err(PluginError::new(
-                PluginErrorCode::InvalidArgument,
-                "interval_ms must be greater than zero",
-            ));
-        }
+    let Some(interval_ms) = NonZeroUsize::new(interval_ms) else {
+        return PluginResult::Err(PluginError::new(
+            PluginErrorCode::InvalidArgument,
+            "interval_ms must be greater than zero",
+        ));
     };
 
     dispatch_actor_action(
@@ -680,14 +677,11 @@ unsafe extern "C" fn host_unsubscribe_book_at_interval(
     };
     let actor_args = args.clone();
     let strategy_args = args;
-    let interval_ms = match NonZeroUsize::new(interval_ms) {
-        Some(value) => value,
-        None => {
-            return PluginResult::Err(PluginError::new(
-                PluginErrorCode::InvalidArgument,
-                "interval_ms must be greater than zero",
-            ));
-        }
+    let Some(interval_ms) = NonZeroUsize::new(interval_ms) else {
+        return PluginResult::Err(PluginError::new(
+            PluginErrorCode::InvalidArgument,
+            "interval_ms must be greater than zero",
+        ));
     };
 
     dispatch_actor_action(

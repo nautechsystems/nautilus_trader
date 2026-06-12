@@ -373,6 +373,10 @@ pub enum PluginResult<T> {
 
 impl<T> PluginResult<T> {
     /// Converts to a `core::result::Result`, dropping the discriminant.
+    ///
+    /// # Errors
+    ///
+    /// Returns the contained [`PluginError`] when the boundary result is `Err`.
     pub fn into_result(self) -> Result<T, PluginError> {
         match self {
             Self::Ok(t) => Ok(t),

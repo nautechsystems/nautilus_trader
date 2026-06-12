@@ -127,7 +127,7 @@ impl PluginController for RuntimeSmokeController {
 
 fn parse_callback_config(config_json: &str, default_label: &str) -> CallbackConfig {
     let config = serde_json::from_str::<serde_json::Value>(config_json)
-        .unwrap_or_else(|_| serde_json::Value::Object(Default::default()));
+        .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::default()));
     let callback_path = config
         .get("callback_path")
         .and_then(serde_json::Value::as_str)

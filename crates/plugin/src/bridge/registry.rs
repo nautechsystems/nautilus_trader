@@ -55,7 +55,7 @@ pub fn host_context_test_lock() -> MutexGuard<'static, ()> {
     // subsequent tests still serialize cleanly.
     HOST_CONTEXT_TEST_LOCK
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Returns the number of [`HostContextInner`] allocations currently alive.
@@ -74,7 +74,7 @@ pub fn controller_host_context_test_lock() -> MutexGuard<'static, ()> {
     // subsequent tests still serialize cleanly.
     HOST_CONTEXT_TEST_LOCK
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Returns the number of controller host-context allocations currently alive.

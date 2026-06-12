@@ -44,6 +44,8 @@
 //!
 //! Host-side loading lives behind the `host` feature and uses `libloading`.
 
+#![warn(clippy::pedantic)]
+
 /// ABI version of the plug-in contract.
 ///
 /// The host refuses to load a plug-in whose [`PluginManifest::abi_version`]

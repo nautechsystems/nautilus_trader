@@ -209,18 +209,39 @@ pub trait PluginCustomData: 'static + Send + Sync + Sized {
     fn ts_init(&self) -> u64;
 
     /// Serializes this value to a JSON payload (no envelope, payload only).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the value cannot be encoded as JSON.
     fn to_json(&self) -> anyhow::Result<Vec<u8>>;
 
     /// Deserializes a value from a JSON payload (no envelope).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `payload` cannot be decoded into this type.
     fn from_json(payload: &[u8]) -> anyhow::Result<Self>;
 
     /// Returns the Arrow schema for this type as an Arrow IPC byte stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schema cannot be encoded as Arrow IPC.
     fn schema_ipc() -> anyhow::Result<Vec<u8>>;
 
     /// Encodes a batch of values into an Arrow IPC byte stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the batch cannot be encoded as Arrow IPC.
     fn encode_batch(items: &[&Self]) -> anyhow::Result<Vec<u8>>;
 
     /// Decodes an Arrow IPC byte stream into a vector of values.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `ipc_bytes` or `metadata` cannot be decoded into
+    /// this type.
     fn decode_batch(ipc_bytes: &[u8], metadata: &[(String, String)]) -> anyhow::Result<Vec<Self>>;
 
     /// Tests two values of this type for equality. Default implementation
@@ -375,6 +396,10 @@ unsafe extern "C" fn decode_batch_thunk<T: PluginCustomData>(
     })
 }
 
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "pointer was produced from Vec<*mut CustomDataHandle> with pointer alignment"
+)]
 unsafe extern "C" fn drop_handle_array(ptr: *mut u8, len: usize, cap: usize) {
     if ptr.is_null() {
         return;

@@ -12,12 +12,15 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-//
+
 //! Per-method dispatch tests for the strategy plug point's order command
 //! surface.
 //!
 //! [`PluginStrategy`] extends the actor callback surface with a host-side
-//! execution surface: `submit_order`, `cancel_order`, and `modify_order`.
+//! execution surface: `submit_order`, `cancel_order`, `modify_order`,
+//! `submit_order_list`, `cancel_orders`, `cancel_all_orders`,
+//! `close_position`, `close_all_positions`, `query_account`, and
+//! `query_order`.
 //! At create time, the host hands the strategy a [`HostVTable`] pointer
 //! plus an opaque [`HostContext`] the host uses to attribute each command
 //! back to the calling strategy. A wiring mistake at the strategy author's
@@ -26,16 +29,16 @@
 //!
 //! These tests build a fake host vtable whose order-command handlers each
 //! bump a per-slot counter and record the [`HostContext`] pointer they
-//! received. The strategy under test invokes one execution method per
-//! callback through its bound `(host, ctx)`. The parametrised test drives
-//! each callback in turn and asserts:
+//! received. The strategy under test dispatches the selected execution
+//! method from a single callback through its bound `(host, ctx)`. The
+//! parametrised test drives each execution slot in turn and asserts:
 //!
 //! - Only the matching counter incremented (no cross-wiring of execution
 //!   methods).
 //! - The host received the exact [`HostContext`] the strategy was given
 //!   at `create`.
 //!
-//! Mirrors the strategy-side analogue of the actor dispatch coverage in
+//! Complements the broader plug-point dispatch coverage in
 //! [`tests/hook_dispatch.rs`](./hook_dispatch.rs).
 
 #![allow(unsafe_code)]
@@ -104,7 +107,7 @@ fn dispatch_lock() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
         .lock()
-        .unwrap_or_else(|p| p.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn reset_all() {
@@ -138,7 +141,7 @@ fn assert_only_hook(expected: ExecHook) {
 }
 
 fn assert_ctx(hook: ExecHook, expected: *const HostContext) {
-    let last = LAST_CTX[hook as usize].load(Ordering::SeqCst) as *const HostContext;
+    let last = LAST_CTX[hook as usize].load(Ordering::SeqCst).cast_const();
     assert!(
         std::ptr::eq(last, expected),
         "host context not threaded through to {hook:?}: expected {expected:?}, was {last:?}",
@@ -272,7 +275,7 @@ unsafe extern "C" fn stub_cancel_timer(
     PluginResult::Ok(())
 }
 
-// Recording handlers for the three execution slots. These are the ones a
+// Recording handlers for the ten execution slots. These are the ones a
 // strategy is allowed to invoke; they bump the per-hook counter and
 // capture the [`HostContext`] pointer the strategy passed.
 

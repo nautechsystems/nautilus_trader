@@ -302,6 +302,15 @@ pub struct ActorVTable {
 /// Every callback has a no-op default; authors override the ones they care
 /// about. Callbacks receive borrowed references to host-owned values; the
 /// references are only valid for the duration of the call.
+///
+/// # Errors
+///
+/// Hook implementations may return an error to abort the current callback.
+/// Default hook implementations never error.
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "hook error behavior is documented once at the trait level"
+)]
 pub trait PluginActor: 'static + Send + Sized {
     /// Canonical type name. Must be unique across a Nautilus deployment.
     const TYPE_NAME: &'static str;

@@ -92,7 +92,7 @@ impl Debug for PluginActorAdapter {
             .field("plugin_name", &self.plugin_name)
             .field("type_name", &self.type_name)
             .field("actor_id", &self.core.actor_id())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

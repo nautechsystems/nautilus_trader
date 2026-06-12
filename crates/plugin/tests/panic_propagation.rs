@@ -50,8 +50,8 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionChainSlice, OptionGreekValues, OptionGreeks, OrderBookDelta,
+        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         stubs::{
             stub_bar, stub_deltas, stub_depth10, stub_instrument_close, stub_instrument_status,
             stub_trade_ethusdt_buyer,
@@ -568,12 +568,11 @@ fn custom_data_from_json_thunk_propagates_failure(#[case] mode: Mode) {
     let r = unsafe { generated_slot!(vt, from_json)(payload) };
     // from_json returns *mut CustomDataHandle, not OwnedBytes, so it has
     // Debug; use the plain helper anyway for symmetry.
-    let err = match r.into_result() {
-        Ok(_) => panic!("expected an error from from_json"),
-        Err(e) => e,
+    let Err(e) = r.into_result() else {
+        panic!("expected an error from from_json");
     };
     assert_failure_code(
-        &err,
+        &e,
         mode,
         PluginErrorCode::Panic,
         PluginErrorCode::SerializationFailed,
@@ -688,6 +687,10 @@ enum ActorThunkUnderTest {
     OnHistoricalFundingRates,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "test dispatch table covers every actor thunk in one auditable match"
+)]
 fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
     // SAFETY: vtable lives for the process lifetime.
     let vt = unsafe { &*actor_vtable::<MisbehavingActor>() };
@@ -994,6 +997,10 @@ enum StrategyThunkUnderTest {
     OnHistoricalFundingRates,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "test dispatch table covers every strategy thunk in one auditable match"
+)]
 fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
     // SAFETY: vtable lives for the process lifetime.
     let vt = unsafe { &*strategy_vtable::<MisbehavingStrategy>() };
@@ -1558,7 +1565,7 @@ fn option_greeks_value() -> OptionGreeks {
     OptionGreeks {
         instrument_id: instrument_id(),
         convention: GreeksConvention::BlackScholes,
-        greeks: Default::default(),
+        greeks: OptionGreekValues::default(),
         mark_iv: Some(0.25),
         bid_iv: Some(0.24),
         ask_iv: Some(0.26),

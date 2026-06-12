@@ -84,7 +84,7 @@ fn dispatch_lock() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
         .lock()
-        .unwrap_or_else(|p| p.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn reset_counters() {
@@ -389,13 +389,14 @@ fn decode_batch_slot_calls_trait_decode_batch() {
     let buf = unsafe { owned.as_bytes() };
     let count = buf.len() / elem_size;
     assert_eq!(count, 3, "decoded handle count");
-    let handle_ptr = buf.as_ptr().cast::<*mut CustomDataHandle>();
+    // SAFETY: `decode_batch` returns an OwnedBytes buffer backed by a
+    // Vec<*mut CustomDataHandle>.
+    let (prefix, handles, suffix) = unsafe { buf.align_to::<*mut CustomDataHandle>() };
+    assert!(prefix.is_empty(), "decoded handle buffer prefix");
+    assert!(suffix.is_empty(), "decoded handle buffer suffix");
+    assert_eq!(handles.len(), count, "decoded handle slice length");
 
-    for i in 0..count {
-        // SAFETY: i < count and the buffer is `count * elem_size` bytes.
-        let slot = unsafe { handle_ptr.add(i) };
-        // SAFETY: slot points at a freshly-decoded handle pointer.
-        let h = unsafe { slot.read() };
+    for &h in handles {
         // SAFETY: handle is live (decode just produced it).
         unsafe {
             generated_slot!(vt, drop_handle)(h);

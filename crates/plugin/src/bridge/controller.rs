@@ -60,7 +60,7 @@ impl Debug for PluginControllerAdapter {
         f.debug_struct(stringify!(PluginControllerAdapter))
             .field("plugin_name", &self.plugin_name)
             .field("type_name", &self.type_name)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

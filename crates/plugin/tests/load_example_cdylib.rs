@@ -122,7 +122,7 @@ fn cargo_target_dir(root: &Path) -> PathBuf {
 }
 
 #[rstest::rstest]
-#[ignore]
+#[ignore = "builds an example cdylib on demand"]
 fn loads_example_cdylib_and_walks_manifest() {
     let path = build_example_cdylib("custom_data_plugin");
     let mut loader = PluginLoader::new();
@@ -179,7 +179,7 @@ fn loads_example_cdylib_and_walks_manifest() {
 }
 
 #[rstest::rstest]
-#[ignore]
+#[ignore = "builds an example cdylib on demand"]
 fn rejects_second_plugin_with_duplicate_custom_data_type() {
     // Loading the same cdylib twice reproduces a cross-plug-in custom-data
     // type-name collision: both manifests declare "ExampleTick", and host
@@ -225,7 +225,7 @@ fn rejects_second_plugin_with_duplicate_custom_data_type() {
     }
 )]
 #[case::init_panic("bad_init_panic_plugin", LoadErrorExpectation::NullManifest)]
-#[ignore]
+#[ignore = "builds malformed example cdylibs on demand"]
 fn rejects_malformed_cdylib_fixture(
     #[case] example_name: &str,
     #[case] expectation: LoadErrorExpectation,
@@ -242,10 +242,8 @@ fn rejects_malformed_cdylib_fixture(
 
 fn assert_load_error(err: LoadError, path: &Path, expectation: LoadErrorExpectation) {
     match (err, expectation) {
-        (LoadError::MissingSymbol { path: actual, .. }, LoadErrorExpectation::MissingSymbol) => {
-            assert_eq!(actual.as_path(), path);
-        }
-        (LoadError::NullManifest { path: actual }, LoadErrorExpectation::NullManifest) => {
+        (LoadError::MissingSymbol { path: actual, .. }, LoadErrorExpectation::MissingSymbol)
+        | (LoadError::NullManifest { path: actual }, LoadErrorExpectation::NullManifest) => {
             assert_eq!(actual.as_path(), path);
         }
         (

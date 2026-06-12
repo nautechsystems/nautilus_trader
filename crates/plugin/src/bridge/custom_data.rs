@@ -180,7 +180,7 @@ impl Debug for PluginCustomDataValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(PluginCustomDataValue))
             .field("type_name", &self.type_name)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -418,15 +418,14 @@ mod tests {
     #[rstest]
     fn custom_data_boundary_ref_rejects_non_plugin_custom_data() {
         let data = nautilus_model::data::stubs::stub_custom_data(1, 42, None, None);
-        let err = match custom_data_boundary_ref(&data) {
-            Ok(_) => panic!("expected non-plugin custom data to fail"),
-            Err(e) => e,
+        let Err(e) = custom_data_boundary_ref(&data) else {
+            panic!("expected non-plugin custom data to fail");
         };
 
         assert!(
-            err.to_string()
+            e.to_string()
                 .contains("not backed by a plug-in custom-data handle"),
-            "expected non-plugin custom-data error, was: {err}",
+            "expected non-plugin custom-data error, was: {e}",
         );
     }
 
