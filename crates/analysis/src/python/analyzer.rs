@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
 use nautilus_core::{UnixNanos, python::to_pyvalue_err};
 use nautilus_model::{
@@ -24,13 +27,16 @@ use nautilus_model::{
 use pyo3::prelude::*;
 
 use crate::{
+    Returns,
     analyzer::{PortfolioAnalyzer, Statistic},
     statistics::{
-        expectancy::Expectancy, long_ratio::LongRatio, loser_avg::AvgLoser, loser_max::MaxLoser,
-        loser_min::MinLoser, profit_factor::ProfitFactor, returns_avg::ReturnsAverage,
-        returns_avg_loss::ReturnsAverageLoss, returns_avg_win::ReturnsAverageWin,
-        returns_volatility::ReturnsVolatility, risk_return_ratio::RiskReturnRatio,
-        sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio, win_rate::WinRate,
+        alpha::Alpha, beta_ratio::BetaRatio, expectancy::Expectancy,
+        information_ratio::InformationRatio, long_ratio::LongRatio, loser_avg::AvgLoser,
+        loser_max::MaxLoser, loser_min::MinLoser, profit_factor::ProfitFactor,
+        returns_avg::ReturnsAverage, returns_avg_loss::ReturnsAverageLoss,
+        returns_avg_win::ReturnsAverageWin, returns_volatility::ReturnsVolatility,
+        risk_return_ratio::RiskReturnRatio, sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio,
+        tracking_error::TrackingError, treynor_ratio::TreynorRatio, win_rate::WinRate,
         winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
     },
 };
@@ -77,6 +83,21 @@ impl PortfolioAnalyzer {
     #[pyo3(name = "get_performance_stats_portfolio_returns")]
     fn py_get_performance_stats_portfolio_returns(&self) -> HashMap<String, f64> {
         self.get_performance_stats_portfolio_returns()
+            .into_iter()
+            .collect()
+    }
+
+    /// Gets all benchmark-relative return statistics for the primary returns.
+    #[pyo3(name = "get_performance_stats_returns_vs_benchmark")]
+    fn py_get_performance_stats_returns_vs_benchmark(
+        &self,
+        benchmark: BTreeMap<u64, f64>,
+    ) -> HashMap<String, f64> {
+        let benchmark: Returns = benchmark
+            .into_iter()
+            .map(|(k, v)| (UnixNanos::from(k), v))
+            .collect();
+        self.get_performance_stats_returns_vs_benchmark(&benchmark)
             .into_iter()
             .collect()
     }
@@ -196,6 +217,26 @@ impl PortfolioAnalyzer {
                 let stat = statistic.extract::<LongRatio>(py)?;
                 self.register_statistic(Arc::new(stat));
             }
+            "Alpha" => {
+                let stat = statistic.extract::<Alpha>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "BetaRatio" => {
+                let stat = statistic.extract::<BetaRatio>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "InformationRatio" => {
+                let stat = statistic.extract::<InformationRatio>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "TrackingError" => {
+                let stat = statistic.extract::<TrackingError>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "TreynorRatio" => {
+                let stat = statistic.extract::<TreynorRatio>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
             _ => {
                 return Err(to_pyvalue_err(format!(
                     "Unknown statistic type: {type_name}"
@@ -282,6 +323,26 @@ impl PortfolioAnalyzer {
             }
             "LongRatio" => {
                 let stat = statistic.extract::<LongRatio>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "Alpha" => {
+                let stat = statistic.extract::<Alpha>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "BetaRatio" => {
+                let stat = statistic.extract::<BetaRatio>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "InformationRatio" => {
+                let stat = statistic.extract::<InformationRatio>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "TrackingError" => {
+                let stat = statistic.extract::<TrackingError>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "TreynorRatio" => {
+                let stat = statistic.extract::<TreynorRatio>(py)?;
                 self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             _ => {

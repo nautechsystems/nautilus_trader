@@ -546,6 +546,30 @@ impl PortfolioAnalyzer {
         self.calculate_returns_stats(self.portfolio_returns())
     }
 
+    /// Gets all benchmark-relative return statistics for the primary returns.
+    ///
+    /// This is stateless: the `benchmark` series is supplied by the caller rather
+    /// than stored on the analyzer. Only statistics that override
+    /// [`PortfolioStatistic::calculate_from_returns_with_benchmark`] (the benchmark-relative
+    /// statistics) contribute values; all others return `None` and are skipped.
+    #[must_use]
+    pub fn get_performance_stats_returns_vs_benchmark(
+        &self,
+        benchmark: &Returns,
+    ) -> AHashMap<String, f64> {
+        let mut output = AHashMap::new();
+
+        for (name, stat) in &self.statistics {
+            if let Some(value) =
+                stat.calculate_from_returns_with_benchmark(self.returns(), benchmark)
+            {
+                output.insert(name.clone(), value);
+            }
+        }
+
+        output
+    }
+
     /// Gets general portfolio statistics.
     #[must_use]
     pub fn get_performance_stats_general(&self) -> AHashMap<String, f64> {
@@ -690,6 +714,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::statistics::beta_ratio::BetaRatio;
 
     /// Mock implementation of `PortfolioStatistic` for testing.
     #[derive(Debug)]
@@ -1421,5 +1446,39 @@ mod tests {
             epsilon = 1e-9
         ));
         assert_eq!(returns_stats, portfolio_stats);
+    }
+
+    #[rstest]
+    fn test_get_performance_stats_returns_vs_benchmark() {
+        let mut analyzer = PortfolioAnalyzer::new();
+        analyzer.register_statistic(Arc::new(BetaRatio::new()));
+        analyzer.register_statistic(Arc::new(SharpeRatio::new(None)));
+
+        let one_day = 86_400_000_000_000_u64;
+        let start = 1_600_000_000_000_000_000_u64;
+        for (i, value) in [0.03, -0.01, 0.02, 0.04].iter().enumerate() {
+            analyzer.add_return(UnixNanos::from(start + i as u64 * one_day), *value);
+        }
+
+        let mut benchmark: Returns = BTreeMap::new();
+        for (i, value) in [0.01, 0.005, 0.005, 0.01].iter().enumerate() {
+            benchmark.insert(UnixNanos::from(start + i as u64 * one_day), *value);
+        }
+
+        let stats = analyzer.get_performance_stats_returns_vs_benchmark(&benchmark);
+
+        // r = [0.03, -0.01, 0.02, 0.04], b = [0.01, 0.005, 0.005, 0.01]:
+        //   mean_r = 0.02, mean_b = 0.0075
+        //   Cov = 1.5e-4 / 3 = 5e-5, Var(b) = 2.5e-5 / 3 -> beta = 6.0
+        // Only the benchmark-relative statistic contributes; SharpeRatio
+        // returns None from the default and is skipped.
+        assert_eq!(stats.len(), 1);
+        assert!(approx_eq!(
+            f64,
+            *stats.get("Beta").unwrap(),
+            6.0,
+            epsilon = 1e-9
+        ));
+        assert!(!stats.contains_key("Sharpe Ratio (252 days)"));
     }
 }

@@ -517,6 +517,64 @@ class PortfolioAnalyzer:
         """
         return self._calculate_returns_stats(self._portfolio_returns)
 
+    def get_performance_stats_returns_vs_benchmark(
+        self,
+        benchmark_returns: pd.Series,
+        returns: pd.Series | None = None,
+    ) -> dict[str, Any]:
+        """
+        Return the benchmark-relative performance statistics.
+
+        Only registered benchmark-relative statistics (those exposing
+        ``calculate_from_returns_with_benchmark``) contribute values; all other
+        statistics are skipped.
+
+        Parameters
+        ----------
+        benchmark_returns : pd.Series
+            The benchmark returns series for comparison. Must be indexed by
+            ``pd.Timestamp``.
+        returns : pd.Series, optional
+            The strategy returns series to evaluate against the benchmark. If
+            ``None``, the primary `returns` series is used (portfolio returns
+            when available, otherwise position returns). Callers that resolve a
+            specific series (e.g., the tearsheet's equity-curve series) should
+            pass it explicitly so the metrics match that series.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        """
+        output: dict[str, Any] = {}
+
+        returns_dict: dict[int, float] | None = None
+        benchmark_dict: dict[int, float] | None = None
+
+        for name, stat in self._statistics.items():
+            if not _is_pyo3_statistic(stat):
+                continue  # Benchmark-relative statistics are pyo3-only
+
+            calculate = getattr(stat, "calculate_from_returns_with_benchmark", None)
+            if calculate is None:
+                continue  # Not a benchmark-relative statistic
+
+            if returns_dict is None or benchmark_dict is None:
+                strategy_returns = self._returns if returns is None else returns
+                returns_dict = self._returns_to_dict(strategy_returns)
+                benchmark_dict = self._returns_to_dict(benchmark_returns)
+
+            value = calculate(returns_dict, benchmark_dict)
+            if value is None:
+                continue
+
+            if not isinstance(value, int | float | str | bool):
+                value = str(value)
+
+            output[name] = value
+
+        return output
+
     def get_performance_stats_general(self) -> dict[str, Any]:
         """
         Return the `general` performance statistics.
@@ -690,13 +748,7 @@ class PortfolioAnalyzer:
 
         for name, stat in self._statistics.items():
             if _is_pyo3_statistic(stat):
-                returns_dict: dict[int, float] = {}
-
-                if not returns.empty:
-                    for timestamp, value in returns.items():
-                        returns_dict[timestamp.value] = float(value)
-
-                value = stat.calculate_from_returns(returns_dict)
+                value = stat.calculate_from_returns(self._returns_to_dict(returns))
             else:
                 value = stat.calculate_from_returns(returns)
 
@@ -709,6 +761,15 @@ class PortfolioAnalyzer:
             output[name] = value
 
         return output
+
+    def _returns_to_dict(self, returns: pd.Series) -> dict[int, float]:
+        returns_dict: dict[int, float] = {}
+
+        if not returns.empty:
+            for timestamp, value in returns.items():
+                returns_dict[timestamp.value] = float(value)
+
+        return returns_dict
 
     def _format_stats(self, stats: dict[str, Any]) -> list[str]:
         max_length: int = self._get_max_length_name()
