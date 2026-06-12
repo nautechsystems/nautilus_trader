@@ -1021,10 +1021,10 @@ pub fn parse_ws_position_status_report(
 /// not via `AccountBalance.locked`.
 ///
 /// We map:
-/// - `total  = balance + margin_balance` — every unit of that currency
+/// - `total  = balance + margin_balance`: every unit of that currency
 ///   the account owns at the venue
-/// - `locked = locked_balance` — only spot-order reservations
-/// - `free   = total - locked` (derived by `from_total_and_locked`) —
+/// - `locked = locked_balance`: only spot-order reservations
+/// - `free   = total - locked` (derived by `from_total_and_locked`):
 ///   all deployable equity, whether currently sitting on spot or perp
 ///
 /// Perp-side margin currently allocated to positions is **not** folded
@@ -1048,9 +1048,9 @@ pub fn account_balance_from_lighter_asset(asset: &LighterAsset) -> anyhow::Resul
 ///
 /// Lighter is USDC-collateralized end-to-end. `user_stats` is the perp-side
 /// rollup; we derive:
-/// - `initial = max(collateral - available_balance, 0)` — collateral
+/// - `initial = max(collateral - available_balance, 0)`: collateral
 ///   currently allocated to open positions/orders
-/// - `maintenance = 0` — Lighter does not publish maintenance margin on
+/// - `maintenance = 0`: Lighter does not publish maintenance margin on
 ///   `user_stats`. `margin_usage` looks like a maintenance ratio but is
 ///   actually the initial-margin-usage percentage
 ///   (`(collateral - available) / collateral * 100`), so it carries no
@@ -1079,8 +1079,8 @@ pub fn margin_balance_from_user_stats(stats: &LighterUserStats) -> anyhow::Resul
 ///
 /// The reconciler in the `websocket::account_state` module owns the latest
 /// snapshot of each input stream and calls this once per emission.
-/// `AccountType::Margin` and `base_currency = Some(USDC)` are invariant for
-/// Lighter — see the design note in the adapter's account-state report.
+/// `AccountType::Margin` is invariant for Lighter; `base_currency` is `None`
+/// because the account holds multiple spot currencies.
 #[must_use]
 pub fn build_unified_account_state(
     balances: Vec<AccountBalance>,
@@ -1089,7 +1089,6 @@ pub fn build_unified_account_state(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> AccountState {
-    let usdc = Currency::get_or_create_crypto("USDC");
     let margins = margin.map(|m| vec![m]).unwrap_or_default();
     AccountState::new(
         account_id,
@@ -1100,7 +1099,7 @@ pub fn build_unified_account_state(
         UUID4::new(),
         ts_event,
         ts_init,
-        Some(usdc),
+        None,
     )
 }
 
@@ -2288,7 +2287,7 @@ mod tests {
     fn test_account_balance_from_lighter_asset_combines_spot_and_perp() {
         // Worked example: 10 USDC sitting on spot, 40 USDC pledged as
         // perp collateral, no resting spot orders. Lighter runs unified
-        // margin — both legs are deployable equity, so the merged view
+        // margin: both legs are deployable equity, so the merged view
         // is total=50, locked=0, free=50. Perp margin currently in use
         // is tracked separately via MarginBalance, not via locked here.
         let asset = LighterAsset {
@@ -2329,7 +2328,7 @@ mod tests {
     #[rstest]
     fn test_margin_balance_from_user_stats_no_positions() {
         // 40 USDC collateral, 40 available, no positions open: both initial
-        // and maintenance must be zero — strategies should see "full
+        // and maintenance must be zero; strategies should see "full
         // collateral free to deploy".
         let stats = LighterUserStats {
             account_trading_mode: 0,
@@ -2353,7 +2352,7 @@ mod tests {
 
     #[rstest]
     fn test_margin_balance_from_user_stats_with_position() {
-        // 40 USDC collateral, 35 available → 5 USDC initial margin in use.
+        // 40 USDC collateral, 35 available -> 5 USDC initial margin in use.
         // Maintenance is always 0 here: Lighter's `margin_usage` is an
         // initial-margin-usage percent, not a maintenance ratio, so we
         // don't derive maintenance from `user_stats` at all (see comment
@@ -2411,7 +2410,7 @@ mod tests {
         let usdc = Currency::get_or_create_crypto("USDC");
         assert_eq!(state.account_id, account_id());
         assert_eq!(state.account_type, AccountType::Margin);
-        assert_eq!(state.base_currency, Some(usdc));
+        assert_eq!(state.base_currency, None);
         assert!(state.is_reported);
         assert_eq!(state.balances.len(), 1);
         assert_eq!(state.balances[0].total, Money::from("50.000000 USDC"));

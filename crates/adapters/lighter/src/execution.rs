@@ -560,15 +560,9 @@ impl LighterExecutionClient {
                     .map_err(|e| anyhow::anyhow!("failed to set Lighter execution context: {e}"))?;
 
                 // Subscribe to the five account-scoped streams the consumption
-                // loop converts into typed reports. `account_all_orders` carries
-                // OrderStatusReport-shaped events; `account_all_trades` carries
-                // discrete fills; `account_all_positions` carries position
-                // snapshots; `account_all_assets` carries per-asset balances
-                // (spot + perp `margin_balance`); `user_stats` carries the
-                // perp-account rollup (collateral, available_balance,
-                // margin_usage). The handler's `account_state_reconciler`
-                // merges `assets` and `user_stats` into a single AccountState
-                // — see websocket/account_state.rs.
+                // loop converts into typed reports. The handler merges
+                // `account_all_assets` and `user_stats` into a single
+                // AccountState (see websocket/account_state.rs).
                 let channels = [
                     LighterWsChannel::AccountAllOrders(account_index),
                     LighterWsChannel::AccountAllTrades(account_index),

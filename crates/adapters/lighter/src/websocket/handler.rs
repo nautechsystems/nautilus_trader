@@ -1267,7 +1267,7 @@ impl FeedHandler {
 
     /// Asks the reconciler for a merged [`AccountState`] and wraps it as a
     /// `NautilusWsMessage`. Returns an empty vec when the second stream
-    /// hasn't arrived yet — the AccountStreamFirstFrame marker still gets
+    /// hasn't arrived yet; the AccountStreamFirstFrame marker still gets
     /// pushed by the caller so the startup gate progresses.
     fn emit_unified_account_state(
         &self,
@@ -1884,7 +1884,7 @@ mod tests {
     fn handle_frame_emits_no_account_state_until_both_streams_seen() {
         // Reconciler refuses to emit until both `account_all_assets` and
         // `user_stats` have delivered. An assets frame alone produces only
-        // the AccountStreamFirstFrame marker — no AccountState payload.
+        // the AccountStreamFirstFrame marker, no AccountState payload.
         let mut handler = make_handler_with_account();
         let assets_only: super::LighterWsFrame =
             serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_UPDATE).unwrap();
@@ -1920,7 +1920,7 @@ mod tests {
             NautilusWsMessage::AccountState(state) => {
                 let usdc = Currency::get_or_create_crypto("USDC");
                 assert_eq!(state.account_type, AccountType::Margin);
-                assert_eq!(state.base_currency, Some(usdc));
+                assert_eq!(state.base_currency, None);
                 assert_eq!(state.balances.len(), 1);
                 assert_eq!(state.balances[0].currency, usdc);
                 // balance 10 + margin_balance 40 = 50 total; locked = 0
@@ -1948,7 +1948,7 @@ mod tests {
         // The 5 mUSDC haircut on margin_balance is the entry fee. The
         // 0.827055 USDC gap between collateral and available_balance is
         // the initial margin pledged to the open position. AccountBalance
-        // is unchanged in shape — perp-margin-in-use lives on
+        // is unchanged in shape; perp-margin-in-use lives on
         // MarginBalance, not in `locked`. Maintenance is zero because
         // Lighter doesn't publish a maintenance value on user_stats.
         let mut handler = make_handler_with_account();
@@ -1964,18 +1964,17 @@ mod tests {
         assert_eq!(messages.len(), 1);
         match &messages[0] {
             NautilusWsMessage::AccountState(state) => {
-                let usdc = Currency::get_or_create_crypto("USDC");
                 assert_eq!(state.account_type, AccountType::Margin);
-                assert_eq!(state.base_currency, Some(usdc));
+                assert_eq!(state.base_currency, None);
                 assert_eq!(state.balances.len(), 1);
                 // total = 10 + 39.995369556 = 49.99536956 (Money truncates
-                // the trailing digit to 8 decimals — matches what the
-                // production log showed).
+                // the trailing digit to 8 decimals, matching the
+                // production log).
                 assert_eq!(state.balances[0].total, Money::from("49.99536956 USDC"));
                 assert_eq!(state.balances[0].locked, Money::from("0 USDC"));
                 assert_eq!(state.balances[0].free, Money::from("49.99536956 USDC"));
                 assert_eq!(state.margins.len(), 1);
-                // initial = collateral 39.995369 − available 39.168314 = 0.827055
+                // initial = collateral 39.995369 - available 39.168314 = 0.827055
                 assert_eq!(state.margins[0].initial, Money::from("0.82705500 USDC"));
                 assert_eq!(state.margins[0].maintenance, Money::from("0 USDC"));
                 assert!(state.margins[0].instrument_id.is_none());

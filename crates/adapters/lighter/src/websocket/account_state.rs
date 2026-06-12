@@ -17,27 +17,26 @@
 //!
 //! Lighter publishes the account-state inputs across two WS streams:
 //!
-//! - `account_all_assets` — per-asset spot `balance`, spot `locked_balance`,
+//! - `account_all_assets`: per-asset spot `balance`, spot `locked_balance`,
 //!   and perp `margin_balance` (collateral pledged to the perp side).
-//! - `user_stats`         — perp-account rollup: `collateral`,
-//!   `available_balance`, `margin_usage`.
+//! - `user_stats`: perp-account rollup (`collateral`, `available_balance`,
+//!   `margin_usage`).
 //!
 //! Both share the same `account_id` and both legitimately update
-//! `AccountState`. Emitting one per stream produces flip-flopping balances
-//! (see the design report for the full failure mode). This reconciler
-//! holds the latest snapshot of each input and emits **one merged
-//! `AccountState`** per update from either source.
+//! `AccountState`. Emitting one per stream produces flip-flopping balances,
+//! because each `AccountState` replaces the account's balances and margins
+//! wholesale. This reconciler holds the latest snapshot of each input and
+//! emits **one merged `AccountState`** per update from either source.
 //!
 //! Output contract:
-//! - `AccountType::Margin` (Lighter is a unified margin venue — see
-//!   `MarginAccount` superset-of-`CashAccount` notes in the design report).
-//! - `base_currency = Some(USDC)` — Lighter is USDC-collateralized.
+//! - `AccountType::Margin` (Lighter is a unified margin venue).
+//! - `base_currency = None`: the account holds multiple spot currencies.
 //! - `balances`: one `AccountBalance` per asset reported by
 //!   `account_all_assets`, with `total = balance + margin_balance` and
-//!   `locked = locked_balance + margin_balance` (perp collateral is
-//!   unspendable as spot until withdrawn).
-//! - `margins`:  one cross-margin `MarginBalance(currency=USDC, instrument_id=None)`
-//!   with `initial = collateral − available_balance`.
+//!   `locked = locked_balance` (spot-order reservations only; perp margin
+//!   in use is reported via `margins`, not `locked`).
+//! - `margins`: one cross-margin `MarginBalance(currency=USDC, instrument_id=None)`
+//!   with `initial = max(collateral - available_balance, 0)`.
 //!
 //! Emission gate: the reconciler refuses to emit until BOTH streams have
 //! delivered at least one frame. This prevents emitting half-formed state
@@ -98,24 +97,19 @@ impl LighterAccountStateReconciler {
     ///
     /// Upsert per-key: each entry in `assets` overwrites any prior entry
     /// with the same key; keys absent from this frame are retained.
-    /// Returns `true` once both streams have delivered, signalling the
-    /// caller to call [`Self::build_state`].
-    pub(crate) fn update_assets(&self, assets: &AHashMap<Ustr, LighterAsset>) -> bool {
+    pub(crate) fn update_assets(&self, assets: &AHashMap<Ustr, LighterAsset>) {
         let mut inner = self.inner.lock().expect("reconciler mutex poisoned");
         for (key, asset) in assets {
             inner.assets.insert(*key, asset.clone());
         }
         inner.assets_seen = true;
-        inner.both_seen()
     }
 
     /// Update the perp-rollup snapshot from a `user_stats` frame.
-    /// Returns `true` once both streams have delivered.
-    pub(crate) fn update_user_stats(&self, stats: &LighterUserStats) -> bool {
+    pub(crate) fn update_user_stats(&self, stats: &LighterUserStats) {
         let mut inner = self.inner.lock().expect("reconciler mutex poisoned");
         inner.user_stats = Some(stats.clone());
         inner.user_stats_seen = true;
-        inner.both_seen()
     }
 
     /// Build the unified [`AccountState`] from the current snapshots.
@@ -229,7 +223,7 @@ mod tests {
                 .is_none()
         );
 
-        // user_stats lands → emit unblocked.
+        // user_stats lands: emit unblocked.
         r.update_user_stats(&user_stats("40.0", "40.0", "0.0"));
         let state = r
             .build_state(account_id(), UnixNanos::default(), UnixNanos::default())
@@ -239,9 +233,9 @@ mod tests {
     }
 
     #[rstest]
-    fn reconciler_emits_unchanged_when_only_one_stream_updates() {
-        // Stream-ordering invariance: assets-first-then-stats and
-        // stats-first-then-assets must both produce the same merged state.
+    fn reconciler_emission_is_stream_order_invariant() {
+        // Assets-first-then-stats and stats-first-then-assets must both
+        // produce the same merged state.
         let r1 = LighterAccountStateReconciler::new();
         r1.update_assets(&asset_map(usdc_asset("10.0", "0.0", "40.0")));
         r1.update_user_stats(&user_stats("40.0", "40.0", "0.0"));
@@ -280,7 +274,7 @@ mod tests {
             .expect("ok");
 
         let usdc = Currency::get_or_create_crypto("USDC");
-        assert_eq!(state.base_currency, Some(usdc));
+        assert_eq!(state.base_currency, None);
         assert_eq!(state.balances.len(), 1);
         let bal = &state.balances[0];
         assert_eq!(bal.currency, usdc);
@@ -299,7 +293,7 @@ mod tests {
     fn reconciler_tracks_position_open_via_user_stats_drift() {
         // After opening a perp position: collateral unchanged at 40,
         // available_balance drops to 35 (5 USDC margin in use).
-        // AccountBalance is unchanged — margin-in-use lives on
+        // AccountBalance is unchanged; margin-in-use lives on
         // MarginBalance, not in `locked`. Maintenance stays 0 because
         // Lighter doesn't publish maintenance on `user_stats`.
         let r = LighterAccountStateReconciler::new();
