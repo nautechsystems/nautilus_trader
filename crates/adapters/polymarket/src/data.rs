@@ -5148,6 +5148,78 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    async fn spawn_message_handler_does_not_reseed_token_meta_for_watched_expired_instrument() {
+        let mut client = make_client_for_reset_test();
+        let ws_ctx = make_client_ws_ctx(&client);
+        let expiration_ns = UnixNanos::from(
+            client
+                .clock
+                .get_time_ns()
+                .as_u64()
+                .saturating_sub(1_000_000_000),
+        );
+        let inst_yes = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_RETAINED",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-RETAINED"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_yes,
+            PositionId::new("P-1"),
+        );
+
+        let instrument_id = inst_yes.id();
+        let token_id = Ustr::from(inst_yes.raw_symbol().as_str());
+
+        retire_local_instrument_state(
+            instrument_id,
+            &client.instruments,
+            &client.token_meta,
+            &client.order_books,
+            &client.last_quotes,
+            &client.active_quote_subs,
+            &client.active_delta_subs,
+            &client.active_trade_subs,
+            &client.resolve_poll_watchlist,
+            &client.pending_snapshot_after_tick_change,
+            &client.pending_auto_loads,
+            &client.ws_open_tokens,
+            &client.ws_sub_mutex,
+            &client.ws_client.clone_subscription_handle(),
+        )
+        .await;
+
+        assert!(client.instruments.load().contains_key(&instrument_id));
+        assert!(!client.token_meta.contains_key(&token_id));
+
+        for startup in 1..=2 {
+            let (_tx, rx) = tokio::sync::mpsc::unbounded_channel::<PolymarketWsMessage>();
+            client.spawn_message_handler(rx);
+            client
+                .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
+                .await;
+
+            assert!(
+                client.instruments.load().contains_key(&instrument_id),
+                "watched expired instrument metadata should still be retained in PR1",
+            );
+            assert!(
+                !client.token_meta.contains_key(&token_id),
+                "message-handler startup #{startup} must not re-seed token_meta for retained expired instruments",
+            );
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn auto_load_expired_instrument_retires_without_retrying() {
         let state = ExpiredAutoLoadServerState {
             requests: Arc::new(AtomicUsize::new(0)),
