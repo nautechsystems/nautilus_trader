@@ -311,37 +311,38 @@ pub(crate) fn upsert_resolve_watch_entry_from_instrument(
     });
 }
 
-fn remove_resolve_watch_instrument(
+fn remove_resolve_watch_instrument_by_ids(
     watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
-    instrument: &InstrumentAny,
+    instrument_id: InstrumentId,
     position_id: PositionId,
 ) {
-    let Some((condition_id, token_id, _expiration_ns, _tracked)) =
-        binary_option_context(instrument)
-    else {
-        return;
-    };
-
     watchlist.rcu(|entries| {
-        let remove_entry = match entries.get_mut(&condition_id) {
-            Some(entry) => {
-                let remove_token = match entry.tracked.get_mut(&token_id) {
-                    Some(tracked) => {
-                        tracked.open_position_ids.remove(&position_id);
-                        tracked.open_position_ids.is_empty()
-                    }
-                    None => false,
-                };
+        let mut remove_conditions = Vec::new();
 
-                if remove_token {
-                    entry.tracked.remove(&token_id);
+        for (condition_id, entry) in entries.iter_mut() {
+            let mut remove_tokens = Vec::new();
+
+            for (token_id, tracked) in &mut entry.tracked {
+                if tracked.instrument_id != instrument_id {
+                    continue;
                 }
-                entry.tracked.is_empty()
-            }
-            None => false,
-        };
 
-        if remove_entry {
+                tracked.open_position_ids.remove(&position_id);
+                if tracked.open_position_ids.is_empty() {
+                    remove_tokens.push(token_id.clone());
+                }
+            }
+
+            for token_id in remove_tokens {
+                entry.tracked.remove(&token_id);
+            }
+
+            if entry.tracked.is_empty() {
+                remove_conditions.push(condition_id.clone());
+            }
+        }
+
+        for condition_id in remove_conditions {
             entries.remove(&condition_id);
         }
     });
@@ -357,11 +358,6 @@ pub(crate) fn update_resolve_watchlist_from_position_event(
         return;
     }
 
-    let loaded = instruments.load();
-    let Some(instrument) = loaded.get(&instrument_id) else {
-        return;
-    };
-
     let position_id = match event {
         PositionEvent::PositionOpened(position) => position.position_id,
         PositionEvent::PositionChanged(position) => position.position_id,
@@ -371,11 +367,15 @@ pub(crate) fn update_resolve_watchlist_from_position_event(
 
     match event {
         PositionEvent::PositionClosed(_) => {
-            remove_resolve_watch_instrument(watchlist, instrument, position_id);
+            remove_resolve_watch_instrument_by_ids(watchlist, instrument_id, position_id);
         }
         PositionEvent::PositionOpened(_)
         | PositionEvent::PositionChanged(_)
         | PositionEvent::PositionAdjusted(_) => {
+            let loaded = instruments.load();
+            let Some(instrument) = loaded.get(&instrument_id) else {
+                return;
+            };
             upsert_resolve_watch_entry_from_instrument(watchlist, instrument, position_id);
         }
     }
@@ -1502,6 +1502,40 @@ mod tests {
             &watchlist,
             &instruments,
             &stub_position_closed_event_with_position_id(yes.id(), "P-2"),
+        );
+
+        assert!(!watchlist.contains_key(&"0xCOND-BTC".to_string()));
+    }
+
+    #[rstest]
+    fn position_closed_cleans_watchlist_without_local_instrument_metadata() {
+        let watchlist: Arc<AtomicMap<String, ResolveWatchEntry>> = Arc::new(AtomicMap::new());
+        let instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>> = Arc::new(AtomicMap::new());
+        let expiration_ns = UnixNanos::from(1_000_000_000);
+        let yes = seed_instrument_with_context(
+            &instruments,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                market_slug: Some("btc-updown-5m"),
+                market_id: Some("1778973900"),
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(expiration_ns),
+            },
+        );
+
+        update_resolve_watchlist_from_position_event(
+            &watchlist,
+            &instruments,
+            &stub_position_opened_event(yes.id()),
+        );
+        instruments.remove(&yes.id());
+
+        update_resolve_watchlist_from_position_event(
+            &watchlist,
+            &instruments,
+            &stub_position_closed_event(yes.id()),
         );
 
         assert!(!watchlist.contains_key(&"0xCOND-BTC".to_string()));

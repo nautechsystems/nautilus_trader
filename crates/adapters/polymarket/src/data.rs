@@ -52,7 +52,7 @@ use nautilus_common::{
     providers::InstrumentProvider,
 };
 use nautilus_core::{
-    AtomicMap, AtomicSet,
+    AtomicMap, AtomicSet, UnixNanos,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -71,6 +71,11 @@ use ustr::Ustr;
 use crate::{
     common::consts::{GAMMA_CONDITION_IDS_BATCH_SIZE, POLYMARKET_VENUE},
     config::PolymarketDataClientConfig,
+    data_runtime::{
+        TokenMeta, is_instrument_expired, resolve_token_id_from, retire_expired_local_instruments,
+        retire_local_instrument_state, seed_token_meta_from_live_instruments,
+        sync_ws_subscription_async,
+    },
     data_types::register_polymarket_custom_data,
     filters::InstrumentFilter,
     http::{
@@ -122,56 +127,6 @@ impl Drop for NewMarketInflightGuard {
         self.inflight_keys.remove(&self.key);
     }
 }
-// Reconciles the WS subscription for `instrument_id` with the union of caller
-// intents. Holds `ws_sub_mutex` across the async WS send so concurrent
-// subscribe/unsubscribe calls arrive at the WS handler in mutex-release order;
-// that makes the final wire state consistent with the last writer.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "shared state comes in as Arc refs"
-)]
-async fn sync_ws_subscription_async(
-    instrument_id: InstrumentId,
-    token_id_str: String,
-    active_quote_subs: Arc<AtomicSet<InstrumentId>>,
-    active_delta_subs: Arc<AtomicSet<InstrumentId>>,
-    active_trade_subs: Arc<AtomicSet<InstrumentId>>,
-    ws_open_tokens: Arc<AtomicSet<Ustr>>,
-    ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
-    ws: crate::websocket::client::WsSubscriptionHandle,
-) {
-    let token_id = Ustr::from(token_id_str.as_str());
-    let _guard = ws_sub_mutex.lock().await;
-
-    let wants_subscribe = active_quote_subs.contains(&instrument_id)
-        || active_delta_subs.contains(&instrument_id)
-        || active_trade_subs.contains(&instrument_id);
-    let is_open = ws_open_tokens.contains(&token_id);
-
-    if wants_subscribe && !is_open {
-        ws_open_tokens.insert(token_id);
-
-        if let Err(e) = ws.subscribe_market(vec![token_id_str]).await {
-            log::error!("Failed to subscribe to market data: {e:?}");
-            // Roll back tracked WS state so a retry can take effect.
-            ws_open_tokens.remove(&token_id);
-        }
-    } else if !wants_subscribe && is_open {
-        ws_open_tokens.remove(&token_id);
-
-        if let Err(e) = ws.unsubscribe_market(vec![token_id_str]).await {
-            log::error!("Failed to unsubscribe from market data: {e:?}");
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct TokenMeta {
-    instrument_id: InstrumentId,
-    price_precision: u8,
-    size_precision: u8,
-}
-
 // Inserts `instrument` into the live instrument cache and updates the
 // `token_meta` routing index in one step. Every path that populates the live
 // cache must go through here so WS messages can always resolve token_id back
@@ -197,13 +152,23 @@ fn cache_and_publish_instruments(
     instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
     data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    now_ns: UnixNanos,
     instruments: Vec<InstrumentAny>,
 ) -> usize {
-    let total = instruments.len();
+    let mut total = 0;
 
     for instrument in instruments {
+        if is_instrument_expired(&instrument, now_ns) {
+            log::debug!(
+                "Skipping expired instrument {} during live cache publish",
+                instrument.id()
+            );
+            continue;
+        }
+
         let instrument_id = instrument.id();
         cache_instrument(instruments_cache, token_meta, &instrument);
+        total += 1;
 
         if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
             log::warn!("Failed to publish instrument {instrument_id}: {e}");
@@ -220,6 +185,7 @@ async fn refresh_scoped_instruments(
     instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
     data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    clock: &'static AtomicTime,
 ) -> anyhow::Result<usize> {
     let Some(instrument_config) = instrument_config else {
         return Ok(0);
@@ -232,6 +198,7 @@ async fn refresh_scoped_instruments(
         instruments_cache,
         token_meta,
         data_sender,
+        clock.get_time_ns(),
         refreshed,
     ))
 }
@@ -308,17 +275,6 @@ pub struct PolymarketDataClient {
     auto_load_scheduled: Arc<AtomicBool>,
     position_event_handler: Option<TypedHandler<PositionEvent>>,
     rtds_feed: PolymarketRtdsFeed,
-}
-
-fn resolve_token_id_from(
-    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    instrument_id: InstrumentId,
-) -> anyhow::Result<String> {
-    let loaded = instruments.load();
-    let instrument = loaded
-        .get(&instrument_id)
-        .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
-    Ok(instrument.raw_symbol().as_str().to_string())
 }
 
 impl PolymarketDataClient {
@@ -474,6 +430,41 @@ impl PolymarketDataClient {
         resolve_token_id_from(&self.instruments, instrument_id)
     }
 
+    fn ensure_live_subscription_allowed(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        let now_ns = self.clock.get_time_ns();
+        let loaded = self.instruments.load();
+        let Some(instrument) = loaded.get(&instrument_id) else {
+            return Ok(());
+        };
+
+        if is_instrument_expired(instrument, now_ns) {
+            anyhow::bail!(
+                "Instrument {instrument_id} is expired and no longer available for live subscription"
+            );
+        }
+
+        Ok(())
+    }
+
+    fn ensure_market_data_request_allowed(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<InstrumentAny> {
+        let loaded = self.instruments.load();
+        let instrument = loaded
+            .get(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?
+            .clone();
+
+        if is_instrument_expired(&instrument, self.clock.get_time_ns()) {
+            anyhow::bail!(
+                "Instrument {instrument_id} is expired and no longer available for market data requests"
+            );
+        }
+
+        Ok(instrument)
+    }
+
     // Spawns an async task that reconciles the WS subscription for
     // `instrument_id`. The task holds `ws_sub_mutex` across the wire send so
     // concurrent subscribe/unsubscribe calls deliver commands to the WS handler
@@ -565,7 +556,12 @@ impl PolymarketDataClient {
         let ws_sub_mutex = self.ws_sub_mutex.clone();
         let ws_client = self.ws_client.clone_subscription_handle();
         let data_sender = self.data_sender.clone();
+        let clock = self.clock;
         let cancellation = self.cancellation_token.clone();
+        let order_books = self.order_books.clone();
+        let last_quotes = self.last_quotes.clone();
+        let resolve_poll_watchlist = self.resolve_poll_watchlist.clone();
+        let pending_snapshot_after_tick_change = self.pending_snapshot_after_tick_change.clone();
 
         get_runtime().spawn(async move {
             // Coalesce concurrent misses into one Gamma call.
@@ -664,9 +660,34 @@ impl PolymarketDataClient {
                 let next_batch: AHashSet<InstrumentId> = if chunk_failed {
                     batch.clone()
                 } else {
+                    let mut retired_expired_ids = AHashSet::new();
+
                     for inst in loaded {
                         if !filters.iter().all(|f| f.accept(&inst)) {
                             log::debug!("Auto-loaded instrument {} filtered out", inst.id());
+                            continue;
+                        }
+
+                        if is_instrument_expired(&inst, clock.get_time_ns()) {
+                            log::debug!("Skipping expired auto-loaded instrument {}", inst.id());
+                            retired_expired_ids.insert(inst.id());
+                            retire_local_instrument_state(
+                                inst.id(),
+                                &instruments,
+                                &token_meta,
+                                &order_books,
+                                &last_quotes,
+                                &active_quote_subs,
+                                &active_delta_subs,
+                                &active_trade_subs,
+                                &resolve_poll_watchlist,
+                                &pending_snapshot_after_tick_change,
+                                &pending,
+                                &ws_open_tokens,
+                                &ws_sub_mutex,
+                                &ws_client,
+                            )
+                            .await;
                             continue;
                         }
 
@@ -712,6 +733,10 @@ impl PolymarketDataClient {
                                 )
                                 .await;
                             }
+                        } else if retired_expired_ids.contains(id) {
+                            // Expired instruments are terminal for live auto-load:
+                            // retire any residual runtime state and stop retrying.
+                            continue;
                         } else if transient.contains(&cid) {
                             // CLOB still hydrating: retry within the budget.
                             next.insert(*id);
@@ -785,6 +810,7 @@ impl PolymarketDataClient {
             &self.instruments,
             &self.token_meta,
             &self.data_sender,
+            self.clock.get_time_ns(),
             self.provider
                 .store()
                 .list_all()
@@ -814,6 +840,7 @@ impl PolymarketDataClient {
         let instruments_cache = self.instruments.clone();
         let token_meta = self.token_meta.clone();
         let data_sender = self.data_sender.clone();
+        let clock = self.clock;
 
         let handle = get_runtime().spawn(async move {
             log::debug!("Polymarket instrument refresh task started");
@@ -834,6 +861,7 @@ impl PolymarketDataClient {
                     &instruments_cache,
                     &token_meta,
                     &data_sender,
+                    clock,
                 )
                 .await
                 {
@@ -862,16 +890,11 @@ impl PolymarketDataClient {
     ) {
         let cancellation = self.cancellation_token.clone();
 
-        for (token_id, instrument) in self.provider.build_token_map() {
-            self.token_meta.insert(
-                token_id,
-                TokenMeta {
-                    instrument_id: instrument.id(),
-                    price_precision: instrument.price_precision(),
-                    size_precision: instrument.size_precision(),
-                },
-            );
-        }
+        seed_token_meta_from_live_instruments(
+            self.clock.get_time_ns(),
+            &self.instruments,
+            &self.token_meta,
+        );
 
         let ctx = WsMessageContext {
             clock: self.clock,
@@ -924,43 +947,41 @@ impl PolymarketDataClient {
     }
 
     fn spawn_resolve_poll_task(&mut self) {
-        if !self.config.resolve_poll_enabled {
-            log::info!("Polymarket resolve polling disabled");
-            return;
-        }
-
         let cancellation = self.cancellation_token.clone();
         let gamma_client = self.provider.http_client().clone();
         let clob_public_client = self.clob_public_client.clone();
         let clock = self.clock;
+        let resolve_poll_enabled = self.config.resolve_poll_enabled;
         let interval_secs = self.config.resolve_poll_interval_secs.max(1);
         let grace_secs = self.config.resolve_poll_grace_secs;
         let max_wait_secs = self.config.resolve_poll_max_wait_secs.max(grace_secs);
-
-        let ctx = WsMessageContext {
+        let resolve_ctx = ResolveContext {
             clock: self.clock,
             data_sender: self.data_sender.clone(),
-            token_meta: self.token_meta.clone(),
-            instruments: self.instruments.clone(),
-            gamma_client: gamma_client.clone(),
-            clob_public_client: clob_public_client.clone(),
-            filters: self.provider.filters(),
-            order_books: self.order_books.clone(),
-            last_quotes: self.last_quotes.clone(),
-            active_quote_subs: self.active_quote_subs.clone(),
-            active_delta_subs: self.active_delta_subs.clone(),
-            active_trade_subs: self.active_trade_subs.clone(),
-            resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
-            resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
-            pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
-            new_market_inflight_keys: self.new_market_inflight_keys.clone(),
-            new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
-            subscribe_new_markets: self.config.subscribe_new_markets,
-            new_market_filter: self.config.new_market_filter.clone(),
-            cancellation_token: cancellation.clone(),
+            watchlist: self.resolve_poll_watchlist.clone(),
+            apply_mutex: self.resolve_watch_apply_mutex.clone(),
         };
-
         let watchlist = self.resolve_poll_watchlist.clone();
+        let instruments = self.instruments.clone();
+        let token_meta = self.token_meta.clone();
+        let order_books = self.order_books.clone();
+        let last_quotes = self.last_quotes.clone();
+        let active_quote_subs = self.active_quote_subs.clone();
+        let active_delta_subs = self.active_delta_subs.clone();
+        let active_trade_subs = self.active_trade_subs.clone();
+        let pending_snapshot_after_tick_change = self.pending_snapshot_after_tick_change.clone();
+        let pending_auto_loads = self.pending_auto_loads.clone();
+        let ws_open_tokens = self.ws_open_tokens.clone();
+        let ws_sub_mutex = self.ws_sub_mutex.clone();
+        let ws = self.ws_client.clone_subscription_handle();
+
+        if resolve_poll_enabled {
+            log::debug!("Polymarket resolve poll task started");
+        } else {
+            log::debug!(
+                "Polymarket resolve poll task started with resolution fetch disabled; expiry retirement remains active"
+            );
+        }
 
         let handle = get_runtime().spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
@@ -971,6 +992,28 @@ impl PolymarketDataClient {
                     () = cancellation.cancelled() => break,
                     _ = interval.tick() => {
                         let now_ns = clock.get_time_ns();
+                        retire_expired_local_instruments(
+                            now_ns,
+                            &instruments,
+                            &token_meta,
+                            &order_books,
+                            &last_quotes,
+                            &active_quote_subs,
+                            &active_delta_subs,
+                            &active_trade_subs,
+                            &watchlist,
+                            &pending_snapshot_after_tick_change,
+                            &pending_auto_loads,
+                            &ws_open_tokens,
+                            &ws_sub_mutex,
+                            &ws,
+                        )
+                        .await;
+
+                        if !resolve_poll_enabled {
+                            continue;
+                        }
+
                         let snapshot = watchlist.load();
                         let watched_conditions = snapshot.len();
                         let watched_instruments = snapshot
@@ -1021,7 +1064,7 @@ impl PolymarketDataClient {
                         let _ = fetch_and_apply_resolutions_by_condition_ids(
                             &gamma_client,
                             &clob_public_client,
-                            &ctx.resolve_context(),
+                            &resolve_ctx,
                             &selection.condition_ids,
                             ResolveBatchErrorMode::Continue,
                         )
@@ -1458,6 +1501,14 @@ impl PolymarketDataClient {
 
                                 if !filters.iter().all(|f| f.accept(&inst)) {
                                     log::debug!("New market instrument {} filtered out", inst.id());
+                                    continue;
+                                }
+
+                                if is_instrument_expired(&inst, clock.get_time_ns()) {
+                                    log::debug!(
+                                        "Skipping expired new market instrument {}",
+                                        inst.id()
+                                    );
                                     continue;
                                 }
 
@@ -1903,7 +1954,16 @@ impl DataClient for PolymarketDataClient {
                 }
             };
 
+            let now_ns = clock.get_time_ns();
             for instrument in &instruments {
+                if is_instrument_expired(instrument, now_ns) {
+                    log::debug!(
+                        "Skipping expired instrument {} during request_instruments cache update",
+                        instrument.id()
+                    );
+                    continue;
+                }
+
                 cache_instrument(&instruments_cache, &token_meta, instrument);
             }
 
@@ -1962,12 +2022,19 @@ impl DataClient for PolymarketDataClient {
             };
 
             if let Some(inst) = instrument {
-                cache_instrument(&instruments_cache, &token_meta, &inst);
+                if is_instrument_expired(&inst, clock.get_time_ns()) {
+                    log::debug!(
+                        "Skipping expired instrument {} during request_instrument cache update",
+                        instrument_id
+                    );
+                } else {
+                    cache_instrument(&instruments_cache, &token_meta, &inst);
 
-                // Publish onto the data bus so other clients (e.g. the exec
-                // client's token map) can update from the same fetch.
-                if let Err(e) = sender.send(DataEvent::Instrument(inst.clone())) {
-                    log::warn!("Failed to publish instrument {instrument_id}: {e}");
+                    // Publish onto the data bus so other clients (e.g. the exec
+                    // client's token map) can update from the same fetch.
+                    if let Err(e) = sender.send(DataEvent::Instrument(inst.clone())) {
+                        log::warn!("Failed to publish instrument {instrument_id}: {e}");
+                    }
                 }
 
                 let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
@@ -1994,10 +2061,7 @@ impl DataClient for PolymarketDataClient {
 
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
         let instrument_id = request.instrument_id;
-        let instruments = self.instruments.load();
-        let instrument = instruments
-            .get(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
+        let instrument = self.ensure_market_data_request_allowed(instrument_id)?;
 
         let token_id = instrument.raw_symbol().as_str().to_string();
         let price_precision = instrument.price_precision();
@@ -2041,10 +2105,7 @@ impl DataClient for PolymarketDataClient {
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
         let instrument_id = request.instrument_id;
-        let instruments = self.instruments.load();
-        let instrument = instruments
-            .get(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
+        let instrument = self.ensure_market_data_request_allowed(instrument_id)?;
 
         let condition_id = extract_condition_id(&instrument_id)?;
         let token_id = instrument.raw_symbol().as_str().to_string();
@@ -2142,6 +2203,7 @@ impl DataClient for PolymarketDataClient {
         }
 
         let instrument_id = cmd.instrument_id;
+        self.ensure_live_subscription_allowed(instrument_id)?;
         let cached = self.instruments.load().contains_key(&instrument_id);
 
         if !cached && !self.config.auto_load_missing_instruments {
@@ -2168,6 +2230,7 @@ impl DataClient for PolymarketDataClient {
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
+        self.ensure_live_subscription_allowed(instrument_id)?;
         let cached = self.instruments.load().contains_key(&instrument_id);
 
         if !cached && !self.config.auto_load_missing_instruments {
@@ -2190,6 +2253,7 @@ impl DataClient for PolymarketDataClient {
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
+        self.ensure_live_subscription_allowed(instrument_id)?;
         let cached = self.instruments.load().contains_key(&instrument_id);
 
         if !cached && !self.config.auto_load_missing_instruments {
@@ -2277,6 +2341,7 @@ impl DataClient for PolymarketDataClient {
 mod tests {
     use std::{
         net::SocketAddr,
+        num::NonZeroUsize,
         sync::{
             Arc, Mutex as StdMutex,
             atomic::{AtomicUsize, Ordering},
@@ -2708,6 +2773,50 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing token_meta for {token_id}"));
             assert_eq!(meta.instrument_id, inst.id());
         }
+    }
+
+    #[rstest]
+    fn instrument_without_expiration_is_not_treated_as_expired() {
+        let instrument = stub_instrument(
+            "token-no-expiry",
+            Price::from("0.01"),
+            Quantity::from("0.1"),
+        );
+
+        assert!(!is_instrument_expired(
+            &instrument,
+            UnixNanos::from(1_000_000_000),
+        ));
+    }
+
+    #[rstest]
+    fn seed_token_meta_skips_expired_local_instruments() {
+        let instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>> = Arc::new(AtomicMap::new());
+        let token_meta: Arc<DashMap<Ustr, TokenMeta>> = Arc::new(DashMap::new());
+        let now_ns = UnixNanos::from(2_000_000_000);
+
+        let mut expired =
+            stub_instrument("token-expired", Price::from("0.01"), Quantity::from("1"));
+        if let InstrumentAny::BinaryOption(ref mut binary) = expired {
+            binary.expiration_ns = UnixNanos::from(1_000_000_000);
+        }
+
+        let mut active = stub_instrument("token-active", Price::from("0.01"), Quantity::from("1"));
+        if let InstrumentAny::BinaryOption(ref mut binary) = active {
+            binary.expiration_ns = UnixNanos::from(3_000_000_000);
+        }
+
+        instruments.insert(expired.id(), expired);
+        instruments.insert(active.id(), active.clone());
+
+        seed_token_meta_from_live_instruments(now_ns, &instruments, &token_meta);
+
+        assert!(!token_meta.contains_key(&Ustr::from("token-expired")));
+        assert!(token_meta.contains_key(&Ustr::from("token-active")));
+        let meta = token_meta
+            .get(&Ustr::from("token-active"))
+            .expect("active token_meta seeded");
+        assert_eq!(meta.instrument_id, active.id());
     }
 
     fn make_ws_ctx_with_gamma_base_url(
@@ -3197,9 +3306,26 @@ mod tests {
         }))
     }
 
-    fn gamma_market_fixture_value() -> Value {
+    const TEST_ACTIVE_MARKET_END_DATE: &str = "2099-01-01T00:00:00Z";
+    const TEST_CONDITION_ID: &str =
+        "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b";
+    const TEST_TOKEN_ID_YES: &str =
+        "104239898038807136052399800151408521467737075933964991162589336683346093173875";
+
+    fn active_gamma_market_fixture_value() -> Value {
+        let mut value: Value = serde_json::from_str(include_str!("../test_data/gamma_market.json"))
+            .expect("gamma market fixture json");
+        value["endDate"] = serde_json::Value::String(TEST_ACTIVE_MARKET_END_DATE.to_string());
+        value
+    }
+
+    fn expired_gamma_market_fixture_value() -> Value {
         serde_json::from_str(include_str!("../test_data/gamma_market.json"))
             .expect("gamma market fixture json")
+    }
+
+    fn fixture_yes_instrument_id() -> InstrumentId {
+        InstrumentId::from(format!("{TEST_CONDITION_ID}-{TEST_TOKEN_ID_YES}.POLYMARKET").as_str())
     }
 
     #[derive(Clone, Default)]
@@ -3299,6 +3425,32 @@ mod tests {
 
         state.inflight_requests.fetch_sub(1, Ordering::SeqCst);
         Json(response)
+    }
+
+    #[derive(Clone)]
+    struct ExpiredAutoLoadServerState {
+        requests: Arc<AtomicUsize>,
+        response: Value,
+    }
+
+    async fn handle_expired_auto_load_markets(
+        State(state): State<ExpiredAutoLoadServerState>,
+    ) -> Json<Value> {
+        state.requests.fetch_add(1, Ordering::SeqCst);
+        Json(state.response.clone())
+    }
+
+    async fn start_expired_auto_load_test_server(state: ExpiredAutoLoadServerState) -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr");
+        let router = Router::new()
+            .route("/markets", get(handle_expired_auto_load_markets))
+            .with_state(state);
+
+        tokio::spawn(async move { axum::serve(listener, router).await.expect("serve failed") });
+        addr
     }
 
     async fn start_new_market_test_server(state: NewMarketFetchTestServerState) -> SocketAddr {
@@ -3651,7 +3803,7 @@ mod tests {
             .empty_then_success_payload
             .lock()
             .expect("empty_then_success_payload mutex poisoned") =
-            Some(serde_json::json!([gamma_market_fixture_value()]));
+            Some(serde_json::json!([active_gamma_market_fixture_value()]));
 
         let addr = start_new_market_test_server(state.clone()).await;
         let gamma_base_url = format!("http://{addr}");
@@ -4886,6 +5038,256 @@ mod tests {
                 .resolve_poll_watchlist
                 .contains_key(&"0xCOND-POLL".to_string())
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn resolve_poll_task_retires_expired_runtime_state_when_auto_poll_disabled() {
+        let state = TestServerState::default();
+        let addr = start_mock_server(state).await;
+        let (mut client, _data_rx) = create_test_client(addr);
+        client.config.resolve_poll_enabled = false;
+        client.config.resolve_poll_interval_secs = 1;
+
+        let ws_ctx = make_client_ws_ctx(&client);
+        let expiration_ns = UnixNanos::from(
+            client
+                .clock
+                .get_time_ns()
+                .as_u64()
+                .saturating_sub(1_000_000_000),
+        );
+        let inst_yes = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-POLL"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_yes,
+            PositionId::new("P-1"),
+        );
+
+        let instrument_id = inst_yes.id();
+        let token_id = Ustr::from(inst_yes.raw_symbol().as_str());
+        client.active_quote_subs.insert(instrument_id);
+        client.active_delta_subs.insert(instrument_id);
+        client.active_trade_subs.insert(instrument_id);
+        client.ws_open_tokens.insert(token_id);
+        client
+            .pending_snapshot_after_tick_change
+            .insert(instrument_id);
+        client
+            .pending_auto_loads
+            .lock()
+            .expect("pending_auto_loads mutex poisoned")
+            .insert(instrument_id);
+        client.order_books.insert(
+            instrument_id,
+            OrderBook::new(instrument_id, BookType::L2_MBP),
+        );
+        client.last_quotes.insert(
+            instrument_id,
+            QuoteTick::new(
+                instrument_id,
+                Price::from("0.504"),
+                Price::from("0.506"),
+                Quantity::from("5.00"),
+                Quantity::from("8.00"),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ),
+        );
+
+        client.spawn_resolve_poll_task();
+
+        wait_until_async(
+            || async { !client.token_meta.contains_key(&Ustr::from("0xTOKEN_YES")) },
+            StdDuration::from_secs(5),
+        )
+        .await;
+
+        client.cancellation_token.cancel();
+        client
+            .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
+            .await;
+
+        assert!(!client.active_quote_subs.contains(&instrument_id));
+        assert!(!client.active_delta_subs.contains(&instrument_id));
+        assert!(!client.active_trade_subs.contains(&instrument_id));
+        assert!(!client.ws_open_tokens.contains(&token_id));
+        assert!(
+            !client
+                .pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        assert!(
+            client
+                .pending_auto_loads
+                .lock()
+                .expect("pending_auto_loads mutex poisoned")
+                .is_empty()
+        );
+        assert!(!client.order_books.contains_key(&instrument_id));
+        assert!(!client.last_quotes.contains_key(&instrument_id));
+        assert!(!client.token_meta.contains_key(&Ustr::from("0xTOKEN_YES")));
+        assert!(client.instruments.load().contains_key(&instrument_id));
+        assert!(
+            client
+                .resolve_poll_watchlist
+                .contains_key(&"0xCOND-POLL".to_string())
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn auto_load_expired_instrument_retires_without_retrying() {
+        let state = ExpiredAutoLoadServerState {
+            requests: Arc::new(AtomicUsize::new(0)),
+            response: serde_json::json!([expired_gamma_market_fixture_value()]),
+        };
+        let addr = start_expired_auto_load_test_server(state.clone()).await;
+        let (mut client, _data_rx) = create_test_client(addr);
+        client.config.auto_load_debounce_ms = 0;
+        client.config.auto_load_max_retries = 3;
+        client.config.auto_load_retry_delay_initial_secs = 0.0;
+        client.config.auto_load_retry_delay_max_secs = 0.0;
+
+        let instrument_id = fixture_yes_instrument_id();
+        client
+            .subscribe_quotes(SubscribeQuotes::new(
+                instrument_id,
+                Some(client.client_id),
+                Some(*POLYMARKET_VENUE),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("subscribe_quotes should queue auto-load");
+
+        wait_until_async(
+            || {
+                let client = &client;
+                async move {
+                    !client.active_quote_subs.contains(&instrument_id)
+                        && client
+                            .pending_auto_loads
+                            .lock()
+                            .expect("pending_auto_loads mutex poisoned")
+                            .is_empty()
+                        && !client.auto_load_scheduled.load(Ordering::Acquire)
+                }
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert_eq!(state.requests.load(Ordering::SeqCst), 1);
+        assert!(!client.active_quote_subs.contains(&instrument_id));
+        assert!(
+            !client
+                .token_meta
+                .contains_key(&Ustr::from(TEST_TOKEN_ID_YES))
+        );
+        assert!(!client.instruments.load().contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    fn subscribe_quotes_rejects_cached_expired_instrument() {
+        let mut client = make_client_for_reset_test();
+        let ws_ctx = make_client_ws_ctx(&client);
+        let expired = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_EXPIRED",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-EXPIRED"),
+                expiration_ns: Some(UnixNanos::from(1)),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        let result = client.subscribe_quotes(SubscribeQuotes::new(
+            expired.id(),
+            Some(client.client_id),
+            Some(*POLYMARKET_VENUE),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ));
+
+        assert!(result.is_err());
+        assert!(!client.active_quote_subs.contains(&expired.id()));
+    }
+
+    #[rstest]
+    fn request_book_snapshot_rejects_cached_expired_instrument() {
+        let client = make_client_for_reset_test();
+        let ws_ctx = make_client_ws_ctx(&client);
+        let expired = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_EXPIRED_BOOK",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-EXPIRED"),
+                expiration_ns: Some(UnixNanos::from(1)),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        let result = client.request_book_snapshot(RequestBookSnapshot::new(
+            expired.id(),
+            Some(NonZeroUsize::new(10).expect("nonzero depth")),
+            Some(client.client_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn request_trades_rejects_cached_expired_instrument() {
+        let client = make_client_for_reset_test();
+        let ws_ctx = make_client_ws_ctx(&client);
+        let expired = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_EXPIRED_TRADES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-EXPIRED"),
+                expiration_ns: Some(UnixNanos::from(1)),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        let result = client.request_trades(RequestTrades::new(
+            expired.id(),
+            None,
+            None,
+            Some(NonZeroUsize::new(10).expect("nonzero limit")),
+            Some(client.client_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+
+        assert!(result.is_err());
     }
 
     #[rstest]
