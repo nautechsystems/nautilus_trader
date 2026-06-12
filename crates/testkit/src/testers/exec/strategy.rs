@@ -1540,10 +1540,7 @@ fn sub_price_ticks(base: Price, increment: Price, ticks: u64, precision: u8) -> 
 }
 
 fn tick_offset_raw(increment: Price, ticks: u64) -> PriceRaw {
-    #[cfg(feature = "high-precision")]
     let ticks_raw = PriceRaw::from(ticks);
-    #[cfg(not(feature = "high-precision"))]
-    let ticks_raw = PriceRaw::try_from(ticks).expect("tick offset must fit PriceRaw");
 
     increment.raw * ticks_raw
 }

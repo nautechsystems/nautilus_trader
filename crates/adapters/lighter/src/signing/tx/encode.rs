@@ -125,6 +125,19 @@ pub struct SignedTx {
     pub sig_bytes: [u8; SIG_BYTES],
 }
 
+impl SignedTx {
+    /// Lowercase hex rendering of [`Self::tx_hash`], the form the venue
+    /// echoes in sendTx responses.
+    #[must_use]
+    pub fn tx_hash_hex(&self) -> String {
+        let mut s = String::with_capacity(TX_HASH_BYTES * 2);
+        for b in &self.tx_hash {
+            write!(&mut s, "{b:02x}").expect("writing into String never fails");
+        }
+        s
+    }
+}
+
 /// JSON renderer for the L2 tx_info wire payload.
 ///
 /// Field order and base64-encoded `Sig` match the upstream Go marshalling so
@@ -527,6 +540,12 @@ mod tests {
             bytes_to_hex(&signed.tx_hash),
             v.tx_hash,
             "{}: sign_tx tx_hash diverged",
+            v.kind,
+        );
+        assert_eq!(
+            signed.tx_hash_hex(),
+            v.tx_hash,
+            "{}: tx_hash_hex must render the venue's lowercase hex form",
             v.kind,
         );
         let pk = sk.public_key();

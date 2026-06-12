@@ -54,7 +54,8 @@ use super::{
 use crate::{
     common::{
         consts::{
-            LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED, LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL,
+            LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED, LIGHTER_ERROR_CODE_TX_RANGE,
+            LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL,
         },
         enums::LighterCandleResolution,
     },
@@ -601,20 +602,24 @@ impl FeedHandler {
                 (true, None)
             }
             CTRL_TYPE_ERROR => {
-                if value.get("code").and_then(|v| v.as_u64())
-                    == Some(LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED)
-                {
+                let code = value.get("code").and_then(|v| v.as_u64());
+                if code == Some(LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED) {
                     log_integrator_not_approved();
                 } else {
                     log::warn!("Lighter WebSocket error frame: {value}");
                 }
-                (
-                    true,
-                    Some(send_tx_rejected_from_value(
-                        &value,
-                        SendTxRejectionSource::BareError,
-                    )),
-                )
+
+                if is_sendtx_error_code(code) {
+                    (
+                        true,
+                        Some(send_tx_rejected_from_value(
+                            &value,
+                            SendTxRejectionSource::BareError,
+                        )),
+                    )
+                } else {
+                    (true, None)
+                }
             }
             _ => {
                 if let Some(error) = value.get("error") {
@@ -624,13 +629,10 @@ impl FeedHandler {
                     } else {
                         log::warn!("Lighter WebSocket error frame: {value}");
                     }
-                    return (
-                        true,
-                        Some(send_tx_rejected_from_nested_error(
-                            error,
-                            SendTxRejectionSource::BareError,
-                        )),
-                    );
+                    let rejected = is_sendtx_error_code(nested_code).then(|| {
+                        send_tx_rejected_from_nested_error(error, SendTxRejectionSource::BareError)
+                    });
+                    return (true, rejected);
                 }
                 (false, None)
             }
@@ -1344,6 +1346,12 @@ fn find_book_level(
     })
 }
 
+// Codes outside the transaction range (e.g. 30003 "Already Subscribed")
+// would falsely reject a live order; see `LIGHTER_ERROR_CODE_TX_RANGE`.
+fn is_sendtx_error_code(code: Option<u64>) -> bool {
+    code.is_some_and(|c| LIGHTER_ERROR_CODE_TX_RANGE.contains(&c))
+}
+
 // SendTxRejected from a top-level `{code, message}` frame: non-200 sendTx
 // ACK or `{"type":"error",...}`.
 fn send_tx_rejected_from_value(
@@ -1356,14 +1364,20 @@ fn send_tx_rejected_from_value(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    let tx_hash = value
+        .get("tx_hash")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
     NautilusWsMessage::SendTxRejected {
         source,
         code,
         message,
+        tx_hash,
     }
 }
 
-// SendTxRejected from a nested `{"error":{"code":N,"message":...}}` frame.
+// SendTxRejected from a nested `{"error":{"code":N,"message":...}}` frame;
+// these frames never carry a `tx_hash`.
 fn send_tx_rejected_from_nested_error(
     error: &serde_json::Value,
     source: SendTxRejectionSource,
@@ -1378,6 +1392,7 @@ fn send_tx_rejected_from_nested_error(
         source,
         code,
         message,
+        tx_hash: None,
     }
 }
 
@@ -1754,6 +1769,21 @@ mod tests {
         true,
         true,
     )]
+    #[case::subscription_error_frame(
+        serde_json::json!({"type": "error", "code": 30003, "message": "Already Subscribed to : ticker:3"}),
+        true,
+        false,
+    )]
+    #[case::wrapped_subscription_error(
+        serde_json::json!({"error": {"code": 30003, "message": "Already Subscribed to : ticker:3"}}),
+        true,
+        false,
+    )]
+    #[case::codeless_error_frame(
+        serde_json::json!({"type": "error", "message": "unclassifiable"}),
+        true,
+        false,
+    )]
     #[case::unknown_type(
         serde_json::json!({"type": "something_unexpected", "payload": "x"}),
         false,
@@ -1820,10 +1850,33 @@ mod tests {
                 source,
                 code,
                 message,
+                tx_hash,
             } => {
                 assert_eq!(source, SendTxRejectionSource::Ack);
                 assert_eq!(code, Some(21727));
                 assert_eq!(message, "invalid client order index");
+                assert_eq!(tx_hash, None);
+            }
+            other => panic!("expected SendTxRejected, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_control_text_sendtx_failure_carries_echoed_tx_hash() {
+        let mut handler = make_handler_with_account();
+        let payload = serde_json::json!({
+            "type": "jsonapi/sendtx",
+            "code": 21727,
+            "message": "invalid client order index",
+            "tx_hash": "0000abcd",
+        })
+        .to_string();
+
+        let (_, msg) = handler.handle_control_text(&payload);
+
+        match msg.expect("SendTxRejected emitted") {
+            NautilusWsMessage::SendTxRejected { tx_hash, .. } => {
+                assert_eq!(tx_hash.as_deref(), Some("0000abcd"));
             }
             other => panic!("expected SendTxRejected, was {other:?}"),
         }
@@ -1846,10 +1899,12 @@ mod tests {
                 source,
                 code,
                 message,
+                tx_hash,
             } => {
                 assert_eq!(source, SendTxRejectionSource::BareError);
                 assert_eq!(code, Some(21702));
                 assert_eq!(message, "invalid price");
+                assert_eq!(tx_hash, None);
             }
             other => panic!("expected SendTxRejected, was {other:?}"),
         }
@@ -1871,10 +1926,12 @@ mod tests {
                 source,
                 code,
                 message,
+                tx_hash,
             } => {
                 assert_eq!(source, SendTxRejectionSource::BareError);
                 assert_eq!(code, Some(21149));
                 assert_eq!(message, "integrator is not approved");
+                assert_eq!(tx_hash, None);
             }
             other => panic!("expected SendTxRejected, was {other:?}"),
         }

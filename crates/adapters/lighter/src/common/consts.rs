@@ -47,6 +47,15 @@ pub const LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED: u64 = 21_149;
 /// Venue error code for an invalid (non-contiguous) transaction nonce.
 pub const LIGHTER_ERROR_CODE_INVALID_NONCE: i64 = 21_104;
 
+/// Venue error-code range for L2 transaction failures.
+///
+/// Observed codes follow a domain split: `20xxx` request validation, `21xxx`
+/// transaction processing (21104 invalid nonce, 21149 integrator not
+/// approved), `30xxx` WebSocket subscription state (30003 "Already
+/// Subscribed"). Bare error frames are attributed to in-flight `sendTx`
+/// requests only when the code falls in this range.
+pub const LIGHTER_ERROR_CODE_TX_RANGE: std::ops::Range<u64> = 21_000..22_000;
+
 /// Public docs anchor for integrator approval.
 pub const LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL: &str =
     "https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution";

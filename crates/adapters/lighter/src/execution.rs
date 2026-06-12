@@ -752,6 +752,30 @@ impl LighterExecutionClient {
                                 // `generate_position_status_reports` may
                                 // return stale data.
 
+                                // Drained creates have unknown outcomes;
+                                // reconciliation resolves them, so warn
+                                // rather than emit rejections.
+                                let stale = dispatch.drain_pending_sendtx();
+                                if !stale.is_empty() {
+                                    log::warn!(
+                                        "Discarded {} pending sendTx entries on reconnect; \
+                                         order state recovers via reconciliation",
+                                        stale.len(),
+                                    );
+
+                                    for pending in &stale {
+                                        if let PendingSendTxKind::Create { order, .. } =
+                                            &pending.kind
+                                        {
+                                            log::warn!(
+                                                "Lighter sendTx outcome unknown after reconnect \
+                                                 for {}",
+                                                order.client_order_id(),
+                                            );
+                                        }
+                                    }
+                                }
+
                                 if let Some(credential) = &credential_for_loop {
                                     match http_client_for_loop
                                         .get_next_nonce(
@@ -796,6 +820,7 @@ impl LighterExecutionClient {
                                 source,
                                 code,
                                 message,
+                                tx_hash,
                             }) => {
                                 let account_index = credential_for_loop
                                     .as_ref()
@@ -808,6 +833,7 @@ impl LighterExecutionClient {
                                     source,
                                     code,
                                     &message,
+                                    tx_hash.as_deref(),
                                 );
 
                                 // Invalid nonce means the sequential stream is
@@ -1063,6 +1089,7 @@ impl LighterExecutionClient {
             tx_info,
             nonce,
             api_key_index,
+            tx_hash,
         } = prepared;
         let ws_client = self.ws_client.clone();
         let dispatch = self.dispatch.clone();
@@ -1086,6 +1113,7 @@ impl LighterExecutionClient {
                 submitted_at: clock.get_time_ns(),
                 nonce,
                 api_key_index,
+                tx_hash,
             });
 
             if let Err(e) = ws_client
@@ -1281,6 +1309,7 @@ impl LighterExecutionClient {
             tx_info,
             nonce,
             api_key_index,
+            tx_hash: signed.tx_hash_hex(),
         })
     }
 
@@ -1298,6 +1327,7 @@ impl LighterExecutionClient {
             tx_info,
             nonce,
             api_key_index,
+            tx_hash,
         } = prepared;
 
         let ws_client = self.ws_client.clone();
@@ -1314,6 +1344,7 @@ impl LighterExecutionClient {
                 submitted_at: clock.get_time_ns(),
                 nonce,
                 api_key_index,
+                tx_hash,
             });
 
             if let Err(e) = ws_client
@@ -1404,6 +1435,7 @@ impl LighterExecutionClient {
             tx_info,
             nonce: captured_nonce,
             api_key_index: captured_api_key_index,
+            tx_hash: signed.tx_hash_hex(),
         })
     }
 
@@ -1493,6 +1525,7 @@ impl LighterExecutionClient {
         let tx_info = serde_json::value::RawValue::from_string(tx_info_str)
             .context("failed to wrap signed Lighter modify tx_info JSON")?;
         rollback_guard.disarm();
+        let captured_tx_hash = signed.tx_hash_hex();
 
         let ws_client = self.ws_client.clone();
         let dispatch = self.dispatch.clone();
@@ -1512,6 +1545,7 @@ impl LighterExecutionClient {
                 submitted_at: clock.get_time_ns(),
                 nonce: captured_nonce,
                 api_key_index: captured_api_key_index,
+                tx_hash: captured_tx_hash,
             });
 
             if let Err(e) = ws_client
@@ -1597,6 +1631,7 @@ impl LighterExecutionClient {
         let tx_info = serde_json::value::RawValue::from_string(tx_info_str)
             .context("failed to wrap signed Lighter update_leverage tx_info JSON")?;
         rollback_guard.disarm();
+        let captured_tx_hash = signed.tx_hash_hex();
 
         let ws_client = self.ws_client.clone();
         let dispatch = self.dispatch.clone();
@@ -1611,6 +1646,7 @@ impl LighterExecutionClient {
                 submitted_at: clock.get_time_ns(),
                 nonce: captured_nonce,
                 api_key_index: captured_api_key_index,
+                tx_hash: captured_tx_hash,
             });
 
             if let Err(e) = ws_client
@@ -1636,6 +1672,7 @@ struct PreparedCreateOrder {
     tx_info: Box<serde_json::value::RawValue>,
     nonce: i64,
     api_key_index: u8,
+    tx_hash: String,
 }
 
 #[derive(Clone)]
@@ -1647,6 +1684,7 @@ struct PreparedCancelOrder {
     tx_info: Box<serde_json::value::RawValue>,
     nonce: i64,
     api_key_index: u8,
+    tx_hash: String,
 }
 
 struct PreparedIntegratorApproval {
@@ -1757,13 +1795,26 @@ impl Drop for TxDispatchGuard {
 // SendTxAck: pop the pending entry and advance the nonce baseline (the venue
 // applied the nonce); the account-orders frame drives the order lifecycle.
 // The advance is a monotonic max, so a misattributed pop is harmless.
+// SendTxAck: remove by echoed tx_hash when present, pop head only for
+// hashless acks. An echoed hash is authoritative: on a miss the entry was
+// already consumed or never enqueued, and a head fallback would attribute
+// the ack to the wrong tx.
 fn handle_send_tx_ack(
     dispatch: &WsDispatchState,
     account_index: Option<i64>,
     code: i64,
     tx_hash: Option<&str>,
 ) {
-    let popped = dispatch.pop_pending_sendtx_head();
+    let popped = match tx_hash {
+        Some(hash) => {
+            let matched = dispatch.remove_pending_sendtx_by_hash(hash);
+            if matched.is_none() {
+                log::warn!("Lighter sendTx ack unmatched: tx_hash={hash} code={code}");
+            }
+            matched
+        }
+        None => dispatch.pop_pending_sendtx_head(),
+    };
 
     if let (Some(pending), Some(account_index)) = (&popped, account_index) {
         let _ =
@@ -1778,10 +1829,16 @@ fn handle_send_tx_ack(
     );
 }
 
-// SendTxRejected: pop head for Ack or head-within-window for BareError;
-// Create emits OrderRejected, Other recovers via reconciliation, both roll
-// the nonce back when still the latest issuance. Returns true on an
-// invalid-nonce code: the sequential stream is wedged and needs a hard refresh.
+// SendTxRejected: attribute by echoed tx_hash when present (authoritative,
+// no head fallback on a miss); otherwise pop head for Ack or
+// head-within-window for BareError. Create emits OrderRejected, Other
+// recovers via reconciliation, both roll the nonce back when still the
+// latest issuance. Returns true on an invalid-nonce code: the sequential
+// stream is wedged and needs a hard refresh.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "consumer-loop sink that flattens one SendTxRejected message without a wrapper struct"
+)]
 fn handle_send_tx_rejection(
     dispatch: &WsDispatchState,
     emitter: &ExecutionEventEmitter,
@@ -1790,14 +1847,18 @@ fn handle_send_tx_rejection(
     source: SendTxRejectionSource,
     code: Option<i64>,
     message: &str,
+    tx_hash: Option<&str>,
 ) -> bool {
     let needs_nonce_resync = code == Some(LIGHTER_ERROR_CODE_INVALID_NONCE);
 
-    let pending = match source {
-        SendTxRejectionSource::Ack => dispatch.pop_pending_sendtx_head(),
-        SendTxRejectionSource::BareError => {
-            dispatch.pop_pending_sendtx_within(now, SENDTX_BARE_ERROR_WINDOW_MS)
-        }
+    let pending = match tx_hash {
+        Some(hash) => dispatch.remove_pending_sendtx_by_hash(hash),
+        None => match source {
+            SendTxRejectionSource::Ack => dispatch.pop_pending_sendtx_head(),
+            SendTxRejectionSource::BareError => {
+                dispatch.pop_pending_sendtx_within(now, SENDTX_BARE_ERROR_WINDOW_MS)
+            }
+        },
     };
     let Some(pending) = pending else {
         log::warn!(
@@ -3731,6 +3792,7 @@ mod tests {
     use crate::{
         common::enums::{LighterEnvironment, LighterProductType},
         http::models::{LighterNextNonce, LighterSendTxBatchResponse},
+        signing::tx::TX_HASH_BYTES,
     };
 
     const TEST_PRIVATE_KEY: &str =
@@ -6453,6 +6515,7 @@ mod tests {
             submitted_at: now,
             nonce,
             api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: format!("hash{nonce:02x}"),
         });
         client.dispatch.nonce_manager.refresh(
             TEST_ACCOUNT_INDEX_I64,
@@ -6472,11 +6535,12 @@ mod tests {
             submitted_at: UnixNanos::from(1_000_000_000),
             nonce,
             api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: format!("hash{nonce:02x}"),
         });
     }
 
     #[tokio::test]
-    async fn handle_send_tx_ack_pops_head_silently() {
+    async fn handle_send_tx_ack_removes_hash_matched_entry() {
         let (client, cache, mut rx) = create_execution_client();
         let instrument_id = register_test_instrument(&client, &cache);
         let mut factory = test_order_factory();
@@ -6485,18 +6549,19 @@ mod tests {
         enqueue_create(&client, &order_a, 10);
         enqueue_create(&client, &order_b, 11);
 
+        // Out-of-order ack: B's hash must remove B even though A is at head.
         handle_send_tx_ack(
             &client.dispatch,
             Some(TEST_ACCOUNT_INDEX_I64),
             200,
-            Some("0xabc"),
+            Some("hash0b"),
         );
 
-        assert_eq!(client.dispatch.pending_sendtx_len(), 1, "only head pops");
+        assert_eq!(client.dispatch.pending_sendtx_len(), 1, "only B pops");
         let head = client.dispatch.pop_pending_sendtx_head().unwrap();
         match head.kind {
             PendingSendTxKind::Create { order, .. } => {
-                assert_eq!(order.client_order_id(), order_b.client_order_id());
+                assert_eq!(order.client_order_id(), order_a.client_order_id());
             }
             _ => panic!("expected Create kind"),
         }
@@ -6505,6 +6570,83 @@ mod tests {
                 .await
                 .is_err(),
             "ack must not emit an event",
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_send_tx_ack_unmatched_hash_pops_nothing() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "ACK-UNMATCHED");
+        enqueue_create(&client, &order, 10);
+
+        handle_send_tx_ack(
+            &client.dispatch,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            200,
+            Some("0xabc"),
+        );
+
+        assert_eq!(
+            client.dispatch.pending_sendtx_len(),
+            1,
+            "an echoed hash with no matching entry must not pop the head",
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), rx.recv())
+                .await
+                .is_err(),
+            "unmatched ack must not emit an event",
+        );
+    }
+
+    #[tokio::test]
+    async fn prepared_create_tx_hash_round_trips_through_ack() {
+        // The hash prepare threads into the queue must be the lowercase hex
+        // form a venue ack echoes, or every live ack goes unattributed.
+        let (client, cache, _rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "ACK-REAL-HASH");
+
+        let credential = test_credential();
+        let prepared = client
+            .prepare_signed_create_order(&order, &credential, 0)
+            .expect("prepare must sign");
+
+        assert_eq!(prepared.tx_hash.len(), TX_HASH_BYTES * 2);
+        assert!(
+            prepared
+                .tx_hash
+                .chars()
+                .all(|c| matches!(c, '0'..='9' | 'a'..='f')),
+            "tx_hash must be lowercase hex, was `{}`",
+            prepared.tx_hash,
+        );
+
+        client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            kind: PendingSendTxKind::Create {
+                order: Box::new(order),
+                client_order_index: prepared.client_order_index,
+            },
+            submitted_at: UnixNanos::from(1_000_000_000),
+            nonce: prepared.nonce,
+            api_key_index: prepared.api_key_index,
+            tx_hash: prepared.tx_hash.clone(),
+        });
+
+        handle_send_tx_ack(
+            &client.dispatch,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            200,
+            Some(&prepared.tx_hash),
+        );
+
+        assert_eq!(
+            client.dispatch.pending_sendtx_len(),
+            0,
+            "venue echo of the signed hash must match the enqueued entry",
         );
     }
 
@@ -6570,6 +6712,7 @@ mod tests {
             submitted_at: UnixNanos::from(1_000_000_000),
             nonce,
             api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: format!("hash{nonce:02x}"),
         });
 
         handle_send_tx_rejection(
@@ -6580,6 +6723,7 @@ mod tests {
             SendTxRejectionSource::Ack,
             Some(21702),
             "invalid price",
+            None,
         );
 
         let event = recv_order_event(&mut rx).await;
@@ -6618,6 +6762,7 @@ mod tests {
             submitted_at: UnixNanos::from(1_000_000_000),
             nonce: rejected_nonce,
             api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: format!("hash{rejected_nonce:02x}"),
         });
 
         handle_send_tx_rejection(
@@ -6628,6 +6773,7 @@ mod tests {
             SendTxRejectionSource::Ack,
             Some(21702),
             "invalid price",
+            None,
         );
 
         let event = recv_order_event(&mut rx).await;
@@ -6864,6 +7010,7 @@ mod tests {
             SendTxRejectionSource::Ack,
             Some(21702),
             "invalid price",
+            None,
         );
 
         let event = recv_order_event(&mut rx).await;
@@ -6896,6 +7043,7 @@ mod tests {
             SendTxRejectionSource::Ack,
             Some(21700),
             "post-only order would execute",
+            None,
         );
 
         let event = recv_order_event(&mut rx).await;
@@ -6907,6 +7055,77 @@ mod tests {
             other => panic!("expected Rejected, was {other:?}"),
         }
         assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn handle_send_tx_rejection_hash_match_attributes_past_the_head() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order_a = test_limit_order(&mut factory, instrument_id, "REJECT-HASH-A");
+        let order_b = test_limit_order(&mut factory, instrument_id, "REJECT-HASH-B");
+        enqueue_create(&client, &order_a, 10);
+        enqueue_create(&client, &order_b, 11);
+
+        // A desynced or out-of-order rejection for B must not consume A.
+        handle_send_tx_rejection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1_000_000_000),
+            SendTxRejectionSource::Ack,
+            Some(21702),
+            "invalid price",
+            Some("hash0b"),
+        );
+
+        let event = recv_order_event(&mut rx).await;
+        match event {
+            OrderEventAny::Rejected(e) => {
+                assert_eq!(e.client_order_id, order_b.client_order_id());
+            }
+            other => panic!("expected Rejected, was {other:?}"),
+        }
+        assert_eq!(client.dispatch.pending_sendtx_len(), 1, "A must survive");
+        let head = client.dispatch.pop_pending_sendtx_head().unwrap();
+        match head.kind {
+            PendingSendTxKind::Create { order, .. } => {
+                assert_eq!(order.client_order_id(), order_a.client_order_id());
+            }
+            _ => panic!("expected Create kind"),
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_send_tx_rejection_unmatched_hash_pops_nothing() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "REJECT-UNMATCHED");
+        enqueue_create(&client, &order, 10);
+
+        handle_send_tx_rejection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1_000_000_000),
+            SendTxRejectionSource::Ack,
+            Some(21702),
+            "invalid price",
+            Some("0xbeef"),
+        );
+
+        assert_eq!(
+            client.dispatch.pending_sendtx_len(),
+            1,
+            "an echoed hash with no matching entry must not pop the head",
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), rx.recv())
+                .await
+                .is_err(),
+            "unmatched rejection must not emit an event",
+        );
     }
 
     #[tokio::test]
@@ -6926,6 +7145,7 @@ mod tests {
             SendTxRejectionSource::BareError,
             Some(21149),
             "integrator is not approved",
+            None,
         );
 
         let event = recv_order_event(&mut rx).await;
@@ -6950,6 +7170,7 @@ mod tests {
             SendTxRejectionSource::BareError,
             Some(99),
             "late error",
+            None,
         );
 
         assert_eq!(
@@ -6983,6 +7204,7 @@ mod tests {
             SendTxRejectionSource::Ack,
             Some(23000),
             "Too Many Requests",
+            None,
         );
 
         assert!(!needs_resync, "rate-limit rejection must not force resync");
@@ -7012,6 +7234,7 @@ mod tests {
             SendTxRejectionSource::Ack,
             Some(23000),
             "Too Many Requests",
+            None,
         );
 
         assert_eq!(
@@ -7037,6 +7260,7 @@ mod tests {
             SendTxRejectionSource::Ack,
             Some(LIGHTER_ERROR_CODE_INVALID_NONCE),
             "invalid nonce",
+            None,
         );
         assert!(attributed, "attributed invalid nonce must signal resync");
 
@@ -7048,6 +7272,7 @@ mod tests {
             SendTxRejectionSource::Ack,
             Some(LIGHTER_ERROR_CODE_INVALID_NONCE),
             "invalid nonce",
+            None,
         );
         assert!(
             unattributed,
@@ -7063,6 +7288,7 @@ mod tests {
             SendTxRejectionSource::Ack,
             Some(21702),
             "invalid price",
+            None,
         );
         assert!(!other_code, "other rejection codes must not force resync");
     }
@@ -7080,6 +7306,7 @@ mod tests {
             SendTxRejectionSource::Ack,
             Some(21727),
             "invalid client order index",
+            None,
         );
 
         assert_eq!(client.dispatch.pending_sendtx_len(), 0, "Other head pops");
@@ -7103,6 +7330,7 @@ mod tests {
             SendTxRejectionSource::Ack,
             Some(1),
             "no pending",
+            None,
         );
 
         assert_eq!(client.dispatch.pending_sendtx_len(), 0);

@@ -88,15 +88,19 @@ pub(crate) struct OrderIdentity {
 /// In-flight sendTx awaiting a venue response.
 ///
 /// Every signed sendTx (create, cancel, modify, update_leverage) enqueues an
-/// entry so the queue's FIFO order matches the venue's ACK order. The `kind`
-/// records whether the entry has an originating Nautilus order that should
-/// receive a typed `OrderRejected` on a venue rejection.
+/// entry keyed by the signed `tx_hash`, which the venue echoes in its ACK.
+/// Responses that carry the hash remove their matching entry directly;
+/// responses without one fall back to FIFO-head attribution, so the queue
+/// order still matches the send order. The `kind` records whether the entry
+/// has an originating Nautilus order that should receive a typed
+/// `OrderRejected` on a venue rejection.
 #[derive(Debug, Clone)]
 pub(crate) struct PendingSendTx {
     pub(crate) kind: PendingSendTxKind,
     pub(crate) submitted_at: UnixNanos,
     pub(crate) nonce: i64,
     pub(crate) api_key_index: u8,
+    pub(crate) tx_hash: String,
 }
 
 /// What kind of sendTx is sitting at this queue position, and whether the
@@ -489,9 +493,9 @@ impl WsDispatchState {
             .push_back(pending);
     }
 
-    /// Pop the oldest pending entry unconditionally. Use for `SendTxAck`
-    /// (success or non-200): both are direct responses to our own request
-    /// and are always attributable to the head.
+    /// Pop the oldest pending entry unconditionally. Fallback for direct
+    /// sendTx responses that carry no `tx_hash` to correlate on; the head is
+    /// the best guess because queue order matches send order.
     pub(crate) fn pop_pending_sendtx_head(&self) -> Option<PendingSendTx> {
         self.pending_sendtx
             .lock()
@@ -522,6 +526,33 @@ impl WsDispatchState {
         let mut q = self.pending_sendtx.lock().expect(MUTEX_POISONED);
         let pos = q.iter().position(|p| p.nonce == nonce)?;
         q.remove(pos)
+    }
+
+    /// Remove a pending entry by its signed transaction hash
+    /// (case-insensitive hex comparison, optional `0x` prefix tolerated).
+    /// The venue echoes the hash the client computed at signing time, so a
+    /// match is exact attribution regardless of queue position.
+    pub(crate) fn remove_pending_sendtx_by_hash(&self, tx_hash: &str) -> Option<PendingSendTx> {
+        let tx_hash = tx_hash
+            .strip_prefix("0x")
+            .or_else(|| tx_hash.strip_prefix("0X"))
+            .unwrap_or(tx_hash);
+        let mut q = self.pending_sendtx.lock().expect(MUTEX_POISONED);
+        let pos = q
+            .iter()
+            .position(|p| p.tx_hash.eq_ignore_ascii_case(tx_hash))?;
+        q.remove(pos)
+    }
+
+    /// Drain every pending entry. Used on reconnect: responses to txs sent
+    /// on the previous connection are lost, so retained entries would only
+    /// misattribute responses arriving on the new connection.
+    pub(crate) fn drain_pending_sendtx(&self) -> Vec<PendingSendTx> {
+        self.pending_sendtx
+            .lock()
+            .expect(MUTEX_POISONED)
+            .drain(..)
+            .collect()
     }
 
     /// Returns the current pending-sendTx queue length. Test-only helper.
@@ -2280,6 +2311,7 @@ mod tests {
             submitted_at: UnixNanos::from(submitted_at_ns),
             nonce,
             api_key_index: 0,
+            tx_hash: format!("hash{nonce:02x}"),
         }
     }
 
@@ -2289,6 +2321,7 @@ mod tests {
             submitted_at: UnixNanos::from(submitted_at_ns),
             nonce,
             api_key_index: 0,
+            tx_hash: format!("hash{nonce:02x}"),
         }
     }
 
@@ -2374,6 +2407,52 @@ mod tests {
 
         let head = state.pop_pending_sendtx_head().expect("A still queued");
         assert_eq!(pending_cloid(&head), Some(cloid("A")));
+    }
+
+    #[rstest]
+    fn remove_pending_by_hash_targets_the_matching_entry() {
+        // Hash removal must attribute regardless of queue position so an
+        // out-of-order venue response never pops the wrong entry.
+        let state = WsDispatchState::new();
+        let now = UnixNanos::from(1_000_000_000);
+        state.enqueue_pending_sendtx(stub_pending_create("A", 10, now.as_u64()));
+        state.enqueue_pending_sendtx(stub_pending_other(11, now.as_u64() + 1));
+        state.enqueue_pending_sendtx(stub_pending_create("B", 12, now.as_u64() + 2));
+
+        let removed = state
+            .remove_pending_sendtx_by_hash("hash0b")
+            .expect("hash for nonce 11 removed");
+        assert_eq!(removed.nonce, 11);
+        assert_eq!(state.pending_sendtx_len(), 2);
+
+        assert!(
+            state.remove_pending_sendtx_by_hash("hash0b").is_none(),
+            "removed hash must not match again",
+        );
+
+        let upper = state
+            .remove_pending_sendtx_by_hash("0xHASH0C")
+            .expect("hash comparison is case-insensitive and prefix-tolerant");
+        assert_eq!(pending_cloid(&upper), Some(cloid("B")));
+
+        let head = state.pop_pending_sendtx_head().expect("A still queued");
+        assert_eq!(pending_cloid(&head), Some(cloid("A")));
+    }
+
+    #[rstest]
+    fn drain_pending_returns_all_entries_in_order() {
+        let state = WsDispatchState::new();
+        let now = UnixNanos::from(1_000_000_000);
+        state.enqueue_pending_sendtx(stub_pending_create("A", 10, now.as_u64()));
+        state.enqueue_pending_sendtx(stub_pending_other(11, now.as_u64() + 1));
+
+        let drained = state.drain_pending_sendtx();
+
+        assert_eq!(drained.len(), 2);
+        assert_eq!(drained[0].nonce, 10);
+        assert_eq!(drained[1].nonce, 11);
+        assert_eq!(state.pending_sendtx_len(), 0);
+        assert!(state.drain_pending_sendtx().is_empty());
     }
 
     #[rstest]

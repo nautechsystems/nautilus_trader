@@ -486,21 +486,20 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                     "jsonapi/sendtx" => {
                         state.send_txs.lock().await.push(value);
 
-                        // Reply with an ack so the handler clears the
-                        // pending sendTx head. Tests that want to drive a
-                        // venue rejection install an override via
-                        // `next_send_tx_ack`.
+                        // Ack so the handler clears the pending sendTx head.
+                        // No `tx_hash`: the mock cannot recompute the
+                        // Poseidon hash, and a fabricated one would go
+                        // unattributed. Tests drive venue rejections via the
+                        // `next_send_tx_ack` override.
                         let ack = state
                             .next_send_tx_ack
                             .lock()
                             .await
                             .take()
                             .unwrap_or_else(|| {
-                                let seq = state.tx_hash_seq.fetch_add(1, Ordering::Relaxed);
                                 json!({
                                     "type": "jsonapi/sendtx",
                                     "code": 200,
-                                    "tx_hash": format!("0000{seq:016x}"),
                                 })
                             });
 
@@ -2132,6 +2131,49 @@ async fn test_submit_order_venue_rejection_emits_order_rejected() {
         }
         other => panic!("expected OrderRejected, was {other:?}"),
     }
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_subscription_error_does_not_reject() {
+    // A bare subscription error (30003 "Already Subscribed", typical of
+    // reconnect replay) arriving while a create is pending is outside the
+    // venue's transaction code range: it must not pop the pending queue and
+    // must not emit OrderRejected for the live order.
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.expect("connect");
+
+    // Respond to the sendTx with a wrapped bare error instead of an ack so
+    // the create entry is still pending when the frame is classified.
+    *state.next_send_tx_ack.lock().await = Some(json!({
+        "error": {"code": 30003, "message": "Already Subscribed to : ticker:3"},
+    }));
+
+    let order = make_limit_order(
+        "O-SUB-ERROR",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    cache_order(&cache, order.clone());
+    client.submit_order(submit_command(&order)).expect("submit");
+
+    let submitted = next_order_event(&mut rx, Duration::from_secs(2))
+        .await
+        .expect("expected OrderSubmitted");
+    assert!(matches!(submitted, OrderEventAny::Submitted(_)));
+
+    let follow_up = next_order_event(&mut rx, Duration::from_secs(1)).await;
+    assert!(
+        follow_up.is_none(),
+        "subscription error must not reject the pending order, was {follow_up:?}",
+    );
 
     client.disconnect().await.expect("disconnect");
 }

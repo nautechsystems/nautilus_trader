@@ -71,6 +71,7 @@ pub enum NautilusWsMessage {
         source: SendTxRejectionSource,
         code: Option<i64>,
         message: String,
+        tx_hash: Option<String>,
     },
     Raw(serde_json::Value),
     Reconnected,
@@ -95,10 +96,12 @@ pub enum AccountStream {
 
 /// Origin of a Lighter `sendTx` rejection signal.
 ///
-/// `Ack` is a direct non-200 response to our own `jsonapi/sendtx` request and
-/// is always attributable to the most recent pending sendTx. `BareError` is a
-/// standalone error frame that carries no correlation field, so attribution
-/// relies on the FIFO pending queue plus a short attribution window.
+/// `Ack` is a direct non-200 response to our own `jsonapi/sendtx` request,
+/// attributable via the echoed `tx_hash` when present and the FIFO head
+/// otherwise. `BareError` is a standalone error frame that carries no
+/// correlation field, so attribution relies on the FIFO pending queue plus a
+/// short attribution window; only codes in the venue's transaction range are
+/// routed here at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendTxRejectionSource {
     Ack,
