@@ -36,7 +36,10 @@ use crate::opt::DatabaseConfig;
 /// # Errors
 ///
 /// Returns an error if the chain or DEX parameters are invalid.
-#[expect(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "CLI command options map directly to clap fields"
+)]
 pub(crate) async fn run_analyze_pool(
     chain: String,
     dex: String,
@@ -86,7 +89,10 @@ pub(crate) async fn run_analyze_pool(
 ///
 /// Returns an error if chain, DEX, database, RPC, or address file setup fails. Individual pool
 /// failures are emitted as structured output and the command returns an error after all pools run.
-#[expect(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "CLI command options map directly to clap fields"
+)]
 pub(crate) async fn run_analyze_pools(
     chain: String,
     dex: String,

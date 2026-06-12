@@ -54,6 +54,8 @@ fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
         Data::OptionGreeks(greeks) => Py::new(py, greeks).map(pyo3::Py::into_any),
         Data::InstrumentClose(close) => Py::new(py, close).map(pyo3::Py::into_any),
         Data::Custom(custom) => Py::new(py, custom).map(pyo3::Py::into_any),
+        #[cfg(feature = "defi")]
+        Data::Defi(_) => Err(to_pyruntime_err("Unsupported Data::Defi variant")),
         #[allow(unreachable_patterns)]
         _ => Err(to_pyruntime_err("Unsupported Data variant")),
     }

@@ -128,6 +128,10 @@ pub enum BlockchainCommand {
         #[arg(long)]
         chain: String,
         /// The DEX name (case-insensitive). Examples: UniswapV3, uniswapv3, SushiSwapV2, PancakeSwapV3
+        #[expect(
+            clippy::doc_markdown,
+            reason = "clap renders doc comments as plain help text"
+        )]
         #[arg(long)]
         dex: String,
         /// The pool contract address
@@ -140,12 +144,20 @@ pub enum BlockchainCommand {
         #[arg(long)]
         to_block: Option<u64>,
         /// RPC HTTP URL for blockchain calls (optional, falls back to RPC_HTTP_URL env var)
+        #[expect(
+            clippy::doc_markdown,
+            reason = "clap renders doc comments as plain help text"
+        )]
         #[arg(long)]
         rpc_url: Option<String>,
         /// Reset sync progress and start from the beginning, ignoring last synced block
         #[arg(long)]
         reset: bool,
         /// Return needs_bootstrap for pools without a valid snapshot before the target block
+        #[expect(
+            clippy::doc_markdown,
+            reason = "clap renders doc comments as plain help text"
+        )]
         #[arg(long)]
         require_existing_snapshot: bool,
         /// Maximum number of Multicall calls per RPC request (optional, defaults to 200)
@@ -161,6 +173,10 @@ pub enum BlockchainCommand {
         #[arg(long)]
         chain: String,
         /// The DEX name (case-insensitive). Examples: UniswapV3, uniswapv3, SushiSwapV2, PancakeSwapV3
+        #[expect(
+            clippy::doc_markdown,
+            reason = "clap renders doc comments as plain help text"
+        )]
         #[arg(long)]
         dex: String,
         /// Pool contract address. Can be repeated.
@@ -176,12 +192,20 @@ pub enum BlockchainCommand {
         #[arg(long)]
         to_block: Option<u64>,
         /// RPC HTTP URL for blockchain calls (optional, falls back to RPC_HTTP_URL env var)
+        #[expect(
+            clippy::doc_markdown,
+            reason = "clap renders doc comments as plain help text"
+        )]
         #[arg(long)]
         rpc_url: Option<String>,
         /// Reset sync progress and start from the beginning, ignoring last synced block
         #[arg(long)]
         reset: bool,
         /// Return needs_bootstrap for pools without a valid snapshot before the target block
+        #[expect(
+            clippy::doc_markdown,
+            reason = "clap renders doc comments as plain help text"
+        )]
         #[arg(long)]
         require_existing_snapshot: bool,
         /// Maximum number of Multicall calls per RPC request (optional, defaults to 200)
@@ -195,7 +219,7 @@ pub enum BlockchainCommand {
 
 #[cfg(all(test, feature = "defi"))]
 mod tests {
-    use clap::Parser;
+    use clap::{CommandFactory, Parser};
     use rstest::rstest;
 
     use super::*;
@@ -281,5 +305,28 @@ mod tests {
             }
             _ => panic!("Expected analyze-pools blockchain command"),
         }
+    }
+
+    #[rstest]
+    #[case("analyze-pool")]
+    #[case("analyze-pools")]
+    fn blockchain_analysis_help_renders_plain_text_examples(#[case] subcommand: &str) {
+        let mut command = NautilusCli::command();
+        let help = command
+            .find_subcommand_mut("blockchain")
+            .and_then(|command| command.find_subcommand_mut(subcommand))
+            .map(|command| command.render_long_help().to_string())
+            .unwrap();
+
+        assert!(help.contains("UniswapV3"));
+        assert!(help.contains("SushiSwapV2"));
+        assert!(help.contains("PancakeSwapV3"));
+        assert!(help.contains("RPC_HTTP_URL"));
+        assert!(help.contains("needs_bootstrap"));
+        assert!(!help.contains("`UniswapV3`"));
+        assert!(!help.contains("`SushiSwapV2`"));
+        assert!(!help.contains("`PancakeSwapV3`"));
+        assert!(!help.contains("`RPC_HTTP_URL`"));
+        assert!(!help.contains("`needs_bootstrap`"));
     }
 }

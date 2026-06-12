@@ -22,6 +22,7 @@ crate-type = ["rlib", "staticlib"]
 
 [features]
 default = []
+defi = ["nautilus-model/defi"]
 cloud = [
   "object_store/aws",
   "object_store/azure",

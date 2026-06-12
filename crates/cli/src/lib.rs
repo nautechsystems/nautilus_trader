@@ -40,6 +40,7 @@
 //! - `defi`: Enables DeFi functionality including blockchain data access and pool analysis.
 
 #![warn(rustc::all)]
+#![warn(clippy::pedantic)]
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]

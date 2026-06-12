@@ -57,7 +57,12 @@ python = [
   "pyo3-stub-gen",
   "streaming",
 ]
-defi = ["dep:nautilus-data", "nautilus-common/defi", "nautilus-data/defi"]
+defi = [
+  "dep:nautilus-data",
+  "nautilus-common/defi",
+  "nautilus-data/defi",
+  "nautilus-persistence?/defi",
+]
 simulation = [
   "node",
   "nautilus-common/simulation",

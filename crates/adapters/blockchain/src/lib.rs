@@ -41,6 +41,10 @@
 //! - `turmoil`: Enables deterministic network simulation testing with [turmoil](https://github.com/tokio-rs/turmoil).
 
 #![warn(rustc::all)]
+#![allow(
+    clippy::pedantic,
+    reason = "shield the CLI --all-features pedantic gate until the blockchain slice migrates"
+)]
 #![deny(unsafe_code)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]

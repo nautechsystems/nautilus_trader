@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![warn(clippy::pedantic)]
+
 use clap::Parser;
 use nautilus_cli::opt::NautilusCli;
 use nautilus_common::logging::ensure_logging_initialized;
