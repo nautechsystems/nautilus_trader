@@ -496,6 +496,18 @@ criteria = "safe-to-deploy"
 version = "58.3.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.asn1-rs]]
+version = "0.7.2"
+criteria = "safe-to-run"
+
+[[exemptions.asn1-rs-derive]]
+version = "0.6.0"
+criteria = "safe-to-run"
+
+[[exemptions.asn1-rs-impl]]
+version = "0.2.0"
+criteria = "safe-to-run"
+
 [[exemptions.async-channel]]
 version = "2.5.0"
 criteria = "safe-to-deploy"
@@ -579,6 +591,10 @@ criteria = "safe-to-deploy"
 [[exemptions.bip32]]
 version = "0.5.3"
 criteria = "safe-to-deploy"
+
+[[exemptions.bit-vec]]
+version = "0.9.1"
+criteria = "safe-to-run"
 
 [[exemptions.bitcoin-io]]
 version = "0.1.100"
@@ -1031,6 +1047,10 @@ criteria = "safe-to-deploy"
 [[exemptions.dbn-macros]]
 version = "0.58.0"
 criteria = "safe-to-deploy"
+
+[[exemptions.der-parser]]
+version = "10.0.0"
+criteria = "safe-to-run"
 
 [[exemptions.derivative]]
 version = "2.2.0"
@@ -1836,6 +1856,10 @@ criteria = "safe-to-deploy"
 version = "0.13.2"
 criteria = "safe-to-deploy"
 
+[[exemptions.oid-registry]]
+version = "0.8.1"
+criteria = "safe-to-run"
+
 [[exemptions.once_cell]]
 version = "1.12.0"
 criteria = "safe-to-deploy"
@@ -2084,6 +2108,10 @@ criteria = "safe-to-deploy"
 version = "1.12.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.rcgen]]
+version = "0.14.8"
+criteria = "safe-to-run"
+
 [[exemptions.redb]]
 version = "4.1.0"
 criteria = "safe-to-deploy"
@@ -2199,6 +2227,10 @@ criteria = "safe-to-deploy"
 [[exemptions.rustc_version]]
 version = "0.3.3"
 criteria = "safe-to-deploy"
+
+[[exemptions.rusticata-macros]]
+version = "4.1.0"
+criteria = "safe-to-run"
 
 [[exemptions.rustix]]
 version = "1.1.4"
@@ -2729,6 +2761,10 @@ version = "0.2.11"
 criteria = "safe-to-deploy"
 
 [[exemptions.untrusted]]
+version = "0.7.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.untrusted]]
 version = "0.9.0"
 criteria = "safe-to-deploy"
 
@@ -2976,6 +3012,10 @@ criteria = "safe-to-deploy"
 version = "0.5.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.x509-parser]]
+version = "0.18.1"
+criteria = "safe-to-run"
+
 [[exemptions.xml-rs]]
 version = "0.8.28"
 criteria = "safe-to-deploy"
@@ -2986,6 +3026,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.yansi]]
 version = "1.0.1"
+criteria = "safe-to-run"
+
+[[exemptions.yasna]]
+version = "0.6.0"
 criteria = "safe-to-run"
 
 [[exemptions.yoke]]

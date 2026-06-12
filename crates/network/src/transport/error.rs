@@ -69,8 +69,8 @@ pub enum TransportError {
 
     /// UTF-8 validation failed on a text frame.
     ///
-    /// Only emitted by backends that validate (e.g. `tokio-tungstenite`); the
-    /// in-house HFT backend does not validate and will not produce this.
+    /// Both shipped backends validate incoming text frames: tokio-tungstenite
+    /// during frame assembly and sockudo-ws at parse time.
     #[error("invalid UTF-8 in text frame")]
     InvalidUtf8,
 

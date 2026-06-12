@@ -23,7 +23,7 @@
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -71,6 +71,9 @@ const MAX_RECONNECT_ATTEMPTS_WHILE_WAITING_FOR_AUTH_SEED: u64 = 0x57EB_3009;
 const STREAM_NOTIFY_CLOSED_WHILE_WAITING_FOR_AUTH_SEED: u64 = 0x57EB_300A;
 const STREAM_DEAD_WRITE_WHILE_WAITING_FOR_AUTH_SEED: u64 = 0x57EB_300B;
 const RECONNECTABLE_DROP_WHILE_WAITING_FOR_AUTH_SEED: u64 = 0x57EB_300C;
+const HEARTBEAT_PING_SEED: u64 = 0x57EB_3010;
+const SERVER_PING_PONG_SEED: u64 = 0x57EB_3011;
+const SERVER_CLOSE_FRAME_SEED: u64 = 0x57EB_3012;
 const LARGE_WEBSOCKET_MESSAGE_LEN: usize = 16 * 1024;
 const BACKPRESSURE_TCP_CAPACITY: usize = 4;
 const BACKPRESSURE_MESSAGE_COUNT: usize = 16;
@@ -786,6 +789,63 @@ fn test_turmoil_websocket_sockudo_reconnectable_drop_while_waiting_for_auth_wait
 }
 
 #[rstest]
+fn test_turmoil_websocket_heartbeat_pings_reach_server() {
+    run_websocket_heartbeat_pings_reach_server(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        HEARTBEAT_PING_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_heartbeat_pings_reach_server() {
+    run_websocket_heartbeat_pings_reach_server(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        HEARTBEAT_PING_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
+fn test_turmoil_websocket_server_ping_gets_pong() {
+    run_websocket_server_ping_gets_pong(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        SERVER_PING_PONG_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_server_ping_gets_pong() {
+    run_websocket_server_ping_gets_pong(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        SERVER_PING_PONG_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
+fn test_turmoil_websocket_server_close_frame_triggers_reconnect() {
+    run_websocket_server_close_frame_triggers_reconnect(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        SERVER_CLOSE_FRAME_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_server_close_frame_triggers_reconnect() {
+    run_websocket_server_close_frame_triggers_reconnect(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        SERVER_CLOSE_FRAME_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
 #[ignore = "continuous seed sweep; run scripts/soak-network-turmoil.sh"]
 fn test_turmoil_websocket_repeated_drops_backend_pair_soak() {
     for (iteration, seed) in seed_sweep_from_env() {
@@ -806,6 +866,135 @@ fn test_turmoil_websocket_repeated_drops_backend_pair_soak() {
             );
         }
     }
+}
+
+fn run_websocket_heartbeat_pings_reach_server(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.heartbeat = Some(1);
+
+    let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
+    let pings = Arc::new(AtomicUsize::new(0));
+    let server_pings = Arc::clone(&pings);
+
+    sim.host("server", move || {
+        let server_pings = Arc::clone(&server_pings);
+        async move { ws_ping_counting_server(server_pings).await }
+    });
+
+    sim.client("client", async move {
+        let (handler, _rx) = channel_message_handler();
+        let client =
+            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+                .await
+                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        // Heartbeat cadence is 1s; allow up to 10s of simulated time for 3 pings
+        let mut received_enough = false;
+
+        for _ in 0..1_000 {
+            if pings.load(Ordering::SeqCst) >= 3 {
+                received_enough = true;
+                break;
+            }
+            tokio::time::sleep(POLL_STEP).await;
+        }
+
+        assert!(
+            received_enough,
+            "{label} seed {seed:#018x} server should receive heartbeat pings, received {}",
+            pings.load(Ordering::SeqCst)
+        );
+
+        client.disconnect().await;
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_server_ping_gets_pong(
+    websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
+    let pong_received = Arc::new(AtomicBool::new(false));
+    let server_pong_received = Arc::clone(&pong_received);
+
+    sim.host("server", move || {
+        let server_pong_received = Arc::clone(&server_pong_received);
+        async move { ws_ping_until_pong_server(server_pong_received).await }
+    });
+
+    sim.client("client", async move {
+        let (handler, _rx) = channel_message_handler();
+        let client =
+            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+                .await
+                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        // A quiet client must auto-reply to server pings at the transport layer;
+        // for sockudo this pins the pending_flush nudge that flushes pongs
+        // queued by the read path
+        assert!(
+            wait_for(|| pong_received.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} server should receive a pong from the quiet client"
+        );
+
+        client.disconnect().await;
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_server_close_frame_triggers_reconnect(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(100);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+
+    let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
+
+    sim.host("server", ws_close_frame_then_echo_server);
+
+    sim.client("client", async move {
+        let (handler, mut rx) = channel_message_handler();
+        let client =
+            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+                .await
+                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        // First connection receives a protocol Close frame; the client must
+        // tear it down and reconnect; the second connection announces itself
+        assert!(
+            recv_text(&mut rx, "after-close").await,
+            "{label} seed {seed:#018x} should reconnect after a server close frame"
+        );
+        assert!(
+            wait_for(|| client.is_active()).await,
+            "{label} seed {seed:#018x} should be active after the close-frame reconnect"
+        );
+
+        client.disconnect().await;
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
 }
 
 fn run_websocket_repeated_drops_preserve_message_order(
@@ -2718,4 +2907,97 @@ async fn ws_hold_first_connection_until_release_then_echo_server(
             }
         });
     }
+}
+
+async fn ws_ping_counting_server(
+    pings: Arc<AtomicUsize>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let mut websocket = accept_async(stream).await?;
+
+        while let Some(Ok(msg)) = websocket.next().await {
+            match msg {
+                Message::Ping(_) => {
+                    pings.fetch_add(1, Ordering::SeqCst);
+                }
+                Message::Close(_) => {
+                    let _ = websocket.close(None).await;
+                    break;
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+async fn ws_ping_until_pong_server(
+    pong_received: Arc<AtomicBool>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+    let (stream, _) = listener.accept().await?;
+    let mut websocket = accept_async(stream).await?;
+
+    loop {
+        if websocket
+            .send(Message::Ping(Vec::new().into()))
+            .await
+            .is_err()
+        {
+            break;
+        }
+
+        match tokio::time::timeout(Duration::from_millis(100), websocket.next()).await {
+            Ok(Some(Ok(Message::Pong(_)))) => {
+                pong_received.store(true, Ordering::SeqCst);
+            }
+            Ok(Some(Ok(Message::Close(_)))) => {
+                let _ = websocket.close(None).await;
+                break;
+            }
+            Ok(Some(Ok(_))) => {}
+            Ok(Some(Err(_)) | None) => break,
+            Err(_) => {}
+        }
+    }
+
+    Ok(())
+}
+
+async fn ws_close_frame_then_echo_server() -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+    // First connection: complete the upgrade then send a protocol Close frame
+    let (stream, _) = listener.accept().await?;
+    let mut websocket = accept_async(stream).await?;
+    let _ = websocket.close(None).await;
+    // Drive the close handshake to completion (bounded in case the peer drops)
+    let _ = tokio::time::timeout(Duration::from_millis(500), async {
+        while websocket.next().await.is_some() {}
+    })
+    .await;
+
+    // Second connection: announce and echo
+    let (stream, _) = listener.accept().await?;
+    let mut websocket = accept_async(stream).await?;
+    websocket.send(Message::Text("after-close".into())).await?;
+
+    while let Some(Ok(msg)) = websocket.next().await {
+        match msg {
+            Message::Text(_) | Message::Binary(_) => {
+                if websocket.send(msg).await.is_err() {
+                    break;
+                }
+            }
+            Message::Close(_) => {
+                let _ = websocket.close(None).await;
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
 }

@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Added Hyperliquid minimum notional handling
 - Added Polymarket RTDS custom data subscriptions (#4214), thanks @graceyangfan
 - Added Redis cache adapter order, position, and order-index write persistence (Rust)
+- Added SEC1 EC private key support to socket TLS configuration (Rust)
 - Added Tardis Lighter venue mapping
 - Added Tardis `options_chain` CSV loading, streaming, and catalog conversion
 - Added `order_position_index` Postgres table for the order-position index; run `make init-db` to migrate
@@ -21,6 +22,7 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Changed plug-in loader to reject build mismatches by default; opt out with `set_allow_build_mismatch` (Rust)
 - Changed `CacheDatabaseAdapter::load_index_order_position` to return position IDs instead of positions (Rust)
+- Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)
 
 ### Security
 - Hardened Docker toolchain pins
@@ -40,6 +42,7 @@ Released on TBD (UTC).
 - Fixed Binance Futures hedge reduce-only orders in Rust
 - Fixed Binance Spot expired order handling
 - Fixed Binance Spot/Futures WebSocket connection pool race (#4244), thanks @filipmacek
+- Fixed blocking Python HTTP functions holding the GIL for the full request duration
 - Fixed Blockchain snapshot bootstrap checks
 - Fixed data option-chain delta warmup
 - Fixed Deribit chart bar volume for inverse perpetuals (#4245), thanks @filipmacek
@@ -48,6 +51,8 @@ Released on TBD (UTC).
 - Fixed event-store capture duplicating order events, commands, and account states across dispatch hops (Rust)
 - Fixed event-store snapshot-anchor validation across the verifier, retention, and restore paths (Rust)
 - Fixed event-store replay, scan, marker, and halt-signal edge cases around skipped events, gaps, and reruns (Rust)
+- Fixed HTTP client errors discarding the underlying cause from the reqwest source chain (Rust)
+- Fixed `HttpClient` rejecting invalid response header keys instead of silently dropping them (Rust)
 - Fixed Interactive Brokers reconnect startup handling (#4210), thanks @faysou
 - Fixed Lighter AccountState to include perp-side margin balance (#4246), thanks @filipmacek
 - Fixed Lighter maker-only key lookup authentication (#4234), thanks @filipmacek
@@ -55,12 +60,23 @@ Released on TBD (UTC).
 - Fixed matching engine fill commission side in Rust
 - Fixed OKX instrument parsing for malformed venue payloads
 - Fixed portfolio account update scoping in Rust
+- Fixed rate limiter arithmetic to saturate so extreme quotas deny instead of admitting every request (Rust)
+- Fixed reconnect backoff jitter collapsing to zero at the maximum delay (Rust)
+- Fixed reconnect timeout cancelling the writer swap and replaying buffered messages into a readerless connection (Rust)
 - Fixed Postgres order-client index load panic on orders persisted without a client ID (Rust)
 - Fixed Postgres cache writer runtime
 - Fixed risk sizing without max quantity in Rust
 - Fixed `RiskEngine` bypass to also skip modify-order risk checks (#2330), thanks for reporting @fabz1
+- Fixed socket client `close` stalling on and regressing an already closed client (Rust)
+- Fixed socket reconnect confirmation hanging when a stalled peer blocks the buffer drain (Rust)
+- Fixed stream-mode WebSocket clients accepting a zero heartbeat interval (Rust)
+- Fixed TLS client authentication silently dropped for combined key and certificate PEM files (Rust)
 - Fixed `TwapAlgorithm` rejecting primary orders already cached by the engine submit path (Rust)
 - Fixed `TwapAlgorithm` time event and lifecycle dispatch so all scheduled slices execute (Rust)
+- Fixed unbounded WebSocket initial connection wait against servers that never complete the upgrade (Rust)
+- Fixed WebSocket and socket writer failure paths overwriting a concurrent disconnect with a reconnect (Rust)
+- Fixed WebSocket auth and connection-state waiters missing wakeups from unregistered `Notify` futures (Rust)
+- Fixed WebSocket idle timeout starvation under control-frame floods faster than the check interval (Rust)
 - Fixed Architect AX to deny invalid submits locally and defer ambiguous command failures to reconciliation
 - Fixed dYdX to deny unsupported submits locally and emit rejections only for definitive CheckTx refusals
 - Fixed Interactive Brokers to deny not-ready submits locally and drop synthetic cancel/modify rejections
@@ -69,10 +85,13 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Added Cargo publish dry-run and nightly publish plan checks
+- Added turmoil coverage for WebSocket heartbeats, server-initiated pings, and server close frames (Rust)
 - Fixed nightly CI publish and Windows Harden-Runner checks
 - Improved instrument validation to reject non-positive multiplier and lot size (Rust)
 - Improved `FixedTickScheme` validation to reject non-finite tick sizes (Rust)
 - Improved release verifier retries and manual-publish recovery checks
+- Improved network crate property tests with window-budget, full-domain arithmetic, and jitter-spread checks (Rust)
+- Improved retry budget-exceeded errors to include the last underlying error (Rust)
 - Improved plug-in ABI-mismatch reporting with manifest diagnostics instead of a null-manifest error (Rust)
 - Improved `nautilus_plugin!` macro errors for missing `name` or `version` fields (Rust)
 - Improved event-store marker writer and capture diagnostics with logged fail-stop errors (Rust)

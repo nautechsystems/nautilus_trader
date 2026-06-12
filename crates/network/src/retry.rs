@@ -101,7 +101,9 @@ where
     /// (2) During operation execution (via `tokio::select!`).
     /// (3) During retry delays.
     ///
-    /// This means cancellation may be delayed by up to one operation timeout if it occurs mid-execution.
+    /// Cancellation mid-execution takes effect immediately by dropping the in-flight
+    /// operation future. For non-idempotent operations (e.g. an order already on the
+    /// wire) the outcome of the abandoned attempt is unknown to the caller.
     ///
     /// # Errors
     ///
@@ -205,7 +207,10 @@ where
                             Duration::from_millis(max_elapsed_ms).saturating_sub(elapsed);
 
                         if remaining.is_zero() {
-                            return Err(create_error(self.budget_exceeded_msg(attempt)));
+                            return Err(create_error(format!(
+                                "{}: last error: {e}",
+                                self.budget_exceeded_msg(attempt)
+                            )));
                         }
 
                         delay = delay.min(remaining);
@@ -265,7 +270,10 @@ where
                             Duration::from_millis(max_elapsed_ms).saturating_sub(elapsed);
 
                         if remaining.is_zero() {
-                            return Err(create_error(self.budget_exceeded_msg(attempt)));
+                            return Err(create_error(format!(
+                                "{}: last error: {e}",
+                                self.budget_exceeded_msg(attempt)
+                            )));
                         }
 
                         delay = delay.min(remaining);
@@ -1610,11 +1618,13 @@ mod proptest_tests {
                     times[i].checked_sub(times[i - 1]).unwrap()
                 };
 
-                // The delay should be at least base_delay_ms
+                // The delay floor is min(base, max - jitter): near the cap the
+                // jittered base is lowered so the spread survives saturation
+                let floor = base_delay_ms.min((base_delay_ms * 2).saturating_sub(jitter_ms));
                 prop_assert!(
-                    delay_from_previous.as_millis() >= u128::from(base_delay_ms),
-                    "Retry {} delay {}ms is less than base {}ms",
-                    i, delay_from_previous.as_millis(), base_delay_ms
+                    delay_from_previous.as_millis() >= u128::from(floor),
+                    "Retry {} delay {}ms is less than floor {}ms",
+                    i, delay_from_previous.as_millis(), floor
                 );
 
                 // Delay should be at most base_delay + jitter

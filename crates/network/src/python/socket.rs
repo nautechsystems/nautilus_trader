@@ -205,7 +205,11 @@ impl SocketClient {
                     log::warn!("Cannot reconnect - socket closed");
                 }
                 ConnectionMode::Active => {
-                    connection_mode.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+                    // CAS so a concurrent close cannot be overwritten back to Reconnect
+                    if !ConnectionMode::request_reconnect(&connection_mode) {
+                        log::warn!("Cannot reconnect - socket no longer active");
+                        return Ok(());
+                    }
                     state_notify.notify_one();
 
                     let fallback_interval = Duration::from_millis(100);
@@ -264,7 +268,8 @@ impl SocketClient {
                     log::debug!("Socket already disconnecting");
                 }
                 _ => {
-                    connection_mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
+                    // Preserve a CLOSED terminal state reached concurrently
+                    ConnectionMode::request_disconnect(&connection_mode);
                     state_notify.notify_one();
 
                     let timeout = tokio::time::timeout(Duration::from_secs(5), async {

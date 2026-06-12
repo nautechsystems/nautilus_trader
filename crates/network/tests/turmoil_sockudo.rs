@@ -406,9 +406,10 @@ fn test_turmoil_real_sockudo_network_partition(mut websocket_config: WebSocketCo
     sim.run().unwrap();
 }
 
-/// The Sockudo backend rejects `proxy_url` outright (proxying is only wired
-/// for the tungstenite path); the simulator must surface that uniformly so
-/// callers see the gap immediately.
+/// In production a Sockudo config with `proxy_url` falls back to the
+/// tungstenite proxy path with a warning; under the simulator that path is
+/// unavailable, so the fallback surfaces as an up-front error instead. This
+/// pins the simulator behavior, not the production fallback.
 #[rstest]
 fn test_turmoil_sockudo_rejects_proxy_url(mut websocket_config: WebSocketConfig) {
     websocket_config.proxy_url = Some("http://proxy:9999".to_string());

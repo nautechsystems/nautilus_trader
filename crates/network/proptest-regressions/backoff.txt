@@ -6,3 +6,5 @@
 # everyone who runs the test benefits from these saved cases.
 cc 5689afb07d7f1d849884e4862623843045ed3d60fda16be22cbc54d2c4f042c1 # shrinks to (initial, max, factor, jitter_ms, immediate_first) = (1ms, 1.98s, 3.958823983700926, 808, true), iterations = 12
 cc 931fbad69048776408b8ccaf3f5c5317503272dc16323deec163183edd881e6f
+cc 3810ba47a65b37ae5877b0e34a191b3d040947fdc7a5da12c3ce4ca3c01d0d00 # shrinks to (initial, max, factor, jitter_ms, _) = (2.392s, 2.392s, 1.1, 1, false), subsequent_calls = 1
+cc 22e2bc16d5f84b91a44638b5ab01d7d67b85fa228cc8ed1ab182e9e7bc0e61c0 # shrinks to (initial, max, factor, jitter_ms, immediate_first) = (1ms, 31ms, 8.877937256308906, 283, true), iterations = 8

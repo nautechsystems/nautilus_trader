@@ -40,6 +40,7 @@
 //!    and `fail()` on terminal auth rejection or terminal client shutdown.
 
 use std::{
+    pin::pin,
     sync::{
         Arc, Mutex,
         atomic::{AtomicU8, Ordering},
@@ -276,7 +277,9 @@ impl AuthTracker {
 
         tokio::time::timeout(timeout, async {
             loop {
-                let notified = self.state_notify.notified();
+                // Enable before the state check: an unpolled Notified is unregistered and misses notifies
+                let mut notified = pin!(self.state_notify.notified());
+                notified.as_mut().enable();
 
                 match self.auth_state() {
                     AuthState::Authenticated => return true,
@@ -1035,6 +1038,30 @@ mod tests {
         });
 
         assert!(tracker.wait_for_authenticated(Duration::from_secs(1)).await);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_wait_for_authenticated_no_lost_wakeup_under_race() {
+        // Regression: a succeed() landing between the waiter's state check and
+        // its first poll of Notified must not be lost. Notified only registers
+        // with the Notify once polled or enabled, so without enable() this
+        // stalls for the full timeout and returns false on some iterations.
+        for _ in 0..200 {
+            let tracker = AuthTracker::new();
+            let _rx = tracker.begin();
+
+            let succeeder = tracker.clone();
+            let handle = std::thread::spawn(move || succeeder.succeed());
+
+            assert!(
+                tracker
+                    .wait_for_authenticated(Duration::from_millis(500))
+                    .await,
+                "wakeup lost despite successful authentication"
+            );
+            handle.join().unwrap();
+        }
     }
 
     #[rstest]

@@ -129,9 +129,20 @@ pub(super) struct Gcra {
 }
 
 impl Gcra {
+    /// Creates a GCRA for `quota`.
+    ///
+    /// `t` and `tau` are clamped far below `u64::MAX` so TAT arithmetic
+    /// cannot saturate into the always-admit regime (`tat - tau` collapsing
+    /// to zero): a degenerate quota (period beyond ~146 years) admits its
+    /// burst and then denies. Unclamped, such quotas panicked in the
+    /// Duration multiplication.
     pub(crate) fn new(quota: Quota) -> Self {
-        let tau: Nanos = (quota.replenish_1_per * quota.max_burst.get()).into();
-        let t: Nanos = quota.replenish_1_per.into();
+        const MAX_QUOTA_NANOS: Nanos = Nanos::new(u64::MAX / 4);
+
+        let t = Nanos::from_duration_saturating(quota.replenish_1_per).min(MAX_QUOTA_NANOS);
+        let tau = t
+            .saturating_mul(u64::from(quota.max_burst.get()))
+            .min(MAX_QUOTA_NANOS);
         Self { t, tau }
     }
 

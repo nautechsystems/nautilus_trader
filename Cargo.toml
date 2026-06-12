@@ -375,6 +375,11 @@ criterion = { version = "0.8.2", default-features = false, features = [
 iai = "0.1.1"
 pretty_assertions = "1.4.1"
 proptest = { version = "1.11.0", default-features = false, features = ["std"] }
+rcgen = { version = "0.14.8", default-features = false, features = [
+  "aws_lc_rs",
+  "crypto",
+  "pem",
+] }
 rstest = "0.26.1"
 tempfile = "3.27.0"
 turmoil = "0.7.2"

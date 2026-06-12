@@ -115,10 +115,17 @@ impl HttpClient {
             .build()
             .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?;
 
-        // Pre-intern header keys as HeaderName, keeping both vectors aligned
+        // Pre-intern header keys as HeaderName, keeping both vectors aligned,
+        // an invalid key is an error: a silent drop would make response extraction read nothing.
         let (valid_keys, header_names): (Vec<String>, Vec<HeaderName>) = header_keys
             .into_iter()
-            .filter_map(|k| HeaderName::from_str(&k).ok().map(|name| (k, name)))
+            .map(|k| {
+                HeaderName::from_str(&k)
+                    .map(|name| (k.clone(), name))
+                    .map_err(|e| HttpClientError::Error(format!("Invalid header key '{k}': {e}")))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
             .unzip();
 
         let client = InnerHttpClient {

@@ -234,7 +234,8 @@ impl WebSocketClient {
                     log::debug!("WebSocket already disconnecting");
                 }
                 _ => {
-                    connection_mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
+                    // Preserve a CLOSED terminal state reached concurrently
+                    ConnectionMode::request_disconnect(&connection_mode);
                     state_notify.notify_one();
 
                     let timeout = tokio::time::timeout(Duration::from_secs(5), async {

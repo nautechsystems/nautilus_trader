@@ -124,7 +124,8 @@ impl Quota {
     /// Construct a quota for a given burst size, replenishing the entire burst size in that
     /// given unit of time.
     ///
-    /// Returns `None` if the duration is zero.
+    /// Returns `None` if the per-cell replenish interval (`replenish_all_per / max_burst`)
+    /// rounds to zero nanoseconds, since that would construct a limiter that never limits.
     ///
     /// This constructor allows greater control over the resulting
     /// quota, but doesn't make as much intuitive sense as other
@@ -141,12 +142,13 @@ impl Quota {
     )]
     #[must_use]
     pub fn new(max_burst: NonZeroU32, replenish_all_per: Duration) -> Option<Self> {
-        if replenish_all_per.as_nanos() == 0 {
+        let replenish_1_per = replenish_all_per / max_burst.get();
+        if replenish_1_per.as_nanos() == 0 {
             None
         } else {
             Some(Self {
                 max_burst,
-                replenish_1_per: replenish_all_per / max_burst.get(),
+                replenish_1_per,
             })
         }
     }

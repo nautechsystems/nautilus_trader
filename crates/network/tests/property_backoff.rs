@@ -59,6 +59,18 @@ fn backoff_params_strategy() -> impl Strategy<Value = (Duration, Duration, f64, 
 }
 
 proptest! {
+    // Pin regression files to the crate directory: the default source-parallel
+    // resolution has no `src` component for integration tests and lands at the
+    // workspace root instead
+    #![proptest_config(ProptestConfig {
+        failure_persistence: Some(Box::new(
+            proptest::test_runner::FileFailurePersistence::Direct(
+                concat!(env!("CARGO_MANIFEST_DIR"), "/proptest-regressions/backoff.txt")
+            )
+        )),
+        ..ProptestConfig::default()
+    })]
+
     /// Property: Backoff delays should grow exponentially up to the maximum.
     #[rstest]
     fn backoff_grows_exponentially_to_max(
@@ -151,15 +163,19 @@ proptest! {
                 continue;
             }
 
-            // Jitter should be between 0 and jitter_ms
+            // Near the cap the jittered base is lowered to max - jitter so the
+            // spread survives saturation; the delay may then dip below the
+            // pre-call base but never below min(base, max - jitter)
+            let jitter_range = Duration::from_millis(jitter_ms);
             prop_assert!(
-                delay >= base_delay,
-                "Delay {} should be at least base delay {}",
+                delay >= base_delay.min(max.saturating_sub(jitter_range)),
+                "Delay {} should be at least min(base {}, max - jitter {})",
                 delay.as_millis(),
-                base_delay.as_millis()
+                base_delay.as_millis(),
+                max.saturating_sub(jitter_range).as_millis()
             );
             prop_assert!(
-                delay <= (base_delay + Duration::from_millis(jitter_ms)).min(max),
+                delay <= (base_delay + jitter_range).min(max),
                 "Delay {} should not exceed base delay {} plus jitter {}",
                 delay.as_millis(),
                 base_delay.as_millis(),
@@ -237,14 +253,17 @@ proptest! {
             "First call should return zero delay with immediate_first"
         );
 
-        // Subsequent calls should return non-zero delays
+        // Subsequent calls return real delays; near the cap the jittered base
+        // may dip to max - jitter, so the floor is min(initial, max - jitter)
+        let floor = initial.min(max.saturating_sub(Duration::from_millis(jitter_ms)));
+
         for i in 0..subsequent_calls {
             let delay = backoff.next_duration();
             prop_assert!(
-                delay >= initial,
-                "Subsequent call {} should return delay >= initial ({}ms), was {}ms",
+                delay >= floor,
+                "Subsequent call {} should return delay >= {}ms, was {}ms",
                 i + 1,
-                initial.as_millis(),
+                floor.as_millis(),
                 delay.as_millis()
             );
         }

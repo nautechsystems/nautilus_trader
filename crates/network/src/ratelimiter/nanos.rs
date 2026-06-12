@@ -41,6 +41,11 @@ impl Nanos {
     pub const fn new(u: u64) -> Self {
         Self(u)
     }
+
+    /// Converts a [`Duration`], clamping at `u64::MAX` nanoseconds (~584 years).
+    pub fn from_duration_saturating(d: Duration) -> Self {
+        Self(u64::try_from(d.as_nanos()).unwrap_or(u64::MAX))
+    }
 }
 
 impl From<Duration> for Nanos {
@@ -61,11 +66,13 @@ impl Debug for Nanos {
     }
 }
 
+// Add and Mul saturate: release builds disable overflow checks, and a wrapped
+// TAT would admit every request; pinning at the far future denies instead.
 impl Add<Self> for Nanos {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
+        Self(self.0.saturating_add(rhs.0))
     }
 }
 
@@ -73,7 +80,7 @@ impl Mul<u64> for Nanos {
     type Output = Self;
 
     fn mul(self, rhs: u64) -> Self::Output {
-        Self(self.0 * rhs)
+        Self(self.0.saturating_mul(rhs))
     }
 }
 
@@ -165,5 +172,29 @@ mod test {
         assert_eq!(n_half.saturating_sub(n), Nanos::new(0));
         assert_eq!(n.saturating_sub(n_half), n_half);
         assert_eq!(clock::Reference::saturating_sub(&n_half, n), Nanos::new(0));
+    }
+
+    #[rstest]
+    fn nanos_add_and_mul_saturate_at_max() {
+        // A wrapped TAT would admit every request; the operators must pin at
+        // u64::MAX instead (release builds disable overflow checks)
+        let max = Nanos::new(u64::MAX);
+        let one = Nanos::new(1);
+
+        assert_eq!(max + one, max);
+        assert_eq!(max * 2, max);
+        assert_eq!(Nanos::new(u64::MAX / 2 + 1) * 2, max);
+    }
+
+    #[rstest]
+    fn nanos_from_duration_saturating_clamps() {
+        assert_eq!(
+            Nanos::from_duration_saturating(Duration::MAX),
+            Nanos::new(u64::MAX)
+        );
+        assert_eq!(
+            Nanos::from_duration_saturating(Duration::from_nanos(42)),
+            Nanos::new(42)
+        );
     }
 }
