@@ -152,6 +152,7 @@ pub struct LighterExecutionClient {
     http_client: LighterHttpClient,
     ws_client: LighterWebSocketClient,
     tx_rate_limiter: Arc<LighterTxRateLimiter>,
+    http_batch_serializer: Arc<tokio::sync::Mutex<()>>,
     registry: Arc<MarketRegistry>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
     ws_stream_handle: Mutex<Option<JoinHandle<()>>>,
@@ -234,6 +235,7 @@ impl LighterExecutionClient {
             http_client,
             ws_client,
             tx_rate_limiter,
+            http_batch_serializer: Arc::new(tokio::sync::Mutex::new(())),
             registry,
             pending_tasks: Mutex::new(Vec::new()),
             ws_stream_handle: Mutex::new(None),
@@ -2444,12 +2446,16 @@ impl ExecutionClient for LighterExecutionClient {
         let credential = credential.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
+        let http_batch_serializer = self.http_batch_serializer.clone();
 
         self.spawn_task("submit_order_list", async move {
             log::debug!(
                 "Lighter submit_order_list: queueing {} CreateOrder txs",
                 prepared_orders.len(),
             );
+
+            // Serialize batch sends — venue rejects out-of-order nonces (21104).
+            let _send_guard = http_batch_serializer.lock().await;
 
             match http_client.send_tx_batch(&request).await {
                 Ok(_) => {
@@ -2593,12 +2599,16 @@ impl ExecutionClient for LighterExecutionClient {
         let credential = credential.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
+        let http_batch_serializer = self.http_batch_serializer.clone();
 
         self.spawn_task("batch_cancel_orders", async move {
             log::debug!(
                 "Lighter batch_cancel_orders: queueing {} CancelOrder txs",
                 prepared_cancels.len(),
             );
+
+            // Serialize batch sends — venue rejects out-of-order nonces (21104).
+            let _send_guard = http_batch_serializer.lock().await;
 
             match http_client.send_tx_batch(&request).await {
                 Ok(_) => {
