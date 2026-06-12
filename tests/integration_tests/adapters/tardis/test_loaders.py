@@ -18,10 +18,13 @@ import sys
 import tempfile
 import time
 from decimal import Decimal
+from pathlib import Path
+from types import SimpleNamespace
 
 import psutil
 import pytest
 
+import nautilus_trader.adapters.tardis.loaders as tardis_loaders
 from nautilus_trader.adapters.tardis.loaders import TardisCSVDataLoader
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.enums import AggressorSide
@@ -40,6 +43,108 @@ from tests.integration_tests.adapters.tardis.conftest import get_test_data_path
 
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
+
+
+def test_load_options_chain_threads_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_load_tardis_options_chain(**kwargs: object) -> list[object]:
+        captured.update(kwargs)
+        return ["quote", "greeks"]
+
+    monkeypatch.setattr(
+        tardis_loaders,
+        "nautilus_pyo3",
+        SimpleNamespace(
+            tardis=SimpleNamespace(load_tardis_options_chain=fake_load_tardis_options_chain),
+        ),
+    )
+
+    loader = TardisCSVDataLoader(price_precision=4, size_precision=1)
+    result = loader.load_options_chain(Path("chain.csv"), underlyings=["BTC-"], limit=5)
+
+    assert result == ["quote", "greeks"]
+    assert captured == {
+        "filepath": str(Path("chain.csv").resolve()),
+        "underlyings": ["BTC-"],
+        "price_precision": 4,
+        "size_precision": 1,
+        "limit": 5,
+    }
+
+
+def test_convert_options_chain_csv_threads_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_convert_tardis_options_chain_csv(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        tardis_loaders,
+        "nautilus_pyo3",
+        SimpleNamespace(
+            tardis=SimpleNamespace(
+                convert_tardis_options_chain_csv=fake_convert_tardis_options_chain_csv,
+            ),
+        ),
+    )
+
+    loader = TardisCSVDataLoader(price_precision=4, size_precision=1)
+    loader.convert_options_chain_csv(
+        filepaths=[Path("chain.csv")],
+        catalog_path=Path("catalog"),
+        underlyings=["BTC-"],
+        snapshot_interval_ms=60_000,
+        extract_bbo_as_quotes=False,
+        write_instruments=False,
+    )
+
+    assert captured == {
+        "filepaths": [str(Path("chain.csv").resolve())],
+        "catalog_path": str(Path("catalog").resolve()),
+        "underlyings": ["BTC-"],
+        "snapshot_interval_ms": 60_000,
+        "extract_bbo_as_quotes": False,
+        "write_instruments": False,
+        "price_precision": 4,
+        "size_precision": 1,
+    }
+
+
+def test_stream_options_chain_threads_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_stream_tardis_options_chain(**kwargs: object) -> list[list[object]]:
+        captured.update(kwargs)
+        return [["quote"], ["greeks"]]
+
+    monkeypatch.setattr(
+        tardis_loaders,
+        "nautilus_pyo3",
+        SimpleNamespace(
+            tardis=SimpleNamespace(stream_tardis_options_chain=fake_stream_tardis_options_chain),
+        ),
+    )
+
+    loader = TardisCSVDataLoader(price_precision=4, size_precision=1)
+    result = list(
+        loader.stream_options_chain(
+            Path("chain.csv"),
+            chunk_size=2,
+            underlyings=["ETH-"],
+            limit=3,
+        ),
+    )
+
+    assert result == [["quote"], ["greeks"]]
+    assert captured == {
+        "filepath": str(Path("chain.csv").resolve()),
+        "chunk_size": 2,
+        "underlyings": ["ETH-"],
+        "price_precision": 4,
+        "size_precision": 1,
+        "limit": 3,
+    }
 
 
 def test_csv_loader_with_malformed_data():

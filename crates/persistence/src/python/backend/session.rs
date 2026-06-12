@@ -35,6 +35,10 @@ struct SendPtr<T>(*mut T);
 unsafe impl<T> Send for SendPtr<T> {}
 
 /// Converts a `Data` variant into a Python object via PyO3.
+#[allow(
+    clippy::match_wildcard_for_single_variants,
+    reason = "Data::Defi appears through nautilus-model feature unification"
+)]
 fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
     match item {
         Data::Quote(quote) => Py::new(py, quote).map(pyo3::Py::into_any),
@@ -191,7 +195,7 @@ impl DataBackendSession {
         DataQueryResult::new(query_result, chunk_size)
     }
 
-    /// Register an object store with the session context from a URI with optional storage options
+    /// Register an object store with the session context from a URI with optional storage options.
     #[pyo3(name = "register_object_store_from_uri")]
     #[pyo3(signature = (uri, storage_options=None))]
     fn py_register_object_store_from_uri(

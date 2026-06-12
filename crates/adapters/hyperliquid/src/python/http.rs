@@ -73,10 +73,6 @@ impl HyperliquidHttpClient {
     }
 
     /// Creates an authenticated client from environment variables for the specified network.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error.Auth` if required environment variables are not set.
     #[staticmethod]
     #[pyo3(name = "from_env", signature = (environment=HyperliquidEnvironment::Mainnet, include_builder_attribution=true))]
     fn py_from_env(

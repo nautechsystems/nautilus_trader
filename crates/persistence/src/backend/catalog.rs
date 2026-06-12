@@ -376,6 +376,10 @@ impl ParquetDataCatalog {
     ///
     /// catalog.write_data_enum(mixed_data, None, None)?;
     /// ```
+    #[allow(
+        clippy::match_wildcard_for_single_variants,
+        reason = "Data::Defi appears through nautilus-model feature unification"
+    )]
     pub fn write_data_enum(
         &self,
         data: &[Data],

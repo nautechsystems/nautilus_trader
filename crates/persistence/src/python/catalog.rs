@@ -28,6 +28,10 @@ use pyo3::{exceptions::PyIOError, prelude::*, types::PyList};
 use crate::backend::catalog::ParquetDataCatalog;
 
 /// Converts a single `Data` variant into a Python object for returning from catalog methods.
+#[allow(
+    clippy::match_wildcard_for_single_variants,
+    reason = "Data::Defi appears through nautilus-model feature unification"
+)]
 fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
     match item {
         Data::Quote(quote) => Py::new(py, quote).map(pyo3::Py::into_any),

@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added Polymarket RTDS custom data subscriptions (#4214), thanks @graceyangfan
 - Added Redis cache adapter order, position, and order-index write persistence (Rust)
 - Added Tardis Lighter venue mapping
+- Added Tardis `options_chain` CSV loading, streaming, and catalog conversion
 - Added `order_position_index` Postgres table for the order-position index; run `make init-db` to migrate
 - Added negative price support for `Commodity` instruments in risk checks (#2330), thanks for reporting @fabz1
 - Added `add_native_exec_algorithm` and `ExecutionAlgorithmConfig` bindings to the Python v2 backtest engine

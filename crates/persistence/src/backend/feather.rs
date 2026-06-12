@@ -769,6 +769,10 @@ impl FeatherWriter {
     /// # Errors
     ///
     /// Returns an error if the routed typed or custom data write fails.
+    #[allow(
+        clippy::match_wildcard_for_single_variants,
+        reason = "Data::Defi appears through nautilus-model feature unification"
+    )]
     pub async fn write_data(&mut self, data: Data) -> Result<(), Box<dyn std::error::Error>> {
         match data {
             Data::Quote(quote) => self.write(quote).await,
