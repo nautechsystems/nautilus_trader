@@ -1,0 +1,29 @@
+{
+  "tokens": [
+    {
+      "index": 0,
+      "isCanonical": true,
+      "name": "USDC",
+      "szDecimals": 8,
+      "tokenId": "0x1",
+      "weiDecimals": 8
+    },
+    {
+      "index": 360,
+      "isCanonical": true,
+      "name": "USDH",
+      "szDecimals": 2,
+      "tokenId": "0x168",
+      "weiDecimals": 8
+    },
+    {
+      "index": 235,
+      "isCanonical": true,
+      "name": "USDE",
+      "szDecimals": 2,
+      "tokenId": "0xeb",
+      "weiDecimals": 8
+    }
+  ],
+  "universe": []
+}

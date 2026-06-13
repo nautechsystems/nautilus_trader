@@ -99,6 +99,7 @@ fn spot_meta_fixture() -> Value {
         "tokens": [
             {"name": "USDC", "szDecimals": 6, "weiDecimals": 6, "index": 0, "tokenId": "0x1", "isCanonical": true},
             {"name": "PURR", "szDecimals": 0, "weiDecimals": 5, "index": 1, "tokenId": "0x2", "isCanonical": true},
+            {"name": "USDH", "szDecimals": 2, "weiDecimals": 8, "index": 360, "tokenId": "0x168", "isCanonical": true},
         ],
         "universe": [
             {"name": "PURR/USDC", "tokens": [1, 0], "index": 0, "isCanonical": true},
@@ -149,6 +150,7 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         "allPerpMetas" => {
             let standard_meta = load_json("http_meta_perp_sample.json");
             let hip3_meta = json!({
+                "collateralToken": 360,
                 "universe": [
                     {"name": "xyz:XYZ100", "szDecimals": 4, "maxLeverage": 30, "growthMode": "enabled"},
                     {"name": "xyz:TSLA", "szDecimals": 3, "maxLeverage": 10, "growthMode": "enabled", "marginMode": "strictIsolated"},
@@ -736,12 +738,17 @@ async fn test_data_client_emits_hip3_instruments() {
 
     let mut standard_perp_symbols = Vec::new();
     let mut hip3_symbols = Vec::new();
+    let mut hip3_settlements = Vec::new();
     let mut spot_symbols = Vec::new();
 
     while let Ok(event) = rx.try_recv() {
         if let DataEvent::Instrument(instrument) = event {
             let symbol = instrument.id().symbol.to_string();
             if symbol.contains(':') {
+                hip3_settlements.push((
+                    symbol.clone(),
+                    instrument.settlement_currency().code.to_string(),
+                ));
                 hip3_symbols.push(symbol);
             } else if symbol.ends_with("-SPOT") {
                 spot_symbols.push(symbol);
@@ -759,6 +766,7 @@ async fn test_data_client_emits_hip3_instruments() {
     assert!(hip3_symbols.contains(&"xyz:XYZ100-USD-PERP".to_string()));
     assert!(hip3_symbols.contains(&"xyz:TSLA-USD-PERP".to_string()));
     assert!(hip3_symbols.contains(&"xyz:NVDA-USD-PERP".to_string()));
+    assert!(hip3_settlements.contains(&("xyz:TSLA-USD-PERP".to_string(), "USDH".to_string(),)));
 
     client.disconnect().await.unwrap();
 }

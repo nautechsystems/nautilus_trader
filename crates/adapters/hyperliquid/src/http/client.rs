@@ -93,8 +93,9 @@ use crate::{
         parse::{
             HyperliquidInstrumentDef, instruments_from_defs_owned, parse_fill_report,
             parse_order_status_report_from_basic, parse_outcome_instruments,
-            parse_perp_instruments, parse_position_status_report, parse_spot_instruments,
-            parse_spot_position_status_report,
+            parse_perp_instruments_with_settlement, parse_position_status_report,
+            parse_spot_instruments, parse_spot_position_status_report,
+            resolve_perp_settlement_currency,
         },
         query::{ExchangeAction, InfoRequest},
         rate_limits::{
@@ -1376,43 +1377,68 @@ impl HyperliquidHttpClient {
     /// Fetch and parse all instrument definitions, populating the asset indices cache.
     pub async fn request_instrument_defs(&self) -> Result<Vec<HyperliquidInstrumentDef>> {
         let mut defs: Vec<HyperliquidInstrumentDef> = Vec::new();
+        let spot_meta = match self.inner.get_spot_meta().await {
+            Ok(spot_meta) => Some(spot_meta),
+            Err(e) => {
+                log::warn!("Failed to load Hyperliquid spot metadata: {e}");
+                None
+            }
+        };
 
         // Load all perp dexes: index 0 = standard, index 1+ = HIP-3
         match self.inner.load_all_perp_metas().await {
             Ok(all_metas) => {
                 for (dex_index, meta) in all_metas.iter().enumerate() {
                     let base = perp_dex_asset_index_base(dex_index);
-
-                    match parse_perp_instruments(meta, base) {
-                        Ok(perp_defs) => {
-                            log::debug!(
-                                "Loaded Hyperliquid perp defs: dex_index={dex_index}, count={}",
-                                perp_defs.len(),
-                            );
-                            defs.extend(perp_defs);
-                        }
+                    let settlement_currency = match resolve_perp_settlement_currency(
+                        meta,
+                        spot_meta.as_ref(),
+                    ) {
+                        Ok(settlement_currency) => settlement_currency,
                         Err(e) => {
-                            log::warn!("Failed to parse perp instruments for dex {dex_index}: {e}");
+                            return Err(Error::decode(format!(
+                                "failed to resolve perp settlement currency for dex {dex_index}: {e}",
+                            )));
                         }
-                    }
+                    };
+
+                    let perp_defs = parse_perp_instruments_with_settlement(
+                        meta,
+                        base,
+                        settlement_currency.as_str(),
+                    );
+                    log::debug!(
+                        "Loaded Hyperliquid perp defs: dex_index={dex_index}, count={}",
+                        perp_defs.len(),
+                    );
+                    defs.extend(perp_defs);
                 }
             }
             Err(e) => {
                 log::warn!("Failed to load allPerpMetas, falling back to meta: {e}");
 
                 match self.inner.load_perp_meta().await {
-                    Ok(perp_meta) => match parse_perp_instruments(&perp_meta, 0) {
-                        Ok(perp_defs) => {
-                            log::debug!(
-                                "Loaded Hyperliquid perp defs via fallback: count={}",
-                                perp_defs.len(),
-                            );
-                            defs.extend(perp_defs);
+                    Ok(perp_meta) => {
+                        match resolve_perp_settlement_currency(&perp_meta, spot_meta.as_ref()) {
+                            Ok(settlement_currency) => {
+                                let perp_defs = parse_perp_instruments_with_settlement(
+                                    &perp_meta,
+                                    0,
+                                    settlement_currency.as_str(),
+                                );
+                                log::debug!(
+                                    "Loaded Hyperliquid perp defs via fallback: count={}",
+                                    perp_defs.len(),
+                                );
+                                defs.extend(perp_defs);
+                            }
+                            Err(e) => {
+                                return Err(Error::decode(format!(
+                                    "failed to resolve fallback perp settlement currency: {e}",
+                                )));
+                            }
                         }
-                        Err(e) => {
-                            log::warn!("Failed to parse perp instruments: {e}");
-                        }
-                    },
+                    }
                     Err(e) => {
                         log::warn!("Failed to load Hyperliquid perp metadata: {e}");
                     }
@@ -1420,8 +1446,8 @@ impl HyperliquidHttpClient {
             }
         }
 
-        match self.inner.get_spot_meta().await {
-            Ok(spot_meta) => match parse_spot_instruments(&spot_meta) {
+        if let Some(spot_meta) = spot_meta.as_ref() {
+            match parse_spot_instruments(spot_meta) {
                 Ok(spot_defs) => {
                     log::debug!(
                         "Loaded Hyperliquid spot definitions: count={}",
@@ -1432,9 +1458,6 @@ impl HyperliquidHttpClient {
                 Err(e) => {
                     log::warn!("Failed to parse Hyperliquid spot instruments: {e}");
                 }
-            },
-            Err(e) => {
-                log::warn!("Failed to load Hyperliquid spot metadata: {e}");
             }
         }
 
@@ -3323,6 +3346,7 @@ mod tests {
                 })
                 .collect(),
             margin_tables: Vec::new(),
+            collateral_token: None,
         }
     }
 
@@ -3399,6 +3423,51 @@ mod tests {
         let router = Router::new()
             .route("/info", post(handle_outcome_meta_info))
             .with_state(state);
+
+        tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+
+        addr
+    }
+
+    async fn handle_unresolved_collateral_info(body: axum::body::Bytes) -> Response {
+        let Ok(request_body): Result<Value, _> = serde_json::from_slice(&body) else {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "Invalid JSON body"})),
+            )
+                .into_response();
+        };
+
+        match request_body.get("type").and_then(|value| value.as_str()) {
+            Some("spotMeta") => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "spot metadata unavailable"})),
+            )
+                .into_response(),
+            Some("allPerpMetas") => Json(json!([
+                {
+                    "collateralToken": 360,
+                    "marginTables": [],
+                    "universe": [
+                        {
+                            "maxLeverage": 20,
+                            "name": "km:US500",
+                            "szDecimals": 3
+                        }
+                    ]
+                }
+            ]))
+            .into_response(),
+            _ => Json(json!({"universe": [], "marginTables": []})).into_response(),
+        }
+    }
+
+    async fn start_unresolved_collateral_server() -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let router = Router::new().route("/info", post(handle_unresolved_collateral_info));
 
         tokio::spawn(async move {
             axum::serve(listener, router).await.unwrap();
@@ -3506,6 +3575,23 @@ mod tests {
         assert_eq!(meta.outcomes[0].side_specs.len(), 2);
         assert_eq!(meta.outcomes[0].side_specs[0].name, "Yes");
         assert_eq!(meta.outcomes[0].side_specs[1].name, "No");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_instrument_defs_errors_when_non_usdc_collateral_unresolved() {
+        let addr = start_unresolved_collateral_server().await;
+        let mut client =
+            HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+        client.set_base_info_url(format!("http://{addr}/info"));
+
+        let err = client.request_instrument_defs().await.unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "decode error: failed to resolve perp settlement currency for dex 0: \
+             Spot metadata required to resolve perp collateral token 360",
+        );
     }
 
     #[rstest]

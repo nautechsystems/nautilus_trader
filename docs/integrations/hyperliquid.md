@@ -179,19 +179,22 @@ though orders are live on the venue. See [GH-4010](https://github.com/nautechsys
 Hyperliquid offers linear perpetual futures, HIP-3 builder-deployed perpetuals, native
 spot markets, and HIP-4 binary outcome markets.
 
-| Product Type      | Data Feed | Trading | Notes                                           |
-|-------------------|-----------|---------|-------------------------------------------------|
-| Spot              | ✓         | ✓       | Native spot markets.                            |
-| Perpetual Futures | ✓         | ✓       | USDC‑settled linear perps (validator‑operated). |
-| HIP‑3 Perpetuals  | ✓         | ✓       | Builder‑deployed perps. Opt‑in.                 |
-| HIP‑4 Outcomes    | ✓         | ✓       | USDH‑settled binary outcomes. Opt‑in.           |
+| Product Type      | Data Feed | Trading | Notes                                                   |
+|-------------------|-----------|---------|---------------------------------------------------------|
+| Spot              | ✓         | ✓       | Native spot markets.                                    |
+| Perpetual Futures | ✓         | ✓       | USDC‑settled linear perps (validator‑operated).         |
+| HIP‑3 Perpetuals  | ✓         | ✓       | Builder‑deployed perps with per‑dex collateral. Opt‑in. |
+| HIP‑4 Outcomes    | ✓         | ✓       | USDH‑settled binary outcomes. Opt‑in.                   |
 
 :::note
-All perpetual futures on Hyperliquid are settled in USDC. Spot markets are standard
-currency pairs. See [HIP-3 builder-deployed perpetuals](#hip-3-builder-deployed-perpetuals)
-and [HIP-4 outcome markets](#hip-4-outcome-markets) for configuration and opt-in details.
-Hyperliquid's current API docs mark `outcomeMeta` as testnet-only, so HIP-4 discovery
-depends on that payload being available from the selected environment.
+Standard Hyperliquid perpetuals are settled in USDC. HIP-3 dexes may settle in
+their own collateral token, such as USDH, USDE, or USDT0, while keeping Nautilus
+symbols quoted as `USD`. Spot markets are standard currency pairs. See
+[HIP-3 builder-deployed perpetuals](#hip-3-builder-deployed-perpetuals) and
+[HIP-4 outcome markets](#hip-4-outcome-markets) for configuration and opt-in
+details. Hyperliquid's current API docs mark `outcomeMeta` as testnet-only, so
+HIP-4 discovery depends on that payload being available from the selected
+environment.
 :::
 
 ## Symbology
@@ -358,6 +361,11 @@ The key differences are:
 
 - **Higher fees**: 2x standard perp fees by default. The deployer receives half.
 - **Isolated margin**: HIP-3 markets default to isolated-only margin.
+- **Per-dex collateral**: Each HIP-3 dex declares its settlement token through
+  its `collateralToken` entry in `allPerpMetas`. Nautilus resolves that token
+  through `spotMeta` and keeps the symbol's quote leg as `USD`. If a non-USDC
+  collateral token cannot resolve from `spotMeta`, instrument loading returns
+  an error rather than falling back to USDC.
 - **Deployer-managed oracles**: The deployer operates the oracle feed, not validators.
 - **Growth mode**: Some dexes enable growth mode, which reduces protocol fees by 90%.
 

@@ -1,0 +1,37 @@
+[
+  {
+    "collateralToken": 0,
+    "marginTables": [],
+    "universe": [
+      {
+        "maxLeverage": 40,
+        "name": "BTC",
+        "szDecimals": 5
+      }
+    ]
+  },
+  {
+    "collateralToken": 360,
+    "marginTables": [],
+    "universe": [
+      {
+        "growthMode": "enabled",
+        "maxLeverage": 20,
+        "name": "km:US500",
+        "szDecimals": 3
+      }
+    ]
+  },
+  {
+    "collateralToken": 235,
+    "marginTables": [],
+    "universe": [
+      {
+        "growthMode": "enabled",
+        "maxLeverage": 20,
+        "name": "hyna:BTC",
+        "szDecimals": 5
+      }
+    ]
+  }
+]

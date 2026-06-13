@@ -162,6 +162,9 @@ pub struct PerpMeta {
     /// Margin tables for leverage tiers.
     #[serde(default)]
     pub margin_tables: Vec<(u32, MarginTable)>,
+    /// Collateral token index for this perp dex. Missing on legacy `meta` responses.
+    #[serde(default)]
+    pub collateral_token: Option<u32>,
 }
 
 /// A single perpetual asset from the universe.
