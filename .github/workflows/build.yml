@@ -263,6 +263,19 @@ jobs:
       - name: Verify immutable CI inputs (post-checkout)
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
 
+      # Fork-PR runners keep the workspace on the small root fs; bind the target
+      # dir to the larger /mnt disk (path stays workspace-relative for rust-cache).
+      - name: Back Cargo target with /mnt ephemeral disk (fork PRs)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        run: |
+          target="${{ github.workspace }}/target/build-linux-x86"
+          backing="/mnt/cargo-target/build-linux-x86"
+          sudo mkdir -p "$backing"
+          sudo chown "$(id -u):$(id -g)" "$backing"
+          mkdir -p "$target"
+          sudo mount --bind "$backing" "$target"
+          df -h / /mnt
+
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
@@ -315,7 +328,7 @@ jobs:
         run: |
           rm -rf "${CARGO_TARGET_DIR}/nextest"
           rm -rf "${CARGO_TARGET_DIR}/${CARGO_CI_PROFILE:-nextest}"
-          df -h .
+          df -h . "${CARGO_TARGET_DIR}"
 
       # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
       - name: Verify immutable CI inputs (pre-wheel build)
