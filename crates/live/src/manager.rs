@@ -1122,7 +1122,7 @@ impl ExecutionManager {
                     all_reports.extend(reports);
                 }
                 Err(e) => {
-                    log::error!(
+                    log::warn!(
                         "Failed to query order reports from {}: {e}",
                         client.client_id()
                     );
@@ -1295,7 +1295,7 @@ impl ExecutionManager {
                     }
                 }
                 Err(e) => {
-                    log::error!(
+                    log::warn!(
                         "Failed to query position reports from {}: {e}",
                         client.client_id()
                     );
@@ -2327,7 +2327,7 @@ impl ExecutionManager {
         }
 
         if !self.config.generate_missing_orders {
-            log::warn!(
+            log::debug!(
                 "Discrepancy for {instrument_id} position when `generate_missing_orders` disabled, skipping"
             );
             return None;

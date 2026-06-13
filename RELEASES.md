@@ -61,6 +61,8 @@ Released on TBD (UTC).
 - Fixed Lighter AccountState to include perp-side margin balance (#4246), thanks @filipmacek
 - Fixed Lighter maker-only key lookup authentication (#4234), thanks @filipmacek
 - Fixed live external order claim registration in Rust
+- Fixed live reconciliation logging below-cached fill mismatches as errors, halting `shutdown_on_error` nodes (Rust)
+- Fixed live reconciliation logging transient venue report-query failures as errors (Rust)
 - Fixed matching engine fill commission side in Rust
 - Fixed OKX instrument parsing for malformed venue payloads
 - Fixed portfolio account update scoping in Rust

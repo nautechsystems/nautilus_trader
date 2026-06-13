@@ -861,12 +861,24 @@ fn reconcile_fill_quantity_mismatch(
     let report_filled_qty = report.filled_qty;
 
     if report_filled_qty < order_filled_qty {
-        // Venue reports less filled than we have - potential state corruption
-        log::error!(
-            "Fill qty mismatch for {}: cached={}, venue={} (venue < cached)",
+        // Venue cumulative below cached: apply no event so cached state is
+        // preserved. Suppress sub-unit gaps as precision noise.
+        let precision = order_filled_qty.precision.max(report_filled_qty.precision);
+        if is_within_single_unit_tolerance(
+            report_filled_qty.as_decimal(),
+            order_filled_qty.as_decimal(),
+            precision,
+        ) {
+            return None;
+        }
+
+        log::warn!(
+            "Fill qty mismatch for {} ({}): cached={}, venue={}, order_qty={} (venue < cached)",
             order.client_order_id(),
+            report.venue_order_id,
             order_filled_qty,
-            report_filled_qty
+            report_filled_qty,
+            order.quantity(),
         );
         return None;
     }
