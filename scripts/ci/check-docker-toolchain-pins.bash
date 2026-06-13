@@ -46,6 +46,70 @@ check_refs() {
   fi
 }
 
+# The python base image has no canonical version file to align against, so its
+# version tag is the source of truth: every other Python reference must match it,
+# and it must stay within pyproject's requires-python range.
+check_python_alignment() {
+  local nautilus_df=".docker/nautilus_trader.dockerfile"
+  local ubuntu_df=".docker/DockerfileUbuntu"
+  local pyproject="pyproject.toml"
+  local base_ref py_version minor digest requires lower upper ref found
+
+  base_ref="$(grep -Eo 'python:3\.[0-9]+-slim@sha256:[0-9a-f]+' "${REPO_ROOT}/${nautilus_df}" | head -n1 || true)"
+  if [[ -z "$base_ref" ]]; then
+    echo "Error: ${nautilus_df} has no version-tagged, digest-pinned python base image" >&2
+    echo "       Expected: FROM python:<major>.<minor>-slim@sha256:<digest>" >&2
+    status=1
+    return
+  fi
+  py_version="$(printf '%s' "$base_ref" | grep -Eo '3\.[0-9]+' | head -n1)"
+  minor="${py_version#3.}"
+
+  digest="${base_ref##*@sha256:}"
+  if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "Error: ${nautilus_df} python base image has an invalid digest: ${base_ref}" >&2
+    status=1
+  fi
+
+  requires="$(awk -F'"' '/^requires-python/{print $2; exit}' "${REPO_ROOT}/${pyproject}")"
+  lower="$(printf '%s' "$requires" | grep -Eo '>=[[:space:]]*3\.[0-9]+' | grep -Eo '[0-9]+$' || true)"
+  upper="$(printf '%s' "$requires" | grep -Eo '<[[:space:]]*3\.[0-9]+' | grep -Eo '[0-9]+$' || true)"
+  if [[ -n "$lower" ]] && ((minor < lower)); then
+    echo "Error: ${nautilus_df} Python ${py_version} is below requires-python \"${requires}\" in ${pyproject}" >&2
+    status=1
+  fi
+  if [[ -n "$upper" ]] && ((minor >= upper)); then
+    echo "Error: ${nautilus_df} Python ${py_version} is outside requires-python \"${requires}\" in ${pyproject}" >&2
+    status=1
+  fi
+
+  found=0
+  while IFS= read -r ref; do
+    found=1
+    if [[ "$ref" != "python${py_version}" ]]; then
+      echo "Error: ${nautilus_df} references ${ref}, expected python${py_version} from the base image" >&2
+      status=1
+    fi
+  done < <(grep -Eo 'python3\.[0-9]+' "${REPO_ROOT}/${nautilus_df}" || true)
+  if [[ "$found" -eq 0 ]]; then
+    echo "Error: ${nautilus_df} has no python<version> site-packages paths to verify" >&2
+    status=1
+  fi
+
+  found=0
+  while IFS= read -r ref; do
+    found=1
+    if [[ "$ref" != "$py_version" ]]; then
+      echo "Error: ${ubuntu_df} installs Python ${ref}, expected ${py_version} from the base image" >&2
+      status=1
+    fi
+  done < <(grep -Eo 'uv python install[[:space:]]+3\.[0-9]+' "${REPO_ROOT}/${ubuntu_df}" | grep -Eo '3\.[0-9]+' || true)
+  if [[ "$found" -eq 0 ]]; then
+    echo "Error: ${ubuntu_df} has no 'uv python install <version>' to verify" >&2
+    status=1
+  fi
+}
+
 check_refs \
   "uv ${UV_VERSION}" \
   "pyproject.toml [tool.uv].required-version" \
@@ -62,5 +126,7 @@ check_refs \
   'rust:[^[:space:]\\]+@sha256:[0-9a-f]+' \
   ".docker/DockerfileUbuntu" \
   ".docker/nautilus_trader.dockerfile"
+
+check_python_alignment
 
 exit "$status"

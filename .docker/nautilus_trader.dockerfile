@@ -1,7 +1,9 @@
 FROM rust:1.96.0-slim-bookworm@sha256:b5f842fac1e3b4ff718a652a8e0173b62d9403ec826ef4998880b9347db30684 AS rust-toolchain
 
-# Pin to specific digest for supply-chain security (python:3.13-slim as of 2026-04-30)
-FROM python@sha256:a0779d7c12fc20be6ec6b4ddc901a4fd7657b8a6bc9def9d3fde89ed5efe0a3d AS base
+# Pin to specific digest for supply-chain security (python:3.13-slim as of 2026-04-30).
+# Keep the version tag: scripts/ci/check-docker-toolchain-pins.bash treats it as the
+# canonical Docker Python version and aligns the site-packages paths below to it.
+FROM python:3.13-slim@sha256:a0779d7c12fc20be6ec6b4ddc901a4fd7657b8a6bc9def9d3fde89ed5efe0a3d AS base
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=off \

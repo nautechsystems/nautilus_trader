@@ -146,7 +146,7 @@ repos:
 
       - id: check-docker-toolchain-pins
         name: check Docker toolchain pins
-        description: Ensures Docker uv and Rust image pins match project toolchain versions
+        description: Ensures Docker uv, Rust, and Python pins match project toolchain versions
         entry: bash scripts/ci/check-docker-toolchain-pins.bash
         language: system
         files: >-
