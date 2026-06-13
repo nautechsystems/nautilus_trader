@@ -668,6 +668,8 @@ ignored_unit_patterns = "warn"
 if_not_else = "warn"
 
 # Security and robustness
+disallowed_methods = "warn"
+disallowed_types = "warn"
 suspicious_doc_comments = "warn"
 large_stack_arrays = "warn"
 panic_in_result_fn = "warn"
