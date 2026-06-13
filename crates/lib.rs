@@ -19,6 +19,8 @@
 //! stable entry point. Use the individual `nautilus-*` crates for adapter,
 //! backtest, live, and other crate-specific APIs.
 
+#![warn(clippy::pedantic)]
+
 pub use nautilus_common as common;
 pub use nautilus_core as core;
 pub use nautilus_model as model;
