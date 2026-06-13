@@ -350,6 +350,20 @@ impl PyStrategyInner {
         Ok(())
     }
 
+    fn dispatch_on_market_exit(&self) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| py_self.call_method0(py, "on_market_exit"))?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_post_market_exit(&self) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| py_self.call_method0(py, "post_market_exit"))?;
+        }
+        Ok(())
+    }
+
     fn dispatch_on_time_event(&self, event: &TimeEvent) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
@@ -807,6 +821,14 @@ impl Strategy for PyStrategyInner {
 
     fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
         self.core.config.external_order_claims.clone()
+    }
+
+    fn on_market_exit(&mut self) {
+        let _ = self.dispatch_on_market_exit();
+    }
+
+    fn post_market_exit(&mut self) {
+        let _ = self.dispatch_post_market_exit();
     }
 
     fn on_order_initialized(&mut self, event: OrderInitialized) {
@@ -1395,6 +1417,16 @@ impl PyStrategy {
         }
     }
 
+    #[pyo3(name = "market_exit")]
+    fn py_market_exit(&mut self) -> PyResult<()> {
+        Strategy::market_exit(self.inner_mut()).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "is_exiting")]
+    fn py_is_exiting(&self) -> bool {
+        Strategy::is_exiting(self.inner())
+    }
+
     #[pyo3(name = "save")]
     fn py_save(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let state = DataActor::on_save(self.inner()).map_err(to_pyruntime_err)?;
@@ -1729,6 +1761,12 @@ impl PyStrategy {
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_option_chain")]
     fn py_on_option_chain(&mut self, slice: OptionChainSlice) {}
+
+    #[pyo3(name = "on_market_exit")]
+    fn py_on_market_exit(&mut self) {}
+
+    #[pyo3(name = "post_market_exit")]
+    fn py_post_market_exit(&mut self) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_initialized")]
@@ -2833,6 +2871,8 @@ class TrackingStrategy:
         "on_historical_bars",
         "on_historical_mark_prices",
         "on_historical_index_prices",
+        "on_market_exit",
+        "post_market_exit",
         "on_order_initialized",
         "on_order_denied",
         "on_order_emulated",
@@ -3348,6 +3388,34 @@ class TrackingStrategy:
             assert!(rust_strategy.inner().core.pending_stop);
             assert!(rust_strategy.inner().core.is_exiting);
             assert_eq!(python_method_call_count(&py_strategy, py, "on_stop"), 0);
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_market_exit_methods_update_state_and_dispatch_hooks() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let (py_strategy, mut rust_strategy) = create_registered_tracking_strategy(py);
+
+            rust_strategy.py_start().unwrap();
+
+            assert!(!rust_strategy.py_is_exiting());
+
+            rust_strategy.py_market_exit().unwrap();
+
+            assert!(rust_strategy.py_is_exiting());
+            assert_eq!(
+                python_method_call_count(&py_strategy, py, "on_market_exit"),
+                1
+            );
+
+            rust_strategy.inner_mut().finalize_market_exit();
+
+            assert!(!rust_strategy.py_is_exiting());
+            assert_eq!(
+                python_method_call_count(&py_strategy, py, "post_market_exit"),
+                1
+            );
         });
     }
 
