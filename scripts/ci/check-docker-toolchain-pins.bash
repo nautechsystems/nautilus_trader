@@ -12,9 +12,10 @@ status=0
 
 check_refs() {
   local label="$1"
-  local expected_prefix="$2"
-  local pattern="$3"
-  shift 3
+  local version_source="$2"
+  local expected_prefix="$3"
+  local pattern="$4"
+  shift 4
 
   local found=0
   local file
@@ -27,7 +28,8 @@ check_refs() {
       digest="${ref##*@sha256:}"
 
       if [[ "$ref" != "$expected_prefix"* ]]; then
-        echo "Error: ${file} uses ${ref}, expected ${label} from project config" >&2
+        echo "Error: ${file} uses ${ref}, expected ${label} from ${version_source}" >&2
+        echo "       Update the Docker image tag and digest together." >&2
         status=1
       fi
 
@@ -46,6 +48,7 @@ check_refs() {
 
 check_refs \
   "uv ${UV_VERSION}" \
+  "pyproject.toml [tool.uv].required-version" \
   "$EXPECTED_UV_PREFIX" \
   'ghcr\.io/astral-sh/uv:[^[:space:]\\]+@sha256:[0-9a-f]+' \
   ".docker/DockerfileUbuntu" \
@@ -54,6 +57,7 @@ check_refs \
 
 check_refs \
   "Rust ${RUST_VERSION}" \
+  "rust-toolchain.toml [toolchain].version" \
   "$EXPECTED_RUST_PREFIX" \
   'rust:[^[:space:]\\]+@sha256:[0-9a-f]+' \
   ".docker/DockerfileUbuntu" \

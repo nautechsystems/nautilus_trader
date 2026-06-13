@@ -142,6 +142,21 @@ repos:
         files: ^(uv\.lock|python/uv\.lock|pyproject\.toml|python/pyproject\.toml)$
         pass_filenames: false
 
+      - id: check-docker-toolchain-pins
+        name: check Docker toolchain pins
+        description: Ensures Docker uv and Rust image pins match project toolchain versions
+        entry: bash scripts/ci/check-docker-toolchain-pins.bash
+        language: system
+        files: >-
+          (?x)^(
+            \.docker/(DockerfileUbuntu|nautilus_trader\.dockerfile|jupyterlab\.dockerfile)|
+            pyproject\.toml|
+            rust-toolchain\.toml|
+            scripts/(uv-version|rust-toolchain)\.sh|
+            scripts/ci/check-docker-toolchain-pins\.bash
+          )$
+        pass_filenames: false
+
       - id: check-copyright-year
         name: check copyright year
         description: Ensures copyright headers have current year
