@@ -16,18 +16,19 @@
 use ahash::AHashMap;
 use nautilus_common::signal::Signal;
 use nautilus_model::{
-    accounts::{Account, AccountAny},
+    accounts::AccountAny,
     data::{Bar, CustomData, DataType, HasTsInit, QuoteTick, TradeTick},
     events::{
-        AccountState, OrderEvent, OrderEventAny, OrderSnapshot,
+        AccountState, OrderEvent, OrderEventAny, OrderFilled, OrderInitialized, OrderSnapshot,
         position::snapshot::PositionSnapshot,
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     instruments::{Instrument, InstrumentAny},
-    orders::{Order, OrderAny},
+    orders::OrderAny,
+    position::Position,
     types::{AccountBalance, Currency, MarginBalance},
 };
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Postgres, Row, Transaction};
 
 use super::models::{
     orders::OrderSnapshotModel, positions::PositionSnapshotModel, types::SignalModel,
@@ -41,7 +42,7 @@ use crate::sql::models::{
     },
     general::{GeneralRow, OrderEventOrderClientIdCombination, OrderPositionIndexRow},
     instruments::InstrumentAnyModel,
-    orders::OrderEventAnyModel,
+    orders::{OrderEventAnyModel, OrderFilledModel},
     types::CurrencyModel,
 };
 
@@ -240,83 +241,17 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to load instruments: {e}"))
     }
 
-    /// Inserts or updates an `OrderAny` entry via the provided `pool`.
+    /// Inserts an `OrderInitialized` event via the provided `pool`.
     ///
     /// # Errors
     ///
     /// Returns an error if the SQL INSERT or UPDATE operation fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the order initialization existence check unwraps `None` after awaiting.
     pub async fn add_order(
         pool: &PgPool,
-        _kind: &str,
-        updated: bool,
-        order: Box<dyn Order>,
+        event: OrderInitialized,
         client_id: Option<ClientId>,
     ) -> anyhow::Result<()> {
-        if updated {
-            let exists = Self::check_if_order_initialized_exists(pool, order.client_order_id())
-                .await
-                .unwrap();
-            assert!(
-                exists,
-                "OrderInitialized event does not exist for order: {}",
-                order.client_order_id()
-            );
-        }
-
-        match order.last_event().clone() {
-            OrderEventAny::Accepted(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-            OrderEventAny::CancelRejected(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-            OrderEventAny::Canceled(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-            OrderEventAny::Denied(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-            OrderEventAny::Emulated(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-            OrderEventAny::Expired(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-            OrderEventAny::Filled(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-            OrderEventAny::Initialized(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-            OrderEventAny::ModifyRejected(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-            OrderEventAny::PendingCancel(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-            OrderEventAny::PendingUpdate(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-            OrderEventAny::Rejected(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-            OrderEventAny::Released(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-            OrderEventAny::Submitted(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-            OrderEventAny::Updated(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-            OrderEventAny::Triggered(event) => {
-                Self::add_order_event(pool, Box::new(event), client_id).await
-            }
-        }
+        Self::add_order_event(pool, Box::new(event), client_id).await
     }
 
     /// Inserts an `OrderSnapshot` entry via the provided `pool`.
@@ -753,9 +688,6 @@ impl DatabaseQueries {
     ///
     /// Returns an error if assembling events or SQL operations fail.
     ///
-    /// # Panics
-    ///
-    /// Panics if assembling the order from events fails.
     pub async fn load_order(
         pool: &PgPool,
         client_order_id: &ClientOrderId,
@@ -767,7 +699,9 @@ impl DatabaseQueries {
                 if order_events.is_empty() {
                     return Ok(None);
                 }
-                let order = OrderAny::from_events(order_events).unwrap();
+                let order = OrderAny::from_events(order_events).map_err(|e| {
+                    anyhow::anyhow!("Failed to assemble order {client_order_id} from events: {e}")
+                })?;
                 Ok(Some(order))
             }
             Err(e) => anyhow::bail!("Failed to load order events: {e}"),
@@ -780,9 +714,6 @@ impl DatabaseQueries {
     ///
     /// Returns an error if loading events or SQL operations fail.
     ///
-    /// # Panics
-    ///
-    /// Panics if loading or assembling any individual order fails.
     pub async fn load_orders(pool: &PgPool) -> anyhow::Result<Vec<OrderAny>> {
         let mut orders: Vec<OrderAny> = Vec::new();
         let client_order_ids: Vec<ClientOrderId> = sqlx::query(
@@ -799,7 +730,7 @@ impl DatabaseQueries {
         })
         .map_err(|e| anyhow::anyhow!("Failed to load order ids: {e}"))?;
         for id in client_order_ids {
-            let order = Self::load_order(pool, &id).await.unwrap();
+            let order = Self::load_order(pool, &id).await?;
             if let Some(order) = order {
                 orders.push(order);
             }
@@ -807,46 +738,270 @@ impl DatabaseQueries {
         Ok(orders)
     }
 
-    /// Inserts or updates an `AccountAny` entry via the provided `pool`.
+    /// Replaces the fill event log for a `position_id` via the provided `pool`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the SQL INSERT or UPDATE operation fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if checking for existing account event unwrap fails.
-    pub async fn add_account(
+    /// Returns an error if the fill is invalid or if the SQL operations fail.
+    pub async fn add_position(
         pool: &PgPool,
-        kind: &str,
-        updated: bool,
-        account: Box<dyn Account>,
+        position_id: PositionId,
+        event: &OrderFilled,
     ) -> anyhow::Result<()> {
-        if updated {
-            let exists = Self::check_if_account_event_exists(pool, account.id())
-                .await
-                .unwrap();
-            assert!(
-                exists,
-                "Account event does not exist for account: {}",
-                account.id()
+        let event_position_id = Self::event_position_id(event)?;
+        if event_position_id != position_id {
+            anyhow::bail!(
+                "Cannot persist position event {} for mismatched position_id: expected {}, was {}",
+                event.event_id,
+                position_id,
+                event_position_id
             );
         }
 
         let mut transaction = pool.begin().await?;
+
+        sqlx::query(r#"DELETE FROM "position_event" WHERE position_id = $1"#)
+            .bind(position_id.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("Failed to delete position_event rows: {e}"))?;
+
+        Self::insert_position_event(&mut transaction, event).await?;
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
+    }
+
+    /// Appends a fill event for a `Position` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the fill is invalid or if the SQL operations fail.
+    pub async fn update_position(pool: &PgPool, event: &OrderFilled) -> anyhow::Result<()> {
+        let mut transaction = pool.begin().await?;
+
+        Self::insert_position_event(&mut transaction, event).await?;
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
+    }
+
+    /// Appends an `OrderFilled` event to the position event log via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL INSERT operation fails.
+    pub async fn add_position_event(pool: &PgPool, event: &OrderFilled) -> anyhow::Result<()> {
+        let mut transaction = pool.begin().await?;
+
+        Self::insert_position_event(&mut transaction, event).await?;
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
+    }
+
+    /// Loads all fill events for a `position_id` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT or deserialization fails.
+    pub async fn load_position_events(
+        pool: &PgPool,
+        position_id: &PositionId,
+    ) -> anyhow::Result<Vec<OrderFilled>> {
+        sqlx::query_as::<_, OrderFilledModel>(
+            r#"
+            SELECT *
+            FROM "position_event"
+            WHERE position_id = $1
+            ORDER BY event_sequence ASC
+        "#,
+        )
+        .bind(position_id.to_string())
+        .fetch_all(pool)
+        .await
+        .map(|rows| rows.into_iter().map(|row| row.0).collect())
+        .map_err(|e| anyhow::anyhow!("Failed to load position events: {e}"))
+    }
+
+    /// Loads and replays a complete `Position` for a `position_id` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading events, loading instruments, or replaying fills fails.
+    pub async fn load_position(
+        pool: &PgPool,
+        position_id: &PositionId,
+    ) -> anyhow::Result<Option<Position>> {
+        let fills = Self::load_position_events(pool, position_id).await?;
+        let Some((first_fill, remaining_fills)) = fills.split_first() else {
+            return Ok(None);
+        };
+        let Some(instrument) = Self::load_instrument(pool, &first_fill.instrument_id).await? else {
+            log::error!(
+                "Instrument not found for position {position_id}: {}",
+                first_fill.instrument_id
+            );
+            return Ok(None);
+        };
+
+        let mut position = Position::new(&instrument, *first_fill);
+        for fill in remaining_fills {
+            if position.trade_ids().contains(&fill.trade_id) {
+                anyhow::bail!(
+                    "Duplicate fill event for position {position_id}: {}",
+                    fill.trade_id
+                );
+            }
+            position.apply(fill);
+        }
+
+        Ok(Some(position))
+    }
+
+    /// Loads and replays all `Position` entries via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading position IDs or replaying any position fails.
+    pub async fn load_positions(pool: &PgPool) -> anyhow::Result<Vec<Position>> {
+        let position_ids: Vec<PositionId> = sqlx::query(
+            r#"
+            SELECT DISTINCT position_id
+            FROM "position_event"
+            ORDER BY position_id ASC
+        "#,
+        )
+        .fetch_all(pool)
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .map(|row| PositionId::from(row.get::<&str, _>(0)))
+                .collect()
+        })
+        .map_err(|e| anyhow::anyhow!("Failed to load position ids: {e}"))?;
+
+        let mut positions = Vec::new();
+
+        for id in position_ids {
+            match Self::load_position(pool, &id).await {
+                Ok(Some(position)) => positions.push(position),
+                Ok(None) => log::error!("Position not found: {id}"),
+                Err(e) => log::error!("Failed to load position {id}: {e}"),
+            }
+        }
+
+        Ok(positions)
+    }
+
+    async fn insert_position_event(
+        transaction: &mut Transaction<'_, Postgres>,
+        event: &OrderFilled,
+    ) -> anyhow::Result<()> {
+        let position_id = Self::event_position_id(event)?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO "trader" (id)
+            VALUES ($1)
+            ON CONFLICT (id) DO NOTHING
+        "#,
+        )
+        .bind(event.trader_id.to_string())
+        .execute(&mut **transaction)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into trader table: {e}"))?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO "position_event" (
+                id, kind, trader_id, strategy_id, instrument_id, client_order_id, venue_order_id,
+                account_id, trade_id, currency, order_type, order_side, last_px, last_qty,
+                liquidity_side, position_id, commission, ts_event, ts_init, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                $18, $19, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+        "#,
+        )
+        .bind(event.event_id.to_string())
+        .bind("OrderFilled")
+        .bind(event.trader_id.to_string())
+        .bind(event.strategy_id.to_string())
+        .bind(event.instrument_id.to_string())
+        .bind(event.client_order_id.to_string())
+        .bind(event.venue_order_id.to_string())
+        .bind(event.account_id.to_string())
+        .bind(event.trade_id.to_string())
+        .bind(event.currency.code.as_str())
+        .bind(event.order_type.to_string())
+        .bind(event.order_side.to_string())
+        .bind(event.last_px.to_string())
+        .bind(event.last_qty.to_string())
+        .bind(event.liquidity_side.to_string())
+        .bind(position_id.to_string())
+        .bind(event.commission.map(|commission| commission.to_string()))
+        .bind(event.ts_event.to_string())
+        .bind(event.ts_init.to_string())
+        .execute(&mut **transaction)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into position_event table: {e}"))
+    }
+
+    fn event_position_id(event: &OrderFilled) -> anyhow::Result<PositionId> {
+        event.position_id.ok_or_else(|| {
+            anyhow::anyhow!(
+                "Cannot persist position event with no position_id: {}",
+                event.event_id
+            )
+        })
+    }
+
+    /// Inserts or updates an `AccountState` event via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL INSERT or UPDATE operation fails.
+    pub async fn add_account(
+        pool: &PgPool,
+        updated: bool,
+        account_event: AccountState,
+    ) -> anyhow::Result<()> {
+        if updated {
+            let exists =
+                Self::check_if_account_event_exists(pool, account_event.account_id).await?;
+
+            if !exists {
+                anyhow::bail!(
+                    "Account event does not exist for account: {}",
+                    account_event.account_id
+                );
+            }
+        }
+
+        let mut transaction = pool.begin().await?;
+        let balances = serde_json::to_value::<Vec<AccountBalance>>(account_event.balances)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize account balances: {e}"))?;
+        let margins = serde_json::to_value::<Vec<MarginBalance>>(account_event.margins)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize margin balances: {e}"))?;
 
         sqlx::query(
             r#"
             INSERT INTO "account" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
         "#,
         )
-        .bind(account.id().to_string())
+        .bind(account_event.account_id.to_string())
         .execute(&mut *transaction)
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to insert into account table: {e}"))?;
 
-        let account_event = account.last_event().unwrap();
         sqlx::query(r#"
             INSERT INTO "account_event" (
                 id, kind, account_id, base_currency, balances, margins, is_reported, ts_event, ts_init, created_at, updated_at
@@ -860,11 +1015,11 @@ impl DatabaseQueries {
                 ts_event = $8, ts_init = $9, updated_at = CURRENT_TIMESTAMP
         "#)
             .bind(account_event.event_id.to_string())
-            .bind(kind.to_string())
+            .bind(account_event.account_type.to_string())
             .bind(account_event.account_id.to_string())
             .bind(account_event.base_currency.map(|x| x.code.as_str()))
-            .bind(serde_json::to_value::<Vec<AccountBalance>>(account_event.balances).unwrap())
-            .bind(serde_json::to_value::<Vec<MarginBalance>>(account_event.margins).unwrap())
+            .bind(balances)
+            .bind(margins)
             .bind(account_event.is_reported)
             .bind(account_event.ts_event.to_string())
             .bind(account_event.ts_init.to_string())
@@ -903,9 +1058,6 @@ impl DatabaseQueries {
     ///
     /// Returns an error if assembling events or SQL operations fail.
     ///
-    /// # Panics
-    ///
-    /// Panics if assembling the account from events fails.
     pub async fn load_account(
         pool: &PgPool,
         account_id: &AccountId,
@@ -916,7 +1068,9 @@ impl DatabaseQueries {
                 if account_events.is_empty() {
                     return Ok(None);
                 }
-                let account = AccountAny::from_events(&account_events).unwrap();
+                let account = AccountAny::from_events(&account_events).map_err(|e| {
+                    anyhow::anyhow!("Failed to assemble account {account_id} from events: {e}")
+                })?;
                 Ok(Some(account))
             }
             Err(e) => anyhow::bail!("Failed to load account events: {e}"),
@@ -929,9 +1083,6 @@ impl DatabaseQueries {
     ///
     /// Returns an error if loading events or SQL operations fail.
     ///
-    /// # Panics
-    ///
-    /// Panics if loading or assembling any individual account fails.
     pub async fn load_accounts(pool: &PgPool) -> anyhow::Result<Vec<AccountAny>> {
         let mut accounts: Vec<AccountAny> = Vec::new();
         let account_ids: Vec<AccountId> = sqlx::query(
@@ -948,7 +1099,7 @@ impl DatabaseQueries {
         })
         .map_err(|e| anyhow::anyhow!("Failed to load account ids: {e}"))?;
         for id in account_ids {
-            let account = Self::load_account(pool, &id).await.unwrap();
+            let account = Self::load_account(pool, &id).await?;
             if let Some(account) = account {
                 accounts.push(account);
             }

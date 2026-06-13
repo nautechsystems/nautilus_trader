@@ -43,6 +43,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use anyhow::Context;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use nautilus_common::{
@@ -61,7 +62,10 @@ use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, CustomData, DataType, FundingRateUpdate, HasTsInit, QuoteTick, TradeTick},
     enums::TriggerType,
-    events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
+    events::{
+        AccountState, OrderEventAny, OrderFilled, OrderSnapshot,
+        position::snapshot::PositionSnapshot,
+    },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
@@ -695,7 +699,7 @@ async fn drain_buffer(
                 if let Some(payload) = msg.payload {
                     log::debug!("Processing UPDATE_ORDER for key: {key}");
                     if let Err(e) =
-                        update_order_state(conn, trader_key, encoding, &key, &payload).await
+                        update_order_event_log(conn, trader_key, encoding, &key, &payload).await
                     {
                         log::error!("{e}");
                     }
@@ -755,7 +759,7 @@ async fn flush_pending_pipeline(
     *has_pending_ops = false;
 }
 
-async fn update_order_state(
+async fn update_order_event_log(
     conn: &mut ConnectionManager,
     trader_key: &str,
     encoding: SerializationEncoding,
@@ -770,14 +774,33 @@ async fn update_order_state(
         return Ok(());
     }
 
-    let mut order: OrderAny = DatabaseQueries::deserialize_payload(encoding, &result[0])?;
-    let event: OrderEventAny = DatabaseQueries::deserialize_payload(encoding, value[0].as_ref())?;
-    order.apply(event)?;
+    let mut append_pipe = redis::pipe();
+    append_pipe.atomic();
+    update_list(&mut append_pipe, key, value[0].as_ref());
+    append_pipe.query_async::<()>(conn).await?;
 
-    let payload = DatabaseQueries::serialize_payload(encoding, &order)?;
+    let mut events: Vec<OrderEventAny> = result
+        .iter()
+        .map(|payload| DatabaseQueries::deserialize_payload(encoding, payload))
+        .collect::<anyhow::Result<_>>()
+        .with_context(|| {
+            format!(
+                "Order event append succeeded for {key}, but index replay failed decoding history"
+            )
+        })?;
+    let event: OrderEventAny = DatabaseQueries::deserialize_payload(encoding, value[0].as_ref())
+        .with_context(|| {
+            format!(
+                "Order event append succeeded for {key}, but index replay failed decoding appended event"
+            )
+        })?;
+    events.push(event);
+    let order = OrderAny::from_events(events).with_context(|| {
+        format!("Order event append succeeded for {key}, but index replay failed rebuilding order")
+    })?;
+
     let mut pipe = redis::pipe();
     pipe.atomic();
-    replace_list(&mut pipe, key, &payload);
     update_order_indexes(&mut pipe, trader_key, &order);
     pipe.query_async::<()>(conn).await?;
 
@@ -1062,6 +1085,44 @@ impl RedisCacheDatabaseAdapter {
         self.database.get_encoding()
     }
 
+    fn send_command(
+        &self,
+        op_type: DatabaseOperation,
+        key: String,
+        payload: Option<Vec<Bytes>>,
+    ) -> anyhow::Result<()> {
+        let op = DatabaseCommand::new(op_type, key, payload);
+        self.database
+            .tx
+            .send(op)
+            .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))
+    }
+
+    fn append_list(&self, key: String, payload: Bytes) -> anyhow::Result<()> {
+        self.send_command(DatabaseOperation::Update, key, Some(vec![payload]))
+    }
+
+    fn serialize_account_event(&self, account: &AccountAny) -> anyhow::Result<Bytes> {
+        let event: AccountState = account.last_event().ok_or_else(|| {
+            anyhow::anyhow!("Cannot persist account with no events: {}", account.id())
+        })?;
+        let payload = DatabaseQueries::serialize_payload(self.encoding(), &event)?;
+        Ok(Bytes::from(payload))
+    }
+
+    fn serialize_order_event(&self, order_event: &OrderEventAny) -> anyhow::Result<Bytes> {
+        let payload = DatabaseQueries::serialize_payload(self.encoding(), order_event)?;
+        Ok(Bytes::from(payload))
+    }
+
+    fn serialize_position_event(&self, position: &Position) -> anyhow::Result<Bytes> {
+        let event: OrderFilled = position.last_event().ok_or_else(|| {
+            anyhow::anyhow!("Cannot persist position with no events: {}", position.id)
+        })?;
+        let payload = DatabaseQueries::serialize_payload(self.encoding(), &event)?;
+        Ok(Bytes::from(payload))
+    }
+
     fn load_state(&self, key: String) -> anyhow::Result<AHashMap<String, Bytes>> {
         let mut con = self.database.con.clone();
         let trader_key = self.database.trader_key.clone();
@@ -1094,11 +1155,7 @@ impl RedisCacheDatabaseAdapter {
     }
 
     fn replace_list(&self, key: String, payload: Bytes) -> anyhow::Result<()> {
-        let op = DatabaseCommand::new(DatabaseOperation::ReplaceList, key, Some(vec![payload]));
-        self.database
-            .tx
-            .send(op)
-            .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))
+        self.send_command(DatabaseOperation::ReplaceList, key, Some(vec![payload]))
     }
 }
 
@@ -1424,16 +1481,17 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         let account_id = account.id();
         let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
 
-        let payload = DatabaseQueries::serialize_payload(self.encoding(), account)?;
-        self.replace_list(key, Bytes::from(payload))
+        let payload = self.serialize_account_event(account)?;
+        self.database.insert(key, Some(vec![payload]))
     }
 
     fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
         let client_order_id = order.client_order_id();
         let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
 
-        let payload = DatabaseQueries::serialize_payload(self.encoding(), order)?;
-        self.replace_list(key, Bytes::from(payload))?;
+        let event = OrderEventAny::Initialized(order.init_event().clone());
+        let payload = self.serialize_order_event(&event)?;
+        self.replace_list(key, payload)?;
 
         let order_id_bytes = Bytes::from(client_order_id.to_string());
         self.database
@@ -1472,44 +1530,23 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         let position_id = position.id;
         let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
 
-        let payload = DatabaseQueries::serialize_payload(self.encoding(), position)?;
-        self.replace_list(key, Bytes::from(payload))?;
+        let payload = self.serialize_position_event(position)?;
+        self.replace_list(key, payload)?;
 
         let position_id_bytes = Bytes::from(position_id.to_string());
         self.database.insert(
             INDEX_POSITIONS.to_string(),
             Some(vec![position_id_bytes.clone()]),
         )?;
-
-        if position.is_open() {
-            self.database.insert(
-                INDEX_POSITIONS_OPEN.to_string(),
-                Some(vec![position_id_bytes.clone()]),
-            )?;
-            let op = DatabaseCommand::new(
-                DatabaseOperation::Delete,
-                INDEX_POSITIONS_CLOSED.to_string(),
-                Some(vec![position_id_bytes]),
-            );
-            self.database
-                .tx
-                .send(op)
-                .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))?;
-        } else if position.is_closed() {
-            self.database.insert(
-                INDEX_POSITIONS_CLOSED.to_string(),
-                Some(vec![position_id_bytes.clone()]),
-            )?;
-            let op = DatabaseCommand::new(
-                DatabaseOperation::Delete,
-                INDEX_POSITIONS_OPEN.to_string(),
-                Some(vec![position_id_bytes]),
-            );
-            self.database
-                .tx
-                .send(op)
-                .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))?;
-        }
+        self.database.insert(
+            INDEX_POSITIONS_OPEN.to_string(),
+            Some(vec![position_id_bytes.clone()]),
+        )?;
+        self.send_command(
+            DatabaseOperation::Delete,
+            INDEX_POSITIONS_CLOSED.to_string(),
+            Some(vec![position_id_bytes]),
+        )?;
 
         Ok(())
     }
@@ -1713,7 +1750,10 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn update_account(&self, account: &AccountAny) -> anyhow::Result<()> {
-        self.add_account(account)
+        let account_id = account.id();
+        let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
+        let payload = self.serialize_account_event(account)?;
+        self.append_list(key, payload)
     }
 
     fn update_order(&self, order_event: &OrderEventAny) -> anyhow::Result<()> {
@@ -1732,7 +1772,36 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn update_position(&self, position: &Position) -> anyhow::Result<()> {
-        self.add_position(position)
+        let position_id = position.id;
+        let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
+        let payload = self.serialize_position_event(position)?;
+        self.append_list(key, payload)?;
+
+        let position_id_bytes = Bytes::from(position_id.to_string());
+
+        if position.is_open() {
+            self.database.insert(
+                INDEX_POSITIONS_OPEN.to_string(),
+                Some(vec![position_id_bytes.clone()]),
+            )?;
+            self.send_command(
+                DatabaseOperation::Delete,
+                INDEX_POSITIONS_CLOSED.to_string(),
+                Some(vec![position_id_bytes]),
+            )?;
+        } else if position.is_closed() {
+            self.database.insert(
+                INDEX_POSITIONS_CLOSED.to_string(),
+                Some(vec![position_id_bytes.clone()]),
+            )?;
+            self.send_command(
+                DatabaseOperation::Delete,
+                INDEX_POSITIONS_OPEN.to_string(),
+                Some(vec![position_id_bytes]),
+            )?;
+        }
+
+        Ok(())
     }
 
     fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {

@@ -37,14 +37,15 @@ mod serial_tests {
             order::spec::{OrderCancelRejectedSpec, OrderModifyRejectedSpec},
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId,
-            VenueOrderId,
+            AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
+            TraderId, VenueOrderId,
         },
         instruments::{
             Instrument, InstrumentAny,
             stubs::{crypto_perpetual_ethusdt, currency_pair_ethusdt},
         },
-        orders::{Order, builder::OrderTestBuilder},
+        orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+        position::Position,
         types::{Currency, Quantity},
     };
     use ustr::Ustr;
@@ -205,6 +206,92 @@ mod serial_tests {
         );
         assert!(cache.position_id(&order_2.client_order_id()).is_none());
         assert!(cache.client_id(&order_2.client_order_id()).is_none());
+
+        database.flush().unwrap();
+        database.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_restart_recovery_restores_positions() {
+        let mut database = get_pg_cache_database().await.unwrap();
+        let mut cache = get_cache(Some(Box::new(get_pg_cache_database().await.unwrap())));
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        database
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        database.add_currency(&instrument.quote_currency()).unwrap();
+        database.add_instrument(&instrument).unwrap();
+
+        let open_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-PG-CACHE-POSITION-001"))
+            .build();
+        let close_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-PG-CACHE-POSITION-002"))
+            .build();
+        let position_id = PositionId::new("P-PG-CACHE-POSITION");
+
+        let OrderEventAny::Filled(open_fill) = TestOrderEventStubs::filled(
+            &open_order,
+            &instrument,
+            Some(TradeId::new("E-PG-CACHE-POSITION-001")),
+            Some(position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+        let mut position = Position::new(&instrument, open_fill);
+        database.add_position(&position).unwrap();
+
+        let OrderEventAny::Filled(close_fill) = TestOrderEventStubs::filled(
+            &close_order,
+            &instrument,
+            Some(TradeId::new("E-PG-CACHE-POSITION-002")),
+            Some(position.id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+        position.apply(&close_fill);
+        database.update_position(&position).unwrap();
+
+        wait_until_async(
+            || async {
+                database
+                    .load_position(&position.id)
+                    .await
+                    .unwrap()
+                    .is_some_and(|loaded| loaded.events == position.events)
+            },
+            Duration::from_secs(3),
+        )
+        .await;
+
+        cache.cache_positions().await.unwrap();
+        cache.build_index();
+
+        let cached_position = cache.position(&position.id).unwrap();
+        assert_eq!(
+            cached_position.events.as_slice(),
+            position.events.as_slice()
+        );
+        assert_eq!(cached_position.quantity, position.quantity);
 
         database.flush().unwrap();
         database.close().unwrap();

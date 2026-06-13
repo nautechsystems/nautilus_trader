@@ -23,6 +23,7 @@ use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_model::{
     accounts::AccountAny,
     data::{CustomData, DataType, HasTsInit},
+    events::{AccountState, OrderEventAny, OrderFilled},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     instruments::{InstrumentAny, SyntheticInstrument},
     orders::OrderAny,
@@ -823,7 +824,11 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let account: AccountAny = Self::deserialize_payload(encoding, &result[0])?;
+        let events: Vec<AccountState> = result
+            .iter()
+            .map(|payload| Self::deserialize_payload(encoding, payload))
+            .collect::<anyhow::Result<_>>()?;
+        let account = AccountAny::from_events(&events)?;
         Ok(Some(account))
     }
 
@@ -844,7 +849,11 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let order: OrderAny = Self::deserialize_payload(encoding, &result[0])?;
+        let events: Vec<OrderEventAny> = result
+            .iter()
+            .map(|payload| Self::deserialize_payload(encoding, payload))
+            .collect::<anyhow::Result<_>>()?;
+        let order = OrderAny::from_events(events)?;
         Ok(Some(order))
     }
 
@@ -865,7 +874,34 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let position: Position = Self::deserialize_payload(encoding, &result[0])?;
+        let fills: Vec<OrderFilled> = result
+            .iter()
+            .map(|payload| Self::deserialize_payload(encoding, payload))
+            .collect::<anyhow::Result<_>>()?;
+        let Some((first_fill, remaining_fills)) = fills.split_first() else {
+            return Ok(None);
+        };
+        let Some(instrument) =
+            Self::load_instrument(con, trader_key, &first_fill.instrument_id, encoding).await?
+        else {
+            log::error!(
+                "Instrument not found for position {position_id}: {}",
+                first_fill.instrument_id
+            );
+            return Ok(None);
+        };
+
+        let mut position = Position::new(&instrument, *first_fill);
+        for fill in remaining_fills {
+            if position.trade_ids().contains(&fill.trade_id) {
+                anyhow::bail!(
+                    "Duplicate fill event for position {position_id}: {}",
+                    fill.trade_id
+                );
+            }
+            position.apply(fill);
+        }
+
         Ok(Some(position))
     }
 

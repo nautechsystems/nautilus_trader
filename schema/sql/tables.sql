@@ -176,6 +176,34 @@ CREATE TABLE IF NOT EXISTS "order_position_index" (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS "position_event" (
+    event_sequence BIGSERIAL PRIMARY KEY NOT NULL,
+    id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,
+    strategy_id TEXT NOT NULL,
+    instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
+    client_order_id TEXT NOT NULL,
+    venue_order_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    trade_id TEXT NOT NULL,
+    currency TEXT REFERENCES currency(id),
+    order_type TEXT NOT NULL,
+    order_side TEXT NOT NULL,
+    last_px TEXT NOT NULL,
+    last_qty TEXT NOT NULL,
+    liquidity_side TEXT NOT NULL,
+    position_id TEXT NOT NULL,
+    commission TEXT,
+    ts_event TEXT NOT NULL,
+    ts_init TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_position_event_position_id
+    ON position_event(position_id, event_sequence);
+
 CREATE TABLE IF NOT EXISTS "position"(
     id TEXT PRIMARY KEY NOT NULL,
     trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,

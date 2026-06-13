@@ -681,28 +681,26 @@ mod serial_tests {
     use rstest::*;
 
     use super::*;
-    use crate::redis::flush_redis;
 
     #[fixture]
     async fn redis_connection() -> ConnectionManager {
         let config = DatabaseConfig::default();
-        let mut con = create_redis_connection(MSGBUS_STREAM, config)
+        create_redis_connection(MSGBUS_STREAM, config)
             .await
-            .unwrap();
-        flush_redis(&mut con).await.unwrap();
-        con
+            .unwrap()
     }
 
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_stream_messages_terminate_signal(#[future] redis_connection: ConnectionManager) {
-        let mut con = redis_connection.await;
+        let _con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
             database: Some(DatabaseConfig::default()),
+            use_instance_id: true,
             ..Default::default()
         };
 
@@ -729,7 +727,6 @@ mod serial_tests {
         // Shutdown and cleanup
         rx.close();
         handle.await.unwrap();
-        flush_redis(&mut con).await.unwrap();
     }
 
     #[rstest]
@@ -744,6 +741,7 @@ mod serial_tests {
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
             database: Some(DatabaseConfig::default()),
+            use_instance_id: true,
             ..Default::default()
         };
 
@@ -784,7 +782,6 @@ mod serial_tests {
 
         // Shutdown and cleanup
         handle.await.unwrap();
-        flush_redis(&mut con).await.unwrap();
     }
 
     #[rstest]
@@ -797,6 +794,7 @@ mod serial_tests {
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
             database: Some(DatabaseConfig::default()),
+            use_instance_id: true,
             ..Default::default()
         };
 
@@ -841,7 +839,6 @@ mod serial_tests {
         rx.close();
         stream_signal.store(true, Ordering::Relaxed);
         handle.await.unwrap();
-        flush_redis(&mut con).await.unwrap();
     }
 
     #[rstest]
@@ -854,6 +851,7 @@ mod serial_tests {
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
             database: Some(DatabaseConfig::default()),
+            use_instance_id: true,
             stream_per_topic: false,
             ..Default::default()
         };
@@ -900,7 +898,6 @@ mod serial_tests {
 
         // Shutdown and cleanup
         handle.await.unwrap();
-        flush_redis(&mut con).await.unwrap();
     }
 
     #[rstest]
@@ -910,8 +907,9 @@ mod serial_tests {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
         // Setup multiple stream keys
-        let stream_key1 = "test:stream:1".to_string();
-        let stream_key2 = "test:stream:2".to_string();
+        let suffix = UUID4::new();
+        let stream_key1 = format!("test:stream:{suffix}:1");
+        let stream_key2 = format!("test:stream:{suffix}:2");
         let external_streams = vec![stream_key1.clone(), stream_key2.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
         let stream_signal_clone = stream_signal.clone();
@@ -930,8 +928,6 @@ mod serial_tests {
             .await
             .unwrap();
         });
-
-        tokio::time::sleep(Duration::from_millis(200)).await;
 
         // Publish to stream 1 at higher ID
         let _: () = con
@@ -969,7 +965,6 @@ mod serial_tests {
         rx.close();
         stream_signal.store(true, Ordering::Relaxed);
         handle.await.unwrap();
-        flush_redis(&mut con).await.unwrap();
     }
 
     #[rstest]
@@ -981,9 +976,10 @@ mod serial_tests {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
         // Setup multiple stream keys
-        let stream_key1 = "test:stream:interleaved:1".to_string();
-        let stream_key2 = "test:stream:interleaved:2".to_string();
-        let stream_key3 = "test:stream:interleaved:3".to_string();
+        let suffix = UUID4::new();
+        let stream_key1 = format!("test:stream:interleaved:{suffix}:1");
+        let stream_key2 = format!("test:stream:interleaved:{suffix}:2");
+        let stream_key3 = format!("test:stream:interleaved:{suffix}:3");
         let external_streams = vec![
             stream_key1.clone(),
             stream_key2.clone(),
@@ -1005,8 +1001,6 @@ mod serial_tests {
             .await
             .unwrap();
         });
-
-        tokio::time::sleep(Duration::from_millis(200)).await;
 
         // Stream 1 advances with high ID
         let _: () = con
@@ -1057,7 +1051,6 @@ mod serial_tests {
         rx.close();
         stream_signal.store(true, Ordering::Relaxed);
         handle.await.unwrap();
-        flush_redis(&mut con).await.unwrap();
     }
 
     #[rstest]
@@ -1067,6 +1060,7 @@ mod serial_tests {
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
             database: Some(DatabaseConfig::default()),
+            use_instance_id: true,
             ..Default::default()
         };
 
@@ -1085,23 +1079,16 @@ mod serial_tests {
         // Start the heartbeat task with a short interval
         let handle = tokio::spawn(run_heartbeat(1, signal.clone(), tx));
 
-        // Wait for a couple of heartbeats
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        let heartbeat = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("Heartbeat should be received")
+            .unwrap();
 
         // Stop the heartbeat task
         signal.store(true, Ordering::Relaxed);
         handle.await.unwrap();
 
         // Ensure heartbeats were sent
-        let mut heartbeats: Vec<BusMessage> = Vec::new();
-        while let Ok(hb) = rx.try_recv() {
-            heartbeats.push(hb);
-        }
-
-        assert!(!heartbeats.is_empty());
-
-        for hb in heartbeats {
-            assert_eq!(hb.topic, HEARTBEAT_TOPIC);
-        }
+        assert_eq!(heartbeat.topic, HEARTBEAT_TOPIC);
     }
 }

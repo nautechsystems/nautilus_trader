@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Added Hyperliquid builder attribution opt-out
 - Added Hyperliquid minimum notional handling
 - Added Polymarket RTDS custom data subscriptions (#4214), thanks @graceyangfan
+- Added Postgres cache position event-log persistence and restart recovery (Rust)
 - Added Redis cache adapter order, position, and order-index write persistence (Rust)
 - Added SEC1 EC private key support to socket TLS configuration (Rust)
 - Added Tardis Lighter venue mapping
@@ -23,6 +24,7 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Changed plug-in loader to reject build mismatches by default; opt out with `set_allow_build_mismatch` (Rust)
 - Changed `CacheDatabaseAdapter::load_index_order_position` to return position IDs instead of positions (Rust)
+- Changed Redis cache account/order/position storage to event logs; clear old typed state (Rust)
 - Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)
 
 ### Security
@@ -68,6 +70,7 @@ Released on TBD (UTC).
 - Fixed Postgres order-client index load panic on orders persisted without a client ID (Rust)
 - Fixed Postgres cache writer runtime
 - Fixed risk sizing without max quantity in Rust
+- Fixed Redis order updates to persist events before index replay can fail (Rust)
 - Fixed `RiskEngine` bypass to also skip modify-order risk checks (#2330), thanks for reporting @fabz1
 - Fixed socket client `close` stalling on and regressing an already closed client (Rust)
 - Fixed socket reconnect confirmation hanging when a stalled peer blocks the buffer drain (Rust)

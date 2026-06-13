@@ -39,7 +39,7 @@ mod serial_tests {
         },
         enums::{OrderSide, OrderStatus, OrderType},
         events::{
-            OrderEventAny, OrderSnapshot,
+            AccountState, OrderEventAny, OrderFilled, OrderSnapshot,
             account::stubs::{cash_account_state_multi, cash_account_state_multi_changed_btc},
             position::snapshot::PositionSnapshot,
         },
@@ -905,6 +905,7 @@ mod serial_tests {
         let mut position = Position::new(&instrument, fill);
         let mut account = AccountAny::from(cash_account_state_multi());
 
+        adapter.add_instrument(&instrument).unwrap();
         adapter.add_order(&order_1, Some(client_id)).unwrap();
         adapter.add_order(&order_2, None).unwrap();
         adapter.add_position(&position).unwrap();
@@ -1002,6 +1003,7 @@ mod serial_tests {
         .await;
 
         let mut conn = adapter.database.con.clone();
+        let encoding = adapter.database.get_encoding();
         let order_snapshot_key = format!(
             "{}:snapshots:orders:{}",
             adapter.database.trader_key,
@@ -1011,6 +1013,18 @@ mod serial_tests {
             "{}:snapshots:positions:{}",
             adapter.database.trader_key, position.id
         );
+        let account_key = format!("{}:accounts:{}", adapter.database.trader_key, account.id());
+        let order_1_key = format!(
+            "{}:orders:{}",
+            adapter.database.trader_key,
+            order_1.client_order_id()
+        );
+        let order_2_key = format!(
+            "{}:orders:{}",
+            adapter.database.trader_key,
+            order_2.client_order_id()
+        );
+        let position_key = format!("{}:positions:{}", adapter.database.trader_key, position.id);
         let heartbeat_key = format!("{}:health:heartbeat", adapter.database.trader_key);
 
         wait_until_async(
@@ -1040,23 +1054,47 @@ mod serial_tests {
         )
         .await;
 
+        let account_frames: Vec<Bytes> = conn.lrange(&account_key, 0, -1).await.unwrap();
+        let order_1_frames: Vec<Bytes> = conn.lrange(&order_1_key, 0, -1).await.unwrap();
+        let order_2_frames: Vec<Bytes> = conn.lrange(&order_2_key, 0, -1).await.unwrap();
+        let position_frames: Vec<Bytes> = conn.lrange(&position_key, 0, -1).await.unwrap();
         let order_snapshot_frames: Vec<Bytes> =
             conn.lrange(&order_snapshot_key, 0, -1).await.unwrap();
         let position_snapshot_frames: Vec<Bytes> =
             conn.lrange(&position_snapshot_key, 0, -1).await.unwrap();
         let heartbeat: String = conn.get(&heartbeat_key).await.unwrap();
 
-        let order_snapshot: OrderSnapshot = DatabaseQueries::deserialize_payload(
-            adapter.database.get_encoding(),
-            &order_snapshot_frames[0],
-        )
-        .unwrap();
-        let position_snapshot: PositionSnapshot = DatabaseQueries::deserialize_payload(
-            adapter.database.get_encoding(),
-            &position_snapshot_frames[0],
-        )
-        .unwrap();
+        let account_events: Vec<AccountState> = account_frames
+            .iter()
+            .map(|frame| DatabaseQueries::deserialize_payload(encoding, frame).unwrap())
+            .collect();
+        let order_1_events: Vec<OrderEventAny> = order_1_frames
+            .iter()
+            .map(|frame| DatabaseQueries::deserialize_payload(encoding, frame).unwrap())
+            .collect();
+        let order_2_events: Vec<OrderEventAny> = order_2_frames
+            .iter()
+            .map(|frame| DatabaseQueries::deserialize_payload(encoding, frame).unwrap())
+            .collect();
+        let position_events: Vec<OrderFilled> = position_frames
+            .iter()
+            .map(|frame| DatabaseQueries::deserialize_payload(encoding, frame).unwrap())
+            .collect();
+        let order_snapshot: OrderSnapshot =
+            DatabaseQueries::deserialize_payload(encoding, &order_snapshot_frames[0]).unwrap();
+        let position_snapshot: PositionSnapshot =
+            DatabaseQueries::deserialize_payload(encoding, &position_snapshot_frames[0]).unwrap();
 
+        assert_eq!(account_events, account.events());
+        assert_eq!(
+            order_1_events,
+            order_1.events().into_iter().cloned().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            order_2_events,
+            order_2.events().into_iter().cloned().collect::<Vec<_>>()
+        );
+        assert_eq!(position_events, position.events.clone());
         assert_eq!(order_snapshot.client_order_id, order_1.client_order_id());
         assert_eq!(position_snapshot.position_id, position.id);
         assert_eq!(position_snapshot.ts_init, UnixNanos::from(2_000_000_000));
@@ -1158,7 +1196,7 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_add_order_replacement_reloads_latest_state() {
+    async fn test_update_order_appends_event_and_reloads_latest_state() {
         let _guard = redis_test_mutex().lock().await;
         let adapter = get_redis_cache_adapter()
             .await
@@ -1174,10 +1212,9 @@ mod serial_tests {
 
         adapter.add_order(&order, None).unwrap();
 
-        // Replacements reuse the same client order ID with updated state
         let submitted = TestOrderEventStubs::submitted(&order, AccountId::new("BINANCE-001"));
-        order.apply(submitted).unwrap();
-        adapter.add_order(&order, None).unwrap();
+        order.apply(submitted.clone()).unwrap();
+        adapter.update_order(&submitted).unwrap();
 
         wait_until_async(
             || async {
@@ -1196,8 +1233,406 @@ mod serial_tests {
             .await
             .unwrap()
             .unwrap();
+        let key = format!(
+            "{}:orders:{}",
+            adapter.database.trader_key,
+            order.client_order_id()
+        );
+        let frames: Vec<Bytes> = adapter
+            .database
+            .con
+            .clone()
+            .lrange(key, 0, -1)
+            .await
+            .unwrap();
+        let events: Vec<OrderEventAny> = frames
+            .iter()
+            .map(|frame| {
+                DatabaseQueries::deserialize_payload(adapter.database.get_encoding(), frame)
+                    .unwrap()
+            })
+            .collect();
+
         assert_eq!(loaded.status(), OrderStatus::Submitted);
         assert_eq!(loaded, order);
+        assert_eq!(
+            events,
+            order.events().into_iter().cloned().collect::<Vec<_>>()
+        );
+
+        let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_order_replaces_event_log_with_initialized_event() {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-2"))
+            .build();
+
+        adapter.add_order(&order, None).unwrap();
+
+        let submitted = TestOrderEventStubs::submitted(&order, AccountId::new("BINANCE-001"));
+        order.apply(submitted.clone()).unwrap();
+        adapter.update_order(&submitted).unwrap();
+
+        wait_until_async(
+            || async {
+                adapter
+                    .load_order(&order.client_order_id())
+                    .await
+                    .unwrap()
+                    .is_some_and(|loaded| loaded.status() == OrderStatus::Submitted)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        adapter.add_order(&order, None).unwrap();
+
+        let key = format!(
+            "{}:orders:{}",
+            adapter.database.trader_key,
+            order.client_order_id()
+        );
+        wait_until_async(
+            || {
+                let mut conn = adapter.database.con.clone();
+                let key = key.clone();
+                async move { conn.llen::<_, usize>(&key).await.unwrap_or(0) == 1 }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let loaded = adapter
+            .load_order(&order.client_order_id())
+            .await
+            .unwrap()
+            .unwrap();
+        let frames: Vec<Bytes> = adapter
+            .database
+            .con
+            .clone()
+            .lrange(key, 0, -1)
+            .await
+            .unwrap();
+        let events: Vec<OrderEventAny> = frames
+            .iter()
+            .map(|frame| {
+                DatabaseQueries::deserialize_payload(adapter.database.get_encoding(), frame)
+                    .unwrap()
+            })
+            .collect();
+
+        assert_eq!(loaded.status(), OrderStatus::Initialized);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events.as_slice(), [OrderEventAny::Initialized(_)]));
+
+        let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_position_replaces_event_log_for_reused_position_id() {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        adapter.add_instrument(&instrument).unwrap();
+
+        let open_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-1"))
+            .build();
+        let close_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-2"))
+            .build();
+        let reopen_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-3"))
+            .build();
+
+        let position_id = PositionId::new("P-NETTING-REUSED");
+        let OrderEventAny::Filled(open_fill) = TestOrderEventStubs::filled(
+            &open_order,
+            &instrument,
+            Some(TradeId::new("E-1")),
+            Some(position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+        let mut closed_position = Position::new(&instrument, open_fill);
+        adapter.add_position(&closed_position).unwrap();
+
+        let OrderEventAny::Filled(close_fill) = TestOrderEventStubs::filled(
+            &close_order,
+            &instrument,
+            Some(TradeId::new("E-2")),
+            Some(position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+        closed_position.apply(&close_fill);
+        adapter.update_position(&closed_position).unwrap();
+
+        let OrderEventAny::Filled(reopen_fill) = TestOrderEventStubs::filled(
+            &reopen_order,
+            &instrument,
+            Some(TradeId::new("E-3")),
+            Some(position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+        let reopened_position = Position::new(&instrument, reopen_fill);
+        adapter.add_position(&reopened_position).unwrap();
+
+        let key = format!(
+            "{}:positions:{}",
+            adapter.database.trader_key, reopened_position.id
+        );
+        let positions_open_key = format!("{}:index:positions_open", adapter.database.trader_key);
+        let positions_closed_key =
+            format!("{}:index:positions_closed", adapter.database.trader_key);
+        let con = adapter.database.con.clone();
+        let trader_key = adapter.database.trader_key.clone();
+        let encoding = adapter.database.get_encoding();
+        let expected_position = reopened_position.clone();
+        let wait_key = key.clone();
+        let wait_positions_open_key = positions_open_key.clone();
+        let wait_positions_closed_key = positions_closed_key.clone();
+
+        wait_until_async(
+            move || {
+                let con = con.clone();
+                let trader_key = trader_key.clone();
+                let key = wait_key.clone();
+                let positions_open_key = wait_positions_open_key.clone();
+                let positions_closed_key = wait_positions_closed_key.clone();
+                let expected_position = expected_position.clone();
+                async move {
+                    let mut conn = con.clone();
+                    DatabaseQueries::load_position(
+                        &con,
+                        &trader_key,
+                        &expected_position.id,
+                        encoding,
+                    )
+                    .await
+                    .unwrap()
+                    .is_some_and(|loaded| loaded == expected_position)
+                        && conn.llen::<_, usize>(&key).await.unwrap_or(0) == 1
+                        && conn
+                            .sismember::<_, _, bool>(
+                                &positions_open_key,
+                                expected_position.id.to_string(),
+                            )
+                            .await
+                            .unwrap_or(false)
+                        && !conn
+                            .sismember::<_, _, bool>(
+                                &positions_closed_key,
+                                expected_position.id.to_string(),
+                            )
+                            .await
+                            .unwrap_or(true)
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let frames: Vec<Bytes> = adapter
+            .database
+            .con
+            .clone()
+            .lrange(&key, 0, -1)
+            .await
+            .unwrap();
+        let fills: Vec<OrderFilled> = frames
+            .iter()
+            .map(|frame| {
+                DatabaseQueries::deserialize_payload(adapter.database.get_encoding(), frame)
+                    .unwrap()
+            })
+            .collect();
+
+        assert_eq!(fills, reopened_position.events.clone());
+
+        let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_load_position_duplicate_fill_returns_error() {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        adapter.add_instrument(&instrument).unwrap();
+
+        wait_until_async(
+            || async {
+                adapter
+                    .load_instrument(&instrument.id())
+                    .await
+                    .unwrap()
+                    .is_some()
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-1"))
+            .build();
+        let position_id = PositionId::new("P-DUPLICATE-FILL");
+        let OrderEventAny::Filled(fill) = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::new("E-1")),
+            Some(position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+
+        let payload =
+            DatabaseQueries::serialize_payload(adapter.database.get_encoding(), &fill).unwrap();
+        let key = format!("{}:positions:{position_id}", adapter.database.trader_key);
+        let mut conn = adapter.database.con.clone();
+        conn.rpush::<_, _, ()>(&key, payload.clone()).await.unwrap();
+        conn.rpush::<_, _, ()>(&key, payload).await.unwrap();
+
+        let result = adapter.load_position(&position_id).await;
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("E-1"));
+
+        let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_update_order_appends_event_when_index_replay_fails() {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-1"))
+            .build();
+        let key = format!(
+            "{}:orders:{}",
+            adapter.database.trader_key,
+            order.client_order_id()
+        );
+        let encoding = adapter.database.get_encoding();
+        let init_payload =
+            DatabaseQueries::serialize_payload(encoding, order.last_event()).unwrap();
+        let mut conn = adapter.database.con.clone();
+        conn.rpush::<_, _, ()>(&key, init_payload).await.unwrap();
+        conn.rpush::<_, _, ()>(&key, vec![0xc1_u8]).await.unwrap();
+
+        let submitted = TestOrderEventStubs::submitted(&order, AccountId::new("BINANCE-001"));
+        order.apply(submitted.clone()).unwrap();
+        adapter.update_order(&submitted).unwrap();
+
+        wait_until_async(
+            || {
+                let mut conn = adapter.database.con.clone();
+                let key = key.clone();
+                async move { conn.llen::<_, usize>(&key).await.unwrap_or(0) == 3 }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let frames: Vec<Bytes> = adapter
+            .database
+            .con
+            .clone()
+            .lrange(&key, 0, -1)
+            .await
+            .unwrap();
+        let appended: OrderEventAny =
+            DatabaseQueries::deserialize_payload(encoding, &frames[2]).unwrap();
+
+        assert_eq!(appended, submitted);
+
+        let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_redis_loads_reject_snapshot_market_data_and_signals() {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let client_order_id = ClientOrderId::new("O-19700101-000000-001-001-1");
+        let position_id = PositionId::new("P-UNSUPPORTED");
+
+        assert!(adapter.load_order_snapshot(&client_order_id).is_err());
+        assert!(adapter.load_position_snapshot(&position_id).is_err());
+        assert!(adapter.load_quotes(&instrument.id()).is_err());
+        assert!(adapter.load_trades(&instrument.id()).is_err());
+        assert!(adapter.load_funding_rates(&instrument.id()).is_err());
+        assert!(adapter.load_bars(&instrument.id()).is_err());
+        assert!(adapter.load_signals("signals").is_err());
 
         let mut adapter = adapter;
         adapter.flush().unwrap();

@@ -27,7 +27,10 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, CustomData, DataType, FundingRateUpdate, QuoteTick, TradeTick},
-    events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
+    events::{
+        AccountState, OrderEventAny, OrderFilled, OrderInitialized, OrderSnapshot,
+        position::snapshot::PositionSnapshot,
+    },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
@@ -71,16 +74,18 @@ pub enum DatabaseQuery {
     Add(String, Vec<u8>),
     AddCurrency(Currency),
     AddInstrument(InstrumentAny),
-    AddOrder(OrderAny, Option<ClientId>, bool),
+    AddOrder(OrderInitialized, Option<ClientId>),
     AddOrderSnapshot(OrderSnapshot),
+    AddPosition(PositionId, OrderFilled),
     AddPositionSnapshot(PositionSnapshot),
-    AddAccount(AccountAny, bool),
+    AddAccount(AccountState, bool),
     AddSignal(Signal),
     AddCustom(CustomData),
     AddQuote(QuoteTick),
     AddTrade(TradeTick),
     AddBar(Bar),
     UpdateOrder(OrderEventAny),
+    UpdatePosition(OrderFilled),
     IndexOrderPosition(ClientOrderId, PositionId),
 }
 
@@ -454,7 +459,24 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     async fn load_positions(&self) -> anyhow::Result<AHashMap<PositionId, Position>> {
-        todo!()
+        let pool = self.pool.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_positions(&pool)
+                .await
+                .map(|positions| {
+                    positions
+                        .into_iter()
+                        .map(|position| (position.id, position))
+                        .collect()
+                });
+
+            if let Err(e) = tx.send(result) {
+                log::error!("Failed to send positions: {e:?}");
+            }
+        });
+        rx.recv()?
     }
 
     fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>> {
@@ -611,7 +633,17 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Option<Position>> {
-        todo!()
+        let pool = self.pool.clone();
+        let position_id = position_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_position(&pool, &position_id).await;
+            if let Err(e) = tx.send(result) {
+                log::error!("Failed to send position {position_id}: {e:?}");
+            }
+        });
+        rx.recv()?
     }
 
     fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
@@ -672,14 +704,14 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_account(&self, account: &AccountAny) -> anyhow::Result<()> {
-        let query = DatabaseQuery::AddAccount(account.clone(), false);
+        let query = DatabaseQuery::AddAccount(account_last_event(account)?, false);
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_account to database message handler: {e}")
         })
     }
 
     fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
-        let query = DatabaseQuery::AddOrder(order.clone(), client_id, false);
+        let query = DatabaseQuery::AddOrder(order_initialized_event(order), client_id);
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_order to database message handler: {e}")
         })
@@ -695,7 +727,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_position(&self, position: &Position) -> anyhow::Result<()> {
-        todo!()
+        let event = position_last_event(position)?;
+        let query = DatabaseQuery::AddPosition(position.id, event);
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!("Failed to send query add_position to database message handler: {e}")
+        })
     }
 
     fn add_position_snapshot(&self, snapshot: &PositionSnapshot) -> anyhow::Result<()> {
@@ -979,7 +1015,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn update_account(&self, account: &AccountAny) -> anyhow::Result<()> {
-        let query = DatabaseQuery::AddAccount(account.clone(), true);
+        let query = DatabaseQuery::AddAccount(account_last_event(account)?, true);
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_account to database message handler: {e}")
         })
@@ -993,7 +1029,10 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn update_position(&self, position: &Position) -> anyhow::Result<()> {
-        todo!()
+        let query = DatabaseQuery::UpdatePosition(position_last_event(position)?);
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!("Failed to send query update_position to database message handler: {e}")
+        })
     }
 
     fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {
@@ -1012,6 +1051,22 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     fn heartbeat(&self, timestamp: UnixNanos) -> anyhow::Result<()> {
         todo!()
     }
+}
+
+fn account_last_event(account: &AccountAny) -> anyhow::Result<AccountState> {
+    account
+        .last_event()
+        .ok_or_else(|| anyhow::anyhow!("Cannot persist account with no events: {}", account.id()))
+}
+
+fn order_initialized_event(order: &OrderAny) -> OrderInitialized {
+    order.init_event().clone()
+}
+
+fn position_last_event(position: &Position) -> anyhow::Result<OrderFilled> {
+    position
+        .last_event()
+        .ok_or_else(|| anyhow::anyhow!("Cannot persist position with no events: {}", position.id))
 }
 
 #[expect(
@@ -1108,103 +1163,21 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                         .await
                 }
             },
-            DatabaseQuery::AddOrder(order_any, client_id, updated) => match order_any {
-                OrderAny::Limit(order) => {
-                    DatabaseQueries::add_order(pool, "LIMIT", updated, Box::new(order), client_id)
-                        .await
-                }
-                OrderAny::LimitIfTouched(order) => {
-                    DatabaseQueries::add_order(
-                        pool,
-                        "LIMIT_IF_TOUCHED",
-                        updated,
-                        Box::new(order),
-                        client_id,
-                    )
-                    .await
-                }
-                OrderAny::Market(order) => {
-                    DatabaseQueries::add_order(pool, "MARKET", updated, Box::new(order), client_id)
-                        .await
-                }
-                OrderAny::MarketIfTouched(order) => {
-                    DatabaseQueries::add_order(
-                        pool,
-                        "MARKET_IF_TOUCHED",
-                        updated,
-                        Box::new(order),
-                        client_id,
-                    )
-                    .await
-                }
-                OrderAny::MarketToLimit(order) => {
-                    DatabaseQueries::add_order(
-                        pool,
-                        "MARKET_TO_LIMIT",
-                        updated,
-                        Box::new(order),
-                        client_id,
-                    )
-                    .await
-                }
-                OrderAny::StopLimit(order) => {
-                    DatabaseQueries::add_order(
-                        pool,
-                        "STOP_LIMIT",
-                        updated,
-                        Box::new(order),
-                        client_id,
-                    )
-                    .await
-                }
-                OrderAny::StopMarket(order) => {
-                    DatabaseQueries::add_order(
-                        pool,
-                        "STOP_MARKET",
-                        updated,
-                        Box::new(order),
-                        client_id,
-                    )
-                    .await
-                }
-                OrderAny::TrailingStopLimit(order) => {
-                    DatabaseQueries::add_order(
-                        pool,
-                        "TRAILING_STOP_LIMIT",
-                        updated,
-                        Box::new(order),
-                        client_id,
-                    )
-                    .await
-                }
-                OrderAny::TrailingStopMarket(order) => {
-                    DatabaseQueries::add_order(
-                        pool,
-                        "TRAILING_STOP_MARKET",
-                        updated,
-                        Box::new(order),
-                        client_id,
-                    )
-                    .await
-                }
-            },
+            DatabaseQuery::AddOrder(event, client_id) => {
+                DatabaseQueries::add_order(pool, event, client_id).await
+            }
             DatabaseQuery::AddOrderSnapshot(snapshot) => {
                 DatabaseQueries::add_order_snapshot(pool, snapshot).await
+            }
+            DatabaseQuery::AddPosition(position_id, event) => {
+                DatabaseQueries::add_position(pool, position_id, &event).await
             }
             DatabaseQuery::AddPositionSnapshot(snapshot) => {
                 DatabaseQueries::add_position_snapshot(pool, snapshot).await
             }
-            DatabaseQuery::AddAccount(account_any, updated) => match account_any {
-                AccountAny::Margin(account) => {
-                    DatabaseQueries::add_account(pool, "MARGIN", updated, Box::new(account)).await
-                }
-                AccountAny::Cash(account) => {
-                    DatabaseQueries::add_account(pool, "CASH", updated, Box::new(account)).await
-                }
-                AccountAny::Betting(account) => {
-                    DatabaseQueries::add_account(pool, "BETTING", updated, Box::new(account)).await
-                }
-            },
+            DatabaseQuery::AddAccount(event, updated) => {
+                DatabaseQueries::add_account(pool, updated, event).await
+            }
             DatabaseQuery::AddSignal(signal) => DatabaseQueries::add_signal(pool, &signal).await,
             DatabaseQuery::AddCustom(data) => DatabaseQueries::add_custom_data(pool, &data).await,
             DatabaseQuery::AddQuote(quote) => DatabaseQueries::add_quote(pool, &quote).await,
@@ -1212,6 +1185,9 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
             DatabaseQuery::AddBar(bar) => DatabaseQueries::add_bar(pool, &bar).await,
             DatabaseQuery::UpdateOrder(event) => {
                 DatabaseQueries::add_order_event(pool, event.into_boxed(), None).await
+            }
+            DatabaseQuery::UpdatePosition(event) => {
+                DatabaseQueries::update_position(pool, &event).await
             }
             DatabaseQuery::IndexOrderPosition(client_order_id, position_id) => {
                 DatabaseQueries::index_order_position(pool, client_order_id, position_id).await
