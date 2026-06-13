@@ -1042,14 +1042,11 @@ fn create_test_exec_config(addr: SocketAddr) -> HyperliquidExecClientConfig {
     }
 }
 
-fn assert_adapter_cloid_marker(cloid: &str) {
+fn assert_valid_cloid(cloid: &str) {
     assert!(cloid.starts_with("0x"));
     assert_eq!(cloid.len(), 34);
-    assert_eq!(&cloid[2..6], "6e42");
     assert!(cloid[2..].chars().all(|c| c.is_ascii_hexdigit()));
     assert!(cloid[2..].chars().all(|c| !c.is_ascii_uppercase()));
-    assert_eq!(cloid.as_bytes()[14], b'4');
-    assert!(matches!(cloid.as_bytes()[18], b'8' | b'9' | b'a' | b'b'));
 }
 
 async fn create_test_trade_signer(addr: SocketAddr) -> HyperliquidHttpClient {
@@ -1133,7 +1130,7 @@ async fn test_ws_trading_submit_order_sends_builder_and_cloid() {
             .and_then(|v| v.as_u64()),
         Some(0),
     );
-    assert_adapter_cloid_marker(cloid);
+    assert_valid_cloid(cloid);
     assert_eq!(
         signer
             .cached_client_order_id_cloid(&client_order_id)
@@ -1193,7 +1190,7 @@ async fn test_ws_trading_submit_order_omits_builder_when_attribution_disabled() 
 
     assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("order"));
     assert!(action.get("builder").is_none());
-    assert_adapter_cloid_marker(cloid);
+    assert_valid_cloid(cloid);
 
     ws_client.disconnect().await.unwrap();
 }
@@ -1250,7 +1247,7 @@ async fn test_ws_trading_cancel_and_modify_send_expected_actions() {
             .and_then(|v| v.as_str()),
         Some(cancel_cloid_hex.as_str()),
     );
-    assert_adapter_cloid_marker(&cancel_cloid_hex);
+    assert_valid_cloid(&cancel_cloid_hex);
 
     let modify_coid = ClientOrderId::new("O-WS-MODIFY");
     ws_client
@@ -1306,7 +1303,7 @@ async fn test_ws_trading_cancel_and_modify_send_expected_actions() {
         modify_order.get("c").and_then(|v| v.as_str()),
         Some(modify_cloid.as_str()),
     );
-    assert_adapter_cloid_marker(&modify_cloid);
+    assert_valid_cloid(&modify_cloid);
     assert_eq!(
         ws_client.get_cloid_mapping(&Ustr::from(&modify_cloid)),
         Some(modify_coid),
@@ -2206,7 +2203,7 @@ async fn test_submit_order_ws_post_omits_builder_when_attribution_disabled() {
 
     assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("order"));
     assert!(action.get("builder").is_none());
-    assert_adapter_cloid_marker(cloid);
+    assert_valid_cloid(cloid);
 
     client.disconnect().await.unwrap();
 }

@@ -2300,15 +2300,16 @@ fn remove_cloid_mapping_for_client_order_id(
     http_client: &HyperliquidHttpClient,
     client_order_id: &ClientOrderId,
 ) {
+    let generated_cloid = Cloid::from_client_order_id(*client_order_id);
+
     if let Some(cloid) = http_client.remove_client_order_id_cloid(client_order_id) {
         ws_client.remove_cloid_mapping(&Ustr::from(&cloid.to_hex()));
-    } else {
-        let cloid = Cloid::from_client_order_id(*client_order_id);
-        ws_client.remove_cloid_mapping(&Ustr::from(&cloid.to_hex()));
+        if cloid == generated_cloid {
+            return;
+        }
     }
 
-    let legacy_cloid = Cloid::from_legacy_client_order_id(*client_order_id);
-    ws_client.remove_cloid_mapping(&Ustr::from(&legacy_cloid.to_hex()));
+    ws_client.remove_cloid_mapping(&Ustr::from(&generated_cloid.to_hex()));
 }
 
 use crate::common::parse::determine_order_list_grouping;

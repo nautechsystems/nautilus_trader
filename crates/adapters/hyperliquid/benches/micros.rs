@@ -32,10 +32,14 @@ use std::{hint::black_box, str::FromStr};
 use common::{btc_perp, fixtures};
 use criterion::{Criterion, criterion_group, criterion_main};
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_hyperliquid::websocket::{
-    dispatch::{OrderIdentity, WsDispatchState},
-    messages::{HyperliquidWsMessage, WsBookData, WsTradeData},
-    parse::{parse_ws_order_book_deltas, parse_ws_trade_tick},
+use nautilus_hyperliquid::{
+    common::HyperliquidDataConverter,
+    http::models::Cloid,
+    websocket::{
+        dispatch::{OrderIdentity, WsDispatchState},
+        messages::{HyperliquidWsMessage, WsBookData, WsTradeData},
+        parse::{parse_ws_order_book_deltas, parse_ws_trade_tick},
+    },
 };
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderType},
@@ -156,11 +160,50 @@ fn bench_trade_id_new(c: &mut Criterion) {
     });
 }
 
+fn bench_cloid_from_client_order_id(c: &mut Criterion) {
+    let cid = ClientOrderId::from("O-BENCH-CLOID");
+    c.bench_function("atom/cloid_from_client_order_id", |b| {
+        b.iter(|| {
+            let cloid = Cloid::from_client_order_id(black_box(cid));
+            black_box(cloid);
+        });
+    });
+}
+
+fn bench_cloid_to_hex(c: &mut Criterion) {
+    let cloid = Cloid::from_client_order_id(ClientOrderId::from("O-BENCH-CLOID"));
+    c.bench_function("atom/cloid_to_hex", |b| {
+        b.iter(|| {
+            let hex = cloid.to_hex();
+            black_box(hex);
+        });
+    });
+}
+
 fn bench_uuid4_new(c: &mut Criterion) {
     c.bench_function("atom/uuid4_new", |b| {
         b.iter(|| {
             let u = UUID4::new();
             black_box(u);
+        });
+    });
+}
+
+fn bench_data_converter_ws_snapshot(c: &mut Criterion) {
+    let converter = HyperliquidDataConverter::new();
+    let instrument_id = btc_perp().id();
+    let msg: HyperliquidWsMessage = serde_json::from_str(fixtures::BOOK_L2).unwrap();
+    let book: WsBookData = match msg {
+        HyperliquidWsMessage::L2Book { data } => data,
+        _ => unreachable!(),
+    };
+
+    c.bench_function("atom/data_converter_ws_snapshot", |b| {
+        b.iter(|| {
+            let deltas = converter
+                .convert_ws_snapshot(black_box(&book), instrument_id, UnixNanos::default())
+                .unwrap();
+            black_box(deltas);
         });
     });
 }
@@ -333,7 +376,10 @@ criterion_group!(
     bench_price_from_decimal_dp,
     bench_price_from_str_combined,
     bench_trade_id_new,
+    bench_cloid_from_client_order_id,
+    bench_cloid_to_hex,
     bench_uuid4_new,
+    bench_data_converter_ws_snapshot,
     bench_state_construct,
     bench_state_drop,
     bench_event_filled_construct,

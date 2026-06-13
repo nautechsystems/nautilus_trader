@@ -16,6 +16,7 @@
 use std::fmt::Display;
 
 use alloy_primitives::{Address, keccak256};
+use nautilus_core::hex;
 use nautilus_model::identifiers::ClientOrderId;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -28,8 +29,6 @@ use crate::common::enums::{
 
 /// Response from candleSnapshot endpoint (returns array directly).
 pub type HyperliquidCandleSnapshot = Vec<HyperliquidCandle>;
-
-const CLOID_MARKER_PREFIX_BYTES: [u8; 2] = [0x6e, 0x42];
 
 /// A 128-bit client order ID represented as a hex string with `0x` prefix.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -51,13 +50,8 @@ impl Cloid {
             return Err("CLOID must be exactly 32 hex characters (128 bits)".to_string());
         }
 
-        let mut bytes = [0u8; 16];
-
-        for i in 0..16 {
-            let byte_str = &without_prefix[i * 2..i * 2 + 2];
-            bytes[i] = u8::from_str_radix(byte_str, 16)
-                .map_err(|_| "Invalid hex character in CLOID".to_string())?;
-        }
+        let bytes = hex::decode_array(without_prefix)
+            .map_err(|_| "Invalid hex character in CLOID".to_string())?;
 
         Ok(Self(bytes))
     }
@@ -65,18 +59,6 @@ impl Cloid {
     /// Creates a deterministic `Cloid` from a Nautilus `ClientOrderId`.
     #[must_use]
     pub fn from_client_order_id(client_order_id: ClientOrderId) -> Self {
-        let hash = keccak256(client_order_id.as_str().as_bytes());
-        let mut bytes = [0u8; 16];
-        bytes.copy_from_slice(&hash[..16]);
-        bytes[..CLOID_MARKER_PREFIX_BYTES.len()].copy_from_slice(&CLOID_MARKER_PREFIX_BYTES);
-        bytes[6] = (bytes[6] & 0x0f) | 0x40;
-        bytes[8] = (bytes[8] & 0x3f) | 0x80;
-        Self(bytes)
-    }
-
-    /// Creates a legacy deterministic `Cloid` from a Nautilus `ClientOrderId`.
-    #[must_use]
-    pub fn from_legacy_client_order_id(client_order_id: ClientOrderId) -> Self {
         let hash = keccak256(client_order_id.as_str().as_bytes());
         let mut bytes = [0u8; 16];
         bytes.copy_from_slice(&hash[..16]);
@@ -91,12 +73,7 @@ impl Cloid {
 
     /// Converts the CLOID to a hex string with `0x` prefix.
     pub fn to_hex(&self) -> String {
-        let mut result = String::with_capacity(34);
-        result.push_str("0x");
-        for byte in &self.0 {
-            result.push_str(&format!("{byte:02x}"));
-        }
-        result
+        hex::encode_prefixed(self.0)
     }
 }
 

@@ -202,6 +202,7 @@ impl HyperliquidEip712Signer {
 
 #[cfg(test)]
 mod tests {
+    use ahash::AHashSet;
     use alloy::sol_types::SolStruct;
     use nautilus_core::hex;
     use nautilus_model::{identifiers::ClientOrderId, types::Price};
@@ -214,9 +215,6 @@ mod tests {
         Cloid, HyperliquidExecAction, HyperliquidExecGrouping, HyperliquidExecLimitParams,
         HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
     };
-
-    const CLOID_MARKER_PREFIX_BYTES: [u8; 2] = [0x6e, 0x42];
-    const CLOID_MARKER_PREFIX_HEX: &str = "6e42";
 
     #[rstest]
     fn test_sign_request_l1_action() {
@@ -586,7 +584,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_cloid_from_client_order_id_is_deterministic_and_marked() {
+    fn test_cloid_from_client_order_id_is_deterministic() {
         let client_order_id = ClientOrderId::from("O-20241210-123456-001-001-1");
         let other_client_order_id = ClientOrderId::from("O-20241210-123456-001-001-2");
         let first = Cloid::from_client_order_id(client_order_id);
@@ -600,30 +598,18 @@ mod tests {
         for hex in [&first_hex, &second_hex, &other_hex] {
             assert!(hex.starts_with("0x"));
             assert_eq!(hex.len(), 34);
-            assert_eq!(&hex[2..6], CLOID_MARKER_PREFIX_HEX);
             assert!(hex[2..].chars().all(|c| c.is_ascii_hexdigit()));
             assert!(hex[2..].chars().all(|c| !c.is_ascii_uppercase()));
-            assert_eq!(hex.as_bytes()[14], b'4');
-            assert!(matches!(hex.as_bytes()[18], b'8' | b'9' | b'a' | b'b'));
         }
 
-        assert!(first.is_uuid_v4());
-        assert!(second.is_uuid_v4());
-        assert!(other.is_uuid_v4());
-        assert_eq!(
-            first.0[..CLOID_MARKER_PREFIX_BYTES.len()],
-            CLOID_MARKER_PREFIX_BYTES,
-        );
-        assert_eq!(
-            second.0[..CLOID_MARKER_PREFIX_BYTES.len()],
-            CLOID_MARKER_PREFIX_BYTES,
-        );
+        assert_eq!(first_hex, "0x7824fcada984a4aa731780e8326c1932");
+        assert_eq!(other_hex, "0x9012504833e63da1435c32e96ef8b873");
         assert_eq!(first, second);
         assert_ne!(first, other);
     }
 
     #[rstest]
-    fn test_cloid_from_client_order_id_has_stable_marker_across_sample() {
+    fn test_cloid_from_client_order_id_has_varied_leading_bytes() {
         let cloids: Vec<_> = (0..100)
             .map(|i| {
                 let client_order_id = ClientOrderId::from(format!("O-SAMPLE-{i:03}").as_str());
@@ -631,17 +617,16 @@ mod tests {
             })
             .collect();
 
-        for cloid in &cloids {
-            let hex = cloid.to_hex();
-            assert_eq!(&hex[2..6], CLOID_MARKER_PREFIX_HEX);
-            assert_eq!(
-                cloid.0[..CLOID_MARKER_PREFIX_BYTES.len()],
-                CLOID_MARKER_PREFIX_BYTES,
-            );
-            assert!(cloid.is_uuid_v4());
-        }
+        let leading_bytes = cloids
+            .iter()
+            .map(|cloid| cloid.0[0])
+            .collect::<AHashSet<_>>();
 
-        let unique = cloids.iter().collect::<std::collections::HashSet<_>>();
+        let uuid_like = cloids.iter().filter(|cloid| cloid.is_uuid_v4()).count();
+        assert!(uuid_like < cloids.len());
+        assert!(leading_bytes.len() > 1);
+
+        let unique = cloids.iter().collect::<AHashSet<_>>();
         assert_eq!(unique.len(), cloids.len());
     }
 

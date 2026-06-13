@@ -912,13 +912,6 @@ impl HyperliquidHttpClient {
             .or_insert(cloid);
     }
 
-    fn replace_client_order_id_cloid(&self, client_order_id: ClientOrderId, cloid: Cloid) {
-        self.client_order_id_cloids
-            .lock()
-            .expect(MUTEX_POISONED)
-            .insert(client_order_id, cloid);
-    }
-
     /// Returns the cached CLOID for a client order ID.
     #[allow(
         clippy::missing_panics_doc,
@@ -2282,8 +2275,7 @@ impl HyperliquidHttpClient {
     /// Request a single order status report by client order ID.
     ///
     /// Searches `info_frontend_open_orders` for an order whose cloid matches the
-    /// deterministic CLOID for the given client order ID, falling back to the
-    /// legacy unmarked CLOID. Only finds open orders.
+    /// cached CLOID or the generated CLOID. Only finds open orders.
     ///
     /// # Errors
     ///
@@ -2299,12 +2291,11 @@ impl HyperliquidHttpClient {
 
         let ts_init = self.clock.get_time_ns();
 
-        let cloid = self
+        let cached_cloid_hex = self
             .cached_client_order_id_cloid(client_order_id)
-            .unwrap_or_else(|| Cloid::from_client_order_id(*client_order_id));
+            .map(|cloid| cloid.to_hex());
+        let cloid = Cloid::from_client_order_id(*client_order_id);
         let cloid_hex = cloid.to_hex();
-        let legacy_cloid = Cloid::from_legacy_client_order_id(*client_order_id);
-        let legacy_cloid_hex = legacy_cloid.to_hex();
 
         let response = self.info_frontend_open_orders(user).await?;
         let orders: Vec<WsBasicOrderData> = match serde_json::from_value(response) {
@@ -2318,15 +2309,11 @@ impl HyperliquidHttpClient {
         let order = match orders.into_iter().find(|o| {
             o.cloid
                 .as_ref()
-                .is_some_and(|c| c == &cloid_hex || c == &legacy_cloid_hex)
+                .is_some_and(|c| cached_cloid_hex.as_ref() == Some(c) || c == &cloid_hex)
         }) {
             Some(o) => o,
             None => return Ok(None),
         };
-
-        if order.cloid.as_ref() == Some(&legacy_cloid_hex) {
-            self.replace_client_order_id_cloid(*client_order_id, legacy_cloid);
-        }
 
         let instrument = match self.get_or_create_instrument(&order.coin, None) {
             Some(inst) => inst,
