@@ -59,6 +59,7 @@ Released on TBD (UTC).
 - Fixed `HttpClient` rejecting invalid response header keys instead of silently dropping them (Rust)
 - Fixed Interactive Brokers reconnect startup handling (#4210), thanks @faysou
 - Fixed Lighter AccountState to include perp-side margin balance (#4246), thanks @filipmacek
+- Fixed Lighter concurrent batch nonce-ordering race (#4263), thanks @filipmacek
 - Fixed Lighter maker-only key lookup authentication (#4234), thanks @filipmacek
 - Fixed live external order claim registration in Rust
 - Fixed live reconciliation logging below-cached fill mismatches as errors, halting `shutdown_on_error` nodes (Rust)

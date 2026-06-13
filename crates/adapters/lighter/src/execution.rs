@@ -25,9 +25,10 @@
 //! [`crate::websocket::client::LighterWebSocketClient`].
 
 use std::{
+    collections::{BTreeMap, BTreeSet},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -152,7 +153,7 @@ pub struct LighterExecutionClient {
     http_client: LighterHttpClient,
     ws_client: LighterWebSocketClient,
     tx_rate_limiter: Arc<LighterTxRateLimiter>,
-    http_batch_serializer: Arc<tokio::sync::Mutex<()>>,
+    tx_send_sequencer: TxSendSequencer,
     registry: Arc<MarketRegistry>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
     ws_stream_handle: Mutex<Option<JoinHandle<()>>>,
@@ -235,7 +236,7 @@ impl LighterExecutionClient {
             http_client,
             ws_client,
             tx_rate_limiter,
-            http_batch_serializer: Arc::new(tokio::sync::Mutex::new(())),
+            tx_send_sequencer: TxSendSequencer::new(),
             registry,
             pending_tasks: Mutex::new(Vec::new()),
             ws_stream_handle: Mutex::new(None),
@@ -468,11 +469,15 @@ impl LighterExecutionClient {
             }
         }
 
-        let approval = self.prepare_integrator_auto_approval(credential)?;
+        let mut approval = self.prepare_integrator_auto_approval(credential)?;
+
         let request = LighterSendTxRequest::new(
             LighterTxType::ApproveIntegrator as u8,
             approval.tx_info.clone(),
         );
+
+        approval.send_reservation.wait_for_turn().await;
+
         let response = self.http_client.send_tx(&request).await.with_context(|| {
             let hint = if maker_only_check_failed {
                 " (maker-only pre-flight check failed earlier; venue may reject with 62007 \
@@ -485,6 +490,8 @@ impl LighterExecutionClient {
                 approval.nonce, approval.api_key_index,
             )
         })?;
+
+        approval.send_reservation.release();
 
         log::debug!(
             "Submitted Lighter integrator approval: integrator={}, nonce={}, \
@@ -502,9 +509,16 @@ impl LighterExecutionClient {
         &self,
         credential: &Credential,
     ) -> anyhow::Result<PreparedIntegratorApproval> {
-        let context = self.build_tx_context(credential)?;
+        let ReservedTxContext {
+            context,
+            send_reservation,
+        } = self.build_tx_context(credential)?;
+
         let now_ms = (self.clock.get_time_ns().as_u64() as i64) / 1_000_000;
         let approval_expiry = now_ms.saturating_add(INTEGRATOR_AUTO_APPROVAL_MAX_TTL_MS);
+        let nonce = context.nonce;
+        let api_key_index = context.api_key_index;
+
         let tx = ApproveIntegratorTxInfo {
             context,
             integrator_account_index: LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX as i64,
@@ -526,9 +540,10 @@ impl LighterExecutionClient {
 
         Ok(PreparedIntegratorApproval {
             tx_info,
-            nonce: context.nonce,
-            api_key_index: context.api_key_index,
+            nonce,
+            api_key_index,
             approval_expiry,
+            send_reservation,
         })
     }
 
@@ -1008,7 +1023,7 @@ impl LighterExecutionClient {
             .map_or(self.config.market_order_slippage_bps, |v| v as u32)
     }
 
-    fn build_tx_context(&self, credential: &Credential) -> anyhow::Result<TxContext> {
+    fn build_tx_context(&self, credential: &Credential) -> anyhow::Result<ReservedTxContext> {
         let nonce = match self
             .dispatch
             .nonce_manager
@@ -1026,12 +1041,22 @@ impl LighterExecutionClient {
 
         let now_ns = self.clock.get_time_ns().as_u64() as i64;
         let expired_at = (now_ns / 1_000_000).saturating_add(DEFAULT_TX_EXPIRY_MS);
+        let send_reservation = self.tx_send_sequencer.reserve(
+            credential.account_index(),
+            credential.api_key_index(),
+            nonce,
+        );
 
-        Ok(TxContext {
+        let context = TxContext {
             account_index: credential.account_index(),
             api_key_index: credential.api_key_index(),
             nonce,
             expired_at,
+        };
+
+        Ok(ReservedTxContext {
+            context,
+            send_reservation,
         })
     }
 
@@ -1092,6 +1117,7 @@ impl LighterExecutionClient {
             nonce,
             api_key_index,
             tx_hash,
+            mut send_reservation,
         } = prepared;
         let ws_client = self.ws_client.clone();
         let dispatch = self.dispatch.clone();
@@ -1102,8 +1128,10 @@ impl LighterExecutionClient {
         let clock = self.clock;
 
         self.emitter.emit_order_submitted(&order);
+
         self.spawn_task("submit_order", async move {
             log::debug!("Lighter submit_order: queueing CreateOrder tx for {client_order_id}");
+            send_reservation.wait_for_turn().await;
             // Pace before enqueueing so the pending FIFO order matches the send
             // order and `submitted_at` is fresh for ack/rejection attribution.
             await_tx_quota(&tx_rate_limiter).await;
@@ -1135,6 +1163,7 @@ impl LighterExecutionClient {
 
                 emitter.emit_order_rejected(&order, &reason, clock.get_time_ns(), false);
             }
+            send_reservation.release();
             Ok(())
         });
 
@@ -1224,6 +1253,7 @@ impl LighterExecutionClient {
                 .transpose()?
                 .unwrap_or(0),
         };
+
         let trigger_price_ticks = order
             .trigger_price()
             .map(|p| price_to_ticks(&p, price_precision))
@@ -1260,7 +1290,10 @@ impl LighterExecutionClient {
             },
         );
 
-        let context = match self.build_tx_context(credential) {
+        let ReservedTxContext {
+            context,
+            send_reservation,
+        } = match self.build_tx_context(credential) {
             Ok(context) => context,
             Err(e) => {
                 self.dispatch.forget_cloid(client_order_index);
@@ -1268,8 +1301,10 @@ impl LighterExecutionClient {
                 return Err(e);
             }
         };
+
         let nonce = context.nonce;
         let api_key_index = context.api_key_index;
+
         let mut rollback_guard = TxDispatchGuard::new(
             self.dispatch.clone(),
             credential,
@@ -1300,6 +1335,7 @@ impl LighterExecutionClient {
             &credential.private_key()?,
             fresh_k(),
         );
+
         let tx_info_str = TxInfoJson::create_order(&tx, &signed);
         let tx_info = serde_json::value::RawValue::from_string(tx_info_str)
             .context("failed to wrap signed Lighter tx_info JSON")?;
@@ -1312,6 +1348,7 @@ impl LighterExecutionClient {
             nonce,
             api_key_index,
             tx_hash: signed.tx_hash_hex(),
+            send_reservation,
         })
     }
 
@@ -1330,6 +1367,7 @@ impl LighterExecutionClient {
             nonce,
             api_key_index,
             tx_hash,
+            mut send_reservation,
         } = prepared;
 
         let ws_client = self.ws_client.clone();
@@ -1339,7 +1377,9 @@ impl LighterExecutionClient {
         let clock = self.clock;
 
         let tx_rate_limiter = self.tx_rate_limiter.clone();
+
         self.spawn_task("cancel_order", async move {
+            send_reservation.wait_for_turn().await;
             await_tx_quota(&tx_rate_limiter).await;
             dispatch.enqueue_pending_sendtx(PendingSendTx {
                 kind: PendingSendTxKind::Other,
@@ -1367,6 +1407,8 @@ impl LighterExecutionClient {
                     clock.get_time_ns(),
                 );
             }
+
+            send_reservation.release();
             Ok(())
         });
 
@@ -1406,7 +1448,11 @@ impl LighterExecutionClient {
             .parse()
             .with_context(|| format!("Lighter venue_order_id `{voi}` is not an integer index"))?;
 
-        let context = self.build_tx_context(credential)?;
+        let ReservedTxContext {
+            context,
+            send_reservation,
+        } = self.build_tx_context(credential)?;
+
         let captured_nonce = context.nonce;
         let captured_api_key_index = context.api_key_index;
         let mut rollback_guard =
@@ -1438,6 +1484,7 @@ impl LighterExecutionClient {
             nonce: captured_nonce,
             api_key_index: captured_api_key_index,
             tx_hash: signed.tx_hash_hex(),
+            send_reservation,
         })
     }
 
@@ -1502,7 +1549,11 @@ impl LighterExecutionClient {
             price_to_ticks(&new_trigger, instrument.price_precision())?
         };
 
-        let context = self.build_tx_context(credential)?;
+        let ReservedTxContext {
+            context,
+            mut send_reservation,
+        } = self.build_tx_context(credential)?;
+
         let captured_nonce = context.nonce;
         let captured_api_key_index = context.api_key_index;
         let mut rollback_guard =
@@ -1523,6 +1574,7 @@ impl LighterExecutionClient {
             &credential.private_key()?,
             fresh_k(),
         );
+
         let tx_info_str = TxInfoJson::modify_order(&tx, &signed);
         let tx_info = serde_json::value::RawValue::from_string(tx_info_str)
             .context("failed to wrap signed Lighter modify tx_info JSON")?;
@@ -1540,7 +1592,9 @@ impl LighterExecutionClient {
         let venue_order_id = Some(voi);
 
         let tx_rate_limiter = self.tx_rate_limiter.clone();
+
         self.spawn_task("modify_order", async move {
+            send_reservation.wait_for_turn().await;
             await_tx_quota(&tx_rate_limiter).await;
             dispatch.enqueue_pending_sendtx(PendingSendTx {
                 kind: PendingSendTxKind::Other,
@@ -1567,6 +1621,7 @@ impl LighterExecutionClient {
                     clock.get_time_ns(),
                 );
             }
+            send_reservation.release();
             Ok(())
         });
 
@@ -1610,7 +1665,11 @@ impl LighterExecutionClient {
             "initial_margin_fraction must be in 1..=10_000, was {initial_margin_fraction}",
         );
 
-        let context = self.build_tx_context(credential)?;
+        let ReservedTxContext {
+            context,
+            mut send_reservation,
+        } = self.build_tx_context(credential)?;
+
         let captured_nonce = context.nonce;
         let captured_api_key_index = context.api_key_index;
         let mut rollback_guard =
@@ -1641,7 +1700,9 @@ impl LighterExecutionClient {
         let clock = self.clock;
 
         let tx_rate_limiter = self.tx_rate_limiter.clone();
+
         self.spawn_task("update_leverage", async move {
+            send_reservation.wait_for_turn().await;
             await_tx_quota(&tx_rate_limiter).await;
             dispatch.enqueue_pending_sendtx(PendingSendTx {
                 kind: PendingSendTxKind::Other,
@@ -1660,6 +1721,7 @@ impl LighterExecutionClient {
                 dispatch.remove_pending_sendtx_by_nonce(captured_nonce);
                 rollback_tx_dispatch(&dispatch, &credential, None, captured_nonce);
             }
+            send_reservation.release();
             Ok(())
         });
 
@@ -1667,7 +1729,170 @@ impl LighterExecutionClient {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug)]
+struct ReservedTxContext {
+    context: TxContext,
+    send_reservation: TxSendReservation,
+}
+
+#[derive(Debug, Clone)]
+struct TxSendSequencer {
+    state: Arc<Mutex<TxSendSequencerState>>,
+    version: Arc<AtomicU64>,
+    changed: tokio::sync::watch::Sender<u64>,
+}
+
+impl TxSendSequencer {
+    fn new() -> Self {
+        let (changed, _) = tokio::sync::watch::channel(0);
+        Self {
+            state: Arc::new(Mutex::new(TxSendSequencerState::default())),
+            version: Arc::new(AtomicU64::new(0)),
+            changed,
+        }
+    }
+
+    fn reserve(&self, account_index: i64, api_key_index: u8, nonce: i64) -> TxSendReservation {
+        let key = TxSendKey {
+            account_index,
+            api_key_index,
+        };
+        self.state
+            .lock()
+            .expect(MUTEX_POISONED)
+            .pending
+            .entry(key)
+            .or_default()
+            .insert(nonce);
+        self.notify_waiters();
+
+        TxSendReservation {
+            sequencer: self.clone(),
+            key,
+            nonce,
+            released: false,
+        }
+    }
+
+    async fn wait_for_turn(&self, key: TxSendKey, nonce: i64) {
+        let mut changed = self.changed.subscribe();
+
+        loop {
+            if self.ready_to_send(key, nonce) {
+                return;
+            }
+
+            if changed.changed().await.is_err() {
+                tokio::task::yield_now().await;
+            }
+        }
+    }
+
+    fn release(&self, key: TxSendKey, nonce: i64) {
+        let mut state = self.state.lock().expect(MUTEX_POISONED);
+        let should_notify = if let Some(pending) = state.pending.get_mut(&key) {
+            let removed = pending.remove(&nonce);
+            if pending.is_empty() {
+                state.pending.remove(&key);
+            }
+            removed
+        } else {
+            false
+        };
+        drop(state);
+
+        if should_notify {
+            self.notify_waiters();
+        }
+    }
+
+    fn ready_to_send(&self, key: TxSendKey, nonce: i64) -> bool {
+        let state = self.state.lock().expect(MUTEX_POISONED);
+        state
+            .pending
+            .get(&key)
+            .and_then(|pending| pending.first())
+            .is_none_or(|first| *first >= nonce)
+    }
+
+    fn notify_waiters(&self) {
+        let version = self.version.fetch_add(1, Ordering::AcqRel) + 1;
+        let _ = self.changed.send(version);
+    }
+}
+
+#[derive(Debug, Default)]
+struct TxSendSequencerState {
+    pending: BTreeMap<TxSendKey, BTreeSet<i64>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct TxSendKey {
+    account_index: i64,
+    api_key_index: u8,
+}
+
+#[derive(Debug)]
+struct TxSendReservation {
+    sequencer: TxSendSequencer,
+    key: TxSendKey,
+    nonce: i64,
+    released: bool,
+}
+
+impl TxSendReservation {
+    async fn wait_for_turn(&self) {
+        self.sequencer.wait_for_turn(self.key, self.nonce).await;
+    }
+
+    fn release(&mut self) {
+        if self.released {
+            return;
+        }
+
+        self.sequencer.release(self.key, self.nonce);
+        self.released = true;
+    }
+}
+
+impl Drop for TxSendReservation {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+async fn wait_for_tx_send_reservations(reservations: &[&TxSendReservation]) {
+    let Some(first) = reservations.first() else {
+        return;
+    };
+
+    debug_assert!(
+        reservations
+            .iter()
+            .all(|reservation| reservation.key == first.key),
+        "batch send reservations must share one nonce stream",
+    );
+
+    let nonce = reservations
+        .iter()
+        .map(|reservation| reservation.nonce)
+        .min()
+        .expect("reservations is non-empty");
+    first.sequencer.wait_for_turn(first.key, nonce).await;
+}
+
+fn release_prepared_create_reservations(prepared_orders: &mut [PreparedCreateOrder]) {
+    for prepared in prepared_orders {
+        prepared.send_reservation.release();
+    }
+}
+
+fn release_prepared_cancel_reservations(prepared_cancels: &mut [PreparedCancelOrder]) {
+    for prepared in prepared_cancels {
+        prepared.send_reservation.release();
+    }
+}
+
 struct PreparedCreateOrder {
     order: OrderAny,
     client_order_index: i64,
@@ -1675,9 +1900,9 @@ struct PreparedCreateOrder {
     nonce: i64,
     api_key_index: u8,
     tx_hash: String,
+    send_reservation: TxSendReservation,
 }
 
-#[derive(Clone)]
 struct PreparedCancelOrder {
     client_order_id: ClientOrderId,
     strategy_id: StrategyId,
@@ -1687,6 +1912,7 @@ struct PreparedCancelOrder {
     nonce: i64,
     api_key_index: u8,
     tx_hash: String,
+    send_reservation: TxSendReservation,
 }
 
 struct PreparedIntegratorApproval {
@@ -1694,6 +1920,7 @@ struct PreparedIntegratorApproval {
     nonce: i64,
     api_key_index: u8,
     approval_expiry: i64,
+    send_reservation: TxSendReservation,
 }
 
 // Cross-check between a detected account tier and the configured REST quota:
@@ -2446,16 +2673,19 @@ impl ExecutionClient for LighterExecutionClient {
         let credential = credential.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
-        let http_batch_serializer = self.http_batch_serializer.clone();
 
         self.spawn_task("submit_order_list", async move {
+            let mut prepared_orders = prepared_orders;
             log::debug!(
                 "Lighter submit_order_list: queueing {} CreateOrder txs",
                 prepared_orders.len(),
             );
 
-            // Serialize batch sends — venue rejects out-of-order nonces (21104).
-            let _send_guard = http_batch_serializer.lock().await;
+            let reservations = prepared_orders
+                .iter()
+                .map(|prepared| &prepared.send_reservation)
+                .collect::<Vec<_>>();
+            wait_for_tx_send_reservations(&reservations).await;
 
             match http_client.send_tx_batch(&request).await {
                 Ok(_) => {
@@ -2492,6 +2722,7 @@ impl ExecutionClient for LighterExecutionClient {
                         .await;
                 }
             }
+            release_prepared_create_reservations(&mut prepared_orders);
             Ok(())
         });
 
@@ -2599,16 +2830,19 @@ impl ExecutionClient for LighterExecutionClient {
         let credential = credential.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
-        let http_batch_serializer = self.http_batch_serializer.clone();
 
         self.spawn_task("batch_cancel_orders", async move {
+            let mut prepared_cancels = prepared_cancels;
             log::debug!(
                 "Lighter batch_cancel_orders: queueing {} CancelOrder txs",
                 prepared_cancels.len(),
             );
 
-            // Serialize batch sends — venue rejects out-of-order nonces (21104).
-            let _send_guard = http_batch_serializer.lock().await;
+            let reservations = prepared_cancels
+                .iter()
+                .map(|prepared| &prepared.send_reservation)
+                .collect::<Vec<_>>();
+            wait_for_tx_send_reservations(&reservations).await;
 
             match http_client.send_tx_batch(&request).await {
                 Ok(_) => {
@@ -2640,6 +2874,7 @@ impl ExecutionClient for LighterExecutionClient {
                         .await;
                 }
             }
+            release_prepared_cancel_reservations(&mut prepared_cancels);
             Ok(())
         });
 
@@ -4090,6 +4325,126 @@ mod tests {
                 .unwrap(),
             TEST_NEXT_NONCE,
         );
+    }
+
+    #[tokio::test]
+    async fn tx_send_sequencer_blocks_higher_nonce_until_lower_batch_releases() {
+        let sequencer = TxSendSequencer::new();
+        let mut lower_a =
+            sequencer.reserve(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX, TEST_NEXT_NONCE);
+        let mut lower_b = sequencer.reserve(
+            TEST_ACCOUNT_INDEX_I64,
+            TEST_API_KEY_INDEX,
+            TEST_NEXT_NONCE + 1,
+        );
+        let mut higher = sequencer.reserve(
+            TEST_ACCOUNT_INDEX_I64,
+            TEST_API_KEY_INDEX,
+            TEST_NEXT_NONCE + 2,
+        );
+        let (sent_tx, mut sent_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let higher_task = tokio::spawn(async move {
+            higher.wait_for_turn().await;
+            sent_tx.send(higher.nonce).unwrap();
+            higher.release();
+        });
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), sent_rx.recv())
+                .await
+                .is_err(),
+            "higher nonce must wait while the lower batch is pending",
+        );
+
+        {
+            let lower_reservations = [&lower_a, &lower_b];
+            tokio::time::timeout(
+                Duration::from_millis(50),
+                wait_for_tx_send_reservations(&lower_reservations),
+            )
+            .await
+            .expect("lower batch must already have the send turn");
+        }
+
+        lower_a.release();
+        lower_b.release();
+
+        let sent = tokio::time::timeout(Duration::from_secs(2), sent_rx.recv())
+            .await
+            .expect("higher nonce must proceed after lower batch releases")
+            .expect("send channel must stay open");
+        higher_task.await.unwrap();
+
+        assert_eq!(
+            sent,
+            TEST_NEXT_NONCE + 2,
+            "higher nonce must send after the lower batch releases",
+        );
+    }
+
+    #[tokio::test]
+    async fn tx_send_reservation_drop_releases_lower_nonce() {
+        let sequencer = TxSendSequencer::new();
+        let lower = sequencer.reserve(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX, TEST_NEXT_NONCE);
+        let mut higher = sequencer.reserve(
+            TEST_ACCOUNT_INDEX_I64,
+            TEST_API_KEY_INDEX,
+            TEST_NEXT_NONCE + 1,
+        );
+        let (sent_tx, mut sent_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let higher_task = tokio::spawn(async move {
+            higher.wait_for_turn().await;
+            sent_tx.send(higher.nonce).unwrap();
+            higher.release();
+        });
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), sent_rx.recv())
+                .await
+                .is_err(),
+            "higher nonce must wait while the lower reservation is pending",
+        );
+
+        drop(lower);
+
+        let sent = tokio::time::timeout(Duration::from_secs(2), sent_rx.recv())
+            .await
+            .expect("higher nonce must proceed after lower reservation drops")
+            .expect("send channel must stay open");
+        higher_task.await.unwrap();
+
+        assert_eq!(
+            sent,
+            TEST_NEXT_NONCE + 1,
+            "higher nonce must send after the lower reservation drops",
+        );
+    }
+
+    #[tokio::test]
+    async fn tx_send_sequencer_keeps_nonce_streams_independent() {
+        let sequencer = TxSendSequencer::new();
+        let _other_account = sequencer.reserve(
+            TEST_ACCOUNT_INDEX_I64 + 1,
+            TEST_API_KEY_INDEX,
+            TEST_NEXT_NONCE,
+        );
+        let _other_api_key = sequencer.reserve(
+            TEST_ACCOUNT_INDEX_I64,
+            TEST_API_KEY_INDEX + 1,
+            TEST_NEXT_NONCE,
+        );
+        let mut current = sequencer.reserve(
+            TEST_ACCOUNT_INDEX_I64,
+            TEST_API_KEY_INDEX,
+            TEST_NEXT_NONCE + 10,
+        );
+
+        tokio::time::timeout(Duration::from_millis(50), current.wait_for_turn())
+            .await
+            .expect("lower nonces for other keys must not block this key");
+        current.release();
     }
 
     #[rstest]
@@ -6869,7 +7224,7 @@ mod tests {
             !client.nonce_recovery_inflight.load(Ordering::Acquire),
             "recovery latch must release for the next exhaustion",
         );
-        let context = client.build_tx_context(&credential).unwrap();
+        let context = client.build_tx_context(&credential).unwrap().context;
         assert_eq!(
             context.nonce, venue_next_nonce,
             "allocation must resume at the venue nonce",

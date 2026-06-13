@@ -176,6 +176,8 @@ struct TestServerState {
     trades_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     next_rest_send_tx_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     next_send_tx_ack: Arc<tokio::sync::Mutex<Option<Value>>>,
+    block_next_send_tx_batch_response: Arc<AtomicBool>,
+    send_tx_batch_response_gate: Arc<tokio::sync::Notify>,
     inbox_tx: tokio::sync::broadcast::Sender<String>,
     close_after_next_frame: Arc<AtomicBool>,
     tx_hash_seq: Arc<AtomicI64>,
@@ -206,6 +208,8 @@ impl Default for TestServerState {
             trades_response: Arc::new(tokio::sync::Mutex::new(None)),
             next_rest_send_tx_response: Arc::new(tokio::sync::Mutex::new(None)),
             next_send_tx_ack: Arc::new(tokio::sync::Mutex::new(None)),
+            block_next_send_tx_batch_response: Arc::new(AtomicBool::new(false)),
+            send_tx_batch_response_gate: Arc::new(tokio::sync::Notify::new()),
             inbox_tx,
             close_after_next_frame: Arc::new(AtomicBool::new(false)),
             tx_hash_seq: Arc::new(AtomicI64::new(0)),
@@ -233,6 +237,15 @@ impl TestServerState {
 
     fn push_frame(&self, frame: &Value) {
         let _ = self.inbox_tx.send(frame.to_string());
+    }
+
+    fn block_next_send_tx_batch_response(&self) {
+        self.block_next_send_tx_batch_response
+            .store(true, Ordering::Release);
+    }
+
+    fn release_send_tx_batch_response(&self) {
+        self.send_tx_batch_response_gate.notify_one();
     }
 }
 
@@ -596,6 +609,13 @@ async fn send_tx_batch_post_stub(
     state.send_txs.lock().await.push(
         json!({"type":"jsonapi/sendtxbatch","data":{"tx_types":tx_types,"tx_infos":tx_infos}}),
     );
+
+    if state
+        .block_next_send_tx_batch_response
+        .swap(false, Ordering::AcqRel)
+    {
+        state.send_tx_batch_response_gate.notified().await;
+    }
 
     let ack = state
         .next_send_tx_ack
@@ -1845,6 +1865,98 @@ async fn test_submit_order_list_sends_one_create_order_batch() {
             .is_none(),
         "sendTxBatch success is not a per-order terminal outcome",
     );
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_http_batch_response_blocks_later_ws_sendtx() {
+    let (addr, state) = start_server().await;
+    state.block_next_send_tx_batch_response();
+    let mut config = build_config(addr);
+    config.sendtx_quota_per_min = Some(24_000);
+    let (mut client, mut rx, cache) = build_client_with(config);
+    client.connect().await.expect("connect");
+
+    let batch_a = make_limit_order(
+        "O-SEQ-A",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    let batch_b = make_limit_order(
+        "O-SEQ-B",
+        OrderSide::Sell,
+        Quantity::from("0.0100"),
+        Price::from("2400.00"),
+        TimeInForce::Gtc,
+        true,
+        false,
+    );
+    let single = make_limit_order(
+        "O-SEQ-C",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2350.00"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    cache_order(&cache, batch_a.clone());
+    cache_order(&cache, batch_b.clone());
+    cache_order(&cache, single.clone());
+
+    let command = submit_order_list_command(&[batch_a.clone(), batch_b.clone()], "OL-SEQ");
+    client.submit_order_list(command).expect("submit list");
+
+    let submitted_a = next_order_event(&mut rx, Duration::from_secs(2))
+        .await
+        .expect("OrderSubmitted A");
+    let submitted_b = next_order_event(&mut rx, Duration::from_secs(2))
+        .await
+        .expect("OrderSubmitted B");
+    let submitted_ids = [submitted_a, submitted_b].map(|event| match event {
+        OrderEventAny::Submitted(e) => e.client_order_id,
+        other => panic!("expected Submitted, was {other:?}"),
+    });
+    assert!(submitted_ids.contains(&batch_a.client_order_id()));
+    assert!(submitted_ids.contains(&batch_b.client_order_id()));
+
+    await_send_tx_count(&state, 1).await;
+
+    client
+        .submit_order(submit_command(&single))
+        .expect("submit");
+    let submitted_single = next_order_event(&mut rx, Duration::from_secs(2))
+        .await
+        .expect("OrderSubmitted single");
+    match submitted_single {
+        OrderEventAny::Submitted(e) => assert_eq!(e.client_order_id, single.client_order_id()),
+        other => panic!("expected Submitted, was {other:?}"),
+    }
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let frames = state.send_txs().await;
+    assert_eq!(
+        frames.len(),
+        1,
+        "later WS sendTx must wait for batch response"
+    );
+    assert_eq!(frames[0]["type"], "jsonapi/sendtxbatch");
+
+    state.release_send_tx_batch_response();
+    await_send_tx_count(&state, 2).await;
+
+    let frames = state.send_txs().await;
+    assert_eq!(frames.len(), 2);
+    assert_eq!(frames[0]["type"], "jsonapi/sendtxbatch");
+    assert_eq!(send_tx_batch_types(&frames[0]), vec![14, 14]);
+    assert_eq!(frames[1]["type"], "jsonapi/sendtx");
+    assert_eq!(send_tx_type(&frames[1]), 14);
 
     client.disconnect().await.expect("disconnect");
 }
