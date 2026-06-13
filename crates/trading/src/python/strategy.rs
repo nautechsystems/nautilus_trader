@@ -25,6 +25,7 @@ use std::{
     rc::Rc,
 };
 
+use indexmap::IndexMap;
 use nautilus_common::{
     actor::{
         Actor, DataActor,
@@ -72,7 +73,10 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_portfolio::{portfolio::Portfolio, python::PyPortfolio};
-use pyo3::{prelude::*, types::PyDict};
+use pyo3::{
+    prelude::*,
+    types::{PyBytes, PyDict},
+};
 use ustr::Ustr;
 
 use crate::strategy::{ImportableStrategyConfig, Strategy, StrategyConfig, StrategyCore};
@@ -319,6 +323,29 @@ impl PyStrategyInner {
     fn dispatch_on_fault(&self) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| py_self.call_method0(py, "on_fault"))?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_save(&self) -> PyResult<IndexMap<String, Vec<u8>>> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_state = py_self.call_method0(py, "on_save")?;
+                let py_state: &Bound<'_, PyDict> = py_state.cast_bound::<PyDict>(py)?;
+                pydict_to_state(py_state)
+            })
+        } else {
+            Ok(IndexMap::new())
+        }
+    }
+
+    fn dispatch_on_load(&self, state: &IndexMap<String, Vec<u8>>) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| -> PyResult<()> {
+                let py_state = state_to_pydict(py, state)?;
+                py_self.call_method1(py, "on_load", (py_state,))?;
+                Ok(())
+            })?;
         }
         Ok(())
     }
@@ -888,6 +915,16 @@ impl DataActor for PyStrategyInner {
             .map_err(|e| anyhow::anyhow!("Python on_fault failed: {e}"))
     }
 
+    fn on_save(&self) -> anyhow::Result<IndexMap<String, Vec<u8>>> {
+        self.dispatch_on_save()
+            .map_err(|e| anyhow::anyhow!("Python on_save failed: {e}"))
+    }
+
+    fn on_load(&mut self, state: IndexMap<String, Vec<u8>>) -> anyhow::Result<()> {
+        self.dispatch_on_load(&state)
+            .map_err(|e| anyhow::anyhow!("Python on_load failed: {e}"))
+    }
+
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         Strategy::on_time_event(self, event)?;
         self.dispatch_on_time_event(event)
@@ -1034,6 +1071,22 @@ impl DataActor for PyStrategyInner {
         self.dispatch_on_order_canceled(*event)
             .map_err(|e| anyhow::anyhow!("Python on_order_canceled failed: {e}"))
     }
+}
+
+fn state_to_pydict(py: Python<'_>, state: &IndexMap<String, Vec<u8>>) -> PyResult<Py<PyDict>> {
+    let py_state = PyDict::new(py);
+    for (key, value) in state {
+        py_state.set_item(key, PyBytes::new(py, value))?;
+    }
+    Ok(py_state.unbind())
+}
+
+fn pydict_to_state(state: &Bound<'_, PyDict>) -> PyResult<IndexMap<String, Vec<u8>>> {
+    let mut rust_state = IndexMap::with_capacity(state.len());
+    for (key, value) in state.iter() {
+        rust_state.insert(key.extract()?, value.extract()?);
+    }
+    Ok(rust_state)
 }
 
 /// Python-facing wrapper for Strategy.
@@ -1334,7 +1387,24 @@ impl PyStrategy {
 
     #[pyo3(name = "stop")]
     fn py_stop(&mut self) -> PyResult<()> {
-        Component::stop(self.inner_mut()).map_err(to_pyruntime_err)
+        let inner = self.inner_mut();
+        if Strategy::stop(inner) {
+            Component::stop(inner).map_err(to_pyruntime_err)
+        } else {
+            Ok(())
+        }
+    }
+
+    #[pyo3(name = "save")]
+    fn py_save(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let state = DataActor::on_save(self.inner()).map_err(to_pyruntime_err)?;
+        state_to_pydict(py, &state)
+    }
+
+    #[pyo3(name = "load")]
+    fn py_load(&mut self, state: &Bound<'_, PyDict>) -> PyResult<()> {
+        let state = pydict_to_state(state)?;
+        DataActor::on_load(self.inner_mut(), state).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "resume")]
@@ -1586,6 +1656,15 @@ impl PyStrategy {
 
     #[pyo3(name = "on_fault")]
     fn py_on_fault(&mut self) {}
+
+    #[pyo3(name = "on_save")]
+    fn py_on_save(&self, py: Python<'_>) -> Py<PyDict> {
+        PyDict::new(py).unbind()
+    }
+
+    #[allow(unused_variables)]
+    #[pyo3(name = "on_load")]
+    fn py_on_load(&mut self, state: &Bound<'_, PyDict>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_time_event")]
@@ -2663,8 +2742,14 @@ impl PyStrategy {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, collections::BTreeMap, rc::Rc, str::FromStr};
+    use std::{
+        cell::RefCell,
+        collections::{BTreeMap, HashMap},
+        rc::Rc,
+        str::FromStr,
+    };
 
+    use indexmap::IndexMap;
     use nautilus_common::{
         actor::DataActor,
         cache::Cache,
@@ -2702,7 +2787,11 @@ mod tests {
         types::{Currency, Money, Price, Quantity},
     };
     use nautilus_portfolio::portfolio::Portfolio;
-    use pyo3::{Py, PyAny, PyResult, Python, ffi::c_str, types::PyAnyMethods};
+    use pyo3::{
+        Py, PyAny, PyResult, Python,
+        ffi::c_str,
+        types::{PyAnyMethods, PyBytes, PyDict},
+    };
     use ustr::Ustr;
 
     use super::PyStrategy;
@@ -2719,6 +2808,8 @@ class TrackingStrategy:
         "on_dispose",
         "on_degrade",
         "on_fault",
+        "on_save",
+        "on_load",
         "on_time_event",
         "on_data",
         "on_signal",
@@ -2775,6 +2866,20 @@ class TrackingStrategy:
     def call_count(self, method_name):
         return sum(1 for call in self.calls if call[0] == method_name)
 
+    def last_loaded_state(self):
+
+        for method_name, args in reversed(self.calls):
+            if method_name == "on_load":
+                return args[0]
+        return None
+
+    def on_save(self):
+        self._record("on_save")
+        return {"strategy": b"saved"}
+
+    def on_load(self, state):
+        self._record("on_load", dict(state))
+
     def __getattr__(self, name):
         if name in self.TRACKED_METHODS:
             return lambda *args: self._record(name, *args)
@@ -2805,6 +2910,16 @@ class TrackingStrategy:
             .call_method1(py, "call_count", (method_name,))
             .and_then(|result| result.extract::<i32>(py))
             .unwrap_or(0)
+    }
+
+    fn python_last_loaded_state(
+        py_strategy: &Py<PyAny>,
+        py: Python<'_>,
+    ) -> Option<HashMap<String, Vec<u8>>> {
+        py_strategy
+            .call_method0(py, "last_loaded_state")
+            .and_then(|result| result.extract::<Option<HashMap<String, Vec<u8>>>>(py))
+            .unwrap_or(None)
     }
 
     fn sample_instrument() -> CurrencyPair {
@@ -3057,9 +3172,12 @@ class TrackingStrategy:
         }
     }
 
-    fn create_registered_tracking_strategy(py: Python<'_>) -> (Py<PyAny>, PyStrategy) {
+    fn create_registered_tracking_strategy_with_config(
+        py: Python<'_>,
+        config: Option<StrategyConfig>,
+    ) -> (Py<PyAny>, PyStrategy) {
         let py_strategy = create_tracking_python_strategy(py).unwrap();
-        let mut rust_strategy = PyStrategy::new(None);
+        let mut rust_strategy = PyStrategy::new(config);
         rust_strategy.set_python_instance(py_strategy.clone_ref(py));
 
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
@@ -3075,6 +3193,10 @@ class TrackingStrategy:
             .unwrap();
 
         (py_strategy, rust_strategy)
+    }
+
+    fn create_registered_tracking_strategy(py: Python<'_>) -> (Py<PyAny>, PyStrategy) {
+        create_registered_tracking_strategy_with_config(py, None)
     }
 
     #[rstest::rstest]
@@ -3124,6 +3246,108 @@ class TrackingStrategy:
                 "on_fault" => DataActor::on_fault(rust_strategy.inner_mut()),
                 _ => unreachable!("unhandled lifecycle case: {method_name}"),
             });
+        });
+    }
+
+    #[rstest::rstest]
+    #[case("on_save")]
+    #[case("on_load")]
+    fn test_python_dispatch_persistence_matrix(#[case] method_name: &str) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            assert_python_dispatch(py, method_name, |rust_strategy| match method_name {
+                "on_save" => {
+                    let state = DataActor::on_save(rust_strategy.inner()).unwrap();
+                    assert_eq!(
+                        state.get("strategy").map(Vec::as_slice),
+                        Some(b"saved".as_slice())
+                    );
+                    Ok(())
+                }
+                "on_load" => {
+                    let mut state = IndexMap::new();
+                    state.insert("strategy".to_string(), b"loaded".to_vec());
+                    DataActor::on_load(rust_strategy.inner_mut(), state)
+                }
+                _ => unreachable!("unhandled persistence case: {method_name}"),
+            });
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_persistence_methods_convert_state() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let (py_strategy, mut rust_strategy) = create_registered_tracking_strategy(py);
+
+            let saved = rust_strategy.py_save(py).unwrap();
+            let saved_state = saved
+                .bind(py)
+                .extract::<HashMap<String, Vec<u8>>>()
+                .unwrap();
+            assert_eq!(
+                saved_state.get("strategy").map(Vec::as_slice),
+                Some(&b"saved"[..])
+            );
+
+            let load_state = PyDict::new(py);
+            load_state
+                .set_item("strategy", PyBytes::new(py, b"loaded-from-python"))
+                .unwrap();
+
+            rust_strategy.py_load(&load_state).unwrap();
+
+            let loaded_state = python_last_loaded_state(&py_strategy, py).unwrap();
+            assert_eq!(
+                loaded_state.get("strategy").map(Vec::as_slice),
+                Some(&b"loaded-from-python"[..])
+            );
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_stop_stops_immediately_when_manage_stop_disabled() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let config = StrategyConfig {
+                strategy_id: Some(StrategyId::from("TEST-001")),
+                order_id_tag: Some("001".to_string()),
+                manage_stop: false,
+                ..Default::default()
+            };
+            let (py_strategy, mut rust_strategy) =
+                create_registered_tracking_strategy_with_config(py, Some(config));
+
+            rust_strategy.py_start().unwrap();
+            rust_strategy.py_stop().unwrap();
+
+            assert!(rust_strategy.py_is_stopped());
+            assert!(!rust_strategy.inner().core.pending_stop);
+            assert!(!rust_strategy.inner().core.is_exiting);
+            assert_eq!(python_method_call_count(&py_strategy, py, "on_stop"), 1);
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_stop_defers_when_manage_stop_enabled() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let config = StrategyConfig {
+                strategy_id: Some(StrategyId::from("TEST-001")),
+                order_id_tag: Some("001".to_string()),
+                manage_stop: true,
+                ..Default::default()
+            };
+            let (py_strategy, mut rust_strategy) =
+                create_registered_tracking_strategy_with_config(py, Some(config));
+
+            rust_strategy.py_start().unwrap();
+            rust_strategy.py_stop().unwrap();
+
+            assert!(rust_strategy.py_is_running());
+            assert!(rust_strategy.inner().core.pending_stop);
+            assert!(rust_strategy.inner().core.is_exiting);
+            assert_eq!(python_method_call_count(&py_strategy, py, "on_stop"), 0);
         });
     }
 

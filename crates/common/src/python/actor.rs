@@ -23,6 +23,7 @@ use std::{
     rc::Rc,
 };
 
+use indexmap::IndexMap;
 use nautilus_core::{
     from_pydict,
     nanos::UnixNanos,
@@ -45,7 +46,10 @@ use nautilus_model::{
     orderbook::OrderBook,
     python::{data::option_chain::PyStrikeRange, instruments::instrument_any_to_pyobject},
 };
-use pyo3::{prelude::*, types::PyDict};
+use pyo3::{
+    prelude::*,
+    types::{PyBytes, PyDict},
+};
 
 use crate::{
     actor::{
@@ -222,6 +226,29 @@ impl PyDataActorInner {
     fn dispatch_on_fault(&mut self) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| py_self.call_method0(py, "on_fault"))?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_save(&self) -> PyResult<IndexMap<String, Vec<u8>>> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_state = py_self.call_method0(py, "on_save")?;
+                let py_state: &Bound<'_, PyDict> = py_state.cast_bound::<PyDict>(py)?;
+                pydict_to_state(py_state)
+            })
+        } else {
+            Ok(IndexMap::new())
+        }
+    }
+
+    fn dispatch_on_load(&mut self, state: &IndexMap<String, Vec<u8>>) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| -> PyResult<()> {
+                let py_state = state_to_pydict(py, state)?;
+                py_self.call_method1(py, "on_load", (py_state,))?;
+                Ok(())
+            })?;
         }
         Ok(())
     }
@@ -534,6 +561,22 @@ fn dict_to_params(
     }
 }
 
+fn state_to_pydict(py: Python<'_>, state: &IndexMap<String, Vec<u8>>) -> PyResult<Py<PyDict>> {
+    let py_state = PyDict::new(py);
+    for (key, value) in state {
+        py_state.set_item(key, PyBytes::new(py, value))?;
+    }
+    Ok(py_state.unbind())
+}
+
+fn pydict_to_state(state: &Bound<'_, PyDict>) -> PyResult<IndexMap<String, Vec<u8>>> {
+    let mut rust_state = IndexMap::with_capacity(state.len());
+    for (key, value) in state.iter() {
+        rust_state.insert(key.extract()?, value.extract()?);
+    }
+    Ok(rust_state)
+}
+
 /// Python-facing wrapper for `DataActor`.
 ///
 /// This wrapper holds shared ownership of `PyDataActorInner` via `Rc<UnsafeCell<>>`.
@@ -747,6 +790,16 @@ impl DataActor for PyDataActorInner {
     fn on_fault(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_fault()
             .map_err(|e| anyhow::anyhow!("Python on_fault failed: {e}"))
+    }
+
+    fn on_save(&self) -> anyhow::Result<IndexMap<String, Vec<u8>>> {
+        self.dispatch_on_save()
+            .map_err(|e| anyhow::anyhow!("Python on_save failed: {e}"))
+    }
+
+    fn on_load(&mut self, state: IndexMap<String, Vec<u8>>) -> anyhow::Result<()> {
+        self.dispatch_on_load(&state)
+            .map_err(|e| anyhow::anyhow!("Python on_load failed: {e}"))
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
@@ -1027,6 +1080,18 @@ impl PyDataActor {
         Component::stop(self.inner_mut()).map_err(to_pyruntime_err)
     }
 
+    #[pyo3(name = "save")]
+    fn py_save(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let state = DataActor::on_save(self.inner()).map_err(to_pyruntime_err)?;
+        state_to_pydict(py, &state)
+    }
+
+    #[pyo3(name = "load")]
+    fn py_load(&mut self, state: &Bound<'_, PyDict>) -> PyResult<()> {
+        let state = pydict_to_state(state)?;
+        DataActor::on_load(self.inner_mut(), state).map_err(to_pyruntime_err)
+    }
+
     #[pyo3(name = "resume")]
     fn py_resume(&mut self) -> PyResult<()> {
         Component::resume(self.inner_mut()).map_err(to_pyruntime_err)
@@ -1120,6 +1185,15 @@ impl PyDataActor {
 
     #[pyo3(name = "on_fault")]
     fn py_on_fault(&mut self) {}
+
+    #[pyo3(name = "on_save")]
+    fn py_on_save(&self, py: Python<'_>) -> Py<PyDict> {
+        PyDict::new(py).unbind()
+    }
+
+    #[allow(unused_variables)]
+    #[pyo3(name = "on_load")]
+    fn py_on_load(&mut self, state: &Bound<'_, PyDict>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_time_event")]
@@ -2179,10 +2253,11 @@ impl PyDataActor {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc, str::FromStr, sync::Arc};
+    use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr, sync::Arc};
 
     #[cfg(feature = "defi")]
     use alloy_primitives::{I256, U160, U256};
+    use indexmap::IndexMap;
     use nautilus_core::{UUID4, UnixNanos, python::IntoPyObjectNautilusExt};
     #[cfg(feature = "defi")]
     use nautilus_model::defi::{
@@ -2207,7 +2282,11 @@ mod tests {
         orderbook::OrderBook,
         types::{Price, Quantity},
     };
-    use pyo3::{Py, PyAny, PyResult, Python, ffi::c_str, types::PyAnyMethods};
+    use pyo3::{
+        Py, PyAny, PyResult, Python,
+        ffi::c_str,
+        types::{PyAnyMethods, PyBytes, PyDict},
+    };
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
@@ -3242,6 +3321,8 @@ class TrackingActor:
         "on_dispose",
         "on_degrade",
         "on_fault",
+        "on_save",
+        "on_load",
         "on_time_event",
         "on_data",
         "on_signal",
@@ -3285,6 +3366,20 @@ class TrackingActor:
     def call_count(self, method_name):
         return sum(1 for call in self.calls if call[0] == method_name)
 
+    def last_loaded_state(self):
+
+        for method_name, args in reversed(self.calls):
+            if method_name == "on_load":
+                return args[0]
+        return None
+
+    def on_save(self):
+        self._record("on_save")
+        return {"actor": b"saved"}
+
+    def on_load(self, state):
+        self._record("on_load", dict(state))
+
     def __getattr__(self, name):
         if name in self.TRACKED_METHODS:
             return lambda *args: self._record(name, *args)
@@ -3311,6 +3406,16 @@ class TrackingActor:
             .call_method1(py, "call_count", (method_name,))
             .and_then(|r| r.extract::<i32>(py))
             .unwrap_or(0)
+    }
+
+    fn python_last_loaded_state(
+        py_actor: &Py<PyAny>,
+        py: Python<'_>,
+    ) -> Option<HashMap<String, Vec<u8>>> {
+        py_actor
+            .call_method0(py, "last_loaded_state")
+            .and_then(|result| result.extract::<Option<HashMap<String, Vec<u8>>>>(py))
+            .unwrap_or(None)
     }
 
     fn assert_python_dispatch<F>(
@@ -3364,6 +3469,77 @@ class TrackingActor:
                     _ => unreachable!("unhandled lifecycle case: {method_name}"),
                 }
             });
+        });
+    }
+
+    #[rstest]
+    #[case("on_save")]
+    #[case("on_load")]
+    fn test_python_dispatch_persistence_matrix(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        #[case] method_name: &str,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            assert_python_dispatch(py, clock, cache, trader_id, method_name, |rust_actor| {
+                match method_name {
+                    "on_save" => {
+                        let state = DataActor::on_save(rust_actor.inner()).unwrap();
+                        assert_eq!(
+                            state.get("actor").map(Vec::as_slice),
+                            Some(b"saved".as_slice())
+                        );
+                        Ok(())
+                    }
+                    "on_load" => {
+                        let mut state = IndexMap::new();
+                        state.insert("actor".to_string(), b"loaded".to_vec());
+                        DataActor::on_load(rust_actor.inner_mut(), state)
+                    }
+                    _ => unreachable!("unhandled persistence case: {method_name}"),
+                }
+            });
+        });
+    }
+
+    #[rstest]
+    fn test_python_persistence_methods_convert_state(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let saved = rust_actor.py_save(py).unwrap();
+            let saved_state = saved
+                .bind(py)
+                .extract::<HashMap<String, Vec<u8>>>()
+                .unwrap();
+            assert_eq!(
+                saved_state.get("actor").map(Vec::as_slice),
+                Some(&b"saved"[..])
+            );
+
+            let load_state = PyDict::new(py);
+            load_state
+                .set_item("actor", PyBytes::new(py, b"loaded-from-python"))
+                .unwrap();
+
+            rust_actor.py_load(&load_state).unwrap();
+
+            let loaded_state = python_last_loaded_state(&py_actor, py).unwrap();
+            assert_eq!(
+                loaded_state.get("actor").map(Vec::as_slice),
+                Some(&b"loaded-from-python"[..])
+            );
         });
     }
 
