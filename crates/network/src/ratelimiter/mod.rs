@@ -321,16 +321,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_quota_new_rejects_zero_replenish_interval() {
-        // A burst large enough to round the per-cell interval to zero would
-        // construct a limiter that never limits
-        #[allow(deprecated)]
-        let quota = Quota::new(NonZeroU32::new(10).unwrap(), Duration::from_nanos(5));
-
-        assert!(quota.is_none());
-    }
-
-    #[rstest]
     fn test_enormous_quota_denies_after_burst() {
         // Regression: a period beyond ~584 years panicked in Gcra::new; with
         // clamping it must admit the burst and then deny, not admit everything

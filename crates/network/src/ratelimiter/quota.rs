@@ -94,12 +94,7 @@ impl Quota {
         }
     }
 
-    /// Construct a quota that replenishes one cell in a given
-    /// interval.
-    ///
-    /// This constructor is meant to replace [`::new`](#method.new),
-    /// in cases where a longer refresh period than 1 cell/hour is
-    /// necessary.
+    /// Construct a quota that replenishes one cell in a given interval.
     ///
     /// If the time interval is zero, returns `None`.
     #[must_use]
@@ -119,38 +114,6 @@ impl Quota {
     #[must_use]
     pub const fn allow_burst(self, max_burst: NonZeroU32) -> Self {
         Self { max_burst, ..self }
-    }
-
-    /// Construct a quota for a given burst size, replenishing the entire burst size in that
-    /// given unit of time.
-    ///
-    /// Returns `None` if the per-cell replenish interval (`replenish_all_per / max_burst`)
-    /// rounds to zero nanoseconds, since that would construct a limiter that never limits.
-    ///
-    /// This constructor allows greater control over the resulting
-    /// quota, but doesn't make as much intuitive sense as other
-    /// methods of constructing the same quotas. Unless your quotas
-    /// are given as "max burst size, and time it takes to replenish
-    /// that burst size", you are better served by the
-    /// [`Quota::per_second`](#method.per_second) (and similar)
-    /// constructors with the [`allow_burst`](#method.allow_burst)
-    /// modifier.
-    #[deprecated(
-        since = "0.2.0",
-        note = "This constructor is often confusing and non-intuitive. \
-    Use the `per_(interval)` / `with_period` and `max_burst` constructors instead."
-    )]
-    #[must_use]
-    pub fn new(max_burst: NonZeroU32, replenish_all_per: Duration) -> Option<Self> {
-        let replenish_1_per = replenish_all_per / max_burst.get();
-        if replenish_1_per.as_nanos() == 0 {
-            None
-        } else {
-            Some(Self {
-                max_burst,
-                replenish_1_per,
-            })
-        }
     }
 }
 
@@ -241,10 +204,5 @@ impl Quota {
 //     #[rstest]
 //     fn period_error_cases() {
 //         assert!(Quota::with_period(Duration::from_secs(0)).is_none());
-
-//         #[allow(deprecated)]
-//         {
-//             assert!(Quota::new(nonzero!(1u32), Duration::from_secs(0)).is_none());
-//         }
 //     }
 // }
