@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Added Hyperliquid minimum notional handling
 - Added Polymarket RTDS custom data subscriptions (#4214), thanks @graceyangfan
 - Added Postgres cache position event-log persistence and restart recovery (Rust)
+- Added PyO3 cache purge APIs (#4249), thanks @graceyangfan
 - Added Redis cache adapter order, position, and order-index write persistence (Rust)
 - Added SEC1 EC private key support to socket TLS configuration (Rust)
 - Added Tardis Lighter venue mapping
@@ -19,7 +20,7 @@ Released on TBD (UTC).
 - Added negative price support for `Commodity` instruments in risk checks (#2330), thanks for reporting @fabz1
 - Added `add_native_exec_algorithm` and `ExecutionAlgorithmConfig` bindings to the Python v2 backtest engine
 - Added `Order::to_order_status_report` conversion in Rust
-- Added benchmark-relative portfolio statistics (Beta, Alpha, Information Ratio, Tracking Error, Treynor Ratio) (#4251), thanks @mahimn01
+- Added benchmark-relative portfolio stats (#4251), thanks @mahimn01
 
 ### Breaking Changes
 - Changed plug-in loader to reject build mismatches by default; opt out with `set_allow_build_mismatch` (Rust)
@@ -105,6 +106,7 @@ Released on TBD (UTC).
 - Improved event-store marker writer and capture diagnostics with logged fail-stop errors (Rust)
 - Improved Postgres order-client index restore to pick the latest client ID per order (Rust)
 - Improved OTO contingency position ID recovery to persist re-indexed assignments (Rust)
+- Improved Polymarket data client module structure (#4260), thanks @graceyangfan
 - Optimized `Cache` query filtering to scale with open orders and positions (#4242), thanks for reporting @magnified103
 - Upgraded Interactive Brokers Rust adapter to `ibapi` 3.0.1 (#4209), thanks @faysou
 - Upgraded PyO3 to 0.29.0 with a temporary `pyo3-stub-gen` bridge before v2 removes legacy stubs
