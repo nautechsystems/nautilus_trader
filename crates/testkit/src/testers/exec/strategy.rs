@@ -23,7 +23,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     orders::{Order, OrderAny},
-    types::{Price, price::PriceRaw},
+    types::Price,
 };
 use nautilus_trading::{
     nautilus_strategy,
@@ -548,13 +548,13 @@ impl ExecTester {
         // post_only=true downstream to trigger venue rejection; `limit_aggressive`
         // pairs with IOC/FOK TIF for marketable-fill scenarios.
         let cross_spread = self.config.test_reject_post_only || self.config.limit_aggressive;
-        let raw_price = if cross_spread {
+        let unclamped_price = if cross_spread {
             add_price_ticks(best_ask, increment, price_offset_ticks, precision)
         } else {
             sub_price_ticks(best_bid, increment, price_offset_ticks, precision)
         };
         let price = clamp_price_to_range(
-            raw_price,
+            unclamped_price,
             instrument,
             self.config.clamp_to_instrument_price_range,
         );
@@ -653,13 +653,13 @@ impl ExecTester {
 
         // See `maintain_buy_orders` for the cross_spread and refresh rationale.
         let cross_spread = self.config.test_reject_post_only || self.config.limit_aggressive;
-        let raw_price = if cross_spread {
+        let unclamped_price = if cross_spread {
             sub_price_ticks(best_bid, increment, price_offset_ticks, precision)
         } else {
             add_price_ticks(best_ask, increment, price_offset_ticks, precision)
         };
         let price = clamp_price_to_range(
-            raw_price,
+            unclamped_price,
             instrument,
             self.config.clamp_to_instrument_price_range,
         );
@@ -774,7 +774,7 @@ impl ExecTester {
         // pricing to cross the spread; mirrored from `maintain_buy_orders` /
         // `maintain_sell_orders` so batch mode supports the same scenarios.
         let cross_spread = self.config.test_reject_post_only || self.config.limit_aggressive;
-        let (raw_buy_price, raw_sell_price) = if cross_spread {
+        let (unclamped_buy_price, unclamped_sell_price) = if cross_spread {
             (
                 add_price_ticks(best_ask, increment, price_offset_ticks, precision),
                 sub_price_ticks(best_bid, increment, price_offset_ticks, precision),
@@ -786,8 +786,8 @@ impl ExecTester {
             )
         };
         let clamp = self.config.clamp_to_instrument_price_range;
-        let buy_price = clamp_price_to_range(raw_buy_price, instrument, clamp);
-        let sell_price = clamp_price_to_range(raw_sell_price, instrument, clamp);
+        let buy_price = clamp_price_to_range(unclamped_buy_price, instrument, clamp);
+        let sell_price = clamp_price_to_range(unclamped_sell_price, instrument, clamp);
         let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
         let (time_in_force, expire_time) =
             self.resolve_time_in_force(self.config.limit_time_in_force);
@@ -852,7 +852,7 @@ impl ExecTester {
         let stop_offset_ticks = self.config.stop_offset_ticks;
 
         // Determine trigger price based on order type
-        let raw_trigger_price = if matches!(
+        let unclamped_trigger_price = if matches!(
             self.config.stop_order_type,
             OrderType::LimitIfTouched | OrderType::MarketIfTouched | OrderType::TrailingStopMarket
         ) {
@@ -863,20 +863,25 @@ impl ExecTester {
             add_price_ticks(best_ask, increment, stop_offset_ticks, precision)
         };
         let clamp = self.config.clamp_to_instrument_price_range;
-        let trigger_price = clamp_price_to_range(raw_trigger_price, instrument, clamp);
+        let trigger_price = clamp_price_to_range(unclamped_trigger_price, instrument, clamp);
 
         // Calculate limit price if needed
         let limit_price = if matches!(
             self.config.stop_order_type,
             OrderType::StopLimit | OrderType::LimitIfTouched
         ) {
-            let raw_limit = if let Some(limit_offset_ticks) = self.config.stop_limit_offset_ticks {
-                // BUY LIT/StopLimit both require trigger_price <= price.
-                add_price_ticks(trigger_price, increment, limit_offset_ticks, precision)
-            } else {
-                trigger_price
-            };
-            Some(clamp_price_to_range(raw_limit, instrument, clamp))
+            let unclamped_limit_price =
+                if let Some(limit_offset_ticks) = self.config.stop_limit_offset_ticks {
+                    // BUY LIT/StopLimit both require trigger_price <= price.
+                    add_price_ticks(trigger_price, increment, limit_offset_ticks, precision)
+                } else {
+                    trigger_price
+                };
+            Some(clamp_price_to_range(
+                unclamped_limit_price,
+                instrument,
+                clamp,
+            ))
         } else {
             None
         };
@@ -937,7 +942,7 @@ impl ExecTester {
         let stop_offset_ticks = self.config.stop_offset_ticks;
 
         // Determine trigger price based on order type
-        let raw_trigger_price = if matches!(
+        let unclamped_trigger_price = if matches!(
             self.config.stop_order_type,
             OrderType::LimitIfTouched | OrderType::MarketIfTouched | OrderType::TrailingStopMarket
         ) {
@@ -948,20 +953,25 @@ impl ExecTester {
             sub_price_ticks(best_bid, increment, stop_offset_ticks, precision)
         };
         let clamp = self.config.clamp_to_instrument_price_range;
-        let trigger_price = clamp_price_to_range(raw_trigger_price, instrument, clamp);
+        let trigger_price = clamp_price_to_range(unclamped_trigger_price, instrument, clamp);
 
         // Calculate limit price if needed
         let limit_price = if matches!(
             self.config.stop_order_type,
             OrderType::StopLimit | OrderType::LimitIfTouched
         ) {
-            let raw_limit = if let Some(limit_offset_ticks) = self.config.stop_limit_offset_ticks {
-                // SELL LIT/StopLimit both require trigger_price >= price.
-                sub_price_ticks(trigger_price, increment, limit_offset_ticks, precision)
-            } else {
-                trigger_price
-            };
-            Some(clamp_price_to_range(raw_limit, instrument, clamp))
+            let unclamped_limit_price =
+                if let Some(limit_offset_ticks) = self.config.stop_limit_offset_ticks {
+                    // SELL LIT/StopLimit both require trigger_price >= price.
+                    sub_price_ticks(trigger_price, increment, limit_offset_ticks, precision)
+                } else {
+                    trigger_price
+                };
+            Some(clamp_price_to_range(
+                unclamped_limit_price,
+                instrument,
+                clamp,
+            ))
         } else {
             None
         };
@@ -1285,7 +1295,7 @@ impl ExecTester {
         let precision = instrument.price_precision();
         let bracket_offset_ticks = self.config.bracket_offset_ticks;
 
-        let (raw_tp_price, raw_sl_trigger_price) = match order_side {
+        let (unclamped_tp_price, unclamped_sl_trigger_price) = match order_side {
             OrderSide::Buy => {
                 let tp = add_price_ticks(entry_price, increment, bracket_offset_ticks, precision);
                 let sl = sub_price_ticks(entry_price, increment, bracket_offset_ticks, precision);
@@ -1301,8 +1311,8 @@ impl ExecTester {
             }
         };
         let clamp = self.config.clamp_to_instrument_price_range;
-        let tp_price = clamp_price_to_range(raw_tp_price, instrument, clamp);
-        let sl_trigger_price = clamp_price_to_range(raw_sl_trigger_price, instrument, clamp);
+        let tp_price = clamp_price_to_range(unclamped_tp_price, instrument, clamp);
+        let sl_trigger_price = clamp_price_to_range(unclamped_sl_trigger_price, instrument, clamp);
 
         let entry_post_only = self.config.use_post_only || self.config.test_reject_post_only;
         let orders = self
@@ -1530,19 +1540,19 @@ impl ExecTester {
 }
 
 fn add_price_ticks(base: Price, increment: Price, ticks: u64, precision: u8) -> Price {
-    let offset_raw = tick_offset_raw(increment, ticks);
-    Price::from_raw(base.raw + offset_raw, precision)
+    let offset = price_tick_offset(increment, ticks, precision);
+    base + offset
 }
 
 fn sub_price_ticks(base: Price, increment: Price, ticks: u64, precision: u8) -> Price {
-    let offset_raw = tick_offset_raw(increment, ticks);
-    Price::from_raw(base.raw - offset_raw, precision)
+    let offset = price_tick_offset(increment, ticks, precision);
+    base - offset
 }
 
-fn tick_offset_raw(increment: Price, ticks: u64) -> PriceRaw {
-    let ticks_raw = PriceRaw::from(ticks);
-
-    increment.raw * ticks_raw
+fn price_tick_offset(increment: Price, ticks: u64, precision: u8) -> Price {
+    let offset = increment * Decimal::from(ticks);
+    Price::from_decimal_dp(offset, precision)
+        .unwrap_or_else(|e| panic!("Failed to calculate price tick offset: {e}"))
 }
 
 // `OrderAny::is_contingency` returns true for `Some(NoContingency)` (the factory
