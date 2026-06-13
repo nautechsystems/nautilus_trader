@@ -15,9 +15,16 @@
 
 //! Integration tests for the host-side plug-in adapters in `nautilus-live`.
 //!
-//! Most tests build the example cdylib shipped under
-//! `crates/plugin/examples/custom_data_plugin.rs`, load it through the
-//! live-node-bound [`PluginLoader`], and exercise the host-side adapter pieces.
+//! The cdylib tests build the example plug-ins shipped under
+//! `crates/plugin/examples/`, load them through the live-node-bound
+//! [`PluginLoader`], and exercise the host-side adapter pieces.
+//!
+//! Related cdylib boundary cases are grouped into a few test processes.
+//! `cargo-nextest` runs each test in its own process, so grouping lets
+//! process-local [`OnceLock`] caches share the example build and manifest load.
+//! The grouped `#[rstest]` functions are the test entry points; the unannotated
+//! functions they call are scenario bodies kept separate for readable failures
+//! and focused assertions.
 //!
 //! The runtime smoke test builds
 //! `crates/plugin/examples/runtime_smoke_plugin.rs` and runs by default. It
@@ -421,6 +428,17 @@ fn loader_loads_example_cdylib(example_manifest: &'static PluginManifest) {
 }
 
 #[rstest]
+fn cdylib_custom_data_adapters_dispatch_lifecycle_and_custom_data(
+    example_manifest: &'static PluginManifest,
+) {
+    actor_adapter_construct_and_dispatch_lifecycle(example_manifest);
+    strategy_adapter_construct(example_manifest);
+    cdylib_actor_custom_data_dispatches_to_on_data(example_manifest);
+    cdylib_actor_historical_custom_data_dispatches_to_on_data(example_manifest);
+    cdylib_strategy_custom_data_dispatches_to_on_data(example_manifest);
+    cdylib_strategy_historical_custom_data_dispatches_to_on_data(example_manifest);
+}
+
 fn actor_adapter_construct_and_dispatch_lifecycle(example_manifest: &'static PluginManifest) {
     let manifest = ValidatedPluginManifest::new(example_manifest)
         .expect("live example manifest passes validation");
@@ -446,7 +464,6 @@ fn actor_adapter_construct_and_dispatch_lifecycle(example_manifest: &'static Plu
     DataActor::on_dispose(&mut adapter).expect("on_dispose dispatches into plug-in");
 }
 
-#[rstest]
 fn strategy_adapter_construct(example_manifest: &'static PluginManifest) {
     let manifest = ValidatedPluginManifest::new(example_manifest)
         .expect("live example manifest passes validation");
@@ -477,7 +494,6 @@ fn strategy_adapter_construct(example_manifest: &'static PluginManifest) {
     DataActor::on_stop(&mut adapter).expect("on_stop dispatches into plug-in");
 }
 
-#[rstest]
 fn cdylib_actor_custom_data_dispatches_to_on_data(example_manifest: &'static PluginManifest) {
     let manifest = ValidatedPluginManifest::new(example_manifest)
         .expect("live example manifest passes validation");
@@ -514,7 +530,6 @@ fn cdylib_actor_custom_data_dispatches_to_on_data(example_manifest: &'static Plu
     assert_eq!(contents, "7.25");
 }
 
-#[rstest]
 fn cdylib_actor_historical_custom_data_dispatches_to_on_data(
     example_manifest: &'static PluginManifest,
 ) {
@@ -554,7 +569,6 @@ fn cdylib_actor_historical_custom_data_dispatches_to_on_data(
     assert_eq!(contents, "7.75");
 }
 
-#[rstest]
 fn cdylib_strategy_custom_data_dispatches_to_on_data(example_manifest: &'static PluginManifest) {
     let manifest = ValidatedPluginManifest::new(example_manifest)
         .expect("live example manifest passes validation");
@@ -599,7 +613,6 @@ fn cdylib_strategy_custom_data_dispatches_to_on_data(example_manifest: &'static 
     assert_eq!(contents, "8.5");
 }
 
-#[rstest]
 fn cdylib_strategy_historical_custom_data_dispatches_to_on_data(
     example_manifest: &'static PluginManifest,
 ) {
@@ -648,6 +661,22 @@ fn cdylib_strategy_historical_custom_data_dispatches_to_on_data(
 }
 
 #[rstest]
+fn cdylib_strategy_execution_normalizes_identifiers_for_plugin() {
+    cdylib_strategy_submit_order_normalizes_identifiers();
+    cdylib_strategy_query_order_normalizes_identifiers_for_cache_lookup();
+    cdylib_strategy_cancel_order_normalizes_identifiers_for_cache_lookup();
+    cdylib_strategy_modify_order_normalizes_identifiers_for_cache_lookup();
+    cdylib_strategy_close_position_normalizes_identifiers_for_cache_lookup();
+    cdylib_strategy_submit_order_list_normalizes_identifiers_and_routes_command_fields();
+    cdylib_strategy_cancel_orders_normalizes_identifiers_for_cache_lookup();
+    cdylib_strategy_cancel_orders_normalizes_identifiers_and_surfaces_missing_cache_error();
+    cdylib_strategy_cancel_all_orders_normalizes_identifiers_and_routes_command_fields();
+    cdylib_strategy_close_all_positions_normalizes_identifiers_for_position_lookup();
+    cdylib_strategy_query_account_normalizes_identifiers_and_routes_command_fields();
+    cdylib_strategy_quote_normalizes_identifiers_for_plugin();
+    cdylib_strategy_book_normalizes_identifiers_for_plugin();
+}
+
 fn cdylib_strategy_submit_order_normalizes_identifiers() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -710,7 +739,6 @@ fn cdylib_strategy_submit_order_normalizes_identifiers() {
     assert_eq!(actor_id, ActorId::from("PluginExecCdylib-001"));
 }
 
-#[rstest]
 fn cdylib_strategy_query_order_normalizes_identifiers_for_cache_lookup() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -781,7 +809,6 @@ fn cdylib_strategy_query_order_normalizes_identifiers_for_cache_lookup() {
     }
 }
 
-#[rstest]
 fn cdylib_strategy_cancel_order_normalizes_identifiers_for_cache_lookup() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -852,7 +879,6 @@ fn cdylib_strategy_cancel_order_normalizes_identifiers_for_cache_lookup() {
     }
 }
 
-#[rstest]
 fn cdylib_strategy_modify_order_normalizes_identifiers_for_cache_lookup() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -924,7 +950,6 @@ fn cdylib_strategy_modify_order_normalizes_identifiers_for_cache_lookup() {
     }
 }
 
-#[rstest]
 fn cdylib_strategy_close_position_normalizes_identifiers_for_cache_lookup() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -999,7 +1024,6 @@ fn cdylib_strategy_close_position_normalizes_identifiers_for_cache_lookup() {
     }
 }
 
-#[rstest]
 fn cdylib_strategy_submit_order_list_normalizes_identifiers_and_routes_command_fields() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -1083,7 +1107,6 @@ fn cdylib_strategy_submit_order_list_normalizes_identifiers_and_routes_command_f
     }
 }
 
-#[rstest]
 fn cdylib_strategy_cancel_orders_normalizes_identifiers_for_cache_lookup() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -1180,7 +1203,6 @@ fn cdylib_strategy_cancel_orders_normalizes_identifiers_for_cache_lookup() {
     }
 }
 
-#[rstest]
 fn cdylib_strategy_cancel_orders_normalizes_identifiers_and_surfaces_missing_cache_error() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -1230,7 +1252,6 @@ fn cdylib_strategy_cancel_orders_normalizes_identifiers_and_surfaces_missing_cac
     );
 }
 
-#[rstest]
 fn cdylib_strategy_cancel_all_orders_normalizes_identifiers_and_routes_command_fields() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -1317,7 +1338,6 @@ fn cdylib_strategy_cancel_all_orders_normalizes_identifiers_and_routes_command_f
     }
 }
 
-#[rstest]
 fn cdylib_strategy_close_all_positions_normalizes_identifiers_for_position_lookup() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -1405,7 +1425,6 @@ fn cdylib_strategy_close_all_positions_normalizes_identifiers_for_position_looku
     }
 }
 
-#[rstest]
 fn cdylib_strategy_query_account_normalizes_identifiers_and_routes_command_fields() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -1479,6 +1498,14 @@ fn expected_params(marker: &str) -> Params {
 }
 
 #[rstest]
+fn cdylib_actor_events_normalizes_identifiers_for_plugin() {
+    cdylib_actor_quote_normalizes_identifiers_for_plugin();
+    cdylib_actor_book_deltas_handle_normalizes_identifiers_for_plugin();
+    cdylib_actor_book_handle_normalizes_identifiers_for_plugin();
+    cdylib_actor_instrument_handle_normalizes_identifiers_for_plugin();
+    cdylib_actor_option_chain_handle_normalizes_identifiers_for_plugin();
+}
+
 fn cdylib_actor_quote_normalizes_identifiers_for_plugin() {
     let manifest = ValidatedPluginManifest::new(loaded_actor_event_manifest())
         .expect("actor event manifest passes validation");
@@ -1551,7 +1578,6 @@ fn cdylib_actor_quote_normalizes_identifiers_for_plugin() {
     assert_eq!(contents, instrument);
 }
 
-#[rstest]
 fn cdylib_actor_book_deltas_handle_normalizes_identifiers_for_plugin() {
     let manifest = ValidatedPluginManifest::new(loaded_actor_event_manifest())
         .expect("actor event manifest passes validation");
@@ -1589,7 +1615,6 @@ fn cdylib_actor_book_deltas_handle_normalizes_identifiers_for_plugin() {
     assert_eq!(contents, deltas.instrument_id.to_string());
 }
 
-#[rstest]
 fn cdylib_actor_book_handle_normalizes_identifiers_for_plugin() {
     let manifest = ValidatedPluginManifest::new(loaded_actor_event_manifest())
         .expect("actor event manifest passes validation");
@@ -1625,7 +1650,6 @@ fn cdylib_actor_book_handle_normalizes_identifiers_for_plugin() {
     assert_eq!(contents, book.instrument_id.to_string());
 }
 
-#[rstest]
 fn cdylib_actor_instrument_handle_normalizes_identifiers_for_plugin() {
     let manifest = ValidatedPluginManifest::new(loaded_actor_event_manifest())
         .expect("actor event manifest passes validation");
@@ -1664,7 +1688,6 @@ fn cdylib_actor_instrument_handle_normalizes_identifiers_for_plugin() {
     assert_eq!(contents, instrument_id.to_string());
 }
 
-#[rstest]
 fn cdylib_actor_option_chain_handle_normalizes_identifiers_for_plugin() {
     let manifest = ValidatedPluginManifest::new(loaded_actor_event_manifest())
         .expect("actor event manifest passes validation");
@@ -1703,7 +1726,6 @@ fn cdylib_actor_option_chain_handle_normalizes_identifiers_for_plugin() {
     assert_eq!(contents, series_id.to_wire_string());
 }
 
-#[rstest]
 fn cdylib_strategy_quote_normalizes_identifiers_for_plugin() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -1747,7 +1769,6 @@ fn cdylib_strategy_quote_normalizes_identifiers_for_plugin() {
     assert_eq!(contents, plugin_test_instrument_id().to_string());
 }
 
-#[rstest]
 fn cdylib_strategy_book_normalizes_identifiers_for_plugin() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
