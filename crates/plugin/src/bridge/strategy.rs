@@ -52,7 +52,7 @@ use nautilus_model::{
         OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
         OrderUpdated, PositionChanged, PositionClosed, PositionOpened,
     },
-    identifiers::ActorId,
+    identifiers::{ActorId, InstrumentId},
     instruments::InstrumentAny,
     orderbook::OrderBook,
 };
@@ -220,6 +220,10 @@ impl Drop for PluginStrategyAdapter {
 }
 
 nautilus_strategy!(PluginStrategyAdapter, core, {
+    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
+        self.core.config.external_order_claims.clone()
+    }
+
     fn on_order_initialized(&mut self, event: OrderInitialized) {
         log_strategy_hook_error(
             "on_order_initialized",
@@ -1006,5 +1010,30 @@ mod tests {
 
         drop(adapter);
         assert_eq!(host_context_live_count(), before);
+    }
+
+    #[rstest]
+    fn external_order_claims_returns_configured_instruments() {
+        let claims = vec![InstrumentId::from("ETH-USDT.BINANCE")];
+        let config = StrategyConfig::builder()
+            .strategy_id(StrategyId::from("PluginStrategyAdapter-Claims"))
+            .order_id_tag("001".to_string())
+            .external_order_claims(claims.clone())
+            .build();
+
+        // SAFETY: host_vtable is process-lifetime static.
+        let adapter = unsafe {
+            PluginStrategyAdapter::new(
+                config,
+                "plug-in",
+                DropTestStrategy::TYPE_NAME,
+                drop_test_strategy_vtable(),
+                host_vtable(),
+                "{}",
+            )
+        }
+        .expect("adapter construction");
+
+        assert_eq!(Strategy::external_order_claims(&adapter), Some(claims));
     }
 }

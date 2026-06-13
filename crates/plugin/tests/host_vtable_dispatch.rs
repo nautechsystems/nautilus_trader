@@ -34,7 +34,8 @@
 //! ten order command entries (`submit_order`, `cancel_order`,
 //! `modify_order`, `submit_order_list`, `cancel_orders`,
 //! `cancel_all_orders`, `close_position`, `close_all_positions`,
-//! `query_account`, `query_order`).
+//! `query_account`, `query_order`), identity/state entries, and order
+//! factory id generation entries.
 
 #![allow(unsafe_code)]
 
@@ -102,9 +103,14 @@ enum HostHook {
     CloseAllPositions,
     QueryAccount,
     QueryOrder,
+    TraderId,
+    StrategyId,
+    ComponentState,
+    GenerateClientOrderId,
+    GenerateOrderListId,
 }
 
-const HOOK_COUNT: usize = HostHook::QueryOrder as usize + 1;
+const HOOK_COUNT: usize = HostHook::GenerateOrderListId as usize + 1;
 static HOOK_CALLS: [AtomicU64; HOOK_COUNT] = [const { AtomicU64::new(0) }; HOOK_COUNT];
 static LAST_CTX: [AtomicPtr<HostContext>; HOOK_COUNT] =
     [const { AtomicPtr::new(std::ptr::null_mut()) }; HOOK_COUNT];
@@ -220,6 +226,28 @@ bytes_handler!(
     test_cache_positions_for_strategy,
     HostHook::CachePositionsForStrategy
 );
+
+macro_rules! context_bytes_handler {
+    ($name:ident, $hook:expr) => {
+        unsafe extern "C" fn $name(ctx: *const HostContext) -> PluginResult<OwnedBytes> {
+            record(ctx, $hook);
+            PluginResult::Ok(OwnedBytes::empty())
+        }
+    };
+}
+
+context_bytes_handler!(test_trader_id, HostHook::TraderId);
+context_bytes_handler!(test_strategy_id, HostHook::StrategyId);
+context_bytes_handler!(
+    test_generate_client_order_id,
+    HostHook::GenerateClientOrderId
+);
+context_bytes_handler!(test_generate_order_list_id, HostHook::GenerateOrderListId);
+
+unsafe extern "C" fn test_component_state(ctx: *const HostContext) -> PluginResult<u8> {
+    record(ctx, HostHook::ComponentState);
+    PluginResult::Ok(3)
+}
 
 macro_rules! subscription_handler {
     ($name:ident, $hook:expr) => {
@@ -489,6 +517,11 @@ static TEST_HOST: HostVTable = HostVTable {
     close_all_positions: test_close_all_positions,
     query_account: test_query_account,
     query_order: test_query_order,
+    trader_id: test_trader_id,
+    strategy_id: test_strategy_id,
+    component_state: test_component_state,
+    generate_client_order_id: test_generate_client_order_id,
+    generate_order_list_id: test_generate_order_list_id,
 };
 
 // Sentinel non-null pointer used as the plug-in's host context in tests.
@@ -614,6 +647,68 @@ fn cache_positions_for_strategy_slot_invokes_bound_handler() {
     r.into_result().expect("cache_positions_for_strategy");
     assert_only_hook(HostHook::CachePositionsForStrategy);
     assert_ctx(HostHook::CachePositionsForStrategy, ctx);
+}
+
+#[rstest]
+fn trader_id_slot_invokes_bound_handler() {
+    let _g = dispatch_lock();
+    reset_all();
+    let ctx = sentinel_ctx();
+    // SAFETY: TEST_HOST is process-lifetime static.
+    let r = unsafe { (TEST_HOST.trader_id)(ctx) };
+    r.into_result().expect("trader_id");
+    assert_only_hook(HostHook::TraderId);
+    assert_ctx(HostHook::TraderId, ctx);
+}
+
+#[rstest]
+fn strategy_id_slot_invokes_bound_handler() {
+    let _g = dispatch_lock();
+    reset_all();
+    let ctx = sentinel_ctx();
+    // SAFETY: TEST_HOST is process-lifetime static.
+    let r = unsafe { (TEST_HOST.strategy_id)(ctx) };
+    r.into_result().expect("strategy_id");
+    assert_only_hook(HostHook::StrategyId);
+    assert_ctx(HostHook::StrategyId, ctx);
+}
+
+#[rstest]
+fn component_state_slot_invokes_bound_handler() {
+    let _g = dispatch_lock();
+    reset_all();
+    let ctx = sentinel_ctx();
+    // SAFETY: TEST_HOST is process-lifetime static.
+    let state = unsafe { (TEST_HOST.component_state)(ctx) }
+        .into_result()
+        .expect("component_state");
+    assert_eq!(state, 3);
+    assert_only_hook(HostHook::ComponentState);
+    assert_ctx(HostHook::ComponentState, ctx);
+}
+
+#[rstest]
+fn generate_client_order_id_slot_invokes_bound_handler() {
+    let _g = dispatch_lock();
+    reset_all();
+    let ctx = sentinel_ctx();
+    // SAFETY: TEST_HOST is process-lifetime static.
+    let r = unsafe { (TEST_HOST.generate_client_order_id)(ctx) };
+    r.into_result().expect("generate_client_order_id");
+    assert_only_hook(HostHook::GenerateClientOrderId);
+    assert_ctx(HostHook::GenerateClientOrderId, ctx);
+}
+
+#[rstest]
+fn generate_order_list_id_slot_invokes_bound_handler() {
+    let _g = dispatch_lock();
+    reset_all();
+    let ctx = sentinel_ctx();
+    // SAFETY: TEST_HOST is process-lifetime static.
+    let r = unsafe { (TEST_HOST.generate_order_list_id)(ctx) };
+    r.into_result().expect("generate_order_list_id");
+    assert_only_hook(HostHook::GenerateOrderListId);
+    assert_ctx(HostHook::GenerateOrderListId, ctx);
 }
 
 #[rstest]

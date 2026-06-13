@@ -53,6 +53,7 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
     component::Component,
+    enums::ComponentState,
     messages::{
         data::{DataCommand, SubscribeCommand, UnsubscribeCommand},
         execution::TradingCommand,
@@ -105,7 +106,7 @@ use nautilus_model::{
 };
 use nautilus_plugin::{
     NAUTILUS_PLUGIN_ABI_VERSION,
-    boundary::{BorrowedStr, Slice},
+    boundary::{BorrowedStr, OwnedBytes, Slice},
     host::{HostContext, HostVTable},
     manifest::{
         CustomDataRegistration, PluginBuildId, PluginManifest, ValidatedActorVTable,
@@ -1022,9 +1023,16 @@ fn build_actor_adapter(actor_id: &str) -> PluginActorAdapter {
 }
 
 fn build_strategy_adapter(strategy_id: &str) -> PluginStrategyAdapter {
+    build_strategy_adapter_with_order_id_tag(strategy_id, "001")
+}
+
+fn build_strategy_adapter_with_order_id_tag(
+    strategy_id: &str,
+    order_id_tag: &str,
+) -> PluginStrategyAdapter {
     let config = StrategyConfig::builder()
         .strategy_id(StrategyId::from(strategy_id))
-        .order_id_tag("001".to_string())
+        .order_id_tag(order_id_tag.to_string())
         .build();
     // SAFETY: generated vtables are process-lifetime static and fill every
     // required strategy slot.
@@ -1530,10 +1538,24 @@ fn strategy_adapter_on_start_composes_strategy_default_before_forward() {
 
 // ---- Host vtable end-to-end routing through Strategy::submit_order ----
 
+fn json_string(bytes: &OwnedBytes) -> String {
+    // SAFETY: the host returned an OwnedBytes buffer that stays live until
+    // this function drops it after decoding.
+    serde_json::from_slice(unsafe { bytes.as_bytes() }).expect("host returned a JSON string")
+}
+
 fn make_initialized_market_order(client_order_id: &str, strategy_id: &str) -> OrderAny {
+    make_initialized_market_order_with_identity(client_order_id, "TRADER-001", strategy_id)
+}
+
+fn make_initialized_market_order_with_identity(
+    client_order_id: &str,
+    trader_id: &str,
+    strategy_id: &str,
+) -> OrderAny {
     use nautilus_model::{enums::TimeInForce, orders::MarketOrder};
     OrderAny::Market(MarketOrder::new(
-        TraderId::from("TRADER-001"),
+        TraderId::from(trader_id),
         StrategyId::from(strategy_id),
         instrument_id(),
         ClientOrderId::from(client_order_id),
@@ -1626,6 +1648,46 @@ fn host_submit_order_routes_through_registered_strategy_adapter() {
         }
         other => panic!("expected SubmitOrder, was {other:?}"),
     }
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_submit_order_rejects_mismatched_trader_id() {
+    let _lock = lock_counters();
+    let strategy_id = "PluginSubmitIdentity-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    register_strategy_adapter(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let order = make_initialized_market_order_with_identity(
+        "O-PLUGIN-BAD-TRADER",
+        "TRADER-999",
+        strategy_id,
+    );
+    let handle = SubmitOrderHandle::new(SubmitOrderCommand::new(order, None, None, None));
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx + handle are live for the call.
+    let err = unsafe { (v.submit_order)(ctx, &raw const handle) }
+        .into_result()
+        .expect_err("mismatched trader_id should be rejected");
+
+    assert_eq!(err.code, nautilus_plugin::PluginErrorCode::InvalidArgument);
+    assert!(
+        err.message_string().contains("trader_id"),
+        "expected trader_id in error, was: {}",
+        err.message_string()
+    );
 
     // SAFETY: ctx originated from leak_host_context above.
     unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
@@ -2010,6 +2072,254 @@ fn host_cache_strategy_lists_default_to_calling_strategy() {
     );
     assert_eq!(decoded_positions.len(), 1);
     assert_eq!(decoded_positions[0].id, position.id);
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_identity_and_state_slots_return_registered_strategy_values() {
+    let strategy_id = "PluginIdentity-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    register_strategy_adapter(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx is live for each call.
+    let trader_id = json_string(
+        &unsafe { (v.trader_id)(ctx) }
+            .into_result()
+            .expect("trader_id succeeds"),
+    );
+    // SAFETY: ctx is live for each call.
+    let returned_strategy_id = json_string(
+        &unsafe { (v.strategy_id)(ctx) }
+            .into_result()
+            .expect("strategy_id succeeds"),
+    );
+    // SAFETY: ctx is live for the call.
+    let state = unsafe { (v.component_state)(ctx) }
+        .into_result()
+        .expect("component_state succeeds");
+
+    assert_eq!(trader_id, "TRADER-001");
+    assert_eq!(returned_strategy_id, strategy_id);
+    assert_eq!(state, ComponentState::Ready as u8);
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_identity_slots_support_actor_context_and_reject_strategy_only_calls() {
+    let mut adapter = build_actor_adapter("PluginIdentityActor-001");
+    adapter
+        .register(
+            TraderId::from("TRADER-001"),
+            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(Cache::default())),
+        )
+        .expect("actor register");
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: false,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx is live for each call.
+    let trader_id = json_string(
+        &unsafe { (v.trader_id)(ctx) }
+            .into_result()
+            .expect("trader_id succeeds"),
+    );
+    // SAFETY: ctx is live for the call.
+    let state = unsafe { (v.component_state)(ctx) }
+        .into_result()
+        .expect("component_state succeeds");
+
+    assert_eq!(trader_id, "TRADER-001");
+    assert_eq!(state, ComponentState::Ready as u8);
+
+    for (method, err) in [
+        (
+            "strategy_id",
+            // SAFETY: ctx is live for the call.
+            unsafe { (v.strategy_id)(ctx) }
+                .into_result()
+                .err()
+                .expect("strategy_id rejects actor context"),
+        ),
+        (
+            "generate_client_order_id",
+            // SAFETY: ctx is live for the call.
+            unsafe { (v.generate_client_order_id)(ctx) }
+                .into_result()
+                .err()
+                .expect("generate_client_order_id rejects actor context"),
+        ),
+        (
+            "generate_order_list_id",
+            // SAFETY: ctx is live for the call.
+            unsafe { (v.generate_order_list_id)(ctx) }
+                .into_result()
+                .err()
+                .expect("generate_order_list_id rejects actor context"),
+        ),
+    ] {
+        assert_eq!(err.code, nautilus_plugin::PluginErrorCode::InvalidArgument);
+        assert!(
+            err.message_string().contains("non-strategy"),
+            "expected non-strategy error for {method}, was: {}",
+            err.message_string()
+        );
+    }
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_order_factory_id_slots_generate_canonical_ids_from_strategy_factory() {
+    let strategy_id = "PluginOrderIds-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    register_strategy_adapter(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx is live for each call.
+    let first_client_order_id = json_string(
+        &unsafe { (v.generate_client_order_id)(ctx) }
+            .into_result()
+            .expect("generate_client_order_id succeeds"),
+    );
+    // SAFETY: ctx is live for each call.
+    let second_client_order_id = json_string(
+        &unsafe { (v.generate_client_order_id)(ctx) }
+            .into_result()
+            .expect("generate_client_order_id succeeds"),
+    );
+    // SAFETY: ctx is live for each call.
+    let order_list_id = json_string(
+        &unsafe { (v.generate_order_list_id)(ctx) }
+            .into_result()
+            .expect("generate_order_list_id succeeds"),
+    );
+
+    assert_eq!(first_client_order_id, "O-19700101-000000-001-001-1");
+    assert_eq!(second_client_order_id, "O-19700101-000000-001-001-2");
+    assert_eq!(order_list_id, "OL-19700101-000000-001-001-1");
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_order_factory_id_slots_use_each_strategy_factory_context() {
+    let mut adapter_a = build_strategy_adapter_with_order_id_tag("PluginOrderIdsA-001", "A01");
+    let mut adapter_b = build_strategy_adapter_with_order_id_tag("PluginOrderIdsB-001", "B02");
+    register_strategy_adapter(&mut adapter_a);
+    register_strategy_adapter(&mut adapter_b);
+    let actor_id_a = adapter_a.actor_id().inner();
+    let actor_id_b = adapter_b.actor_id().inner();
+    let _registered_a = register_actor(adapter_a);
+    let _registered_b = register_actor(adapter_b);
+
+    let ctx_a = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_a.as_str()),
+        is_strategy: true,
+    });
+    let ctx_b = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_b.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: contexts are live for each call.
+    let client_order_id_a = json_string(
+        &unsafe { (v.generate_client_order_id)(ctx_a) }
+            .into_result()
+            .expect("generate_client_order_id for strategy A succeeds"),
+    );
+    // SAFETY: contexts are live for each call.
+    let client_order_id_b = json_string(
+        &unsafe { (v.generate_client_order_id)(ctx_b) }
+            .into_result()
+            .expect("generate_client_order_id for strategy B succeeds"),
+    );
+
+    assert_eq!(client_order_id_a, "O-19700101-000000-001-A01-1");
+    assert_eq!(client_order_id_b, "O-19700101-000000-001-B02-1");
+
+    // SAFETY: contexts originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx_a) };
+    // SAFETY: contexts originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx_b) };
+}
+
+#[rstest]
+fn host_order_factory_id_slots_reject_unregistered_strategy() {
+    let strategy_id = "PluginOrderIdsUnregistered-001";
+    let adapter = build_strategy_adapter(strategy_id);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+
+    for (method, err) in [
+        (
+            "generate_client_order_id",
+            // SAFETY: ctx is live for the call.
+            unsafe { (v.generate_client_order_id)(ctx) }
+                .into_result()
+                .err()
+                .expect("generate_client_order_id rejects unregistered strategy"),
+        ),
+        (
+            "generate_order_list_id",
+            // SAFETY: ctx is live for the call.
+            unsafe { (v.generate_order_list_id)(ctx) }
+                .into_result()
+                .err()
+                .expect("generate_order_list_id rejects unregistered strategy"),
+        ),
+    ] {
+        assert_eq!(err.code, nautilus_plugin::PluginErrorCode::InvalidArgument);
+        assert!(
+            err.message_string().contains("registered strategy"),
+            "expected registered strategy error for {method}, was: {}",
+            err.message_string()
+        );
+    }
 
     // SAFETY: ctx originated from leak_host_context above.
     unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
@@ -2771,10 +3081,53 @@ fn host_submit_order_list_routes_through_registered_strategy_adapter() {
 }
 
 #[rstest]
+fn host_submit_order_list_rejects_mismatched_strategy_id() {
+    let _lock = lock_counters();
+    let strategy_id = "PluginSubmitListIdentity-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    register_strategy_adapter(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let handle = SubmitOrderListHandle::new(SubmitOrderListCommand::new(
+        vec![
+            make_initialized_market_order("O-PLUGIN-LIST-IDENTITY-1", strategy_id),
+            make_initialized_market_order("O-PLUGIN-LIST-IDENTITY-2", "WrongStrategy-001"),
+        ],
+        None,
+        None,
+        None,
+    ));
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx + handle are live for the call.
+    let err = unsafe { (v.submit_order_list)(ctx, &raw const handle) }
+        .into_result()
+        .expect_err("mismatched strategy_id should be rejected");
+
+    assert_eq!(err.code, nautilus_plugin::PluginErrorCode::InvalidArgument);
+    assert!(
+        err.message_string().contains("strategy_id"),
+        "expected strategy_id in error, was: {}",
+        err.message_string()
+    );
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
 fn host_submit_order_list_rejects_empty_orders() {
     // Empty `orders` would otherwise reach OrderList builders which panic
-    // on empty slices, unwinding across the FFI boundary. Reject at the
-    // host bridge so plug-ins see a clean error.
+    // on empty slices. Strategy::submit_order_list rejects first, so
+    // plug-ins see a clean error instead of a boundary panic.
     let _lock = lock_counters();
     let strategy_id = "PluginSubmitListEmpty-001";
     let mut adapter = build_strategy_adapter(strategy_id);
@@ -2797,7 +3150,7 @@ fn host_submit_order_list_rejects_empty_orders() {
     let err = unsafe { (v.submit_order_list)(ctx, &raw const handle) }
         .into_result()
         .expect_err("empty order list should be rejected");
-    assert_ne!(err.code, nautilus_plugin::PluginErrorCode::NotImplemented);
+    assert_eq!(err.code, nautilus_plugin::PluginErrorCode::Generic);
     assert!(
         err.message_string().contains("no orders to submit"),
         "unexpected error: {}",
@@ -2959,6 +3312,13 @@ fn host_close_position_routes_through_registered_strategy_adapter() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
+    // SAFETY: ctx is live for the call.
+    let reserved_client_order_id = json_string(
+        &unsafe { (v.generate_client_order_id)(ctx) }
+            .into_result()
+            .expect("generate_client_order_id succeeds"),
+    );
+    assert_eq!(reserved_client_order_id, "O-19700101-000000-001-001-1");
     // SAFETY: ctx + handle are live for the call.
     let r = unsafe { (v.close_position)(ctx, &raw const handle) };
     r.into_result().expect("host close_position should succeed");
@@ -2967,6 +3327,10 @@ fn host_close_position_routes_through_registered_strategy_adapter() {
     let captured = captured.lock().unwrap().take().expect("command captured");
     match captured {
         TradingCommand::SubmitOrder(cmd) => {
+            assert_eq!(
+                cmd.client_order_id,
+                ClientOrderId::from("O-19700101-000000-001-001-2")
+            );
             assert_eq!(cmd.position_id, Some(PositionId::from("P-PLUGIN-CLOSE-1")));
             let order_tags = cmd.order_init.tags.expect("closing order carries tags");
             assert!(

@@ -359,6 +359,14 @@ unsafe extern "C" fn recording_query_order(
     PluginResult::Ok(())
 }
 
+unsafe extern "C" fn stub_context_bytes(_ctx: *const HostContext) -> PluginResult<OwnedBytes> {
+    PluginResult::Ok(OwnedBytes::empty())
+}
+
+unsafe extern "C" fn stub_component_state(_ctx: *const HostContext) -> PluginResult<u8> {
+    PluginResult::Ok(0)
+}
+
 fn make_market_order() -> OrderAny {
     OrderAny::Market(MarketOrder::new(
         TraderId::from("TRADER-001"),
@@ -417,6 +425,11 @@ static TEST_HOST: HostVTable = HostVTable {
     close_all_positions: recording_close_all_positions,
     query_account: recording_query_account,
     query_order: recording_query_order,
+    trader_id: stub_context_bytes,
+    strategy_id: stub_context_bytes,
+    component_state: stub_component_state,
+    generate_client_order_id: stub_context_bytes,
+    generate_order_list_id: stub_context_bytes,
 };
 
 // Strategy whose `on_start` dispatches to the [`HostVTable`] slot named

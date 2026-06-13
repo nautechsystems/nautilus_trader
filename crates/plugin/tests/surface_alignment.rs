@@ -18,6 +18,8 @@ use std::collections::BTreeSet;
 use rstest::rstest;
 
 const DATA_ACTOR_SOURCE: &str = include_str!("../../common/src/actor/data_actor.rs");
+const DATA_ACTOR_CORE_SOURCE: &str = include_str!("../../common/src/actor/data_actor.rs");
+const STRATEGY_CORE_SOURCE: &str = include_str!("../../trading/src/strategy/core.rs");
 const STRATEGY_SOURCE: &str = include_str!("../../trading/src/strategy/mod.rs");
 const HOST_SOURCE: &str = include_str!("../src/host.rs");
 const PLUGIN_ACTOR_SOURCE: &str = include_str!("../src/surfaces/actor.rs");
@@ -89,6 +91,110 @@ const PLUGIN_STRATEGY_HOST_OWNED_METHODS: &[&str] = &[
     "has_gtd_expiry_timer",
     "expire_gtd_order",
     "reactivate_gtd_timers",
+];
+
+const PLUGIN_DATA_ACTOR_CORE_BRIDGED_METHODS: &[(&str, &str)] = &[
+    ("state", "component_state"),
+    ("trader_id", "trader_id"),
+    ("timestamp_ns", "clock_now_ns"),
+    ("subscribe_quotes", "subscribe_quotes"),
+    ("unsubscribe_quotes", "unsubscribe_quotes"),
+    ("subscribe_trades", "subscribe_trades"),
+    ("unsubscribe_trades", "unsubscribe_trades"),
+    ("subscribe_bars", "subscribe_bars"),
+    ("unsubscribe_bars", "unsubscribe_bars"),
+    ("subscribe_book_deltas", "subscribe_book_deltas"),
+    ("unsubscribe_book_deltas", "unsubscribe_book_deltas"),
+    ("subscribe_book_at_interval", "subscribe_book_at_interval"),
+    (
+        "unsubscribe_book_at_interval",
+        "unsubscribe_book_at_interval",
+    ),
+];
+
+const PLUGIN_DATA_ACTOR_CORE_DEFERRED_METHODS: &[&str] = &[
+    // Actor identity needs an actor_id slot; session 1 exposes strategy_id only
+    "actor_id",
+    // Lifecycle and publishing slots are scheduled for a later workstream
+    "register_warning_event",
+    "deregister_warning_event",
+    "shutdown_system",
+    "publish_data",
+    "publish_signal",
+    "add_synthetic",
+    "update_synthetic",
+    // Subscription completion lands after the initial identity and factory-id slots
+    "subscribe_data",
+    "subscribe_signal",
+    "subscribe_instruments",
+    "subscribe_instrument",
+    "subscribe_mark_prices",
+    "subscribe_index_prices",
+    "subscribe_funding_rates",
+    "subscribe_option_greeks",
+    "subscribe_instrument_status",
+    "subscribe_instrument_close",
+    "subscribe_option_chain",
+    "subscribe_order_fills",
+    "subscribe_order_cancels",
+    "unsubscribe_data",
+    "unsubscribe_signal",
+    "unsubscribe_instruments",
+    "unsubscribe_instrument",
+    "unsubscribe_mark_prices",
+    "unsubscribe_index_prices",
+    "unsubscribe_funding_rates",
+    "unsubscribe_option_greeks",
+    "unsubscribe_instrument_status",
+    "unsubscribe_instrument_close",
+    "unsubscribe_option_chain",
+    "unsubscribe_order_fills",
+    "unsubscribe_order_cancels",
+    // Historical request slots are scheduled for a later workstream
+    "request_data",
+    "request_instrument",
+    "request_instruments",
+    "request_book_snapshot",
+    "request_book_deltas",
+    "request_book_depth",
+    "request_quotes",
+    "request_trades",
+    "request_bars",
+    "request_funding_rates",
+];
+
+const PLUGIN_DATA_ACTOR_CORE_HOST_OWNED_METHODS: &[&str] = &[
+    // Construction, registration, and direct shared references stay host-owned
+    "new",
+    "mem_address",
+    "clock",
+    "clock_rc",
+    "cache",
+    "cache_rc",
+    "register",
+    "is_registered",
+];
+
+const PLUGIN_STRATEGY_CORE_BRIDGED_METHODS: &[(&str, &str)] = &[
+    ("strategy_id", "strategy_id"),
+    ("order_factory", "generate_client_order_id"),
+    ("order_factory", "generate_order_list_id"),
+];
+
+const PLUGIN_STRATEGY_CORE_DEFERRED_METHODS: &[&str] = &[];
+
+const PLUGIN_STRATEGY_CORE_HOST_OWNED_METHODS: &[&str] = &[
+    // Construction and registration mutate host runtime state
+    "new",
+    "change_id",
+    "change_order_id_tag",
+    "order_id_tag",
+    "register",
+    // Direct access to host-owned runtime state does not cross the boundary
+    "order_manager",
+    "portfolio",
+    // Market-exit state remains inside the host runtime
+    "reset_market_exit_state",
 ];
 
 #[rstest]
@@ -308,6 +414,111 @@ fn plugin_strategy_surface_classifies_every_strategy_method() {
     );
 }
 
+#[rstest]
+fn plugin_data_actor_core_surface_classifies_every_public_method() {
+    let data_actor_core_methods = data_actor_core_public_method_names();
+    assert_core_surface_classification(
+        "DataActorCore",
+        &data_actor_core_methods,
+        PLUGIN_DATA_ACTOR_CORE_BRIDGED_METHODS,
+        PLUGIN_DATA_ACTOR_CORE_DEFERRED_METHODS,
+        PLUGIN_DATA_ACTOR_CORE_HOST_OWNED_METHODS,
+    );
+}
+
+#[rstest]
+fn plugin_strategy_core_surface_classifies_every_public_method() {
+    let strategy_core_methods = strategy_core_public_method_names();
+    assert_core_surface_classification(
+        "StrategyCore",
+        &strategy_core_methods,
+        PLUGIN_STRATEGY_CORE_BRIDGED_METHODS,
+        PLUGIN_STRATEGY_CORE_DEFERRED_METHODS,
+        PLUGIN_STRATEGY_CORE_HOST_OWNED_METHODS,
+    );
+}
+
+fn assert_core_surface_classification(
+    surface: &str,
+    upstream_methods: &BTreeSet<String>,
+    bridged_methods: &[(&str, &str)],
+    deferred_methods: &[&str],
+    host_owned_methods: &[&str],
+) {
+    let host_vtable_methods = host_vtable_field_names();
+    let bridged_method_names = bridged_methods
+        .iter()
+        .map(|(method, _)| (*method).to_string())
+        .collect::<BTreeSet<_>>();
+    let deferred_method_names = deferred_methods
+        .iter()
+        .map(|method| (*method).to_string())
+        .collect::<BTreeSet<_>>();
+    let host_owned_method_names = host_owned_methods
+        .iter()
+        .map(|method| (*method).to_string())
+        .collect::<BTreeSet<_>>();
+
+    let mut classified_methods = bridged_method_names.clone();
+    classified_methods.extend(deferred_method_names.iter().cloned());
+    classified_methods.extend(host_owned_method_names.iter().cloned());
+
+    let unclassified_methods = upstream_methods
+        .difference(&classified_methods)
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        unclassified_methods.is_empty(),
+        "{surface} public methods must be bridged, deferred, or host-owned: {unclassified_methods:?}",
+    );
+
+    let stale_bridged_methods = bridged_method_names
+        .difference(upstream_methods)
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        stale_bridged_methods.is_empty(),
+        "Bridged {surface} methods are no longer public methods: {stale_bridged_methods:?}",
+    );
+
+    let stale_deferred_methods = deferred_method_names
+        .difference(upstream_methods)
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        stale_deferred_methods.is_empty(),
+        "Deferred {surface} methods are no longer public methods: {stale_deferred_methods:?}",
+    );
+
+    let stale_host_owned_methods = host_owned_method_names
+        .difference(upstream_methods)
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        stale_host_owned_methods.is_empty(),
+        "Host-owned {surface} methods are no longer public methods: {stale_host_owned_methods:?}",
+    );
+
+    let deferred_but_bridged = deferred_method_names
+        .intersection(&bridged_method_names)
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        deferred_but_bridged.is_empty(),
+        "{surface} methods cannot be both deferred and bridged: {deferred_but_bridged:?}",
+    );
+
+    let missing_host_fields = bridged_methods
+        .iter()
+        .filter(|(_, field)| !host_vtable_methods.contains(*field))
+        .map(|(method, field)| format!("{method} -> {field}"))
+        .collect::<Vec<_>>();
+    assert!(
+        missing_host_fields.is_empty(),
+        "Bridged {surface} methods must point at HostVTable fields: {missing_host_fields:?}",
+    );
+}
+
 fn data_actor_callback_names() -> BTreeSet<String> {
     callback_names_between(
         DATA_ACTOR_SOURCE,
@@ -337,6 +548,22 @@ fn strategy_execution_method_names() -> BTreeSet<String> {
         STRATEGY_SOURCE,
         "    /// Submits an order.",
         "    /// Handles an order event",
+    )
+}
+
+fn data_actor_core_public_method_names() -> BTreeSet<String> {
+    public_method_names_between(
+        DATA_ACTOR_CORE_SOURCE,
+        "impl DataActorCore {",
+        "\nfn check_timestamps",
+    )
+}
+
+fn strategy_core_public_method_names() -> BTreeSet<String> {
+    public_method_names_between(
+        STRATEGY_CORE_SOURCE,
+        "impl StrategyCore {",
+        "\nfn strategy_id_with_order_id_tag",
     )
 }
 
@@ -385,6 +612,43 @@ fn method_names_between(source: &str, start_marker: &str, stop_marker: &str) -> 
     section.lines().filter_map(method_name).collect()
 }
 
+fn public_method_names_between(
+    source: &str,
+    start_marker: &str,
+    stop_marker: &str,
+) -> BTreeSet<String> {
+    let section = source_between(source, start_marker, stop_marker);
+    let mut skip_next_public_method = false;
+    let mut names = BTreeSet::new();
+
+    for line in section.lines() {
+        let line = line.trim_start();
+        if line == "#[cfg(test)]" {
+            skip_next_public_method = true;
+            continue;
+        }
+
+        if let Some(name) = public_method_name(line) {
+            if skip_next_public_method {
+                skip_next_public_method = false;
+            } else {
+                names.insert(name);
+            }
+            continue;
+        }
+
+        if !line.is_empty()
+            && !line.starts_with("#[")
+            && !line.starts_with("///")
+            && !line.starts_with("//")
+        {
+            skip_next_public_method = false;
+        }
+    }
+
+    names
+}
+
 fn callback_names_between(source: &str, start_marker: &str, stop_marker: &str) -> BTreeSet<String> {
     let section = source_between(source, start_marker, stop_marker);
 
@@ -417,6 +681,12 @@ fn source_between<'a>(source: &'a str, start_marker: &str, stop_marker: &str) ->
 
 fn method_name(line: &str) -> Option<String> {
     let line = line.trim_start().strip_prefix("fn ")?;
+    let (name, _) = line.split_once('(')?;
+    Some(name.to_string())
+}
+
+fn public_method_name(line: &str) -> Option<String> {
+    let line = line.trim_start().strip_prefix("pub fn ")?;
     let (name, _) = line.split_once('(')?;
     Some(name.to_string())
 }

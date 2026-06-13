@@ -300,7 +300,7 @@ fn x64_boundary_layouts_match_absolute_snapshot() {
         on_fault: 80,
         on_time_event: 88,
     ]);
-    x64_layout_snapshot!(HostVTable, "HostVTable", 264, 8, [
+    x64_layout_snapshot!(HostVTable, "HostVTable", 304, 8, [
         abi_version: 0,
         clock_now_ns: 8,
         log: 16,
@@ -334,6 +334,11 @@ fn x64_boundary_layouts_match_absolute_snapshot() {
         close_all_positions: 240,
         query_account: 248,
         query_order: 256,
+        trader_id: 264,
+        strategy_id: 272,
+        component_state: 280,
+        generate_client_order_id: 288,
+        generate_order_list_id: 296,
     ]);
     x64_layout_snapshot!(ControllerHostVTable, "ControllerHostVTable", 72, 8, [
         abi_version: 0,
@@ -691,6 +696,11 @@ fn host_vtable_layout_matches_snapshot() {
         close_all_positions,
         query_account,
         query_order,
+        trader_id,
+        strategy_id,
+        component_state,
+        generate_client_order_id,
+        generate_order_list_id,
     ]);
 }
 

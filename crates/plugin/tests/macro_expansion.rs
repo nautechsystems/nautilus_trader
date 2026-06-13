@@ -572,6 +572,14 @@ unsafe extern "C" fn test_query_order_stub(
     PluginResult::Ok(())
 }
 
+unsafe extern "C" fn test_host_bytes_stub(_ctx: *const HostContext) -> PluginResult<OwnedBytes> {
+    PluginResult::Ok(OwnedBytes::empty())
+}
+
+unsafe extern "C" fn test_component_state_stub(_ctx: *const HostContext) -> PluginResult<u8> {
+    PluginResult::Ok(0)
+}
+
 static TEST_HOST: HostVTable = HostVTable {
     abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
     clock_now_ns: test_clock_now_ns,
@@ -606,6 +614,11 @@ static TEST_HOST: HostVTable = HostVTable {
     close_all_positions: test_close_all_positions_stub,
     query_account: test_query_account_stub,
     query_order: test_query_order_stub,
+    trader_id: test_host_bytes_stub,
+    strategy_id: test_host_bytes_stub,
+    component_state: test_component_state_stub,
+    generate_client_order_id: test_host_bytes_stub,
+    generate_order_list_id: test_host_bytes_stub,
 };
 
 unsafe extern "C" fn test_controller_host_call(
@@ -855,6 +868,11 @@ fn nautilus_plugin_init_returns_manifest_for_host_abi_mismatch(#[case] abi: u32)
         close_all_positions: test_close_all_positions_stub,
         query_account: test_query_account_stub,
         query_order: test_query_order_stub,
+        trader_id: test_host_bytes_stub,
+        strategy_id: test_host_bytes_stub,
+        component_state: test_component_state_stub,
+        generate_client_order_id: test_host_bytes_stub,
+        generate_order_list_id: test_host_bytes_stub,
     };
     let m = unsafe { nautilus_plugin_init(&raw const bad_host) };
     assert!(

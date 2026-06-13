@@ -45,6 +45,7 @@ use nautilus_model::{
     data::BarType,
     enums::{BookType, FromU8},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId},
+    orders::{Order, OrderAny},
 };
 use nautilus_trading::strategy::Strategy;
 use serde::Serialize;
@@ -110,6 +111,11 @@ pub fn host_vtable() -> *const HostVTable {
         close_all_positions: host_close_all_positions,
         query_account: host_query_account,
         query_order: host_query_order,
+        trader_id: host_trader_id,
+        strategy_id: host_strategy_id,
+        component_state: host_component_state,
+        generate_client_order_id: host_generate_client_order_id,
+        generate_order_list_id: host_generate_order_list_id,
     }))
 }
 
@@ -301,6 +307,83 @@ unsafe extern "C" fn host_cache_positions_for_strategy(
             .map(|position| position.cloned())
             .collect::<Vec<_>>();
         json_bytes(&positions)
+    })
+}
+
+unsafe extern "C" fn host_trader_id(ctx: *const HostContext) -> PluginResult<OwnedBytes> {
+    guard_host_dispatch("trader_id", || {
+        let inner = resolve_context(ctx, "trader_id")?;
+        let actor_id = inner.actor_id.inner();
+        let trader_id = if inner.is_strategy {
+            let adapter_ref = try_get_actor_unchecked::<PluginStrategyAdapter>(&actor_id)
+                .ok_or_else(|| resolve_adapter_error("trader_id", inner))?;
+            adapter_ref.trader_id()
+        } else {
+            let adapter_ref = try_get_actor_unchecked::<PluginActorAdapter>(&actor_id)
+                .ok_or_else(|| resolve_adapter_error("trader_id", inner))?;
+            adapter_ref.trader_id()
+        }
+        .ok_or_else(|| {
+            PluginError::new(
+                PluginErrorCode::InvalidArgument,
+                format!("trader_id is unavailable for unregistered actor_id={actor_id}"),
+            )
+        })?;
+
+        json_bytes(&trader_id).into_result()
+    })
+}
+
+unsafe extern "C" fn host_strategy_id(ctx: *const HostContext) -> PluginResult<OwnedBytes> {
+    dispatch_strategy_query(ctx, "strategy_id", |adapter| {
+        let strategy_id = adapter.core().strategy_id().ok_or_else(|| {
+            PluginError::new(
+                PluginErrorCode::InvalidArgument,
+                "strategy_id is unavailable before strategy registration",
+            )
+        })?;
+        json_bytes(&strategy_id).into_result()
+    })
+}
+
+unsafe extern "C" fn host_component_state(ctx: *const HostContext) -> PluginResult<u8> {
+    guard_host_dispatch("component_state", || {
+        let inner = resolve_context(ctx, "component_state")?;
+        let actor_id = inner.actor_id.inner();
+        let state = if inner.is_strategy {
+            let adapter_ref = try_get_actor_unchecked::<PluginStrategyAdapter>(&actor_id)
+                .ok_or_else(|| resolve_adapter_error("component_state", inner))?;
+            adapter_ref.state()
+        } else {
+            let adapter_ref = try_get_actor_unchecked::<PluginActorAdapter>(&actor_id)
+                .ok_or_else(|| resolve_adapter_error("component_state", inner))?;
+            adapter_ref.state()
+        };
+
+        Ok(state as u8)
+    })
+}
+
+unsafe extern "C" fn host_generate_client_order_id(
+    ctx: *const HostContext,
+) -> PluginResult<OwnedBytes> {
+    dispatch_strategy_query(ctx, "generate_client_order_id", |adapter| {
+        require_registered_strategy(adapter, "generate_client_order_id")?;
+        let client_order_id = adapter
+            .core_mut()
+            .order_factory()
+            .generate_client_order_id();
+        json_bytes(&client_order_id).into_result()
+    })
+}
+
+unsafe extern "C" fn host_generate_order_list_id(
+    ctx: *const HostContext,
+) -> PluginResult<OwnedBytes> {
+    dispatch_strategy_query(ctx, "generate_order_list_id", |adapter| {
+        require_registered_strategy(adapter, "generate_order_list_id")?;
+        let order_list_id = adapter.core_mut().order_factory().generate_order_list_id();
+        json_bytes(&order_list_id).into_result()
     })
 }
 
@@ -831,7 +914,8 @@ unsafe extern "C" fn host_submit_order(
 ) -> PluginResult<()> {
     // SAFETY: plug-in keeps the handle alive for the duration of the call.
     unsafe {
-        dispatch_handle(ctx, command, "submit_order", |adapter, cmd| {
+        dispatch_handle_plugin_error(ctx, command, "submit_order", |adapter, cmd| {
+            validate_order_identity(adapter, &cmd.order)?;
             Strategy::submit_order(
                 adapter,
                 cmd.order,
@@ -839,6 +923,7 @@ unsafe extern "C" fn host_submit_order(
                 cmd.client_id,
                 cmd.params,
             )
+            .map_err(|e| generic_plugin_error(&e))
         })
     }
 }
@@ -881,7 +966,10 @@ unsafe extern "C" fn host_submit_order_list(
 ) -> PluginResult<()> {
     // SAFETY: plug-in keeps the handle alive for the duration of the call.
     unsafe {
-        dispatch_handle(ctx, command, "submit_order_list", |adapter, cmd| {
+        dispatch_handle_plugin_error(ctx, command, "submit_order_list", |adapter, cmd| {
+            for order in &cmd.orders {
+                validate_order_identity(adapter, order)?;
+            }
             Strategy::submit_order_list(
                 adapter,
                 cmd.orders,
@@ -889,6 +977,7 @@ unsafe extern "C" fn host_submit_order_list(
                 cmd.client_id,
                 cmd.params,
             )
+            .map_err(|e| generic_plugin_error(&e))
         })
     }
 }
@@ -1024,6 +1113,23 @@ unsafe fn dispatch_handle<H>(
 where
     H: BoundaryCommandHandle,
 {
+    // SAFETY: forwards the caller's handle contract unchanged.
+    unsafe {
+        dispatch_handle_plugin_error(ctx, command, method, |adapter, command| {
+            f(adapter, command).map_err(|e| generic_plugin_error(&e))
+        })
+    }
+}
+
+unsafe fn dispatch_handle_plugin_error<H>(
+    ctx: *const HostContext,
+    command: *const H,
+    method: &'static str,
+    f: impl FnOnce(&mut PluginStrategyAdapter, H::Command) -> Result<(), PluginError>,
+) -> PluginResult<()>
+where
+    H: BoundaryCommandHandle,
+{
     guard_host_dispatch(method, || {
         if command.is_null() {
             return Err(PluginError::new(
@@ -1060,8 +1166,65 @@ where
         let handle = unsafe { &*command };
         let command = handle.boundary_normalized_command();
         f(&mut adapter_ref, command)
-            .map_err(|e| PluginError::new(PluginErrorCode::Generic, e.to_string()))
     })
+}
+
+fn validate_order_identity(
+    adapter: &PluginStrategyAdapter,
+    order: &OrderAny,
+) -> Result<(), PluginError> {
+    let expected_trader_id = adapter.trader_id().ok_or_else(|| {
+        PluginError::new(
+            PluginErrorCode::InvalidArgument,
+            "trader_id is unavailable before strategy registration",
+        )
+    })?;
+    let expected_strategy_id = adapter.core().strategy_id().ok_or_else(|| {
+        PluginError::new(
+            PluginErrorCode::InvalidArgument,
+            "strategy_id is unavailable before strategy registration",
+        )
+    })?;
+
+    if order.trader_id() != expected_trader_id {
+        return Err(PluginError::new(
+            PluginErrorCode::InvalidArgument,
+            format!(
+                "order {} trader_id mismatch: expected {}, found {}",
+                order.client_order_id(),
+                expected_trader_id,
+                order.trader_id()
+            ),
+        ));
+    }
+
+    if order.strategy_id() != expected_strategy_id {
+        return Err(PluginError::new(
+            PluginErrorCode::InvalidArgument,
+            format!(
+                "order {} strategy_id mismatch: expected {}, found {}",
+                order.client_order_id(),
+                expected_strategy_id,
+                order.strategy_id()
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+fn require_registered_strategy(
+    adapter: &PluginStrategyAdapter,
+    method: &'static str,
+) -> Result<(), PluginError> {
+    if adapter.is_registered() {
+        Ok(())
+    } else {
+        Err(PluginError::new(
+            PluginErrorCode::InvalidArgument,
+            format!("{method} requires a registered strategy"),
+        ))
+    }
 }
 
 fn dispatch_actor_action(
@@ -1085,6 +1248,31 @@ fn dispatch_actor_action(
         };
 
         result.map_err(|e| PluginError::new(PluginErrorCode::Generic, e.to_string()))
+    })
+}
+
+fn dispatch_strategy_query<T>(
+    ctx: *const HostContext,
+    method: &'static str,
+    f: impl FnOnce(&mut PluginStrategyAdapter) -> Result<T, PluginError>,
+) -> PluginResult<T> {
+    guard_host_dispatch(method, || {
+        let inner = resolve_context(ctx, method)?;
+        if !inner.is_strategy {
+            return Err(PluginError::new(
+                PluginErrorCode::InvalidArgument,
+                format!(
+                    "{method} called from a non-strategy plug-in context (actor_id={})",
+                    inner.actor_id
+                ),
+            ));
+        }
+
+        let actor_id = inner.actor_id.inner();
+        let mut adapter_ref = try_get_actor_unchecked::<PluginStrategyAdapter>(&actor_id)
+            .ok_or_else(|| resolve_adapter_error(method, inner))?;
+
+        f(&mut adapter_ref)
     })
 }
 
@@ -1158,6 +1346,10 @@ fn resolve_adapter_error(method: &str, inner: &HostContextInner) -> PluginError 
             inner.actor_id
         ),
     )
+}
+
+fn generic_plugin_error(error: &anyhow::Error) -> PluginError {
+    PluginError::new(PluginErrorCode::Generic, error.to_string())
 }
 
 fn ensure_adapter_registered(method: &str, inner: &HostContextInner) -> Result<(), PluginError> {
@@ -1477,6 +1669,26 @@ mod tests {
         assert_eq!(
             v.modify_order as *const () as usize,
             host_modify_order as *const () as usize,
+        );
+        assert_eq!(
+            v.trader_id as *const () as usize,
+            host_trader_id as *const () as usize,
+        );
+        assert_eq!(
+            v.strategy_id as *const () as usize,
+            host_strategy_id as *const () as usize,
+        );
+        assert_eq!(
+            v.component_state as *const () as usize,
+            host_component_state as *const () as usize,
+        );
+        assert_eq!(
+            v.generate_client_order_id as *const () as usize,
+            host_generate_client_order_id as *const () as usize,
+        );
+        assert_eq!(
+            v.generate_order_list_id as *const () as usize,
+            host_generate_order_list_id as *const () as usize,
         );
         assert_eq!(
             v.clock_now_ns as *const () as usize,
