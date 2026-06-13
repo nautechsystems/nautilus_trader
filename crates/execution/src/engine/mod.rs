@@ -3396,7 +3396,9 @@ impl ExecutionEngine {
             let commission2 = commission - commission1;
             (Some(commission1), Some(commission2))
         } else {
-            log::error!("Commission is not available");
+            log::warn!(
+                "Commission is not available for position flip, splitting with no commission"
+            );
             (None, None)
         };
 

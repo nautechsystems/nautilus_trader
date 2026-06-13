@@ -590,7 +590,7 @@ impl BinanceFuturesExecutionClient {
                     // reached Binance, WebSocket updates will still arrive. The order
                     // will be cleaned up via WebSocket rejection or reconciliation.
                     if is_ambiguous_submit_error(&e) {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {e}"
                         );
                     } else if is_structured_venue_rejection(&e) {
@@ -613,7 +613,7 @@ impl BinanceFuturesExecutionClient {
 
                         emitter.send_order_event(OrderEventAny::Rejected(rejected));
                     } else {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {e}"
                         );
                     }
@@ -755,7 +755,7 @@ impl BinanceFuturesExecutionClient {
                             "Cancel command failed local validation for {client_order_id}: {e}"
                         );
                     } else {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous cancel failure for {client_order_id}, awaiting reconciliation: {e}"
                         );
                     }
@@ -2127,7 +2127,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     let e = anyhow::Error::new(e);
 
                     if is_ambiguous_submit_error(&e) {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous order-list submit failure, awaiting reconciliation: {e}"
                         );
                     } else if is_structured_venue_rejection(&e) {
@@ -2156,7 +2156,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                             orders.len()
                         );
                     } else {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous order-list submit failure, awaiting reconciliation: {e}"
                         );
                     }
@@ -2357,7 +2357,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
                         emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
                     } else {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous modify failure for {}, awaiting reconciliation: {e}",
                             command.client_order_id
                         );
@@ -2520,7 +2520,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                                     "Batch cancel command failed local validation for {batch_len} orders: {e}",
                                 );
                             } else {
-                                log::error!(
+                                log::warn!(
                                     "Ambiguous batch cancel request failure for {batch_len} orders, awaiting reconciliation: {e}",
                                 );
                             }

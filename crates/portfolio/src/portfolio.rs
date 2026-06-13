@@ -1574,7 +1574,7 @@ impl Portfolio {
                 {
                     xrate
                 } else {
-                    log::error!(
+                    log::warn!(
                         // TODO: Improve logging
                         "Cannot calculate unrealized PnL: insufficient data for {}/{}",
                         instrument.settlement_currency(),
@@ -1850,7 +1850,7 @@ impl Portfolio {
                             {
                                 xrate
                             } else {
-                                log::error!(
+                                log::warn!(
                                     "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
                                     instrument.settlement_currency(),
                                     base_currency
@@ -1888,7 +1888,7 @@ impl Portfolio {
                             if let Some(xrate) = xrate {
                                 pnl = (pnl * xrate).round_dp(u32::from(currency.precision));
                             } else {
-                                log::error!(
+                                log::warn!(
                                     "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
                                     instrument.settlement_currency(),
                                     base_currency
@@ -1918,7 +1918,7 @@ impl Portfolio {
                         {
                             xrate
                         } else {
-                            log::error!(
+                            log::warn!(
                                 "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
                                 instrument.settlement_currency(),
                                 base_currency
@@ -1958,7 +1958,7 @@ impl Portfolio {
                         if let Some(xrate) = xrate {
                             pnl = (pnl * xrate).round_dp(u32::from(currency.precision));
                         } else {
-                            log::error!(
+                            log::warn!(
                                 "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
                                 instrument.settlement_currency(),
                                 base_currency
@@ -1987,7 +1987,7 @@ impl Portfolio {
                         {
                             xrate
                         } else {
-                            log::error!(
+                            log::warn!(
                                 "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
                                 instrument.settlement_currency(),
                                 base_currency

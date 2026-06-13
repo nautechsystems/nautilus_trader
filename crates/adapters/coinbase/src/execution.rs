@@ -1137,7 +1137,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                             false,
                         );
                     } else if is_coinbase_ambiguous_command_failure(&e) {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {e}"
                         );
                     } else {
@@ -1260,7 +1260,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                 }
                 Err(e) => {
                     if is_coinbase_ambiguous_command_failure(&e) {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous modify failure for {client_order_id}, awaiting reconciliation: {e}"
                         );
                     } else {
@@ -1313,7 +1313,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                 }
                 Err(e) => {
                     if is_coinbase_ambiguous_command_failure(&e) {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous cancel failure for {client_order_id}, awaiting reconciliation: {e}"
                         );
                     } else {
@@ -1411,7 +1411,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                     }
                     Err(e) => {
                         if is_coinbase_ambiguous_command_failure(&e) {
-                            log::error!(
+                            log::warn!(
                                 "Ambiguous cancel-all failure for {} orders on {instrument_id}, awaiting reconciliation: {e}",
                                 chunk.len()
                             );
@@ -1500,7 +1500,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                     }
                     Err(e) => {
                         if is_coinbase_ambiguous_command_failure(&e) {
-                            log::error!(
+                            log::warn!(
                                 "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
                                 chunk.len()
                             );

@@ -893,7 +893,7 @@ impl DydxExecutionClient {
                         false,
                     );
                 } else {
-                    log::error!(
+                    log::warn!(
                         "Ambiguous dYdX {label} failure for {client_order_id}, awaiting reconciliation: {e:?}"
                     );
                 }
@@ -1804,7 +1804,7 @@ impl ExecutionClient for DydxExecutionClient {
                                     false,
                                 );
                             } else {
-                                log::error!(
+                                log::warn!(
                                     "Ambiguous dYdX submit failure for {client_order_id}, awaiting reconciliation: {e:?}"
                                 );
                             }
@@ -1874,7 +1874,7 @@ impl ExecutionClient for DydxExecutionClient {
                             );
                         }
                     } else {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous dYdX batch submit failure, awaiting reconciliation: {e:?}"
                         );
                     }

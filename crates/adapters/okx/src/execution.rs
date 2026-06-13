@@ -386,7 +386,7 @@ impl OKXExecutionClient {
                         false,
                     );
                 } else {
-                    log::error!(
+                    log::warn!(
                         "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {e}"
                     );
                 }
@@ -470,7 +470,7 @@ impl OKXExecutionClient {
                         false,
                     );
                 } else {
-                    log::error!(
+                    log::warn!(
                         "Ambiguous HTTP submit failure for {client_order_id}, awaiting reconciliation: {e}"
                     );
                 }
@@ -584,7 +584,7 @@ impl OKXExecutionClient {
                         false,
                     );
                 } else {
-                    log::error!(
+                    log::warn!(
                         "Ambiguous algo submit failure for {client_order_id}, awaiting reconciliation: {e}"
                     );
                 }
@@ -621,7 +621,7 @@ impl OKXExecutionClient {
                         command.client_order_id
                     );
                 } else {
-                    log::error!(
+                    log::warn!(
                         "Ambiguous cancel failure for {}, awaiting reconciliation: {e}",
                         command.client_order_id
                     );
@@ -667,7 +667,7 @@ impl OKXExecutionClient {
                         command.client_order_id
                     );
                 } else {
-                    log::error!(
+                    log::warn!(
                         "Ambiguous HTTP cancel failure for {}, awaiting reconciliation: {e}",
                         command.client_order_id
                     );
@@ -721,7 +721,7 @@ impl OKXExecutionClient {
                     None
                 }
                 Err(e) => {
-                    log::error!(
+                    log::warn!(
                         "Ambiguous algo cancel failure for {}, awaiting reconciliation: {e}",
                         command.client_order_id
                     );
@@ -1994,7 +1994,7 @@ impl ExecutionClient for OKXExecutionClient {
                         );
                     }
                 } else {
-                    log::error!(
+                    log::warn!(
                         "Ambiguous batch submit failure for {} orders on {instrument_id}, awaiting reconciliation: {e}",
                         client_order_ids.len()
                     );
@@ -2061,7 +2061,7 @@ impl ExecutionClient for OKXExecutionClient {
                         ts_event,
                     );
                 } else {
-                    log::error!(
+                    log::warn!(
                         "Ambiguous modify failure for {}, awaiting reconciliation: {e}",
                         command.client_order_id
                     );
@@ -2171,7 +2171,7 @@ impl ExecutionClient for OKXExecutionClient {
                                     regular_cancel_contexts.len()
                                 );
                             } else {
-                                log::error!(
+                                log::warn!(
                                     "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
                                     regular_cancel_contexts.len()
                                 );
@@ -2286,7 +2286,7 @@ impl ExecutionClient for OKXExecutionClient {
                             cancel_contexts.len()
                         );
                     } else {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
                             cancel_contexts.len()
                         );
@@ -2350,7 +2350,7 @@ impl ExecutionClient for OKXExecutionClient {
                                 "HTTP cancel command failed local validation for {client_order_id}: {e}"
                             );
                         } else {
-                            log::error!(
+                            log::warn!(
                                 "Ambiguous HTTP cancel failure for {client_order_id}, awaiting reconciliation: {e}"
                             );
                         }

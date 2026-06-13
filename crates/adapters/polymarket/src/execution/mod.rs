@@ -1409,7 +1409,7 @@ impl ExecutionClient for PolymarketExecutionClient {
                     );
                 }
                 Err(e) => {
-                    log::error!(
+                    log::warn!(
                         "Cancel outcome unknown for {} ({}), awaiting reconciliation: {e}",
                         order_clone.client_order_id(),
                         venue_order_id,
@@ -2529,7 +2529,7 @@ async fn execute_deferred_cancel(
             }
         }
         Err(e) => {
-            log::error!(
+            log::warn!(
                 "Deferred cancel outcome unknown for {} ({}), awaiting reconciliation: {e}",
                 order.client_order_id(),
                 venue_order_id,

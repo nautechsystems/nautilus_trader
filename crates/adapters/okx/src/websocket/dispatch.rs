@@ -477,7 +477,7 @@ pub fn dispatch_ws_message(
             op,
             error,
         } => {
-            log::error!(
+            log::warn!(
                 "WebSocket send failed without structured venue response: \
                  request_id={request_id}, client_order_id={client_order_id:?}, \
                  op={op:?}, awaiting reconciliation: {error}"
@@ -1279,7 +1279,7 @@ pub fn emit_batch_cancel_failure(
     _clock: &'static AtomicTime,
 ) {
     for ctx in contexts {
-        log::error!(
+        log::warn!(
             "Ambiguous algo batch cancel failure for {}, awaiting reconciliation: {error}",
             ctx.client_order_id
         );

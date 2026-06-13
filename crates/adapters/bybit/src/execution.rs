@@ -1241,7 +1241,7 @@ impl ExecutionClient for BybitExecutionClient {
                         anyhow::bail!("submit order rejected: {reason}");
                     }
 
-                    log::error!(
+                    log::warn!(
                         "Submit failure without confirmed venue rejection for {client_order_id}: \
                          {e}; awaiting reconciliation",
                     );
@@ -1270,7 +1270,7 @@ impl ExecutionClient for BybitExecutionClient {
                     );
                 }
                 Err(e) => {
-                    log::error!(
+                    log::warn!(
                         "Submit failure without confirmed venue rejection for {client_order_id}: \
                          {e}; awaiting reconciliation",
                     );
@@ -1495,7 +1495,7 @@ impl ExecutionClient for BybitExecutionClient {
                             continue;
                         }
 
-                        log::error!(
+                        log::warn!(
                             "Submit failure without confirmed venue rejection for {cid}: {e}; \
                              awaiting reconciliation",
                         );
@@ -1546,7 +1546,7 @@ impl ExecutionClient for BybitExecutionClient {
                     }
                 }
                 Err(e) => {
-                    log::error!(
+                    log::warn!(
                         "Submit order list failure without confirmed venue rejection: {e}; \
                          awaiting reconciliation",
                     );
@@ -1620,7 +1620,7 @@ impl ExecutionClient for BybitExecutionClient {
                             );
                         }
                         BybitCommandFailureKind::Ambiguous => {
-                            log::error!(
+                            log::warn!(
                                 "Ambiguous HTTP modify failure for {client_order_id}, awaiting reconciliation: {e}"
                             );
                         }
@@ -1734,7 +1734,7 @@ impl ExecutionClient for BybitExecutionClient {
                             );
                         }
                         BybitCommandFailureKind::Ambiguous => {
-                            log::error!(
+                            log::warn!(
                                 "Ambiguous HTTP cancel failure for {client_order_id}, awaiting reconciliation: {e}"
                             );
                         }
@@ -1867,7 +1867,7 @@ impl ExecutionClient for BybitExecutionClient {
                                 );
                             }
                             BybitCommandFailureKind::Ambiguous => {
-                                log::error!(
+                                log::warn!(
                                     "Ambiguous HTTP batch cancel failure for {client_order_id}, awaiting reconciliation: {e}"
                                 );
                             }
@@ -1918,7 +1918,7 @@ impl ExecutionClient for BybitExecutionClient {
                             client_order_ids.len()
                         );
                     } else {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
                             client_order_ids.len()
                         );
@@ -1991,7 +1991,7 @@ fn log_cancel_ws_failure(client_order_id: ClientOrderId, error: &BybitWsError) {
     if is_bybit_ws_local_command_failure(error) {
         log::warn!("Cancel command failed local validation for {client_order_id}: {error}");
     } else {
-        log::error!(
+        log::warn!(
             "Ambiguous cancel failure for {client_order_id}, awaiting reconciliation: {error}"
         );
     }
@@ -2001,7 +2001,7 @@ fn log_modify_ws_failure(client_order_id: ClientOrderId, error: &BybitWsError) {
     if is_bybit_ws_local_command_failure(error) {
         log::warn!("Modify command failed local validation for {client_order_id}: {error}");
     } else {
-        log::error!(
+        log::warn!(
             "Ambiguous modify failure for {client_order_id}, awaiting reconciliation: {error}"
         );
     }

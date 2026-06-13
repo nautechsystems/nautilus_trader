@@ -291,7 +291,7 @@ impl AxExecutionClient {
             // The submit never demonstrably reached AX: leave the order in
             // flight for reconciliation to resolve.
             if let Err(e) = result {
-                log::error!(
+                log::warn!(
                     "Ambiguous AX submit failure for {client_order_id}, awaiting reconciliation: {e:?}"
                 );
             }
