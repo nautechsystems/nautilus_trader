@@ -191,11 +191,6 @@ impl Clone for TimeEventHandler_API {
     }
 }
 
-#[cfg(not(feature = "python"))]
-impl Drop for TimeEventHandler_API {
-    fn drop(&mut self) {}
-}
-
 impl TimeEventHandler_API {
     /// Creates a null (sentinel) `TimeEventHandler_API`.
     ///

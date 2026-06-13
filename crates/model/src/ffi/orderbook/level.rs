@@ -59,15 +59,6 @@ impl DerefMut for BookLevel_API {
     }
 }
 
-impl Drop for BookLevel_API {
-    fn drop(&mut self) {
-        // The Box<BookLevel> inside self.0 will be automatically dropped here.
-        // This is critical for preventing memory leaks when BookLevel_API instances
-        // are stored in CVecs, as each BookLevel may contain many BookOrder objects
-        // in its IndexMap which need to be properly deallocated.
-    }
-}
-
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -> BookLevel_API {

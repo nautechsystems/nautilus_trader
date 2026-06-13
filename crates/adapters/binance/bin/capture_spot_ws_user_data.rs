@@ -612,6 +612,10 @@ async fn wait_for_response(
     }
 }
 
+#[expect(
+    clippy::exit,
+    reason = "help flag exits the standalone capture utility after printing usage"
+)]
 fn parse_args<I>(args: I) -> anyhow::Result<CaptureConfig>
 where
     I: IntoIterator<Item = String>,

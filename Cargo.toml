@@ -670,6 +670,7 @@ if_not_else = "warn"
 # Security and robustness
 disallowed_methods = "warn"
 disallowed_types = "warn"
+exit = "warn"
 suspicious_doc_comments = "warn"
 large_stack_arrays = "warn"
 panic_in_result_fn = "warn"
@@ -684,6 +685,9 @@ invalid_upcast_comparisons = "warn"
 
 # API hygiene
 rc_mutex = "warn"
+rc_buffer = "warn"
+empty_drop = "warn"
+rest_pat_in_fully_bound_structs = "warn"
 iter_not_returning_iterator = "warn"
 infallible_try_from = "warn"
 debug_assert_with_mut_call = "warn"

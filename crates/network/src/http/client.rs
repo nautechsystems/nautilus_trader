@@ -159,8 +159,8 @@ impl HttpClient {
 
         let client = InnerHttpClient {
             client,
-            header_keys: Arc::new(valid_keys),
-            header_names: Arc::new(header_names),
+            header_keys: Arc::from(valid_keys),
+            header_names: Arc::from(header_names),
         };
 
         Ok(Self {
@@ -346,8 +346,8 @@ impl HttpClient {
 #[derive(Clone, Debug)]
 pub struct InnerHttpClient {
     pub(crate) client: reqwest::Client,
-    pub(crate) header_keys: Arc<Vec<String>>,
-    pub(crate) header_names: Arc<Vec<HeaderName>>,
+    pub(crate) header_keys: Arc<[String]>,
+    pub(crate) header_names: Arc<[HeaderName]>,
 }
 
 impl InnerHttpClient {

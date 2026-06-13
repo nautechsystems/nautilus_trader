@@ -348,7 +348,7 @@ impl TransportClient {
 #[derive(Debug)]
 pub struct CancelBroadcaster {
     config: CancelBroadcasterConfig,
-    transports: Arc<Vec<TransportClient>>,
+    transports: Arc<[TransportClient]>,
     health_check_task: Arc<RwLock<Option<JoinHandle<()>>>>,
     running: Arc<AtomicBool>,
     total_cancels: Arc<AtomicU64>,
@@ -398,7 +398,7 @@ impl CancelBroadcaster {
 
         Ok(Self {
             config,
-            transports: Arc::new(transports),
+            transports: Arc::from(transports),
             health_check_task: Arc::new(RwLock::new(None)),
             running: Arc::new(AtomicBool::new(false)),
             total_cancels: Arc::new(AtomicU64::new(0)),
@@ -821,7 +821,7 @@ impl CancelBroadcaster {
     ) -> Self {
         Self {
             config,
-            transports: Arc::new(transports),
+            transports: Arc::from(transports),
             health_check_task: Arc::new(RwLock::new(None)),
             running: Arc::new(AtomicBool::new(false)),
             total_cancels: Arc::new(AtomicU64::new(0)),
