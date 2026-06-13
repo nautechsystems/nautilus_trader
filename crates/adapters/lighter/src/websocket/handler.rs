@@ -894,10 +894,10 @@ impl FeedHandler {
             }
         }
 
-        // Depth10 needs the full visible book, which is present only on snapshot
-        // frames; incremental frames carry only changed levels.
-        if is_snapshot && self.book_depth_10_subs.contains(&market_index) {
-            match parse_ws_order_book_depth10(book, instrument, timestamp, ts_init) {
+        if self.book_depth_10_subs.contains(&market_index)
+            && let Some(cached) = self.book_states.get(&market_index)
+        {
+            match parse_ws_order_book_depth10(&cached.book, instrument, cached.timestamp, ts_init) {
                 Ok(depth) => messages.push(NautilusWsMessage::Depth10(Box::new(depth))),
                 Err(e) => log::error!("Error parsing Lighter order_book depth10: {e}"),
             }

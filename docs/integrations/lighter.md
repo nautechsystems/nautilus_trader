@@ -168,7 +168,7 @@ binding does not prompt: review the active env vars yourself before calling.
 | Trade ticks          | ✓            | -        | ✓     | `TradeTick`         | WebSocket trades; historical REST trades require auth. |
 | Quote ticks          | ✓            | -        | -     | `QuoteTick`         | Best bid and ask ticker stream.                        |
 | Order book deltas    | ✓            | ✓        | -     | `OrderBookDeltas`   | `L2_MBP` only.                                         |
-| Order book depth10   | ✓            | ✓        | -     | `OrderBookDepth10`  | Full WebSocket book snapshots.                         |
+| Order book depth10   | ✓            | ✓        | -     | `OrderBookDepth10`  | Live top-10 view from maintained book state.           |
 | Order book snapshots | -            | ✓        | -     | `OrderBook`         | REST snapshot, max depth 250.                          |
 | Mark prices          | ✓            | -        | -     | `MarkPriceUpdate`   | Perp market stats stream.                              |
 | Index prices         | ✓            | -        | -     | `IndexPriceUpdate`  | Market and spot stats streams.                         |
@@ -182,6 +182,9 @@ return an error before subscribing.
 The WebSocket order book initializes only from `subscribed/order_book`. If an `update/order_book`
 arrives before that snapshot, the adapter drops it and waits for the real snapshot because
 incremental updates do not contain the full visible book.
+
+Depth10 subscriptions use the same WebSocket `order_book` stream as deltas. The adapter emits a
+refreshed top-10 view after each accepted snapshot or incremental update.
 
 Bar subscriptions use the venue's `candle/{market_id}/{resolution}` WebSocket channel. Lighter
 batches in-progress updates for the open bar every ~500 ms; the adapter emits a Nautilus `Bar`
@@ -213,8 +216,8 @@ WebSocket `ticker` stream, but the REST endpoints available to the adapter do no
 timestamped quote snapshot or quote history that can map safely to `QuoteTick`.
 
 `request_book_depth` is not implemented. The documented REST book endpoints do not provide a
-venue event timestamp for `OrderBookDepth10.ts_event`; use `subscribe_book_depth10` for live
-depth10 snapshots or `request_book_snapshot` for a REST `OrderBook` snapshot.
+venue event timestamp for `OrderBookDepth10.ts_event`; use `subscribe_book_depth10` for a live
+depth10 stream or `request_book_snapshot` for a REST `OrderBook` snapshot.
 
 ## Orders capability
 

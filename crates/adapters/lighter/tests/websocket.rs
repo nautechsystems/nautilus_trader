@@ -55,6 +55,7 @@ use nautilus_lighter::{
     },
 };
 use nautilus_model::{
+    data::OrderBookDepth10,
     enums::{BookAction, RecordFlag},
     identifiers::{InstrumentId, Symbol},
     instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny},
@@ -427,7 +428,6 @@ fn book_update_frame_with_cached_changes() -> Value {
             "code": 0,
             "asks": [
                 {"price": "2325.00", "size": "0.0000"},
-                {"price": "2341.25", "size": "1.0000"},
                 {"price": "2330.00", "size": "0.1200"}
             ],
             "bids": [
@@ -442,6 +442,18 @@ fn book_update_frame_with_cached_changes() -> Value {
         "timestamp": 1778138583602_u64,
         "type": "update/order_book"
     })
+}
+
+fn assert_depth10_matches_cached_changes(depth: &OrderBookDepth10) {
+    assert_eq!(depth.sequence, 904846);
+    assert_eq!(depth.bids[0].price, Price::from("2000.00"));
+    assert_eq!(depth.bids[0].size, Quantity::from("0.0500"));
+    assert_eq!(depth.bids[1].price, Price::from("1999.00"));
+    assert_eq!(depth.bids[1].size, Quantity::from("0.0100"));
+    assert_eq!(depth.asks[0].price, Price::from("2330.00"));
+    assert_eq!(depth.asks[0].size, Quantity::from("0.1200"));
+    assert_eq!(depth.asks[1].price, Price::from("2341.25"));
+    assert_eq!(depth.asks[1].size, Quantity::from("340.1028"));
 }
 
 #[tokio::test]
@@ -794,6 +806,116 @@ async fn test_order_book_depth10_emits_on_snapshot() {
 }
 
 #[tokio::test]
+async fn test_order_book_depth10_emits_on_incremental_update() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let mut harness = ClientHarness::build(addr).await;
+
+    state
+        .enqueue_push(load_json("ws_order_book_subscribed.json"))
+        .await;
+
+    let id = harness.instrument(PERP_MARKET_INDEX);
+    harness
+        .client
+        .subscribe_book_depth10(id)
+        .await
+        .expect("subscribe_book_depth10");
+
+    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("initial depth10");
+    assert!(matches!(event, NautilusWsMessage::Depth10(_)));
+
+    state
+        .enqueue_push(book_update_frame_with_cached_changes())
+        .await;
+    harness
+        .client
+        .subscribe_quotes(id)
+        .await
+        .expect("trigger incremental push");
+
+    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("updated depth10");
+    let NautilusWsMessage::Depth10(depth) = event else {
+        panic!("expected updated Depth10, was {event:?}");
+    };
+
+    assert_depth10_matches_cached_changes(&depth);
+
+    harness.client.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test]
+async fn test_order_book_incremental_emits_deltas_and_depth10_when_both_subscribed() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let mut harness = ClientHarness::build(addr).await;
+
+    state
+        .enqueue_push(load_json("ws_order_book_subscribed.json"))
+        .await;
+
+    let id = harness.instrument(PERP_MARKET_INDEX);
+    harness
+        .client
+        .subscribe_book_depth10(id)
+        .await
+        .expect("subscribe_book_depth10");
+
+    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("initial depth10");
+    assert!(matches!(event, NautilusWsMessage::Depth10(_)));
+
+    harness
+        .client
+        .subscribe_book(id)
+        .await
+        .expect("subscribe_book");
+    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("cached deltas");
+    assert!(matches!(event, NautilusWsMessage::Deltas(_)));
+
+    state
+        .enqueue_push(book_update_frame_with_cached_changes())
+        .await;
+    harness
+        .client
+        .subscribe_quotes(id)
+        .await
+        .expect("trigger incremental push");
+
+    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("incremental deltas");
+    let NautilusWsMessage::Deltas(deltas) = event else {
+        panic!("expected Deltas, was {event:?}");
+    };
+    assert!(
+        !deltas
+            .deltas
+            .iter()
+            .any(|d| d.flags & RecordFlag::F_SNAPSHOT as u8 != 0),
+        "incremental frame must not carry F_SNAPSHOT",
+    );
+
+    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("updated depth10");
+    let NautilusWsMessage::Depth10(depth) = event else {
+        panic!("expected updated Depth10, was {event:?}");
+    };
+
+    assert_depth10_matches_cached_changes(&depth);
+
+    harness.client.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test]
 async fn test_late_depth10_uses_cached_book_after_incremental_updates() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
@@ -854,15 +976,7 @@ async fn test_late_depth10_uses_cached_book_after_incremental_updates() {
         panic!("expected cached Depth10, was {event:?}");
     };
 
-    assert_eq!(depth.sequence, 904846);
-    assert_eq!(depth.bids[0].price, Price::from("2000.00"));
-    assert_eq!(depth.bids[0].size, Quantity::from("0.0500"));
-    assert_eq!(depth.bids[1].price, Price::from("1999.00"));
-    assert_eq!(depth.bids[1].size, Quantity::from("0.0100"));
-    assert_eq!(depth.asks[0].price, Price::from("2330.00"));
-    assert_eq!(depth.asks[0].size, Quantity::from("0.1200"));
-    assert_eq!(depth.asks[1].price, Price::from("2341.25"));
-    assert_eq!(depth.asks[1].size, Quantity::from("1.0000"));
+    assert_depth10_matches_cached_changes(&depth);
 
     harness.client.disconnect().await.expect("disconnect");
 }
