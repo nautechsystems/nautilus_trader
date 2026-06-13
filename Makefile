@@ -70,6 +70,47 @@ FAIL_FAST ?= false
 # CI should set NEXTEST_PROFILE=ci to limit parallelism on resource-constrained runners.
 NEXTEST_PROFILE ?= default
 
+# Local Rust concurrency defaults are capped by host CPU count so lower-spec
+# machines do not inherit settings meant for high-core workstations.
+# Override with CARGO_BUILD_JOBS or NEXTEST_TEST_THREADS when needed
+HOST_CPU_COUNT := $(shell \
+	n=`getconf _NPROCESSORS_ONLN 2>/dev/null` || n=; \
+	if [ -z "$$n" ]; then n=`sysctl -n hw.ncpu 2>/dev/null` || n=; fi; \
+	if [ -z "$$n" ]; then n="$${NUMBER_OF_PROCESSORS:-1}"; fi; \
+	n=`printf '%s' "$$n" | tr -cd '0-9'`; \
+	if [ -z "$$n" ]; then n=1; fi; \
+	printf '%s' "$$n")
+
+ifeq ($(CI),true)
+LOCAL_CARGO_BUILD_JOBS_DEFAULT :=
+LOCAL_NEXTEST_TEST_THREADS_DEFAULT :=
+else
+LOCAL_CARGO_BUILD_JOBS_DEFAULT := $(shell \
+	n='$(HOST_CPU_COUNT)'; \
+	[ "$$n" -gt 32 ] && n=32; \
+	printf '%s' "$$n")
+ifeq ($(NEXTEST_PROFILE),ci)
+LOCAL_NEXTEST_TEST_THREADS_DEFAULT :=
+else
+LOCAL_NEXTEST_TEST_THREADS_DEFAULT := $(shell \
+	n='$(HOST_CPU_COUNT)'; \
+	[ "$$n" -gt 64 ] && n=64; \
+	printf '%s' "$$n")
+endif
+endif
+
+ifeq ($(origin CARGO_BUILD_JOBS),undefined)
+CARGO_BUILD_JOBS_FOR_RUST := $(LOCAL_CARGO_BUILD_JOBS_DEFAULT)
+else
+CARGO_BUILD_JOBS_FOR_RUST := $(CARGO_BUILD_JOBS)
+endif
+
+ifeq ($(origin NEXTEST_TEST_THREADS),undefined)
+NEXTEST_TEST_THREADS_FOR_RUST := $(LOCAL_NEXTEST_TEST_THREADS_DEFAULT)
+else
+NEXTEST_TEST_THREADS_FOR_RUST := $(NEXTEST_TEST_THREADS)
+endif
+
 # CARGO_CI_PROFILE selects the Cargo compile profile used by nextest.
 CARGO_CI_PROFILE ?= nextest
 
@@ -106,6 +147,36 @@ ifneq ($(strip $(EXTRA_FEATURES)),)
 CARGO_FEATURES := $(BASE_FEATURES),$(EXTRA_FEATURES)
 else
 CARGO_FEATURES := $(BASE_FEATURES)
+endif
+
+CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug \
+	build-debug-pyo3 build-wheel build-wheel-debug build-dry-run check-code \
+	check-all-targets clippy clippy-fix clippy-fix-nightly clippy-pedantic-crate-% \
+	docs docs-rust docsrs-check cargo-build cargo-check check-features cargo-test \
+	cargo-test-extras cargo-test-core-local cargo-test-core cargo-test-adapters \
+	cargo-test-sim cargo-test-plugin-cdylib-smoke cargo-test-core-debug \
+	cargo-test-core-local-debug cargo-test-lib cargo-test-standard-precision \
+	cargo-test-debug cargo-test-coverage cargo-test-crate-% \
+	cargo-test-coverage-crate-% cargo-test-coverage-html \
+	cargo-test-coverage-crate-html-% cargo-miri-core cargo-miri-model \
+	cargo-miri-plugin cargo-miri cargo-ci-benches build-debug-v2 py-stubs-v2 \
+	install-cli
+
+NEXTEST_ENV_TARGETS := cargo-test cargo-test-extras cargo-test-core-local \
+	cargo-test-core cargo-test-adapters cargo-test-sim \
+	cargo-test-plugin-cdylib-smoke cargo-test-core-debug \
+	cargo-test-core-local-debug cargo-test-lib cargo-test-standard-precision \
+	cargo-test-debug cargo-test-coverage cargo-test-crate-% \
+	cargo-test-coverage-crate-% cargo-test-coverage-html \
+	cargo-test-coverage-crate-html-% cargo-miri-core cargo-miri-model \
+	cargo-miri-plugin cargo-miri
+
+ifneq ($(strip $(CARGO_BUILD_JOBS_FOR_RUST)),)
+$(CARGO_BUILD_JOB_TARGETS): export CARGO_BUILD_JOBS=$(CARGO_BUILD_JOBS_FOR_RUST)
+endif
+
+ifneq ($(strip $(NEXTEST_TEST_THREADS_FOR_RUST)),)
+$(NEXTEST_ENV_TARGETS): export NEXTEST_TEST_THREADS=$(NEXTEST_TEST_THREADS_FOR_RUST)
 endif
 
 # Core crates (excludes adapters/*, nautilus-pyo3, nautilus-cli)
