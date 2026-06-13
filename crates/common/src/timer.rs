@@ -348,6 +348,10 @@ fn call_legacy_python_time_event_callback(
     event: TimeEvent,
     callback: &Py<PyAny>,
 ) -> PyResult<Py<PyAny>> {
+    #[allow(
+        deprecated,
+        reason = "unnamed capsules are required for legacy Cython time-event callbacks"
+    )]
     let capsule: Py<PyAny> = PyCapsule::new_with_destructor(py, event, None, |_, _| {})
         .expect("Error creating `PyCapsule`")
         .into_py_any_unwrap(py);

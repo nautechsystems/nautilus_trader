@@ -25,8 +25,18 @@ use crate::{statistic::PortfolioStatistic, statistics::information_ratio::Inform
 impl InformationRatio {
     /// Calculates the information ratio of portfolio returns relative to a benchmark.
     ///
-    /// `IR = mean(active) / std(active) * sqrt(period)` where `active = strategy - benchmark`,
-    /// `std` uses Bessel's correction (`ddof = 1`), annualized over `period` (default 252).
+    /// The information ratio measures active return per unit of active risk (tracking error):
+    ///
+    /// `IR = mean(active) / std(active) * sqrt(period)`
+    ///
+    /// where `active_i = portfolio_i - benchmark_i`, `std` uses Bessel's correction
+    /// (`ddof = 1`), and the ratio is annualized by the square root of the specified period
+    /// (default: 252 trading days).
+    ///
+    /// # References
+    ///
+    /// - Goodwin, T. H. (1998). "The Information Ratio". *Financial Analysts Journal*, 54(4), 34-43.
+    /// - CFA Institute Investment Foundations, 3rd Edition
     #[new]
     #[pyo3(signature = (period=None))]
     fn py_new(period: Option<usize>) -> Self {

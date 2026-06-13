@@ -343,7 +343,7 @@ distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE
 .PHONY: format
 format:  #-- Format Rust (with nightly) and Python code
 	cargo +nightly fmt
-	uv run --active --no-sync ruff format .
+	uv run --active --no-sync ruff format . --force-exclude
 
 .PHONY: pre-commit
 pre-commit:  #-- Run all pre-commit hooks on all files
@@ -355,7 +355,7 @@ pre-commit:  #-- Run all pre-commit hooks on all files
 check-code:  #-- Run clippy on lib/test targets and ruff --fix (use HYPERSYNC=true to include hypersync feature)
 	$(info $(M) Running code quality checks...)
 	@cargo clippy --workspace --lib --tests --features "$(CARGO_FEATURES)" --profile nextest -- -D warnings
-	@uv run --active --no-sync ruff check . --fix
+	@uv run --active --no-sync ruff check . --fix --force-exclude
 	@printf "$(GREEN)Checks passed$(RESET)\n"
 
 .PHONY: check-all-targets
@@ -400,7 +400,7 @@ pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, build-de
 
 .PHONY: ruff
 ruff:  #-- Run ruff linter with automatic fixes
-	uv run --active --no-sync ruff check . --fix
+	uv run --active --no-sync ruff check . --fix --force-exclude
 
 .PHONY: clippy
 clippy:  #-- Run clippy linter (check only, workspace lints)

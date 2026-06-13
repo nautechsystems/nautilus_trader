@@ -21,7 +21,7 @@ use nautilus_model::{
         Bar, Data, DataFFI, InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta,
         OrderBookDepth10, QuoteTick, TradeTick,
     },
-    python::data::DataFfiCVec,
+    python::data::{DATA_FFI_CVEC_CAPSULE_NAME, DataFfiCVec},
 };
 use nautilus_serialization::arrow::{ArrowSchemaProvider, custom::CustomDataDecoder};
 use pyo3::{prelude::*, types::PyCapsule};
@@ -272,10 +272,10 @@ impl DataQueryResult {
                         .collect::<Result<Vec<_>, _>>()
                         .map_err(to_pyruntime_err)?;
                     let cvec: DataFfiCVec = ffi_data.into();
-                    match PyCapsule::new_with_destructor::<DataFfiCVec, _>(
+                    match PyCapsule::new_with_value_and_destructor::<DataFfiCVec, _>(
                         py,
                         cvec,
-                        Some(DataFfiCVec::capsule_name()),
+                        DATA_FFI_CVEC_CAPSULE_NAME,
                         |_, _| {},
                     ) {
                         Ok(capsule) => Ok(Some(capsule.into_py_any_unwrap(py))),

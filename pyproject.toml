@@ -307,6 +307,7 @@ exclude = [
   ".venv",
   "build",
   "dist",
+  "patches",
   "venv",
 ]
 

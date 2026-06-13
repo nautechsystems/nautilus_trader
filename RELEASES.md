@@ -101,6 +101,7 @@ Released on TBD (UTC).
 - Improved OTO contingency position ID recovery to persist re-indexed assignments (Rust)
 - Optimized `Cache` query filtering to scale with open orders and positions (#4242), thanks for reporting @magnified103
 - Upgraded Interactive Brokers Rust adapter to `ibapi` 3.0.1 (#4209), thanks @faysou
+- Upgraded PyO3 to 0.29.0 with a temporary `pyo3-stub-gen` bridge before v2 removes legacy stubs
 
 ### Documentation Updates
 - Updated plugins concept guide for panic recovery, build pinning, and UTF-8 validation semantics

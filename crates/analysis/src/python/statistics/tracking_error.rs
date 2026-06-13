@@ -25,8 +25,19 @@ use crate::{statistic::PortfolioStatistic, statistics::tracking_error::TrackingE
 impl TrackingError {
     /// Calculates the tracking error of portfolio returns relative to a benchmark.
     ///
-    /// `TE = std(active) * sqrt(period)` where `active = strategy - benchmark`,
-    /// `std` uses Bessel's correction (`ddof = 1`), annualized over `period` (default 252).
+    /// Tracking error is the volatility of the active return (portfolio minus benchmark):
+    ///
+    /// `TE = std(active) * sqrt(period)`
+    ///
+    /// where `active_i = portfolio_i - benchmark_i`, `std` uses Bessel's correction
+    /// (`ddof = 1`), and the result is annualized by the square root of the specified period
+    /// (default: 252 trading days).
+    ///
+    /// # References
+    ///
+    /// - Roll, R. (1992). "A Mean/Variance Analysis of Tracking Error".
+    ///   *Journal of Portfolio Management*, 18(4), 13-22.
+    /// - CFA Institute Investment Foundations, 3rd Edition
     #[new]
     #[pyo3(signature = (period=None))]
     fn py_new(period: Option<usize>) -> Self {

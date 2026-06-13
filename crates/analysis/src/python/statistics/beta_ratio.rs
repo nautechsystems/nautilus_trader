@@ -25,9 +25,20 @@ use crate::{statistic::PortfolioStatistic, statistics::beta_ratio::BetaRatio};
 impl BetaRatio {
     /// Calculates the beta of portfolio returns relative to a benchmark.
     ///
-    /// Beta measures the systematic risk (market sensitivity) of a portfolio:
-    /// `Beta = Cov(strategy, benchmark) / Var(benchmark)` using sample (`ddof = 1`)
-    /// covariance and variance. Beta is not annualized.
+    /// Beta measures the systematic risk (market sensitivity) of a portfolio and is
+    /// calculated as the covariance of the portfolio and benchmark returns divided by
+    /// the variance of the benchmark returns:
+    ///
+    /// `Beta = Cov(portfolio, benchmark) / Var(benchmark)`
+    ///
+    /// Sample (Bessel-corrected, `ddof = 1`) covariance and variance are used to match
+    /// the standard deviation convention elsewhere in this crate. Beta is not annualized.
+    ///
+    /// # References
+    ///
+    /// - Sharpe, W. F. (1964). "Capital Asset Prices: A Theory of Market Equilibrium under
+    ///   Conditions of Risk". *Journal of Finance*, 19(3), 425-442.
+    /// - CFA Institute Investment Foundations, 3rd Edition
     #[new]
     fn py_new() -> Self {
         Self::new()

@@ -25,9 +25,23 @@ use crate::{statistic::PortfolioStatistic, statistics::alpha::Alpha};
 impl Alpha {
     /// Calculates Jensen's alpha of portfolio returns relative to a benchmark.
     ///
-    /// `alpha = (mean_strategy - rf) - beta * (mean_benchmark - rf)` per period, then
-    /// annualized geometrically over `period` (default 252). The risk-free rate `rf`
-    /// is per period (default 0.0).
+    /// Alpha measures the excess return of a portfolio over the return predicted by its
+    /// beta exposure to the benchmark (CAPM). The per-period alpha is:
+    ///
+    /// `alpha = (mean_portfolio - rf) - beta * (mean_benchmark - rf)`
+    ///
+    /// where `beta` is the sample (`ddof = 1`) beta of the portfolio against the benchmark.
+    /// The per-period alpha is then annualized geometrically over `period` (default 252):
+    ///
+    /// `alpha_annual = (1 + alpha)^period - 1`
+    ///
+    /// The risk-free rate `rf` is specified per period (default 0.0).
+    ///
+    /// # References
+    ///
+    /// - Jensen, M. C. (1968). "The Performance of Mutual Funds in the Period 1945-1964".
+    ///   *Journal of Finance*, 23(2), 389-416.
+    /// - CFA Institute Investment Foundations, 3rd Edition
     #[new]
     #[pyo3(signature = (period=None, risk_free_rate=None))]
     fn py_new(period: Option<usize>, risk_free_rate: Option<f64>) -> Self {

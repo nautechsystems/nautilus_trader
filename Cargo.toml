@@ -198,7 +198,7 @@ parquet = { version = "58.3.0", default-features = false, features = [
   "async",
 ] }
 pem = "3.0.6"
-pyo3 = { version = "0.28.3", default-features = false, features = [
+pyo3 = { version = "0.29.0", default-features = false, features = [
   "chrono",
   "hashbrown",
   "indexmap",
@@ -207,12 +207,13 @@ pyo3 = { version = "0.28.3", default-features = false, features = [
   "rust_decimal",
   "serde",
 ] }
-pyo3-async-runtimes = { version = "0.28.0", default-features = false, features = [
+pyo3-async-runtimes = { version = "0.29.0", default-features = false, features = [
   "attributes",
   "tokio",
   "tokio-runtime",
 ] }
-# Pinned: 0.21 rejects module paths outside pymodule root, blocking our mixed layout for now
+# Pinned: 0.21+ rejects module paths outside the pymodule root. Stub generation still uses
+# two paths: legacy Cython compatibility plus v2 without the nautilus_pyo3 namespace.
 pyo3-stub-gen = { version = "=0.20.0", default-features = false, features = [
   "rust_decimal",
 ] }
@@ -243,7 +244,7 @@ reqwest = { version = "0.13.4", default-features = false, features = [
   "stream",
 ] }
 rmp-serde = "1.3.1"
-rust_decimal = { version = "1.42.0", features = ["serde-with-float"] }
+rust_decimal = { version = "1.42.1", features = ["serde-with-float"] }
 rust_decimal_macros = "1.40.0"
 rustls = { version = "0.23.40", default-features = false, features = [
   "aws-lc-rs",
@@ -357,7 +358,7 @@ tonic = { version = "0.13.1", default-features = false, features = [
   "tls-aws-lc",
   "tls-webpki-roots",
 ] }
-zeroize = { version = "1.8.2", features = ["alloc", "zeroize_derive"] }
+zeroize = { version = "1.9.0", features = ["alloc", "zeroize_derive"] }
 
 # -----------------------------------------------------------------------------
 # Dev dependencies
@@ -390,6 +391,10 @@ turmoil = "0.7.2"
 capnpc = "0.25.3"
 cbindgen = "0.29.4"
 walkdir = "2.5.0"
+
+[patch.crates-io]
+# Keep the pinned pyo3-stub-gen buildable with PyO3 0.29 API and exception alias changes.
+pyo3-stub-gen = { path = "patches/pyo3-stub-gen" }
 
 # -----------------------------------------------------------------------------
 # Tools (for cargo install, used by Makefile and CI)

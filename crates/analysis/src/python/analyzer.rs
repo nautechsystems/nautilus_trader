@@ -88,6 +88,11 @@ impl PortfolioAnalyzer {
     }
 
     /// Gets all benchmark-relative return statistics for the primary returns.
+    ///
+    /// This is stateless: the `benchmark` series is supplied by the caller rather
+    /// than stored on the analyzer. Only statistics that override
+    /// `PortfolioStatistic.calculate_from_returns_with_benchmark` (the benchmark-relative
+    /// statistics) contribute values; all others return `None` and are skipped.
     #[pyo3(name = "get_performance_stats_returns_vs_benchmark")]
     fn py_get_performance_stats_returns_vs_benchmark(
         &self,

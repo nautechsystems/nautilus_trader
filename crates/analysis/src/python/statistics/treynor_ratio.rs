@@ -25,10 +25,22 @@ use crate::{statistic::PortfolioStatistic, statistics::treynor_ratio::TreynorRat
 impl TreynorRatio {
     /// Calculates the Treynor ratio of portfolio returns relative to a benchmark.
     ///
-    /// `Treynor = (annualized_return - rf_annual) / beta` where `annualized_return` is the
-    /// geometric (CAGR-style) annualization of the aligned strategy returns,
-    /// `rf_annual = (1 + rf)^period - 1`, and `beta` is the sample (`ddof = 1`) beta.
-    /// The period defaults to 252 and the per-period risk-free rate `rf` defaults to 0.0.
+    /// The Treynor ratio measures excess return per unit of systematic risk (beta):
+    ///
+    /// `Treynor = (annualized_return - rf_annual) / beta`
+    ///
+    /// The portfolio's annualized return is computed geometrically (CAGR-style) from the
+    /// aligned returns: `annualized_return = (prod(1 + r_i))^(period / n) - 1`. The
+    /// per-period risk-free rate is annualized geometrically as
+    /// `rf_annual = (1 + rf)^period - 1`. Beta is the sample (`ddof = 1`) beta of the
+    /// portfolio against the benchmark. The period defaults to 252 trading days and `rf`
+    /// defaults to 0.0.
+    ///
+    /// # References
+    ///
+    /// - Treynor, J. L. (1965). "How to Rate Management of Investment Funds".
+    ///   *Harvard Business Review*, 43(1), 63-75.
+    /// - CFA Institute Investment Foundations, 3rd Edition
     #[new]
     #[pyo3(signature = (period=None, risk_free_rate=None))]
     fn py_new(period: Option<usize>, risk_free_rate: Option<f64>) -> Self {
