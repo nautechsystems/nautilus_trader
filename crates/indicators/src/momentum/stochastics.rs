@@ -322,7 +322,7 @@ impl Stochastics {
         }
 
         // Handle division by zero (flat market)
-        #[allow(clippy::float_cmp, reason = "guards divide-by-zero on flat market")]
+        #[expect(clippy::float_cmp, reason = "guards divide-by-zero on flat market")]
         if k_max_high == k_min_low {
             return;
         }

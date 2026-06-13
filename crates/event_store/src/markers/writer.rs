@@ -155,7 +155,6 @@ mod imp {
         ///
         /// Returns [`EventStoreError::Backend`] when the backend has no open run or when the
         /// writer thread cannot be spawned.
-        #[allow(clippy::needless_pass_by_value)]
         pub fn spawn(
             backend: Box<dyn MarkerBackend + Send>,
             _clock: &'static AtomicTime,
@@ -456,7 +455,10 @@ mod imp {
         /// # Errors
         ///
         /// Returns [`EventStoreError::Backend`] when the backend has no open run.
-        #[allow(clippy::needless_pass_by_value)]
+        #[expect(
+            clippy::needless_pass_by_value,
+            reason = "synchronous writer keeps ownership of the marker backend"
+        )]
         pub fn spawn(
             backend: Box<dyn MarkerBackend + Send>,
             _clock: &'static AtomicTime,

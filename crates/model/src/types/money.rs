@@ -1395,7 +1395,10 @@ mod tests {
     #[case(42.0, true, "positive value")]
     #[case(0.0, false, "zero value")]
     #[case( -13.5,  false, "negative value")]
-    #[allow(clippy::used_underscore_binding)]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "rstest case name documents the parameterized input"
+    )]
     fn test_check_positive_money(
         #[case] amount: f64,
         #[case] should_succeed: bool,

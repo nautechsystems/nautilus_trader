@@ -3683,7 +3683,10 @@ impl DataActorCore {
     }
 
     /// Helper method for subscribing to option chain snapshots from the trait.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "subscription command mirrors the option chain request fields"
+    )]
     pub fn subscribe_option_chain(
         &mut self,
         topic: MStr<Topic>,

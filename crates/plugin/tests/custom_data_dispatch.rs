@@ -57,8 +57,6 @@ macro_rules! generated_slot {
     }};
 }
 
-// See note in hook_dispatch.rs on the `On`/method-name lint suppression.
-#[allow(clippy::enum_variant_names)]
 #[repr(usize)]
 #[derive(Clone, Copy, Debug)]
 enum CustomDataHook {

@@ -40,7 +40,10 @@ fn populate_string_map(builder: base_capnp::string_map::Builder<'_>, params: &Pa
 }
 
 /// Helper function to populate a `TradingCommandHeader` builder
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Cap'n Proto header builder needs each command header field"
+)]
 fn populate_trading_command_header(
     mut builder: trading_capnp::trading_command_header::Builder<'_>,
     trader_id: &TraderId,

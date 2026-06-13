@@ -50,7 +50,10 @@ impl LoggerConfig {
         fileout_sync_on_flush=None,
         buffered_stdout=None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "PyO3 constructor mirrors LoggerConfig keyword arguments"
+    )]
     fn py_new(
         stdout_level: Option<LogLevel>,
         fileout_level: Option<LogLevel>,

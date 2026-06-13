@@ -649,7 +649,10 @@ fn custom_data_to_json_thunk_propagates_failure(#[case] mode: Mode) {
 
 // `On` prefix mirrors the trait method names; clippy's
 // `enum_variant_names` would otherwise object to the shared prefix.
-#[allow(clippy::enum_variant_names)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "variants mirror actor hook method names"
+)]
 #[derive(Clone, Copy, Debug)]
 enum ActorThunkUnderTest {
     OnStart,
@@ -941,7 +944,10 @@ fn actor_thunk_propagates_failure(#[case] thunk: ActorThunkUnderTest, #[case] mo
 }
 
 // See note above on ActorThunkUnderTest regarding the `On` prefix lint.
-#[allow(clippy::enum_variant_names)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "variants mirror strategy hook method names"
+)]
 #[derive(Clone, Copy, Debug)]
 enum StrategyThunkUnderTest {
     OnStart,
@@ -1387,8 +1393,6 @@ fn strategy_thunk_propagates_failure(#[case] thunk: StrategyThunkUnderTest, #[ca
     assert_failure_code(&err, mode, PluginErrorCode::Panic, PluginErrorCode::Generic);
 }
 
-// See note above on ActorThunkUnderTest regarding the `On` prefix lint.
-#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Debug)]
 enum ControllerThunkUnderTest {
     Prepare,

@@ -2918,7 +2918,10 @@ fn continuous_future_transitions_params(
     }))
 }
 
-#[allow(clippy::type_complexity)]
+#[expect(
+    clippy::type_complexity,
+    reason = "test setup returns coupled engine, clock, and command recorder handles"
+)]
 fn register_continuous_future_subscription_engine(
     cache: Rc<RefCell<Cache>>,
     initial_ns: u64,

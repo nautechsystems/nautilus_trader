@@ -479,7 +479,6 @@ mod tests {
         );
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn make_init_with_optional_fields(
         order_type: OrderType,
         price: Option<Price>,

@@ -145,7 +145,6 @@ pub struct CloseAllPositionsCommand {
 
 impl CloseAllPositionsCommand {
     /// Creates a new [`CloseAllPositionsCommand`] instance.
-    #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub const fn new(
         instrument_id: InstrumentId,

@@ -79,7 +79,10 @@ pub struct EventStoreEntry {
 impl EventStoreEntry {
     /// Creates a new [`EventStoreEntry`] with all fields supplied by the writer.
     #[must_use]
-    #[allow(clippy::too_many_arguments)] // entry envelope fields per SPEC
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "entry constructor takes the full SPEC envelope"
+    )]
     pub fn new(
         entry_hash: EntryHash,
         seq: u64,

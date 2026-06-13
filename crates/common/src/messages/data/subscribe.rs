@@ -590,7 +590,10 @@ pub struct SubscribeOptionChain {
 
 impl SubscribeOptionChain {
     /// Creates a new [`SubscribeOptionChain`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "constructor exposes the option chain subscription fields"
+    )]
     pub fn new(
         series_id: OptionSeriesId,
         strike_range: StrikeRange,

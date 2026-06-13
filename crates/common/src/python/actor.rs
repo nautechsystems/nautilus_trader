@@ -1060,7 +1060,10 @@ impl PyDataActor {
 
     #[pyo3(name = "publish_signal")]
     #[pyo3(signature = (name, value, ts_event=0))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "PyO3 accepts an owned PyAny handle for Python signal values"
+    )]
     fn py_publish_signal(
         &self,
         py: Python<'_>,

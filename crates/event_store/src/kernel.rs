@@ -894,7 +894,10 @@ pub fn build_run_id(start_ts_init: UnixNanos) -> RunId {
 /// when the writer rejects the submit, [`BootError::RunStartedTimeout`] when the
 /// commit does not happen inside the configured ceiling, and [`BootError::HaltedDuringBoot`]
 /// when the writer fail-stops while waiting for the commit.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "run opening requires the boot context and event-store handles"
+)]
 pub fn open_run(
     config: &EventStoreConfig,
     instance_id: &str,
@@ -929,7 +932,10 @@ pub fn open_run(
 /// when the writer rejects the submit, [`BootError::RunStartedTimeout`] when the
 /// commit does not happen inside the configured ceiling, and [`BootError::HaltedDuringBoot`]
 /// when the writer fail-stops while waiting for the commit.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "run opening with options requires the boot context and lifecycle handles"
+)]
 pub fn open_run_with_options(
     config: &EventStoreConfig,
     instance_id: &str,
@@ -1322,7 +1328,10 @@ fn install_bus_tap(
 
 // Use fully qualified `EventStoreLifecycle::` to dispatch to the inherent methods;
 // `Self::` would resolve back into this trait impl and recurse.
-#[allow(clippy::use_self)]
+#[expect(
+    clippy::use_self,
+    reason = "Self would dispatch back into this trait impl"
+)]
 impl KernelEventStoreTrait for EventStoreLifecycle {
     fn restore_parent_cache(
         &mut self,

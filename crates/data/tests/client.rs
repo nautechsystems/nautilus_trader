@@ -1,4 +1,7 @@
-#![allow(clippy::redundant_clone)]
+#![expect(
+    clippy::redundant_clone,
+    reason = "test cases clone commands to assert ownership and recorder state"
+)]
 
 // -------------------------------------------------------------------------------------------------
 //  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.

@@ -498,12 +498,8 @@ impl WebSocketClientInner {
 
         // Each ProxiedStream variant carries a distinct concrete stream type,
         // so we monomorphize the handshake through `proxied_ws_handshake`
-        // rather than duplicating the body four times. The arms are
-        // syntactically identical post-deref, but each call instantiates a
-        // different generic; the `match_same_arms` lint is a false positive
-        // here. The futures are boxed because `client_async` produces a
-        // large state machine.
-        #[allow(clippy::match_same_arms)]
+        // rather than duplicating the body four times. The futures are boxed
+        // because `client_async` produces a large state machine.
         let transport: BoxedWsTransport = match stream {
             ProxiedStream::Plain(tcp) => Box::pin(proxied_ws_handshake(request, tcp)).await?,
             ProxiedStream::PlainOverTlsProxy(s) => {
@@ -2234,8 +2230,6 @@ mod tests {
                         .unwrap();
 
                     task::spawn(async move {
-                        // Inner if consumes `msg`, cannot hoist into a match guard
-                        #[allow(clippy::collapsible_match)]
                         while let Some(Ok(msg)) = websocket.next().await {
                             match msg {
                                 WsMessage::Text(txt) if txt == "close-now" => {
@@ -4730,8 +4724,6 @@ mod rust_tests {
                 && let Ok(mut ws) = accept_async(stream).await
             {
                 while let Some(Ok(msg)) = ws.next().await {
-                    // Inner if consumes `msg`, cannot hoist into a match guard
-                    #[allow(clippy::collapsible_match)]
                     match msg {
                         WsMessage::Text(_) | WsMessage::Binary(_) => {
                             if ws.send(msg).await.is_err() {

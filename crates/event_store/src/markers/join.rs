@@ -247,16 +247,16 @@ mod tests {
         assert_eq!(joined.len(), 3);
         assert_join(
             &joined[0],
-            quote,
-            cursor(0, 2_000, 2),
+            &quote,
+            &cursor(0, 2_000, 2),
             &["quotes", "quotes"],
             false,
         );
-        assert_join(&joined[1], trade, cursor(1, 3_000, 1), &["trades"], false);
+        assert_join(&joined[1], &trade, &cursor(1, 3_000, 1), &["trades"], false);
         assert_join(
             &joined[2],
-            bar,
-            cursor(2, 4_000, 2),
+            &bar,
+            &cursor(2, 4_000, 2),
             &["bars", "bars"],
             false,
         );
@@ -284,8 +284,8 @@ mod tests {
         assert_eq!(joined.len(), 1);
         assert_join(
             &joined[0],
-            quote,
-            cursor(0, 2_000, 3),
+            &quote,
+            &cursor(0, 2_000, 3),
             &["quotes", "quotes"],
             true,
         );
@@ -313,8 +313,8 @@ mod tests {
         assert_eq!(joined.len(), 1);
         assert_join(
             &joined[0],
-            quote,
-            cursor(0, 2_000, 2),
+            &quote,
+            &cursor(0, 2_000, 2),
             &["quotes", "quotes"],
             true,
         );
@@ -342,7 +342,7 @@ mod tests {
         let joined = join_at_entry(&reader, &mut catalog, 5).expect("join");
 
         assert_eq!(joined.len(), 1);
-        assert_join(&joined[0], order_book, cursor(0, 2_000, 3), &[], false);
+        assert_join(&joined[0], &order_book, &cursor(0, 2_000, 3), &[], false);
         assert!(catalog.plan_queries.is_empty());
         assert!(catalog.load_plans.is_empty());
     }
@@ -359,7 +359,7 @@ mod tests {
         let joined = join_at_entry(&reader, &mut catalog, 5).expect("join");
 
         assert_eq!(joined.len(), 1);
-        assert_join(&joined[0], quote, cursor(0, 2_000, 2), &[], true);
+        assert_join(&joined[0], &quote, &cursor(0, 2_000, 2), &[], true);
         assert_eq!(
             catalog.plan_queries,
             vec![query("quotes", "AUD/USD.SIM", 2_000)],
@@ -635,13 +635,13 @@ mod tests {
 
     fn assert_join(
         joined: &JoinedStream,
-        entry: StreamDictEntry,
-        cursor: StreamCursor,
+        entry: &StreamDictEntry,
+        cursor: &StreamCursor,
         data_classes: &[&str],
         candidate: bool,
     ) {
-        assert_eq!(joined.entry, entry);
-        assert_eq!(joined.cursor, cursor);
+        assert_eq!(&joined.entry, entry);
+        assert_eq!(&joined.cursor, cursor);
         assert_eq!(
             joined
                 .records

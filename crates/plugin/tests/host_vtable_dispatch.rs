@@ -67,7 +67,6 @@ use rstest::rstest;
 
 // One variant per callable [`HostVTable`] slot. Indexed into the per-hook
 // counter and last-context arrays.
-#[allow(clippy::enum_variant_names)]
 #[repr(usize)]
 #[derive(Clone, Copy, Debug)]
 enum HostHook {

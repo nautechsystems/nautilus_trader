@@ -94,7 +94,10 @@ macro_rules! generated_slot {
 
 // The `On` prefix mirrors the trait method names; clippy's
 // `enum_variant_names` would otherwise object to the shared prefix.
-#[allow(clippy::enum_variant_names)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "variants mirror actor hook method names"
+)]
 #[repr(usize)]
 #[derive(Clone, Copy, Debug)]
 enum ActorHook {
@@ -361,7 +364,10 @@ impl PluginActor for HookCountingActor {
 }
 
 // See note above on ActorHook regarding the `On` prefix lint.
-#[allow(clippy::enum_variant_names)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "variants mirror strategy hook method names"
+)]
 #[repr(usize)]
 #[derive(Clone, Copy, Debug)]
 enum StrategyHook {
@@ -727,7 +733,10 @@ impl PluginStrategy for HookCountingStrategy {
 }
 
 // See note above on ActorHook regarding the `On` prefix lint.
-#[allow(clippy::enum_variant_names)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "variants mirror controller hook method names"
+)]
 #[repr(usize)]
 #[derive(Clone, Copy, Debug)]
 enum ControllerHook {
