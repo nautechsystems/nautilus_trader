@@ -80,7 +80,7 @@ use nautilus_model::{
 };
 use nautilus_network::{
     http::{HttpClient, Method, USER_AGENT},
-    ratelimiter::quota::Quota,
+    ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
     retry::{RetryConfig, RetryManager},
 };
 use rust_decimal::Decimal;
@@ -135,6 +135,17 @@ fn bar_type_to_resolution(bar_type: &BarType) -> anyhow::Result<DydxCandleResolu
 pub static DYDX_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
     Quota::per_second(NonZeroU32::new(9).expect("non-zero")).expect("valid constant")
 });
+
+/// Process-global rate limiter for the dYdX Indexer REST API.
+///
+/// Shared across every [`DydxRawHttpClient`] (and therefore every
+/// [`DydxHttpClient`]) constructed in the process, so the data client and
+/// execution client draw from the same 9 req/s bucket instead of one each.
+/// dYdX mainnet vs testnet are treated as a single bucket here — at worst
+/// slightly over-conservative if both networks ran in the same process, which
+/// they never do in practice.
+pub static DYDX_REST_RATE_LIMITER: LazyLock<Arc<RateLimiter<Ustr, MonotonicClock>>> =
+    LazyLock::new(|| Arc::new(RateLimiter::new_with_quota(Some(*DYDX_REST_QUOTA), vec![])));
 
 static DYDX_RATE_LIMIT_KEY: LazyLock<Ustr> = LazyLock::new(|| Ustr::from("dydx:rest"));
 
@@ -221,13 +232,12 @@ impl DydxRawHttpClient {
         let mut headers = HashMap::new();
         headers.insert(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
 
-        let client = HttpClient::new(
+        let client = HttpClient::new_with_rate_limiter(
             headers,
-            vec![], // No specific headers to extract from responses
-            vec![], // No keyed quotas (we use a single global quota)
-            Some(*DYDX_REST_QUOTA),
+            vec![],
             Some(timeout_secs),
             proxy_url,
+            Arc::clone(&DYDX_REST_RATE_LIMITER),
         )
         .map_err(|e| {
             DydxHttpError::ValidationError(format!("Failed to create HTTP client: {e}"))
