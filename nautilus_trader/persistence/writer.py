@@ -139,6 +139,7 @@ class StreamingFeatherWriter:
             "quote_tick",
             "trade_tick",
             "funding_rate_update",
+            "mark_price_update",
             "option_greeks",
         }
         self.rotation_mode = rotation_mode
