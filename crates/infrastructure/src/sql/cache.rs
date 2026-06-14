@@ -182,8 +182,6 @@ async fn handle_query(
         return ControlFlow::Break(());
     };
 
-    log::debug!("Received {msg:?}");
-
     if matches!(msg, DatabaseQuery::Close) {
         if !buffer.is_empty() {
             drain_buffer(pool, buffer).await;

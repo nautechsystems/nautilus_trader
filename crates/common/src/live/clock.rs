@@ -25,8 +25,7 @@ use std::{
 
 use futures::Stream;
 use nautilus_core::{
-    AtomicTime, UnixNanos, consts::NAUTILUS_PREFIX, correctness::check_predicate_true,
-    time::get_atomic_clock_realtime,
+    AtomicTime, UnixNanos, correctness::check_predicate_true, time::get_atomic_clock_realtime,
 };
 use ustr::Ustr;
 
@@ -305,13 +304,9 @@ impl Stream for TimeEventStream {
     type Item = TimeEvent;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut heap = match self.heap.try_lock() {
-            Ok(guard) => guard,
-            Err(e) => {
-                eprintln!("{NAUTILUS_PREFIX} Unable to get LiveClock heap lock: {e}");
-                cx.waker().wake_by_ref();
-                return Poll::Pending;
-            }
+        let Ok(mut heap) = self.heap.try_lock() else {
+            cx.waker().wake_by_ref();
+            return Poll::Pending;
         };
 
         if let Some(event) = heap.pop() {

@@ -1214,7 +1214,6 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the SQL INSERT operation fails.
     pub async fn add_bar(pool: &PgPool, bar: &Bar) -> anyhow::Result<()> {
-        println!("Adding bar: {bar:?}");
         let bar_step = i32::try_from(bar.bar_type.spec().step.get())
             .map_err(|e| anyhow::anyhow!("invalid bar step: {e}"))?;
 
