@@ -15,20 +15,54 @@
 
 use std::{
     collections::HashMap,
+    error::Error,
     hash::{Hash, Hasher},
 };
 
 use derive_builder::Builder;
-use nautilus_core::{UnixNanos, correctness::FAILED};
+use nautilus_core::{
+    UnixNanos,
+    correctness::{CorrectnessError, FAILED},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    expressions::{Bindings, CompiledExpression, compile_numeric},
+    expressions::{Bindings, CompiledExpression, ExpressionError, compile_numeric},
     identifiers::{InstrumentId, Symbol, Venue},
     types::Price,
 };
 
 const MAX_INLINE_COMPONENTS: usize = 8;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SyntheticInstrumentError {
+    #[error("{0}")]
+    Validation(#[from] CorrectnessError),
+    #[error("{source}")]
+    Expression {
+        #[source]
+        source: Box<dyn Error + Send + Sync + 'static>,
+    },
+    #[error("Missing price for component: {component_name}")]
+    MissingInput { component_name: String },
+    #[error("Expected {expected} input values, received {actual}")]
+    InputCountMismatch { expected: usize, actual: usize },
+    #[error("Non-finite input price for component {component_name}: {value}")]
+    NonFiniteInput { component_name: String, value: f64 },
+    #[error("Formula result produced invalid price: {source}")]
+    InvalidPriceResult {
+        #[source]
+        source: CorrectnessError,
+    },
+}
+
+impl SyntheticInstrumentError {
+    fn expression(source: ExpressionError) -> Self {
+        Self::Expression {
+            source: Box::new(source),
+        }
+    }
+}
 
 /// Represents a synthetic instrument with prices derived from component instruments using a
 /// formula.
@@ -122,7 +156,7 @@ impl SyntheticInstrument {
     ///
     /// # Errors
     ///
-    /// Returns an error if any input validation fails.
+    /// Returns an error if input validation or formula compilation fails.
     ///
     /// # Notes
     ///
@@ -134,7 +168,7 @@ impl SyntheticInstrument {
         formula: &str,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, SyntheticInstrumentError> {
         let price_increment =
             Price::new_checked(10f64.powi(-i32::from(price_precision)), price_precision)?;
         let component_names = component_names_from_components(&components);
@@ -182,7 +216,7 @@ impl SyntheticInstrument {
             ts_event,
             ts_init,
         )
-        .expect(FAILED)
+        .unwrap_or_else(|e| panic!("{FAILED}: {e}"))
     }
 
     /// Returns whether the given formula compiles against this instrument's components.
@@ -196,7 +230,7 @@ impl SyntheticInstrument {
     /// # Errors
     ///
     /// Returns an error if parsing the new formula fails.
-    pub fn change_formula(&mut self, formula: &str) -> anyhow::Result<()> {
+    pub fn change_formula(&mut self, formula: &str) -> Result<(), SyntheticInstrumentError> {
         let compiled_formula = compile_formula(formula, &self.component_names)?;
         self.formula = formula.to_string();
         self.compiled_formula = compiled_formula;
@@ -209,26 +243,32 @@ impl SyntheticInstrument {
     ///
     /// Returns an error if formula evaluation fails or a required component price is missing from
     /// the input map.
-    pub fn calculate_from_map(&self, inputs: &HashMap<String, f64>) -> anyhow::Result<Price> {
+    pub fn calculate_from_map(
+        &self,
+        inputs: &HashMap<String, f64>,
+    ) -> Result<Price, SyntheticInstrumentError> {
         let n = self.component_names.len();
         let mut buf = [0.0_f64; MAX_INLINE_COMPONENTS];
         let input_values: &[f64] = if n <= MAX_INLINE_COMPONENTS {
             for (i, component_name) in self.component_names.iter().enumerate() {
                 buf[i] = *inputs.get(component_name).ok_or_else(|| {
-                    anyhow::anyhow!("Missing price for component: {component_name}")
+                    SyntheticInstrumentError::MissingInput {
+                        component_name: component_name.clone(),
+                    }
                 })?;
             }
             &buf[..n]
         } else {
             // Fallback for large component sets
-            let v: std::result::Result<Vec<f64>, _> = self
+            let v: Result<Vec<f64>, _> = self
                 .component_names
                 .iter()
                 .map(|name| {
-                    inputs
-                        .get(name)
-                        .copied()
-                        .ok_or_else(|| anyhow::anyhow!("Missing price for component: {name}"))
+                    inputs.get(name).copied().ok_or_else(|| {
+                        SyntheticInstrumentError::MissingInput {
+                            component_name: name.clone(),
+                        }
+                    })
                 })
                 .collect();
             return self.calculate(&v?);
@@ -244,27 +284,29 @@ impl SyntheticInstrument {
     ///
     /// Returns an error if the input length does not match, any input is non-finite, or formula
     /// evaluation fails.
-    pub fn calculate(&self, inputs: &[f64]) -> anyhow::Result<Price> {
+    pub fn calculate(&self, inputs: &[f64]) -> Result<Price, SyntheticInstrumentError> {
         if inputs.len() != self.component_names.len() {
-            anyhow::bail!(
-                "Expected {} input values, received {}",
-                self.component_names.len(),
-                inputs.len(),
-            );
+            return Err(SyntheticInstrumentError::InputCountMismatch {
+                expected: self.component_names.len(),
+                actual: inputs.len(),
+            });
         }
 
         for (i, value) in inputs.iter().enumerate() {
             if !value.is_finite() {
-                anyhow::bail!(
-                    "Non-finite input price for component {}: {value}",
-                    self.component_names[i],
-                );
+                return Err(SyntheticInstrumentError::NonFiniteInput {
+                    component_name: self.component_names[i].clone(),
+                    value: *value,
+                });
             }
         }
 
-        let price = self.compiled_formula.eval_number(inputs)?;
+        let price = self
+            .compiled_formula
+            .eval_number(inputs)
+            .map_err(SyntheticInstrumentError::expression)?;
         Price::new_checked(price, self.price_precision)
-            .map_err(|e| anyhow::anyhow!("Formula result produced invalid price: {e}"))
+            .map_err(|source| SyntheticInstrumentError::InvalidPriceResult { source })
     }
 }
 
@@ -275,11 +317,13 @@ fn component_names_from_components(components: &[InstrumentId]) -> Vec<String> {
 /// # Errors
 ///
 /// Returns an error if primary component names collide.
-fn build_bindings(component_names: &[String]) -> anyhow::Result<Bindings> {
+fn build_bindings(component_names: &[String]) -> Result<Bindings, SyntheticInstrumentError> {
     let mut bindings = Bindings::new();
 
     for (slot, component_name) in component_names.iter().enumerate() {
-        bindings.add(slot, component_name)?;
+        bindings
+            .add(slot, component_name)
+            .map_err(SyntheticInstrumentError::expression)?;
     }
 
     for (slot, component_name) in component_names.iter().enumerate() {
@@ -300,9 +344,9 @@ fn build_bindings(component_names: &[String]) -> anyhow::Result<Bindings> {
 fn compile_formula(
     formula: &str,
     component_names: &[String],
-) -> anyhow::Result<CompiledExpression> {
+) -> Result<CompiledExpression, SyntheticInstrumentError> {
     let bindings = build_bindings(component_names)?;
-    Ok(compile_numeric(formula, &bindings)?)
+    compile_numeric(formula, &bindings).map_err(SyntheticInstrumentError::expression)
 }
 
 impl PartialEq<Self> for SyntheticInstrument {
@@ -326,6 +370,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::types::fixed::FIXED_PRECISION;
 
     #[rstest]
     fn test_calculate_from_map() {
@@ -434,6 +479,57 @@ mod tests {
     }
 
     #[rstest]
+    fn test_new_checked_rejects_unknown_formula_symbol_with_expression_error() {
+        let components = vec![
+            InstrumentId::from_str("BTC.BINANCE").unwrap(),
+            InstrumentId::from_str("LTC.BINANCE").unwrap(),
+        ];
+
+        let error = SyntheticInstrument::new_checked(
+            Symbol::from("BTC-LTC"),
+            2,
+            components,
+            "BTC.BINANCE + missing",
+            0.into(),
+            0.into(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            &error,
+            SyntheticInstrumentError::Expression { .. }
+        ));
+        assert_eq!(error.to_string(), "Unknown symbol `missing`");
+    }
+
+    #[rstest]
+    fn test_new_checked_rejects_invalid_precision_with_validation_error() {
+        let components = vec![
+            InstrumentId::from_str("BTC.BINANCE").unwrap(),
+            InstrumentId::from_str("LTC.BINANCE").unwrap(),
+        ];
+
+        let error = SyntheticInstrument::new_checked(
+            Symbol::from("BTC-LTC"),
+            FIXED_PRECISION + 1,
+            components,
+            "BTC.BINANCE + LTC.BINANCE",
+            0.into(),
+            0.into(),
+        )
+        .unwrap_err();
+
+        match &error {
+            SyntheticInstrumentError::Validation(CorrectnessError::PredicateViolation {
+                message,
+            }) => {
+                assert!(message.contains("precision"), "{message}");
+            }
+            _ => panic!("Expected validation error, received {error:?}"),
+        }
+    }
+
+    #[rstest]
     fn test_deserialize_rejects_unknown_formula_symbol() {
         let synth = SyntheticInstrument::default();
         let payload = serde_json::to_string(&synth).unwrap().replace(
@@ -454,12 +550,31 @@ mod tests {
         let synth = SyntheticInstrument::default();
         let error = synth.calculate(&[100.0]).unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("Expected 2 input values, received 1"),
-            "{error}",
-        );
+        match &error {
+            SyntheticInstrumentError::InputCountMismatch { expected, actual } => {
+                assert_eq!((*expected, *actual), (2, 1));
+            }
+            _ => panic!("Expected input count mismatch, received {error:?}"),
+        }
+        assert_eq!(error.to_string(), "Expected 2 input values, received 1");
+    }
+
+    #[rstest]
+    fn test_change_formula_rejects_invalid_formula_without_mutation() {
+        let mut synth = SyntheticInstrument::default();
+        let original_formula = synth.formula.clone();
+        let original_price = synth.calculate(&[100.0, 200.0]).unwrap();
+
+        let error = synth.change_formula("BTC.BINANCE + missing").unwrap_err();
+        let current_price = synth.calculate(&[100.0, 200.0]).unwrap();
+
+        assert!(matches!(
+            &error,
+            SyntheticInstrumentError::Expression { .. }
+        ));
+        assert_eq!(error.to_string(), "Unknown symbol `missing`");
+        assert_eq!(synth.formula, original_formula);
+        assert_eq!(current_price, original_price);
     }
 
     #[rstest]
@@ -470,11 +585,53 @@ mod tests {
 
         let error = synth.calculate_from_map(&inputs).unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("Missing price for component: LTC.BINANCE"),
-            "{error}",
+        match &error {
+            SyntheticInstrumentError::MissingInput { component_name } => {
+                assert_eq!(component_name, "LTC.BINANCE");
+            }
+            _ => panic!("Expected missing input, received {error:?}"),
+        }
+        assert_eq!(
+            error.to_string(),
+            "Missing price for component: LTC.BINANCE",
+        );
+    }
+
+    #[rstest]
+    fn test_calculate_from_map_fallback_rejects_missing_component() {
+        let count = MAX_INLINE_COMPONENTS + 2;
+        let components: Vec<InstrumentId> = (0..count)
+            .map(|i| InstrumentId::from(format!("C{i}.VENUE").as_str()))
+            .collect();
+        let terms: Vec<String> = components.iter().map(ToString::to_string).collect();
+        let formula = terms.join(" + ");
+        let missing_component = components.last().unwrap().to_string();
+
+        let synth = SyntheticInstrument::new(
+            Symbol::from("BIG"),
+            2,
+            components.clone(),
+            &formula,
+            0.into(),
+            0.into(),
+        );
+
+        let mut inputs = HashMap::new();
+        for component in components.iter().take(count - 1) {
+            inputs.insert(component.to_string(), 10.0);
+        }
+
+        let error = synth.calculate_from_map(&inputs).unwrap_err();
+
+        match &error {
+            SyntheticInstrumentError::MissingInput { component_name } => {
+                assert_eq!(component_name, &missing_component);
+            }
+            _ => panic!("Expected missing input, received {error:?}"),
+        }
+        assert_eq!(
+            error.to_string(),
+            format!("Missing price for component: {missing_component}"),
         );
     }
 
@@ -487,11 +644,17 @@ mod tests {
 
         let error = synth.calculate(&[100.0, 100.0]).unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("Formula result produced invalid price"),
-            "{error}",
+        match &error {
+            SyntheticInstrumentError::InvalidPriceResult {
+                source: CorrectnessError::InvalidValue { param, .. },
+            } => {
+                assert_eq!(param, "value");
+            }
+            _ => panic!("Expected invalid price result, received {error:?}"),
+        }
+        assert_eq!(
+            error.to_string(),
+            "Formula result produced invalid price: invalid f64 for 'value', was inf",
         );
     }
 
@@ -516,6 +679,12 @@ mod tests {
         let synth = SyntheticInstrument::default();
         let error = synth.calculate(&[a, b]).unwrap_err();
 
+        match &error {
+            SyntheticInstrumentError::NonFiniteInput { component_name, .. } => {
+                assert!(["BTC.BINANCE", "LTC.BINANCE"].contains(&component_name.as_str()));
+            }
+            _ => panic!("Expected non-finite input, received {error:?}"),
+        }
         assert!(error.to_string().contains(expected_msg), "{error}");
     }
 

@@ -27,6 +27,7 @@ Released on TBD (UTC).
 - Changed `CacheDatabaseAdapter::load_index_order_position` to return position IDs instead of positions (Rust)
 - Changed `PoolProfiler.price_sqrt_ratio_x96` to return `int` instead of `str`
 - Changed Redis cache account/order/position storage to event logs; clear old typed state (Rust)
+- Changed `SyntheticInstrument` fallible methods to return `SyntheticInstrumentError` instead of `anyhow::Error` (Rust)
 - Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)
 
 ### Security

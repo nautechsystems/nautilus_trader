@@ -73,7 +73,7 @@ pub use crate::instruments::{
     option_contract::OptionContract,
     option_spread::OptionSpread,
     perpetual_contract::PerpetualContract,
-    synthetic::SyntheticInstrument,
+    synthetic::{SyntheticInstrument, SyntheticInstrumentError},
     tick_scheme::{FixedTickScheme, TickScheme, TickSchemeRule, TieredTickScheme},
     tokenized_asset::TokenizedAsset,
 };
