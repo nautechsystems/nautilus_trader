@@ -1394,18 +1394,16 @@ impl KrakenFuturesHttpClient {
                         continue;
                     }
                     bars.push(bar);
-
-                    if let Some(limit_count) = limit
-                        && bars.len() >= limit_count as usize
-                    {
-                        return Ok(bars);
-                    }
                 }
                 Err(e) => {
                     log::warn!("Failed to parse futures bar: {e}");
                 }
             }
         }
+
+        // Kraken returns the page oldest-first; keep the most recent `limit`
+        // bars for count-only requests rather than the oldest (issue #4254).
+        crate::http::apply_bar_limit(&mut bars, start, limit);
 
         Ok(bars)
     }
