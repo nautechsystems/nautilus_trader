@@ -587,9 +587,7 @@ pub(crate) fn create_config_instance<'py>(
     let py_dict = PyDict::new(py);
 
     for (key, value) in config {
-        let json_str = serde_json::to_string(value)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize config value: {e}"))?;
-        let py_value = PyModule::import(py, "json")?.call_method("loads", (json_str,), None)?;
+        let py_value = config_value_to_py(py, key, value)?;
         py_dict.set_item(key, py_value)?;
     }
 
@@ -608,14 +606,7 @@ pub(crate) fn create_config_instance<'py>(
                 Ok(instance) => {
                     log::debug!("Created default config instance, setting attributes");
                     for (key, value) in config {
-                        let json_str = serde_json::to_string(value).map_err(|e| {
-                            anyhow::anyhow!("Failed to serialize config value: {e}")
-                        })?;
-                        let py_value = PyModule::import(py, "json")?.call_method(
-                            "loads",
-                            (json_str,),
-                            None,
-                        )?;
+                        let py_value = config_value_to_py(py, key, value)?;
 
                         if let Err(setattr_err) = instance.setattr(key, py_value) {
                             log::warn!("Failed to set attribute {key}: {setattr_err}");
@@ -643,4 +634,24 @@ pub(crate) fn create_config_instance<'py>(
     log::debug!("Created config instance: {config_instance:?}");
 
     Ok(Some(config_instance))
+}
+
+fn config_value_to_py<'py>(
+    py: Python<'py>,
+    key: &str,
+    value: &serde_json::Value,
+) -> anyhow::Result<Bound<'py, PyAny>> {
+    if key == "actor_id"
+        && let Some(actor_id) = value.as_str()
+    {
+        return Ok(ActorId::new_checked(actor_id)?
+            .into_pyobject(py)?
+            .into_any());
+    }
+
+    let json_str = serde_json::to_string(value)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize config value: {e}"))?;
+    Ok(PyModule::import(py, "json")?
+        .call_method("loads", (json_str,), None)?
+        .into_any())
 }

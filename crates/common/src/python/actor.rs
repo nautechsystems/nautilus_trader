@@ -67,8 +67,13 @@ use crate::{
 impl DataActorConfig {
     /// Common configuration for `DataActor` based components.
     #[new]
-    #[pyo3(signature = (actor_id=None, log_events=true, log_commands=true))]
-    fn py_new(actor_id: Option<ActorId>, log_events: bool, log_commands: bool) -> Self {
+    #[pyo3(signature = (actor_id=None, log_events=true, log_commands=true, **_kwargs))]
+    fn py_new(
+        actor_id: Option<ActorId>,
+        log_events: bool,
+        log_commands: bool,
+        _kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> Self {
         Self {
             actor_id,
             log_events,

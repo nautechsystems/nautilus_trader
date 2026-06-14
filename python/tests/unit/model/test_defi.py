@@ -119,6 +119,12 @@ def test_pool_event_types_construction():
         == "0x3333333333333333333333333333333333333333333333333333333333333333"
     )
     assert swap.sender == "0x0000000000000000000000000000000000000004"
+    assert swap.recipient == "0x0000000000000000000000000000000000000005"
+    assert swap.amount0 == "1"
+    assert swap.amount1 == "-2"
+    assert swap.sqrt_price_x96 == "79228162514264337593543950336"
+    assert swap.liquidity == "100"
+    assert swap.tick == 1
     assert swap.timestamp == 10
     assert swap.ts_event == 10
     assert swap.ts_init == 10

@@ -16,7 +16,10 @@
 use std::{num::ParseIntError, str::FromStr};
 
 use alloy::primitives::{Address, I256, U160, U256};
-use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
+use nautilus_core::{
+    UnixNanos,
+    datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
+};
 use nautilus_model::{
     defi::{
         PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap, SharedChain, SharedDex,
@@ -28,6 +31,8 @@ use nautilus_model::{
 use sqlx::{FromRow, Row, postgres::PgRow};
 
 const MAX_UNIX_SECONDS_TIMESTAMP: u64 = 9_999_999_999;
+const MAX_UNIX_MILLISECONDS_TIMESTAMP: u64 = MAX_UNIX_SECONDS_TIMESTAMP * 1_000 + 999;
+const MAX_UNIX_MICROSECONDS_TIMESTAMP: u64 = MAX_UNIX_SECONDS_TIMESTAMP * 1_000_000 + 999_999;
 
 /// A data transfer object that maps database rows to token data.
 ///
@@ -135,6 +140,14 @@ pub(crate) fn parse_cached_block_timestamp(value: &str) -> Result<UnixNanos, Par
     let timestamp = value.parse::<u64>()?;
     if timestamp <= MAX_UNIX_SECONDS_TIMESTAMP {
         return Ok(UnixNanos::from(timestamp * NANOSECONDS_IN_SECOND));
+    }
+
+    if timestamp <= MAX_UNIX_MILLISECONDS_TIMESTAMP {
+        return Ok(UnixNanos::from(timestamp * NANOSECONDS_IN_MILLISECOND));
+    }
+
+    if timestamp <= MAX_UNIX_MICROSECONDS_TIMESTAMP {
+        return Ok(UnixNanos::from(timestamp * NANOSECONDS_IN_MICROSECOND));
     }
 
     Ok(UnixNanos::from(timestamp))
@@ -438,7 +451,9 @@ pub fn transform_row_to_dex_pool_data(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::datetime::NANOSECONDS_IN_SECOND;
+    use nautilus_core::datetime::{
+        NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND,
+    };
     use rstest::rstest;
 
     use super::*;
@@ -446,6 +461,10 @@ mod tests {
     #[rstest]
     #[case("1700000000", 1_700_000_000 * NANOSECONDS_IN_SECOND)]
     #[case("9999999999", 9_999_999_999 * NANOSECONDS_IN_SECOND)]
+    #[case("1700000000123", 1_700_000_000_123 * NANOSECONDS_IN_MILLISECOND)]
+    #[case("9999999999999", 9_999_999_999_999 * NANOSECONDS_IN_MILLISECOND)]
+    #[case("1700000000123456", 1_700_000_000_123_456 * NANOSECONDS_IN_MICROSECOND)]
+    #[case("9999999999999999", 9_999_999_999_999_999 * NANOSECONDS_IN_MICROSECOND)]
     #[case("1700000000123456789", 1_700_000_000_123_456_789)]
     fn parse_cached_block_timestamp_returns_unix_nanos(#[case] value: &str, #[case] expected: u64) {
         let timestamp = parse_cached_block_timestamp(value).unwrap();

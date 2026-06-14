@@ -362,6 +362,42 @@ impl PoolSwap {
     }
 
     #[getter]
+    #[pyo3(name = "recipient")]
+    fn py_recipient(&self) -> String {
+        self.recipient.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "amount0")]
+    fn py_amount0(&self) -> String {
+        self.amount0.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "amount1")]
+    fn py_amount1(&self) -> String {
+        self.amount1.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "sqrt_price_x96")]
+    fn py_sqrt_price_x96(&self) -> String {
+        self.sqrt_price_x96.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "liquidity")]
+    fn py_liquidity(&self) -> String {
+        self.liquidity.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "tick")]
+    fn py_tick(&self) -> i32 {
+        self.tick
+    }
+
+    #[getter]
     #[pyo3(name = "timestamp")]
     fn py_timestamp(&self) -> u64 {
         self.ts_event.as_u64()

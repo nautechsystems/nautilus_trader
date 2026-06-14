@@ -313,6 +313,28 @@ def test_data_actor_overridden_typed_callbacks_receive_runtime_objects(
     assert call_args[0] is payload
 
 
+def test_data_actor_overridden_pool_swap_callback_exposes_raw_payload(
+    recording_actor,
+    sample_objects,
+):
+    payload = sample_objects["pool_swap"]
+
+    assert recording_actor.on_pool_swap(payload) is None
+
+    call_name, call_args = recording_actor.calls[-1]
+    assert call_name == "on_pool_swap"
+    assert call_args == (payload,)
+
+    swap = call_args[0]
+    assert swap is payload
+    assert swap.recipient == "0x0000000000000000000000000000000000000005"
+    assert swap.amount0 == "1"
+    assert swap.amount1 == "-2"
+    assert swap.sqrt_price_x96 == "79228162514264337593543950336"
+    assert swap.liquidity == "100"
+    assert swap.tick == 1
+
+
 @pytest.mark.parametrize(("method_name", "sample_name"), HISTORICAL_CALLBACKS)
 def test_data_actor_historical_callbacks_accept_runtime_objects(
     actor,

@@ -16,6 +16,7 @@
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.common import DataActor
+from nautilus_trader.common import DataActorConfig
 from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.model import Block
 from nautilus_trader.model import Blockchain
@@ -32,6 +33,30 @@ class DefiBlockActor(DataActor):
 
     def on_block(self, block):
         type(self).received_blocks.append(block.number)
+
+
+class RequiredConfigDefiBlockActorConfig(DataActorConfig):
+    def __init__(
+        self,
+        required_label: str,
+        actor_id=None,
+        log_events: bool = True,
+        log_commands: bool = True,
+    ):
+        self.actor_id = actor_id
+        self.log_events = log_events
+        self.log_commands = log_commands
+        self.required_label = required_label
+
+
+class RequiredConfigDefiBlockActor(DataActor):
+    received_actor_id: str | None = None
+    received_label: str | None = None
+
+    def __init__(self, config: RequiredConfigDefiBlockActorConfig):
+        super().__init__()
+        type(self).received_actor_id = str(config.actor_id)
+        type(self).received_label = config.required_label
 
 
 def test_defi_data_uses_model_timestamp_contract():
@@ -82,6 +107,30 @@ def test_backtest_engine_replays_defi_blocks_to_actor_subscription():
         assert engine.iteration == 2
         assert engine.backtest_start == 10
         assert engine.backtest_end == 20
+    finally:
+        engine.dispose()
+
+
+def test_backtest_engine_importable_actor_config_accepts_required_subclass_kwargs():
+    RequiredConfigDefiBlockActor.received_actor_id = None
+    RequiredConfigDefiBlockActor.received_label = None
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_actor_from_config(
+        ImportableActorConfig(
+            actor_path="tests.unit.backtest.test_backtest_engine_defi:RequiredConfigDefiBlockActor",
+            config_path=(
+                "tests.unit.backtest.test_backtest_engine_defi:RequiredConfigDefiBlockActorConfig"
+            ),
+            config={
+                "actor_id": "DEFI-CONFIG-ACTOR-001",
+                "required_label": "configured",
+            },
+        ),
+    )
+
+    try:
+        assert RequiredConfigDefiBlockActor.received_actor_id == "DEFI-CONFIG-ACTOR-001"
+        assert RequiredConfigDefiBlockActor.received_label == "configured"
     finally:
         engine.dispose()
 

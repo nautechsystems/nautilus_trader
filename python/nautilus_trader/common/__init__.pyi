@@ -120,9 +120,10 @@ class CustomData:
 class DataActorConfig:
     def __init__(
         self,
-        actor_id: model.ActorId | None = None,
-        log_events: bool = True,
-        log_commands: bool = True,
+        actor_id: model.ActorId | None,
+        log_events: bool,
+        log_commands: bool,
+        _kwargs: dict | None = ...,
     ) -> None: ...
 
 @typing.final
