@@ -65,7 +65,7 @@ use nautilus_model::{
     },
     instruments::InstrumentAny,
     orderbook::OrderBook,
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     position::Position,
     python::{
         data::option_chain::PyStrikeRange, instruments::instrument_any_to_pyobject,
@@ -1566,6 +1566,16 @@ impl PyStrategy {
             .map_err(to_pyruntime_err)
     }
 
+    /// Cancels the managed GTD expiry for the given order.
+    #[pyo3(name = "cancel_gtd_expiry")]
+    #[pyo3(signature = (order))]
+    fn py_cancel_gtd_expiry(&mut self, py: Python<'_>, order: Py<PyAny>) -> PyResult<()> {
+        let order = pyobject_to_order_any(py, order)?;
+
+        Strategy::cancel_gtd_expiry(self.inner_mut(), &order.client_order_id());
+        Ok(())
+    }
+
     #[pyo3(name = "cancel_orders")]
     #[pyo3(signature = (client_order_ids, client_id=None, params=None))]
     fn py_cancel_orders(
@@ -2855,7 +2865,7 @@ mod tests {
         },
         enums::{
             AggressorSide, BookType, GreeksConvention, InstrumentCloseType, MarketStatusAction,
-            OrderSide, OrderType, PositionSide,
+            OrderSide, OrderType, PositionSide, TimeInForce,
         },
         events::{
             OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
@@ -3550,6 +3560,58 @@ class TrackingStrategy:
                     .and_then(|params| params.get("routing_hint")),
                 Some(&Value::String("prefer_batch".to_string()))
             );
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_cancel_gtd_expiry_accepts_order() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let (_, mut rust_strategy) = create_registered_tracking_strategy(py);
+            let strategy_id = rust_strategy.strategy_id();
+            let client_order_id = ClientOrderId::from("O-PYO3-GTD-001");
+            let timer_name = format!("GTD-EXPIRY:{client_order_id}");
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(strategy_id)
+                .instrument_id(sample_instrument().id)
+                .client_order_id(client_order_id)
+                .quantity(Quantity::from(100_000))
+                .price(Price::from("1.00000"))
+                .time_in_force(TimeInForce::Gtd)
+                .expire_time(UnixNanos::from(1))
+                .build();
+            let py_order = order_any_to_pyobject(py, order).unwrap();
+
+            {
+                let mut clock = rust_strategy.inner_mut().core.clock();
+                clock
+                    .set_time_alert_ns(&timer_name, UnixNanos::from(1), None, None)
+                    .unwrap();
+            }
+            rust_strategy
+                .inner_mut()
+                .core
+                .gtd_timers
+                .insert(client_order_id, Ustr::from(&timer_name));
+
+            rust_strategy
+                .py_cancel_gtd_expiry(py, py_order)
+                .expect("cancel_gtd_expiry should accept Python order");
+
+            let clock_timer_exists = rust_strategy
+                .inner_mut()
+                .core
+                .clock()
+                .timer_names()
+                .contains(&timer_name.as_str());
+
+            assert!(
+                !rust_strategy
+                    .inner_mut()
+                    .has_gtd_expiry_timer(&client_order_id)
+            );
+            assert!(!clock_timer_exists);
         });
     }
 
