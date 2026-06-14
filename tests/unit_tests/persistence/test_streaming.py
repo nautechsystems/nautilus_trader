@@ -35,6 +35,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggregationSource
@@ -511,6 +512,51 @@ class TestPersistenceStreaming:
         # Verify feather files exist in subdirectories
         feather_files = list(self.catalog.fs.glob(f"{bar_dir}/**/*.feather"))
         assert len(feather_files) == 2  # One file per bar type
+
+    def test_feather_writer_mark_price_uses_per_instrument_path(
+        self,
+        catalog_betfair: ParquetDataCatalog,
+    ) -> None:
+        # Arrange
+        self.catalog = catalog_betfair
+        clock = TestClock()
+        cache = Cache()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        cache.add_instrument(instrument)
+
+        instance_id = "test_instance_mark_price"
+        writer = StreamingFeatherWriter(
+            path=f"{self.catalog.path}/backtest/{instance_id}",
+            cache=cache,
+            clock=clock,
+            fs_protocol="file",
+            include_types=[MarkPriceUpdate],
+        )
+        mark = MarkPriceUpdate(
+            instrument_id=instrument.id,
+            value=Price.from_str("1.00000"),
+            ts_event=1_000,
+            ts_init=1_000,
+        )
+
+        # Act
+        writer.write(mark)
+        writer.close()
+
+        # Assert
+        feather_files = list(
+            self.catalog.fs.glob(
+                f"{self.catalog.path}/backtest/{instance_id}/mark_price_update/**/*.feather",
+            ),
+        )
+        assert len(feather_files) == 1
+        assert "/mark_price_update/AUDUSD.SIM/" in feather_files[0]
+
+        with self.catalog.fs.open(feather_files[0], "rb") as f:
+            table = pa.ipc.open_stream(f).read_all()
+
+        assert table.schema.metadata is not None
+        assert table.schema.metadata[b"instrument_id"] == instrument.id.value.encode()
 
     def test_convert_stream_to_data_with_identifiers(
         self,
