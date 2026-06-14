@@ -30,6 +30,7 @@ run_hook() {
 
 expect_failure() {
   local case_dir="$1"
+  local pattern="$2"
 
   if run_hook "$case_dir"; then
     echo "Expected logging convention hook to fail in $case_dir"
@@ -37,7 +38,7 @@ expect_failure() {
     exit 1
   fi
 
-  rg -q "Direct stdout/stderr macro" "$case_dir/output.txt"
+  rg -q "$pattern" "$case_dir/output.txt"
 }
 
 expect_success() {
@@ -55,7 +56,7 @@ write_rs "$reject_direct_case/crates/common/src/lib.rs" \
   'pub fn direct_output() {' \
   '    println!("leak");' \
   '}'
-expect_failure "$reject_direct_case"
+expect_failure "$reject_direct_case" "Direct stdout/stderr macro"
 
 reject_after_string_case="$TMP_DIR/reject-output-after-string"
 write_rs "$reject_after_string_case/crates/common/src/lib.rs" \
@@ -65,7 +66,7 @@ write_rs "$reject_after_string_case/crates/common/src/lib.rs" \
   '        _ => {}' \
   '    }' \
   '}'
-expect_failure "$reject_after_string_case"
+expect_failure "$reject_after_string_case" "Direct stdout/stderr macro"
 
 reject_not_test_case="$TMP_DIR/reject-not-test-output"
 write_rs "$reject_not_test_case/crates/common/src/lib.rs" \
@@ -73,23 +74,92 @@ write_rs "$reject_not_test_case/crates/common/src/lib.rs" \
   'pub fn output_under_not_test() {' \
   '    print!("still production");' \
   '}'
-expect_failure "$reject_not_test_case"
+expect_failure "$reject_not_test_case" "Direct stdout/stderr macro"
+
+reject_direct_exit_case="$TMP_DIR/reject-direct-process-exit"
+write_rs "$reject_direct_exit_case/crates/common/src/lib.rs" \
+  'pub fn terminate() {' \
+  '    std::process::exit(1);' \
+  '}'
+expect_failure "$reject_direct_exit_case" "Process exit in production library code"
+
+reject_process_exit_case="$TMP_DIR/reject-process-module-exit"
+write_rs "$reject_process_exit_case/crates/common/src/lib.rs" \
+  'use std::process;' \
+  '' \
+  'pub fn terminate() {' \
+  '    process::exit(1);' \
+  '}'
+expect_failure "$reject_process_exit_case" "Process exit in production library code"
+
+reject_imported_exit_case="$TMP_DIR/reject-imported-process-exit"
+write_rs "$reject_imported_exit_case/crates/common/src/lib.rs" \
+  'use std::process::{' \
+  '    Command,' \
+  '    exit,' \
+  '};' \
+  '' \
+  'pub fn terminate() {' \
+  '    exit(1);' \
+  '}'
+expect_failure "$reject_imported_exit_case" "Process exit in production library code"
+
+reject_single_imported_exit_case="$TMP_DIR/reject-single-imported-process-exit"
+write_rs "$reject_single_imported_exit_case/crates/common/src/lib.rs" \
+  'use std::process::exit;' \
+  '' \
+  'pub fn terminate() {' \
+  '    exit(1);' \
+  '}'
+expect_failure "$reject_single_imported_exit_case" "Process exit in production library code"
+
+allow_method_exit_case="$TMP_DIR/allow-imported-method-exit"
+write_rs "$allow_method_exit_case/crates/common/src/lib.rs" \
+  'use std::process::exit;' \
+  '' \
+  'struct Handle;' \
+  '' \
+  'impl Handle {' \
+  '    fn exit(&self) {}' \
+  '}' \
+  '' \
+  'pub fn close(handle: Handle) {' \
+  '    handle.exit();' \
+  '}'
+expect_success "$allow_method_exit_case"
 
 allow_case="$TMP_DIR/allow-intentional-output"
 write_rs "$allow_case/crates/common/src/lib.rs" \
   'pub fn literal_text() {' \
   '    let _text = "println!(not a macro)";' \
+  '    let _exit_text = "std::process::exit(1)";' \
+  '    let exit = || ();' \
+  '    exit();' \
   '}' \
+  '' \
+  '// std::process::exit(1);' \
+  '' \
+  'use std::process::exit as process_exit;' \
   '' \
   '#[cfg(all(test, not(all(feature = "simulation", madsim))))]' \
   'mod output_cases {' \
   '    fn prints_in_tests() {' \
   '        println!("test output");' \
+  '        std::process::exit(1);' \
   '    }' \
+  '}'
+write_rs "$allow_case/crates/common/src/bin/tool.rs" \
+  'fn main() {' \
+  '    std::process::exit(0);' \
   '}'
 write_rs "$allow_case/crates/common/src/examples/demo.rs" \
   'pub fn example_output() {' \
   '    println!("example output");' \
+  '    std::process::exit(0);' \
+  '}'
+write_rs "$allow_case/crates/common/src/benches/demo.rs" \
+  'pub fn bench_tool() {' \
+  '    std::process::exit(0);' \
   '}'
 write_rs "$allow_case/crates/common/src/logging/writer.rs" \
   'pub fn fallback() {' \

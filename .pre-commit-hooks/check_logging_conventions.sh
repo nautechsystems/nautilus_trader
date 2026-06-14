@@ -9,6 +9,8 @@
 #    Use '// log-period-ok' comment on or within 3 lines above to allow exceptions
 # 3. Production library code must not write directly to stdout or stderr.
 #    Build scripts, bins, examples, benches, tests, CLI/adapters, and testkit code are out of scope.
+# 4. Production library code must not terminate the process with std::process::exit.
+#    Bins, examples, benches, tests, CLI/adapters, and testkit code are out of scope.
 
 set -euo pipefail
 
@@ -95,15 +97,15 @@ echo "Checking for direct stdout/stderr macros in production library code..."
 
 OUTPUT_VIOLATIONS=0
 
-PRODUCTION_OUTPUT_CRATES=(
+PRODUCTION_CODE_CRATES=(
   "analysis" "backtest" "common" "core" "cryptography" "data" "execution"
   "indicators" "infrastructure" "live" "model" "network" "persistence"
   "portfolio" "risk" "serialization" "system" "trading"
 )
 
-OUTPUT_GLOBS=()
-for c in "${PRODUCTION_OUTPUT_CRATES[@]}"; do
-  OUTPUT_GLOBS+=(--glob "crates/$c/src/**/*.rs")
+PRODUCTION_CODE_GLOBS=()
+for c in "${PRODUCTION_CODE_CRATES[@]}"; do
+  PRODUCTION_CODE_GLOBS+=(--glob "crates/$c/src/**/*.rs")
 done
 
 normalize_path() {
@@ -329,7 +331,7 @@ is_allowed_direct_output() {
 
 direct_output=$(rg -n --no-heading \
   '\b(e?println|e?print)!\s*\(' \
-  "${OUTPUT_GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${PRODUCTION_CODE_GLOBS[@]}" --type rust 2> /dev/null || true)
 
 if [[ -n "$direct_output" ]]; then
   while IFS=: read -r file line_num content; do
@@ -356,6 +358,160 @@ if [ $OUTPUT_VIOLATIONS -gt 0 ]; then
   echo
 else
   echo "✓ No direct stdout/stderr macros in production library code"
+fi
+
+echo "Checking for process exits in production library code..."
+
+PROCESS_EXIT_VIOLATIONS=0
+
+is_process_exit_allowed_path() {
+  local file
+  file=$(normalize_path "$1")
+  [[ "$file" =~ /bin/ ]] && return 0
+  [[ "$file" =~ /examples/ ]] && return 0
+  [[ "$file" =~ /benches/ ]] && return 0
+  [[ "$file" =~ /tests/ ]] && return 0
+  [[ "$file" =~ tests\.rs$ ]] && return 0
+  [[ "$file" =~ _test\.rs$ ]] && return 0
+  [[ "$file" =~ _tests\.rs$ ]] && return 0
+  [[ "$file" =~ /test_.*\.rs$ ]] && return 0
+  return 1
+}
+
+file_imports_std_process_exit() {
+  local file="$1"
+  local in_use_statement=false
+  local normalized
+  local use_statement=""
+
+  while IFS= read -r line; do
+    if echo "$line" | grep -qE '^\s*use\s+std::process::exit\s*(;|//|$)'; then
+      return 0
+    fi
+
+    if echo "$line" | grep -qE '^\s*use\s+std::process::\{'; then
+      in_use_statement=true
+      use_statement="$line"
+    elif [ "$in_use_statement" = true ]; then
+      use_statement="$use_statement $line"
+    fi
+
+    if [ "$in_use_statement" = true ] && echo "$use_statement" | grep -qE ';\s*$'; then
+      normalized=$(echo "$use_statement" | sed -e 's|//.*||g' -e 's/[[:space:]]\+/ /g')
+      if echo "$normalized" | grep -qE '(^|[,{[:space:]])exit[[:space:]]*([,};]|$)'; then
+        return 0
+      fi
+      in_use_statement=false
+      use_statement=""
+    fi
+  done < "$file"
+
+  return 1
+}
+
+line_has_process_exit_call() {
+  local content="$1"
+  local imported_exit="$2"
+
+  awk -v line="$content" -v imported_exit="$imported_exit" '
+    function is_ident_char(c) {
+      return c ~ /[[:alnum:]_]/
+    }
+    BEGIN {
+      for (i = 1; i <= length(line); i++) {
+        c = substr(line, i, 1)
+        pair = substr(line, i, 2)
+
+        if (in_string) {
+          if (escaped) {
+            escaped = 0
+          } else if (c == "\\") {
+            escaped = 1
+          } else if (c == "\"") {
+            in_string = 0
+          }
+          continue
+        }
+        if (in_char) {
+          if (escaped) {
+            escaped = 0
+          } else if (c == "\\") {
+            escaped = 1
+          } else if (c == sprintf("%c", 39)) {
+            in_char = 0
+          }
+          continue
+        }
+
+        if (pair == "//") {
+          exit 1
+        }
+        if (c == "\"") {
+          in_string = 1
+          continue
+        }
+        if (c == sprintf("%c", 39)) {
+          in_char = 1
+          continue
+        }
+
+        rest = substr(line, i)
+        previous = i == 1 ? "" : substr(line, i - 1, 1)
+
+        if (rest ~ /^std::process::exit[[:space:]]*\(/ || rest ~ /^process::exit[[:space:]]*\(/) {
+          if (!is_ident_char(previous) && previous != ":") {
+            exit 0
+          }
+        }
+
+        if (imported_exit == "1" && rest ~ /^exit[[:space:]]*\(/) {
+          prefix = substr(line, 1, i - 1)
+          if (prefix ~ /(^|[[:space:]])fn[[:space:]]+$/) {
+            continue
+          }
+          if (!is_ident_char(previous) && previous != "." && previous != ":") {
+            exit 0
+          }
+        }
+      }
+      exit 1
+    }
+  '
+}
+
+process_exit=$(rg -n --no-heading \
+  '\b(std::process::exit|process::exit|exit)\s*\(' \
+  "${PRODUCTION_CODE_GLOBS[@]}" --type rust 2> /dev/null || true)
+
+if [[ -n "$process_exit" ]]; then
+  while IFS=: read -r file line_num content; do
+    [[ -z "$file" ]] && continue
+
+    norm_file=$(normalize_path "$file")
+    is_process_exit_allowed_path "$norm_file" && continue
+    is_in_inline_test_module "$file" "$line_num" && continue
+    is_comment_line "$content" && continue
+
+    imported_exit=0
+    if file_imports_std_process_exit "$file"; then
+      imported_exit=1
+    fi
+    line_has_process_exit_call "$content" "$imported_exit" || continue
+
+    trimmed="${content#"${content%%[![:space:]]*}"}"
+    echo -e "${RED}Error:${NC} Process exit in production library code at $norm_file:$line_num"
+    echo "  Found: ${trimmed:0:100}"
+    echo "  Return errors instead of terminating the process from library code."
+    echo
+    PROCESS_EXIT_VIOLATIONS=$((PROCESS_EXIT_VIOLATIONS + 1))
+  done <<< "$process_exit"
+fi
+
+if [ $PROCESS_EXIT_VIOLATIONS -gt 0 ]; then
+  echo -e "${RED}Found $PROCESS_EXIT_VIOLATIONS process exit violation(s)${NC}"
+  echo
+else
+  echo "✓ No process exits in production library code"
 fi
 
 # Check for terminating periods in log messages
@@ -432,7 +588,10 @@ else
 fi
 
 # Exit with error if any violations found
-if [ $VIOLATIONS -gt 0 ] || [ $OUTPUT_VIOLATIONS -gt 0 ] || [ $PERIOD_VIOLATIONS -gt 0 ]; then
+if [ $VIOLATIONS -gt 0 ] ||
+  [ $OUTPUT_VIOLATIONS -gt 0 ] ||
+  [ $PROCESS_EXIT_VIOLATIONS -gt 0 ] ||
+  [ $PERIOD_VIOLATIONS -gt 0 ]; then
   exit 1
 fi
 

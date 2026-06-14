@@ -205,7 +205,7 @@ repos:
 
       - id: check-logging-conventions
         name: check logging conventions
-        description: Enforces logging conventions
+        description: Enforces logging and process termination conventions
         entry: bash .pre-commit-hooks/check_logging_conventions.sh
         language: system
         files: "\\.rs$"
