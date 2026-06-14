@@ -881,6 +881,157 @@ fn test_rust_write_trade_ticks() {
     assert!(!files.is_empty());
 }
 
+// Non-ASCII ids are stored percent-encoded on disk; queries must resolve the on-disk name.
+#[rstest]
+fn test_query_round_trip_non_ascii_instrument_id() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let id = InstrumentId::from("CAFÉ.SIM");
+    let trade = TradeTick::new(
+        id,
+        Price::new(1987.0, 1),
+        Quantity::new(0.1, 1),
+        AggressorSide::Buyer,
+        TradeId::from("123456"),
+        UnixNanos::from(0),
+        UnixNanos::from(1),
+    );
+    catalog
+        .write_to_parquet(vec![trade], None, None, None)
+        .unwrap();
+
+    let files = catalog.query_files("trades", None, None, None).unwrap();
+    assert_eq!(files.len(), 1);
+
+    let ids = Some(vec![id.to_string()]);
+
+    // Both directory-based (optimize=true) and per-file (optimize=false) registration
+    // must resolve the percent-encoded on-disk directory, with and without an id filter.
+    for optimize in [true, false] {
+        for identifiers in [None, ids.clone()] {
+            let ticks: Vec<TradeTick> = catalog
+                .query_typed_data(identifiers, None, None, None, None, optimize)
+                .unwrap();
+            assert_eq!(ticks.len(), 1, "optimize={optimize}");
+            assert_eq!(ticks[0].instrument_id, id);
+        }
+    }
+}
+
+// filter_files must match a non-ASCII id against the percent-encoded on-disk directory.
+#[rstest]
+fn test_filter_files_non_ascii_instrument_id() {
+    let (_temp_dir, catalog) = create_temp_catalog();
+
+    let id = InstrumentId::from("CAFÉ.SIM");
+    let trade = TradeTick::new(
+        id,
+        Price::new(1987.0, 1),
+        Quantity::new(0.1, 1),
+        AggressorSide::Buyer,
+        TradeId::from("123456"),
+        UnixNanos::from(0),
+        UnixNanos::from(1),
+    );
+    catalog
+        .write_to_parquet(vec![trade], None, None, None)
+        .unwrap();
+
+    let all_files = catalog.query_files("trades", None, None, None).unwrap();
+    let filtered = catalog
+        .filter_files("trades", all_files, Some(vec![id.to_string()]), None, None)
+        .unwrap();
+
+    assert_eq!(filtered.len(), 1);
+}
+
+// query_instruments_filtered must match a non-ASCII id against the percent-encoded directory.
+#[rstest]
+fn test_query_instruments_filtered_non_ascii_instrument_id() {
+    let (_temp_dir, catalog) = create_temp_catalog();
+
+    let instrument_id = InstrumentId::from("CAFÉ.SIM");
+    let currency_pair = CurrencyPair::new(
+        instrument_id,
+        Symbol::from("CAFÉ"),
+        Currency::from("AUD"),
+        Currency::from("USD"),
+        5,
+        0,
+        Price::new(0.00001, 5),
+        Quantity::new(1.0, 0),
+        None, // multiplier
+        None, // lot_size
+        None, // max_quantity
+        None, // min_quantity
+        None, // max_notional
+        None, // min_notional
+        None, // max_price
+        None, // min_price
+        None, // margin_init
+        None, // margin_maint
+        None, // maker_fee
+        None, // taker_fee
+        None, // info
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    catalog
+        .write_instruments(vec![InstrumentAny::CurrencyPair(currency_pair)])
+        .unwrap();
+
+    let ids = vec![instrument_id.to_string()];
+    let read = catalog.query_instruments(Some(&ids)).unwrap();
+
+    assert_eq!(read.len(), 1);
+    assert_eq!(Instrument::id(&read[0]), instrument_id);
+}
+
+// Bars match by partial (instrument-id) match against the percent-encoded bar-type
+// directory; a non-ASCII id must still resolve through that branch.
+#[rstest]
+fn test_query_bars_non_ascii_instrument_id_partial_match() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let instrument_id = InstrumentId::from("CAFÉ.SIM");
+    let bar_type = BarType::new(
+        instrument_id,
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid),
+        AggregationSource::External,
+    );
+    let bar = Bar::new(
+        bar_type,
+        Price::new(1.00001, 5),
+        Price::new(1.1, 1),
+        Price::new(1.00000, 5),
+        Price::new(1.00000, 5),
+        Quantity::new(100_000.0, 0),
+        UnixNanos::from(0),
+        UnixNanos::from(1),
+    );
+    catalog
+        .write_to_parquet(vec![bar], None, None, None)
+        .unwrap();
+
+    // Querying by the bare instrument id only matches via the bars partial-match
+    // branch, since the directory name is the full bar-type string.
+    let ids = vec![instrument_id.to_string()];
+
+    let all_files = catalog.query_files("bars", None, None, None).unwrap();
+    let filtered = catalog
+        .filter_files("bars", all_files, Some(ids.clone()), None, None)
+        .unwrap();
+    assert_eq!(filtered.len(), 1);
+
+    for optimize in [true, false] {
+        let bars: Vec<Bar> = catalog
+            .query_typed_data(Some(ids.clone()), None, None, None, None, optimize)
+            .unwrap();
+        assert_eq!(bars.len(), 1, "optimize={optimize}");
+        assert_eq!(bars[0].bar_type.instrument_id(), instrument_id);
+    }
+}
+
 #[rstest]
 fn test_rust_write_order_book_deltas() {
     let (_temp_dir, catalog) = create_temp_catalog();

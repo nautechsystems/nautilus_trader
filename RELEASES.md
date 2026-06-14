@@ -70,6 +70,7 @@ Released on TBD (UTC).
 - Fixed live external order claim registration in Rust
 - Fixed live reconciliation logging below-cached fill mismatches as errors, halting `shutdown_on_error` nodes (Rust)
 - Fixed live reconciliation logging transient venue report-query failures as errors (Rust)
+- Fixed local catalog queries and backtests for non-ASCII instrument IDs (#4259), thanks for reporting @seungpyoson
 - Fixed matching engine fill commission side in Rust
 - Fixed OKX instrument parsing for malformed venue payloads
 - Fixed portfolio account update scoping in Rust

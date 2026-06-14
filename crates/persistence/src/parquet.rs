@@ -671,6 +671,46 @@ pub(crate) fn file_uri_to_native_path(uri: &str) -> String {
     uri.strip_prefix("file://").unwrap_or(uri).to_string()
 }
 
+/// Appends an object-store-relative `path` onto a `file://` `base_uri`, percent-encoding
+/// each path segment.
+///
+/// The catalog records instrument directories under their object-store path form, which
+/// preserves any percent-encoding applied for the on-disk name: each non-ASCII byte in an
+/// instrument id becomes a `%XX` sequence, so the directory differs from the logical id.
+/// DataFusion percent-decodes the `ListingTableUrl` it is given, so the segments are encoded
+/// here for that decode to recover the literal on-disk name. Falls back to a plain join when
+/// `base_uri` does not parse.
+pub(crate) fn append_path_to_file_uri(base_uri: &str, path: &str) -> String {
+    if let Ok(mut url) = Url::parse(base_uri) {
+        if let Ok(mut segments) = url.path_segments_mut() {
+            segments.pop_if_empty();
+            segments.extend(
+                path.trim_end_matches('/')
+                    .split('/')
+                    .filter(|segment| !segment.is_empty()),
+            );
+        }
+        return url.to_string();
+    }
+
+    format!(
+        "{}/{}",
+        base_uri.trim_end_matches('/'),
+        path.trim_end_matches('/')
+    )
+}
+
+/// Decodes a percent-encoded `object_store` path segment back to its logical form.
+///
+/// `object_store` lists path segments in URL-encoded form, so a non-ASCII instrument
+/// directory reads back with each non-ASCII byte as a `%XX` sequence. Decoding recovers the
+/// original id for matching against `urisafe_instrument_id`. Returns the input unchanged when
+/// it is not valid percent-encoded UTF-8.
+pub(crate) fn decode_object_store_segment(segment: &str) -> String {
+    object_store::path::Path::from_url_path(segment)
+        .map_or_else(|_| segment.to_string(), String::from)
+}
+
 /// Helper function to create local file system object store
 fn create_local_store(
     uri: &str,

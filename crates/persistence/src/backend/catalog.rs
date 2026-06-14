@@ -120,7 +120,8 @@ use super::{
     session::{self, DataBackendSession, QueryResult, build_query},
 };
 use crate::parquet::{
-    is_remote_uri_scheme, read_parquet_from_object_store, remote_full_uri, remote_store_root_url,
+    append_path_to_file_uri, decode_object_store_segment, is_remote_uri_scheme,
+    read_parquet_from_object_store, remote_full_uri, remote_store_root_url,
     write_batches_to_object_store,
 };
 
@@ -907,13 +908,13 @@ impl ParquetDataCatalog {
                 continue;
             }
 
-            let instrument_id_dir = path_parts[path_parts.len() - 2];
+            let instrument_id_dir = decode_object_store_segment(path_parts[path_parts.len() - 2]);
 
             if let Some(ids) = instrument_ids
                 && !ids
                     .iter()
                     .map(|id| urisafe_instrument_id(id))
-                    .any(|x| x.as_str() == urisafe_instrument_id(instrument_id_dir))
+                    .any(|x| x.as_str() == urisafe_instrument_id(&instrument_id_dir))
             {
                 continue;
             }
@@ -1457,9 +1458,7 @@ impl ParquetDataCatalog {
         }
 
         if self.original_uri.starts_with("file://") {
-            let base = self.original_uri.trim_end_matches('/');
-            let path_trimmed = path.trim_end_matches('/');
-            return format!("{base}/{path_trimmed}");
+            return append_path_to_file_uri(&self.original_uri, path);
         }
         self.reconstruct_full_uri(path)
     }
@@ -2078,8 +2077,9 @@ impl ParquetDataCatalog {
                     // Extract the directory name (second to last path component)
                     let path_parts: Vec<&str> = file_path.split('/').collect();
                     if path_parts.len() >= 2 {
-                        let dir_name = path_parts[path_parts.len() - 2];
-                        safe_identifiers.iter().any(|safe_id| safe_id == dir_name)
+                        let dir_name =
+                            decode_object_store_segment(path_parts[path_parts.len() - 2]);
+                        safe_identifiers.contains(&dir_name)
                     } else {
                         false
                     }
@@ -2091,8 +2091,10 @@ impl ParquetDataCatalog {
                 file_paths.retain(|file_path| {
                     let path_parts: Vec<&str> = file_path.split('/').collect();
                     if path_parts.len() >= 2 {
-                        let dir_name = path_parts[path_parts.len() - 2];
-                        if let Some(bar_instrument_id) = extract_bar_type_instrument_id(dir_name) {
+                        let dir_name =
+                            decode_object_store_segment(path_parts[path_parts.len() - 2]);
+
+                        if let Some(bar_instrument_id) = extract_bar_type_instrument_id(&dir_name) {
                             safe_identifiers.iter().any(|id| id == bar_instrument_id)
                         } else {
                             false
@@ -2372,7 +2374,7 @@ impl ParquetDataCatalog {
                 .map(|file_path| {
                     let path_parts: Vec<&str> = file_path.split('/').collect();
                     if path_parts.len() >= 2 {
-                        path_parts[path_parts.len() - 2].to_string()
+                        decode_object_store_segment(path_parts[path_parts.len() - 2])
                     } else {
                         String::new()
                     }
@@ -2398,7 +2400,8 @@ impl ParquetDataCatalog {
                 filtered_paths.retain(|file_path| {
                     let path_parts: Vec<&str> = file_path.split('/').collect();
                     if path_parts.len() >= 2 {
-                        let dir_name = path_parts[path_parts.len() - 2];
+                        let dir_name =
+                            decode_object_store_segment(path_parts[path_parts.len() - 2]);
                         safe_identifiers
                             .iter()
                             .any(|safe_id| dir_name.starts_with(&format!("{safe_id}-")))
