@@ -259,7 +259,10 @@ impl KrakenSpotWebSocketClient {
             reconnect_backoff_factor: Some(1.5),
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
-            idle_timeout_ms: None,
+            // Treat a silent connection as dead so the reconnect + resubscribe
+            // path runs. `0` disables; see `ws_idle_timeout_ms` docs (issue #4255).
+            idle_timeout_ms: (self.config.ws_idle_timeout_ms != 0)
+                .then_some(self.config.ws_idle_timeout_ms),
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
         };
