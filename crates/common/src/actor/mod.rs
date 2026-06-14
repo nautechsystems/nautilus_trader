@@ -26,8 +26,7 @@ use std::{any::Any, fmt::Debug};
 use ustr::Ustr;
 
 pub mod data_actor;
-#[cfg(feature = "indicators")]
-pub(crate) mod indicators;
+pub mod indicators;
 pub mod registry;
 
 #[cfg(test)]

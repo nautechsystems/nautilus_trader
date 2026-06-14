@@ -55,6 +55,10 @@ const PLUGIN_STRATEGY_DEFERRED_CALLBACKS: &[&str] = &[
     // Generic historical data stays out of the vtable; registered plug-in
     // custom data reaches `on_data`.
     "on_historical_data",
+    // Aggregate order and position callbacks need plug-in-safe event handles;
+    // typed lifecycle callbacks already cross the boundary.
+    "on_order_event",
+    "on_position_event",
 ];
 
 const PLUGIN_STRATEGY_DEFERRED_EXECUTION_METHODS: &[&str] = &[
@@ -161,6 +165,12 @@ const PLUGIN_DATA_ACTOR_CORE_DEFERRED_METHODS: &[&str] = &[
     "request_trades",
     "request_bars",
     "request_funding_rates",
+    // Indicator handles need a plug-in-safe registration ABI
+    "registered_indicators",
+    "indicators_initialized",
+    "register_indicator_for_quote_ticks",
+    "register_indicator_for_trade_ticks",
+    "register_indicator_for_bars",
 ];
 
 const PLUGIN_DATA_ACTOR_CORE_HOST_OWNED_METHODS: &[&str] = &[

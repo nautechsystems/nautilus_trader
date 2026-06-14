@@ -31,6 +31,7 @@ pub mod custom;
 pub mod enums;
 pub mod fifo;
 pub mod greeks;
+pub mod indicators;
 pub mod listener;
 pub mod logging;
 pub mod msgbus;

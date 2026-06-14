@@ -36,7 +36,12 @@ use nautilus_common::{
     clock::Clock,
     component::{Component, with_component_registry},
     enums::ComponentState,
-    python::{cache::PyCache, clock::PyClock, logging::PyLogger},
+    python::{
+        cache::PyCache,
+        clock::PyClock,
+        indicators::{registered_python_indicators, wrap_python_indicator},
+        logging::PyLogger,
+    },
     signal::Signal,
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -77,7 +82,7 @@ use nautilus_model::{
 use nautilus_portfolio::{portfolio::Portfolio, python::PyPortfolio};
 use pyo3::{
     prelude::*,
-    types::{PyBytes, PyDict},
+    types::{PyBytes, PyDict, PyList},
 };
 use ustr::Ustr;
 
@@ -1499,6 +1504,59 @@ impl PyStrategy {
         Component::fault(self.inner_mut()).map_err(to_pyruntime_err)
     }
 
+    #[getter]
+    #[pyo3(name = "registered_indicators")]
+    fn py_registered_indicators(&self, py: Python<'_>) -> PyResult<Py<PyList>> {
+        registered_python_indicators(py, self.inner().core.registered_indicators())
+    }
+
+    #[pyo3(name = "indicators_initialized")]
+    fn py_indicators_initialized(&self, _py: Python<'_>) -> PyResult<bool> {
+        self.inner()
+            .core
+            .indicators_initialized()
+            .map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "register_indicator_for_quote_ticks")]
+    fn py_register_indicator_for_quote_ticks(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        indicator: Py<PyAny>,
+    ) {
+        let indicator = wrap_python_indicator(py, indicator);
+        self.inner_mut()
+            .core
+            .register_indicator_for_quote_ticks(instrument_id, indicator);
+    }
+
+    #[pyo3(name = "register_indicator_for_trade_ticks")]
+    fn py_register_indicator_for_trade_ticks(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        indicator: Py<PyAny>,
+    ) {
+        let indicator = wrap_python_indicator(py, indicator);
+        self.inner_mut()
+            .core
+            .register_indicator_for_trade_ticks(instrument_id, indicator);
+    }
+
+    #[pyo3(name = "register_indicator_for_bars")]
+    fn py_register_indicator_for_bars(
+        &mut self,
+        py: Python<'_>,
+        bar_type: BarType,
+        indicator: Py<PyAny>,
+    ) {
+        let indicator = wrap_python_indicator(py, indicator);
+        self.inner_mut()
+            .core
+            .register_indicator_for_bars(bar_type, indicator);
+    }
+
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (order, position_id=None, client_id=None, params=None))]
     fn py_submit_order(
@@ -2887,7 +2945,11 @@ mod tests {
         actor::DataActor,
         cache::Cache,
         clock::{Clock, TestClock},
-        messages::execution::TradingCommand,
+        component::Component,
+        messages::{
+            data::{BarsResponse, QuotesResponse, TradesResponse},
+            execution::TradingCommand,
+        },
         msgbus::{
             self, MessagingSwitchboard,
             stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
@@ -2917,8 +2979,8 @@ mod tests {
             order::spec::OrderFilledSpec,
         },
         identifiers::{
-            AccountId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId,
-            TradeId, TraderId, Venue,
+            AccountId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId,
+            StrategyId, TradeId, TraderId, Venue,
         },
         instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
         orderbook::OrderBook,
@@ -2928,7 +2990,7 @@ mod tests {
     };
     use nautilus_portfolio::portfolio::Portfolio;
     use pyo3::{
-        Py, PyAny, PyResult, Python,
+        Bound, Py, PyAny, PyResult, Python,
         ffi::c_str,
         types::{PyAnyMethods, PyBytes, PyDict, PyList},
     };
@@ -3075,6 +3137,85 @@ class TrackingStrategy:
             .call_method0(py, "last_loaded_state")
             .and_then(|result| result.extract::<Option<HashMap<String, Vec<u8>>>>(py))
             .unwrap_or(None)
+    }
+
+    const TRACKING_INDICATOR_CODE: &std::ffi::CStr = c_str!(
+        r#"
+class TrackingIndicator:
+    def __init__(self, events=None):
+        self.initialized = False
+        self.calls = []
+        self.events = events
+
+    def handle_quote_tick(self, quote):
+        self.calls.append("quote")
+        if self.events is not None:
+            self.events.append("indicator:quote")
+
+    def handle_trade_tick(self, trade):
+        self.calls.append("trade")
+        if self.events is not None:
+            self.events.append("indicator:trade")
+
+    def handle_bar(self, bar):
+        self.calls.append("bar")
+        if self.events is not None:
+            self.events.append("indicator:bar")
+
+    def call_count(self, name):
+        return self.calls.count(name)
+
+class IndicatorEventStrategy:
+    def __init__(self, events):
+        self.events = events
+
+    def on_start(self):
+        pass
+
+    def on_quote(self, quote):
+        self.events.append("strategy:quote")
+
+    def on_trade(self, trade):
+        self.events.append("strategy:trade")
+
+    def on_bar(self, bar):
+        self.events.append("strategy:bar")
+"#
+    );
+
+    fn create_tracking_python_indicator(py: Python<'_>) -> PyResult<Py<PyAny>> {
+        py.run(TRACKING_INDICATOR_CODE, None, None)?;
+        let indicator_class = py.eval(c_str!("TrackingIndicator"), None, None)?;
+        Ok(indicator_class.call0()?.unbind())
+    }
+
+    fn create_event_tracking_python_indicator(
+        py: Python<'_>,
+        events: &Bound<'_, PyList>,
+    ) -> PyResult<Py<PyAny>> {
+        py.run(TRACKING_INDICATOR_CODE, None, None)?;
+        let indicator_class = py.eval(c_str!("TrackingIndicator"), None, None)?;
+        Ok(indicator_class.call1((events,))?.unbind())
+    }
+
+    fn create_indicator_event_strategy(
+        py: Python<'_>,
+        events: &Bound<'_, PyList>,
+    ) -> PyResult<Py<PyAny>> {
+        py.run(TRACKING_INDICATOR_CODE, None, None)?;
+        let strategy_class = py.eval(c_str!("IndicatorEventStrategy"), None, None)?;
+        Ok(strategy_class.call1((events,))?.unbind())
+    }
+
+    fn python_indicator_call_count(
+        indicator: &Py<PyAny>,
+        py: Python<'_>,
+        method_name: &str,
+    ) -> i32 {
+        indicator
+            .call_method1(py, "call_count", (method_name,))
+            .and_then(|result| result.extract::<i32>(py))
+            .unwrap_or(0)
     }
 
     fn sample_instrument() -> CurrencyPair {
@@ -3393,6 +3534,193 @@ class TrackingStrategy:
 
             assert!(strategy.hasattr("on_order_event").unwrap());
             assert!(strategy.hasattr("on_position_event").unwrap());
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_indicator_registration_exposes_readiness_and_registered_view() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let mut rust_strategy = PyStrategy::new(None);
+            let indicator = create_tracking_python_indicator(py).unwrap();
+            let instrument_id = sample_instrument().id;
+            let bar_type = sample_bar().bar_type;
+
+            assert_eq!(
+                rust_strategy
+                    .py_registered_indicators(py)
+                    .unwrap()
+                    .bind(py)
+                    .len()
+                    .unwrap(),
+                0
+            );
+            assert!(!rust_strategy.py_indicators_initialized(py).unwrap());
+
+            rust_strategy.py_register_indicator_for_quote_ticks(
+                py,
+                instrument_id,
+                indicator.clone_ref(py),
+            );
+            rust_strategy.py_register_indicator_for_trade_ticks(
+                py,
+                instrument_id,
+                indicator.clone_ref(py),
+            );
+            rust_strategy.py_register_indicator_for_bars(py, bar_type, indicator.clone_ref(py));
+
+            let registered = rust_strategy.py_registered_indicators(py).unwrap();
+            let registered = registered.bind(py);
+
+            assert_eq!(registered.len().unwrap(), 1);
+            assert_eq!(
+                registered.get_item(0).unwrap().as_ptr(),
+                indicator.bind(py).as_ptr()
+            );
+            assert!(!rust_strategy.py_indicators_initialized(py).unwrap());
+
+            indicator.bind(py).setattr("initialized", true).unwrap();
+
+            assert!(rust_strategy.py_indicators_initialized(py).unwrap());
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_registered_indicators_receive_quote_trade_and_bar_before_strategy_callbacks() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let events = PyList::empty(py);
+            let py_strategy = create_indicator_event_strategy(py, &events).unwrap();
+            let indicator = create_event_tracking_python_indicator(py, &events).unwrap();
+
+            let mut rust_strategy = PyStrategy::new(None);
+            rust_strategy.set_python_instance(py_strategy.clone_ref(py));
+
+            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+            let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+            let portfolio = Rc::new(RefCell::new(Portfolio::new(
+                cache.clone(),
+                clock.clone(),
+                None,
+            )));
+
+            rust_strategy
+                .register(TraderId::from("TRADER-001"), clock, cache, portfolio)
+                .unwrap();
+            Component::start(rust_strategy.inner_mut()).unwrap();
+
+            let quote = sample_quote();
+            let trade = sample_trade();
+            let bar = sample_bar();
+            let external_bar_type = BarType::from_str(&format!(
+                "{}-1-MINUTE-LAST-EXTERNAL",
+                bar.bar_type.instrument_id()
+            ))
+            .unwrap();
+
+            rust_strategy.py_register_indicator_for_quote_ticks(
+                py,
+                quote.instrument_id,
+                indicator.clone_ref(py),
+            );
+            rust_strategy.py_register_indicator_for_trade_ticks(
+                py,
+                trade.instrument_id,
+                indicator.clone_ref(py),
+            );
+            rust_strategy.py_register_indicator_for_bars(
+                py,
+                external_bar_type,
+                indicator.clone_ref(py),
+            );
+
+            DataActor::handle_quote(rust_strategy.inner_mut(), &quote);
+            DataActor::handle_trade(rust_strategy.inner_mut(), &trade);
+            DataActor::handle_bar(rust_strategy.inner_mut(), &bar);
+
+            let events = events.extract::<Vec<String>>().unwrap();
+
+            assert_eq!(python_indicator_call_count(&indicator, py, "quote"), 1);
+            assert_eq!(python_indicator_call_count(&indicator, py, "trade"), 1);
+            assert_eq!(python_indicator_call_count(&indicator, py, "bar"), 1);
+            assert_eq!(
+                events,
+                vec![
+                    "indicator:quote",
+                    "strategy:quote",
+                    "indicator:trade",
+                    "strategy:trade",
+                    "indicator:bar",
+                    "strategy:bar",
+                ]
+            );
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_registered_indicators_receive_historical_quote_trade_and_bar_batches() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let mut rust_strategy = PyStrategy::new(None);
+            let indicator = create_tracking_python_indicator(py).unwrap();
+            let quote = sample_quote();
+            let trade = sample_trade();
+            let bar = sample_bar();
+            let quotes = vec![quote];
+            let trades = vec![trade];
+            let bars = vec![bar];
+
+            rust_strategy.py_register_indicator_for_quote_ticks(
+                py,
+                quote.instrument_id,
+                indicator.clone_ref(py),
+            );
+            rust_strategy.py_register_indicator_for_trade_ticks(
+                py,
+                trade.instrument_id,
+                indicator.clone_ref(py),
+            );
+            rust_strategy.py_register_indicator_for_bars(py, bar.bar_type, indicator.clone_ref(py));
+
+            let client_id = ClientId::new("TEST");
+            let quotes_response = QuotesResponse::new(
+                UUID4::new(),
+                client_id,
+                quote.instrument_id,
+                quotes,
+                None,
+                None,
+                UnixNanos::default(),
+                None,
+            );
+            let trades_response = TradesResponse::new(
+                UUID4::new(),
+                client_id,
+                trade.instrument_id,
+                trades,
+                None,
+                None,
+                UnixNanos::default(),
+                None,
+            );
+            let bars_response = BarsResponse::new(
+                UUID4::new(),
+                client_id,
+                bar.bar_type,
+                bars,
+                None,
+                None,
+                UnixNanos::default(),
+                None,
+            );
+
+            DataActor::handle_quotes_response(rust_strategy.inner_mut(), &quotes_response);
+            DataActor::handle_trades_response(rust_strategy.inner_mut(), &trades_response);
+            DataActor::handle_bars_response(rust_strategy.inner_mut(), &bars_response);
+
+            assert_eq!(python_indicator_call_count(&indicator, py, "quote"), 1);
+            assert_eq!(python_indicator_call_count(&indicator, py, "trade"), 1);
+            assert_eq!(python_indicator_call_count(&indicator, py, "bar"), 1);
         });
     }
 

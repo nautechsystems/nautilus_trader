@@ -48,10 +48,9 @@ use nautilus_model::{
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-#[cfg(feature = "indicators")]
-use super::indicators::Indicators;
 use super::{
     Actor,
+    indicators::{Indicators, SharedActorIndicator},
     registry::{get_actor_unchecked, try_get_actor_unchecked},
 };
 #[cfg(feature = "defi")]
@@ -691,6 +690,11 @@ pub trait DataActor:
     fn handle_quote(&mut self, quote: &QuoteTick) {
         log_received(&quote);
 
+        if let Err(e) = DataActorCore::handle_indicators_for_quote(&*self, quote) {
+            log_error(&e);
+            return;
+        }
+
         if self.not_running() {
             log_not_running(&quote);
             return;
@@ -705,6 +709,11 @@ pub trait DataActor:
     fn handle_trade(&mut self, trade: &TradeTick) {
         log_received(&trade);
 
+        if let Err(e) = DataActorCore::handle_indicators_for_trade(&*self, trade) {
+            log_error(&e);
+            return;
+        }
+
         if self.not_running() {
             log_not_running(&trade);
             return;
@@ -718,6 +727,11 @@ pub trait DataActor:
     /// Handles a receiving bar.
     fn handle_bar(&mut self, bar: &Bar) {
         log_received(&bar);
+
+        if let Err(e) = DataActorCore::handle_indicators_for_bar(&*self, bar) {
+            log_error(&e);
+            return;
+        }
 
         if self.not_running() {
             log_not_running(&bar);
@@ -1032,6 +1046,11 @@ pub trait DataActor:
         log_received_bulk("QuotesResponse", &resp.correlation_id, resp.data.len());
         log::trace!("{RECV} {resp:?}");
 
+        if let Err(e) = DataActorCore::handle_indicators_for_quotes(&*self, &resp.data) {
+            log_error(&e);
+            return;
+        }
+
         if let Err(e) = self.on_historical_quotes(&resp.data) {
             log_error(&e);
         }
@@ -1042,6 +1061,11 @@ pub trait DataActor:
         log_received_bulk("TradesResponse", &resp.correlation_id, resp.data.len());
         log::trace!("{RECV} {resp:?}");
 
+        if let Err(e) = DataActorCore::handle_indicators_for_trades(&*self, &resp.data) {
+            log_error(&e);
+            return;
+        }
+
         if let Err(e) = self.on_historical_trades(&resp.data) {
             log_error(&e);
         }
@@ -1051,6 +1075,11 @@ pub trait DataActor:
     fn handle_bars_response(&mut self, resp: &BarsResponse) {
         log_received_bulk("BarsResponse", &resp.correlation_id, resp.data.len());
         log::trace!("{RECV} {resp:?}");
+
+        if let Err(e) = DataActorCore::handle_indicators_for_bars(&*self, &resp.data) {
+            log_error(&e);
+            return;
+        }
 
         if let Err(e) = self.on_historical_bars(&resp.data) {
             log_error(&e);
@@ -2396,7 +2425,6 @@ pub struct DataActorCore {
     warning_events: AHashSet<String>, // TODO: TBD
     pending_requests: AHashMap<UUID4, Option<RequestCallback>>,
     signal_classes: AHashMap<String, String>,
-    #[cfg(feature = "indicators")]
     indicators: Indicators,
 }
 
@@ -2960,9 +2988,77 @@ impl DataActorCore {
             warning_events: AHashSet::new(),
             pending_requests: AHashMap::new(),
             signal_classes: AHashMap::new(),
-            #[cfg(feature = "indicators")]
             indicators: Indicators::default(),
         }
+    }
+
+    /// Returns the registered indicators.
+    #[must_use]
+    pub fn registered_indicators(&self) -> Vec<SharedActorIndicator> {
+        self.indicators.registered_indicators()
+    }
+
+    /// Returns whether all registered indicators are initialized.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a registered indicator cannot report readiness.
+    pub fn indicators_initialized(&self) -> anyhow::Result<bool> {
+        self.indicators.initialized()
+    }
+
+    /// Registers an indicator to receive quote ticks for an instrument.
+    pub fn register_indicator_for_quote_ticks(
+        &mut self,
+        instrument_id: InstrumentId,
+        indicator: SharedActorIndicator,
+    ) {
+        self.indicators
+            .register_indicator_for_quote_ticks(instrument_id, indicator);
+    }
+
+    /// Registers an indicator to receive trade ticks for an instrument.
+    pub fn register_indicator_for_trade_ticks(
+        &mut self,
+        instrument_id: InstrumentId,
+        indicator: SharedActorIndicator,
+    ) {
+        self.indicators
+            .register_indicator_for_trade_ticks(instrument_id, indicator);
+    }
+
+    /// Registers an indicator to receive bars for a bar type.
+    pub fn register_indicator_for_bars(
+        &mut self,
+        bar_type: BarType,
+        indicator: SharedActorIndicator,
+    ) {
+        self.indicators
+            .register_indicator_for_bars(bar_type, indicator);
+    }
+
+    pub(crate) fn handle_indicators_for_quote(&self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.indicators.handle_quote(quote)
+    }
+
+    pub(crate) fn handle_indicators_for_quotes(&self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
+        self.indicators.handle_quotes(quotes)
+    }
+
+    pub(crate) fn handle_indicators_for_trade(&self, trade: &TradeTick) -> anyhow::Result<()> {
+        self.indicators.handle_trade(trade)
+    }
+
+    pub(crate) fn handle_indicators_for_trades(&self, trades: &[TradeTick]) -> anyhow::Result<()> {
+        self.indicators.handle_trades(trades)
+    }
+
+    pub(crate) fn handle_indicators_for_bar(&self, bar: &Bar) -> anyhow::Result<()> {
+        self.indicators.handle_bar(bar)
+    }
+
+    pub(crate) fn handle_indicators_for_bars(&self, bars: &[Bar]) -> anyhow::Result<()> {
+        self.indicators.handle_bars(bars)
     }
 
     /// Returns the memory address of this instance as a hexadecimal string.
