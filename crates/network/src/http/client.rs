@@ -77,6 +77,35 @@ impl HttpClient {
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
     ) -> Result<Self, HttpClientError> {
+        let keyed_quotas = keyed_quotas
+            .into_iter()
+            .map(|(key, quota)| (Ustr::from(&key), quota))
+            .collect();
+
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
+
+        Self::new_with_rate_limiter(headers, header_keys, timeout_secs, proxy_url, rate_limiter)
+    }
+
+    /// Creates a new [`HttpClient`] instance sharing an externally-owned rate limiter.
+    ///
+    /// Use this constructor to share a single [`RateLimiter`] across multiple
+    /// [`HttpClient`] instances (for example, the HTTP clients owned by an
+    /// exchange adapter's data and execution clients). All quota state lives
+    /// inside the limiter, so passing the same `Arc` produces a single shared
+    /// bucket.
+    ///
+    /// # Errors
+    ///
+    /// - Returns `InvalidProxy` if the proxy URL is malformed.
+    /// - Returns `ClientBuildError` if building the underlying `reqwest::Client` fails.
+    pub fn new_with_rate_limiter(
+        headers: HashMap<String, String>,
+        header_keys: Vec<String>,
+        timeout_secs: Option<u64>,
+        proxy_url: Option<String>,
+        rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
+    ) -> Result<Self, HttpClientError> {
         install_cryptographic_provider();
 
         // Build default headers
@@ -133,13 +162,6 @@ impl HttpClient {
             header_keys: Arc::new(valid_keys),
             header_names: Arc::new(header_names),
         };
-
-        let keyed_quotas = keyed_quotas
-            .into_iter()
-            .map(|(key, quota)| (Ustr::from(&key), quota))
-            .collect();
-
-        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
         Ok(Self {
             client,
