@@ -2430,6 +2430,7 @@ mod tests {
 
         let error = result.unwrap_err();
         pyo3::Python::initialize();
+
         pyo3::Python::attach(|py| {
             assert!(error.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
         });
@@ -2497,6 +2498,7 @@ mod tests {
         let mut actor = create_registered_actor(clock, cache, trader_id);
 
         pyo3::Python::initialize();
+
         pyo3::Python::attach(|py| {
             assert!(
                 actor
@@ -2595,6 +2597,7 @@ mod tests {
         msgbus::subscribe_any(pattern, handler, None);
 
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let val1: Py<PyAny> = 1.0_f64.into_py_any_unwrap(py);
             let val2: Py<PyAny> = "HIGH".into_py_any_unwrap(py);
@@ -2644,6 +2647,7 @@ mod tests {
         msgbus::subscribe_any(pattern, handler, None);
 
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let int_value: Py<PyAny> = 42_i64.into_py_any_unwrap(py);
             let float_value: Py<PyAny> = 3.5_f64.into_py_any_unwrap(py);
@@ -2712,6 +2716,7 @@ mod tests {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let py_actor = create_tracking_python_actor(py).unwrap();
 
@@ -2745,6 +2750,7 @@ mod tests {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let py_actor = create_tracking_python_actor(py).unwrap();
 
@@ -2780,6 +2786,7 @@ mod tests {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let py_actor = create_tracking_python_actor(py).unwrap();
 
@@ -2816,6 +2823,7 @@ mod tests {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let py_actor = create_tracking_python_actor(py).unwrap();
 
@@ -2853,6 +2861,7 @@ mod tests {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let capture_code = c_str!(
                 r#"
@@ -2976,6 +2985,7 @@ class CapturingActor:
         audusd_sim: CurrencyPair,
     ) {
         pyo3::Python::initialize();
+
         let mut actor = create_registered_actor(clock, cache, trader_id);
 
         pyo3::Python::attach(|py| {
@@ -3607,6 +3617,7 @@ class IndicatorEventActor:
         #[case] method_name: &str,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             assert_python_dispatch(py, clock, cache, trader_id, method_name, |rust_actor| {
                 match method_name {
@@ -3633,6 +3644,7 @@ class IndicatorEventActor:
         #[case] method_name: &str,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             assert_python_dispatch(py, clock, cache, trader_id, method_name, |rust_actor| {
                 match method_name {
@@ -3662,6 +3674,7 @@ class IndicatorEventActor:
         trader_id: TraderId,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let py_actor = create_tracking_python_actor(py).unwrap();
 
@@ -3700,6 +3713,7 @@ class IndicatorEventActor:
         bar_type: BarType,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let mut rust_actor = PyDataActor::new(None);
             let indicator = create_tracking_python_indicator(py).unwrap();
@@ -3750,6 +3764,7 @@ class IndicatorEventActor:
         trader_id: TraderId,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let events = PyList::empty(py);
             let py_actor = create_indicator_event_actor(py, &events).unwrap();
@@ -3815,6 +3830,7 @@ class IndicatorEventActor:
         trader_id: TraderId,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let events = PyList::empty(py);
             let py_actor = create_indicator_event_actor(py, &events).unwrap();
@@ -3844,6 +3860,7 @@ class IndicatorEventActor:
     #[rstest]
     fn test_registered_indicators_receive_historical_quote_trade_and_bar_batches() {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let mut rust_actor = PyDataActor::new(None);
             let indicator = create_tracking_python_indicator(py).unwrap();
@@ -3911,6 +3928,7 @@ class IndicatorEventActor:
     #[rstest]
     fn test_indicators_initialized_requires_all_registered_indicators(audusd_sim: CurrencyPair) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let mut rust_actor = PyDataActor::new(None);
             let first = create_tracking_python_indicator(py).unwrap();
@@ -3944,6 +3962,7 @@ class IndicatorEventActor:
         trader_id: TraderId,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let mut rust_actor = PyDataActor::new(None);
             let indicator = create_tracking_python_indicator(py).unwrap();
@@ -4002,6 +4021,7 @@ class IndicatorEventActor:
         trader_id: TraderId,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let events = PyList::empty(py);
             let py_actor = create_indicator_event_actor(py, &events).unwrap();
@@ -4047,6 +4067,7 @@ class IndicatorEventActor:
         #[case] method_name: &str,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             assert_python_dispatch(py, clock, cache, trader_id, method_name, |rust_actor| {
                 match method_name {
@@ -4135,6 +4156,7 @@ class IndicatorEventActor:
         #[case] method_name: &str,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             assert_python_dispatch(py, clock, cache, trader_id, method_name, |rust_actor| {
                 match method_name {
@@ -4193,6 +4215,7 @@ class IndicatorEventActor:
         #[case] method_name: &str,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             assert_python_dispatch(py, clock, cache, trader_id, method_name, |rust_actor| {
                 match method_name {
@@ -4234,6 +4257,7 @@ class IndicatorEventActor:
         audusd_sim: CurrencyPair,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let py_actor = create_tracking_python_actor(py).unwrap();
 
@@ -4266,6 +4290,7 @@ class IndicatorEventActor:
         trader_id: TraderId,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|_py| {
             let mut rust_actor = PyDataActor::new(None);
             rust_actor.register(trader_id, clock, cache).unwrap();
@@ -4283,6 +4308,7 @@ class IndicatorEventActor:
         trader_id: TraderId,
     ) {
         pyo3::Python::initialize();
+
         let mut rust_actor = PyDataActor::new(None);
         rust_actor.register(trader_id, clock, cache).unwrap();
 

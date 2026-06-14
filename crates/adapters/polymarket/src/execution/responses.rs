@@ -733,7 +733,6 @@ pub(super) async fn check_fok_status(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use nautilus_common::{
         cache::fifo::FifoCacheMap,
         messages::{ExecutionEvent, ExecutionReport},
@@ -748,6 +747,7 @@ mod tests {
     };
     use rstest::rstest;
 
+    use super::*;
     use crate::{
         http::{
             models::GammaMarket,

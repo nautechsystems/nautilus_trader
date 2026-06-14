@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_common::messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderType, TimeInForce},
     identifiers::VenueOrderId,
@@ -37,7 +38,6 @@ use super::{
     types::{BatchLimitOrderContext, LimitOrderSubmitRequest},
 };
 use crate::common::consts::BATCH_ORDER_LIMIT;
-use nautilus_common::messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList};
 
 impl PolymarketExecutionClient {
     pub(super) fn submit_limit_order(&self, order: OrderAny) {
