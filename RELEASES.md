@@ -50,8 +50,10 @@ Released on TBD (UTC).
 - Fixed Blockchain snapshot bootstrap checks
 - Fixed custom `DataType` metadata ordering and shared custom-data unsubscribes (Rust)
 - Fixed data option-chain delta warmup
+- Fixed DeFi replay bootstrap gaps in `PoolSwap` payload exposure, block timestamp units, and actor IDs (Rust)
 - Fixed Deribit chart bar volume for inverse perpetuals (#4245), thanks @filipmacek
 - Fixed `DonchianChannel` period window (#4239), thanks @KaizynX
+- Fixed dYdX to share one REST rate-limit bucket across data and execution clients (#4265), thanks @filipmacek
 - Fixed event-store boot recovery to repair hard-crashed run files and skip damaged ones instead of failing (Rust)
 - Fixed event-store capture duplicating order events, commands, and account states across dispatch hops (Rust)
 - Fixed event-store snapshot-anchor validation across the verifier, retention, and restore paths (Rust)
@@ -71,6 +73,7 @@ Released on TBD (UTC).
 - Fixed rate limiter arithmetic to saturate so extreme quotas deny instead of admitting every request (Rust)
 - Fixed reconnect backoff jitter collapsing to zero at the maximum delay (Rust)
 - Fixed reconnect timeout cancelling the writer swap and replaying buffered messages into a readerless connection (Rust)
+- Fixed recoverable order, commission, and PnL conditions logging as errors, halting `shutdown_on_error` nodes (Rust)
 - Fixed Postgres order-client index load panic on orders persisted without a client ID (Rust)
 - Fixed Postgres cache writer runtime
 - Fixed risk sizing without max quantity in Rust
@@ -94,7 +97,9 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Added Cargo publish dry-run and nightly publish plan checks
+- Added a Docker check that Python references match the base image tag and `requires-python`
 - Added turmoil coverage for WebSocket heartbeats, server-initiated pings, and server close frames (Rust)
+- Fixed Docker image build missing the `patches` directory needed by `pyo3-stub-gen`
 - Fixed nightly CI publish and Windows Harden-Runner checks
 - Improved instrument validation to reject non-positive multiplier and lot size (Rust)
 - Improved `FixedTickScheme` validation to reject non-finite tick sizes (Rust)

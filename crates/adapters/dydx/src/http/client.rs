@@ -54,9 +54,10 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     num::NonZeroU32,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, Mutex},
 };
 
+use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use nautilus_core::{
     UnixNanos,
@@ -136,21 +137,28 @@ pub static DYDX_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
     Quota::per_second(NonZeroU32::new(9).expect("non-zero")).expect("valid constant")
 });
 
-/// Process-global rate limiter for the dYdX Indexer REST API.
-///
-/// Shared across every [`DydxRawHttpClient`] (and therefore every
-/// [`DydxHttpClient`]) constructed in the process, so the data client and
-/// execution client draw from the same 9 req/s bucket instead of one each.
-/// dYdX mainnet vs testnet are treated as a single bucket here — at worst
-/// slightly over-conservative if both networks ran in the same process, which
-/// they never do in practice.
-pub static DYDX_REST_RATE_LIMITER: LazyLock<Arc<RateLimiter<Ustr, MonotonicClock>>> =
-    LazyLock::new(|| Arc::new(RateLimiter::new_with_quota(Some(*DYDX_REST_QUOTA), vec![])));
+type DydxRestRateLimiter = Arc<RateLimiter<Ustr, MonotonicClock>>;
+
+// Process-global registry of dYdX Indexer REST rate limiters, keyed by resolved base URL.
+// Clients on the same URL (a network's data and execution clients) share one 9 req/s bucket
+// matching the Indexer per-IP limit; distinct URLs (testnet, or a mock server in tests) stay
+// isolated so unrelated traffic never contends for the same tokens.
+static DYDX_REST_RATE_LIMITERS: LazyLock<Mutex<AHashMap<String, DydxRestRateLimiter>>> =
+    LazyLock::new(|| Mutex::new(AHashMap::new()));
 
 static DYDX_RATE_LIMIT_KEY: LazyLock<Ustr> = LazyLock::new(|| Ustr::from("dydx:rest"));
 
 fn rate_limit_keys() -> Vec<Ustr> {
     vec![*DYDX_RATE_LIMIT_KEY]
+}
+
+fn rest_rate_limiter(base_url: &str) -> DydxRestRateLimiter {
+    DYDX_REST_RATE_LIMITERS
+        .lock()
+        .expect("dYdX REST rate limiter registry mutex poisoned")
+        .entry(base_url.to_string())
+        .or_insert_with(|| Arc::new(RateLimiter::new_with_quota(Some(*DYDX_REST_QUOTA), vec![])))
+        .clone()
 }
 
 /// Represents a dYdX HTTP response wrapper.
@@ -237,7 +245,7 @@ impl DydxRawHttpClient {
             vec![],
             Some(timeout_secs),
             proxy_url,
-            Arc::clone(&DYDX_REST_RATE_LIMITER),
+            rest_rate_limiter(&base_url),
         )
         .map_err(|e| {
             DydxHttpError::ValidationError(format!("Failed to create HTTP client: {e}"))
@@ -1810,6 +1818,18 @@ mod tests {
         let client = client.unwrap();
         assert!(client.is_testnet());
         assert_eq!(client.base_url(), DYDX_TESTNET_HTTP_URL);
+    }
+
+    #[rstest]
+    fn test_rest_rate_limiter_shared_per_base_url() {
+        let shared_a = rest_rate_limiter(DYDX_HTTP_URL);
+        let shared_b = rest_rate_limiter(DYDX_HTTP_URL);
+        let isolated = rest_rate_limiter("http://rate-limiter-test.invalid");
+
+        // Same base URL: data and execution clients on a network share one bucket.
+        assert!(Arc::ptr_eq(&shared_a, &shared_b));
+        // Distinct base URL: custom endpoints and mock servers stay isolated.
+        assert!(!Arc::ptr_eq(&shared_a, &isolated));
     }
 
     #[tokio::test]
