@@ -93,7 +93,7 @@ pub(crate) struct OrderIdentity {
 /// responses without one fall back to FIFO-head attribution, so the queue
 /// order still matches the send order. The `kind` records whether the entry
 /// has an originating Nautilus order that should receive a typed
-/// `OrderRejected` on a venue rejection.
+/// order event on a venue rejection.
 #[derive(Debug, Clone)]
 pub(crate) struct PendingSendTx {
     pub(crate) kind: PendingSendTxKind,
@@ -113,9 +113,22 @@ pub(crate) enum PendingSendTxKind {
         order: Box<OrderAny>,
         client_order_index: i64,
     },
-    /// Cancel, modify, or update-leverage submit. Tracked for FIFO alignment
-    /// so the venue's ACK or rejection pops the correct head; the consumption
-    /// loop logs but does not emit a typed event for these yet.
+    /// Cancel-order submit. On rejection: emit `OrderCancelRejected`.
+    Cancel {
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+    },
+    /// Modify-order submit. On rejection: emit `OrderModifyRejected`.
+    Modify {
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+    },
+    /// Non-order sendTx, such as update-leverage. Tracked for FIFO alignment
+    /// so the venue's ACK or rejection pops the correct head.
     Other,
 }
 
@@ -2328,6 +2341,12 @@ mod tests {
     fn pending_cloid(p: &PendingSendTx) -> Option<ClientOrderId> {
         match &p.kind {
             PendingSendTxKind::Create { order, .. } => Some(order.client_order_id()),
+            PendingSendTxKind::Cancel {
+                client_order_id, ..
+            }
+            | PendingSendTxKind::Modify {
+                client_order_id, ..
+            } => Some(*client_order_id),
             PendingSendTxKind::Other => None,
         }
     }

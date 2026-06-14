@@ -1535,20 +1535,24 @@ fills before the reduce lands, the engine's overfill guard is the backstop.
 
 #### Order command outcome policy
 
-Adapters must emit these rejection events only from venue-originating signals:
+Adapters must emit these rejection events only from definitive command-failure evidence:
 
 - `OrderRejected`.
 - `OrderModifyRejected`.
 - `OrderCancelRejected`.
 
 Positive venue evidence includes structured order responses, per-order batch responses, or order
-status messages that explicitly report a rejection.
+status messages that explicitly report a rejection. Positive local evidence includes prepare
+failures that prove a cancel or modify command cannot be sent and can be attributed to a single
+order command.
 
-Local validation is not a venue rejection:
+Local validation is not automatically a venue rejection:
 
 - Validate submit commands before `OrderSubmitted` and emit `OrderDenied` when validation fails.
 - If submit validation fails after `OrderSubmitted`, log the failure and leave the order in flight.
-- If cancel or modify validation fails locally, log a warning and do not emit a rejection event.
+- If cancel or modify prepare fails before the command is sent, emit
+  `OrderCancelRejected` or `OrderModifyRejected` only when the adapter can attribute the failure
+  to that command. Otherwise log a warning and do not emit a rejection event.
 
 Do not emit rejection events for errors that leave the venue outcome unknown. Unknown outcomes
 include transport errors, WebSocket send failures, request timeouts, disconnects, canceled local
