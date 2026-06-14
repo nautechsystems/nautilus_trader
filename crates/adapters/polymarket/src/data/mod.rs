@@ -14,15 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Live market data client implementation for the Polymarket adapter.
-//!
-//! Tick-size changes are handled as book epoch transitions: the local order
-//! book is dropped, incremental `price_change` deltas are gated through
-//! `pending_snapshot_after_tick_change`, and the gate clears once the next
-//! venue snapshot reseeds the book under the new precision. The quote arm of
-//! `price_change` stays open through the gap because each payload carries
-//! `best_bid` / `best_ask` on the new grid; `last_quotes` is preserved so the
-//! unchanged side's size carries forward. See
-//! `docs/integrations/polymarket.md` for the full description.
 
 mod auto_load;
 mod dispatch;
@@ -71,8 +62,6 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
-#[cfg(test)]
-use self::{dispatch::WsMessageContext, instruments::cache_instrument};
 use self::{
     instruments::TokenMeta,
     requests::{
@@ -94,12 +83,11 @@ use crate::{
     rtds::{PolymarketRtdsFeed, is_supported_rtds_data_type},
     websocket::client::PolymarketWebSocketClient,
 };
-#[cfg(test)]
-use nautilus_model::instruments::Instrument;
 
 const NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP: usize = 64;
 pub(super) const NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS: usize = 1;
 pub(super) const NEW_MARKET_EMPTY_RECHECK_DELAY: Duration = Duration::from_millis(500);
+
 fn clamp_new_market_fetch_max_concurrency(value: usize) -> usize {
     value.clamp(1, NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP)
 }
@@ -276,19 +264,6 @@ impl PolymarketDataClient {
             ws_sub_mutex,
             ws,
         ));
-    }
-
-    #[cfg(test)]
-    fn handle_market_message(
-        message: crate::websocket::messages::MarketWsMessage,
-        ctx: &WsMessageContext,
-    ) {
-        dispatch::handle_market_message(message, ctx);
-    }
-
-    #[cfg(test)]
-    fn new_market_dedupe_key(nm: &crate::websocket::messages::PolymarketNewMarket) -> String {
-        dispatch::new_market_dedupe_key(nm)
     }
 }
 
@@ -535,6 +510,3 @@ impl DataClient for PolymarketDataClient {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests;

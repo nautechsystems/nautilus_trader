@@ -13,6 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! WebSocket market-message dispatch for the Polymarket data client.
+//!
+//! Tick-size changes are handled as book epoch transitions: the local order
+//! book is dropped, incremental `price_change` deltas are gated through
+//! `pending_snapshot_after_tick_change`, and the gate clears once the next
+//! venue snapshot reseeds the book under the new precision. The quote arm of
+//! `price_change` stays open through the gap because each payload carries
+//! `best_bid` / `best_ask` on the new grid; `last_quotes` is preserved so the
+//! unchanged side's size carries forward. See
+//! `docs/integrations/polymarket.md` for the full description.
+
 use std::sync::{Arc, Mutex as StdMutex};
 
 use dashmap::DashMap;
@@ -99,7 +110,7 @@ impl WsMessageContext {
     }
 }
 
-pub(super) fn new_market_dedupe_key(nm: &PolymarketNewMarket) -> String {
+fn new_market_dedupe_key(nm: &PolymarketNewMarket) -> String {
     let condition_id = nm.condition_id.trim();
     if !condition_id.is_empty() {
         return format!("cond:{condition_id}");
@@ -139,7 +150,7 @@ pub(super) fn handle_ws_message(message: PolymarketWsMessage, ctx: &WsMessageCon
     }
 }
 
-pub(super) fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
+fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
     match message {
         MarketWsMessage::Book(snap) => {
             let token_id = Ustr::from(snap.asset_id.as_str());
@@ -641,5 +652,2410 @@ fn emit_quote_if_changed(ctx: &WsMessageContext, instrument_id: InstrumentId, qu
         {
             log::error!("Failed to emit quote tick: {e}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        net::SocketAddr,
+        sync::atomic::{AtomicUsize, Ordering},
+        time::{Duration, Duration as StdDuration},
+    };
+
+    use ahash::AHashMap;
+    use axum::{
+        Router,
+        extract::{Path, RawQuery, State},
+        http::StatusCode,
+        response::Json,
+        routing::get,
+    };
+    use nautilus_common::{
+        clients::DataClient,
+        live::runner::replace_data_event_sender,
+        messages::{DataResponse, data::RequestCustomData},
+        testing::wait_until_async,
+    };
+    use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_model::{
+        data::{CustomData as ModelCustomData, DataType},
+        enums::{AssetClass, InstrumentCloseType, OrderSide, PositionSide},
+        events::{PositionEvent, PositionOpened},
+        identifiers::{
+            AccountId, ClientId, ClientOrderId, PositionId, StrategyId, Symbol, TraderId,
+        },
+        instruments::BinaryOption,
+        types::{Currency, Price, Quantity},
+    };
+    use nautilus_network::{retry::RetryConfig, websocket::TransportBackend};
+    use rstest::rstest;
+    use serde_json::Value;
+
+    use super::{super::PolymarketDataClient, *};
+    use crate::{
+        common::{consts::POLYMARKET_CLIENT_ID, enums::PolymarketOrderSide},
+        config::PolymarketDataClientConfig,
+        http::data_api::PolymarketDataApiHttpClient,
+        resolve::{
+            PolymarketResolveRequestSummaryData, RESOLVE_REQUEST_TYPE_NAME, ResolveBatchErrorMode,
+            fetch_and_apply_resolutions_by_condition_ids, pause_resolve_watch_entries,
+            update_resolve_watchlist_from_position_event,
+            upsert_resolve_watch_entry_from_instrument,
+        },
+        websocket::{
+            client::PolymarketWebSocketClient,
+            messages::{
+                PolymarketBookLevel, PolymarketBookSnapshot, PolymarketMarketResolved,
+                PolymarketQuote, PolymarketTickSizeChange,
+            },
+        },
+    };
+
+    fn is_resolve_response(event: &DataEvent) -> bool {
+        matches!(event, DataEvent::Response(DataResponse::Data(_)))
+    }
+
+    fn count_instrument_close_events(events: &[DataEvent]) -> usize {
+        events
+            .iter()
+            .filter(|event| matches!(event, DataEvent::Data(NautilusData::InstrumentClose(_))))
+            .count()
+    }
+    async fn collect_events_until<F>(
+        data_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+        timeout: StdDuration,
+        mut done: F,
+    ) -> Vec<DataEvent>
+    where
+        F: FnMut(&[DataEvent]) -> bool,
+    {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut events = Vec::new();
+
+        loop {
+            while let Ok(event) = data_rx.try_recv() {
+                events.push(event);
+            }
+
+            if done(&events) || tokio::time::Instant::now() >= deadline {
+                break;
+            }
+
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+
+            let wait_for = remaining.min(StdDuration::from_millis(100));
+            if let Ok(Some(event)) = tokio::time::timeout(wait_for, data_rx.recv()).await {
+                events.push(event);
+            }
+        }
+
+        events
+    }
+
+    fn stub_instrument(
+        raw_symbol: &str,
+        price_increment: Price,
+        size_increment: Quantity,
+    ) -> InstrumentAny {
+        let price_precision = price_increment.precision;
+        let size_precision = size_increment.precision;
+        InstrumentAny::BinaryOption(BinaryOption::new(
+            InstrumentId::from(format!("{raw_symbol}.POLYMARKET").as_str()),
+            Symbol::new(raw_symbol),
+            AssetClass::Alternative,
+            Currency::pUSD(),
+            UnixNanos::default(),
+            UnixNanos::from(u64::MAX),
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+    }
+
+    fn make_ws_ctx_with_gamma_base_url(
+        gamma_base_url: &str,
+    ) -> (
+        WsMessageContext,
+        tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    ) {
+        let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let gamma_client = PolymarketGammaHttpClient::new(
+            Some(gamma_base_url.to_string()),
+            2,
+            RetryConfig {
+                max_retries: 0,
+                initial_delay_ms: 1,
+                max_delay_ms: 1,
+                backoff_factor: 1.0,
+                jitter_ms: 0,
+                operation_timeout_ms: Some(2_000),
+                immediate_first: true,
+                max_elapsed_ms: Some(2_000),
+            },
+        )
+        .expect("gamma client");
+        let clob_public_client =
+            PolymarketClobPublicClient::new(Some("http://localhost".to_string()), 5)
+                .expect("clob client");
+
+        let ctx = WsMessageContext {
+            clock: get_atomic_clock_realtime(),
+            data_sender: data_tx,
+            token_meta: Arc::new(DashMap::new()),
+            instruments: Arc::new(AtomicMap::new()),
+            gamma_client,
+            clob_public_client,
+            filters: vec![],
+            order_books: Arc::new(DashMap::new()),
+            last_quotes: Arc::new(DashMap::new()),
+            active_quote_subs: Arc::new(AtomicSet::new()),
+            active_delta_subs: Arc::new(AtomicSet::new()),
+            active_trade_subs: Arc::new(AtomicSet::new()),
+            resolve_poll_watchlist: Arc::new(AtomicMap::new()),
+            resolve_watch_apply_mutex: Arc::new(StdMutex::new(())),
+            pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
+            new_market_inflight_keys: Arc::new(DashMap::new()),
+            new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
+                PolymarketDataClientConfig::default().new_market_fetch_max_concurrency,
+            )),
+            subscribe_new_markets: false,
+            new_market_filter: None,
+            cancellation_token: CancellationToken::new(),
+        };
+
+        (ctx, data_rx)
+    }
+
+    fn make_ws_ctx() -> (
+        WsMessageContext,
+        tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    ) {
+        make_ws_ctx_with_gamma_base_url("http://localhost")
+    }
+    fn seed_instrument(
+        ctx: &WsMessageContext,
+        raw_symbol: &str,
+        price_increment: Price,
+        size_increment: Quantity,
+    ) -> InstrumentAny {
+        let inst = stub_instrument(raw_symbol, price_increment, size_increment);
+        cache_instrument(&ctx.instruments, &ctx.token_meta, &inst);
+        inst
+    }
+
+    #[derive(Clone, Copy, Default)]
+    struct SeedInstrumentContext<'a> {
+        market_slug: Option<&'a str>,
+        market_id: Option<&'a str>,
+        condition_id: Option<&'a str>,
+        expiration_ns: Option<UnixNanos>,
+    }
+
+    fn seed_instrument_with_context(
+        ctx: &WsMessageContext,
+        raw_symbol: &str,
+        price_increment: Price,
+        size_increment: Quantity,
+        seed_ctx: SeedInstrumentContext<'_>,
+    ) -> InstrumentAny {
+        let mut inst = stub_instrument(raw_symbol, price_increment, size_increment);
+        if let InstrumentAny::BinaryOption(ref mut binary) = inst {
+            if let Some(expiration_ns) = seed_ctx.expiration_ns {
+                binary.expiration_ns = expiration_ns;
+            }
+
+            let mut info = Params::new();
+            info.insert(
+                "token_id".to_string(),
+                serde_json::Value::String(raw_symbol.to_string()),
+            );
+
+            if let Some(market_slug) = seed_ctx.market_slug {
+                info.insert(
+                    "market_slug".to_string(),
+                    serde_json::Value::String(market_slug.to_string()),
+                );
+            }
+
+            if let Some(market_id) = seed_ctx.market_id {
+                info.insert(
+                    "market_id".to_string(),
+                    serde_json::Value::String(market_id.to_string()),
+                );
+            }
+
+            if let Some(condition_id) = seed_ctx.condition_id {
+                info.insert(
+                    "condition_id".to_string(),
+                    serde_json::Value::String(condition_id.to_string()),
+                );
+            }
+
+            binary.info = Some(info);
+        }
+
+        cache_instrument(&ctx.instruments, &ctx.token_meta, &inst);
+        inst
+    }
+
+    fn stub_position_opened_event_with_position_id(
+        instrument_id: InstrumentId,
+        position_id: &str,
+    ) -> PositionEvent {
+        PositionEvent::PositionOpened(PositionOpened {
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("STRATEGY-001"),
+            instrument_id,
+            position_id: PositionId::new(position_id),
+            account_id: AccountId::from("ACCOUNT-001"),
+            opening_order_id: ClientOrderId::from("ENTRY-1"),
+            entry: OrderSide::Buy,
+            side: PositionSide::Long,
+            signed_qty: 1.0,
+            quantity: Quantity::from("1"),
+            last_qty: Quantity::from("1"),
+            last_px: Price::from("0.75"),
+            currency: Currency::pUSD(),
+            avg_px_open: 0.75,
+            event_id: UUID4::new(),
+            ts_event: UnixNanos::from(1),
+            ts_init: UnixNanos::from(1),
+        })
+    }
+
+    fn stub_position_opened_event(instrument_id: InstrumentId) -> PositionEvent {
+        stub_position_opened_event_with_position_id(instrument_id, "P-1")
+    }
+
+    fn make_client_ws_ctx(client: &PolymarketDataClient) -> WsMessageContext {
+        WsMessageContext {
+            clock: client.clock,
+            data_sender: client.data_sender.clone(),
+            token_meta: client.token_meta.clone(),
+            instruments: client.instruments.clone(),
+            gamma_client: client.provider.http_client().clone(),
+            clob_public_client: client.clob_public_client.clone(),
+            filters: client.provider.filters(),
+            order_books: client.order_books.clone(),
+            last_quotes: client.last_quotes.clone(),
+            active_quote_subs: client.active_quote_subs.clone(),
+            active_delta_subs: client.active_delta_subs.clone(),
+            active_trade_subs: client.active_trade_subs.clone(),
+            resolve_poll_watchlist: client.resolve_poll_watchlist.clone(),
+            resolve_watch_apply_mutex: client.resolve_watch_apply_mutex.clone(),
+            pending_snapshot_after_tick_change: client.pending_snapshot_after_tick_change.clone(),
+            new_market_inflight_keys: client.new_market_inflight_keys.clone(),
+            new_market_fetch_semaphore: client.new_market_fetch_semaphore.clone(),
+            subscribe_new_markets: client.config.subscribe_new_markets,
+            new_market_filter: client.config.new_market_filter.clone(),
+            cancellation_token: client.cancellation_token.clone(),
+        }
+    }
+
+    fn make_new_market(slug: &str, active: bool) -> MarketWsMessage {
+        make_new_market_with_ids(
+            slug,
+            &format!("cond-{slug}"),
+            &format!("cond-{slug}"),
+            active,
+        )
+    }
+
+    fn make_new_market_with_condition(
+        slug: &str,
+        condition_id: &str,
+        active: bool,
+    ) -> MarketWsMessage {
+        make_new_market_with_ids(slug, condition_id, condition_id, active)
+    }
+
+    fn make_new_market_with_ids(
+        slug: &str,
+        market: &str,
+        condition_id: &str,
+        active: bool,
+    ) -> MarketWsMessage {
+        MarketWsMessage::NewMarket(Box::new(PolymarketNewMarket {
+            id: format!("id-{slug}"),
+            question: format!("Will {slug} settle true?"),
+            market: Ustr::from(market),
+            slug: slug.to_string(),
+            description: format!("desc-{slug}"),
+            assets_ids: vec![format!("yes-{slug}"), format!("no-{slug}")],
+            outcomes: vec!["Yes".to_string(), "No".to_string()],
+            timestamp: "1700000003000".to_string(),
+            tags: vec![],
+            condition_id: condition_id.to_string(),
+            active,
+            clob_token_ids: vec![format!("yes-{slug}"), format!("no-{slug}")],
+            order_price_min_tick_size: None,
+            group_item_title: None,
+            event_message: None,
+        }))
+    }
+
+    fn gamma_market_fixture_value() -> Value {
+        serde_json::from_str(include_str!("../../test_data/gamma_market.json"))
+            .expect("gamma market fixture json")
+    }
+
+    #[derive(Clone, Default)]
+    struct NewMarketFetchTestServerState {
+        total_requests: Arc<AtomicUsize>,
+        inflight_requests: Arc<AtomicUsize>,
+        max_inflight_requests: Arc<AtomicUsize>,
+        seen_condition_ids: Arc<StdMutex<Vec<Option<String>>>>,
+        seen_slugs: Arc<StdMutex<Vec<Option<String>>>>,
+        empty_then_success_condition_id: Arc<StdMutex<Option<String>>>,
+        empty_then_success_payload: Arc<StdMutex<Option<Value>>>,
+        per_condition_requests: Arc<StdMutex<AHashMap<String, usize>>>,
+        response_delay_ms: u64,
+    }
+
+    fn query_param(raw_query: Option<String>, key: &str) -> Option<String> {
+        let raw = raw_query?;
+        raw.split('&').find_map(|pair| {
+            let mut parts = pair.splitn(2, '=');
+            let pair_key = parts.next().unwrap_or("");
+            if pair_key != key {
+                return None;
+            }
+            Some(parts.next().unwrap_or("").to_string())
+        })
+    }
+
+    async fn handle_new_market_gamma_markets(
+        RawQuery(raw_query): RawQuery,
+        State(state): State<NewMarketFetchTestServerState>,
+    ) -> Json<Value> {
+        state.total_requests.fetch_add(1, Ordering::SeqCst);
+        let inflight = state.inflight_requests.fetch_add(1, Ordering::SeqCst) + 1;
+        let condition_id = query_param(raw_query.clone(), "condition_ids");
+        let slug = query_param(raw_query, "slug");
+
+        state
+            .seen_condition_ids
+            .lock()
+            .expect("seen_condition_ids mutex poisoned")
+            .push(condition_id.clone());
+        state
+            .seen_slugs
+            .lock()
+            .expect("seen_slugs mutex poisoned")
+            .push(slug);
+
+        loop {
+            let prev = state.max_inflight_requests.load(Ordering::SeqCst);
+            if inflight <= prev {
+                break;
+            }
+
+            if state
+                .max_inflight_requests
+                .compare_exchange(prev, inflight, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                break;
+            }
+        }
+
+        if state.response_delay_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(state.response_delay_ms)).await;
+        }
+
+        let response = if let Some(ref cid) = condition_id {
+            let next_count = {
+                let mut counts = state
+                    .per_condition_requests
+                    .lock()
+                    .expect("per_condition_requests mutex poisoned");
+                let next = counts.get(cid).copied().unwrap_or(0) + 1;
+                counts.insert(cid.clone(), next);
+                next
+            };
+
+            let target_cid = state
+                .empty_then_success_condition_id
+                .lock()
+                .expect("empty_then_success_condition_id mutex poisoned")
+                .clone();
+
+            if target_cid.as_deref() == Some(cid.as_str()) && next_count >= 2 {
+                state
+                    .empty_then_success_payload
+                    .lock()
+                    .expect("empty_then_success_payload mutex poisoned")
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!([]))
+            } else {
+                serde_json::json!([])
+            }
+        } else {
+            serde_json::json!([])
+        };
+
+        state.inflight_requests.fetch_sub(1, Ordering::SeqCst);
+        Json(response)
+    }
+
+    async fn start_new_market_test_server(state: NewMarketFetchTestServerState) -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr");
+        let router = Router::new()
+            .route("/markets", get(handle_new_market_gamma_markets))
+            .with_state(state);
+
+        tokio::spawn(async move { axum::serve(listener, router).await.expect("serve failed") });
+        addr
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_dedupes_same_slug_and_cleans_inflight_on_cancel() {
+        let state = NewMarketFetchTestServerState::default();
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, _data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(0));
+
+        handle_market_message(make_new_market("btc-updown-5m-1", true), &ctx);
+        handle_market_message(make_new_market("btc-updown-5m-1", true), &ctx);
+
+        assert_eq!(state.total_requests.load(Ordering::SeqCst), 0);
+        assert_eq!(ctx.new_market_inflight_keys.len(), 1);
+        assert!(
+            ctx.new_market_inflight_keys
+                .contains_key("cond:cond-btc-updown-5m-1")
+        );
+
+        ctx.cancellation_token.cancel();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+
+        loop {
+            if ctx.new_market_inflight_keys.is_empty() {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "expected in-flight key cleanup after cancellation"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_fetches_respect_global_concurrency_cap() {
+        let state = NewMarketFetchTestServerState {
+            response_delay_ms: 150,
+            ..NewMarketFetchTestServerState::default()
+        };
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, _data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+
+        let slug_count = 6usize;
+        for idx in 0..slug_count {
+            let slug = format!("asset-{idx}-updown-5m-1");
+            handle_market_message(make_new_market(&slug, true), &ctx);
+        }
+
+        let expected_requests = slug_count * (1 + NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+
+        loop {
+            let done = state.total_requests.load(Ordering::SeqCst) >= expected_requests
+                && state.inflight_requests.load(Ordering::SeqCst) == 0
+                && ctx.new_market_inflight_keys.is_empty();
+
+            if done {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for new market fetch tasks to complete"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        assert_eq!(
+            state.total_requests.load(Ordering::SeqCst),
+            expected_requests,
+        );
+        assert_eq!(state.max_inflight_requests.load(Ordering::SeqCst), 1);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_same_slug_can_refetch_after_previous_completion() {
+        let state = NewMarketFetchTestServerState {
+            response_delay_ms: 50,
+            ..NewMarketFetchTestServerState::default()
+        };
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, _data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+
+        let slug = "btc-updown-5m-2";
+        let dedupe_key = "cond:cond-btc-updown-5m-2";
+        handle_market_message(make_new_market(slug, true), &ctx);
+
+        let per_fetch_requests = 1 + NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS;
+        let deadline_first = tokio::time::Instant::now() + Duration::from_secs(3);
+
+        loop {
+            let first_done = state.total_requests.load(Ordering::SeqCst) >= per_fetch_requests
+                && state.inflight_requests.load(Ordering::SeqCst) == 0
+                && !ctx.new_market_inflight_keys.contains_key(dedupe_key);
+
+            if first_done {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline_first,
+                "timed out waiting for first slug fetch to complete"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        handle_market_message(make_new_market(slug, true), &ctx);
+
+        let deadline_second = tokio::time::Instant::now() + Duration::from_secs(3);
+
+        loop {
+            let second_done = state.total_requests.load(Ordering::SeqCst) >= per_fetch_requests * 2
+                && state.inflight_requests.load(Ordering::SeqCst) == 0
+                && !ctx.new_market_inflight_keys.contains_key(dedupe_key);
+
+            if second_done {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline_second,
+                "timed out waiting for second slug fetch to complete"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        assert_eq!(
+            state.total_requests.load(Ordering::SeqCst),
+            per_fetch_requests * 2,
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_cancellation_during_fetch_cleans_inflight_slug() {
+        let state = NewMarketFetchTestServerState {
+            response_delay_ms: 500,
+            ..NewMarketFetchTestServerState::default()
+        };
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, _data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+
+        let slug = "eth-updown-5m-cancel";
+        let dedupe_key = "cond:cond-eth-updown-5m-cancel";
+        handle_market_message(make_new_market(slug, true), &ctx);
+
+        let deadline_started = tokio::time::Instant::now() + Duration::from_secs(2);
+
+        loop {
+            let started = state.inflight_requests.load(Ordering::SeqCst) > 0
+                && ctx.new_market_inflight_keys.contains_key(dedupe_key);
+
+            if started {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline_started,
+                "timed out waiting for in-flight fetch to begin"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        ctx.cancellation_token.cancel();
+
+        let deadline_cleanup = tokio::time::Instant::now() + Duration::from_secs(2);
+
+        loop {
+            if ctx.new_market_inflight_keys.is_empty() {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline_cleanup,
+                "expected in-flight key cleanup after cancellation during fetch"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        assert!(
+            state.max_inflight_requests.load(Ordering::SeqCst) <= 1,
+            "fetch concurrency exceeded configured cap during cancellation path"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_dedupes_mixed_slugs_when_condition_id_matches() {
+        let state = NewMarketFetchTestServerState::default();
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, _data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(0));
+
+        let condition_id = "0xabc123";
+        handle_market_message(
+            make_new_market_with_condition("btc-updown-5m-window-a", condition_id, true),
+            &ctx,
+        );
+        handle_market_message(
+            make_new_market_with_condition("btc-updown-5m-window-b", condition_id, true),
+            &ctx,
+        );
+
+        assert_eq!(state.total_requests.load(Ordering::SeqCst), 0);
+        assert_eq!(ctx.new_market_inflight_keys.len(), 1);
+        assert!(
+            ctx.new_market_inflight_keys.contains_key("cond:0xabc123"),
+            "mixed slug events with same condition_id should dedupe to one in-flight fetch",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_fetch_prefers_condition_id_query_over_slug_query() {
+        let state = NewMarketFetchTestServerState::default();
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, _data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+
+        handle_market_message(
+            make_new_market_with_ids(
+                "btc-updown-5m-query-check",
+                "0xmarket-condition-query",
+                "0xcondition-query",
+                true,
+            ),
+            &ctx,
+        );
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+
+        loop {
+            let done = state.total_requests.load(Ordering::SeqCst) >= 1
+                && state.inflight_requests.load(Ordering::SeqCst) == 0
+                && ctx.new_market_inflight_keys.is_empty();
+
+            if done {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for condition_id query fetch to complete"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        let condition_ids = state
+            .seen_condition_ids
+            .lock()
+            .expect("seen_condition_ids mutex poisoned");
+        let slugs = state.seen_slugs.lock().expect("seen_slugs mutex poisoned");
+        assert_eq!(
+            condition_ids.len(),
+            1 + NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS,
+        );
+        assert_eq!(slugs.len(), 1 + NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS);
+        assert!(
+            condition_ids
+                .iter()
+                .all(|cid| cid.as_deref() == Some("0xcondition-query")),
+        );
+        assert_eq!(
+            slugs.iter().filter(|slug| slug.is_none()).count(),
+            1 + NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS,
+            "condition-aware path should not send slug query for new_market fetch"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_fetch_falls_back_to_slug_when_identifiers_missing() {
+        let state = NewMarketFetchTestServerState::default();
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, _data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+
+        handle_market_message(
+            make_new_market_with_ids("btc-updown-5m-slug-fallback", "", "", true),
+            &ctx,
+        );
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+
+        loop {
+            let done = state.total_requests.load(Ordering::SeqCst) >= 1
+                && state.inflight_requests.load(Ordering::SeqCst) == 0
+                && ctx.new_market_inflight_keys.is_empty();
+
+            if done {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for slug fallback fetch to complete"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        let condition_ids = state
+            .seen_condition_ids
+            .lock()
+            .expect("seen_condition_ids mutex poisoned");
+        let slugs = state.seen_slugs.lock().expect("seen_slugs mutex poisoned");
+        assert_eq!(condition_ids.len(), 1);
+        assert_eq!(slugs.len(), 1);
+        assert_eq!(condition_ids[0], None);
+        assert_eq!(slugs[0].as_deref(), Some("btc-updown-5m-slug-fallback"));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_condition_empty_then_success_recheck_loads_instrument() {
+        let state = NewMarketFetchTestServerState::default();
+        let target_condition = "0xcondition-recheck";
+        *state
+            .empty_then_success_condition_id
+            .lock()
+            .expect("empty_then_success_condition_id mutex poisoned") =
+            Some(target_condition.to_string());
+        *state
+            .empty_then_success_payload
+            .lock()
+            .expect("empty_then_success_payload mutex poisoned") =
+            Some(serde_json::json!([gamma_market_fixture_value()]));
+
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, mut data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+
+        handle_market_message(
+            make_new_market_with_ids(
+                "btc-updown-5m-recheck",
+                target_condition,
+                target_condition,
+                true,
+            ),
+            &ctx,
+        );
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+        loop {
+            let done = state.total_requests.load(Ordering::SeqCst) >= 2
+                && state.inflight_requests.load(Ordering::SeqCst) == 0
+                && ctx.new_market_inflight_keys.is_empty()
+                && !ctx.instruments.load().is_empty();
+
+            if done {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for empty-then-success recheck flow",
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        let seen_condition_ids = state
+            .seen_condition_ids
+            .lock()
+            .expect("seen_condition_ids mutex poisoned")
+            .clone();
+        assert!(
+            seen_condition_ids
+                .iter()
+                .all(|cid| cid.as_deref() == Some(target_condition)),
+            "all requests should query target condition_id, saw: {seen_condition_ids:?}",
+        );
+        assert_eq!(
+            state.total_requests.load(Ordering::SeqCst),
+            2,
+            "single recheck policy should perform exactly two condition fetch attempts",
+        );
+
+        let mut emitted_instrument = false;
+
+        while let Ok(Some(event)) =
+            tokio::time::timeout(Duration::from_millis(200), data_rx.recv()).await
+        {
+            if matches!(event, DataEvent::Instrument(_)) {
+                emitted_instrument = true;
+                break;
+            }
+        }
+        assert!(
+            emitted_instrument,
+            "expected emitted DataEvent::Instrument after successful recheck"
+        );
+    }
+
+    #[rstest]
+    fn new_market_dedupe_key_prefers_condition_then_market_then_slug() {
+        let MarketWsMessage::NewMarket(mut nm) =
+            make_new_market_with_condition("btc-updown-5m-window-a", "0xcond123", true)
+        else {
+            panic!("expected new_market message");
+        };
+
+        assert_eq!(new_market_dedupe_key(&nm), "cond:0xcond123");
+
+        nm.condition_id.clear();
+        nm.market = Ustr::from("0xmarket456");
+        assert_eq!(new_market_dedupe_key(&nm), "market:0xmarket456");
+
+        nm.market = Ustr::from("");
+        nm.slug = "btc-updown-5m-window-b".to_string();
+        assert_eq!(new_market_dedupe_key(&nm), "slug:btc-updown-5m-window-b");
+    }
+
+    fn make_market_resolved(
+        condition_id: &str,
+        winner_asset_id: &str,
+        loser_asset_id: &str,
+    ) -> MarketWsMessage {
+        MarketWsMessage::MarketResolved(PolymarketMarketResolved {
+            id: "resolved-1".to_string(),
+            market: Ustr::from(condition_id),
+            assets_ids: vec![winner_asset_id.to_string(), loser_asset_id.to_string()],
+            winning_asset_id: winner_asset_id.to_string(),
+            winning_outcome: "Yes".to_string(),
+            timestamp: "1700000004000".to_string(),
+            tags: vec![],
+        })
+    }
+
+    fn make_gamma_market_value_with_outcome_prices(
+        condition_id: &str,
+        clob_token_ids: &str,
+        outcome_prices: Option<&str>,
+        closed: Option<bool>,
+        accepting_orders: Option<bool>,
+    ) -> Value {
+        let mut value = serde_json::json!({
+            "id": "1557558",
+            "conditionId": condition_id,
+            "questionID": "0xquestion",
+            "clobTokenIds": clob_token_ids,
+            "outcomes": "[\"Yes\",\"No\"]",
+            "question": "Will test pass?",
+            "description": null,
+            "startDate": null,
+            "endDate": null,
+            "active": false,
+            "closed": closed,
+            "acceptingOrders": accepting_orders,
+            "enableOrderBook": false,
+            "slug": "test-market",
+            "events": []
+        });
+
+        if let Some(outcome_prices) = outcome_prices {
+            value["outcomePrices"] = serde_json::Value::String(outcome_prices.to_string());
+        }
+
+        value
+    }
+
+    fn make_clob_market_value(
+        condition_id: &str,
+        winner_token_id: &str,
+        loser_token_id: &str,
+        closed: bool,
+    ) -> Value {
+        serde_json::json!({
+            "condition_id": condition_id,
+            "closed": closed,
+            "tokens": [
+                {"token_id": winner_token_id, "outcome": "Yes", "winner": true},
+                {"token_id": loser_token_id, "outcome": "No", "winner": false}
+            ]
+        })
+    }
+
+    #[derive(Clone, Default)]
+    struct TestServerState {
+        gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+        clob_market_by_condition: Arc<tokio::sync::Mutex<AHashMap<String, Value>>>,
+    }
+
+    async fn handle_gamma_markets(State(state): State<TestServerState>) -> Json<Value> {
+        let body = state
+            .gamma_response
+            .lock()
+            .await
+            .clone()
+            .unwrap_or_else(|| serde_json::json!([]));
+        Json(body)
+    }
+
+    async fn handle_clob_market(
+        State(state): State<TestServerState>,
+        Path(condition_id): Path<String>,
+    ) -> (StatusCode, Json<Value>) {
+        let body = state.clob_market_by_condition.lock().await;
+        if let Some(value) = body.get(&condition_id) {
+            (StatusCode::OK, Json(value.clone()))
+        } else {
+            (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error":"market not found"})),
+            )
+        }
+    }
+
+    async fn start_mock_server(state: TestServerState) -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr");
+        let router = Router::new()
+            .route("/markets", get(handle_gamma_markets))
+            .route("/markets/{condition_id}", get(handle_clob_market))
+            .with_state(state);
+
+        tokio::spawn(async move { axum::serve(listener, router).await.expect("serve failed") });
+        addr
+    }
+
+    fn create_test_client(
+        addr: SocketAddr,
+    ) -> (
+        PolymarketDataClient,
+        tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(tx);
+
+        let base_url = format!("http://{addr}");
+        let gamma =
+            PolymarketGammaHttpClient::new(Some(base_url.clone()), 5, RetryConfig::default())
+                .expect("gamma client");
+        let clob_public =
+            PolymarketClobPublicClient::new(Some(base_url.clone()), 5).expect("clob client");
+        let data_api =
+            PolymarketDataApiHttpClient::new(Some(base_url.clone()), 5).expect("data api client");
+        let ws = PolymarketWebSocketClient::new_market(
+            Some(format!("ws://{addr}/ws/market")),
+            false,
+            TransportBackend::default(),
+        );
+
+        let config = PolymarketDataClientConfig {
+            base_url_http: Some(base_url.clone()),
+            base_url_ws: Some(format!("ws://{addr}/ws")),
+            base_url_gamma: Some(base_url.clone()),
+            base_url_data_api: Some(base_url),
+            resolve_poll_enabled: false,
+            ..PolymarketDataClientConfig::default()
+        };
+
+        let client = PolymarketDataClient::new(
+            *POLYMARKET_CLIENT_ID,
+            config,
+            gamma,
+            clob_public,
+            data_api,
+            ws,
+        );
+
+        (client, rx)
+    }
+
+    #[rstest]
+    fn market_resolved_emits_grouped_close_and_removes_watch_entry() {
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let expiration_ns = UnixNanos::from(1_000_000_000);
+        let yes = seed_instrument_with_context(
+            &ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                market_slug: Some("btc-updown-5m"),
+                market_id: Some("1778973900"),
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(expiration_ns),
+            },
+        );
+        let no = seed_instrument_with_context(
+            &ctx,
+            "0xTOKEN_NO",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                market_slug: Some("btc-updown-5m"),
+                market_id: Some("1778973900"),
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(expiration_ns),
+            },
+        );
+
+        update_resolve_watchlist_from_position_event(
+            &ctx.resolve_poll_watchlist,
+            &ctx.instruments,
+            &stub_position_opened_event(yes.id()),
+        );
+        update_resolve_watchlist_from_position_event(
+            &ctx.resolve_poll_watchlist,
+            &ctx.instruments,
+            &stub_position_opened_event(no.id()),
+        );
+
+        handle_market_message(
+            make_market_resolved("0xCOND-BTC", "0xTOKEN_YES", "0xTOKEN_NO"),
+            &ctx,
+        );
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        let statuses = events
+            .iter()
+            .filter(|event| matches!(event, DataEvent::InstrumentStatus(_)))
+            .count();
+        assert_eq!(statuses, 2);
+
+        let mut yes_close = None;
+        let mut no_close = None;
+
+        for event in events {
+            if let DataEvent::Data(NautilusData::InstrumentClose(close)) = event {
+                if close.instrument_id == yes.id() {
+                    yes_close = Some(close);
+                } else if close.instrument_id == no.id() {
+                    no_close = Some(close);
+                }
+            }
+        }
+
+        let yes_close = yes_close.expect("expected yes close");
+        let no_close = no_close.expect("expected no close");
+        assert_eq!(yes_close.close_type, InstrumentCloseType::ContractExpired);
+        assert_eq!(no_close.close_type, InstrumentCloseType::ContractExpired);
+        assert_eq!(
+            yes_close.close_price.as_decimal(),
+            rust_decimal::Decimal::ONE
+        );
+        assert_eq!(
+            no_close.close_price.as_decimal(),
+            rust_decimal::Decimal::ZERO
+        );
+        assert!(
+            !ctx.resolve_poll_watchlist
+                .contains_key(&"0xCOND-BTC".to_string())
+        );
+    }
+
+    #[rstest]
+    fn duplicate_market_resolved_after_watch_removal_is_a_noop() {
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let yes = seed_instrument_with_context(
+            &ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(UnixNanos::from(1_000_000_000)),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        update_resolve_watchlist_from_position_event(
+            &ctx.resolve_poll_watchlist,
+            &ctx.instruments,
+            &stub_position_opened_event(yes.id()),
+        );
+
+        let resolved = make_market_resolved("0xCOND-BTC", "0xTOKEN_YES", "0xTOKEN_NO");
+        handle_market_message(resolved.clone(), &ctx);
+        let _ = std::iter::from_fn(|| data_rx.try_recv().ok()).collect::<Vec<_>>();
+
+        handle_market_message(resolved, &ctx);
+        assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn market_resolved_emit_failure_merges_watch_entry_back() {
+        let (ctx, data_rx) = make_ws_ctx();
+        let expiration_ns = UnixNanos::from(1_000_000_000);
+        let yes = seed_instrument_with_context(
+            &ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                market_slug: Some("btc-updown-5m"),
+                market_id: Some("1778973900"),
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(expiration_ns),
+            },
+        );
+        let no = seed_instrument_with_context(
+            &ctx,
+            "0xTOKEN_NO",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                market_slug: Some("btc-updown-5m"),
+                market_id: Some("1778973900"),
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(expiration_ns),
+            },
+        );
+
+        update_resolve_watchlist_from_position_event(
+            &ctx.resolve_poll_watchlist,
+            &ctx.instruments,
+            &stub_position_opened_event(yes.id()),
+        );
+        update_resolve_watchlist_from_position_event(
+            &ctx.resolve_poll_watchlist,
+            &ctx.instruments,
+            &stub_position_opened_event(no.id()),
+        );
+
+        drop(data_rx);
+
+        handle_market_message(
+            make_market_resolved("0xCOND-BTC", "0xTOKEN_YES", "0xTOKEN_NO"),
+            &ctx,
+        );
+
+        let watchlist = ctx.resolve_poll_watchlist.load();
+        let entry = watchlist
+            .get("0xCOND-BTC")
+            .expect("expected watch entry restored after emit failure");
+        assert_eq!(entry.tracked.len(), 2);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn request_data_manual_fallback_resolves_paused_entries() {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await = Some(serde_json::json!([
+            make_gamma_market_value_with_outcome_prices(
+                "0xCOND-REQ",
+                "[\"0xTOKEN_YES\",\"0xTOKEN_NO\"]",
+                Some("[\"1\",\"0\"]"),
+                Some(true),
+                Some(false),
+            )
+        ]));
+        let addr = start_mock_server(state).await;
+        let (client, mut data_rx) = create_test_client(addr);
+        let ws_ctx = make_client_ws_ctx(&client);
+
+        let expiration_ns = UnixNanos::from(1_000_000_000);
+        let inst_yes = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let inst_no = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_NO",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_yes,
+            PositionId::new("P-1"),
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_no,
+            PositionId::new("P-2"),
+        );
+        pause_resolve_watch_entries(&client.resolve_poll_watchlist, &["0xCOND-REQ".to_string()]);
+
+        let request = RequestCustomData::new(
+            ClientId::from("POLYMARKET"),
+            DataType::new(RESOLVE_REQUEST_TYPE_NAME, None, None),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        client.request_data(request).expect("request_data");
+
+        wait_until_async(
+            || async {
+                !client
+                    .resolve_poll_watchlist
+                    .contains_key(&"0xCOND-REQ".to_string())
+            },
+            StdDuration::from_secs(5),
+        )
+        .await;
+
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(2), |events| {
+            events.iter().any(is_resolve_response) && count_instrument_close_events(events) >= 2
+        })
+        .await;
+
+        assert!(
+            events.iter().any(is_resolve_response),
+            "expected custom data response, received: {events:?}"
+        );
+        let response = events
+            .iter()
+            .find_map(|event| match event {
+                DataEvent::Response(DataResponse::Data(response)) => Some(response),
+                _ => None,
+            })
+            .expect("expected custom data response");
+        let custom = response
+            .data
+            .as_ref()
+            .downcast_ref::<ModelCustomData>()
+            .expect("expected CustomData response payload");
+        assert_eq!(custom.data_type.type_name(), RESOLVE_REQUEST_TYPE_NAME);
+        let summary = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketResolveRequestSummaryData>()
+            .expect("expected resolve summary payload");
+        assert_eq!(
+            summary.emitted_condition_ids,
+            vec!["0xCOND-REQ".to_string()]
+        );
+        let closes = count_instrument_close_events(&events);
+        assert_eq!(closes, 2);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn request_data_manual_fallback_with_auto_poll_disabled_resolves_expired_entries() {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await = Some(serde_json::json!([
+            make_gamma_market_value_with_outcome_prices(
+                "0xCOND-REQ",
+                "[\"0xTOKEN_YES\",\"0xTOKEN_NO\"]",
+                Some("[\"1\",\"0\"]"),
+                Some(true),
+                Some(false),
+            )
+        ]));
+        let addr = start_mock_server(state).await;
+        let (client, mut data_rx) = create_test_client(addr);
+        let ws_ctx = make_client_ws_ctx(&client);
+
+        let expiration_ns = UnixNanos::from(
+            client
+                .clock
+                .get_time_ns()
+                .as_u64()
+                .saturating_sub(60_000_000_000),
+        );
+        let inst_yes = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let inst_no = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_NO",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_yes,
+            PositionId::new("P-1"),
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_no,
+            PositionId::new("P-2"),
+        );
+
+        let request = RequestCustomData::new(
+            ClientId::from("POLYMARKET"),
+            DataType::new(RESOLVE_REQUEST_TYPE_NAME, None, None),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        client.request_data(request).expect("request_data");
+
+        wait_until_async(
+            || async {
+                !client
+                    .resolve_poll_watchlist
+                    .contains_key(&"0xCOND-REQ".to_string())
+            },
+            StdDuration::from_secs(5),
+        )
+        .await;
+
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(2), |events| {
+            events.iter().any(is_resolve_response) && count_instrument_close_events(events) >= 2
+        })
+        .await;
+
+        let closes = count_instrument_close_events(&events);
+        assert_eq!(closes, 2);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn request_data_manual_fallback_uses_clob_when_gamma_is_not_strict() {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await = Some(serde_json::json!([
+            make_gamma_market_value_with_outcome_prices(
+                "0xCOND-REQ",
+                "[\"0xTOKEN_YES\",\"0xTOKEN_NO\"]",
+                Some("[\"0.58\",\"0.42\"]"),
+                Some(true),
+                Some(false),
+            )
+        ]));
+        state.clob_market_by_condition.lock().await.insert(
+            "0xCOND-REQ".to_string(),
+            make_clob_market_value("0xCOND-REQ", "0xTOKEN_YES", "0xTOKEN_NO", true),
+        );
+
+        let addr = start_mock_server(state).await;
+        let (client, mut data_rx) = create_test_client(addr);
+        let ws_ctx = make_client_ws_ctx(&client);
+
+        let expiration_ns = UnixNanos::from(
+            client
+                .clock
+                .get_time_ns()
+                .as_u64()
+                .saturating_sub(60_000_000_000),
+        );
+        let inst_yes = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let inst_no = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_NO",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_yes,
+            PositionId::new("P-1"),
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_no,
+            PositionId::new("P-2"),
+        );
+
+        let request = RequestCustomData::new(
+            ClientId::from("POLYMARKET"),
+            DataType::new(RESOLVE_REQUEST_TYPE_NAME, None, None),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        client.request_data(request).expect("request_data");
+
+        wait_until_async(
+            || async {
+                !client
+                    .resolve_poll_watchlist
+                    .contains_key(&"0xCOND-REQ".to_string())
+            },
+            StdDuration::from_secs(5),
+        )
+        .await;
+
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(2), |events| {
+            events.iter().any(is_resolve_response) && count_instrument_close_events(events) >= 2
+        })
+        .await;
+
+        let response = events
+            .iter()
+            .find_map(|event| match event {
+                DataEvent::Response(DataResponse::Data(response)) => Some(response),
+                _ => None,
+            })
+            .expect("expected custom data response");
+        let custom = response
+            .data
+            .as_ref()
+            .downcast_ref::<ModelCustomData>()
+            .expect("expected CustomData response payload");
+        let summary = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketResolveRequestSummaryData>()
+            .expect("expected resolve summary payload");
+        assert_eq!(summary.resolved_markets, 1);
+        assert_eq!(summary.skipped_non_binary_markets, 1);
+        assert_eq!(summary.clob_fallback_successes, 1);
+        assert_eq!(
+            summary.emitted_condition_ids,
+            vec!["0xCOND-REQ".to_string()]
+        );
+
+        let closes = count_instrument_close_events(&events);
+        assert_eq!(closes, 2);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn resolve_fallback_clob_success_after_gamma_error_does_not_mark_failed() {
+        let state = TestServerState::default();
+        state.clob_market_by_condition.lock().await.insert(
+            "0xCOND-REQ".to_string(),
+            make_clob_market_value("0xCOND-REQ", "0xTOKEN_YES", "0xTOKEN_NO", true),
+        );
+
+        let addr = start_mock_server(state).await;
+        let (client, _data_rx) = create_test_client(addr);
+        let ws_ctx = make_client_ws_ctx(&client);
+
+        let expiration_ns = UnixNanos::from(
+            client
+                .clock
+                .get_time_ns()
+                .as_u64()
+                .saturating_sub(60_000_000_000),
+        );
+        let inst_yes = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let inst_no = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_NO",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_yes,
+            PositionId::new("P-1"),
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_no,
+            PositionId::new("P-2"),
+        );
+
+        let failing_gamma = PolymarketGammaHttpClient::new(
+            Some("http://127.0.0.1:1".to_string()),
+            1,
+            RetryConfig {
+                max_retries: 0,
+                initial_delay_ms: 1,
+                max_delay_ms: 1,
+                backoff_factor: 1.0,
+                jitter_ms: 0,
+                operation_timeout_ms: Some(200),
+                immediate_first: true,
+                max_elapsed_ms: Some(200),
+            },
+        )
+        .expect("gamma client");
+
+        let stats = fetch_and_apply_resolutions_by_condition_ids(
+            &failing_gamma,
+            &client.clob_public_client,
+            &ws_ctx.resolve_context(),
+            &["0xCOND-REQ".to_string()],
+            ResolveBatchErrorMode::StopOnFirstError,
+        )
+        .await;
+
+        assert_eq!(stats.resolved_markets, 1);
+        assert_eq!(stats.clob_fallback_successes, 1);
+        assert_eq!(stats.emitted_condition_ids, vec!["0xCOND-REQ".to_string()]);
+        assert!(stats.failed_condition_ids.is_empty());
+        assert_eq!(stats.error, None);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn request_data_explicit_multiple_condition_ids_resolves_all_requested_conditions() {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await = Some(serde_json::json!([
+            make_gamma_market_value_with_outcome_prices(
+                "0xCOND-A",
+                "[\"0xA_YES\",\"0xA_NO\"]",
+                Some("[\"1\",\"0\"]"),
+                Some(true),
+                Some(false),
+            ),
+            make_gamma_market_value_with_outcome_prices(
+                "0xCOND-B",
+                "[\"0xB_YES\",\"0xB_NO\"]",
+                Some("[\"1\",\"0\"]"),
+                Some(true),
+                Some(false),
+            )
+        ]));
+        let addr = start_mock_server(state).await;
+        let (client, mut data_rx) = create_test_client(addr);
+        let ws_ctx = make_client_ws_ctx(&client);
+
+        let expiration_ns = UnixNanos::from(1_000_000_000);
+        let instruments = [
+            seed_instrument_with_context(
+                &ws_ctx,
+                "0xA_YES",
+                Price::from("0.001"),
+                Quantity::from("0.01"),
+                SeedInstrumentContext {
+                    condition_id: Some("0xCOND-A"),
+                    expiration_ns: Some(expiration_ns),
+                    ..SeedInstrumentContext::default()
+                },
+            ),
+            seed_instrument_with_context(
+                &ws_ctx,
+                "0xA_NO",
+                Price::from("0.001"),
+                Quantity::from("0.01"),
+                SeedInstrumentContext {
+                    condition_id: Some("0xCOND-A"),
+                    expiration_ns: Some(expiration_ns),
+                    ..SeedInstrumentContext::default()
+                },
+            ),
+            seed_instrument_with_context(
+                &ws_ctx,
+                "0xB_YES",
+                Price::from("0.001"),
+                Quantity::from("0.01"),
+                SeedInstrumentContext {
+                    condition_id: Some("0xCOND-B"),
+                    expiration_ns: Some(expiration_ns),
+                    ..SeedInstrumentContext::default()
+                },
+            ),
+            seed_instrument_with_context(
+                &ws_ctx,
+                "0xB_NO",
+                Price::from("0.001"),
+                Quantity::from("0.01"),
+                SeedInstrumentContext {
+                    condition_id: Some("0xCOND-B"),
+                    expiration_ns: Some(expiration_ns),
+                    ..SeedInstrumentContext::default()
+                },
+            ),
+        ];
+
+        for instrument in &instruments {
+            upsert_resolve_watch_entry_from_instrument(
+                &client.resolve_poll_watchlist,
+                instrument,
+                PositionId::new("P-1"),
+            );
+        }
+
+        let mut params = Params::new();
+        params.insert(
+            "condition_ids".to_string(),
+            serde_json::json!(["0xCOND-A", "0xCOND-B"]),
+        );
+        let request = RequestCustomData::new(
+            ClientId::from("POLYMARKET"),
+            DataType::new(RESOLVE_REQUEST_TYPE_NAME, None, None),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(params),
+        );
+        client.request_data(request).expect("request_data");
+
+        wait_until_async(
+            || async {
+                !client
+                    .resolve_poll_watchlist
+                    .contains_key(&"0xCOND-A".to_string())
+                    && !client
+                        .resolve_poll_watchlist
+                        .contains_key(&"0xCOND-B".to_string())
+            },
+            StdDuration::from_secs(5),
+        )
+        .await;
+
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(2), |events| {
+            events.iter().any(is_resolve_response) && count_instrument_close_events(events) >= 4
+        })
+        .await;
+
+        let response = events
+            .iter()
+            .find_map(|event| match event {
+                DataEvent::Response(DataResponse::Data(response)) => Some(response),
+                _ => None,
+            })
+            .expect("expected custom data response");
+        let custom = response
+            .data
+            .as_ref()
+            .downcast_ref::<ModelCustomData>()
+            .expect("expected CustomData response payload");
+        let summary = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketResolveRequestSummaryData>()
+            .expect("expected resolve summary payload");
+        assert_eq!(
+            summary.requested_condition_ids,
+            vec!["0xCOND-A".to_string(), "0xCOND-B".to_string()]
+        );
+        assert_eq!(summary.resolved_markets, 2);
+        assert_eq!(
+            summary.emitted_condition_ids,
+            vec!["0xCOND-A".to_string(), "0xCOND-B".to_string()]
+        );
+
+        let closes = count_instrument_close_events(&events);
+        assert_eq!(closes, 4);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn request_data_explicit_invalid_selector_does_not_fallback_to_watchlist() {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await = Some(serde_json::json!([
+            make_gamma_market_value_with_outcome_prices(
+                "0xCOND-REQ",
+                "[\"0xTOKEN_YES\",\"0xTOKEN_NO\"]",
+                Some("[\"1\",\"0\"]"),
+                Some(true),
+                Some(false),
+            )
+        ]));
+        let addr = start_mock_server(state).await;
+        let (client, mut data_rx) = create_test_client(addr);
+        let ws_ctx = make_client_ws_ctx(&client);
+
+        let expiration_ns = UnixNanos::from(1_000_000_000);
+        let inst_yes = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let inst_no = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_NO",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_yes,
+            PositionId::new("P-1"),
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_no,
+            PositionId::new("P-2"),
+        );
+        pause_resolve_watch_entries(&client.resolve_poll_watchlist, &["0xCOND-REQ".to_string()]);
+
+        let mut params = Params::new();
+        params.insert(
+            "instrument_ids".to_string(),
+            serde_json::json!(["BTCUSDT-PERP.BINANCE"]),
+        );
+        let request = RequestCustomData::new(
+            ClientId::from("POLYMARKET"),
+            DataType::new(RESOLVE_REQUEST_TYPE_NAME, None, None),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(params),
+        );
+        client.request_data(request).expect("request_data");
+
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(2), |events| {
+            events.iter().any(is_resolve_response)
+        })
+        .await;
+
+        let response = events
+            .iter()
+            .find_map(|event| match event {
+                DataEvent::Response(DataResponse::Data(response)) => Some(response),
+                _ => None,
+            })
+            .expect("expected custom data response");
+        let custom = response
+            .data
+            .as_ref()
+            .downcast_ref::<ModelCustomData>()
+            .expect("expected CustomData response payload");
+        let summary = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketResolveRequestSummaryData>()
+            .expect("expected resolve summary payload");
+        assert!(!summary.used_watchlist_fallback);
+        assert_eq!(summary.requested_condition_ids, Vec::<String>::new());
+        assert!(summary.error.is_some());
+
+        let closes = count_instrument_close_events(&events);
+        assert_eq!(closes, 0);
+        assert!(
+            client
+                .resolve_poll_watchlist
+                .contains_key(&"0xCOND-REQ".to_string())
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn resolve_poll_task_emits_grouped_close_for_expired_watch_entries() {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await = Some(serde_json::json!([
+            make_gamma_market_value_with_outcome_prices(
+                "0xCOND-POLL",
+                "[\"0xTOKEN_YES\",\"0xTOKEN_NO\"]",
+                Some("[\"1\",\"0\"]"),
+                Some(true),
+                Some(false),
+            )
+        ]));
+        let addr = start_mock_server(state).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.config.resolve_poll_enabled = true;
+        client.config.resolve_poll_interval_secs = 1;
+        client.config.resolve_poll_grace_secs = 0;
+        client.config.resolve_poll_max_wait_secs = 300;
+
+        let ws_ctx = make_client_ws_ctx(&client);
+        let expiration_ns = UnixNanos::from(
+            client
+                .clock
+                .get_time_ns()
+                .as_u64()
+                .saturating_sub(1_000_000_000),
+        );
+        let inst_yes = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-POLL"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let inst_no = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_NO",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-POLL"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_yes,
+            PositionId::new("P-1"),
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_no,
+            PositionId::new("P-2"),
+        );
+
+        client.spawn_resolve_poll_task();
+
+        wait_until_async(
+            || async {
+                !client
+                    .resolve_poll_watchlist
+                    .contains_key(&"0xCOND-POLL".to_string())
+            },
+            StdDuration::from_secs(5),
+        )
+        .await;
+
+        client.cancellation_token.cancel();
+        client
+            .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
+            .await;
+
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(1), |events| {
+            count_instrument_close_events(events) >= 2
+        })
+        .await;
+        let closes = count_instrument_close_events(&events);
+
+        assert_eq!(closes, 2);
+        assert!(
+            !client
+                .resolve_poll_watchlist
+                .contains_key(&"0xCOND-POLL".to_string())
+        );
+    }
+
+    fn level(price: &str, size: &str) -> PolymarketBookLevel {
+        PolymarketBookLevel {
+            price: price.to_string(),
+            size: size.to_string(),
+        }
+    }
+
+    fn make_snapshot(market: &str, asset_id: &str, prices: &[(&str, &str)]) -> MarketWsMessage {
+        let mid = prices.len() / 2;
+        let bids = prices[..mid].iter().map(|(p, s)| level(p, s)).collect();
+        let asks = prices[mid..].iter().map(|(p, s)| level(p, s)).collect();
+        MarketWsMessage::Book(PolymarketBookSnapshot {
+            market: Ustr::from(market),
+            asset_id: Ustr::from(asset_id),
+            bids,
+            asks,
+            timestamp: "1700000000000".to_string(),
+        })
+    }
+
+    fn make_tick_change(market: &str, asset_id: &str, old: &str, new: &str) -> MarketWsMessage {
+        MarketWsMessage::TickSizeChange(PolymarketTickSizeChange {
+            market: Ustr::from(market),
+            asset_id: Ustr::from(asset_id),
+            new_tick_size: new.to_string(),
+            old_tick_size: old.to_string(),
+            timestamp: "1700000001000".to_string(),
+        })
+    }
+
+    fn make_price_change(market: &str, asset_id: &str, price: &str, size: &str) -> MarketWsMessage {
+        MarketWsMessage::PriceChange(PolymarketQuotes {
+            market: Ustr::from(market),
+            price_changes: vec![PolymarketQuote {
+                asset_id: Ustr::from(asset_id),
+                price: price.to_string(),
+                side: PolymarketOrderSide::Buy,
+                size: size.to_string(),
+                hash: String::new(),
+                best_bid: None,
+                best_ask: None,
+            }],
+            timestamp: "1700000002000".to_string(),
+        })
+    }
+
+    #[rstest]
+    fn tick_size_change_clears_book_and_marks_pending() {
+        let asset_id_str = "0xTOKEN";
+        let token_ustr = Ustr::from(asset_id_str);
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+
+        let prior_quote = QuoteTick::new(
+            instrument_id,
+            Price::from("0.504"),
+            Price::from("0.506"),
+            Quantity::from("5.00"),
+            Quantity::from("8.00"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        ctx.last_quotes.insert(instrument_id, prior_quote);
+
+        let snap = make_snapshot(
+            market,
+            asset_id_str,
+            &[
+                ("0.501", "10"),
+                ("0.504", "5"),
+                ("0.506", "8"),
+                ("0.509", "12"),
+            ],
+        );
+        handle_market_message(snap, &ctx);
+        assert!(ctx.order_books.contains_key(&instrument_id));
+
+        while data_rx.try_recv().is_ok() {}
+
+        let change = make_tick_change(market, asset_id_str, "0.001", "0.01");
+        handle_market_message(change, &ctx);
+
+        assert!(!ctx.order_books.contains_key(&instrument_id));
+        assert!(ctx.last_quotes.contains_key(&instrument_id));
+        assert!(
+            ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+
+        let meta = ctx.token_meta.get(&token_ustr).expect("token_meta");
+        assert_eq!(meta.price_precision, 2);
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            events.iter().any(|e| matches!(e, DataEvent::Instrument(_))),
+            "expected rebuilt instrument event, found: {events:?}",
+        );
+        assert!(
+            !events.iter().any(|e| matches!(e, DataEvent::Data(_))),
+            "tick size change must not emit Data events: {events:?}",
+        );
+    }
+
+    #[rstest]
+    fn pending_drops_price_change_until_snapshot() {
+        let asset_id_str = "0xTOKEN2";
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+
+        let pc = make_price_change(market, asset_id_str, "0.50", "20");
+        handle_market_message(pc, &ctx);
+
+        assert!(!ctx.order_books.contains_key(&instrument_id));
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            events.is_empty(),
+            "price_change while pending must not emit any events: {events:?}",
+        );
+
+        let snap = make_snapshot(
+            market,
+            asset_id_str,
+            &[("0.45", "5"), ("0.49", "10"), ("0.51", "8"), ("0.55", "12")],
+        );
+        handle_market_message(snap, &ctx);
+
+        assert!(
+            !ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        assert!(ctx.order_books.contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    fn tick_size_change_noop_preserves_book_and_quote() {
+        let asset_id_str = "0xTOKEN_NOOP";
+        let token_ustr = Ustr::from(asset_id_str);
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+
+        let snap = make_snapshot(
+            market,
+            asset_id_str,
+            &[("0.50", "10"), ("0.54", "5"), ("0.56", "8"), ("0.59", "12")],
+        );
+        handle_market_message(snap, &ctx);
+        let book_ts_before = ctx
+            .order_books
+            .get(&instrument_id)
+            .expect("book entry")
+            .ts_last;
+
+        while data_rx.try_recv().is_ok() {}
+
+        let change = make_tick_change(market, asset_id_str, "0.01", "0.01");
+        handle_market_message(change, &ctx);
+
+        let book_after = ctx.order_books.get(&instrument_id).expect("book entry");
+        assert_eq!(book_after.ts_last, book_ts_before);
+        assert!(
+            !ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        let meta = ctx.token_meta.get(&token_ustr).expect("token_meta");
+        assert_eq!(meta.price_precision, 2);
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            events.is_empty(),
+            "no-op tick change must not emit events: {events:?}",
+        );
+    }
+
+    #[rstest]
+    fn tick_size_change_same_precision_different_value_triggers_epoch() {
+        let asset_id_str = "0xTOKEN_VALUE";
+        let token_ustr = Ustr::from(asset_id_str);
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.005"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.order_books.insert(
+            instrument_id,
+            OrderBook::new(instrument_id, BookType::L2_MBP),
+        );
+
+        let change = make_tick_change(market, asset_id_str, "0.005", "0.001");
+        handle_market_message(change, &ctx);
+
+        assert!(!ctx.order_books.contains_key(&instrument_id));
+        assert!(
+            ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        let meta = ctx.token_meta.get(&token_ustr).expect("token_meta");
+        assert_eq!(meta.price_precision, 3);
+
+        let rebuilt = ctx
+            .instruments
+            .load()
+            .get(&instrument_id)
+            .cloned()
+            .expect("rebuilt instrument");
+        assert_eq!(rebuilt.price_increment(), Price::from("0.001"));
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            events.iter().any(|e| matches!(e, DataEvent::Instrument(_))),
+            "expected rebuilt instrument event, found: {events:?}",
+        );
+    }
+
+    #[rstest]
+    fn tick_size_change_does_not_mark_pending_for_trade_only_sub() {
+        let asset_id_str = "0xTOKEN6";
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_trade_subs.insert(instrument_id);
+
+        let change = make_tick_change(market, asset_id_str, "0.001", "0.01");
+        handle_market_message(change, &ctx);
+
+        assert!(
+            !ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            events.iter().any(|e| matches!(e, DataEvent::Instrument(_))),
+            "instrument update must still be emitted: {events:?}",
+        );
+    }
+
+    #[rstest]
+    fn pending_persists_when_snapshot_has_corrupt_level() {
+        let asset_id_str = "0xTOKEN7";
+
+        let (ctx, _data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.active_quote_subs.insert(instrument_id);
+        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+
+        let snap = MarketWsMessage::Book(PolymarketBookSnapshot {
+            market: Ustr::from("0xMARKET"),
+            asset_id: Ustr::from(asset_id_str),
+            bids: vec![level("not-a-number", "1"), level("0.49", "10")],
+            asks: vec![level("0.51", "8"), level("0.55", "12")],
+            timestamp: "1700000000000".to_string(),
+        });
+        handle_market_message(snap, &ctx);
+
+        assert!(
+            ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        assert!(!ctx.order_books.contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    fn price_change_emits_delta_when_not_pending() {
+        let asset_id_str = "0xTOKEN10";
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.order_books.insert(
+            instrument_id,
+            OrderBook::new(instrument_id, BookType::L2_MBP),
+        );
+
+        let pc = make_price_change(market, asset_id_str, "0.50", "20");
+        handle_market_message(pc, &ctx);
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, DataEvent::Data(NautilusData::Deltas(_)))),
+            "delta must be emitted on the not-pending happy path: {events:?}",
+        );
+
+        let book = ctx.order_books.get(&instrument_id).expect("book entry");
+        assert_eq!(book.best_bid_price(), Some(Price::from("0.50")));
+        assert_eq!(book.best_bid_size(), Some(Quantity::from("20.00")));
+    }
+
+    #[rstest]
+    fn quote_path_open_during_pending_window() {
+        let asset_id_str = "0xTOKEN8";
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.active_quote_subs.insert(instrument_id);
+        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+
+        let prior = QuoteTick::new(
+            instrument_id,
+            Price::from("0.49"),
+            Price::from("0.51"),
+            Quantity::from("100.00"),
+            Quantity::from("75.00"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        ctx.last_quotes.insert(instrument_id, prior);
+
+        let pc = MarketWsMessage::PriceChange(PolymarketQuotes {
+            market: Ustr::from(market),
+            price_changes: vec![PolymarketQuote {
+                asset_id: Ustr::from(asset_id_str),
+                price: "0.50".to_string(),
+                side: PolymarketOrderSide::Buy,
+                size: "20".to_string(),
+                hash: String::new(),
+                best_bid: Some("0.50".to_string()),
+                best_ask: Some("0.52".to_string()),
+            }],
+            timestamp: "1700000003000".to_string(),
+        });
+        handle_market_message(pc, &ctx);
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, DataEvent::Data(NautilusData::Deltas(_)))),
+            "delta must be dropped while pending: {events:?}",
+        );
+        let emitted_quote = events
+            .iter()
+            .find_map(|e| match e {
+                DataEvent::Data(NautilusData::Quote(q)) => Some(q),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("expected quote event, found: {events:?}"));
+        assert_eq!(emitted_quote.bid_size, Quantity::from("20.00"));
+        assert_eq!(emitted_quote.ask_size, Quantity::from("75.00"));
+    }
+
+    #[rstest]
+    fn pending_persists_when_snapshot_fails_to_seed() {
+        let asset_id_str = "0xTOKEN5";
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+
+        let empty = MarketWsMessage::Book(PolymarketBookSnapshot {
+            market: Ustr::from(market),
+            asset_id: Ustr::from(asset_id_str),
+            bids: vec![],
+            asks: vec![],
+            timestamp: "1700000000000".to_string(),
+        });
+        handle_market_message(empty, &ctx);
+
+        assert!(
+            ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            !events.iter().any(|e| matches!(e, DataEvent::Data(_))),
+            "empty snapshot must not emit Data events: {events:?}",
+        );
     }
 }
