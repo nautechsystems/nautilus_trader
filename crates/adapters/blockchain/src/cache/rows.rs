@@ -69,6 +69,7 @@ pub struct PoolRow {
     pub pool_identifier: String,
     pub dex_name: String,
     pub creation_block: i64,
+    pub creation_block_timestamp: Option<UnixNanos>,
     pub token0_chain: i32,
     pub token0_address: Address,
     pub token1_chain: i32,
@@ -86,6 +87,18 @@ impl<'r> FromRow<'r, PgRow> for PoolRow {
         let pool_identifier = row.try_get::<String, _>("pool_identifier")?;
         let dex_name = row.try_get::<String, _>("dex_name")?;
         let creation_block = row.try_get::<i64, _>("creation_block")?;
+        let creation_block_timestamp =
+            row.try_get::<Option<String>, _>("creation_block_timestamp")?;
+        let creation_block_timestamp = creation_block_timestamp
+            .as_deref()
+            .map(parse_cached_block_timestamp)
+            .transpose()
+            .map_err(|e| {
+                sqlx::Error::Decode(
+                    format!("Invalid creation block timestamp '{creation_block_timestamp:?}': {e}")
+                        .into(),
+                )
+            })?;
         let token0_chain = row.try_get::<i32, _>("token0_chain")?;
         let token0_address =
             validate_address(row.try_get::<String, _>("token0_address")?.as_str()).unwrap();
@@ -103,6 +116,7 @@ impl<'r> FromRow<'r, PgRow> for PoolRow {
             pool_identifier,
             dex_name,
             creation_block,
+            creation_block_timestamp,
             token0_chain,
             token0_address,
             token1_chain,

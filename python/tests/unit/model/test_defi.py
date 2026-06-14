@@ -185,6 +185,7 @@ def test_pool_profiler_surface_methods():
     assert PoolProfiler.__name__ == "PoolProfiler"
     assert hasattr(PoolProfiler, "pool")
     assert hasattr(PoolProfiler, "current_tick")
+    assert hasattr(PoolProfiler, "price_sqrt_ratio_x96")
     assert hasattr(PoolProfiler, "swap_exact_in")
     assert hasattr(PoolProfiler, "swap_exact_out")
     assert hasattr(PoolProfiler, "size_for_impact_bps_detailed")

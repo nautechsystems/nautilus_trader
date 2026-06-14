@@ -25,6 +25,7 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Changed plug-in loader to reject build mismatches by default; opt out with `set_allow_build_mismatch` (Rust)
 - Changed `CacheDatabaseAdapter::load_index_order_position` to return position IDs instead of positions (Rust)
+- Changed `PoolProfiler.price_sqrt_ratio_x96` to return `int` instead of `str`
 - Changed Redis cache account/order/position storage to event logs; clear old typed state (Rust)
 - Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)
 
@@ -48,6 +49,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot/Futures WebSocket connection pool race (#4244), thanks @filipmacek
 - Fixed blocking Python HTTP functions holding the GIL for the full request duration
 - Fixed Blockchain snapshot bootstrap checks
+- Fixed Blockchain pool-event replay to require durable timestamps before checkpoints
 - Fixed custom `DataType` metadata ordering and shared custom-data unsubscribes (Rust)
 - Fixed data option-chain delta warmup
 - Fixed DeFi replay bootstrap gaps in `PoolSwap` payload exposure, block timestamp units, and actor IDs (Rust)

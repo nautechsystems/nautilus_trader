@@ -563,50 +563,59 @@ impl BlockchainDataClientCore {
                     let event_sig_bytes = extract_event_signature_bytes(&log)?;
             if event_sig_bytes == swap_sig_bytes.as_slice() {
                 let swap_event = dex_extended.parse_swap_event_hypersync(&log)?;
-                match self.process_pool_swap_event(&swap_event, &pool) {
-                    Ok(swap) => swap_batch.push(swap),
-                    Err(e) => log::error!("Failed to process swap event: {e}"),
-                }
+                let swap = self
+                    .process_pool_swap_event(&swap_event, &pool)
+                    .with_context(|| {
+                        format!("failed to process swap event at block {}", swap_event.block_number)
+                    })?;
+                swap_batch.push(swap);
             } else if event_sig_bytes == mint_sig_bytes.as_slice() {
                 let mint_event = dex_extended.parse_mint_event_hypersync(&log)?;
-                match self.process_pool_mint_event(&mint_event, &pool, &dex_extended) {
-                    Ok(liquidity_update) => liquidity_batch.push(liquidity_update),
-                    Err(e) => log::error!("Failed to process mint event: {e}"),
-                }
+                let liquidity_update = self
+                    .process_pool_mint_event(&mint_event, &pool, &dex_extended)
+                    .with_context(|| {
+                        format!("failed to process mint event at block {}", mint_event.block_number)
+                    })?;
+                liquidity_batch.push(liquidity_update);
             } else if event_sig_bytes == burn_sig_bytes.as_slice() {
                 let burn_event = dex_extended.parse_burn_event_hypersync(&log)?;
-                match self.process_pool_burn_event(&burn_event, &pool, &dex_extended) {
-                    Ok(liquidity_update) => liquidity_batch.push(liquidity_update),
-                    Err(e) => log::error!("Failed to process burn event: {e}"),
-                }
+                let liquidity_update = self
+                    .process_pool_burn_event(&burn_event, &pool, &dex_extended)
+                    .with_context(|| {
+                        format!("failed to process burn event at block {}", burn_event.block_number)
+                    })?;
+                liquidity_batch.push(liquidity_update);
             } else if event_sig_bytes == collect_sig_bytes.as_slice() {
                 let collect_event = dex_extended.parse_collect_event_hypersync(&log)?;
-                match self.process_pool_collect_event(&collect_event, &pool, &dex_extended) {
-                    Ok(fee_collect) => collect_batch.push(fee_collect),
-                    Err(e) => log::error!("Failed to process collect event: {e}"),
-                }
+                let fee_collect = self
+                    .process_pool_collect_event(&collect_event, &pool, &dex_extended)
+                    .with_context(|| {
+                        format!(
+                            "failed to process collect event at block {}",
+                            collect_event.block_number
+                        )
+                    })?;
+                collect_batch.push(fee_collect);
             } else if initialize_sig_bytes.as_ref().is_some_and(|sig| sig.as_slice() == event_sig_bytes) {
                 let initialize_event = dex_extended.parse_initialize_event_hypersync(&log)?;
                 self.cache
                     .update_pool_initialize_price_tick(&initialize_event)
                     .await?;
             } else if flash_sig_bytes.as_ref().is_some_and(|sig| sig.as_slice() == event_sig_bytes) {
-                if let Some(parse_fn) = dex_extended.parse_flash_event_hypersync_fn {
-                    match parse_fn(dex_extended.dex.clone(), &log) {
-                        Ok(flash_event) => {
-                            match self.process_pool_flash_event(&flash_event, &pool) {
-                                Ok(flash) => flash_batch.push(flash),
-                                Err(e) => log::error!("Failed to process flash event: {e}"),
-                            }
-                        }
-                        Err(e) => log::error!("Failed to parse flash event: {e}"),
-                    }
-                }
+                let parse_fn = dex_extended
+                    .parse_flash_event_hypersync_fn
+                    .context("missing flash event parser")?;
+                let flash_event = parse_fn(dex_extended.dex.clone(), &log)
+                    .context("failed to parse flash event")?;
+                let flash = self
+                    .process_pool_flash_event(&flash_event, &pool)
+                    .with_context(|| {
+                        format!("failed to process flash event at block {}", flash_event.block_number)
+                    })?;
+                flash_batch.push(flash);
             } else {
                 let event_signature = hex::encode(event_sig_bytes);
-                log::error!(
-                    "Unexpected event signature: {event_signature} for log {log:?}"
-                );
+                anyhow::bail!("unexpected event signature {event_signature} for log {log:?}");
             }
 
             // Check if we've moved beyond stale data (transition point for strategy change)
@@ -621,6 +630,7 @@ impl BlockchainDataClientCore {
                 // Flush all batches with ON CONFLICT to handle any remaining duplicates
                 self.flush_event_batches(
                     EVENT_BATCH_SIZE,
+                    &mut block_batch,
                     &mut swap_batch,
                     &mut liquidity_batch,
                     &mut collect_batch,
@@ -636,6 +646,7 @@ impl BlockchainDataClientCore {
                 // Process batches when they reach batch size
                 self.flush_event_batches(
                     EVENT_BATCH_SIZE,
+                    &mut block_batch,
                     &mut swap_batch,
                     &mut liquidity_batch,
                     &mut collect_batch,
@@ -652,14 +663,31 @@ impl BlockchainDataClientCore {
             // Log progress if needed
             if metrics.should_log_progress(block_number, to_block) {
                 metrics.log_progress(block_number);
-                self.cache
-                    .update_pool_last_synced_block(dex, &pool_identifier, block_number)
-                    .await?;
+                self.flush_event_batches(
+                    EVENT_BATCH_SIZE,
+                    &mut block_batch,
+                    &mut swap_batch,
+                    &mut liquidity_batch,
+                    &mut collect_batch,
+                    &mut flash_batch,
+                    false,
+                    true,
+                )
+                .await?;
+
+                if let Some(checkpoint_block) =
+                    Self::completed_pool_event_checkpoint(block_number, effective_from_block)
+                {
+                    self.cache
+                        .update_pool_last_synced_block(dex, &pool_identifier, checkpoint_block)
+                        .await?;
+                }
             }
         }
 
         self.flush_event_batches(
             EVENT_BATCH_SIZE,
+            &mut block_batch,
             &mut swap_batch,
             &mut liquidity_batch,
             &mut collect_batch,
@@ -668,7 +696,6 @@ impl BlockchainDataClientCore {
             true,
         )
         .await?;
-        self.flush_pool_event_blocks(&mut block_batch).await?;
 
         metrics.log_final_stats();
         self.cache
@@ -690,8 +717,9 @@ impl BlockchainDataClientCore {
 
     #[expect(clippy::too_many_arguments)]
     async fn flush_event_batches(
-        &self,
+        &mut self,
         event_batch_size: usize,
+        block_batch: &mut Vec<Block>,
         swap_batch: &mut Vec<PoolSwap>,
         liquidity_batch: &mut Vec<PoolLiquidityUpdate>,
         collect_batch: &mut Vec<PoolFeeCollect>,
@@ -699,31 +727,46 @@ impl BlockchainDataClientCore {
         use_copy_command: bool,
         force_flush_all: bool,
     ) -> anyhow::Result<()> {
-        if (force_flush_all || swap_batch.len() >= event_batch_size) && !swap_batch.is_empty() {
+        let should_flush_swaps =
+            (force_flush_all || swap_batch.len() >= event_batch_size) && !swap_batch.is_empty();
+        let should_flush_liquidity = (force_flush_all || liquidity_batch.len() >= event_batch_size)
+            && !liquidity_batch.is_empty();
+        let should_flush_collects = (force_flush_all || collect_batch.len() >= event_batch_size)
+            && !collect_batch.is_empty();
+        let should_flush_flash =
+            (force_flush_all || flash_batch.len() >= event_batch_size) && !flash_batch.is_empty();
+
+        if force_flush_all
+            || should_flush_swaps
+            || should_flush_liquidity
+            || should_flush_collects
+            || should_flush_flash
+        {
+            self.flush_pool_event_blocks(block_batch).await?;
+        }
+
+        if should_flush_swaps {
             self.cache
                 .add_pool_swaps_batch(swap_batch, use_copy_command)
                 .await?;
             swap_batch.clear();
         }
 
-        if (force_flush_all || liquidity_batch.len() >= event_batch_size)
-            && !liquidity_batch.is_empty()
-        {
+        if should_flush_liquidity {
             self.cache
                 .add_pool_liquidity_updates_batch(liquidity_batch, use_copy_command)
                 .await?;
             liquidity_batch.clear();
         }
 
-        if (force_flush_all || collect_batch.len() >= event_batch_size) && !collect_batch.is_empty()
-        {
+        if should_flush_collects {
             self.cache
                 .add_pool_fee_collects_batch(collect_batch, use_copy_command)
                 .await?;
             collect_batch.clear();
         }
 
-        if (force_flush_all || flash_batch.len() >= event_batch_size) && !flash_batch.is_empty() {
+        if should_flush_flash {
             self.cache.add_pool_flash_batch(flash_batch).await?;
             flash_batch.clear();
         }
@@ -755,6 +798,14 @@ impl BlockchainDataClientCore {
         self.cache
             .add_pool_event_blocks_batch(std::mem::take(block_batch))
             .await
+    }
+
+    fn completed_pool_event_checkpoint(
+        block_number: u64,
+        effective_from_block: u64,
+    ) -> Option<u64> {
+        let checkpoint_block = block_number.checked_sub(1)?;
+        (checkpoint_block >= effective_from_block).then_some(checkpoint_block)
     }
 
     /// Processes a swap event and converts it to a pool swap.
@@ -1066,18 +1117,15 @@ impl BlockchainDataClientCore {
         }
 
         // Sync the pool events before bootstrapping of pool profiler
-        if let Err(e) = self
-            .sync_pool_events(
-                &pool.dex.name,
-                pool.pool_identifier,
-                None,
-                Some(to_block),
-                false,
-            )
-            .await
-        {
-            log::error!("Failed to sync pool events for snapshot request: {e}");
-        }
+        self.sync_pool_events(
+            &pool.dex.name,
+            pool.pool_identifier,
+            None,
+            Some(to_block),
+            false,
+        )
+        .await
+        .context("failed to sync pool events for snapshot request")?;
 
         if !profiler.is_initialized {
             if let Some(initial_sqrt_price_x96) = pool.initial_sqrt_price_x96 {
@@ -1113,7 +1161,7 @@ impl BlockchainDataClientCore {
                 Ok(event) => {
                     profiler.process(&event)?;
                 }
-                Err(e) => log::error!("Error processing event: {e}"),
+                Err(e) => return Err(e).context("failed to stream pool event from database"),
             }
         }
 
@@ -1240,24 +1288,30 @@ impl BlockchainDataClientCore {
                 }
             } else if event_sig_bytes == mint_sig_bytes {
                 let mint_event = dex_extended.parse_mint_event_hypersync(&log)?;
-                match self.process_pool_mint_event(&mint_event, &profiler.pool, &dex_extended) {
-                    Ok(liquidity_update) => {
-                        profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;
-                    }
-                    Err(e) => log::error!("Failed to process mint event: {e}"),
-                }
+                let liquidity_update = self
+                    .process_pool_mint_event(&mint_event, &profiler.pool, &dex_extended)
+                    .with_context(|| {
+                        format!(
+                            "failed to process mint event at block {}",
+                            mint_event.block_number
+                        )
+                    })?;
+                profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;
             } else if event_sig_bytes == burn_sig_bytes {
                 let burn_event = dex_extended.parse_burn_event_hypersync(&log)?;
-                match self.process_pool_burn_event(&burn_event, &profiler.pool, &dex_extended) {
-                    Ok(liquidity_update) => {
-                        profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;
-                    }
-                    Err(e) => log::error!("Failed to process burn event: {e}"),
-                }
+                let liquidity_update = self
+                    .process_pool_burn_event(&burn_event, &profiler.pool, &dex_extended)
+                    .with_context(|| {
+                        format!(
+                            "failed to process burn event at block {}",
+                            burn_event.block_number
+                        )
+                    })?;
+                profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;
             } else {
                 let event_signature = hex::encode(event_sig_bytes);
-                log::error!(
-                    "Unexpected event signature in bootstrap_latest_pool_profiler: {event_signature} for log {log:?}"
+                anyhow::bail!(
+                    "unexpected event signature in bootstrap_latest_pool_profiler: {event_signature} for log {log:?}"
                 );
             }
         }
@@ -1606,6 +1660,23 @@ mod tests {
             error.to_string(),
             "missing block timestamp for on-chain snapshot"
         );
+    }
+
+    #[rstest]
+    #[case(100, 50, Some(99))]
+    #[case(50, 50, None)]
+    #[case(0, 0, None)]
+    fn completed_pool_event_checkpoint_excludes_in_flight_block(
+        #[case] block_number: u64,
+        #[case] effective_from_block: u64,
+        #[case] expected: Option<u64>,
+    ) {
+        let checkpoint = BlockchainDataClientCore::completed_pool_event_checkpoint(
+            block_number,
+            effective_from_block,
+        );
+
+        assert_eq!(checkpoint, expected);
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -346,7 +346,8 @@ impl BlockchainCacheDatabase {
             FROM UNNEST(
                 $2::int8[], $3::text[]
             )
-            ON CONFLICT (chain_id, number) DO NOTHING
+            ON CONFLICT (chain_id, number)
+            DO UPDATE SET timestamp = EXCLUDED.timestamp
            ",
         )
         .bind(chain_id as i32)
@@ -456,12 +457,19 @@ impl BlockchainCacheDatabase {
     ) -> anyhow::Result<Vec<BlockTimestampRow>> {
         sqlx::query_as::<_, BlockTimestampRow>(
             "
-            SELECT
+            SELECT DISTINCT ON (number)
                 number,
                 timestamp
-            FROM block
-            WHERE chain_id = $1 AND number >= $2
-            ORDER BY number ASC
+            FROM (
+                SELECT number, timestamp, 0 AS source_order
+                FROM block
+                WHERE chain_id = $1 AND number >= $2 AND timestamp IS NOT NULL
+                UNION ALL
+                SELECT number, timestamp, 1 AS source_order
+                FROM pool_event_block
+                WHERE chain_id = $1 AND number >= $2 AND timestamp IS NOT NULL
+            ) AS block_timestamps
+            ORDER BY number ASC, source_order ASC
             ",
         )
         .bind(chain.chain_id as i32)
@@ -1066,6 +1074,10 @@ impl BlockchainCacheDatabase {
                 pool_identifier,
                 dex_name,
                 creation_block,
+                COALESCE(
+                    (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool.chain_id AND block.number = pool.creation_block),
+                    (SELECT timestamp::TEXT FROM pool_event_block WHERE pool_event_block.chain_id = pool.chain_id AND pool_event_block.number = pool.creation_block)
+                ) as creation_block_timestamp,
                 token0_chain,
                 token0_address,
                 token1_chain,
@@ -1191,7 +1203,7 @@ impl BlockchainCacheDatabase {
         .execute(&self.pool)
         .await
         .map(|_| ())
-        .map_err(|e| anyhow::anyhow!("Failed to update dex last synced block: {e}"))
+        .map_err(|e| anyhow::anyhow!("Failed to update pool last synced block: {e}"))
     }
 
     /// Retrieves the saved checkpoint block number from the last completed pool synchronization for a specific DEX.
@@ -1719,7 +1731,7 @@ impl BlockchainCacheDatabase {
         .execute(&self.pool)
         .await
         .map(|_| ())
-        .map_err(|e| anyhow::anyhow!("Failed to update dex last synced block: {e}"))
+        .map_err(|e| anyhow::anyhow!("Failed to update pool initial price and tick: {e}"))
     }
 
     /// Loads the latest valid pool snapshot from the database.
@@ -1793,8 +1805,17 @@ impl BlockchainCacheDatabase {
             let transaction_index: i32 = row.get("transaction_index");
             let log_index: i32 = row.get("log_index");
             let transaction_hash: String = row.get("transaction_hash");
-            let block_timestamp = row.get::<String, _>("block_timestamp");
-            let timestamp = parse_cached_block_timestamp(&block_timestamp)?;
+            let block_timestamp = row
+                .try_get::<Option<String>, _>("block_timestamp")?
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Missing block timestamp for pool snapshot {} at block {}",
+                        pool_identifier,
+                        block
+                    )
+                })?;
+            let timestamp = parse_cached_block_timestamp(&block_timestamp)
+                .map_err(|e| anyhow::anyhow!("Invalid block timestamp '{block_timestamp}': {e}"))?;
 
             let block_position = BlockPosition::new(
                 block as u64,
@@ -1848,7 +1869,11 @@ impl BlockchainCacheDatabase {
                 )
                 .await?;
 
-            let dex_name: String = row.get("dex_name");
+            let dex_name = row
+                .try_get::<Option<String>, _>("dex_name")?
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Missing dex_name for pool snapshot {}", pool_identifier)
+                })?;
             let chain = Chain::from_chain_id(chain_id)
                 .ok_or_else(|| anyhow::anyhow!("Unknown chain_id: {chain_id}"))?;
 
