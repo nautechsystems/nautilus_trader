@@ -65,6 +65,7 @@ use nautilus_model::{
     },
     instruments::InstrumentAny,
     orderbook::OrderBook,
+    orders::OrderAny,
     position::Position,
     python::{
         data::option_chain::PyStrikeRange, instruments::instrument_any_to_pyobject,
@@ -1487,6 +1488,33 @@ impl PyStrategy {
             .map_err(to_pyruntime_err)
     }
 
+    #[pyo3(name = "submit_order_list")]
+    #[pyo3(signature = (order_list, position_id=None, client_id=None, params=None))]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "PyO3 owns extracted method arguments before Rust conversion"
+    )]
+    fn py_submit_order_list(
+        &mut self,
+        py: Python<'_>,
+        order_list: Py<PyAny>,
+        position_id: Option<PositionId>,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let orders = py_order_list_to_orders(py, &order_list)?;
+        let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
+            match params {
+                Some(dict) => from_pydict(py, &dict),
+                None => Ok(None),
+            }
+        })?;
+        let inner = self.inner_mut();
+
+        Strategy::submit_order_list(inner, orders, position_id, client_id, params_map)
+            .map_err(to_pyruntime_err)
+    }
+
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (client_order_id, quantity=None, price=None, trigger_price=None, client_id=None, params=None))]
     fn py_modify_order(
@@ -2778,6 +2806,21 @@ impl PyStrategy {
     }
 }
 
+fn py_order_list_to_orders(py: Python<'_>, order_list: &Py<PyAny>) -> PyResult<Vec<OrderAny>> {
+    let order_objects = match order_list.getattr(py, "orders") {
+        Ok(orders) => orders.extract::<Vec<Py<PyAny>>>(py)?,
+        Err(e) if e.is_instance_of::<pyo3::exceptions::PyAttributeError>(py) => {
+            order_list.extract::<Vec<Py<PyAny>>>(py)?
+        }
+        Err(e) => return Err(e),
+    };
+
+    order_objects
+        .into_iter()
+        .map(|order| pyobject_to_order_any(py, order))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -2792,6 +2835,11 @@ mod tests {
         actor::DataActor,
         cache::Cache,
         clock::{Clock, TestClock},
+        messages::execution::TradingCommand,
+        msgbus::{
+            self, MessagingSwitchboard,
+            stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
+        },
         signal::Signal,
         timer::TimeEvent,
     };
@@ -2807,7 +2855,7 @@ mod tests {
         },
         enums::{
             AggressorSide, BookType, GreeksConvention, InstrumentCloseType, MarketStatusAction,
-            OrderSide, PositionSide,
+            OrderSide, OrderType, PositionSide,
         },
         events::{
             OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
@@ -2822,14 +2870,17 @@ mod tests {
         },
         instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
         orderbook::OrderBook,
+        orders::{Order, OrderTestBuilder},
+        python::orders::order_any_to_pyobject,
         types::{Currency, Money, Price, Quantity},
     };
     use nautilus_portfolio::portfolio::Portfolio;
     use pyo3::{
         Py, PyAny, PyResult, Python,
         ffi::c_str,
-        types::{PyAnyMethods, PyBytes, PyDict},
+        types::{PyAnyMethods, PyBytes, PyDict, PyList},
     };
+    use serde_json::Value;
     use ustr::Ustr;
 
     use super::PyStrategy;
@@ -3212,6 +3263,22 @@ class TrackingStrategy:
         }
     }
 
+    fn sample_python_market_order(
+        py: Python<'_>,
+        strategy_id: StrategyId,
+        client_order_id: ClientOrderId,
+    ) -> PyResult<Py<PyAny>> {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(strategy_id)
+            .instrument_id(sample_instrument().id)
+            .client_order_id(client_order_id)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        order_any_to_pyobject(py, order)
+    }
+
     fn create_registered_tracking_strategy_with_config(
         py: Python<'_>,
         config: Option<StrategyConfig>,
@@ -3415,6 +3482,73 @@ class TrackingStrategy:
             assert_eq!(
                 python_method_call_count(&py_strategy, py, "post_market_exit"),
                 1
+            );
+        });
+    }
+
+    #[rstest::rstest]
+    #[case::order_list_object(true)]
+    #[case::raw_order_sequence(false)]
+    fn test_python_submit_order_list_accepts_order_list_inputs(#[case] wrap_order_list: bool) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let (_, mut rust_strategy) = create_registered_tracking_strategy(py);
+            let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+                get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::risk_engine_queue_execute(),
+                risk_handler,
+            );
+
+            let strategy_id = rust_strategy.strategy_id();
+            let client_order_id1 = ClientOrderId::from("O-PYO3-LIST-001");
+            let client_order_id2 = ClientOrderId::from("O-PYO3-LIST-002");
+            let orders = vec![
+                sample_python_market_order(py, strategy_id, client_order_id1).unwrap(),
+                sample_python_market_order(py, strategy_id, client_order_id2).unwrap(),
+            ];
+            let params = PyDict::new(py);
+
+            params.set_item("routing_hint", "prefer_batch").unwrap();
+            let order_list = if wrap_order_list {
+                let order_list_type = py
+                    .eval(c_str!("type('OrderListShim', (), {})"), None, None)
+                    .unwrap();
+                let order_list = order_list_type.call0().unwrap();
+
+                order_list.setattr("orders", orders).unwrap();
+                order_list.unbind()
+            } else {
+                PyList::new(py, orders).unwrap().into_any().unbind()
+            };
+
+            rust_strategy
+                .py_submit_order_list(py, order_list, None, None, Some(params.unbind()))
+                .unwrap();
+
+            let cache = rust_strategy.inner().core.cache();
+            let cached_order1 = cache.order(&client_order_id1).unwrap();
+            let cached_order2 = cache.order(&client_order_id2).unwrap();
+            let order_list_id = cached_order1.order_list_id().unwrap();
+            let order_list = cache.order_list(&order_list_id).unwrap();
+
+            assert_eq!(cached_order2.order_list_id(), Some(order_list_id));
+            assert_eq!(
+                order_list.client_order_ids.as_slice(),
+                &[client_order_id1, client_order_id2]
+            );
+
+            let risk_messages = risk_messages.get_messages();
+            assert_eq!(risk_messages.len(), 1);
+            let Some(TradingCommand::SubmitOrderList(command)) = risk_messages.first() else {
+                panic!("expected SubmitOrderList command");
+            };
+            assert_eq!(
+                command
+                    .params
+                    .as_ref()
+                    .and_then(|params| params.get("routing_hint")),
+                Some(&Value::String("prefer_batch".to_string()))
             );
         });
     }
