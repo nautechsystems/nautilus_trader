@@ -60,9 +60,9 @@ use rstest::rstest;
 use serde_json::Value;
 
 const TEST_CONDITION_ID: &str =
-    "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b";
+    "0x0f49db97f71c68b1e42a6d16e3de93d85dbf7d4148e3f018eb79e88554be9f75";
 const TEST_TOKEN_ID_YES: &str =
-    "104239898038807136052399800151408521467737075933964991162589336683346093173875";
+    "54533043819946592547517511176940999955633860128497669742211153063842200957669";
 
 fn data_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
@@ -201,8 +201,8 @@ fn create_test_data_client(
     (client, rx)
 }
 
-fn gamma_market_fixture() -> Value {
-    load_json("gamma_market.json")
+fn gamma_market_live_fixture() -> Value {
+    load_json("gamma_market_live.json")
 }
 
 fn yes_instrument_id() -> InstrumentId {
@@ -244,7 +244,7 @@ async fn test_request_instrument_publishes_event_and_response() {
     // does not pick up newly fetched instruments and the WS dispatcher
     // logs `Unknown asset_id in order update`.
     let state = TestServerState::default();
-    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_fixture()]));
+    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_live_fixture()]));
     let addr = start_mock_server(state.clone()).await;
     let (client, mut rx) = create_test_data_client(addr);
 
@@ -316,7 +316,7 @@ async fn test_request_instrument_not_found_emits_no_publish() {
 #[tokio::test]
 async fn test_request_instruments_emits_response() {
     let state = TestServerState::default();
-    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_fixture()]));
+    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_live_fixture()]));
     let addr = start_mock_server(state.clone()).await;
     let (client, mut rx) = create_test_data_client(addr);
 
@@ -397,7 +397,7 @@ async fn test_request_book_snapshot_returns_book_response() {
     // request_book_snapshot needs the instrument cached; we prime the
     // cache by issuing a request_instrument first, then the book snapshot.
     let state = TestServerState::default();
-    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_fixture()]));
+    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_live_fixture()]));
     let addr = start_mock_server(state).await;
     let (client, mut rx) = create_test_data_client(addr);
 
@@ -487,7 +487,7 @@ async fn test_request_trades_returns_trades_response() {
     ]);
 
     let state = TestServerState::default();
-    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_fixture()]));
+    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_live_fixture()]));
     *state.trades_response.lock().await = Some(trades_fixture);
     let addr = start_mock_server(state).await;
     let (client, mut rx) = create_test_data_client(addr);
@@ -567,7 +567,7 @@ async fn test_reset_reconnect_does_not_replay_stale_market_subscriptions() {
     // a previous generation. A new subscribe should be required for the next
     // active instrument cycle.
     let state = TestServerState::default();
-    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_fixture()]));
+    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_live_fixture()]));
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx) = create_test_data_client(addr);
     let instrument_id = yes_instrument_id();

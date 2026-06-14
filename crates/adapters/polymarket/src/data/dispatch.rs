@@ -659,6 +659,7 @@ fn emit_quote_if_changed(ctx: &WsMessageContext, instrument_id: InstrumentId, qu
 mod tests {
     use std::{
         net::SocketAddr,
+        num::NonZeroUsize,
         sync::atomic::{AtomicUsize, Ordering},
         time::{Duration, Duration as StdDuration},
     };
@@ -674,7 +675,10 @@ mod tests {
     use nautilus_common::{
         clients::DataClient,
         live::runner::replace_data_event_sender,
-        messages::{DataResponse, data::RequestCustomData},
+        messages::{
+            DataResponse,
+            data::{RequestBookSnapshot, RequestCustomData, RequestTrades, SubscribeQuotes},
+        },
         testing::wait_until_async,
     };
     use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
@@ -683,7 +687,8 @@ mod tests {
         enums::{AssetClass, InstrumentCloseType, OrderSide, PositionSide},
         events::{PositionEvent, PositionOpened},
         identifiers::{
-            AccountId, ClientId, ClientOrderId, PositionId, StrategyId, Symbol, TraderId,
+            AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol,
+            TraderId,
         },
         instruments::BinaryOption,
         types::{Currency, Price, Quantity},
@@ -691,10 +696,14 @@ mod tests {
     use nautilus_network::{retry::RetryConfig, websocket::TransportBackend};
     use rstest::rstest;
     use serde_json::Value;
+    use ustr::Ustr;
 
     use super::{super::PolymarketDataClient, *};
     use crate::{
-        common::{consts::POLYMARKET_CLIENT_ID, enums::PolymarketOrderSide},
+        common::{
+            consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
+            enums::PolymarketOrderSide,
+        },
         config::PolymarketDataClientConfig,
         http::data_api::PolymarketDataApiHttpClient,
         resolve::{
@@ -1014,9 +1023,30 @@ mod tests {
         }))
     }
 
-    fn gamma_market_fixture_value() -> Value {
+    fn gamma_market_expired_fixture_value() -> Value {
         serde_json::from_str(include_str!("../../test_data/gamma_market.json"))
             .expect("gamma market fixture json")
+    }
+
+    fn gamma_market_live_fixture_value() -> Value {
+        serde_json::from_str(include_str!("../../test_data/gamma_market_live.json"))
+            .expect("gamma market live fixture json")
+    }
+
+    const TEST_CONDITION_ID: &str =
+        "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b";
+    const TEST_TOKEN_ID_YES: &str =
+        "104239898038807136052399800151408521467737075933964991162589336683346093173875";
+
+    fn fixture_yes_instrument_id() -> InstrumentId {
+        InstrumentId::from(format!("{TEST_CONDITION_ID}-{TEST_TOKEN_ID_YES}.POLYMARKET").as_str())
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum ExpiredPath {
+        Quotes,
+        BookSnapshot,
+        Trades,
     }
 
     #[derive(Clone, Default)]
@@ -1468,7 +1498,7 @@ mod tests {
             .empty_then_success_payload
             .lock()
             .expect("empty_then_success_payload mutex poisoned") =
-            Some(serde_json::json!([gamma_market_fixture_value()]));
+            Some(serde_json::json!([gamma_market_live_fixture_value()]));
 
         let addr = start_new_market_test_server(state.clone()).await;
         let gamma_base_url = format!("http://{addr}");
@@ -1665,6 +1695,32 @@ mod tests {
         addr
     }
 
+    #[derive(Clone)]
+    struct ExpiredAutoLoadServerState {
+        requests: Arc<AtomicUsize>,
+        response: Value,
+    }
+
+    async fn handle_expired_auto_load_markets(
+        State(state): State<ExpiredAutoLoadServerState>,
+    ) -> Json<Value> {
+        state.requests.fetch_add(1, Ordering::SeqCst);
+        Json(state.response)
+    }
+
+    async fn start_expired_auto_load_test_server(state: ExpiredAutoLoadServerState) -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr");
+        let router = Router::new()
+            .route("/markets", get(handle_expired_auto_load_markets))
+            .with_state(state);
+
+        tokio::spawn(async move { axum::serve(listener, router).await.expect("serve failed") });
+        addr
+    }
+
     fn create_test_client(
         addr: SocketAddr,
     ) -> (
@@ -1707,6 +1763,36 @@ mod tests {
         );
 
         (client, rx)
+    }
+
+    fn make_local_test_client() -> PolymarketDataClient {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(tx);
+
+        let gamma = PolymarketGammaHttpClient::new(
+            Some("http://localhost".to_string()),
+            5,
+            RetryConfig::default(),
+        )
+        .expect("gamma client");
+        let clob_public = PolymarketClobPublicClient::new(Some("http://localhost".to_string()), 5)
+            .expect("clob client");
+        let data_api = PolymarketDataApiHttpClient::new(Some("http://localhost".to_string()), 5)
+            .expect("data api client");
+        let ws = PolymarketWebSocketClient::new_market(
+            Some("ws://localhost/ws/market".to_string()),
+            false,
+            TransportBackend::default(),
+        );
+
+        PolymarketDataClient::new(
+            *POLYMARKET_CLIENT_ID,
+            PolymarketDataClientConfig::default(),
+            gamma,
+            clob_public,
+            data_api,
+            ws,
+        )
     }
 
     #[rstest]
@@ -2618,6 +2704,123 @@ mod tests {
                 .resolve_poll_watchlist
                 .contains_key(&"0xCOND-POLL".to_string())
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn auto_load_expired_instrument_retires_without_retrying() {
+        let state = ExpiredAutoLoadServerState {
+            requests: Arc::new(AtomicUsize::new(0)),
+            response: serde_json::json!([gamma_market_expired_fixture_value()]),
+        };
+        let addr = start_expired_auto_load_test_server(state.clone()).await;
+        let (mut client, _data_rx) = create_test_client(addr);
+        client.config.auto_load_debounce_ms = 0;
+        client.config.auto_load_max_retries = 3;
+        client.config.auto_load_retry_delay_initial_secs = 0.0;
+        client.config.auto_load_retry_delay_max_secs = 0.0;
+
+        let instrument_id = fixture_yes_instrument_id();
+        client
+            .subscribe_quotes(SubscribeQuotes::new(
+                instrument_id,
+                Some(client.client_id),
+                Some(*POLYMARKET_VENUE),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("subscribe_quotes should queue auto-load");
+
+        wait_until_async(
+            || {
+                let client = &client;
+                async move {
+                    !client.active_quote_subs.contains(&instrument_id)
+                        && client
+                            .pending_auto_loads
+                            .lock()
+                            .expect("pending_auto_loads mutex poisoned")
+                            .is_empty()
+                        && !client.auto_load_scheduled.load(Ordering::Acquire)
+                }
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        let quiet_start = tokio::time::Instant::now();
+        while quiet_start.elapsed() < StdDuration::from_millis(100) {
+            assert_eq!(state.requests.load(Ordering::SeqCst), 1);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        assert_eq!(state.requests.load(Ordering::SeqCst), 1);
+        assert!(!client.active_quote_subs.contains(&instrument_id));
+        assert!(
+            !client
+                .token_meta
+                .contains_key(&Ustr::from(TEST_TOKEN_ID_YES))
+        );
+        assert!(!client.instruments.load().contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    #[case::quotes(ExpiredPath::Quotes, "0xTOKEN_EXPIRED")]
+    #[case::book(ExpiredPath::BookSnapshot, "0xTOKEN_EXPIRED_BOOK")]
+    #[case::trades(ExpiredPath::Trades, "0xTOKEN_EXPIRED_TRADES")]
+    fn cached_expired_instrument_live_paths_are_rejected(
+        #[case] path: ExpiredPath,
+        #[case] raw_symbol: &str,
+    ) {
+        let mut client = make_local_test_client();
+        let expired = seed_instrument_with_context(
+            &make_client_ws_ctx(&client),
+            raw_symbol,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-EXPIRED"),
+                expiration_ns: Some(UnixNanos::from(1)),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        let result = match path {
+            ExpiredPath::Quotes => client.subscribe_quotes(SubscribeQuotes::new(
+                expired.id(),
+                Some(client.client_id),
+                Some(*POLYMARKET_VENUE),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )),
+            ExpiredPath::BookSnapshot => client.request_book_snapshot(RequestBookSnapshot::new(
+                expired.id(),
+                Some(NonZeroUsize::new(10).expect("nonzero depth")),
+                Some(client.client_id),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            )),
+            ExpiredPath::Trades => client.request_trades(RequestTrades::new(
+                expired.id(),
+                None,
+                None,
+                Some(NonZeroUsize::new(10).expect("nonzero limit")),
+                Some(client.client_id),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            )),
+        };
+
+        assert!(result.is_err());
+        if matches!(path, ExpiredPath::Quotes) {
+            assert!(!client.active_quote_subs.contains(&expired.id()));
+        }
     }
 
     fn level(price: &str, size: &str) -> PolymarketBookLevel {

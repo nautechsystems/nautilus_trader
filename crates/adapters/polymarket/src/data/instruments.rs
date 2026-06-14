@@ -17,7 +17,7 @@ use std::{sync::Arc, time::Duration};
 
 use dashmap::DashMap;
 use nautilus_common::{live::get_runtime, messages::DataEvent, providers::InstrumentProvider};
-use nautilus_core::AtomicMap;
+use nautilus_core::{AtomicMap, UnixNanos, time::AtomicTime};
 use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -25,13 +25,16 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use super::PolymarketDataClient;
-use crate::{filters::InstrumentFilter, http::gamma::PolymarketGammaHttpClient};
+use crate::{
+    data_runtime::is_instrument_expired, filters::InstrumentFilter,
+    http::gamma::PolymarketGammaHttpClient,
+};
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct TokenMeta {
-    pub(super) instrument_id: InstrumentId,
-    pub(super) price_precision: u8,
-    pub(super) size_precision: u8,
+pub(crate) struct TokenMeta {
+    pub(crate) instrument_id: InstrumentId,
+    pub(crate) price_precision: u8,
+    pub(crate) size_precision: u8,
 }
 
 // Inserts `instrument` into the live instrument cache and updates the
@@ -59,13 +62,23 @@ pub(super) fn cache_and_publish_instruments(
     instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
     data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    now_ns: UnixNanos,
     instruments: Vec<InstrumentAny>,
 ) -> usize {
-    let total = instruments.len();
+    let mut total = 0;
 
     for instrument in instruments {
+        if is_instrument_expired(&instrument, now_ns) {
+            log::debug!(
+                "Skipping expired instrument {} during live cache publish",
+                instrument.id()
+            );
+            continue;
+        }
+
         let instrument_id = instrument.id();
         cache_instrument(instruments_cache, token_meta, &instrument);
+        total += 1;
 
         if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
             log::warn!("Failed to publish instrument {instrument_id}: {e}");
@@ -82,6 +95,7 @@ pub(super) async fn refresh_scoped_instruments(
     instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
     data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    clock: &'static AtomicTime,
 ) -> anyhow::Result<usize> {
     let Some(instrument_config) = instrument_config else {
         return Ok(0);
@@ -94,6 +108,7 @@ pub(super) async fn refresh_scoped_instruments(
         instruments_cache,
         token_meta,
         data_sender,
+        clock.get_time_ns(),
         refreshed,
     ))
 }
@@ -106,6 +121,7 @@ impl PolymarketDataClient {
             &self.instruments,
             &self.token_meta,
             &self.data_sender,
+            self.clock.get_time_ns(),
             self.provider
                 .store()
                 .list_all()
@@ -135,6 +151,7 @@ impl PolymarketDataClient {
         let instruments_cache = self.instruments.clone();
         let token_meta = self.token_meta.clone();
         let data_sender = self.data_sender.clone();
+        let clock = self.clock;
 
         let handle = get_runtime().spawn(async move {
             log::debug!("Polymarket instrument refresh task started");
@@ -155,6 +172,7 @@ impl PolymarketDataClient {
                     &instruments_cache,
                     &token_meta,
                     &data_sender,
+                    clock,
                 )
                 .await
                 {

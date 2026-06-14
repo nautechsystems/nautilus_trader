@@ -41,7 +41,7 @@ pub(super) fn resolve_token_id_from(
     clippy::too_many_arguments,
     reason = "shared state comes in as Arc refs"
 )]
-pub(super) async fn sync_ws_subscription_async(
+pub(crate) async fn sync_ws_subscription_async(
     instrument_id: InstrumentId,
     token_id_str: String,
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
