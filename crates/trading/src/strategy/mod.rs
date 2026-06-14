@@ -1140,6 +1140,7 @@ pub trait Strategy: DataActor {
                 let _ = DataActor::on_order_filled(self, e);
             }
         }
+        self.on_order_event(event);
     }
 
     /// Handles a position event, dispatching to the appropriate handler.
@@ -1159,14 +1160,15 @@ pub trait Strategy: DataActor {
             return;
         }
 
-        match event {
-            PositionEvent::PositionOpened(e) => self.on_position_opened(e),
-            PositionEvent::PositionChanged(e) => self.on_position_changed(e),
-            PositionEvent::PositionClosed(e) => self.on_position_closed(e),
+        match &event {
+            PositionEvent::PositionOpened(e) => self.on_position_opened(e.clone()),
+            PositionEvent::PositionChanged(e) => self.on_position_changed(e.clone()),
+            PositionEvent::PositionClosed(e) => self.on_position_closed(e.clone()),
             PositionEvent::PositionAdjusted(_) => {
-                // No handler for adjusted events yet
+                return;
             }
         }
+        self.on_position_event(event);
     }
 
     // -- LIFECYCLE METHODS -----------------------------------------------------------------------
@@ -1215,6 +1217,12 @@ pub trait Strategy: DataActor {
     /// Override this method to implement custom logic when an order is first created.
     #[allow(unused_variables)]
     fn on_order_initialized(&mut self, event: OrderInitialized) {}
+
+    /// Called when any order event is received after the specific order handler runs.
+    ///
+    /// Override this method to implement custom logic for all order events.
+    #[allow(unused_variables)]
+    fn on_order_event(&mut self, event: OrderEventAny) {}
 
     /// Called when an order is denied by the system.
     ///
@@ -1301,6 +1309,12 @@ pub trait Strategy: DataActor {
     /// Override this method to implement custom logic when a position is opened.
     #[allow(unused_variables)]
     fn on_position_opened(&mut self, event: PositionOpened) {}
+
+    /// Called after a position opened, changed, or closed handler runs.
+    ///
+    /// Override this method to implement custom logic for all position events.
+    #[allow(unused_variables)]
+    fn on_position_event(&mut self, event: PositionEvent) {}
 
     /// Called when a position is changed (quantity or price updated).
     ///
@@ -1912,8 +1926,10 @@ mod tests {
     };
     use nautilus_core::UnixNanos;
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide},
-        events::{OrderAccepted, OrderCanceled, OrderFilled, OrderRejected},
+        enums::{
+            LiquiditySide, OrderSide, OrderStatus, OrderType, PositionAdjustmentType, PositionSide,
+        },
+        events::{OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted},
         identifiers::{
             AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, TradeId,
             TraderId, VenueOrderId,
@@ -1934,10 +1950,12 @@ mod tests {
     struct TestStrategy {
         core: StrategyCore,
         on_order_rejected_called: bool,
+        on_order_event_called: bool,
         on_order_accepted_called: bool,
         on_order_canceled_called: bool,
         on_order_filled_called: bool,
         on_order_expired_called: bool,
+        on_position_event_called: bool,
         on_position_opened_called: bool,
         on_position_changed_called: bool,
         on_position_closed_called: bool,
@@ -1948,10 +1966,12 @@ mod tests {
             Self {
                 core: StrategyCore::new(config),
                 on_order_rejected_called: false,
+                on_order_event_called: false,
                 on_order_accepted_called: false,
                 on_order_canceled_called: false,
                 on_order_filled_called: false,
                 on_order_expired_called: false,
+                on_position_event_called: false,
                 on_position_opened_called: false,
                 on_position_changed_called: false,
                 on_position_closed_called: false,
@@ -1976,6 +1996,10 @@ mod tests {
             self.on_order_rejected_called = true;
         }
 
+        fn on_order_event(&mut self, _event: OrderEventAny) {
+            self.on_order_event_called = true;
+        }
+
         fn on_order_accepted(&mut self, _event: OrderAccepted) {
             self.on_order_accepted_called = true;
         }
@@ -1986,6 +2010,10 @@ mod tests {
 
         fn on_position_opened(&mut self, _event: PositionOpened) {
             self.on_position_opened_called = true;
+        }
+
+        fn on_position_event(&mut self, _event: PositionEvent) {
+            self.on_position_event_called = true;
         }
 
         fn on_position_changed(&mut self, _event: PositionChanged) {
@@ -2322,6 +2350,23 @@ mod tests {
         })
     }
 
+    fn make_position_adjusted() -> PositionEvent {
+        PositionEvent::PositionAdjusted(PositionAdjusted {
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("TEST-001"),
+            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
+            position_id: PositionId::test_default(),
+            account_id: AccountId::from("ACC-001"),
+            adjustment_type: PositionAdjustmentType::Funding,
+            quantity_change: None,
+            pnl_change: None,
+            reason: None,
+            event_id: UUID4::default(),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
+        })
+    }
+
     #[rstest]
     fn test_strategy_creation() {
         let strategy = create_test_strategy();
@@ -2367,6 +2412,7 @@ mod tests {
         strategy.handle_order_event(event);
 
         assert!(strategy.on_order_rejected_called);
+        assert!(strategy.on_order_event_called);
     }
 
     #[rstest]
@@ -2387,6 +2433,7 @@ mod tests {
         assert_eq!(strategy.on_position_opened_called, expected_opened);
         assert_eq!(strategy.on_position_changed_called, expected_changed);
         assert_eq!(strategy.on_position_closed_called, expected_closed);
+        assert!(strategy.on_position_event_called);
     }
 
     #[rstest]
@@ -2399,7 +2446,22 @@ mod tests {
 
         strategy.handle_position_event(make_position_opened());
 
+        assert!(!strategy.on_position_event_called);
         assert!(!strategy.on_position_opened_called);
+    }
+
+    #[rstest]
+    fn test_handle_position_event_skips_dispatch_for_adjusted() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+
+        strategy.handle_position_event(make_position_adjusted());
+
+        assert!(!strategy.on_position_event_called);
+        assert!(!strategy.on_position_opened_called);
+        assert!(!strategy.on_position_changed_called);
+        assert!(!strategy.on_position_closed_called);
     }
 
     #[rstest]
@@ -2407,6 +2469,7 @@ mod tests {
         let mut strategy = create_test_strategy();
 
         strategy.on_order_initialized(OrderInitialized::default());
+        strategy.on_order_event(OrderEventAny::Accepted(OrderAccepted::default()));
         strategy.on_order_denied(OrderDenied::default());
         strategy.on_order_emulated(OrderEmulated::default());
         strategy.on_order_released(OrderReleased::default());
@@ -2420,6 +2483,7 @@ mod tests {
         strategy.on_order_modify_rejected(OrderModifyRejected::default());
         strategy.on_order_cancel_rejected(OrderCancelRejected::default());
         strategy.on_order_updated(OrderUpdated::default());
+        strategy.on_position_event(make_position_opened());
     }
 
     #[rstest]
@@ -3196,6 +3260,7 @@ mod tests {
 
         strategy.handle_order_event(make_rejected(ClientOrderId::from("O-001")));
 
+        assert!(!strategy.on_order_event_called);
         assert!(!strategy.on_order_rejected_called);
     }
 

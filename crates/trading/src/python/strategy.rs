@@ -55,9 +55,10 @@ use nautilus_model::{
     enums::{BookType, OmsType, OrderSide, PositionSide, TimeInForce},
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
-        OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
-        OrderUpdated, PositionChanged, PositionClosed, PositionOpened,
+        OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
+        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
+        OrderTriggered, OrderUpdated, PositionChanged, PositionClosed, PositionEvent,
+        PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId,
@@ -68,8 +69,8 @@ use nautilus_model::{
     orders::{Order, OrderAny},
     position::Position,
     python::{
-        data::option_chain::PyStrikeRange, instruments::instrument_any_to_pyobject,
-        orders::pyobject_to_order_any,
+        data::option_chain::PyStrikeRange, events::order::order_event_to_pyobject,
+        instruments::instrument_any_to_pyobject, orders::pyobject_to_order_any,
     },
     types::{Price, Quantity},
 };
@@ -383,6 +384,16 @@ impl PyStrategyInner {
         Ok(())
     }
 
+    fn dispatch_on_order_event(&self, event: OrderEventAny) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_event = order_event_to_pyobject(py, event)?;
+                py_self.call_method1(py, "on_order_event", (py_event,))
+            })?;
+        }
+        Ok(())
+    }
+
     fn dispatch_on_order_denied(&self, event: OrderDenied) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
@@ -538,6 +549,21 @@ impl PyStrategyInner {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_position_opened", (event.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_position_event(&self, event: PositionEvent) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_event = match event {
+                    PositionEvent::PositionOpened(event) => event.into_py_any_unwrap(py),
+                    PositionEvent::PositionChanged(event) => event.into_py_any_unwrap(py),
+                    PositionEvent::PositionClosed(event) => event.into_py_any_unwrap(py),
+                    PositionEvent::PositionAdjusted(event) => event.into_py_any_unwrap(py),
+                };
+                py_self.call_method1(py, "on_position_event", (py_event,))
             })?;
         }
         Ok(())
@@ -836,6 +862,10 @@ impl Strategy for PyStrategyInner {
         let _ = self.dispatch_on_order_initialized(event);
     }
 
+    fn on_order_event(&mut self, event: OrderEventAny) {
+        let _ = self.dispatch_on_order_event(event);
+    }
+
     fn on_order_denied(&mut self, event: OrderDenied) {
         let _ = self.dispatch_on_order_denied(event);
     }
@@ -890,6 +920,10 @@ impl Strategy for PyStrategyInner {
 
     fn on_position_opened(&mut self, event: PositionOpened) {
         let _ = self.dispatch_on_position_opened(event);
+    }
+
+    fn on_position_event(&mut self, event: PositionEvent) {
+        let _ = self.dispatch_on_position_event(event);
     }
 
     fn on_position_changed(&mut self, event: PositionChanged) {
@@ -1810,6 +1844,10 @@ impl PyStrategy {
     #[pyo3(name = "on_order_initialized")]
     fn py_on_order_initialized(&mut self, event: OrderInitialized) {}
 
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_order_event")]
+    fn py_on_order_event(&mut self, event: Py<PyAny>) {}
+
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_denied")]
     fn py_on_order_denied(&mut self, event: OrderDenied) {}
@@ -1873,6 +1911,10 @@ impl PyStrategy {
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_opened")]
     fn py_on_position_opened(&mut self, event: PositionOpened) {}
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_position_event")]
+    fn py_on_position_event(&mut self, event: Py<PyAny>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_changed")]
@@ -2869,9 +2911,9 @@ mod tests {
         },
         events::{
             OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-            OrderExpired, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
+            OrderEventAny, OrderExpired, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
             OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
-            OrderUpdated, PositionChanged, PositionClosed, PositionOpened,
+            OrderUpdated, PositionChanged, PositionClosed, PositionEvent, PositionOpened,
             order::spec::OrderFilledSpec,
         },
         identifiers::{
@@ -2935,6 +2977,7 @@ class TrackingStrategy:
         "on_market_exit",
         "post_market_exit",
         "on_order_initialized",
+        "on_order_event",
         "on_order_denied",
         "on_order_emulated",
         "on_order_released",
@@ -2951,6 +2994,7 @@ class TrackingStrategy:
         "on_order_canceled",
         "on_order_filled",
         "on_position_opened",
+        "on_position_event",
         "on_position_changed",
         "on_position_closed",
     }
@@ -2966,6 +3010,9 @@ class TrackingStrategy:
 
     def call_count(self, method_name):
         return sum(1 for call in self.calls if call[0] == method_name)
+
+    def call_names(self):
+        return [call[0] for call in self.calls]
 
     def last_loaded_state(self):
 
@@ -3011,6 +3058,13 @@ class TrackingStrategy:
             .call_method1(py, "call_count", (method_name,))
             .and_then(|result| result.extract::<i32>(py))
             .unwrap_or(0)
+    }
+
+    fn python_method_call_names(py_strategy: &Py<PyAny>, py: Python<'_>) -> Vec<String> {
+        py_strategy
+            .call_method0(py, "call_names")
+            .and_then(|result| result.extract::<Vec<String>>(py))
+            .unwrap_or_default()
     }
 
     fn python_last_loaded_state(
@@ -3328,6 +3382,18 @@ class TrackingStrategy:
         }));
 
         assert_eq!(strategy.external_order_claims(), Some(claims));
+    }
+
+    #[rstest::rstest]
+    fn test_python_aggregate_event_handlers_exist() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let strategy = Py::new(py, PyStrategy::new(None)).unwrap();
+            let strategy = strategy.bind(py);
+
+            assert!(strategy.hasattr("on_order_event").unwrap());
+            assert!(strategy.hasattr("on_position_event").unwrap());
+        });
     }
 
     fn assert_python_dispatch<F>(py: Python<'_>, method_name: &str, invoke: F)
@@ -3748,6 +3814,7 @@ class TrackingStrategy:
 
     #[rstest::rstest]
     #[case("on_order_initialized")]
+    #[case("on_order_event")]
     #[case("on_order_denied")]
     #[case("on_order_emulated")]
     #[case("on_order_released")]
@@ -3771,6 +3838,13 @@ class TrackingStrategy:
                     Strategy::on_order_initialized(
                         rust_strategy.inner_mut(),
                         OrderInitialized::default(),
+                    );
+                    Ok(())
+                }
+                "on_order_event" => {
+                    Strategy::on_order_event(
+                        rust_strategy.inner_mut(),
+                        OrderEventAny::Accepted(OrderAccepted::default()),
                     );
                     Ok(())
                 }
@@ -3870,6 +3944,35 @@ class TrackingStrategy:
     }
 
     #[rstest::rstest]
+    fn test_python_handle_order_event_dispatches_specific_and_aggregate_callbacks() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let (py_strategy, mut rust_strategy) = create_registered_tracking_strategy(py);
+
+            rust_strategy.py_start().unwrap();
+            Strategy::handle_order_event(
+                rust_strategy.inner_mut(),
+                OrderEventAny::Accepted(OrderAccepted::default()),
+            );
+
+            assert_eq!(
+                python_method_call_count(&py_strategy, py, "on_order_accepted"),
+                1
+            );
+            assert_eq!(
+                python_method_call_count(&py_strategy, py, "on_order_event"),
+                1
+            );
+            let call_names = python_method_call_names(&py_strategy, py);
+            assert_eq!(
+                &call_names[call_names.len() - 2..],
+                ["on_order_accepted", "on_order_event"],
+            );
+        });
+    }
+
+    #[rstest::rstest]
+    #[case("on_position_event")]
     #[case("on_position_opened")]
     #[case("on_position_changed")]
     #[case("on_position_closed")]
@@ -3877,6 +3980,13 @@ class TrackingStrategy:
         pyo3::Python::initialize();
         Python::attach(|py| {
             assert_python_dispatch(py, method_name, |rust_strategy| match method_name {
+                "on_position_event" => {
+                    Strategy::on_position_event(
+                        rust_strategy.inner_mut(),
+                        PositionEvent::PositionOpened(sample_position_opened()),
+                    );
+                    Ok(())
+                }
                 "on_position_opened" => {
                     Strategy::on_position_opened(
                         rust_strategy.inner_mut(),
@@ -3900,6 +4010,34 @@ class TrackingStrategy:
                 }
                 _ => unreachable!("unhandled position callback case: {method_name}"),
             });
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_handle_position_event_dispatches_specific_and_aggregate_callbacks() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let (py_strategy, mut rust_strategy) = create_registered_tracking_strategy(py);
+
+            rust_strategy.py_start().unwrap();
+            Strategy::handle_position_event(
+                rust_strategy.inner_mut(),
+                PositionEvent::PositionOpened(sample_position_opened()),
+            );
+
+            assert_eq!(
+                python_method_call_count(&py_strategy, py, "on_position_opened"),
+                1
+            );
+            assert_eq!(
+                python_method_call_count(&py_strategy, py, "on_position_event"),
+                1
+            );
+            let call_names = python_method_call_names(&py_strategy, py);
+            assert_eq!(
+                &call_names[call_names.len() - 2..],
+                ["on_position_opened", "on_position_event"],
+            );
         });
     }
 }
