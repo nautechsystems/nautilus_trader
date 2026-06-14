@@ -85,6 +85,7 @@ Released on TBD (UTC).
 - Fixed socket client `close` stalling on and regressing an already closed client (Rust)
 - Fixed socket reconnect confirmation hanging when a stalled peer blocks the buffer drain (Rust)
 - Fixed stream-mode WebSocket clients accepting a zero heartbeat interval (Rust)
+- Fixed streaming index prices and PyO3 mark, index, and funding data paths
 - Fixed TLS client authentication silently dropped for combined key and certificate PEM files (Rust)
 - Fixed `TwapAlgorithm` rejecting primary orders already cached by the engine submit path (Rust)
 - Fixed `TwapAlgorithm` time event and lifecycle dispatch so all scheduled slices execute (Rust)
