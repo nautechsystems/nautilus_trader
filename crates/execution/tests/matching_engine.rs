@@ -4028,6 +4028,150 @@ fn test_reduce_only_order_exceeding_position_quantity(
 }
 
 #[rstest]
+fn test_reduce_only_stop_market_caps_cumulative_multi_level_fill(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    cache
+        .borrow_mut()
+        .add_instrument(instrument_eth_usdt.clone())
+        .unwrap();
+
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Some(cache.clone()),
+        None,
+        None,
+        None,
+    );
+
+    let position_id = PositionId::new(
+        format!(
+            "{}-{}",
+            instrument_eth_usdt.id(),
+            StrategyId::test_default()
+        )
+        .as_str(),
+    );
+    let opening_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2382.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-OPEN"))
+        .build();
+    let opening_fill = build_order_filled(
+        opening_order.trader_id(),
+        opening_order.strategy_id(),
+        opening_order.instrument_id(),
+        opening_order.client_order_id(),
+        VenueOrderId::from("V-OPEN"),
+        account_id,
+        TradeId::new("E-OPEN"),
+        opening_order.order_side(),
+        opening_order.order_type(),
+        opening_order.quantity(),
+        Price::from("1495.00"),
+        instrument_eth_usdt.quote_currency(),
+        LiquiditySide::Taker,
+        Some(position_id),
+        None,
+    );
+    let position = Position::new(&instrument_eth_usdt, opening_fill);
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    let pre_trigger_bid = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1491.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&pre_trigger_bid)
+        .unwrap();
+
+    for (order_id, price, quantity) in [
+        (2, "1490.00", "1000.000"),
+        (3, "1489.00", "1000.000"),
+        (4, "1488.00", "1000.000"),
+    ] {
+        let bid = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+            .book_action(BookAction::Add)
+            .book_order(BookOrder::new(
+                OrderSide::Buy,
+                Price::from(price),
+                Quantity::from(quantity),
+                order_id,
+            ))
+            .build();
+        engine_l2.process_order_book_delta(&bid).unwrap();
+    }
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-RO");
+    let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("1490.00"))
+        .quantity(Quantity::from("7142.000"))
+        .client_order_id(client_order_id)
+        .reduce_only(true)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut stop_order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let trigger_delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Delete)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1491.00"),
+            Quantity::from("0.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&trigger_delta).unwrap();
+
+    let messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<&OrderFilled> = messages
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id => Some(fill),
+            _ => None,
+        })
+        .collect();
+    let updated = messages
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Updated(updated) if updated.client_order_id == client_order_id => {
+                Some(updated)
+            }
+            _ => None,
+        })
+        .expect("Expected reduce-only order quantity update");
+
+    assert_eq!(fills.len(), 3);
+    assert_eq!(fills[0].last_qty, Quantity::from("1000.000"));
+    assert_eq!(fills[1].last_qty, Quantity::from("1000.000"));
+    assert_eq!(fills[2].last_qty, Quantity::from("382.000"));
+    assert_eq!(updated.quantity, Quantity::from("2382.000"));
+
+    let cache_ref = cache.borrow();
+    let order = cache_ref
+        .order(&client_order_id)
+        .expect("Expected reduce-only order in cache");
+    assert_eq!(order.quantity(), Quantity::from("2382.000"));
+    assert_eq!(order.filled_qty(), Quantity::from("2382.000"));
+    assert_eq!(order.status(), OrderStatus::Filled);
+}
+
+#[rstest]
 fn test_process_market_orders_with_protection_rejeceted_and_valid(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
@@ -12732,6 +12876,118 @@ fn test_l1_market_order_slips_remainder_through_next_tick(
     assert_eq!(fills[0].last_qty, Quantity::from("0.500"));
     assert_eq!(fills[1].last_px, Price::from(slip_px));
     assert_eq!(fills[1].last_qty, Quantity::from("1.000"));
+}
+
+#[rstest]
+fn test_reduce_only_l1_market_order_slip_caps_remaining_position(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    cache
+        .borrow_mut()
+        .add_instrument(instrument_eth_usdt.clone())
+        .unwrap();
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt.clone(),
+        Some(cache.clone()),
+        None,
+        None,
+        None,
+    );
+
+    let position_id = PositionId::new(
+        format!(
+            "{}-{}",
+            instrument_eth_usdt.id(),
+            StrategyId::test_default()
+        )
+        .as_str(),
+    );
+    let opening_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-OPEN"))
+        .build();
+    let opening_fill = build_order_filled(
+        opening_order.trader_id(),
+        opening_order.strategy_id(),
+        opening_order.instrument_id(),
+        opening_order.client_order_id(),
+        VenueOrderId::from("V-OPEN"),
+        account_id,
+        TradeId::new("E-OPEN"),
+        opening_order.order_side(),
+        opening_order.order_type(),
+        opening_order.quantity(),
+        Price::from("1000.00"),
+        instrument_eth_usdt.quote_currency(),
+        LiquiditySide::Taker,
+        Some(position_id),
+        None,
+    );
+    let position = Position::new(&instrument_eth_usdt, opening_fill);
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1000.00"),
+        Price::from("1010.00"),
+        Quantity::from("0.500"),
+        Quantity::from("0.500"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote);
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-RO");
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.500"))
+        .client_order_id(client_order_id)
+        .reduce_only(true)
+        .submit(true)
+        .build();
+    engine.process_order(&mut market_order, account_id);
+
+    let messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<OrderFilled> = messages
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id => Some(*fill),
+            _ => None,
+        })
+        .collect();
+    let updated = messages
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Updated(updated) if updated.client_order_id == client_order_id => {
+                Some(updated)
+            }
+            _ => None,
+        })
+        .expect("Expected reduce-only order quantity update");
+
+    assert_eq!(fills.len(), 2);
+    assert_eq!(fills[0].last_px, Price::from("1000.00"));
+    assert_eq!(fills[0].last_qty, Quantity::from("0.500"));
+    assert_eq!(fills[1].last_px, Price::from("999.99"));
+    assert_eq!(fills[1].last_qty, Quantity::from("0.500"));
+    assert_eq!(updated.quantity, Quantity::from("1.000"));
+
+    let cache_ref = cache.borrow();
+    let order = cache_ref
+        .order(&client_order_id)
+        .expect("Expected reduce-only order in cache");
+    assert_eq!(order.quantity(), Quantity::from("1.000"));
+    assert_eq!(order.filled_qty(), Quantity::from("1.000"));
+    assert_eq!(order.status(), OrderStatus::Filled);
 }
 
 #[rstest]

@@ -4651,6 +4651,16 @@ impl OrderMatchingEngine {
             .unwrap_or_else(|| order.filled_qty());
         let initial_total_filled = total_filled;
         let mut last_fill_px: Option<Price> = None;
+        let mut reduce_only_remaining_raw = None;
+        let mut reduce_only_filled_raw = None;
+
+        if self.config.use_reduce_only
+            && order.is_reduce_only()
+            && let Some(current_position) = position
+        {
+            reduce_only_remaining_raw = Some(current_position.quantity.raw);
+            reduce_only_filled_raw = Some(total_filled.raw);
+        }
 
         for &(fill_px, fill_qty) in fills {
             let Some(mut fill_px) = self.normalize_fill_price(fill_px, order.client_order_id())
@@ -4677,31 +4687,16 @@ impl OrderMatchingEngine {
                 }
             }
 
-            // Check reduce only order
-            // If the incoming simulated fill would exceed the position when reduce-only is honored,
-            // clamp the effective fill size to the adjusted (remaining position) quantity.
             let mut effective_fill_qty = fill_qty;
 
-            if self.config.use_reduce_only
-                && order.is_reduce_only()
-                && let Some(position) = &position
-                && fill_qty > position.quantity
-            {
-                if position.quantity == Quantity::zero(position.quantity.precision) {
-                    // Done
+            if let Some(remaining_raw) = reduce_only_remaining_raw {
+                if remaining_raw == 0 {
                     return;
                 }
 
-                // Adjusted target quantity equals the remaining position size
-                let adjusted_fill_qty =
-                    Quantity::from_raw(position.quantity.raw, fill_qty.precision);
-
-                // Determine the effective fill size for this iteration first
-                effective_fill_qty = min(effective_fill_qty, adjusted_fill_qty);
-
-                // Only emit an update if the order quantity actually changes
-                if order.quantity() != adjusted_fill_qty {
-                    self.generate_order_updated(order, adjusted_fill_qty, None, None, None);
+                if effective_fill_qty.raw > remaining_raw {
+                    effective_fill_qty =
+                        Quantity::from_raw(remaining_raw, effective_fill_qty.precision);
                 }
             }
 
@@ -4720,7 +4715,33 @@ impl OrderMatchingEngine {
                 effective_fill_qty,
                 order.quantity().saturating_sub(total_filled),
             );
+            let reduce_only_exhausts_position = reduce_only_remaining_raw
+                .is_some_and(|remaining_raw| capped_fill_qty.raw >= remaining_raw);
+
+            if reduce_only_exhausts_position {
+                let reduce_only_target_raw = reduce_only_filled_raw
+                    .unwrap_or(initial_total_filled.raw)
+                    .checked_add(capped_fill_qty.raw)
+                    .expect("Overflow occurred when adding reduce-only target quantity");
+                let reduce_only_target =
+                    Quantity::from_raw(reduce_only_target_raw, order.quantity().precision);
+
+                if order.quantity() != reduce_only_target {
+                    self.generate_order_updated(order, reduce_only_target, None, None, None);
+                }
+            }
+
             total_filled = total_filled.add(capped_fill_qty);
+
+            if let Some(remaining_raw) = reduce_only_remaining_raw.as_mut() {
+                *remaining_raw = remaining_raw.saturating_sub(capped_fill_qty.raw);
+            }
+
+            if let Some(filled_raw) = reduce_only_filled_raw.as_mut() {
+                *filled_raw = filled_raw
+                    .checked_add(capped_fill_qty.raw)
+                    .expect("Overflow occurred when adding reduce-only filled quantity");
+            }
 
             self.fill_order(
                 order,
@@ -4734,6 +4755,11 @@ impl OrderMatchingEngine {
 
             if order.order_type() == OrderType::MarketToLimit && initial_market_to_limit_fill {
                 // Filled initial level
+                return;
+            }
+
+            if reduce_only_exhausts_position {
+                self.purge_cached_filled_qty_if_closed(order.client_order_id());
                 return;
             }
         }
@@ -4781,7 +4807,34 @@ impl OrderMatchingEngine {
                 }
             }
 
-            let leaves_qty = order.quantity().saturating_sub(total_filled);
+            let mut leaves_qty = order.quantity().saturating_sub(total_filled);
+
+            if let Some(remaining_raw) = reduce_only_remaining_raw {
+                if remaining_raw == 0 {
+                    return;
+                }
+
+                if leaves_qty.raw > remaining_raw {
+                    leaves_qty = Quantity::from_raw(remaining_raw, leaves_qty.precision);
+                }
+
+                if leaves_qty.raw >= remaining_raw {
+                    let reduce_only_target_raw = reduce_only_filled_raw
+                        .unwrap_or(initial_total_filled.raw)
+                        .checked_add(leaves_qty.raw)
+                        .expect("Overflow occurred when adding reduce-only target quantity");
+                    let reduce_only_target =
+                        Quantity::from_raw(reduce_only_target_raw, order.quantity().precision);
+
+                    if order.quantity() != reduce_only_target {
+                        self.generate_order_updated(order, reduce_only_target, None, None, None);
+                    }
+                }
+            }
+
+            if leaves_qty.is_zero() {
+                return;
+            }
 
             self.fill_order(
                 order,
@@ -4791,6 +4844,7 @@ impl OrderMatchingEngine {
                 venue_position_id,
                 position,
             );
+            self.purge_cached_filled_qty_if_closed(order.client_order_id());
         }
     }
 
