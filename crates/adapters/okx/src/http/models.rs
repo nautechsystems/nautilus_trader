@@ -1395,9 +1395,29 @@ pub struct OKXAmendAlgoOrderRequest {
     /// New order size.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_sz: Option<String>,
-    /// New trigger price (for trigger/conditional orders).
+    /// New trigger price (for `trigger` algo orders).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_trigger_px: Option<String>,
+    /// New take-profit trigger price (for attached/OCO TP legs).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_tp_trigger_px: Option<String>,
+    /// New take-profit order price (`-1` for market).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_tp_ord_px: Option<String>,
+    /// New take-profit trigger price type (last, mark, index).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_tp_trigger_px_type: Option<String>,
+    /// New stop-loss trigger price (for `conditional` SL algo orders, incl.
+    /// `closeFraction` close-position stops, which OKX amends via `newSlTriggerPx`
+    /// rather than `newTriggerPx`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_sl_trigger_px: Option<String>,
+    /// New stop-loss order price (`-1` for market).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_sl_ord_px: Option<String>,
+    /// New stop-loss trigger price type (last, mark, index).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_sl_trigger_px_type: Option<String>,
     /// New order price (for limit orders after trigger).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_order_px: Option<String>,
@@ -1528,6 +1548,71 @@ mod tests {
         assert!(!json.contains("posSide"));
         assert!(!json.contains("closePosition"));
         assert!(!json.contains("closeFraction"));
+    }
+
+    #[rstest]
+    fn test_amend_algo_order_request_serializes_sl_trigger_px() {
+        // A conditional stop-loss algo order (incl. closeFraction stops) is amended
+        // via `newSlTriggerPx`, not `newTriggerPx`. Verify the camelCase field name
+        // and that an unset `new_trigger_px` is omitted.
+        let request = OKXAmendAlgoOrderRequest {
+            inst_id: "ETH-USDT-SWAP".to_string(),
+            algo_id: "123".to_string(),
+            algo_cl_ord_id: None,
+            new_sz: None,
+            new_trigger_px: None,
+            new_tp_trigger_px: None,
+            new_tp_ord_px: None,
+            new_tp_trigger_px_type: None,
+            new_sl_trigger_px: Some("850".to_string()),
+            new_sl_ord_px: None,
+            new_sl_trigger_px_type: None,
+            new_order_px: None,
+            new_callback_ratio: None,
+            new_callback_spread: None,
+            new_active_px: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+
+        assert!(json.contains("\"algoId\":\"123\""));
+        assert!(json.contains("\"newSlTriggerPx\":\"850\""));
+        // Unset optional fields must be omitted (OKX rejects an empty newTriggerPx).
+        assert!(!json.contains("newTriggerPx"));
+        assert!(!json.contains("newSz"));
+        assert!(!json.contains("algoClOrdId"));
+    }
+
+    #[rstest]
+    fn test_amend_algo_order_request_serializes_oco_tp_sl_fields() {
+        let request = OKXAmendAlgoOrderRequest {
+            inst_id: "DOGE-USDT-SWAP".to_string(),
+            algo_id: "algo-oco-1".to_string(),
+            algo_cl_ord_id: None,
+            new_sz: None,
+            new_trigger_px: None,
+            new_tp_trigger_px: Some("0.10495".to_string()),
+            new_tp_ord_px: Some("-1".to_string()),
+            new_tp_trigger_px_type: Some("last".to_string()),
+            new_sl_trigger_px: Some("0.06297".to_string()),
+            new_sl_ord_px: Some("-1".to_string()),
+            new_sl_trigger_px_type: Some("last".to_string()),
+            new_order_px: None,
+            new_callback_ratio: None,
+            new_callback_spread: None,
+            new_active_px: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+
+        assert!(json.contains("\"algoId\":\"algo-oco-1\""));
+        assert!(json.contains("\"newTpTriggerPx\":\"0.10495\""));
+        assert!(json.contains("\"newTpOrdPx\":\"-1\""));
+        assert!(json.contains("\"newTpTriggerPxType\":\"last\""));
+        assert!(json.contains("\"newSlTriggerPx\":\"0.06297\""));
+        assert!(json.contains("\"newSlOrdPx\":\"-1\""));
+        assert!(json.contains("\"newSlTriggerPxType\":\"last\""));
+        assert!(!json.contains("newTriggerPx"));
     }
 
     #[rstest]
@@ -1664,6 +1749,12 @@ mod tests {
             algo_cl_ord_id: None,
             new_sz: None,
             new_trigger_px: Some("3500".to_string()),
+            new_tp_trigger_px: None,
+            new_tp_ord_px: None,
+            new_tp_trigger_px_type: None,
+            new_sl_trigger_px: None,
+            new_sl_ord_px: None,
+            new_sl_trigger_px_type: None,
             new_order_px: Some("3490".to_string()),
             new_callback_ratio: None,
             new_callback_spread: None,
@@ -1689,6 +1780,12 @@ mod tests {
             algo_cl_ord_id: Some("client456".to_string()),
             new_sz: Some("0.1".to_string()),
             new_trigger_px: None,
+            new_tp_trigger_px: None,
+            new_tp_ord_px: None,
+            new_tp_trigger_px_type: None,
+            new_sl_trigger_px: None,
+            new_sl_ord_px: None,
+            new_sl_trigger_px_type: None,
             new_order_px: None,
             new_callback_ratio: Some("0.02".to_string()),
             new_callback_spread: None,
@@ -1827,6 +1924,12 @@ mod tests {
             algo_cl_ord_id: None,
             new_sz: None,
             new_trigger_px: None,
+            new_tp_trigger_px: None,
+            new_tp_ord_px: None,
+            new_tp_trigger_px_type: None,
+            new_sl_trigger_px: None,
+            new_sl_ord_px: None,
+            new_sl_trigger_px_type: None,
             new_order_px: None,
             new_callback_ratio: None,
             new_callback_spread: Some("25.0".to_string()),
@@ -1850,6 +1953,12 @@ mod tests {
             algo_cl_ord_id: None,
             new_sz: Some("0.5".to_string()),
             new_trigger_px: None,
+            new_tp_trigger_px: None,
+            new_tp_ord_px: None,
+            new_tp_trigger_px_type: None,
+            new_sl_trigger_px: None,
+            new_sl_ord_px: None,
+            new_sl_trigger_px_type: None,
             new_order_px: None,
             new_callback_ratio: None,
             new_callback_spread: None,
@@ -1874,6 +1983,12 @@ mod tests {
             algo_cl_ord_id: Some("client789".to_string()),
             new_sz: Some("1.0".to_string()),
             new_trigger_px: Some("60000".to_string()),
+            new_tp_trigger_px: None,
+            new_tp_ord_px: None,
+            new_tp_trigger_px_type: None,
+            new_sl_trigger_px: None,
+            new_sl_ord_px: None,
+            new_sl_trigger_px_type: None,
             new_order_px: Some("59900".to_string()),
             new_callback_ratio: Some("0.015".to_string()),
             new_callback_spread: Some("100".to_string()),

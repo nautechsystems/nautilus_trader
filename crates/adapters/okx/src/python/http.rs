@@ -1210,6 +1210,12 @@ impl OKXHttpClient {
         new_callback_ratio=None,
         new_callback_spread=None,
         new_activation_price=None,
+        new_sl_trigger_price=None,
+        new_tp_trigger_price=None,
+        new_tp_order_price=None,
+        new_tp_trigger_px_type=None,
+        new_sl_order_price=None,
+        new_sl_trigger_px_type=None,
     ))]
     fn py_amend_algo_order<'py>(
         &self,
@@ -1222,6 +1228,12 @@ impl OKXHttpClient {
         new_callback_ratio: Option<String>,
         new_callback_spread: Option<String>,
         new_activation_price: Option<Price>,
+        new_sl_trigger_price: Option<Price>,
+        new_tp_trigger_price: Option<Price>,
+        new_tp_order_price: Option<String>,
+        new_tp_trigger_px_type: Option<String>,
+        new_sl_order_price: Option<String>,
+        new_sl_trigger_px_type: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -1231,11 +1243,17 @@ impl OKXHttpClient {
                     instrument_id,
                     algo_id,
                     new_trigger_price,
+                    new_sl_trigger_price,
                     new_limit_price,
                     new_quantity,
                     new_callback_ratio,
                     new_callback_spread,
                     new_activation_price,
+                    new_tp_trigger_price,
+                    new_tp_order_price,
+                    new_tp_trigger_px_type,
+                    new_sl_order_price,
+                    new_sl_trigger_px_type,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
