@@ -936,13 +936,13 @@ mod tests {
     use alloy::primitives::address;
     use futures_util::TryStreamExt;
     use nautilus_core::UnixNanos;
-    use nautilus_infrastructure::sql::pg::get_postgres_connect_options;
+    use nautilus_infrastructure::sql::pg::{PostgresConnectOptions, get_postgres_connect_options};
     use nautilus_model::defi::{
         AmmType, Block, Blockchain, Chain, Dex, SharedChain, SharedDex, Token, data::DexPoolData,
     };
     use rstest::rstest;
     use sqlx::{
-        AssertSqlSafe, PgPool,
+        AssertSqlSafe, Error as SqlxError, PgPool,
         postgres::{PgConnectOptions, PgPoolOptions},
     };
     use ustr::Ustr;
@@ -1171,22 +1171,35 @@ mod tests {
 
     async fn connect_cache_test_database()
     -> anyhow::Result<Option<(BlockchainCacheDatabase, TestSchema)>> {
-        let connect_options: PgConnectOptions =
-            get_postgres_connect_options(None, None, None, None, None).into();
-        let admin_pool = match PgPoolOptions::new()
-            .max_connections(1)
-            .connect_with(connect_options.clone())
-            .await
-        {
-            Ok(pool) => pool,
-            Err(e) => {
-                eprintln!("Postgres service not available; skipping blockchain cache DB test: {e}");
-                return Ok(None);
-            }
+        let config = get_postgres_connect_options(None, None, None, None, None);
+        let mut connect_options: PgConnectOptions = config.clone().into();
+        let Some(mut admin_pool) =
+            connect_cache_test_pool(connect_options.clone(), &config.username).await
+        else {
+            return Ok(None);
         };
         let schema_name = cache_test_schema_name();
 
-        create_cache_test_schema(&admin_pool, &schema_name).await?;
+        if let Err(e) = create_cache_test_schema(&admin_pool, &schema_name).await {
+            if !is_database_create_permission_denied(&e) || config.username == "postgres" {
+                return Err(e);
+            }
+
+            eprintln!(
+                "Postgres role {} cannot create isolated blockchain cache test schema; retrying with postgres role: {e}",
+                config.username
+            );
+            admin_pool.close().await;
+            connect_options = postgres_test_connect_options(&config);
+            let Some(postgres_pool) =
+                connect_cache_test_pool(connect_options.clone(), "postgres").await
+            else {
+                return Err(e);
+            };
+            admin_pool = postgres_pool;
+            create_cache_test_schema(&admin_pool, &schema_name).await?;
+        }
+
         let database = BlockchainCacheDatabase::connect(
             connect_options.options([("search_path", format!("{schema_name},public"))]),
         )
@@ -1199,6 +1212,50 @@ mod tests {
                 name: schema_name,
             },
         )))
+    }
+
+    async fn connect_cache_test_pool(
+        connect_options: PgConnectOptions,
+        username: &str,
+    ) -> Option<PgPool> {
+        match PgPoolOptions::new()
+            .max_connections(1)
+            .connect_with(connect_options)
+            .await
+        {
+            Ok(pool) => Some(pool),
+            Err(e) => {
+                eprintln!(
+                    "Postgres connection as {username} failed; skipping blockchain cache DB test: {e}"
+                );
+                None
+            }
+        }
+    }
+
+    fn postgres_test_connect_options(config: &PostgresConnectOptions) -> PgConnectOptions {
+        PostgresConnectOptions::new(
+            config.host.clone(),
+            config.port,
+            String::from("postgres"),
+            config.password.clone(),
+            config.database.clone(),
+        )
+        .into()
+    }
+
+    fn is_database_create_permission_denied(error: &anyhow::Error) -> bool {
+        match error.downcast_ref::<SqlxError>() {
+            Some(SqlxError::Database(database_error)) => {
+                database_error
+                    .code()
+                    .is_some_and(|code| code.as_ref() == "42501")
+                    && database_error
+                        .message()
+                        .contains("permission denied for database")
+            }
+            _ => false,
+        }
     }
 
     struct TestSchema {
