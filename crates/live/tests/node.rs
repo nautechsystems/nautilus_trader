@@ -238,7 +238,7 @@ mod serial_tests {
         blocking_order_report_requested: Arc<AtomicBool>,
         position_report_requested: Arc<AtomicBool>,
         instrument_received: Arc<AtomicBool>,
-        order_report_release: Option<Arc<tokio::sync::Notify>>,
+        report_release: Option<Arc<tokio::sync::Notify>>,
     }
 
     impl BlockingReportExecutionClient {
@@ -247,7 +247,7 @@ mod serial_tests {
             blocking_order_report_requested: Arc<AtomicBool>,
             position_report_requested: Arc<AtomicBool>,
             instrument_received: Arc<AtomicBool>,
-            order_report_release: Option<Arc<tokio::sync::Notify>>,
+            report_release: Option<Arc<tokio::sync::Notify>>,
         ) -> Self {
             Self {
                 connected: Cell::new(false),
@@ -255,7 +255,7 @@ mod serial_tests {
                 blocking_order_report_requested,
                 position_report_requested,
                 instrument_received,
-                order_report_release,
+                report_release,
             }
         }
     }
@@ -275,7 +275,7 @@ mod serial_tests {
         blocking_order_report_requested: Arc<AtomicBool>,
         position_report_requested: Arc<AtomicBool>,
         instrument_received: Arc<AtomicBool>,
-        order_report_release: Option<Arc<tokio::sync::Notify>>,
+        report_release: Option<Arc<tokio::sync::Notify>>,
     }
 
     impl BlockingReportExecutionClientFactory {
@@ -284,14 +284,14 @@ mod serial_tests {
             blocking_order_report_requested: Arc<AtomicBool>,
             position_report_requested: Arc<AtomicBool>,
             instrument_received: Arc<AtomicBool>,
-            order_report_release: Option<Arc<tokio::sync::Notify>>,
+            report_release: Option<Arc<tokio::sync::Notify>>,
         ) -> Self {
             Self {
                 query_order_received,
                 blocking_order_report_requested,
                 position_report_requested,
                 instrument_received,
-                order_report_release,
+                report_release,
             }
         }
     }
@@ -308,7 +308,7 @@ mod serial_tests {
                 self.blocking_order_report_requested.clone(),
                 self.position_report_requested.clone(),
                 self.instrument_received.clone(),
-                self.order_report_release.clone(),
+                self.report_release.clone(),
             )))
         }
 
@@ -328,14 +328,14 @@ mod serial_tests {
         blocking_order_report_requested: Arc<AtomicBool>,
         position_report_requested: Arc<AtomicBool>,
         instrument_received: Arc<AtomicBool>,
-        order_report_release: Option<Arc<tokio::sync::Notify>>,
+        report_release: Option<Arc<tokio::sync::Notify>>,
     ) -> LiveNode {
         let factory = BlockingReportExecutionClientFactory::new(
             query_order_received,
             blocking_order_report_requested,
             position_report_requested,
             instrument_received,
-            order_report_release,
+            report_release,
         );
 
         LiveNodeBuilder::from_config(config)
@@ -421,7 +421,7 @@ mod serial_tests {
             self.blocking_order_report_requested
                 .store(true, Ordering::Relaxed);
 
-            if let Some(release) = &self.order_report_release {
+            if let Some(release) = &self.report_release {
                 release.notified().await;
                 Ok(Vec::new())
             } else {
@@ -435,7 +435,13 @@ mod serial_tests {
         ) -> anyhow::Result<Vec<PositionStatusReport>> {
             self.position_report_requested
                 .store(true, Ordering::Relaxed);
-            std::future::pending::<anyhow::Result<Vec<PositionStatusReport>>>().await
+
+            if let Some(release) = &self.report_release {
+                release.notified().await;
+                Ok(Vec::new())
+            } else {
+                std::future::pending::<anyhow::Result<Vec<PositionStatusReport>>>().await
+            }
         }
     }
 
@@ -936,6 +942,139 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test(flavor = "current_thread")]
+    async fn test_continuous_report_reconciliation_serializes_open_and_position_requests() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                inflight_check_interval_ms: 0,
+                open_check_interval_secs: Some(0.1),
+                position_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            delay_post_stop: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let query_order_received = Arc::new(AtomicBool::new(false));
+        let blocking_order_report_requested = Arc::new(AtomicBool::new(false));
+        let position_report_requested = Arc::new(AtomicBool::new(false));
+        let instrument_received = Arc::new(AtomicBool::new(false));
+        let mut node = live_node_with_blocking_exec_client(
+            "SerializedReportReconciliationNode",
+            config,
+            query_order_received.clone(),
+            blocking_order_report_requested.clone(),
+            position_report_requested.clone(),
+            instrument_received,
+            None,
+        );
+        let handle = node.handle();
+
+        let stop_handle = handle.clone();
+        let order_report_observed = blocking_order_report_requested.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { stop_handle.is_running() },
+                Duration::from_secs(5),
+            )
+            .await;
+            wait_until_async(
+                || async { order_report_observed.load(Ordering::Relaxed) },
+                Duration::from_secs(5),
+            )
+            .await;
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "run() should not block while a report request is pending"
+        );
+        assert!(
+            result.unwrap().is_ok(),
+            "run() should stop cleanly after serializing report reconciliation"
+        );
+        assert!(blocking_order_report_requested.load(Ordering::Relaxed));
+        assert!(!position_report_requested.load(Ordering::Relaxed));
+        assert!(!query_order_received.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_continuous_report_reconciliation_runs_position_after_open_completes() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                inflight_check_interval_ms: 0,
+                open_check_interval_secs: Some(0.1),
+                position_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            delay_post_stop: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let query_order_received = Arc::new(AtomicBool::new(false));
+        let blocking_order_report_requested = Arc::new(AtomicBool::new(false));
+        let position_report_requested = Arc::new(AtomicBool::new(false));
+        let instrument_received = Arc::new(AtomicBool::new(false));
+        let report_release = Arc::new(tokio::sync::Notify::new());
+        let mut node = live_node_with_blocking_exec_client(
+            "AlternatingReportReconciliationNode",
+            config,
+            query_order_received.clone(),
+            blocking_order_report_requested.clone(),
+            position_report_requested.clone(),
+            instrument_received,
+            Some(report_release.clone()),
+        );
+        let handle = node.handle();
+
+        let stop_handle = handle.clone();
+        let order_report_observed = blocking_order_report_requested.clone();
+        let position_report_observed = position_report_requested.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { stop_handle.is_running() },
+                Duration::from_secs(5),
+            )
+            .await;
+            wait_until_async(
+                || async { order_report_observed.load(Ordering::Relaxed) },
+                Duration::from_secs(5),
+            )
+            .await;
+            report_release.notify_one();
+            wait_until_async(
+                || async { position_report_observed.load(Ordering::Relaxed) },
+                Duration::from_secs(5),
+            )
+            .await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "run() should not block when alternating report reconciliation checks"
+        );
+        assert!(
+            result.unwrap().is_ok(),
+            "run() should stop cleanly after the position report request fires"
+        );
+        assert!(blocking_order_report_requested.load(Ordering::Relaxed));
+        assert!(position_report_requested.load(Ordering::Relaxed));
+        assert!(!query_order_received.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_instrument_update_during_open_order_report_does_not_panic() {
         let config = LiveNodeConfig {
             exec_engine: LiveExecEngineConfig {
@@ -1047,7 +1186,82 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test(flavor = "current_thread")]
-    async fn test_position_only_continuous_reconciliation_does_not_request_reports() {
+    async fn test_instrument_update_during_position_report_does_not_panic() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                inflight_check_interval_ms: 0,
+                position_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            delay_post_stop: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let query_order_received = Arc::new(AtomicBool::new(false));
+        let blocking_order_report_requested = Arc::new(AtomicBool::new(false));
+        let position_report_requested = Arc::new(AtomicBool::new(false));
+        let instrument_received = Arc::new(AtomicBool::new(false));
+        let position_report_release = Arc::new(tokio::sync::Notify::new());
+        let mut node = live_node_with_blocking_exec_client(
+            "InstrumentUpdateDuringPositionReportNode",
+            config,
+            query_order_received.clone(),
+            blocking_order_report_requested.clone(),
+            position_report_requested.clone(),
+            instrument_received.clone(),
+            Some(position_report_release.clone()),
+        );
+        let handle = node.handle();
+
+        let stop_handle = handle.clone();
+        let position_report_observed = position_report_requested.clone();
+        let instrument_observed = instrument_received.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { stop_handle.is_running() },
+                Duration::from_secs(5),
+            )
+            .await;
+            wait_until_async(
+                || async { position_report_observed.load(Ordering::Relaxed) },
+                Duration::from_secs(5),
+            )
+            .await;
+
+            let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+            let topic = switchboard::get_instrument_topic(instrument.id());
+            msgbus::publish_instrument(topic, &instrument);
+            position_report_release.notify_one();
+
+            wait_until_async(
+                || async { instrument_observed.load(Ordering::Relaxed) },
+                Duration::from_secs(5),
+            )
+            .await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(3), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "run() should not panic when an instrument update arrives during position reports"
+        );
+        assert!(
+            result.unwrap().is_ok(),
+            "run() should stop cleanly after flushing deferred instrument updates"
+        );
+        assert!(position_report_requested.load(Ordering::Relaxed));
+        assert!(instrument_received.load(Ordering::Relaxed));
+        assert!(!query_order_received.load(Ordering::Relaxed));
+        assert!(!blocking_order_report_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_position_only_continuous_reconciliation_requests_reports() {
         let config = LiveNodeConfig {
             exec_engine: LiveExecEngineConfig {
                 reconciliation: false,
@@ -1074,6 +1288,7 @@ mod serial_tests {
         let handle = node.handle();
 
         let stop_handle = handle.clone();
+        let position_report_observed = position_report_requested.clone();
 
         tokio::spawn(async move {
             wait_until_async(
@@ -1081,7 +1296,11 @@ mod serial_tests {
                 Duration::from_secs(5),
             )
             .await;
-            tokio::time::sleep(Duration::from_millis(250)).await;
+            wait_until_async(
+                || async { position_report_observed.load(Ordering::Relaxed) },
+                Duration::from_secs(5),
+            )
+            .await;
             stop_handle.stop();
         });
 
@@ -1093,11 +1312,11 @@ mod serial_tests {
         );
         assert!(
             result.unwrap().is_ok(),
-            "run() should stop cleanly without requesting position reports"
+            "run() should stop cleanly after requesting position reports"
         );
         assert!(!query_order_received.load(Ordering::Relaxed));
         assert!(!blocking_order_report_requested.load(Ordering::Relaxed));
-        assert!(!position_report_requested.load(Ordering::Relaxed));
+        assert!(position_report_requested.load(Ordering::Relaxed));
         assert_eq!(handle.state(), NodeState::Stopped);
     }
 }

@@ -197,10 +197,10 @@ When `filter_unclaimed_external_orders` is enabled, only `VENUE`-tagged orders a
 
 ### Continuous reconciliation
 
-Continuous reconciliation keeps runtime order state aligned after startup by checking
-in‑flight orders, polling open orders, and auditing own order books. Configure the loop
-with these settings. For runtime state‑transition rules, retry coordination, and caveats, see
-[Runtime checks](../concepts/live.md#runtime-checks).
+Continuous reconciliation keeps runtime execution state aligned after startup by checking
+in-flight orders, polling open orders, checking position status, and auditing own order books.
+Configure the loop with these settings. For runtime state-transition rules, retry coordination,
+and caveats, see [Runtime checks](../concepts/live.md#runtime-checks).
 
 | Setting                              | Default        | Description                                                                                      |
 |--------------------------------------|----------------|--------------------------------------------------------------------------------------------------|
@@ -219,7 +219,7 @@ with these settings. For runtime state‑transition rules, retry coordination, a
 | `position_check_interval_secs`       | None           | Interval (seconds) between position consistency checks. On discrepancy, queries for missing fills. None disables. Recommended: 30-60s. |
 | `position_check_lookback_mins`       | 60&nbsp;min    | Lookback window (minutes) for querying fill reports on position discrepancy.                     |
 | `position_check_threshold_ms`        | 5,000&nbsp;ms  | Minimum time since last local activity before acting on position discrepancies.                  |
-| `position_check_retries`             | 3&nbsp;retries | Max attempts per instrument before the engine stops retrying that discrepancy. Once exceeded, an error is logged and the discrepancy is no longer actively reconciled until it clears. |
+| `position_check_retries`             | 3&nbsp;retries | Max attempts per instrument/account before the engine stops retrying that discrepancy. Once exceeded, an error is logged and the discrepancy is no longer actively reconciled until it clears. |
 
 :::warning
 

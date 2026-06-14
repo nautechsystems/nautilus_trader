@@ -109,6 +109,24 @@ impl LiveExecutionClient {
         result
     }
 
+    #[expect(
+        clippy::await_holding_refcell_ref,
+        reason = "live report polling runs on the single-threaded node runtime"
+    )]
+    pub(crate) async fn generate_position_status_reports(
+        &self,
+        cmd: &GeneratePositionStatusReports,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let result = {
+            self.client
+                .borrow()
+                .generate_position_status_reports(cmd)
+                .await
+        };
+        self.flush_pending_instruments();
+        result
+    }
+
     fn flush_pending_instruments(&self) {
         let mut pending = self.pending_instruments.borrow_mut();
         if pending.is_empty() {
@@ -259,18 +277,11 @@ impl ExecutionClient for LiveExecutionClient {
         self.client.borrow().generate_fill_reports(cmd).await
     }
 
-    #[expect(
-        clippy::await_holding_refcell_ref,
-        reason = "report generation uses a shared client handle while the live loop keeps running"
-    )]
     async fn generate_position_status_reports(
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        self.client
-            .borrow()
-            .generate_position_status_reports(cmd)
-            .await
+        Self::generate_position_status_reports(self, cmd).await
     }
 
     #[expect(

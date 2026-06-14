@@ -58,7 +58,7 @@ use nautilus_model::{
     events::{OrderCanceled, OrderEventAny, OrderFilled, OrderInitialized},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
-        TraderId, VenueOrderId,
+        TraderId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny, TRIGGERABLE_ORDER_TYPES},
@@ -118,6 +118,13 @@ pub(crate) struct OpenOrderReportCheck {
     pub command: GenerateOrderStatusReports,
     pub filtered_orders: Vec<OrderAny>,
     pub start: Option<UnixNanos>,
+}
+
+/// Snapshot and command for one continuous position reconciliation check.
+#[derive(Debug, Clone)]
+pub(crate) struct PositionReportCheck {
+    pub command: GeneratePositionStatusReports,
+    pub positions_by_key: IndexMap<InstrumentAccountKey, Vec<Position>>,
 }
 
 /// Configuration for execution manager.
@@ -967,6 +974,27 @@ impl ExecutionManager {
         }
     }
 
+    fn open_positions_by_key_for_reconciliation(
+        &self,
+    ) -> IndexMap<InstrumentAccountKey, Vec<Position>> {
+        let cache = self.cache.borrow();
+        let positions = cache.positions_open(None, None, None, None, None);
+        let mut positions_by_key: IndexMap<InstrumentAccountKey, Vec<Position>> = IndexMap::new();
+
+        for position in positions {
+            if !self.should_reconcile_instrument(&position.instrument_id) {
+                continue;
+            }
+
+            positions_by_key
+                .entry((position.instrument_id, position.account_id))
+                .or_default()
+                .push(position.clone());
+        }
+
+        positions_by_key
+    }
+
     /// Prepares a bulk open-order report request and snapshots cached open orders.
     pub(crate) fn prepare_open_order_report_check(
         &self,
@@ -1233,6 +1261,34 @@ impl ExecutionManager {
         events
     }
 
+    /// Prepares a bulk position report request and snapshots cached positions.
+    #[must_use]
+    pub(crate) fn prepare_position_report_check(&self, command_id: UUID4) -> PositionReportCheck {
+        let positions_by_key = self.open_positions_by_key_for_reconciliation();
+
+        log::debug!(
+            "Found {} unique instrument/account combination{} with open positions",
+            positions_by_key.len(),
+            if positions_by_key.len() == 1 { "" } else { "s" }
+        );
+
+        let mut command = GeneratePositionStatusReports::new(
+            command_id,
+            self.clock.borrow().timestamp_ns(),
+            None, // instrument_id - query all
+            None, // start
+            None, // end
+            None, // params
+            None, // correlation_id
+        );
+        command.log_receipt_level = LogLevel::Debug;
+
+        PositionReportCheck {
+            command,
+            positions_by_key,
+        }
+    }
+
     /// Checks position consistency between cache and venue.
     ///
     /// This method validates that positions in the cache match the venue's state,
@@ -1246,55 +1302,20 @@ impl ExecutionManager {
         &mut self,
         clients: &[&dyn ExecutionClient],
     ) -> Vec<OrderEventAny> {
-        log::debug!("Checking position consistency between cached-state and venues");
-
-        let open_positions = {
-            let cache = self.cache.borrow();
-            let positions = cache.positions_open(None, None, None, None, None);
-
-            if self.config.reconciliation_instrument_ids.is_empty() {
-                positions.iter().map(|p| (*p).clone()).collect()
-            } else {
-                positions
-                    .iter()
-                    .filter(|p| {
-                        self.config
-                            .reconciliation_instrument_ids
-                            .contains(&p.instrument_id)
-                    })
-                    .map(|p| (*p).clone())
-                    .collect::<Vec<_>>()
-            }
-        };
-
-        log::debug!(
-            "Found {} position{} to check",
-            open_positions.len(),
-            if open_positions.len() == 1 { "" } else { "s" }
-        );
-
-        // Query venue for position reports
-        let mut venue_positions = IndexMap::new();
+        let check = self.prepare_position_report_check(UUID4::new());
+        let mut reports = Vec::new();
+        let mut failed_venues = IndexSet::new();
 
         for client in clients {
-            let mut cmd = GeneratePositionStatusReports::new(
-                UUID4::new(),
-                self.clock.borrow().timestamp_ns(),
-                None, // instrument_id - query all
-                None, // start
-                None, // end
-                None, // params
-                None, // correlation_id
-            );
-            cmd.log_receipt_level = LogLevel::Debug;
-
-            match client.generate_position_status_reports(&cmd).await {
-                Ok(reports) => {
-                    for report in reports {
-                        venue_positions.insert((report.instrument_id, report.account_id), report);
-                    }
+            match client
+                .generate_position_status_reports(&check.command)
+                .await
+            {
+                Ok(client_reports) => {
+                    reports.extend(client_reports);
                 }
                 Err(e) => {
+                    failed_venues.insert(client.venue());
                     log::warn!(
                         "Failed to query position reports from {}: {e}",
                         client.client_id()
@@ -1303,31 +1324,60 @@ impl ExecutionManager {
             }
         }
 
-        // Check for discrepancies (one check per (instrument, account) per cycle to
-        // avoid burning multiple retries for hedging positions on the same scope)
-        let mut events = Vec::new();
-        let mut checked_keys: IndexSet<InstrumentAccountKey> = IndexSet::new();
+        self.reconcile_position_reports(&check, reports, &failed_venues)
+    }
 
-        for position in &open_positions {
-            let key: InstrumentAccountKey = (position.instrument_id, position.account_id);
-            if !checked_keys.insert(key) {
+    /// Reconciles cached positions against venue position reports.
+    #[must_use]
+    pub(crate) fn reconcile_position_reports(
+        &mut self,
+        check: &PositionReportCheck,
+        reports: Vec<PositionStatusReport>,
+        failed_venues: &IndexSet<Venue>,
+    ) -> Vec<OrderEventAny> {
+        log::debug!("Checking position consistency between cached-state and venues");
+
+        let mut venue_positions = IndexMap::new();
+
+        for report in reports {
+            if !self.should_reconcile_instrument(&report.instrument_id) {
                 continue;
             }
 
-            // Skip if not in filter
-            if !self.config.reconciliation_instrument_ids.is_empty()
-                && !self
-                    .config
-                    .reconciliation_instrument_ids
-                    .contains(&position.instrument_id)
+            venue_positions.insert((report.instrument_id, report.account_id), report);
+        }
+
+        let mut events = Vec::new();
+
+        for (key, cached_positions) in &check.positions_by_key {
+            let venue_report = venue_positions.get(key);
+
+            if venue_report.is_none()
+                && Self::position_query_failed_for_instrument(failed_venues, &key.0)
+            {
+                log::warn!(
+                    "Skipping position reconciliation for {}: failed to query venue position status",
+                    key.0
+                );
+                continue;
+            }
+
+            if let Some(discrepancy_events) =
+                self.check_position_discrepancy(*key, cached_positions, venue_report)
+            {
+                events.extend(discrepancy_events);
+            }
+        }
+
+        for (key, venue_report) in &venue_positions {
+            if check.positions_by_key.contains_key(key)
+                || venue_report.signed_decimal_qty == Decimal::ZERO
             {
                 continue;
             }
 
-            let venue_report = venue_positions.get(&key);
-
             if let Some(discrepancy_events) =
-                self.check_position_discrepancy(position, venue_report)
+                self.check_position_discrepancy(*key, &[], Some(venue_report))
             {
                 events.extend(discrepancy_events);
             }
@@ -1335,9 +1385,10 @@ impl ExecutionManager {
 
         // Prune retry counters for (instrument, account) pairs no longer actively
         // tracked, excluding flat venue reports which shouldn't protect stale counters
-        let active_keys: IndexSet<InstrumentAccountKey> = open_positions
-            .iter()
-            .map(|p| (p.instrument_id, p.account_id))
+        let active_keys: IndexSet<InstrumentAccountKey> = check
+            .positions_by_key
+            .keys()
+            .copied()
             .chain(
                 venue_positions
                     .iter()
@@ -1349,6 +1400,35 @@ impl ExecutionManager {
             .retain(|k, _| active_keys.contains(k));
 
         events
+    }
+
+    fn position_query_failed_for_instrument(
+        failed_venues: &IndexSet<Venue>,
+        instrument_id: &InstrumentId,
+    ) -> bool {
+        failed_venues.contains(&instrument_id.venue)
+    }
+
+    fn position_snapshot_avg_px(cached_positions: &[Position]) -> Option<Decimal> {
+        let mut total_value = Decimal::ZERO;
+        let mut total_qty = Decimal::ZERO;
+
+        for position in cached_positions {
+            let qty = position.signed_decimal_qty().abs();
+            if position.avg_px_open > 0.0
+                && qty > Decimal::ZERO
+                && let Ok(avg_px) = Decimal::from_str(&position.avg_px_open.to_string())
+            {
+                total_value += avg_px * qty;
+                total_qty += qty;
+            }
+        }
+
+        if total_qty > Decimal::ZERO {
+            Some(total_value / total_qty)
+        } else {
+            None
+        }
     }
 
     /// Registers an order as inflight for tracking.
@@ -1687,30 +1767,31 @@ impl ExecutionManager {
 
     fn check_position_discrepancy(
         &mut self,
-        position: &Position,
+        key: InstrumentAccountKey,
+        cached_positions: &[Position],
         venue_report: Option<&PositionStatusReport>,
     ) -> Option<Vec<OrderEventAny>> {
-        let key: InstrumentAccountKey = (position.instrument_id, position.account_id);
+        let (instrument_id, account_id) = key;
 
-        // Use signed quantities to detect both magnitude and side discrepancies
-        let cached_signed_qty = position.signed_decimal_qty();
+        let mut cached_signed_qty = Decimal::ZERO;
+        for position in cached_positions {
+            cached_signed_qty += position.signed_decimal_qty();
+        }
         let venue_signed_qty = venue_report.map_or(Decimal::ZERO, |r| r.signed_decimal_qty);
 
         let tolerance = Decimal::from_str("0.00000001").unwrap();
         if (cached_signed_qty - venue_signed_qty).abs() <= tolerance {
             self.position_recon_retries.shift_remove(&key);
-            return None; // No discrepancy
+            return None;
         }
 
-        // Check activity threshold
         let ts_now = self.clock.borrow().timestamp_ns();
 
         if let Some(&last_activity) = self.position_local_activity_ns.get(&key)
             && (ts_now - last_activity) < self.config.position_check_threshold_ns
         {
             log::debug!(
-                "Skipping position reconciliation for {}: recent activity within threshold",
-                position.instrument_id
+                "Skipping position reconciliation for {instrument_id}: recent activity within threshold"
             );
             return None;
         }
@@ -1722,14 +1803,8 @@ impl ExecutionManager {
         }
 
         log::warn!(
-            "Position discrepancy detected for {}: cached_signed_qty={}, venue_signed_qty={}",
-            position.instrument_id,
-            cached_signed_qty,
-            venue_signed_qty
+            "Position discrepancy detected for {instrument_id}: cached_signed_qty={cached_signed_qty}, venue_signed_qty={venue_signed_qty}"
         );
-
-        let account_id = position.account_id;
-        let instrument_id = position.instrument_id;
 
         let Some(instrument) = self.cache.borrow().instrument(&instrument_id).cloned() else {
             log::debug!("Cannot reconcile position for {instrument_id}: instrument not in cache");
@@ -1746,19 +1821,13 @@ impl ExecutionManager {
             return None;
         };
 
-        let cached_avg_px = if position.avg_px_open > 0.0 {
-            Decimal::from_str(&position.avg_px_open.to_string()).ok()
-        } else {
-            None
-        };
+        let cached_avg_px = Self::position_snapshot_avg_px(cached_positions);
         let venue_avg_px = venue_report.and_then(|r| r.avg_px_open);
 
-        // Check if position crosses zero (flips side)
         let crosses_zero = (cached_signed_qty > Decimal::ZERO && venue_signed_qty < Decimal::ZERO)
             || (cached_signed_qty < Decimal::ZERO && venue_signed_qty > Decimal::ZERO);
 
         let result = if crosses_zero {
-            // Split into two fills: close existing position, then open new position
             let venue_ts_last = venue_report.map_or(ts_now, |r| r.ts_last);
             self.reconcile_cross_zero_position(
                 &instrument,
@@ -2963,6 +3032,7 @@ impl ExecutionManager {
 mod tests {
     use nautilus_common::clock::TestClock;
     use nautilus_model::{
+        enums::OmsType,
         instruments::{
             Instrument,
             stubs::{crypto_perpetual_ethusdt, xbtusd_bitmex},
@@ -3039,6 +3109,66 @@ mod tests {
         assert_eq!(check.filtered_orders[0].client_order_id(), included_id);
     }
 
+    #[rstest]
+    fn test_prepare_position_report_check_builds_bulk_command_with_snapshot() {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let manager = ExecutionManager::new(
+            clock.clone(),
+            cache.clone(),
+            ExecutionManagerConfig {
+                reconciliation_instrument_ids: IndexSet::from([crypto_perpetual_ethusdt().id()]),
+                ..Default::default()
+            },
+        );
+        let included_instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let excluded_instrument = InstrumentAny::CryptoPerpetual(xbtusd_bitmex());
+
+        cache
+            .borrow_mut()
+            .add_instrument(included_instrument.clone())
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_instrument(excluded_instrument.clone())
+            .unwrap();
+        let included_position = insert_open_position(
+            &cache,
+            &included_instrument,
+            PositionId::from("P-REPORT-001"),
+            OrderSide::Buy,
+            "5.0",
+            "3000.00",
+        );
+        insert_open_position(
+            &cache,
+            &excluded_instrument,
+            PositionId::from("P-REPORT-002"),
+            OrderSide::Buy,
+            "2.0",
+            "40000.00",
+        );
+
+        let ts_now = clock.borrow().timestamp_ns();
+        let command_id = UUID4::new();
+        let check = manager.prepare_position_report_check(command_id);
+        let key = (
+            included_position.instrument_id,
+            included_position.account_id,
+        );
+        let positions = check.positions_by_key.get(&key).unwrap();
+
+        assert_eq!(check.command.command_id, command_id);
+        assert_eq!(check.command.ts_init, ts_now);
+        assert_eq!(check.command.instrument_id, None);
+        assert_eq!(check.command.start, None);
+        assert_eq!(check.command.end, None);
+        assert_eq!(check.command.log_receipt_level, LogLevel::Debug);
+        assert_eq!(check.positions_by_key.len(), 1);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].id, included_position.id);
+    }
+
     fn insert_accepted_limit_order(
         cache: &Rc<RefCell<Cache>>,
         client_order_id: ClientOrderId,
@@ -3061,5 +3191,39 @@ mod tests {
         let order = cache.borrow_mut().update_order(&submitted).unwrap();
         let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
         cache.borrow_mut().update_order(&accepted).unwrap();
+    }
+
+    fn insert_open_position(
+        cache: &Rc<RefCell<Cache>>,
+        instrument: &InstrumentAny,
+        position_id: PositionId,
+        side: OrderSide,
+        quantity: &str,
+        price: &str,
+    ) -> Position {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(side)
+            .quantity(Quantity::from(quantity))
+            .build();
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            instrument,
+            Some(TradeId::new("T-REPORT-001")),
+            Some(position_id),
+            Some(Price::from(price)),
+            Some(Quantity::from(quantity)),
+            None,
+            None,
+            None,
+            Some(AccountId::from("TEST-001")),
+        );
+        let order_filled: OrderFilled = fill.into();
+        let position = Position::new(instrument, order_filled);
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Hedging)
+            .unwrap();
+        position
     }
 }

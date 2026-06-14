@@ -457,7 +457,7 @@ different `trade_id` values require overfill handling.
 During live trading, the system maintains state through two parallel channels:
 
 - Real-time fill events arriving via WebSocket.
-- Periodic reconciliation polling the venue for fill history.
+- Periodic reconciliation polling the venue for fill history and position status.
 
 If the same fill arrives through both channels with different identifiers before deduplication
 can occur, both may be applied to the order. This is particularly likely during:
@@ -472,9 +472,10 @@ The likelihood of reconciliation race conditions increases when:
   (both default to 5,000 ms) define how long the engine waits before acting on discrepancies.
   Reducing these below the round-trip latency to your venue increases the chance of processing
   a fill via reconciliation before the real-time event arrives (or vice versa).
-- **Reconciliation frequency is increased**: Setting `open_check_interval_secs` to aggressive values
-  (e.g., 1-2 seconds) increases how often the system polls the venue, creating more opportunities
-  for race conditions with real-time events.
+- **Reconciliation frequency is increased**: Setting `open_check_interval_secs` or
+  `position_check_interval_secs` to aggressive values (e.g., 1-2 seconds) increases how often
+  the system polls the venue, creating more opportunities for race conditions with real-time
+  events.
 - **Startup delay is reduced**: The `reconciliation_startup_delay_secs` setting (default 10 seconds)
   provides time for WebSocket connections to stabilize before continuous reconciliation begins.
   Reducing this increases the chance of duplicate fills during the startup window.

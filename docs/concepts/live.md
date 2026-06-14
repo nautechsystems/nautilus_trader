@@ -232,6 +232,7 @@ Continuous reconciliation starts after startup reconciliation completes. It:
 
 - Monitors in‑flight orders for delays exceeding a configured threshold.
 - Reconciles open orders with the venue at configured intervals.
+- Checks position status with the venue at configured intervals.
 - Audits internal *own* order books against the venue's public books.
 
 The loop waits for startup reconciliation to finish before starting periodic checks.
@@ -245,6 +246,7 @@ reconciliation completes, giving the system time to stabilize.
 | **In‑flight submit timeout**        | `SUBMITTED` remains unconfirmed beyond retry exhaustion.   | Resolves to `REJECTED`.                              |
 | **In‑flight cancel/update timeout** | `PENDING_CANCEL` or `PENDING_UPDATE` exceeds the retries.  | Logs warning and remains unresolved.                 |
 | **Open orders check discrepancy**   | Periodic poll detects a venue state change.                | Confirms status and applies transitions.             |
+| **Position check discrepancy**      | Periodic poll detects a position mismatch.                 | Generates reconciliation events when eligible.       |
 | **Own books audit mismatch**        | Own order books diverge from venue public books.           | Audits and logs inconsistencies.                     |
 
 **In‑flight order timeout resolution** (venue does not respond after max retries):
@@ -285,6 +287,8 @@ open‑only mode is the default.
 - **Targeted query safeguard**: before applying a terminal "not found" resolution, the
   engine issues a single‑order query to the venue. This catches false negatives from bulk
   query limitations or timing delays.
+- **Position report failures**: if a venue position query fails, the engine skips cached
+  positions for that venue during the cycle instead of treating missing reports as flat.
 - **`FILLED` orders** that are "not found" at the venue are silently ignored. Venues commonly
   drop completed orders from their query results.
 
@@ -299,6 +303,10 @@ When the open‑order loop exhausts retries, the engine issues one targeted
 `GenerateOrderStatusReport` probe before applying a terminal state or leaving an ambiguous
 pending cancel/update unresolved. If the venue returns the order, reconciliation proceeds and
 the retry counter resets.
+
+Position checks use separate retry counters per instrument and account. A successful position
+match clears the counter, while repeated unresolved discrepancies stop active reconciliation for
+that pair until the discrepancy clears.
 
 **Single‑order query throttling.** The engine caps single‑order queries per cycle via
 `max_single_order_queries_per_cycle`. Remaining orders are deferred to the next cycle.

@@ -7388,6 +7388,43 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected() 
 }
 
 #[tokio::test]
+async fn test_position_check_reconciles_venue_only_nonflat_report() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+
+    ctx.add_instrument(instrument);
+
+    let venue_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_))),
+        "Expected a synthetic fill for a non-flat venue-only position report"
+    );
+}
+
+#[tokio::test]
 async fn test_position_check_retries_stops_after_max() {
     // When instrument is not in cache, check_position_discrepancy returns None
     // (can't generate fills), so retries should increment until exhausted
@@ -7534,6 +7571,7 @@ struct MockPositionExecutionClient {
     venue: Venue,
     order_reports: RefCell<Vec<OrderStatusReport>>,
     position_reports: RefCell<Vec<PositionStatusReport>>,
+    fail_position_reports: bool,
 }
 
 impl MockPositionExecutionClient {
@@ -7547,6 +7585,18 @@ impl MockPositionExecutionClient {
             venue: test_venue(),
             order_reports: RefCell::new(order_reports),
             position_reports: RefCell::new(position_reports),
+            fail_position_reports: false,
+        }
+    }
+
+    fn failing_position_reports() -> Self {
+        Self {
+            client_id: test_client_id(),
+            account_id: test_account_id(),
+            venue: test_venue(),
+            order_reports: RefCell::new(Vec::new()),
+            position_reports: RefCell::new(Vec::new()),
+            fail_position_reports: true,
         }
     }
 }
@@ -7638,8 +7688,118 @@ impl ExecutionClient for MockPositionExecutionClient {
         &self,
         _cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        if self.fail_position_reports {
+            anyhow::bail!("position reports unavailable");
+        }
+
         Ok(self.position_reports.borrow().clone())
     }
+}
+
+#[tokio::test]
+async fn test_position_check_failed_venue_query_skips_cached_position() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-FAIL-SKIP"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    );
+    ctx.add_position(&position);
+
+    let ok_client = MockPositionExecutionClient::new(vec![], vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&ok_client];
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, test_account_id())),
+        1
+    );
+
+    ctx.add_instrument(instrument);
+    let failing_client = MockPositionExecutionClient::failing_position_reports();
+    let clients: Vec<&dyn ExecutionClient> = vec![&failing_client];
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_))),
+        "Expected no synthetic fill when the venue position query fails"
+    );
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, test_account_id())),
+        1
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_aggregates_hedge_positions_before_comparing_report() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+
+    ctx.add_instrument(instrument.clone());
+    let pos_long = create_test_position(
+        &instrument,
+        PositionId::from("P-NET-LONG"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    );
+    let pos_short = create_test_position(
+        &instrument,
+        PositionId::from("P-NET-SHORT"),
+        OrderSide::Sell,
+        "3.0",
+        "3100.00",
+    );
+    ctx.add_position(&pos_long);
+    ctx.add_position(&pos_short);
+
+    let venue_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("2.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3050.00)),
+    );
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_))),
+        "Expected no synthetic fill when cached hedge positions net to the venue report"
+    );
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, test_account_id())),
+        0
+    );
 }
 
 #[tokio::test]
