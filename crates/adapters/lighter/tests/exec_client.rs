@@ -3556,6 +3556,67 @@ async fn test_account_all_positions_empty_snapshot_clears_cache_and_emits_flat_r
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
+async fn test_account_all_positions_invalid_known_market_does_not_flatten_cached_position() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    await_subscribe_count(&state, 4).await;
+
+    state.push_frame(&load_json("ws_account_all_positions_update.json"));
+
+    next_event_matching(&mut rx, Duration::from_secs(2), |e| {
+        matches!(
+            e,
+            ExecutionEvent::Report(ExecutionReport::Position(report))
+                if report.instrument_id == eth_perp_id()
+                    && report.quantity == Quantity::from("1.5000")
+        )
+    })
+    .await
+    .expect("initial position report");
+
+    let mut invalid_position = load_json("ws_account_all_positions_update.json");
+    invalid_position["positions"]["0"]["position"] = json!("-1.5000");
+    state.push_frame(&invalid_position);
+
+    let unexpected_flat = next_event_matching(&mut rx, Duration::from_millis(250), |e| {
+        matches!(
+            e,
+            ExecutionEvent::Report(ExecutionReport::Position(report))
+                if report.instrument_id == eth_perp_id()
+                    && report.position_side == PositionSideSpecified::Flat
+                    && report.quantity.is_zero()
+        )
+    })
+    .await;
+
+    assert!(
+        unexpected_flat.is_none(),
+        "invalid position row must not flatten cached positions: {unexpected_flat:?}",
+    );
+
+    let positions = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect("position reports");
+
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].instrument_id, eth_perp_id());
+    assert_eq!(positions[0].quantity, Quantity::from("1.5000"));
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prior_position() {
     let (addr, state) = start_server().await;
     let (mut client, mut rx, cache) = build_client(addr);

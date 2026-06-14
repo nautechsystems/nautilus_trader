@@ -689,9 +689,12 @@ impl LighterExecutionClient {
                                     "Lighter execution batch: orders={order_count} fills={fill_count}",
                                 );
                             }
-                            Some(NautilusWsMessage::PositionSnapshot(reports)) => {
-                                // Replace even when empty: Lighter sends complete
-                                // `account_all_positions` snapshots.
+                            Some(NautilusWsMessage::PositionSnapshot {
+                                reports,
+                                skipped_market_ids,
+                            }) => {
+                                // Replace even when empty, but keep rows the
+                                // handler could not parse or map.
                                 for r in &reports {
                                     if let Some(idx) =
                                         registry_for_loop.market_index(&r.instrument_id)
@@ -700,9 +703,20 @@ impl LighterExecutionClient {
                                     }
                                 }
                                 let position_count = reports.len();
-                                let removed = dispatch.replace_positions(&reports);
+                                let retained_positions: Vec<InstrumentId> = skipped_market_ids
+                                    .iter()
+                                    .filter_map(|market_id| {
+                                        registry_for_loop.instrument_id(*market_id)
+                                    })
+                                    .collect();
+                                let removed = if retained_positions.is_empty() {
+                                    dispatch.replace_positions(&reports)
+                                } else {
+                                    dispatch.replace_positions_except(&reports, &retained_positions)
+                                };
                                 log::debug!(
-                                    "Lighter position snapshot: positions={position_count}, removed={}",
+                                    "Lighter position snapshot: positions={position_count}, skipped_markets={}, removed={}",
+                                    skipped_market_ids.len(),
                                     removed.len(),
                                 );
 

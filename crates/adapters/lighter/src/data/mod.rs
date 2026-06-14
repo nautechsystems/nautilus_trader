@@ -315,7 +315,7 @@ impl LighterDataClient {
                             // own clone of the WebSocket and routes them.
                             Some(
                                 NautilusWsMessage::ExecutionReports(_)
-                                | NautilusWsMessage::PositionSnapshot(_)
+                                | NautilusWsMessage::PositionSnapshot { .. }
                                 | NautilusWsMessage::AccountState(_)
                                 | NautilusWsMessage::SendTxAck { .. }
                                 | NautilusWsMessage::SendTxRejected { .. }

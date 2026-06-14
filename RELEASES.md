@@ -68,6 +68,7 @@ Released on TBD (UTC).
 - Fixed Lighter cancel and modify rejections for local, venue, and acked no-op failures
 - Fixed Lighter concurrent batch nonce-ordering race (#4263), thanks @filipmacek
 - Fixed Lighter maker-only key lookup authentication (#4234), thanks @filipmacek
+- Fixed Lighter positions falsely flattening on malformed snapshots
 - Fixed live external order claim registration in Rust
 - Fixed live reconciliation logging below-cached fill mismatches as errors, halting `shutdown_on_error` nodes (Rust)
 - Fixed live reconciliation logging transient venue report-query failures as errors (Rust)

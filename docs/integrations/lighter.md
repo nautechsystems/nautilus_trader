@@ -413,9 +413,12 @@ will not connect until `private_key`, `account_index`, and `api_key_index` resol
 
 Perpetual positions are reported in netting mode: one position per market. Spot balances arrive
 through account asset state rather than position reports.
-Each `account_all_positions` frame is treated as a complete venue snapshot. If a new frame omits a
+Each `account_all_positions` frame is treated as a venue snapshot. If a new frame omits a
 previously cached market, the adapter emits a flat position report for that instrument; an empty
 `positions` map clears all cached perpetual positions and emits a flat report for each.
+Rows present in the frame whose market cannot be mapped or whose position cannot be parsed are
+retained by market ID instead: parsed rows still update the cache, and cached markets absent from
+both the parsed rows and skipped market IDs still flatten.
 
 | Feature                 | Perpetuals | Spot | Notes                                                        |
 |-------------------------|------------|------|--------------------------------------------------------------|
@@ -542,7 +545,7 @@ race the venue's initial state and find the venue order id lookup table or posit
 The gate clears any prior-session position and account caches at the start of each connect attempt
 so a reconnect cycle observes the new session's frames, not stale data.
 By contrast, transparent WebSocket reconnects do not re-enter `connect()`: they keep cached
-positions until the next `account_all_positions` frame, then apply the same complete-snapshot
+positions until the next `account_all_positions` frame, then apply the same position snapshot
 replacement rules.
 
 ## API credentials

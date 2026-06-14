@@ -1199,6 +1199,7 @@ impl FeedHandler {
         let ts_event = ts_init;
 
         let mut reports = Vec::new();
+        let mut skipped_market_ids = Vec::new();
 
         for position in positions.values() {
             let Some(instrument) = self.instruments.get(&position.market_id) else {
@@ -1206,6 +1207,7 @@ impl FeedHandler {
                     "No instrument cached for Lighter position market_id={}",
                     position.market_id,
                 );
+                skipped_market_ids.push(position.market_id);
                 continue;
             };
 
@@ -1213,12 +1215,18 @@ impl FeedHandler {
                 position, instrument, account_id, ts_event, ts_init,
             ) {
                 Ok(report) => reports.push(report),
-                Err(e) => log::error!("Error parsing Lighter position status report: {e}"),
+                Err(e) => {
+                    skipped_market_ids.push(position.market_id);
+                    log::error!("Error parsing Lighter position status report: {e}");
+                }
             }
         }
 
         // Emit even when empty: signals the last position closed.
-        vec![NautilusWsMessage::PositionSnapshot(reports)]
+        vec![NautilusWsMessage::PositionSnapshot {
+            reports,
+            skipped_market_ids,
+        }]
     }
 
     fn handle_account_assets(
@@ -1662,7 +1670,11 @@ mod tests {
 
         assert_eq!(messages.len(), 1);
         match &messages[0] {
-            NautilusWsMessage::PositionSnapshot(reports) => {
+            NautilusWsMessage::PositionSnapshot {
+                reports,
+                skipped_market_ids,
+            } => {
+                assert!(skipped_market_ids.is_empty());
                 assert_eq!(reports.len(), 1);
                 assert_eq!(reports[0].quantity, Quantity::from("1.5000"));
             }
@@ -1688,8 +1700,60 @@ mod tests {
 
         assert_eq!(messages.len(), 1);
         match &messages[0] {
-            NautilusWsMessage::PositionSnapshot(reports) => assert!(reports.is_empty()),
+            NautilusWsMessage::PositionSnapshot {
+                reports,
+                skipped_market_ids,
+            } => {
+                assert!(skipped_market_ids.is_empty());
+                assert!(reports.is_empty());
+            }
             other => panic!("expected empty position snapshot, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_frame_marks_account_positions_incomplete_when_position_instrument_uncached() {
+        let mut handler = make_handler_with_account();
+        let mut frame_json: serde_json::Value =
+            serde_json::from_str(WS_ACCOUNT_ALL_POSITIONS_UPDATE).unwrap();
+        frame_json["positions"]["0"]["market_id"] = json!(999);
+        let frame: super::LighterWsFrame = serde_json::from_value(frame_json).unwrap();
+
+        let messages = strip_account_marker(handler.handle_frame(frame, UnixNanos::from(11)));
+
+        assert_eq!(messages.len(), 1);
+        match &messages[0] {
+            NautilusWsMessage::PositionSnapshot {
+                reports,
+                skipped_market_ids,
+            } => {
+                assert_eq!(skipped_market_ids, &[999]);
+                assert!(reports.is_empty());
+            }
+            other => panic!("expected incomplete position snapshot, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_frame_marks_account_positions_incomplete_when_position_parse_fails() {
+        let mut handler = make_handler_with_account();
+        let mut frame_json: serde_json::Value =
+            serde_json::from_str(WS_ACCOUNT_ALL_POSITIONS_UPDATE).unwrap();
+        frame_json["positions"]["0"]["position"] = json!("-1.5000");
+        let frame: super::LighterWsFrame = serde_json::from_value(frame_json).unwrap();
+
+        let messages = strip_account_marker(handler.handle_frame(frame, UnixNanos::from(11)));
+
+        assert_eq!(messages.len(), 1);
+        match &messages[0] {
+            NautilusWsMessage::PositionSnapshot {
+                reports,
+                skipped_market_ids,
+            } => {
+                assert_eq!(skipped_market_ids, &[0]);
+                assert!(reports.is_empty());
+            }
+            other => panic!("expected incomplete position snapshot, was {other:?}"),
         }
     }
 
@@ -1732,7 +1796,11 @@ mod tests {
 
         assert_eq!(messages.len(), 1);
         match &messages[0] {
-            NautilusWsMessage::PositionSnapshot(reports) => {
+            NautilusWsMessage::PositionSnapshot {
+                reports,
+                skipped_market_ids,
+            } => {
+                assert!(skipped_market_ids.is_empty());
                 assert_eq!(reports.len(), 1);
                 assert_eq!(reports[0].quantity, Quantity::from("100"));
             }
