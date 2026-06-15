@@ -1135,16 +1135,6 @@ impl ExecutionClient for BybitExecutionClient {
             return Ok(());
         }
 
-        if self.config.environment == BybitEnvironment::Demo
-            && (tp_sl.has_tp_sl() || tp_sl.order_iv.is_some() || tp_sl.mmp.is_some())
-        {
-            self.emitter.emit_order_denied(
-                &order,
-                "Native TP/SL and option params are not supported in demo mode",
-            );
-            return Ok(());
-        }
-
         log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
         self.emitter.emit_order_submitted(&order);
 
@@ -1199,10 +1189,13 @@ impl ExecutionClient for BybitExecutionClient {
             let is_quote_quantity = order.is_quote_quantity();
             let is_leverage = tp_sl.is_leverage;
             let bbo_side_type = tp_sl.bbo_side_type;
-            let bbo_level = tp_sl.bbo_level;
+            let bbo_level = tp_sl.bbo_level.clone();
+            let native_tp_sl = tp_sl.to_native_tp_sl();
             let dispatch_state = Arc::clone(&self.dispatch_state);
 
             self.spawn_task("submit_order_http", async move {
+                let native_tp_sl_ref =
+                    (!native_tp_sl.is_empty()).then_some(&native_tp_sl);
                 let result = http_client
                     .submit_order(
                         account_id,
@@ -1222,6 +1215,7 @@ impl ExecutionClient for BybitExecutionClient {
                         position_idx,
                         bbo_side_type,
                         bbo_level,
+                        native_tp_sl_ref,
                     )
                     .await;
 
@@ -1477,6 +1471,7 @@ impl ExecutionClient for BybitExecutionClient {
                             position_idx,
                             bbo_side_type,
                             bbo_level.clone(),
+                            None,
                         )
                         .await
                     {

@@ -1602,7 +1602,7 @@ def test_handle_fill_report_uses_cached_position_id_across_partial_fills(
 
 
 @pytest.mark.asyncio
-async def test_submit_order_with_tp_sl_in_demo_mode_emits_order_denied(
+async def test_submit_order_with_tp_sl_in_demo_mode_routes_to_http(
     exec_client_builder,
     monkeypatch,
     instrument,
@@ -1643,9 +1643,17 @@ async def test_submit_order_with_tp_sl_in_demo_mode_emits_order_denied(
     try:
         await client._submit_order(command)
 
+        # Native TP/SL on demo now goes through the HTTP create-order endpoint
+        # (Bybit demo accepts the same fields as mainnet) instead of being
+        # denied. The mainnet WS Trade API is still bypassed in demo.
         ws_trade_client.submit_order.assert_not_awaited()
         ws_trade_client.batch_place_orders.assert_not_awaited()
-        http_client.submit_order.assert_not_awaited()
+        http_client.submit_order.assert_awaited_once()
+        kwargs = http_client.submit_order.call_args.kwargs
+        native_tp_sl = kwargs["native_tp_sl"]
+        assert native_tp_sl is not None
+        assert native_tp_sl.take_profit == "55000.00"
+        assert native_tp_sl.stop_loss == "47000.00"
     finally:
         await client._disconnect()
 

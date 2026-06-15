@@ -220,6 +220,7 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<params::BybitWsAmendOrderParams>()?;
     m.add_class::<params::BybitWsCancelOrderParams>()?;
     m.add_class::<params::BybitTickersParams>()?;
+    m.add_class::<params::BybitNativeTpSlParams>()?;
     m.add_class::<BybitDataClientConfig>()?;
     m.add_class::<BybitExecClientConfig>()?;
     m.add_class::<BybitDataClientFactory>()?;

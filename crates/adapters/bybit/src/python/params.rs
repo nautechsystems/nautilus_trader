@@ -25,6 +25,7 @@ use crate::{
         },
         parse::parse_bbo_level,
     },
+    http::query::BybitNativeTpSlParams as RustNativeTpSlParams,
     websocket::{error::BybitWsError, messages},
 };
 
@@ -769,5 +770,140 @@ impl From<BybitTickersParams> for crate::http::query::BybitTickersParams {
             base_coin: params.base_coin,
             exp_date: params.exp_date,
         }
+    }
+}
+
+/// Native TP/SL + option-specific fields for `POST /v5/order/create` (used by
+/// the demo HTTP path, since demo doesn't expose the mainnet WS Trade API).
+///
+/// Enum-typed fields are accepted as strings (matching the existing
+/// [`BybitWsPlaceOrderParams`] surface) and parsed at the binding boundary.
+#[pyclass(from_py_object)]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bybit")]
+#[derive(Clone, Debug, Default)]
+pub struct BybitNativeTpSlParams {
+    #[pyo3(get, set)]
+    pub take_profit: Option<String>,
+    #[pyo3(get, set)]
+    pub stop_loss: Option<String>,
+    #[pyo3(get, set)]
+    pub tp_trigger_by: Option<String>,
+    #[pyo3(get, set)]
+    pub sl_trigger_by: Option<String>,
+    #[pyo3(get, set)]
+    pub tp_order_type: Option<String>,
+    #[pyo3(get, set)]
+    pub sl_order_type: Option<String>,
+    #[pyo3(get, set)]
+    pub tp_limit_price: Option<String>,
+    #[pyo3(get, set)]
+    pub sl_limit_price: Option<String>,
+    #[pyo3(get, set)]
+    pub tpsl_mode: Option<String>,
+    #[pyo3(get, set)]
+    pub close_on_trigger: Option<bool>,
+    #[pyo3(get, set)]
+    pub order_iv: Option<String>,
+    #[pyo3(get, set)]
+    pub mmp: Option<bool>,
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl BybitNativeTpSlParams {
+    #[new]
+    #[pyo3(signature = (
+        take_profit=None,
+        stop_loss=None,
+        tp_trigger_by=None,
+        sl_trigger_by=None,
+        tp_order_type=None,
+        sl_order_type=None,
+        tp_limit_price=None,
+        sl_limit_price=None,
+        tpsl_mode=None,
+        close_on_trigger=None,
+        order_iv=None,
+        mmp=None,
+    ))]
+    #[expect(clippy::too_many_arguments)]
+    fn py_new(
+        take_profit: Option<String>,
+        stop_loss: Option<String>,
+        tp_trigger_by: Option<String>,
+        sl_trigger_by: Option<String>,
+        tp_order_type: Option<String>,
+        sl_order_type: Option<String>,
+        tp_limit_price: Option<String>,
+        sl_limit_price: Option<String>,
+        tpsl_mode: Option<String>,
+        close_on_trigger: Option<bool>,
+        order_iv: Option<String>,
+        mmp: Option<bool>,
+    ) -> Self {
+        Self {
+            take_profit,
+            stop_loss,
+            tp_trigger_by,
+            sl_trigger_by,
+            tp_order_type,
+            sl_order_type,
+            tp_limit_price,
+            sl_limit_price,
+            tpsl_mode,
+            close_on_trigger,
+            order_iv,
+            mmp,
+        }
+    }
+}
+
+fn parse_enum<T>(field: &str, raw: &str) -> PyResult<T>
+where
+    T: for<'de> serde::Deserialize<'de>,
+{
+    serde_json::from_str::<T>(&format!("\"{raw}\"")).map_err(|e| {
+        pyo3::exceptions::PyValueError::new_err(format!("Invalid {field} '{raw}': {e}"))
+    })
+}
+
+impl TryFrom<BybitNativeTpSlParams> for RustNativeTpSlParams {
+    type Error = PyErr;
+
+    fn try_from(params: BybitNativeTpSlParams) -> Result<Self, Self::Error> {
+        Ok(Self {
+            take_profit: params.take_profit,
+            stop_loss: params.stop_loss,
+            tp_trigger_by: params
+                .tp_trigger_by
+                .as_deref()
+                .map(|v| parse_enum::<BybitTriggerType>("tp_trigger_by", v))
+                .transpose()?,
+            sl_trigger_by: params
+                .sl_trigger_by
+                .as_deref()
+                .map(|v| parse_enum::<BybitTriggerType>("sl_trigger_by", v))
+                .transpose()?,
+            tp_order_type: params
+                .tp_order_type
+                .as_deref()
+                .map(|v| parse_enum::<BybitOrderType>("tp_order_type", v))
+                .transpose()?,
+            sl_order_type: params
+                .sl_order_type
+                .as_deref()
+                .map(|v| parse_enum::<BybitOrderType>("sl_order_type", v))
+                .transpose()?,
+            tp_limit_price: params.tp_limit_price,
+            sl_limit_price: params.sl_limit_price,
+            tpsl_mode: params
+                .tpsl_mode
+                .as_deref()
+                .map(|v| parse_enum::<BybitTpSlMode>("tpsl_mode", v))
+                .transpose()?,
+            close_on_trigger: params.close_on_trigger,
+            order_iv: params.order_iv,
+            mmp: params.mmp,
+        })
     }
 }
