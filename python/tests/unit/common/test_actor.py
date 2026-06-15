@@ -129,6 +129,65 @@ HISTORICAL_CALLBACKS = [
     ("on_historical_index_prices", "historical_index_prices"),
 ]
 
+NO_PARAMETERS = ()
+STATE_PARAMETERS = ("state",)
+
+LIFECYCLE_HOOK_SIGNATURES = [
+    ("on_start", NO_PARAMETERS),
+    ("on_stop", NO_PARAMETERS),
+    ("on_resume", NO_PARAMETERS),
+    ("on_reset", NO_PARAMETERS),
+    ("on_dispose", NO_PARAMETERS),
+    ("on_degrade", NO_PARAMETERS),
+    ("on_fault", NO_PARAMETERS),
+]
+SAVE_LOAD_HOOK_SIGNATURES = [
+    ("on_save", NO_PARAMETERS),
+    ("on_load", STATE_PARAMETERS),
+]
+DATA_CALLBACK_SIGNATURES = [
+    ("on_time_event", ("event",)),
+    ("on_data", ("data",)),
+    ("on_signal", ("signal",)),
+    ("on_instrument", ("instrument",)),
+    ("on_quote", ("quote",)),
+    ("on_trade", ("trade",)),
+    ("on_bar", ("bar",)),
+    ("on_book_deltas", ("deltas",)),
+    ("on_book", ("book",)),
+    ("on_mark_price", ("mark_price",)),
+    ("on_index_price", ("index_price",)),
+    ("on_funding_rate", ("funding_rate",)),
+    ("on_instrument_status", ("status",)),
+    ("on_instrument_close", ("close",)),
+    ("on_option_greeks", ("greeks",)),
+    ("on_option_chain", ("slice",)),
+]
+HISTORICAL_CALLBACK_SIGNATURES = [
+    ("on_historical_data", ("data",)),
+    ("on_historical_quotes", ("quotes",)),
+    ("on_historical_trades", ("trades",)),
+    ("on_historical_funding_rates", ("funding_rates",)),
+    ("on_historical_bars", ("bars",)),
+    ("on_historical_mark_prices", ("mark_prices",)),
+    ("on_historical_index_prices", ("index_prices",)),
+]
+DEFI_CALLBACK_SIGNATURES = [
+    ("on_block", ("block",)),
+    ("on_pool", ("pool",)),
+    ("on_pool_swap", ("swap",)),
+    ("on_pool_liquidity_update", ("update",)),
+    ("on_pool_fee_collect", ("update",)),
+    ("on_pool_flash", ("flash",)),
+]
+CALLBACK_SIGNATURES = (
+    LIFECYCLE_HOOK_SIGNATURES
+    + SAVE_LOAD_HOOK_SIGNATURES
+    + DATA_CALLBACK_SIGNATURES
+    + HISTORICAL_CALLBACK_SIGNATURES
+    + DEFI_CALLBACK_SIGNATURES
+)
+
 DATA_SUBSCRIPTION_PARAMETERS = ("data_type", "client_id", "params")
 DATA_REQUEST_PARAMETERS = ("data_type", "client_id", "start", "end", "limit", "params")
 VENUE_SUBSCRIPTION_PARAMETERS = ("venue", "client_id", "params")
@@ -460,6 +519,17 @@ def test_data_actor_shutdown_system_signature_exposes_optional_reason(actor):
 
     assert list(signature.parameters) == ["reason"]
     assert parameter.default is None
+
+
+@pytest.mark.parametrize(("method_name", "parameter_names"), CALLBACK_SIGNATURES)
+def test_data_actor_callback_methods_expose_expected_signatures(
+    actor,
+    method_name,
+    parameter_names,
+):
+    signature = inspect.signature(getattr(actor, method_name))
+
+    assert tuple(signature.parameters) == parameter_names
 
 
 @pytest.mark.parametrize(("method_name", "parameter_names"), REGISTRATION_REQUIRED_SIGNATURES)

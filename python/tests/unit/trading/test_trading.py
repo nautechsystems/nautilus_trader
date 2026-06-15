@@ -449,6 +449,40 @@ def test_strategy_portfolio_flat_methods_net_hedged_positions():
 
 
 LIFECYCLE_METHODS = ["start", "stop", "resume", "reset", "dispose", "degrade", "fault"]
+DATA_SUBSCRIPTION_PARAMETERS = ("data_type", "client_id", "params")
+DATA_REQUEST_PARAMETERS = ("data_type", "client_id", "start", "end", "limit", "params")
+VENUE_SUBSCRIPTION_PARAMETERS = ("venue", "client_id", "params")
+VENUE_REQUEST_PARAMETERS = ("venue", "start", "end", "client_id", "params")
+INSTRUMENT_SUBSCRIPTION_PARAMETERS = ("instrument_id", "client_id", "params")
+BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
+    "instrument_id",
+    "book_type",
+    "depth",
+    "client_id",
+    "managed",
+    "params",
+)
+BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS = (
+    "instrument_id",
+    "book_type",
+    "interval_ms",
+    "depth",
+    "client_id",
+    "params",
+)
+BOOK_INTERVAL_UNSUBSCRIBE_PARAMETERS = ("instrument_id", "interval_ms", "client_id", "params")
+BAR_SUBSCRIPTION_PARAMETERS = ("bar_type", "client_id", "params")
+ORDER_SUBSCRIPTION_PARAMETERS = ("instrument_id",)
+OPTION_CHAIN_SUBSCRIPTION_PARAMETERS = (
+    "series_id",
+    "strike_range",
+    "snapshot_interval_ms",
+    "client_id",
+    "params",
+)
+OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS = ("series_id", "client_id")
+INSTRUMENT_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "client_id", "params")
+BOOK_SNAPSHOT_REQUEST_PARAMETERS = ("instrument_id", "depth", "client_id", "params")
 BOOK_DELTAS_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "limit", "client_id", "params")
 BOOK_DEPTH_REQUEST_PARAMETERS = (
     "instrument_id",
@@ -459,10 +493,190 @@ BOOK_DEPTH_REQUEST_PARAMETERS = (
     "client_id",
     "params",
 )
-BOOK_REQUEST_SIGNATURES = [
+INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
+    "instrument_id",
+    "start",
+    "end",
+    "limit",
+    "client_id",
+    "params",
+)
+BAR_REQUEST_PARAMETERS = ("bar_type", "start", "end", "limit", "client_id", "params")
+SUBMIT_ORDER_PARAMETERS = ("order", "position_id", "client_id", "params")
+SUBMIT_ORDER_LIST_PARAMETERS = ("order_list", "position_id", "client_id", "params")
+MODIFY_ORDER_PARAMETERS = (
+    "client_order_id",
+    "quantity",
+    "price",
+    "trigger_price",
+    "client_id",
+    "params",
+)
+CANCEL_ORDER_PARAMETERS = ("client_order_id", "client_id", "params")
+CANCEL_GTD_EXPIRY_PARAMETERS = ("order",)
+CANCEL_ORDERS_PARAMETERS = ("client_order_ids", "client_id", "params")
+CANCEL_ALL_ORDERS_PARAMETERS = ("instrument_id", "order_side", "client_id", "params")
+CLOSE_POSITION_PARAMETERS = (
+    "position",
+    "client_id",
+    "tags",
+    "time_in_force",
+    "reduce_only",
+    "quote_quantity",
+)
+CLOSE_ALL_POSITIONS_PARAMETERS = (
+    "instrument_id",
+    "position_side",
+    "client_id",
+    "tags",
+    "time_in_force",
+    "reduce_only",
+    "quote_quantity",
+)
+QUERY_ACCOUNT_PARAMETERS = ("account_id", "client_id", "params")
+QUERY_ORDER_PARAMETERS = ("order", "client_id", "params")
+DATA_SURFACE_SIGNATURES = [
+    ("subscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_book_at_interval", BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_quotes", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_trades", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_bars", BAR_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_mark_prices", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_index_prices", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_funding_rates", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_option_greeks", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_instrument_status", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_instrument_close", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_option_chain", OPTION_CHAIN_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_order_fills", ORDER_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_order_cancels", ORDER_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_book_deltas", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_book_at_interval", BOOK_INTERVAL_UNSUBSCRIBE_PARAMETERS),
+    ("unsubscribe_quotes", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_trades", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_bars", BAR_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_mark_prices", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_index_prices", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_funding_rates", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_option_greeks", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_instrument_status", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_instrument_close", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_option_chain", OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS),
+    ("unsubscribe_order_fills", ORDER_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_order_cancels", ORDER_SUBSCRIPTION_PARAMETERS),
+    ("request_data", DATA_REQUEST_PARAMETERS),
+    ("request_instrument", INSTRUMENT_REQUEST_PARAMETERS),
+    ("request_instruments", VENUE_REQUEST_PARAMETERS),
+    ("request_book_snapshot", BOOK_SNAPSHOT_REQUEST_PARAMETERS),
     ("request_book_deltas", BOOK_DELTAS_REQUEST_PARAMETERS),
     ("request_book_depth", BOOK_DEPTH_REQUEST_PARAMETERS),
+    ("request_quotes", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
+    ("request_trades", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
+    ("request_funding_rates", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
+    ("request_bars", BAR_REQUEST_PARAMETERS),
 ]
+EXECUTION_SIGNATURES = [
+    ("submit_order", SUBMIT_ORDER_PARAMETERS),
+    ("submit_order_list", SUBMIT_ORDER_LIST_PARAMETERS),
+    ("modify_order", MODIFY_ORDER_PARAMETERS),
+    ("cancel_order", CANCEL_ORDER_PARAMETERS),
+    ("cancel_gtd_expiry", CANCEL_GTD_EXPIRY_PARAMETERS),
+    ("cancel_orders", CANCEL_ORDERS_PARAMETERS),
+    ("cancel_all_orders", CANCEL_ALL_ORDERS_PARAMETERS),
+    ("close_position", CLOSE_POSITION_PARAMETERS),
+    ("close_all_positions", CLOSE_ALL_POSITIONS_PARAMETERS),
+    ("query_account", QUERY_ACCOUNT_PARAMETERS),
+    ("query_order", QUERY_ORDER_PARAMETERS),
+]
+
+NO_PARAMETERS = ()
+STATE_PARAMETERS = ("state",)
+EVENT_PARAMETERS = ("event",)
+
+LIFECYCLE_HOOK_SIGNATURES = [
+    ("on_start", NO_PARAMETERS),
+    ("on_stop", NO_PARAMETERS),
+    ("on_resume", NO_PARAMETERS),
+    ("on_reset", NO_PARAMETERS),
+    ("on_dispose", NO_PARAMETERS),
+    ("on_degrade", NO_PARAMETERS),
+    ("on_fault", NO_PARAMETERS),
+]
+SAVE_LOAD_HOOK_SIGNATURES = [
+    ("on_save", NO_PARAMETERS),
+    ("on_load", STATE_PARAMETERS),
+]
+MARKET_EXIT_HOOK_SIGNATURES = [
+    ("on_market_exit", NO_PARAMETERS),
+    ("post_market_exit", NO_PARAMETERS),
+]
+DATA_CALLBACK_SIGNATURES = [
+    ("on_time_event", EVENT_PARAMETERS),
+    ("on_data", ("data",)),
+    ("on_signal", ("signal",)),
+    ("on_instrument", ("instrument",)),
+    ("on_quote", ("quote",)),
+    ("on_trade", ("trade",)),
+    ("on_bar", ("bar",)),
+    ("on_book_deltas", ("deltas",)),
+    ("on_book", ("book",)),
+    ("on_mark_price", ("mark_price",)),
+    ("on_index_price", ("index_price",)),
+    ("on_funding_rate", ("funding_rate",)),
+    ("on_instrument_status", ("status",)),
+    ("on_instrument_close", ("close",)),
+    ("on_option_greeks", ("greeks",)),
+    ("on_option_chain", ("slice",)),
+]
+HISTORICAL_CALLBACK_SIGNATURES = [
+    ("on_historical_data", ("data",)),
+    ("on_historical_quotes", ("quotes",)),
+    ("on_historical_trades", ("trades",)),
+    ("on_historical_funding_rates", ("funding_rates",)),
+    ("on_historical_bars", ("bars",)),
+    ("on_historical_mark_prices", ("mark_prices",)),
+    ("on_historical_index_prices", ("index_prices",)),
+]
+ORDER_CALLBACK_SIGNATURES = [
+    ("on_order_initialized", EVENT_PARAMETERS),
+    ("on_order_event", EVENT_PARAMETERS),
+    ("on_order_denied", EVENT_PARAMETERS),
+    ("on_order_emulated", EVENT_PARAMETERS),
+    ("on_order_released", EVENT_PARAMETERS),
+    ("on_order_submitted", EVENT_PARAMETERS),
+    ("on_order_rejected", EVENT_PARAMETERS),
+    ("on_order_accepted", EVENT_PARAMETERS),
+    ("on_order_expired", EVENT_PARAMETERS),
+    ("on_order_triggered", EVENT_PARAMETERS),
+    ("on_order_pending_update", EVENT_PARAMETERS),
+    ("on_order_pending_cancel", EVENT_PARAMETERS),
+    ("on_order_modify_rejected", EVENT_PARAMETERS),
+    ("on_order_cancel_rejected", EVENT_PARAMETERS),
+    ("on_order_updated", EVENT_PARAMETERS),
+    ("on_order_canceled", EVENT_PARAMETERS),
+    ("on_order_filled", EVENT_PARAMETERS),
+]
+POSITION_CALLBACK_SIGNATURES = [
+    ("on_position_opened", EVENT_PARAMETERS),
+    ("on_position_event", EVENT_PARAMETERS),
+    ("on_position_changed", EVENT_PARAMETERS),
+    ("on_position_closed", EVENT_PARAMETERS),
+]
+CALLBACK_SIGNATURES = (
+    LIFECYCLE_HOOK_SIGNATURES
+    + SAVE_LOAD_HOOK_SIGNATURES
+    + MARKET_EXIT_HOOK_SIGNATURES
+    + DATA_CALLBACK_SIGNATURES
+    + HISTORICAL_CALLBACK_SIGNATURES
+    + ORDER_CALLBACK_SIGNATURES
+    + POSITION_CALLBACK_SIGNATURES
+)
 
 
 @pytest.mark.parametrize("method_name", LIFECYCLE_METHODS)
@@ -473,17 +687,24 @@ def test_strategy_lifecycle_methods_reject_pre_initialized(method_name):
         getattr(strategy, method_name)()
 
 
-def test_strategy_submit_order_signature():
-    sig = inspect.signature(Strategy.submit_order)
-    params = tuple(sig.parameters)
+@pytest.mark.parametrize(("method_name", "parameter_names"), EXECUTION_SIGNATURES)
+def test_strategy_execution_methods_expose_expected_signatures(method_name, parameter_names):
+    strategy = Strategy()
+    signature = inspect.signature(getattr(strategy, method_name))
 
-    assert "order" in params
-    assert "position_id" in params
-    assert "client_id" in params
+    assert tuple(signature.parameters) == parameter_names
 
 
-@pytest.mark.parametrize(("method_name", "parameter_names"), BOOK_REQUEST_SIGNATURES)
-def test_strategy_book_request_methods_expose_expected_signatures(method_name, parameter_names):
+@pytest.mark.parametrize(("method_name", "parameter_names"), DATA_SURFACE_SIGNATURES)
+def test_strategy_data_surface_methods_expose_expected_signatures(method_name, parameter_names):
+    strategy = Strategy()
+    signature = inspect.signature(getattr(strategy, method_name))
+
+    assert tuple(signature.parameters) == parameter_names
+
+
+@pytest.mark.parametrize(("method_name", "parameter_names"), CALLBACK_SIGNATURES)
+def test_strategy_callback_methods_expose_expected_signatures(method_name, parameter_names):
     strategy = Strategy()
     signature = inspect.signature(getattr(strategy, method_name))
 
