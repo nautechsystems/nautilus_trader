@@ -667,8 +667,11 @@ async fn start_server() -> (SocketAddr, Arc<TestServerState>) {
     tokio::spawn(async move {
         axum::serve(listener, router).await.expect("serve");
     });
-    // Let axum start accepting connections before tests dial in.
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    wait_until_async(
+        || async { tokio::net::TcpStream::connect(addr).await.is_ok() },
+        Duration::from_secs(2),
+    )
+    .await;
     (addr, state)
 }
 
@@ -1368,36 +1371,27 @@ async fn test_connect_disconnect_lifecycle() {
 
     {
         let mut connect_fut = std::pin::pin!(client.connect());
-
-        // Race connect against the first four frames; connect must stay
-        // pending after each push since the strict-await gate requires all
-        // five streams to land.
-        let push_four = {
-            let state = Arc::clone(&state);
-            let frames = [
-                orders_frame.clone(),
-                trades_frame.clone(),
-                positions_frame.clone(),
-                assets_frame.clone(),
-            ];
-            async move {
-                await_subscribe_count(&state, 5).await;
-                for frame in frames {
-                    state.push_frame(&frame);
-                    tokio::time::sleep(Duration::from_millis(80)).await;
-                }
-                // Settle so a buggy implementation that unblocks early has
-                // time to surface here.
-                tokio::time::sleep(Duration::from_millis(200)).await;
-            }
-        };
-
         tokio::select! {
             result = &mut connect_fut => {
-                panic!("connect returned with fewer than five account frames: {result:?}");
+                panic!("connect returned before account subscriptions were sent: {result:?}");
             }
-            () = push_four => {}
+            () = await_subscribe_count(&state, 5) => {}
         }
+
+        for frame in [
+            orders_frame.clone(),
+            trades_frame.clone(),
+            positions_frame.clone(),
+            assets_frame.clone(),
+        ] {
+            state.push_frame(&frame);
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(250), &mut connect_fut)
+                .await
+                .is_err(),
+            "connect returned with fewer than five account frames",
+        );
 
         // Push the fifth frame; connect must now return promptly.
         state.push_frame(&user_stats_frame);
@@ -1592,27 +1586,24 @@ async fn connect_returns_only_after_each_distinct_stream_marks_its_own_flag(
 
     {
         let mut connect_fut = std::pin::pin!(client.connect());
-
-        let push_first_four = {
-            let state = Arc::clone(&state);
-            async move {
-                await_subscribe_count(&state, 5).await;
-                for frame in first_four {
-                    state.push_frame(&frame);
-                    tokio::time::sleep(Duration::from_millis(80)).await;
-                }
-                tokio::time::sleep(Duration::from_millis(200)).await;
-            }
-        };
-
         tokio::select! {
             result = &mut connect_fut => {
                 panic!(
-                    "connect returned before {last_stream} frame landed: {result:?}",
+                    "connect returned before account subscriptions were sent: {result:?}",
                 );
             }
-            () = push_first_four => {}
+            () = await_subscribe_count(&state, 5) => {}
         }
+
+        for frame in first_four {
+            state.push_frame(&frame);
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(250), &mut connect_fut)
+                .await
+                .is_err(),
+            "connect returned before {last_stream} frame landed",
+        );
 
         state.push_frame(&last_frame);
         tokio::time::timeout(Duration::from_secs(2), &mut connect_fut)

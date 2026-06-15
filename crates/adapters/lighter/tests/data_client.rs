@@ -290,8 +290,11 @@ async fn start_server() -> (SocketAddr, Arc<TestServerState>) {
     tokio::spawn(async move {
         axum::serve(listener, router).await.expect("serve");
     });
-    // Give axum a moment to start accepting connections before tests dial in.
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    wait_until_async(
+        || async { tokio::net::TcpStream::connect(addr).await.is_ok() },
+        Duration::from_secs(2),
+    )
+    .await;
     (addr, state)
 }
 

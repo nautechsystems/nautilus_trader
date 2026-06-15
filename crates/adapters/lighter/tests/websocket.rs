@@ -306,7 +306,11 @@ async fn start_ws_server(state: Arc<TestServerState>) -> SocketAddr {
     tokio::spawn(async move {
         axum::serve(listener, router).await.expect("ws server");
     });
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    wait_until_async(
+        || async { tokio::net::TcpStream::connect(addr).await.is_ok() },
+        Duration::from_secs(2),
+    )
+    .await;
     addr
 }
 

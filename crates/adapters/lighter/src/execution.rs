@@ -4916,15 +4916,15 @@ mod tests {
         let subscribe_attempts = Arc::new(AtomicUsize::new(0));
 
         let outcome = tokio::time::timeout(
-            Duration::from_millis(500),
+            Duration::from_secs(3),
             refresh_auth_token_until_rotated(
                 &credential,
                 &channels,
                 &cancellation_token,
                 AuthTokenRefreshBackoff {
-                    initial_delay: Duration::from_millis(1),
-                    max_delay: Duration::from_millis(2),
-                    window: Duration::from_millis(50),
+                    initial_delay: Duration::from_millis(10),
+                    max_delay: Duration::from_millis(20),
+                    window: Duration::from_secs(1),
                 },
                 {
                     let mint_attempts = Arc::clone(&mint_attempts);
@@ -4974,15 +4974,15 @@ mod tests {
         let subscribe_attempts = Arc::new(AtomicUsize::new(0));
 
         let outcome = tokio::time::timeout(
-            Duration::from_millis(500),
+            Duration::from_secs(3),
             refresh_auth_token_until_rotated(
                 &credential,
                 &channels,
                 &cancellation_token,
                 AuthTokenRefreshBackoff {
-                    initial_delay: Duration::from_millis(1),
-                    max_delay: Duration::from_millis(2),
-                    window: Duration::from_millis(50),
+                    initial_delay: Duration::from_millis(10),
+                    max_delay: Duration::from_millis(20),
+                    window: Duration::from_secs(1),
                 },
                 {
                     let mint_attempts = Arc::clone(&mint_attempts);
@@ -5032,27 +5032,32 @@ mod tests {
         let cancellation_token = CancellationToken::new();
         let mint_attempts = Arc::new(AtomicUsize::new(0));
 
-        let outcome = tokio::time::timeout(
-            Duration::from_millis(250),
-            refresh_auth_token_until_rotated(
-                &credential,
-                &channels,
-                &cancellation_token,
-                AuthTokenRefreshBackoff {
-                    initial_delay: Duration::from_millis(500),
-                    max_delay: Duration::from_millis(500),
-                    window: Duration::from_millis(20),
-                },
-                {
-                    let mint_attempts = Arc::clone(&mint_attempts);
-                    move |_| {
-                        mint_attempts.fetch_add(1, Ordering::AcqRel);
-                        Err(anyhow::anyhow!("mint unavailable"))
-                    }
-                },
-                |_channel, _token| async { Ok::<(), crate::websocket::error::LighterWsError>(()) },
-            ),
-        )
+        let refresh = refresh_auth_token_until_rotated(
+            &credential,
+            &channels,
+            &cancellation_token,
+            AuthTokenRefreshBackoff {
+                initial_delay: Duration::from_millis(100),
+                max_delay: Duration::from_millis(100),
+                window: Duration::from_secs(1),
+            },
+            {
+                let mint_attempts = Arc::clone(&mint_attempts);
+                move |_| {
+                    mint_attempts.fetch_add(1, Ordering::AcqRel);
+                    Err(anyhow::anyhow!("mint unavailable"))
+                }
+            },
+            |_channel, _token| async { Ok::<(), crate::websocket::error::LighterWsError>(()) },
+        );
+        let observe_retry = wait_until_async(
+            || async { mint_attempts.load(Ordering::Acquire) > 1 },
+            Duration::from_secs(2),
+        );
+
+        let (outcome, ()) = tokio::time::timeout(Duration::from_secs(3), async {
+            tokio::join!(refresh, observe_retry)
+        })
         .await
         .expect("rotation retry exhaustion must complete within the test window");
 
@@ -5071,36 +5076,40 @@ mod tests {
         let mint_attempts = Arc::new(AtomicUsize::new(0));
 
         let cancel = cancellation_token.clone();
+        let cancel_after_first_attempt = wait_until_async(
+            || async { mint_attempts.load(Ordering::Acquire) > 0 },
+            Duration::from_secs(2),
+        );
 
-        let cancel_task = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(5)).await;
+        let refresh = refresh_auth_token_until_rotated(
+            &credential,
+            &channels,
+            &cancellation_token,
+            AuthTokenRefreshBackoff {
+                initial_delay: Duration::from_secs(2),
+                max_delay: Duration::from_secs(2),
+                window: Duration::from_secs(5),
+            },
+            {
+                let mint_attempts = Arc::clone(&mint_attempts);
+                move |_| {
+                    mint_attempts.fetch_add(1, Ordering::AcqRel);
+                    Err(anyhow::anyhow!("mint unavailable"))
+                }
+            },
+            |_channel, _token| async { Ok::<(), crate::websocket::error::LighterWsError>(()) },
+        );
+
+        let cancel_task = async move {
+            cancel_after_first_attempt.await;
             cancel.cancel();
-        });
+        };
 
-        let outcome = tokio::time::timeout(
-            Duration::from_millis(500),
-            refresh_auth_token_until_rotated(
-                &credential,
-                &channels,
-                &cancellation_token,
-                AuthTokenRefreshBackoff {
-                    initial_delay: Duration::from_millis(100),
-                    max_delay: Duration::from_millis(100),
-                    window: Duration::from_secs(1),
-                },
-                {
-                    let mint_attempts = Arc::clone(&mint_attempts);
-                    move |_| {
-                        mint_attempts.fetch_add(1, Ordering::AcqRel);
-                        Err(anyhow::anyhow!("mint unavailable"))
-                    }
-                },
-                |_channel, _token| async { Ok::<(), crate::websocket::error::LighterWsError>(()) },
-            ),
-        )
+        let (outcome, ()) = tokio::time::timeout(Duration::from_secs(6), async {
+            tokio::join!(refresh, cancel_task)
+        })
         .await
         .expect("rotation cancellation must complete within the test window");
-        cancel_task.await.expect("cancel task must finish");
 
         assert_eq!(outcome, AuthTokenRefreshOutcome::Cancelled);
         assert_eq!(
