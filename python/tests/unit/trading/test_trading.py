@@ -103,6 +103,28 @@ from tests.unit.common.actor import PortfolioProbeStrategy
 from tests.unit.common.actor import TestStrategy
 
 
+class BookHistoryRequestProbeStrategy(Strategy):
+    observed_book_deltas_request_id = None
+    observed_book_depth_request_id = None
+
+    def on_start(self):
+        instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+
+        type(self).observed_book_deltas_request_id = self.request_book_deltas(
+            instrument_id,
+            start=0,
+            limit=1,
+            params={"kind": "deltas"},
+        )
+        type(self).observed_book_depth_request_id = self.request_book_depth(
+            instrument_id,
+            end=0,
+            limit=2,
+            depth=5,
+            params={"kind": "depth"},
+        )
+
+
 def test_strategy_default_construction():
     strategy = Strategy()
 
@@ -372,6 +394,20 @@ def test_strategy_portfolio_flat_methods_net_hedged_positions():
 
 
 LIFECYCLE_METHODS = ["start", "stop", "resume", "reset", "dispose", "degrade", "fault"]
+BOOK_DELTAS_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "limit", "client_id", "params")
+BOOK_DEPTH_REQUEST_PARAMETERS = (
+    "instrument_id",
+    "start",
+    "end",
+    "limit",
+    "depth",
+    "client_id",
+    "params",
+)
+BOOK_REQUEST_SIGNATURES = [
+    ("request_book_deltas", BOOK_DELTAS_REQUEST_PARAMETERS),
+    ("request_book_depth", BOOK_DEPTH_REQUEST_PARAMETERS),
+]
 
 
 @pytest.mark.parametrize("method_name", LIFECYCLE_METHODS)
@@ -389,6 +425,35 @@ def test_strategy_submit_order_signature():
     assert "order" in params
     assert "position_id" in params
     assert "client_id" in params
+
+
+@pytest.mark.parametrize(("method_name", "parameter_names"), BOOK_REQUEST_SIGNATURES)
+def test_strategy_book_request_methods_expose_expected_signatures(method_name, parameter_names):
+    strategy = Strategy()
+    signature = inspect.signature(getattr(strategy, method_name))
+
+    assert tuple(signature.parameters) == parameter_names
+
+
+def test_strategy_book_history_requests_return_ids_when_registered():
+    BookHistoryRequestProbeStrategy.observed_book_deltas_request_id = None
+    BookHistoryRequestProbeStrategy.observed_book_depth_request_id = None
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_strategy_from_config(
+        ImportableStrategyConfig(
+            strategy_path="tests.unit.trading.test_trading:BookHistoryRequestProbeStrategy",
+            config_path="nautilus_trader.trading:StrategyConfig",
+            config={},
+        ),
+    )
+
+    try:
+        engine.run()
+
+        assert UUID4.from_str(BookHistoryRequestProbeStrategy.observed_book_deltas_request_id)
+        assert UUID4.from_str(BookHistoryRequestProbeStrategy.observed_book_depth_request_id)
+    finally:
+        engine.dispose()
 
 
 def test_strategy_config_defaults():

@@ -1925,6 +1925,71 @@ impl PyDataActor {
         Ok(request_id.to_string())
     }
 
+    #[pyo3(name = "request_book_deltas")]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[expect(clippy::too_many_arguments)]
+    fn py_request_book_deltas(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        start: Option<u64>,
+        end: Option<u64>,
+        limit: Option<usize>,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<String> {
+        let params = dict_to_params(py, params)?;
+        let limit = limit.and_then(NonZeroUsize::new);
+        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
+        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
+
+        let request_id = DataActor::request_book_deltas(
+            self.inner_mut(),
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            params,
+        )
+        .map_err(to_pyvalue_err)?;
+        Ok(request_id.to_string())
+    }
+
+    #[pyo3(name = "request_book_depth")]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, depth=None, client_id=None, params=None))]
+    #[expect(clippy::too_many_arguments)]
+    fn py_request_book_depth(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        start: Option<u64>,
+        end: Option<u64>,
+        limit: Option<usize>,
+        depth: Option<usize>,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<String> {
+        let params = dict_to_params(py, params)?;
+        let limit = limit.and_then(NonZeroUsize::new);
+        let depth = depth.and_then(NonZeroUsize::new);
+        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
+        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
+
+        let request_id = DataActor::request_book_depth(
+            self.inner_mut(),
+            instrument_id,
+            start,
+            end,
+            limit,
+            depth,
+            client_id,
+            params,
+        )
+        .map_err(to_pyvalue_err)?;
+        Ok(request_id.to_string())
+    }
+
     #[pyo3(name = "request_quotes")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
     #[expect(clippy::too_many_arguments)]

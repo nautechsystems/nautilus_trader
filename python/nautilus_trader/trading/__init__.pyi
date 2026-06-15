@@ -458,6 +458,25 @@ class Strategy:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> str: ...
+    def request_book_deltas(
+        self,
+        instrument_id: model.InstrumentId,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> str: ...
+    def request_book_depth(
+        self,
+        instrument_id: model.InstrumentId,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+        depth: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> str: ...
     def request_quotes(
         self,
         instrument_id: model.InstrumentId,

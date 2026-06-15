@@ -18,9 +18,12 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.common import ComponentState
 from nautilus_trader.common import CustomData
 from nautilus_trader.common import DataActor
+from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.common import Signal
 from nautilus_trader.common import TimeEvent
 from nautilus_trader.core import UUID4
@@ -157,6 +160,16 @@ OPTION_CHAIN_SUBSCRIPTION_PARAMETERS = (
 )
 INSTRUMENT_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "client_id", "params")
 BOOK_SNAPSHOT_REQUEST_PARAMETERS = ("instrument_id", "depth", "client_id", "params")
+BOOK_DELTAS_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "limit", "client_id", "params")
+BOOK_DEPTH_REQUEST_PARAMETERS = (
+    "instrument_id",
+    "start",
+    "end",
+    "limit",
+    "depth",
+    "client_id",
+    "params",
+)
 INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
     "instrument_id",
     "start",
@@ -219,6 +232,8 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("request_instrument", INSTRUMENT_REQUEST_PARAMETERS),
     ("request_instruments", VENUE_REQUEST_PARAMETERS),
     ("request_book_snapshot", BOOK_SNAPSHOT_REQUEST_PARAMETERS),
+    ("request_book_deltas", BOOK_DELTAS_REQUEST_PARAMETERS),
+    ("request_book_depth", BOOK_DEPTH_REQUEST_PARAMETERS),
     ("request_quotes", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
     ("request_trades", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
     ("request_funding_rates", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
@@ -246,6 +261,28 @@ def _create_recording_actor_type():
 
 
 RecordingActor = _create_recording_actor_type()
+
+
+class BookHistoryRequestProbeActor(TestActor):
+    observed_book_deltas_request_id = None
+    observed_book_depth_request_id = None
+
+    def on_start(self):
+        instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+
+        type(self).observed_book_deltas_request_id = self.request_book_deltas(
+            instrument_id,
+            start=0,
+            limit=1,
+            params={"kind": "deltas"},
+        )
+        type(self).observed_book_depth_request_id = self.request_book_depth(
+            instrument_id,
+            end=0,
+            limit=2,
+            depth=5,
+            params={"kind": "depth"},
+        )
 
 
 def test_data_actor_pre_registration_surface(actor):
@@ -379,6 +416,27 @@ def test_data_actor_registration_gated_methods_expose_expected_signatures(
     signature = inspect.signature(getattr(actor, method_name))
 
     assert tuple(signature.parameters) == parameter_names
+
+
+def test_data_actor_book_history_requests_return_ids_when_registered():
+    BookHistoryRequestProbeActor.observed_book_deltas_request_id = None
+    BookHistoryRequestProbeActor.observed_book_depth_request_id = None
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_actor_from_config(
+        ImportableActorConfig(
+            actor_path="tests.unit.common.test_actor:BookHistoryRequestProbeActor",
+            config_path="tests.unit.common.actor:TestActorConfig",
+            config={"actor_id": "BOOK-HISTORY-REQUEST-ACTOR"},
+        ),
+    )
+
+    try:
+        engine.run()
+
+        assert UUID4.from_str(BookHistoryRequestProbeActor.observed_book_deltas_request_id)
+        assert UUID4.from_str(BookHistoryRequestProbeActor.observed_book_depth_request_id)
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture
