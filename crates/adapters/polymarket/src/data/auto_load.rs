@@ -28,7 +28,9 @@ use super::{
     subscriptions::{resolve_token_id_from, sync_ws_subscription_async},
 };
 use crate::{
-    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE, http::query::GetGammaMarketsParams,
+    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
+    data_runtime::{is_instrument_expired, retire_local_instrument_state},
+    http::query::GetGammaMarketsParams,
     providers::extract_condition_id,
 };
 
@@ -103,7 +105,12 @@ impl PolymarketDataClient {
         let ws_sub_mutex = self.ws_sub_mutex.clone();
         let ws_client = self.ws_client.clone_subscription_handle();
         let data_sender = self.data_sender.clone();
+        let clock = self.clock;
         let cancellation = self.cancellation_token.clone();
+        let order_books = self.order_books.clone();
+        let last_quotes = self.last_quotes.clone();
+        let resolve_poll_watchlist = self.resolve_poll_watchlist.clone();
+        let pending_snapshot_after_tick_change = self.pending_snapshot_after_tick_change.clone();
 
         get_runtime().spawn(async move {
             // Coalesce concurrent misses into one Gamma call.
@@ -202,9 +209,34 @@ impl PolymarketDataClient {
                 let next_batch: AHashSet<InstrumentId> = if chunk_failed {
                     batch.clone()
                 } else {
+                    let mut retired_expired_ids = AHashSet::new();
+
                     for inst in loaded {
                         if !filters.iter().all(|f| f.accept(&inst)) {
                             log::debug!("Auto-loaded instrument {} filtered out", inst.id());
+                            continue;
+                        }
+
+                        if is_instrument_expired(&inst, clock.get_time_ns()) {
+                            log::debug!("Skipping expired auto-loaded instrument {}", inst.id());
+                            retired_expired_ids.insert(inst.id());
+                            retire_local_instrument_state(
+                                inst.id(),
+                                &instruments,
+                                &token_meta,
+                                &order_books,
+                                &last_quotes,
+                                &active_quote_subs,
+                                &active_delta_subs,
+                                &active_trade_subs,
+                                &resolve_poll_watchlist,
+                                &pending_snapshot_after_tick_change,
+                                &pending,
+                                &ws_open_tokens,
+                                &ws_sub_mutex,
+                                &ws_client,
+                            )
+                            .await;
                             continue;
                         }
 
@@ -250,6 +282,9 @@ impl PolymarketDataClient {
                                 )
                                 .await;
                             }
+                        } else if retired_expired_ids.contains(id) {
+                            // Expired instruments are terminal for live auto-load:
+                            // retire any residual runtime state and stop retrying.
                         } else if transient.contains(&cid) {
                             // CLOB still hydrating: retry within the budget.
                             next.insert(*id);
