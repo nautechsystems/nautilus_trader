@@ -202,6 +202,7 @@ const PLUGIN_STRATEGY_CORE_HOST_OWNED_METHODS: &[&str] = &[
     "register",
     // Direct access to host-owned runtime state does not cross the boundary
     "order_manager",
+    "order_factory_rc",
     "portfolio",
     // Market-exit state remains inside the host runtime
     "reset_market_exit_state",

@@ -1117,7 +1117,7 @@ impl ExecTester {
         // Use instrument's make_qty to ensure correct precision
         let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
 
-        let factory = self.core.order_factory();
+        let mut factory = self.core.order_factory();
 
         let mut order: OrderAny = match self.config.stop_order_type {
             OrderType::StopMarket => factory.stop_market(
@@ -1235,6 +1235,7 @@ impl ExecTester {
                 anyhow::bail!("Unknown stop order type: {:?}", self.config.stop_order_type);
             }
         };
+        drop(factory);
 
         if let OrderAny::TrailingStopMarket(order) = &mut order {
             order.activation_price = Some(trigger_price);

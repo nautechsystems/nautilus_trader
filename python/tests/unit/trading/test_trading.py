@@ -97,6 +97,7 @@ from nautilus_trader.trading import fx_next_start
 from nautilus_trader.trading import fx_prev_end
 from nautilus_trader.trading import fx_prev_start
 from tests.providers import TestInstrumentProvider
+from tests.unit.common.actor import OrderFactoryProbeStrategy
 from tests.unit.common.actor import PortfolioHedgedProbeStrategy
 from tests.unit.common.actor import PortfolioProbeStrategy
 from tests.unit.common.actor import TestStrategy
@@ -159,6 +160,56 @@ def test_strategy_portfolio_requires_registration():
 
     with pytest.raises(RuntimeError, match="registered with a trader"):
         _ = strategy.portfolio
+
+
+def test_strategy_order_factory_requires_registration():
+    strategy = Strategy()
+
+    with pytest.raises(RuntimeError, match="registered with a trader"):
+        _ = strategy.order_factory
+
+
+def test_strategy_order_factory_returns_registered_factory():
+    usd = Currency.from_str("USD")
+    venue = Venue("SIM")
+    OrderFactoryProbeStrategy.observed_order = None
+    OrderFactoryProbeStrategy.observed_invalid_order_error = None
+    OrderFactoryProbeStrategy.observed_next_client_order_id = None
+    OrderFactoryProbeStrategy.observed_client_order_id_count = None
+    OrderFactoryProbeStrategy.observed_order_list_id_count = None
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, usd)],
+        base_currency=usd,
+    )
+
+    try:
+        engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path="tests.unit.common.actor:OrderFactoryProbeStrategy",
+                config_path="nautilus_trader.trading:StrategyConfig",
+                config={},
+            ),
+        )
+        engine.run()
+
+        order = OrderFactoryProbeStrategy.observed_order
+        assert order is not None
+        assert order.order_type == OrderType.MARKET
+        assert order.side == OrderSide.BUY
+        assert order.quantity == Quantity.from_str("100000")
+        assert "GTD not supported for Market orders" in (
+            OrderFactoryProbeStrategy.observed_invalid_order_error
+        )
+        assert OrderFactoryProbeStrategy.observed_next_client_order_id != order.client_order_id
+        assert OrderFactoryProbeStrategy.observed_client_order_id_count == 3
+        assert OrderFactoryProbeStrategy.observed_order_list_id_count == 0
+    finally:
+        engine.dispose()
 
 
 def test_strategy_portfolio_returns_registered_kernel_portfolio():

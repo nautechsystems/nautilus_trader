@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    cell::RefCell,
+    cell::{RefCell, RefMut},
     fmt::Debug,
     ops::{Deref, DerefMut},
     rc::Rc,
@@ -49,7 +49,7 @@ pub struct StrategyCore {
     strategy_id: Option<StrategyId>,
     order_id_tag: Option<String>,
     pub(crate) order_manager: Option<OrderManager>,
-    pub(crate) order_factory: Option<OrderFactory>,
+    pub(crate) order_factory: Option<Rc<RefCell<OrderFactory>>>,
     pub(crate) portfolio: Option<Rc<RefCell<Portfolio>>>,
     pub(crate) gtd_timers: AHashMap<ClientOrderId, Ustr>,
     pub(crate) is_exiting: bool,
@@ -179,7 +179,7 @@ impl StrategyCore {
         self.strategy_id = Some(strategy_id);
         self.order_id_tag = Some(strategy_id.get_tag().to_string());
 
-        self.order_factory = Some(OrderFactory::new(
+        self.order_factory = Some(Rc::new(RefCell::new(OrderFactory::new(
             trader_id,
             strategy_id,
             None,
@@ -187,7 +187,7 @@ impl StrategyCore {
             clock.clone(),
             self.config.use_uuid_client_order_ids,
             self.config.use_hyphens_in_client_order_ids,
-        ));
+        ))));
 
         self.order_manager = Some(OrderManager::new(clock, cache, false, None, None, None));
 
@@ -201,10 +201,24 @@ impl StrategyCore {
     /// # Panics
     ///
     /// Panics if the strategy has not been registered.
-    pub fn order_factory(&mut self) -> &mut OrderFactory {
+    pub fn order_factory(&mut self) -> RefMut<'_, OrderFactory> {
         self.order_factory
-            .as_mut()
+            .as_ref()
             .expect("Strategy not registered: OrderFactory not initialized")
+            .borrow_mut()
+    }
+
+    /// Returns a shared reference to the [`OrderFactory`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the strategy has not been registered.
+    #[must_use]
+    pub fn order_factory_rc(&self) -> Rc<RefCell<OrderFactory>> {
+        self.order_factory
+            .as_ref()
+            .expect("Strategy not registered: OrderFactory not initialized")
+            .clone()
     }
 
     /// Returns a mutable reference to the [`OrderManager`].
@@ -435,9 +449,13 @@ mod tests {
 
         core.register(trader_id, clock, cache, portfolio).unwrap();
 
-        let order_factory = core.order_factory();
-        let client_order_id = order_factory.generate_client_order_id();
-        let order_list_id = order_factory.generate_order_list_id();
+        let (client_order_id, order_list_id) = {
+            let mut order_factory = core.order_factory();
+            (
+                order_factory.generate_client_order_id(),
+                order_factory.generate_order_list_id(),
+            )
+        };
 
         assert_eq!(
             core.strategy_id(),

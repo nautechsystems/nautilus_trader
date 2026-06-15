@@ -41,6 +41,7 @@ use nautilus_common::{
         clock::PyClock,
         indicators::{registered_python_indicators, wrap_python_indicator},
         logging::PyLogger,
+        order_factory::PyOrderFactory,
     },
     signal::Signal,
     timer::{TimeEvent, TimeEventCallback},
@@ -1397,6 +1398,19 @@ impl PyStrategy {
         } else {
             Err(to_pyruntime_err(
                 "Strategy must be registered with a trader before accessing portfolio",
+            ))
+        }
+    }
+
+    #[getter]
+    #[pyo3(name = "order_factory")]
+    fn py_order_factory(&self) -> PyResult<PyOrderFactory> {
+        let inner = self.inner();
+        if inner.core.actor.is_registered() {
+            Ok(PyOrderFactory::from_rc(inner.core.order_factory_rc()))
+        } else {
+            Err(to_pyruntime_err(
+                "Strategy must be registered with a trader before accessing order_factory",
             ))
         }
     }

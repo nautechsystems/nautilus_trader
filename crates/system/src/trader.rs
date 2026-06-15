@@ -1542,9 +1542,13 @@ mod tests {
         trader.add_strategy(strategy).unwrap();
 
         let mut registered = get_actor_unchecked::<TestStrategy>(&strategy_id.inner());
-        let order_factory = registered.core.order_factory();
-        let client_order_id = order_factory.generate_client_order_id();
-        let order_list_id = order_factory.generate_order_list_id();
+        let (client_order_id, order_list_id) = {
+            let mut order_factory = registered.core.order_factory();
+            (
+                order_factory.generate_client_order_id(),
+                order_factory.generate_order_list_id(),
+            )
+        };
 
         assert_eq!(trader.strategy_ids(), vec![strategy_id]);
         assert_eq!(registered.core().strategy_id(), Some(strategy_id));
@@ -1583,9 +1587,13 @@ mod tests {
         assert!(try_get_actor_unchecked::<TestStrategy>(&strategy_id.inner()).is_none());
 
         let mut registered = get_actor_unchecked::<TestStrategy>(&runtime_strategy_id.inner());
-        let order_factory = registered.core.order_factory();
-        let client_order_id = order_factory.generate_client_order_id();
-        let order_list_id = order_factory.generate_order_list_id();
+        let (client_order_id, order_list_id) = {
+            let mut order_factory = registered.core.order_factory();
+            (
+                order_factory.generate_client_order_id(),
+                order_factory.generate_order_list_id(),
+            )
+        };
 
         assert_eq!(trader.strategy_ids(), vec![runtime_strategy_id]);
         assert_eq!(registered.core().strategy_id(), Some(runtime_strategy_id));

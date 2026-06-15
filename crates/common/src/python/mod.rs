@@ -35,6 +35,7 @@ pub mod indicators;
 pub mod listener;
 pub mod logging;
 pub mod msgbus;
+pub mod order_factory;
 pub mod runtime;
 pub mod signal;
 pub mod timer;
@@ -58,6 +59,7 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::python::cache::PyCache>()?;
     m.add_class::<crate::python::fifo::PyFifoCache>()?;
     m.add_class::<crate::python::clock::PyClock>()?;
+    m.add_class::<crate::python::order_factory::PyOrderFactory>()?;
     m.add_class::<crate::python::greeks::PyGreeksCalculator>()?;
     m.add_class::<crate::python::logging::PyLogger>()?;
     m.add_class::<crate::actor::data_actor::DataActorConfig>()?;
