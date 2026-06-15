@@ -92,6 +92,8 @@ pub enum HandlerCommand {
     },
     /// Unsubscribe from a channel.
     Unsubscribe { channel: LighterWsChannel },
+    /// Resubscribe to the venue `order_book` stream after a continuity gap.
+    ResubscribeOrderBook { market_index: i16 },
     /// Replace the handler's instrument cache (used on initial connect).
     InitializeInstruments(Vec<(i16, InstrumentAny)>),
     /// Insert or replace a single instrument by `market_index`.
@@ -143,6 +145,10 @@ impl Debug for HandlerCommand {
                 .debug_struct(stringify!(Unsubscribe))
                 .field("channel", channel)
                 .finish(),
+            Self::ResubscribeOrderBook { market_index } => f
+                .debug_struct(stringify!(ResubscribeOrderBook))
+                .field("market_index", market_index)
+                .finish(),
             Self::InitializeInstruments(instruments) => f
                 .debug_tuple(stringify!(InitializeInstruments))
                 .field(&instruments.len())
@@ -191,6 +197,7 @@ pub(super) struct FeedHandler {
     signal: Arc<AtomicBool>,
     inner: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+    cmd_tx: Option<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
     subscriptions: SubscriptionState,
@@ -225,6 +232,7 @@ impl FeedHandler {
             signal,
             inner: None,
             cmd_rx,
+            cmd_tx: None,
             raw_rx,
             out_tx,
             subscriptions,
@@ -245,6 +253,13 @@ impl FeedHandler {
         self.out_tx
             .send(msg)
             .map_err(|e| format!("Failed to send message: {e}"))
+    }
+
+    pub(super) fn set_command_sender(
+        &mut self,
+        cmd_tx: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+    ) {
+        self.cmd_tx = Some(cmd_tx);
     }
 
     pub(super) fn is_stopped(&self) -> bool {
@@ -398,6 +413,9 @@ impl FeedHandler {
                                 self.book_states.remove(market_index);
                             }
                             self.dispatch_unsubscribe(channel).await;
+                        }
+                        HandlerCommand::ResubscribeOrderBook { market_index } => {
+                            self.resubscribe_order_book_stream(market_index).await;
                         }
                         HandlerCommand::InitializeInstruments(instruments) => {
                             self.instruments.clear();
@@ -582,20 +600,22 @@ impl FeedHandler {
                     if kind == CTRL_TYPE_SUBSCRIBED {
                         self.subscriptions.confirm_subscribe(topic);
                     } else {
+                        let was_pending_unsubscribe = self
+                            .subscriptions
+                            .pending_unsubscribe_topics()
+                            .iter()
+                            .any(|pending| pending == topic);
                         self.subscriptions.confirm_unsubscribe(topic);
-                        // Reset snapshot tracking so a future resubscribe to
-                        // the same order book parses its first frame as a
-                        // fresh snapshot. Only reacts to `order_book:*` acks;
-                        // `trade:N` and `ticker:N` share the same `:i16`
-                        // suffix but must not clear book state for an
-                        // order-book subscription that is still active.
-                        if let Some(market_index) = order_book_market_index_from_topic(topic) {
-                            self.book_snapshots_seen.remove(&market_index);
-                            self.book_states.remove(&market_index);
-                        }
-                        // Reset on resubscribe so the first frame is treated as initialization.
-                        if let Some(key) = candle_market_and_resolution_from_topic(topic) {
-                            self.last_candles.remove(&key);
+
+                        if was_pending_unsubscribe {
+                            // Only matched unsubscribe ACKs should reset stream state
+                            if let Some(market_index) = order_book_market_index_from_topic(topic) {
+                                self.clear_cached_order_book(market_index);
+                            }
+
+                            if let Some(key) = candle_market_and_resolution_from_topic(topic) {
+                                self.last_candles.remove(&key);
+                            }
                         }
                     }
                 }
@@ -831,12 +851,102 @@ impl FeedHandler {
                     timestamp,
                 },
             );
-        } else if let Some(state) = self.book_states.get_mut(&market_index) {
-            apply_order_book_update(&mut state.book, book);
-            state.timestamp = timestamp;
+        } else if let Some(cached_nonce) = self
+            .book_states
+            .get(&market_index)
+            .map(|state| state.book.nonce)
+        {
+            if book.begin_nonce != cached_nonce {
+                log::warn!(
+                    "Dropping Lighter order_book update with nonce gap for \
+                     market_index={market_index}: begin_nonce={}, cached_nonce={cached_nonce}",
+                    book.begin_nonce,
+                );
+                self.clear_cached_order_book(market_index);
+                self.queue_order_book_resync(market_index);
+                return Vec::new();
+            }
+
+            if let Some(state) = self.book_states.get_mut(&market_index) {
+                apply_order_book_update(&mut state.book, book);
+                state.timestamp = timestamp;
+            }
+        } else {
+            log::warn!(
+                "Dropping Lighter order_book update without cached state for \
+                 market_index={market_index}",
+            );
+            self.clear_cached_order_book(market_index);
+            self.queue_order_book_resync(market_index);
+            return Vec::new();
         }
 
         self.order_book_messages(market_index, book, timestamp, is_snapshot, ts_init)
+    }
+
+    fn clear_cached_order_book(&mut self, market_index: i16) {
+        self.book_snapshots_seen.remove(&market_index);
+        self.book_states.remove(&market_index);
+    }
+
+    fn queue_order_book_resync(&self, market_index: i16) {
+        if !self.order_book_stream_is_referenced(market_index) {
+            log::debug!(
+                "Skipping Lighter order_book resync: subscription cancelled, \
+                 market_index={market_index}",
+            );
+            return;
+        }
+
+        let Some(cmd_tx) = &self.cmd_tx else {
+            log::error!(
+                "Cannot resync Lighter order_book stream without command sender: \
+                 market_index={market_index}",
+            );
+            return;
+        };
+
+        if let Err(e) = cmd_tx.send(HandlerCommand::ResubscribeOrderBook { market_index }) {
+            log::error!("Failed to queue Lighter order_book resync: {e}");
+        }
+    }
+
+    async fn resubscribe_order_book_stream(&self, market_index: i16) {
+        if !self.order_book_stream_is_referenced(market_index) {
+            log::debug!(
+                "Skipping Lighter order_book resync: subscription cancelled before venue \
+                 unsubscribe, market_index={market_index}",
+            );
+            return;
+        }
+
+        let channel = LighterWsChannel::OrderBook(market_index);
+        self.dispatch_unsubscribe(channel.clone()).await;
+
+        if !self.order_book_stream_is_referenced(market_index) {
+            log::debug!(
+                "Skipping Lighter order_book resubscribe: subscription cancelled after venue \
+                 unsubscribe, market_index={market_index}",
+            );
+            return;
+        }
+
+        self.dispatch_subscribe(channel.clone(), None).await;
+
+        if !self.order_book_stream_is_referenced(market_index) {
+            log::debug!(
+                "Cancelling Lighter order_book resync subscribe after user unsubscribe: \
+                 market_index={market_index}",
+            );
+            self.dispatch_unsubscribe(channel).await;
+        }
+    }
+
+    fn order_book_stream_is_referenced(&self, market_index: i16) -> bool {
+        let channel = LighterWsChannel::OrderBook(market_index);
+        self.subscriptions.get_reference_count(&channel.topic_key()) > 0
+            && (self.book_delta_subs.contains(&market_index)
+                || self.book_depth_10_subs.contains(&market_index))
     }
 
     fn emit_cached_order_book_deltas_snapshot(
@@ -2599,6 +2709,35 @@ mod tests {
         assert!(message.contains("no active WebSocket client"));
     }
 
+    #[tokio::test]
+    async fn resubscribe_order_book_command_skips_when_reference_removed() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+        let subscriptions = SubscriptionState::new(':');
+        let topic = LighterWsChannel::OrderBook(0).topic_key();
+        assert!(subscriptions.add_reference(&topic));
+        assert!(subscriptions.remove_reference(&topic));
+
+        let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, subscriptions.clone());
+        handler.book_delta_subs.insert(0);
+
+        cmd_tx
+            .send(HandlerCommand::ResubscribeOrderBook { market_index: 0 })
+            .expect("queue resync");
+        drop(cmd_tx);
+        drop(raw_tx);
+
+        let next = tokio::time::timeout(Duration::from_secs(2), handler.next())
+            .await
+            .expect("timed out waiting for handler to drain command");
+
+        assert!(next.is_none());
+        assert!(subscriptions.pending_subscribe_topics().is_empty());
+        assert!(subscriptions.pending_unsubscribe_topics().is_empty());
+    }
+
     fn stub_candle(
         t: i64,
         open: i64,
@@ -2758,6 +2897,7 @@ mod tests {
             (0, LighterCandleResolution::FiveMinute),
             stub_candle(2, 0, 0, 0, 0, 0),
         );
+        handler.subscriptions.mark_unsubscribe("candle:0:1m");
 
         let payload = json!({"type": "unsubscribed", "channel": "candle:0:1m"});
         let (matched, _) = handler.handle_control_text(&payload.to_string());

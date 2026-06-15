@@ -323,6 +323,7 @@ impl LighterWebSocketClient {
         let task = get_runtime().spawn(async move {
             let mut handler =
                 FeedHandler::new(Arc::clone(&signal), cmd_rx, raw_rx, out_tx, subscriptions);
+            handler.set_command_sender(cmd_tx_for_reconnect.clone());
 
             let restore_subscriptions = || {
                 if subscription_args.is_empty() {
