@@ -176,6 +176,13 @@ impl NautilusKernel {
         )));
         set_message_bus(msgbus);
 
+        if let Some(ref msgbus_config) = config.msgbus()
+            && let Some(ref filter) = msgbus_config.types_filter
+        {
+            let bus = get_message_bus();
+            bus.borrow_mut().set_types_filter(filter.clone());
+        }
+
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
             cache.clone(),
             clock.clone(),

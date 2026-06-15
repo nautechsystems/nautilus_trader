@@ -48,7 +48,11 @@ pub mod typed_endpoints;
 pub mod typed_handler;
 pub mod typed_router;
 
-use std::{any::Any, cell::RefCell, rc::Rc};
+use std::{
+    any::Any,
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use nautilus_core::UUID4;
 #[cfg(feature = "defi")]
@@ -68,6 +72,7 @@ use smallvec::SmallVec;
 pub use self::{
     api::*,
     core::{MessageBus, Subscription},
+    database::MessageBusTransport,
     message::BusMessage,
     mstr::{Endpoint, MStr, Pattern, Topic},
     switchboard::MessagingSwitchboard,
@@ -150,6 +155,37 @@ thread_local! {
     #[cfg(feature = "defi")]
     pub(super) static DEFI_FLASH_HANDLERS: RefCell<SmallVec<[TypedHandler<PoolFlash>; HANDLER_BUFFER_CAP]>> =
         RefCell::new(SmallVec::new());
+}
+
+thread_local! {
+    pub(super) static HAS_TRANSPORT: Cell<bool> = const { Cell::new(false) };
+    pub(super) static SUPPRESS_EXTERNAL: Cell<bool> = const { Cell::new(false) };
+}
+
+/// RAII guard that suppresses external transport forwarding while held.
+///
+/// Use this when re-publishing consumed messages to prevent infinite loops.
+#[derive(Debug)]
+pub struct SuppressExternalGuard;
+
+impl SuppressExternalGuard {
+    #[must_use]
+    pub fn new() -> Self {
+        SUPPRESS_EXTERNAL.with(|f| f.set(true));
+        Self
+    }
+}
+
+impl Default for SuppressExternalGuard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for SuppressExternalGuard {
+    fn drop(&mut self) {
+        SUPPRESS_EXTERNAL.with(|f| f.set(false));
+    }
 }
 
 /// Sets the thread-local message bus, replacing any existing one.

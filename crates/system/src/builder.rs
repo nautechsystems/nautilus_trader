@@ -18,8 +18,9 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc, time::Duration};
 use nautilus_common::{
     cache::{CacheConfig, database::CacheDatabaseAdapter},
     clock::Clock,
-    enums::Environment,
+    enums::{Environment, SerializationEncoding},
     logging::logger::LoggerConfig,
+    msgbus::MessageBusTransport,
 };
 use nautilus_core::UUID4;
 use nautilus_data::engine::config::DataEngineConfig;
@@ -60,6 +61,8 @@ pub struct NautilusKernelBuilder {
     exec_engine: Option<ExecutionEngineConfig>,
     portfolio: Option<PortfolioConfig>,
     event_store_factory: Option<EventStoreFactory>,
+    msgbus_transport: Option<Box<dyn MessageBusTransport>>,
+    msgbus_transport_encoding: SerializationEncoding,
 }
 
 impl Debug for NautilusKernelBuilder {
@@ -86,6 +89,7 @@ impl Debug for NautilusKernelBuilder {
             .field("exec_engine", &self.exec_engine)
             .field("portfolio", &self.portfolio)
             .field("event_store_factory", &self.event_store_factory.is_some())
+            .field("has_transport", &self.msgbus_transport.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -116,6 +120,8 @@ impl NautilusKernelBuilder {
             exec_engine: None,
             portfolio: None,
             event_store_factory: None,
+            msgbus_transport: None,
+            msgbus_transport_encoding: SerializationEncoding::Json,
         }
     }
 
@@ -263,6 +269,18 @@ impl NautilusKernelBuilder {
         self
     }
 
+    /// Set an external message bus transport for forwarding published messages.
+    #[must_use]
+    pub fn with_msgbus_transport(
+        mut self,
+        transport: Box<dyn MessageBusTransport>,
+        encoding: SerializationEncoding,
+    ) -> Self {
+        self.msgbus_transport = Some(transport);
+        self.msgbus_transport_encoding = encoding;
+        self
+    }
+
     /// Build the [`NautilusKernel`] with the configured settings.
     ///
     /// # Errors
@@ -292,12 +310,20 @@ impl NautilusKernelBuilder {
             streaming: None,
         };
 
-        NautilusKernel::new_with(
+        let kernel = NautilusKernel::new_with(
             self.name,
             config,
             self.cache_database,
             self.event_store_factory,
-        )
+        )?;
+
+        if let Some(transport) = self.msgbus_transport {
+            let bus = nautilus_common::msgbus::get_message_bus();
+            bus.borrow_mut()
+                .set_transport(transport, self.msgbus_transport_encoding);
+        }
+
+        Ok(kernel)
     }
 }
 
