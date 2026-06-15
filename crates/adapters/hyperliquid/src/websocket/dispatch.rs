@@ -47,9 +47,13 @@
 //! `ACCEPTED(new_voi)` on the WebSocket, regardless of whether the WS
 //! message races ahead of the HTTP response.
 //!
-//! [`dispatch_order_fill`] buffers fills for in-flight cancel-replace
-//! modifies into [`WsDispatchState::buffered_fills`]; `handle_accepted`
-//! drains them on the replacement ACCEPTED. See GH-3972.
+//! A fill carrying the replacement `venue_order_id` during an in-flight modify
+//! promotes the binding directly (the same `OrderUpdated` path as the
+//! replacement `ACCEPTED`), so a dropped `ACCEPTED` does not strand the fill.
+//! A fill is buffered into [`WsDispatchState::buffered_fills`] only when the
+//! identity has no price to promote with; `handle_accepted` drains the buffer
+//! on the replacement `ACCEPTED`. A delayed earlier-leg fill during a chained
+//! modify is a known limitation. See GH-3972.
 
 use std::{
     collections::VecDeque,
@@ -219,8 +223,9 @@ pub struct WsDispatchState {
     /// cancel-replace promotion uses it instead of the venue's
     /// remaining-only `report.quantity`.
     pub pending_modify_target_qty: DashMap<ClientOrderId, Quantity>,
-    /// `FillReport`s buffered while a cancel-replace modify is in flight,
-    /// drained by the cancel-replace branch of `handle_accepted`. See
+    /// `FillReport`s buffered only when a cancel-replace fill cannot be promoted
+    /// (the identity carries no price); drained by the cancel-replace branch of
+    /// `handle_accepted`. The common path promotes on the fill instead. See
     /// GH-3972.
     pub buffered_fills: DashMap<ClientOrderId, Vec<FillReport>>,
     /// Cumulative filled quantity per tracked order. Compared against
@@ -625,26 +630,57 @@ pub fn dispatch_order_fill(
         return DispatchOutcome::Skip;
     }
 
-    let Some(identity) = state.lookup_identity(&client_order_id) else {
+    let Some(mut identity) = state.lookup_identity(&client_order_id) else {
         return DispatchOutcome::External;
     };
 
-    // Buffer fills for an in-flight cancel-replace. Marker required so a
-    // stale old-leg fill after promotion falls through instead of being
-    // stranded; a delayed earlier-leg fill during a chained modify is a
-    // known limitation. See GH-3972.
+    // Set when a fill promotes, so the corrective-reduce runs after the fill applies
+    let mut promoted_corrective: Option<(Quantity, HyperliquidExecPlaceOrderRequest)> = None;
+
+    // Promote the binding from the fill so a dropped replacement ACCEPTED cannot
+    // strand it (see module docs).
     if state.pending_modify(&client_order_id).is_some()
         && let Some(cached_voi) = state.cached_venue_order_id(&client_order_id)
         && report.venue_order_id != cached_voi
     {
-        log::debug!(
-            "Buffering cancel-replace fill for {client_order_id}: \
-             report_voi={}, cached_voi={cached_voi}, trade_id={}",
+        let target = state.pending_modify_target_qty(&client_order_id);
+        let sent_request = state.modify_request(&client_order_id);
+        // Prefer the modify target price over the stale cached identity price
+        let price = sent_request
+            .as_ref()
+            .zip(identity.price)
+            .and_then(|(r, cached)| Price::from_decimal_dp(r.price, cached.precision).ok())
+            .or(identity.price);
+        let Some(price) = price else {
+            log::warn!(
+                "Cannot promote cancel-replace for {client_order_id} from fill: no target \
+                 or cached price; buffering until the replacement ACCEPTED arrives",
+            );
+            state.buffer_fill(client_order_id, report.clone());
+            return DispatchOutcome::Tracked;
+        };
+        let updated_quantity = target.unwrap_or(identity.quantity);
+        promote_cancel_replace(
+            client_order_id,
+            &identity,
+            state,
+            emitter,
             report.venue_order_id,
-            report.trade_id,
+            report.account_id,
+            price,
+            updated_quantity,
+            None,
+            report.ts_event,
+            ts_init,
         );
-        state.buffer_fill(client_order_id, report.clone());
-        return DispatchOutcome::Tracked;
+        // Re-read the identity advanced by the promotion (quantity and price)
+        if let Some(updated) = state.lookup_identity(&client_order_id) {
+            identity = updated;
+        }
+
+        if let (Some(target), Some(sent_request)) = (target, sent_request) {
+            promoted_corrective = Some((target, sent_request));
+        }
     }
 
     if state.check_and_insert_trade(report.trade_id) {
@@ -701,6 +737,17 @@ pub fn dispatch_order_fill(
 
     state.record_filled_qty(client_order_id, cumulative);
 
+    // Cumulative now includes this fill, so the reduce sizes against the true remaining
+    if let Some((target, sent_request)) = promoted_corrective {
+        maybe_queue_corrective_reduce(
+            state,
+            client_order_id,
+            report.venue_order_id,
+            target,
+            sent_request,
+        );
+    }
+
     if is_terminal_fill {
         state.cleanup_terminal(&client_order_id);
     }
@@ -742,64 +789,28 @@ fn handle_accepted(
         let updated_quantity = target_total_qty.unwrap_or(report.quantity);
         let sent_request = state.modify_request(&client_order_id);
 
-        state.record_venue_order_id(client_order_id, venue_order_id);
-        state.update_identity_quantity(&client_order_id, updated_quantity);
-        state.update_identity_price(&client_order_id, Some(price));
-        state.clear_pending_modify(&client_order_id);
-
-        let updated = OrderUpdated::new(
-            emitter.trader_id(),
-            identity.strategy_id,
-            identity.instrument_id,
+        promote_cancel_replace(
             client_order_id,
+            identity,
+            state,
+            emitter,
+            venue_order_id,
+            account_id,
+            price,
             updated_quantity,
-            UUID4::new(),
+            report.trigger_price,
             ts_event,
             ts_init,
-            false,
-            Some(venue_order_id),
-            Some(account_id),
-            Some(price),
-            report.trigger_price,
-            None,
-            false,
         );
-        emitter.send_order_event(OrderEventAny::Updated(updated));
 
-        // Drain buffered fills. Bypasses `handle_execution_report`;
-        // FIFO-bounded caches make any residue benign. See GH-3972.
-        let buffered = state.drain_buffered_fills(&client_order_id);
-        for fill in buffered {
-            dispatch_order_fill(&fill, state, emitter, ts_init);
-        }
-
-        // In-flight-fill overfill guard: reduce a replacement left oversized by
-        // a fill that raced the modify (mechanism in the integration guide).
-        // Not covered (engine overfill guard backstops both): reverse WS
-        // ordering, and filled reaching target (remaining zero).
-        if let (Some(target), Some(sent_request)) = (target_total_qty, sent_request)
-            && let Ok(new_oid) = venue_order_id.as_str().parse::<u64>()
-        {
-            let filled = state
-                .previous_filled_qty(&client_order_id)
-                .unwrap_or_else(|| Quantity::zero(target.precision));
-            if filled < target {
-                let remaining = (target - filled).as_decimal().normalize();
-                let sent_size = sent_request.size;
-                if sent_size > remaining {
-                    let mut corrective = sent_request;
-                    corrective.size = remaining;
-
-                    state.mark_pending_modify(client_order_id, venue_order_id, target);
-                    state.stash_modify_request(client_order_id, corrective.clone());
-                    state.queue_corrective(client_order_id, new_oid, corrective);
-
-                    log::info!(
-                        "Cancel-replace left {client_order_id} oversized on {venue_order_id} \
-                         (sent {sent_size}, remaining {remaining}); queuing corrective reduce",
-                    );
-                }
-            }
+        if let (Some(target), Some(sent_request)) = (target_total_qty, sent_request) {
+            maybe_queue_corrective_reduce(
+                state,
+                client_order_id,
+                venue_order_id,
+                target,
+                sent_request,
+            );
         }
 
         return DispatchOutcome::Tracked;
@@ -831,6 +842,92 @@ fn handle_accepted(
     );
     emitter.send_order_event(OrderEventAny::Accepted(accepted));
     DispatchOutcome::Tracked
+}
+
+// Shared by the ACCEPTED branch and the fill path (dropped-ACCEPTED recovery) so the
+// cancel-replace binding is recovered from whichever arrives first. See GH-3827, GH-3972.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "promotion needs the full OrderUpdated field set, sourced from two report shapes"
+)]
+fn promote_cancel_replace(
+    client_order_id: ClientOrderId,
+    identity: &OrderIdentity,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+    price: Price,
+    quantity: Quantity,
+    trigger_price: Option<Price>,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) {
+    state.record_venue_order_id(client_order_id, venue_order_id);
+    state.update_identity_quantity(&client_order_id, quantity);
+    state.update_identity_price(&client_order_id, Some(price));
+    state.clear_pending_modify(&client_order_id);
+
+    let updated = OrderUpdated::new(
+        emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        client_order_id,
+        quantity,
+        UUID4::new(),
+        ts_event,
+        ts_init,
+        false,
+        Some(venue_order_id),
+        Some(account_id),
+        Some(price),
+        trigger_price,
+        None,
+        false,
+    );
+    emitter.send_order_event(OrderEventAny::Updated(updated));
+
+    // Drain fills buffered before the binding advanced. Bypasses
+    // `handle_execution_report`; FIFO-bounded caches make any residue benign.
+    let buffered = state.drain_buffered_fills(&client_order_id);
+    for fill in buffered {
+        dispatch_order_fill(&fill, state, emitter, ts_init);
+    }
+}
+
+// Queue a corrective reduce when a fill that raced the modify left the replacement
+// oversized. Reached from both promotion paths; the engine overfill guard backstops.
+fn maybe_queue_corrective_reduce(
+    state: &WsDispatchState,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    target: Quantity,
+    sent_request: HyperliquidExecPlaceOrderRequest,
+) {
+    let Ok(new_oid) = venue_order_id.as_str().parse::<u64>() else {
+        return;
+    };
+    let filled = state
+        .previous_filled_qty(&client_order_id)
+        .unwrap_or_else(|| Quantity::zero(target.precision));
+    if filled >= target {
+        return;
+    }
+    let remaining = (target - filled).as_decimal().normalize();
+    let sent_size = sent_request.size;
+    if sent_size > remaining {
+        let mut corrective = sent_request;
+        corrective.size = remaining;
+
+        state.mark_pending_modify(client_order_id, venue_order_id, target);
+        state.stash_modify_request(client_order_id, corrective.clone());
+        state.queue_corrective(client_order_id, new_oid, corrective);
+
+        log::info!(
+            "Cancel-replace left {client_order_id} oversized on {venue_order_id} \
+             (sent {sent_size}, remaining {remaining}); queuing corrective reduce",
+        );
+    }
 }
 
 fn handle_triggered(

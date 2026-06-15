@@ -63,6 +63,7 @@ Released on TBD (UTC).
 - Fixed event-store replay, scan, marker, and halt-signal edge cases around skipped events, gaps, and reruns (Rust)
 - Fixed HTTP client errors discarding the underlying cause from the reqwest source chain (Rust)
 - Fixed `HttpClient` rejecting invalid response header keys instead of silently dropping them (Rust)
+- Fixed Hyperliquid cancel-replace fill stranding on a dropped `ACCEPTED` (#4270), thanks for reporting @AlphaTraderK
 - Fixed Interactive Brokers reconnect startup handling (#4210), thanks @faysou
 - Fixed Lighter AccountState to include perp-side margin balance (#4246), thanks @filipmacek
 - Fixed Lighter cancel and modify rejections for local, venue, and acked no-op failures

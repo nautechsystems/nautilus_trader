@@ -70,7 +70,9 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import Order
 
 
 class HyperliquidExecutionClient(LiveExecutionClient):
@@ -165,13 +167,10 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         # cancel-replace when CANCELED(old_voi) arrives before the replacement
         # ACCEPTED(new_voi). See GH-3827.
         self._pending_modify_keys: dict[str, str] = {}
-        # User-intended absolute total qty per in-flight modify; used by
-        # the cancel-replace promotion instead of the venue's remaining-only
-        # `report.quantity`.
+        # User-intended absolute total qty and price for an in-flight modify;
+        # the cancel-replace promotion uses these for an accurate OrderUpdated.
         self._pending_modify_target_qty: dict[str, Quantity] = {}
-        # FillReports buffered during an in-flight cancel-replace, drained
-        # from the cancel-replace ACCEPTED branch. See GH-3972.
-        self._buffered_fills: dict[str, list[nautilus_pyo3.FillReport]] = {}
+        self._pending_modify_target_price: dict[str, Price] = {}
 
         # FillReports buffered when fill arrives before order is in cache,
         # drained on OrderAccepted.
@@ -281,8 +280,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             self._log.info(f"Cached cloid mappings for {count} existing order(s)", LogColor.BLUE)
 
     def _cleanup_cloid_mapping(self, client_order_id: ClientOrderId) -> None:
-        # Drop the cancel-replace fill buffer to avoid stranded entries (GH-3972).
-        self._buffered_fills.pop(client_order_id.value, None)
         self._pending_fills.pop(client_order_id.value, None)
         try:
             pyo3_client_order_id = nautilus_pyo3.ClientOrderId(client_order_id.value)
@@ -356,6 +353,13 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 if resolved_id:
                     report.client_order_id = resolved_id
 
+            if self._is_inflight_modify_old_leg_cancel(report):
+                self._log.debug(
+                    f"Suppressing in-flight modify old-leg CANCELED for "
+                    f"{report.client_order_id!r}, venue_order_id={report.venue_order_id!r}",
+                )
+                return None
+
             self._log.debug(f"Found order status report: {report}")
             return report
         except (asyncio.CancelledError, Exception) as e:
@@ -383,6 +387,13 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                     resolved_id = self._cache.client_order_id(report.venue_order_id)
                     if resolved_id:
                         report.client_order_id = resolved_id
+
+                if self._is_inflight_modify_old_leg_cancel(report):
+                    self._log.debug(
+                        f"Suppressing in-flight modify old-leg CANCELED for "
+                        f"{report.client_order_id!r}, venue_order_id={report.venue_order_id!r}",
+                    )
+                    continue
 
                 reports.append(report)
 
@@ -865,6 +876,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             # Cleared on non-transport post errors; preserved on transport errors so WS can reconcile.
             self._pending_modify_keys[command.client_order_id.value] = venue_order_id.value
             self._pending_modify_target_qty[command.client_order_id.value] = target_total_qty
+            self._pending_modify_target_price[command.client_order_id.value] = price
             self._log.info(f"Order modification requested for {command.client_order_id}")
 
             await self._ws_client.modify_order(
@@ -892,6 +904,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 return
             self._pending_modify_keys.pop(command.client_order_id.value, None)
             self._pending_modify_target_qty.pop(command.client_order_id.value, None)
+            self._pending_modify_target_price.pop(command.client_order_id.value, None)
             self.generate_order_modify_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
@@ -1268,6 +1281,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 and report.venue_order_id != cached_voi
             ):
                 update_price = report.price
+                if update_price is None:
+                    update_price = self._pending_modify_target_price.get(key)
                 if update_price is None and order.has_price:
                     update_price = order.price
                 if update_price is None:
@@ -1277,31 +1292,19 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                     )
                     return
 
-                self._cache.add_venue_order_id(
-                    report.client_order_id,
-                    report.venue_order_id,
-                    overwrite=True,
-                )
-                self._pending_modify_keys.pop(key, None)
                 # Prefer user target over venue's remaining-only
                 # `report.quantity`; fall back when no marker (external modify).
-                target_qty = self._pending_modify_target_qty.pop(key, None)
+                target_qty = self._pending_modify_target_qty.get(key)
                 update_quantity = target_qty if target_qty is not None else report.quantity
 
-                self.generate_order_updated(
-                    strategy_id=order.strategy_id,
-                    instrument_id=report.instrument_id,
-                    client_order_id=report.client_order_id,
-                    venue_order_id=report.venue_order_id,
-                    quantity=update_quantity,
+                self._promote_cancel_replace(
+                    order,
+                    report.venue_order_id,
                     price=update_price,
+                    quantity=update_quantity,
                     trigger_price=report.trigger_price,
                     ts_event=report.ts_last,
-                    venue_order_id_modified=True,
                 )
-
-                # Drain buffered fills against the now-advanced state (GH-3972).
-                self._drain_fill_buffer(self._buffered_fills, key)
                 return
 
             if key in self._accepted_orders or key in self._terminal_orders:
@@ -1439,7 +1442,10 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         else:
             self._log.warning(f"Received unhandled OrderStatusReport: {report}")
 
-    def _handle_fill_report_pyo3(self, pyo3_report: nautilus_pyo3.FillReport) -> None:
+    def _handle_fill_report_pyo3(  # noqa: C901 (complexity unavoidable)
+        self,
+        pyo3_report: nautilus_pyo3.FillReport,
+    ) -> None:
         report = FillReport.from_pyo3(pyo3_report)
 
         self._log.debug(
@@ -1484,8 +1490,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         key = order.client_order_id.value
 
-        # Buffer fills for an in-flight cancel-replace; the marker requirement
-        # avoids stranding stale old-leg fills after promotion. See GH-3972.
+        # A fill on the replacement venue_order_id promotes the binding here so a
+        # dropped ACCEPTED cannot strand it; the fill then reconciles below.
+        # A delayed earlier-leg fill during a chained modify is a known limitation.
         cached_voi = self._cache.venue_order_id(order.client_order_id)
         if (
             key in self._pending_modify_keys
@@ -1493,13 +1500,35 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             and report.venue_order_id is not None
             and report.venue_order_id != cached_voi
         ):
-            self._log.debug(
-                f"Buffering cancel-replace fill for {order.client_order_id!r}: "
-                f"report_voi={report.venue_order_id!r}, cached_voi={cached_voi!r}, "
-                f"trade_id={report.trade_id!r}",
+            if order.is_closed:
+                self._log.error(
+                    f"Cannot promote cancel-replace for {order.client_order_id!r}: order is "
+                    f"{order.status_string()}, fill on {report.venue_order_id!r} cannot reconcile",
+                )
+                return
+
+            update_price = self._pending_modify_target_price.get(key)
+            if update_price is None and order.has_price:
+                update_price = order.price
+            if update_price is None:
+                self._log.warning(
+                    f"Cannot promote cancel-replace for {order.client_order_id!r}: "
+                    "no target or cached price",
+                )
+                return
+
+            target_qty = self._pending_modify_target_qty.get(key)
+            update_quantity = target_qty if target_qty is not None else order.quantity
+
+            self._promote_cancel_replace(
+                order,
+                report.venue_order_id,
+                price=update_price,
+                quantity=update_quantity,
+                trigger_price=order.trigger_price if order.has_trigger_price else None,
+                ts_event=report.ts_event,
             )
-            self._buffered_fills.setdefault(key, []).append(pyo3_report)
-            return
+            # Fall through so the fill reconciles against the now-advanced binding
 
         self._processed_trade_ids.add(trade_id_str)
 
@@ -1551,12 +1580,55 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             for pyo3_buffered in buffered:
                 self._handle_fill_report_pyo3(pyo3_buffered)
 
+    def _promote_cancel_replace(
+        self,
+        order: Order,
+        new_venue_order_id: VenueOrderId,
+        *,
+        price: Price,
+        quantity: Quantity,
+        trigger_price: Price | None,
+        ts_event: int,
+    ) -> None:
+        # Shared by the ACCEPTED branch and the fill path so a dropped ACCEPTED
+        # still rebinds via the fill.
+        key = order.client_order_id.value
+        self._cache.add_venue_order_id(
+            order.client_order_id,
+            new_venue_order_id,
+            overwrite=True,
+        )
+        self._pending_modify_keys.pop(key, None)
+        self._pending_modify_target_qty.pop(key, None)
+        self._pending_modify_target_price.pop(key, None)
+        self.generate_order_updated(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=new_venue_order_id,
+            quantity=quantity,
+            price=price,
+            trigger_price=trigger_price,
+            ts_event=ts_event,
+            venue_order_id_modified=True,
+        )
+
     def _handle_position_status_report_pyo3(
         self,
         msg: nautilus_pyo3.PositionStatusReport,
     ) -> None:
         report = PositionStatusReport.from_pyo3(msg)
         self._log.debug(f"Received {report}", LogColor.MAGENTA)
+
+    def _is_inflight_modify_old_leg_cancel(self, report: OrderStatusReport) -> bool:
+        # Suppress the old leg's CANCELED during a tracked cancel-replace so
+        # reconciliation keeps the order alive for the replacement's fill to rebind.
+        if report.order_status != OrderStatus.CANCELED:
+            return False
+        if report.client_order_id is None or report.venue_order_id is None:
+            return False
+        pending_old_voi = self._pending_modify_keys.get(report.client_order_id.value)
+        return pending_old_voi is not None and report.venue_order_id.value == pending_old_voi
 
     def _is_external_order(self, client_order_id: ClientOrderId) -> bool:
         return not client_order_id or not self._cache.strategy_id_for_order(client_order_id)
