@@ -1060,7 +1060,8 @@ mod tests {
         assert!(!client.token_meta.contains_key(&token_id));
 
         for startup in 1..=2 {
-            let (_tx, rx) = tokio::sync::mpsc::unbounded_channel::<PolymarketWsMessage>();
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<PolymarketWsMessage>();
+            drop(tx);
             client.spawn_message_handler(rx);
             client
                 .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))

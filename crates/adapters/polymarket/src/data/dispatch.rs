@@ -41,7 +41,7 @@ use ustr::Ustr;
 
 use super::{
     NEW_MARKET_EMPTY_RECHECK_DELAY, NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS,
-    instruments::{TokenMeta, cache_instrument},
+    instruments::{TokenMeta, cache_instrument_if_active},
 };
 use crate::{
     filters::InstrumentFilter,
@@ -563,7 +563,18 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                 continue;
                             }
 
-                            cache_instrument(&instruments, &token_meta, &inst);
+                            if !cache_instrument_if_active(
+                                clock.get_time_ns(),
+                                &instruments,
+                                &token_meta,
+                                &inst,
+                            ) {
+                                log::debug!(
+                                    "Skipping expired new market instrument {} during cache update",
+                                    inst.id()
+                                );
+                                continue;
+                            }
 
                             let instrument_id = inst.id();
                             if let Err(e) = data_sender.send(DataEvent::Instrument(inst)) {
@@ -672,6 +683,7 @@ mod tests {
         response::Json,
         routing::get,
     };
+    use chrono::{Duration as ChronoDuration, Utc};
     use nautilus_common::{
         clients::DataClient,
         live::runner::replace_data_event_sender,
@@ -698,7 +710,10 @@ mod tests {
     use serde_json::Value;
     use ustr::Ustr;
 
-    use super::{super::PolymarketDataClient, *};
+    use super::{
+        super::{PolymarketDataClient, instruments::cache_instrument},
+        *,
+    };
     use crate::{
         common::{
             consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
@@ -1028,9 +1043,28 @@ mod tests {
             .expect("gamma market fixture json")
     }
 
-    fn gamma_market_live_fixture_value() -> Value {
-        serde_json::from_str(include_str!("../../test_data/gamma_market_live.json"))
-            .expect("gamma market live fixture json")
+    fn gamma_market_recheck_fixture_value() -> Value {
+        let mut value = gamma_market_expired_fixture_value();
+        let future_date = (Utc::now() + ChronoDuration::days(365)).date_naive();
+        let end_date = format!("{}T00:00:00Z", future_date.format("%Y-%m-%d"));
+
+        if let Some(root) = value.as_object_mut() {
+            root.insert("endDate".to_string(), Value::String(end_date.clone()));
+            root.insert(
+                "endDateIso".to_string(),
+                Value::String(end_date[..10].to_string()),
+            );
+
+            if let Some(events) = root.get_mut("events").and_then(Value::as_array_mut) {
+                for event in events {
+                    if let Some(event_obj) = event.as_object_mut() {
+                        event_obj.insert("endDate".to_string(), Value::String(end_date.clone()));
+                    }
+                }
+            }
+        }
+
+        value
     }
 
     const TEST_CONDITION_ID: &str =
@@ -1159,6 +1193,89 @@ mod tests {
 
         tokio::spawn(async move { axum::serve(listener, router).await.expect("serve failed") });
         addr
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_condition_empty_then_success_recheck_loads_instrument() {
+        let state = NewMarketFetchTestServerState::default();
+        let target_condition = "0xcondition-recheck";
+        *state
+            .empty_then_success_condition_id
+            .lock()
+            .expect("empty_then_success_condition_id mutex poisoned") =
+            Some(target_condition.to_string());
+        *state
+            .empty_then_success_payload
+            .lock()
+            .expect("empty_then_success_payload mutex poisoned") =
+            Some(serde_json::json!([gamma_market_recheck_fixture_value()]));
+
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, mut data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+
+        handle_market_message(
+            make_new_market_with_ids(
+                "btc-updown-5m-recheck",
+                target_condition,
+                target_condition,
+                true,
+            ),
+            &ctx,
+        );
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+        loop {
+            let done = state.total_requests.load(Ordering::SeqCst) >= 2
+                && state.inflight_requests.load(Ordering::SeqCst) == 0
+                && ctx.new_market_inflight_keys.is_empty()
+                && !ctx.instruments.load().is_empty();
+
+            if done {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for empty-then-success recheck flow",
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        let seen_condition_ids = state
+            .seen_condition_ids
+            .lock()
+            .expect("seen_condition_ids mutex poisoned")
+            .clone();
+        assert!(
+            seen_condition_ids
+                .iter()
+                .all(|cid| cid.as_deref() == Some(target_condition)),
+            "all requests should query target condition_id, saw: {seen_condition_ids:?}",
+        );
+        assert_eq!(
+            state.total_requests.load(Ordering::SeqCst),
+            2,
+            "single recheck policy should perform exactly two condition fetch attempts",
+        );
+
+        let mut emitted_instrument = false;
+
+        while let Ok(Some(event)) =
+            tokio::time::timeout(Duration::from_millis(200), data_rx.recv()).await
+        {
+            if matches!(event, DataEvent::Instrument(_)) {
+                emitted_instrument = true;
+                break;
+            }
+        }
+        assert!(
+            emitted_instrument,
+            "expected emitted DataEvent::Instrument after successful recheck"
+        );
     }
 
     #[rstest]
@@ -1482,89 +1599,6 @@ mod tests {
         assert_eq!(slugs.len(), 1);
         assert_eq!(condition_ids[0], None);
         assert_eq!(slugs[0].as_deref(), Some("btc-updown-5m-slug-fallback"));
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn new_market_condition_empty_then_success_recheck_loads_instrument() {
-        let state = NewMarketFetchTestServerState::default();
-        let target_condition = "0xcondition-recheck";
-        *state
-            .empty_then_success_condition_id
-            .lock()
-            .expect("empty_then_success_condition_id mutex poisoned") =
-            Some(target_condition.to_string());
-        *state
-            .empty_then_success_payload
-            .lock()
-            .expect("empty_then_success_payload mutex poisoned") =
-            Some(serde_json::json!([gamma_market_live_fixture_value()]));
-
-        let addr = start_new_market_test_server(state.clone()).await;
-        let gamma_base_url = format!("http://{addr}");
-        let (mut ctx, mut data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
-        ctx.subscribe_new_markets = true;
-        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
-
-        handle_market_message(
-            make_new_market_with_ids(
-                "btc-updown-5m-recheck",
-                target_condition,
-                target_condition,
-                true,
-            ),
-            &ctx,
-        );
-
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-
-        loop {
-            let done = state.total_requests.load(Ordering::SeqCst) >= 2
-                && state.inflight_requests.load(Ordering::SeqCst) == 0
-                && ctx.new_market_inflight_keys.is_empty()
-                && !ctx.instruments.load().is_empty();
-
-            if done {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "timed out waiting for empty-then-success recheck flow",
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        let seen_condition_ids = state
-            .seen_condition_ids
-            .lock()
-            .expect("seen_condition_ids mutex poisoned")
-            .clone();
-        assert!(
-            seen_condition_ids
-                .iter()
-                .all(|cid| cid.as_deref() == Some(target_condition)),
-            "all requests should query target condition_id, saw: {seen_condition_ids:?}",
-        );
-        assert_eq!(
-            state.total_requests.load(Ordering::SeqCst),
-            2,
-            "single recheck policy should perform exactly two condition fetch attempts",
-        );
-
-        let mut emitted_instrument = false;
-
-        while let Ok(Some(event)) =
-            tokio::time::timeout(Duration::from_millis(200), data_rx.recv()).await
-        {
-            if matches!(event, DataEvent::Instrument(_)) {
-                emitted_instrument = true;
-                break;
-            }
-        }
-        assert!(
-            emitted_instrument,
-            "expected emitted DataEvent::Instrument after successful recheck"
-        );
     }
 
     #[rstest]

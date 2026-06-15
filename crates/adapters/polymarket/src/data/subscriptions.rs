@@ -22,7 +22,7 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-pub(super) fn resolve_token_id_from(
+pub(crate) fn resolve_token_id_from(
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument_id: InstrumentId,
 ) -> anyhow::Result<String> {

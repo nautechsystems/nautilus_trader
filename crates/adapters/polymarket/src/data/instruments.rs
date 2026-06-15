@@ -41,7 +41,7 @@ pub(crate) struct TokenMeta {
 // `token_meta` routing index in one step. Every path that populates the live
 // cache must go through here so WS messages can always resolve token_id back
 // to an InstrumentId.
-pub(super) fn cache_instrument(
+pub(crate) fn cache_instrument(
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
     instrument: &InstrumentAny,
@@ -58,6 +58,20 @@ pub(super) fn cache_instrument(
     instruments.insert(instrument_id, instrument.clone());
 }
 
+pub(super) fn cache_instrument_if_active(
+    now_ns: UnixNanos,
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
+    instrument: &InstrumentAny,
+) -> bool {
+    if is_instrument_expired(instrument, now_ns) {
+        return false;
+    }
+
+    cache_instrument(instruments, token_meta, instrument);
+    true
+}
+
 pub(super) fn cache_and_publish_instruments(
     instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
@@ -68,7 +82,7 @@ pub(super) fn cache_and_publish_instruments(
     let mut total = 0;
 
     for instrument in instruments {
-        if is_instrument_expired(&instrument, now_ns) {
+        if !cache_instrument_if_active(now_ns, instruments_cache, token_meta, &instrument) {
             log::debug!(
                 "Skipping expired instrument {} during live cache publish",
                 instrument.id()
@@ -77,7 +91,6 @@ pub(super) fn cache_and_publish_instruments(
         }
 
         let instrument_id = instrument.id();
-        cache_instrument(instruments_cache, token_meta, &instrument);
         total += 1;
 
         if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {

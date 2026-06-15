@@ -86,6 +86,7 @@ use crate::{
 };
 
 pub(crate) use self::instruments::TokenMeta as DataTokenMeta;
+pub(crate) use self::subscriptions::resolve_token_id_from as data_resolve_token_id_from;
 pub(crate) use self::subscriptions::sync_ws_subscription_async as data_sync_ws_subscription_async;
 
 const NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP: usize = 64;

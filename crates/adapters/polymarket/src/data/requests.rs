@@ -30,10 +30,11 @@ use nautilus_common::{
 use nautilus_core::datetime::datetime_to_unix_nanos;
 use nautilus_model::{data::CustomData, instruments::Instrument};
 
-use super::{PolymarketDataClient, dispatch::WsMessageContext, instruments::cache_instrument};
+use super::{
+    PolymarketDataClient, dispatch::WsMessageContext, instruments::cache_instrument_if_active,
+};
 use crate::{
     common::consts::POLYMARKET_VENUE,
-    data_runtime::is_instrument_expired,
     providers::extract_condition_id,
     resolve::{
         PolymarketResolveRequestSummaryData, RESOLVE_REQUEST_TYPE_NAME, ResolveBatchErrorMode,
@@ -229,17 +230,18 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
             }
         };
 
-        let now_ns = clock.get_time_ns();
         for instrument in &instruments {
-            if is_instrument_expired(instrument, now_ns) {
+            if !cache_instrument_if_active(
+                clock.get_time_ns(),
+                &instruments_cache,
+                &token_meta,
+                instrument,
+            ) {
                 log::debug!(
                     "Skipping expired instrument {} during request_instruments cache update",
                     instrument.id()
                 );
-                continue;
             }
-
-            cache_instrument(&instruments_cache, &token_meta, instrument);
         }
 
         let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -295,18 +297,17 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
         };
 
         if let Some(inst) = instrument {
-            if is_instrument_expired(&inst, clock.get_time_ns()) {
-                log::debug!(
-                    "Skipping expired instrument {instrument_id} during request_instrument cache update"
-                );
-            } else {
-                cache_instrument(&instruments_cache, &token_meta, &inst);
-
+            if cache_instrument_if_active(clock.get_time_ns(), &instruments_cache, &token_meta, &inst)
+            {
                 // Publish onto the data bus so other clients (e.g. the exec
                 // client's token map) can update from the same fetch.
                 if let Err(e) = sender.send(DataEvent::Instrument(inst.clone())) {
                     log::warn!("Failed to publish instrument {instrument_id}: {e}");
                 }
+            } else {
+                log::debug!(
+                    "Skipping expired instrument {instrument_id} during request_instrument cache update"
+                );
             }
 
             let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
