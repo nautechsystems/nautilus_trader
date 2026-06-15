@@ -1089,7 +1089,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 order=client_id_to_orders[order_ref],
             )
 
-    async def _modify_order(self, command: ModifyOrder) -> None:
+    async def _modify_order(self, command: ModifyOrder) -> None:  # noqa: C901
         PyCondition.not_none(command, "command")
         if not (command.quantity or command.price or command.trigger_price):
             return
@@ -1123,13 +1123,41 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
             return
 
-        ib_order.orderId = int(command.venue_order_id.value)
+        ib_order_id = self._resolve_ib_order_id(
+            venue_order_id=command.venue_order_id,
+            client_order_id=command.client_order_id,
+        )
+
+        if ib_order_id is None:
+            self.generate_order_modify_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=command.venue_order_id,
+                reason=f"Cannot resolve IB orderId for venue_order_id={command.venue_order_id}",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
+        ib_order.orderId = ib_order_id
 
         if ib_order.parentId:
             parent_nautilus_order = self._cache.order(ClientOrderId(ib_order.parentId))
 
             if parent_nautilus_order and parent_nautilus_order.venue_order_id is not None:
-                ib_order.parentId = int(parent_nautilus_order.venue_order_id.value)
+                parent_ib_order_id = self._resolve_ib_order_id(
+                    venue_order_id=parent_nautilus_order.venue_order_id,
+                    client_order_id=parent_nautilus_order.client_order_id,
+                )
+
+                if parent_ib_order_id is not None:
+                    ib_order.parentId = parent_ib_order_id
+                else:
+                    self._log.warning(
+                        f"Parent order {ib_order.parentId!r} has no resolved IB order ID; "
+                        "modifying child order without parentId",
+                    )
+                    ib_order.parentId = 0
             else:
                 self._log.warning(
                     f"Parent order {ib_order.parentId!r} has no venue order ID yet; "
@@ -1492,7 +1520,18 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         venue_order_id = command.venue_order_id
 
         if venue_order_id:
-            self._client.cancel_order(int(venue_order_id.value))
+            ib_order_id = self._resolve_ib_order_id(
+                venue_order_id=venue_order_id,
+                client_order_id=command.client_order_id,
+            )
+
+            if ib_order_id is not None:
+                self._client.cancel_order(ib_order_id)
+            else:
+                self._log.error(
+                    f"Cannot resolve IB orderId for {command.client_order_id} "
+                    f"with venue_order_id={venue_order_id}",
+                )
         else:
             self._log.error(f"VenueOrderId not found for {command.client_order_id}")
 
@@ -1525,9 +1564,44 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             venue_order_id = order.venue_order_id
 
             if venue_order_id:
-                self._client.cancel_order(int(venue_order_id.value))
+                ib_order_id = self._resolve_ib_order_id(
+                    venue_order_id=venue_order_id,
+                    client_order_id=order.client_order_id,
+                )
+
+                if ib_order_id is not None:
+                    self._client.cancel_order(ib_order_id)
+                else:
+                    self._log.error(
+                        f"Cannot resolve IB orderId for {order.client_order_id} "
+                        f"with venue_order_id={venue_order_id}",
+                    )
             else:
                 self._log.error(f"VenueOrderId not found for {order.client_order_id}")
+
+    def _resolve_ib_order_id(
+        self,
+        venue_order_id: VenueOrderId,
+        client_order_id: ClientOrderId | None = None,
+    ) -> int | None:
+        try:
+            return int(venue_order_id.value)
+        except ValueError:
+            pass
+
+        if client_order_id is None:
+            return None
+
+        for raw_venue_order_id, order_ref in self._client._order_id_to_order_ref.items():
+            if order_ref.order_id != client_order_id.value:
+                continue
+
+            try:
+                return int(raw_venue_order_id.value)
+            except ValueError:
+                continue
+
+        return None
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         for order in command.cancels:

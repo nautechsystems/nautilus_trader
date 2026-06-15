@@ -821,6 +821,7 @@ class IBTestExecStubs:
     def execution(
         order_id: int,
         account_id: str = "DU123456",
+        perm_id: int = 0,
         exec_timestamp: dt.datetime | None = None,
         tz: str = "US/Eastern",
     ) -> Execution:
@@ -835,7 +836,7 @@ class IBTestExecStubs:
             "side": "BOT",
             "shares": Decimal(100),
             "price": 50.0,
-            "permId": 395704644,
+            "permId": perm_id,
             "clientId": 1,
             "orderId": order_id,
             "liquidation": 0,
