@@ -26,16 +26,18 @@ use nautilus_core::{
     UUID4, UnixNanos,
     python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
 };
-use nautilus_execution::models::{
-    fill::{
-        BestPriceFillModel, CompetitionAwareFillModel, DefaultFillModel, FillModelAny,
-        LimitOrderPartialFillModel, MarketHoursFillModel, OneTickSlippageFillModel,
-        ProbabilisticFillModel, SizeAwareFillModel, ThreeTierFillModel, TwoTierFillModel,
-        VolumeSensitiveFillModel,
+use nautilus_execution::{
+    models::{
+        fill::{
+            BestPriceFillModel, CompetitionAwareFillModel, DefaultFillModel, FillModelAny,
+            LimitOrderPartialFillModel, MarketHoursFillModel, OneTickSlippageFillModel,
+            ProbabilisticFillModel, SizeAwareFillModel, ThreeTierFillModel, TwoTierFillModel,
+            VolumeSensitiveFillModel,
+        },
+        latency::{LatencyModelAny, StaticLatencyModel},
     },
-    latency::{LatencyModelAny, StaticLatencyModel},
+    python::fee::pyobject_to_fee_model_any,
 };
-use nautilus_execution::python::fee::pyobject_to_fee_model_any;
 #[cfg(feature = "defi")]
 use nautilus_model::defi::DefiData;
 use nautilus_model::{

@@ -824,7 +824,9 @@ mod tests {
             liquidity_side,
         );
 
-        assert!((commission.as_f64() - expected).abs() < 1e-10);
+        let expected = Decimal::from_str_exact(expected.to_string().as_str()).unwrap();
+
+        assert_eq!(commission.as_decimal(), expected);
     }
 
     /// Reference computations for `adjust_market_buy_amount` follow the SDK
