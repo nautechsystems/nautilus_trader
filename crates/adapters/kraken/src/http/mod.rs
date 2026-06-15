@@ -21,33 +21,31 @@
 //! - [`futures`]: Kraken Futures REST API
 
 use chrono::{DateTime, Utc};
-use nautilus_model::data::Bar;
 
 pub mod error;
 pub mod futures;
 pub mod models;
 pub mod spot;
 
-/// Applies a `limit` to OHLC `bars` returned oldest-first by Kraken.
+/// Applies a count `limit` to `items` returned oldest-first by Kraken.
 ///
-/// Kraken's OHLC endpoints ignore any count parameter and always return their
-/// full page in ascending (oldest-first) order. When the caller anchors the
-/// window with `start`, the oldest `limit` bars from that anchor are the
-/// intended result, so the head of the page is kept. Otherwise a count-only
-/// request (`start` is `None`) means "the most recent `limit` bars", so the
-/// tail is kept rather than the head (see issue #4254).
-pub(crate) fn apply_bar_limit(
-    bars: &mut Vec<Bar>,
+/// Kraken's historical endpoints return their page in ascending (oldest-first)
+/// order. When the caller anchors the window with `start`, the oldest `limit`
+/// items from that anchor are the intended result, so the head of the page is
+/// kept. Otherwise a count-only request (`start` is `None`) means "the most
+/// recent `limit` items", so the tail is kept rather than the head.
+pub(crate) fn apply_count_limit<T>(
+    items: &mut Vec<T>,
     start: Option<DateTime<Utc>>,
     limit: Option<u64>,
 ) {
     if let Some(limit) = limit {
         let limit = limit as usize;
-        if bars.len() > limit {
+        if items.len() > limit {
             if start.is_some() {
-                bars.truncate(limit);
+                items.truncate(limit);
             } else {
-                bars.drain(..bars.len() - limit);
+                items.drain(..items.len() - limit);
             }
         }
     }
@@ -103,33 +101,33 @@ mod tests {
     }
 
     #[rstest]
-    fn test_apply_bar_limit_no_limit_keeps_all() {
+    fn test_apply_count_limit_no_limit_keeps_all() {
         let mut bars = ascending_bars(5);
-        apply_bar_limit(&mut bars, None, None);
+        apply_count_limit(&mut bars, None, None);
         assert_eq!(bars.len(), 5);
     }
 
     #[rstest]
-    fn test_apply_bar_limit_count_only_keeps_most_recent() {
+    fn test_apply_count_limit_count_only_keeps_most_recent() {
         let mut bars = ascending_bars(10);
-        apply_bar_limit(&mut bars, None, Some(3));
+        apply_count_limit(&mut bars, None, Some(3));
         let ts: Vec<u64> = bars.iter().map(|b| b.ts_event.as_u64()).collect();
         assert_eq!(ts, vec![8, 9, 10]);
     }
 
     #[rstest]
-    fn test_apply_bar_limit_with_start_keeps_oldest() {
+    fn test_apply_count_limit_with_start_keeps_oldest() {
         let mut bars = ascending_bars(10);
         let start = DateTime::<Utc>::from_timestamp(0, 0);
-        apply_bar_limit(&mut bars, start, Some(3));
+        apply_count_limit(&mut bars, start, Some(3));
         let ts: Vec<u64> = bars.iter().map(|b| b.ts_event.as_u64()).collect();
         assert_eq!(ts, vec![1, 2, 3]);
     }
 
     #[rstest]
-    fn test_apply_bar_limit_fewer_bars_than_limit() {
+    fn test_apply_count_limit_fewer_bars_than_limit() {
         let mut bars = ascending_bars(2);
-        apply_bar_limit(&mut bars, None, Some(5));
+        apply_count_limit(&mut bars, None, Some(5));
         assert_eq!(bars.len(), 2);
     }
 }

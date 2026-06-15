@@ -72,6 +72,7 @@ use crate::{
         urls::get_kraken_http_base_url,
     },
     http::{
+        apply_count_limit,
         error::{KrakenHttpError, kraken_http_should_retry},
         models::OhlcData,
     },
@@ -1312,9 +1313,13 @@ impl KrakenFuturesHttpClient {
         let since = start.map(|dt| dt.timestamp_millis());
         let before = end.map(|dt| dt.timestamp_millis());
 
+        // Executions are oldest-anchored for `sort=asc`; count-only fetches the
+        // newest page with `sort=desc` (reversed to ascending below)
+        let sort = if start.is_some() { "asc" } else { "desc" };
+
         let response = self
             .inner
-            .get_public_executions(&raw_symbol, since, before, Some("asc"), None)
+            .get_public_executions(&raw_symbol, since, before, Some(sort), None)
             .await?;
 
         let mut trades = Vec::new();
@@ -1322,20 +1327,18 @@ impl KrakenFuturesHttpClient {
         for element in &response.elements {
             let execution = &element.event.execution.execution;
             match parse_futures_public_execution(execution, &instrument, ts_init) {
-                Ok(trade_tick) => {
-                    trades.push(trade_tick);
-
-                    if let Some(limit_count) = limit
-                        && trades.len() >= limit_count as usize
-                    {
-                        return Ok(trades);
-                    }
-                }
+                Ok(trade_tick) => trades.push(trade_tick),
                 Err(e) => {
                     log::warn!("Failed to parse futures trade tick: {e}");
                 }
             }
         }
+
+        if start.is_none() {
+            trades.reverse();
+        }
+
+        apply_count_limit(&mut trades, start, limit);
 
         Ok(trades)
     }
@@ -1403,7 +1406,7 @@ impl KrakenFuturesHttpClient {
 
         // Kraken returns the page oldest-first; keep the most recent `limit`
         // bars for count-only requests rather than the oldest (issue #4254).
-        crate::http::apply_bar_limit(&mut bars, start, limit);
+        apply_count_limit(&mut bars, start, limit);
 
         Ok(bars)
     }

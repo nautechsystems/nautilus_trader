@@ -33,6 +33,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::Response,
 };
+use chrono::{DateTime, Utc};
 use nautilus_common::{
     clients::DataClient,
     live::runner::replace_data_event_sender,
@@ -79,6 +80,7 @@ struct TestServerState {
     rate_limit_after: Arc<AtomicUsize>,
     last_trades_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     last_ohlc_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
+    last_executions_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     add_order_calls: Arc<AtomicUsize>,
     add_order_batch_calls: Arc<AtomicUsize>,
     /// When true, `/0/private/TradeBalance` returns an API error instead of the normal fixture.
@@ -104,6 +106,7 @@ impl Default for TestServerState {
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)), // No rate limit
             last_trades_query: Arc::new(tokio::sync::Mutex::new(None)),
             last_ohlc_query: Arc::new(tokio::sync::Mutex::new(None)),
+            last_executions_query: Arc::new(tokio::sync::Mutex::new(None)),
             add_order_calls: Arc::new(AtomicUsize::new(0)),
             add_order_batch_calls: Arc::new(AtomicUsize::new(0)),
             trade_balance_error: Arc::new(AtomicBool::new(false)),
@@ -535,6 +538,10 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
         return match path {
             p if p.starts_with("/api/history/v2/orders") => mock_futures_order_events().await,
             p if p.contains("/market/") && p.contains("/executions") => {
+                let params = Query::<HashMap<String, String>>::try_from_uri(req.uri())
+                    .map(|q| q.0)
+                    .unwrap_or_default();
+                *state.last_executions_query.lock().await = Some(params);
                 mock_futures_public_executions().await
             }
             _ => Response::builder()
@@ -1453,8 +1460,19 @@ async fn test_spot_domain_request_trades() {
     let result = client.request_trades(instrument_id, None, None, None).await;
     assert!(result.is_ok(), "Failed to request trades: {result:?}");
 
-    let trades = result.unwrap();
-    assert!(!trades.is_empty());
+    let all = result.unwrap();
+    assert!(!all.is_empty());
+
+    // `ts_init` is stamped per request and differs between the two calls, so
+    // compare the most recent trades by trade id rather than by value
+    let limited = client
+        .request_trades(instrument_id, None, None, Some(3))
+        .await
+        .unwrap();
+    assert_eq!(limited.len(), 3);
+    let recent_ids: Vec<_> = all[all.len() - 3..].iter().map(|t| t.trade_id).collect();
+    let limited_ids: Vec<_> = limited.iter().map(|t| t.trade_id).collect();
+    assert_eq!(limited_ids, recent_ids);
 }
 
 #[rstest]
@@ -2363,7 +2381,7 @@ async fn test_spot_raw_api_error_response() {
 #[tokio::test]
 async fn test_futures_domain_request_trades() {
     let state = Arc::new(TestServerState::default());
-    let app = create_router(state);
+    let app = create_router(state.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let base_url = format!("http://{addr}");
@@ -2393,11 +2411,49 @@ async fn test_futures_domain_request_trades() {
     // due to mock execution data having BTC-level prices
     let instrument_id = InstrumentId::from("PF_ETHUSD.KRAKEN");
 
-    let result = client.request_trades(instrument_id, None, None, None).await;
+    // Count-only requests fetch the most recent page with `sort=desc`
+    let trades = client
+        .request_trades(instrument_id, None, None, None)
+        .await
+        .expect("Failed to request futures trades");
+    {
+        let query = state.last_executions_query.lock().await;
+        let sort = query.as_ref().and_then(|params| params.get("sort"));
+        assert_eq!(sort.map(String::as_str), Some("desc"));
+    }
+    // The `sort=desc` page is reversed back to ascending chronological order
+    assert!(
+        trades.len() >= 2,
+        "need >=2 parsed trades to assert ordering, was {}",
+        trades.len()
+    );
+    assert!(
+        trades.windows(2).all(|w| w[0].ts_event <= w[1].ts_event),
+        "count-only futures trades must be ascending by ts_event"
+    );
+
+    // A count-only limit keeps the most recent trade (tail after reversal)
+    let limited = client
+        .request_trades(instrument_id, None, None, Some(1))
+        .await
+        .expect("Failed to request limited futures trades");
+    assert_eq!(limited.len(), 1);
+    assert_eq!(limited[0].trade_id, trades[trades.len() - 1].trade_id);
+
+    // Anchored requests page forward from `start` with `sort=asc`
+    let start = DateTime::<Utc>::from_timestamp(1_700_000_000, 0);
+    let result = client
+        .request_trades(instrument_id, start, None, None)
+        .await;
     assert!(
         result.is_ok(),
-        "Failed to request futures trades: {result:?}"
+        "Failed to request anchored futures trades: {result:?}"
     );
+    {
+        let query = state.last_executions_query.lock().await;
+        let sort = query.as_ref().and_then(|params| params.get("sort"));
+        assert_eq!(sort.map(String::as_str), Some("asc"));
+    }
 }
 
 #[rstest]
