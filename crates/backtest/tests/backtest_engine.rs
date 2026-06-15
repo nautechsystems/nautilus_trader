@@ -927,6 +927,7 @@ fn option_underlying_equity(venue: Venue) -> InstrumentAny {
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     ))
@@ -948,6 +949,7 @@ fn option_contract(venue: Venue, expiration_ns: UnixNanos) -> InstrumentAny {
         Price::from("0.01"),
         Quantity::from(100),
         Quantity::from(1),
+        None,
         None,
         None,
         None,

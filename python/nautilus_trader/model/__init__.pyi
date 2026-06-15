@@ -311,6 +311,7 @@ class BettingInstrument:
         margin_maint: decimal.Decimal | None = None,
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -420,6 +421,7 @@ class BinaryOption:
         margin_maint: decimal.Decimal | None = None,
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -665,6 +667,7 @@ class Cfd:
         margin_maint: decimal.Decimal | None = None,
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -769,6 +772,7 @@ class Commodity:
         margin_maint: decimal.Decimal | None = None,
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -864,6 +868,7 @@ class CryptoFuture:
         margin_maint: decimal.Decimal | None = None,
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -958,6 +963,7 @@ class CryptoFuturesSpread:
         margin_maint: decimal.Decimal | None = None,
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -1055,6 +1061,7 @@ class CryptoOption:
         margin_maint: decimal.Decimal | None = None,
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -1153,6 +1160,7 @@ class CryptoOptionSpread:
         margin_maint: decimal.Decimal | None = None,
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -1246,6 +1254,7 @@ class CryptoPerpetual:
         margin_maint: decimal.Decimal | None = None,
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -1362,6 +1371,7 @@ class CurrencyPair:
         margin_maint: decimal.Decimal | None = None,
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -1471,6 +1481,7 @@ class Equity:
         margin_maint: decimal.Decimal | None = None,
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -1709,6 +1720,7 @@ class FuturesContract:
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
         exchange: str | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -1795,6 +1807,7 @@ class FuturesSpread:
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
         exchange: str | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -1920,6 +1933,7 @@ class IndexInstrument:
         size_increment: Quantity,
         ts_event: int,
         ts_init: int,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -2881,6 +2895,7 @@ class OptionContract:
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
         exchange: str | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -3055,6 +3070,7 @@ class OptionSpread:
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
         exchange: str | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -4253,6 +4269,7 @@ class PerpetualContract:
         margin_maint: decimal.Decimal | None = None,
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...
@@ -5631,6 +5648,7 @@ class TokenizedAsset:
         margin_maint: decimal.Decimal | None = None,
         maker_fee: decimal.Decimal | None = None,
         taker_fee: decimal.Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict | None = None,
     ) -> None: ...
     def __hash__(self) -> int: ...

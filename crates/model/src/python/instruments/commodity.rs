@@ -20,7 +20,7 @@ use std::{
 
 use nautilus_core::{
     from_pydict,
-    python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3, to_pyvalue_err},
+    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
@@ -38,7 +38,7 @@ impl Commodity {
     /// Represents a generic commodity instrument.
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (instrument_id, raw_symbol, asset_class, quote_currency, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, info=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, asset_class, quote_currency, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, tick_scheme=None, info=None))]
     fn py_new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -61,6 +61,7 @@ impl Commodity {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        tick_scheme: Option<String>,
         info: Option<Py<PyDict>>,
     ) -> PyResult<Self> {
         let info_map = if let Some(info_dict) = info {
@@ -89,6 +90,7 @@ impl Commodity {
             margin_maint,
             maker_fee,
             taker_fee,
+            tick_scheme.map(|name| ustr::Ustr::from(name.as_str())),
             info_map,
             ts_event.into(),
             ts_init.into(),
@@ -262,7 +264,7 @@ impl Commodity {
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        from_dict_pyo3(py, values)
+        crate::python::instruments::from_dict_instrument_pyo3(py, values)
     }
 
     #[pyo3(name = "to_dict")]
@@ -331,6 +333,10 @@ impl Commodity {
             Some(value) => dict.set_item("min_price", value.to_string())?,
             None => dict.set_item("min_price", py.None())?,
         }
+        dict.set_item(
+            "tick_scheme",
+            crate::python::instruments::tick_scheme_to_py(self),
+        )?;
         Ok(dict.into())
     }
 }

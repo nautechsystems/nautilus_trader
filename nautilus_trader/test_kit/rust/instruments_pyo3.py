@@ -67,8 +67,10 @@ class TestInstrumentProviderPyo3:
 
         if quote_currency == "JPY":
             price_precision = 3
+            tick_scheme = "FOREX_3DECIMAL"
         else:
             price_precision = 5
+            tick_scheme = "FOREX_5DECIMAL"
 
         return CurrencyPair(
             instrument_id=instrument_id,
@@ -88,6 +90,7 @@ class TestInstrumentProviderPyo3:
             margin_maint=Decimal("0.03"),
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
+            tick_scheme=tick_scheme,
             ts_init=0,
             ts_event=0,
         )

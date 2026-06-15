@@ -155,6 +155,7 @@ fn make_spread_instrument() -> InstrumentAny {
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     );
@@ -2002,6 +2003,7 @@ fn make_report_spread_instrument() -> InstrumentAny {
         Some(Quantity::from("1")),
         None,
         Some(Quantity::from("1")),
+        None,
         None,
         None,
         None,

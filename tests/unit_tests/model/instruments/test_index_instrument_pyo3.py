@@ -17,6 +17,7 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.model.instruments import IndexInstrument
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
+from tests.unit_tests.model.instruments import as_pyo3_instrument_dict
 
 
 _INDEX = TestInstrumentProviderPyo3.index_instrument()
@@ -47,6 +48,7 @@ def test_to_dict():
         "price_precision": 2,
         "size_precision": 0,
         "price_increment": "0.01",
+        "tick_scheme": None,
         "size_increment": "1",
         "ts_event": 0,
         "ts_init": 0,
@@ -59,7 +61,6 @@ def test_pyo3_cython_conversion():
     index_pyo3_dict = index_pyo3.to_dict()
     index_cython = IndexInstrument.from_pyo3(index_pyo3)
     index_cython_dict = IndexInstrument.to_dict(index_cython)
-    del index_cython_dict["tick_scheme_name"]
     index_pyo3_back = nautilus_pyo3.IndexInstrument.from_dict(index_cython_dict)
-    assert index_cython_dict == index_pyo3_dict
+    assert as_pyo3_instrument_dict(index_cython_dict) == index_pyo3_dict
     assert index_pyo3 == index_pyo3_back

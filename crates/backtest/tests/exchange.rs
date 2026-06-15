@@ -531,6 +531,7 @@ fn matching_option_contract(kind: OptionKind) -> InstrumentAny {
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     ))
@@ -561,6 +562,7 @@ fn matching_crypto_option(kind: OptionKind) -> InstrumentAny {
         Some(Quantity::from(1)),
         None,
         Some(Quantity::from("0.1")),
+        None,
         None,
         None,
         None,

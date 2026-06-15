@@ -57,6 +57,7 @@ def test_to_dict():
         "price_precision": 2,
         "size_precision": 2,
         "price_increment": "0.01",
+        "tick_scheme": "BETFAIR",
         "size_increment": "0.01",
         "max_quantity": None,
         "min_quantity": None,
@@ -72,6 +73,17 @@ def test_to_dict():
         "ts_init": 0,
         "info": {},
     }
+
+
+def test_from_dict_accepts_cython_tick_scheme_key():
+    values = _BETTING_INSTRUMENT.to_dict()
+    values["tick_scheme_name"] = values.pop("tick_scheme")
+
+    result = nautilus_pyo3.BettingInstrument.from_dict(values)
+
+    assert result == _BETTING_INSTRUMENT
+    assert result.tick_scheme == "BETFAIR"
+    assert "tick_scheme" not in values
 
 
 # TODO: Not implemented

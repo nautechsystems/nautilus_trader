@@ -1601,6 +1601,7 @@ fn create_test_instrument() -> InstrumentAny {
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     ))

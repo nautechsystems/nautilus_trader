@@ -44,6 +44,7 @@ def test_to_dict():
         "price_precision": 3,
         "size_precision": 2,
         "price_increment": "0.001",
+        "tick_scheme": None,
         "size_increment": "0.01",
         "margin_init": "0",
         "margin_maint": "0",

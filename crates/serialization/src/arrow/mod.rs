@@ -64,6 +64,7 @@ use nautilus_model::{
 };
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+use ustr::Ustr;
 
 // Define metadata key constants constants
 const KEY_BAR_TYPE: &str = "bar_type";
@@ -456,6 +457,62 @@ pub fn extract_column<'a, T: Array + 'static>(
                 column_values.data_type().clone(),
             ))?;
     Ok(downcasted_values)
+}
+
+/// Extracts a column by name when present, falling back to an index for older schemas.
+///
+/// # Errors
+///
+/// Returns an error if the resolved column is missing or has the wrong type.
+pub fn extract_column_by_name_or_index<'a, T: Array + 'static>(
+    record_batch: &'a RecordBatch,
+    column_key: &'static str,
+    fallback_index: usize,
+    expected_type: DataType,
+) -> Result<&'a T, EncodingError> {
+    let column_index = record_batch
+        .schema()
+        .index_of(column_key)
+        .unwrap_or(fallback_index);
+    extract_column::<T>(
+        record_batch.columns(),
+        column_key,
+        column_index,
+        expected_type,
+    )
+}
+
+/// Extracts an optional UTF-8 column by name.
+///
+/// # Errors
+///
+/// Returns an error if the column exists but is not UTF-8.
+pub fn extract_optional_string_column_by_name<'a>(
+    record_batch: &'a RecordBatch,
+    column_key: &'static str,
+) -> Result<Option<&'a StringArray>, EncodingError> {
+    let Ok(column_index) = record_batch.schema().index_of(column_key) else {
+        return Ok(None);
+    };
+    let column_values = record_batch
+        .columns()
+        .get(column_index)
+        .ok_or(EncodingError::MissingColumn(column_key, column_index))?;
+    let downcasted_values = column_values.as_any().downcast_ref::<StringArray>().ok_or(
+        EncodingError::InvalidColumnType(
+            column_key,
+            column_index,
+            DataType::Utf8,
+            column_values.data_type().clone(),
+        ),
+    )?;
+    Ok(Some(downcasted_values))
+}
+
+/// Returns an optional [`Ustr`] value from an optional string column.
+#[must_use]
+pub fn optional_ustr_value(values: Option<&StringArray>, row: usize) -> Option<Ustr> {
+    values.and_then(|column| (!column.is_null(row)).then(|| Ustr::from(column.value(row))))
 }
 
 /// Validates that a [`FixedSizeBinaryArray`] has the expected precision byte width.

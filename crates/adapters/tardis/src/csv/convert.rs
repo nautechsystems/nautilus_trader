@@ -422,6 +422,7 @@ fn create_crypto_option_from_options_chain_record(
         None,
         None,
         None,
+        None,
         parse_timestamp(record.timestamp),
         parse_timestamp(record.local_timestamp),
     )?))

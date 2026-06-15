@@ -111,6 +111,7 @@ fn perp_instrument(
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     ))
@@ -131,6 +132,7 @@ fn spot_instrument(
         4,
         Price::from("0.01"),
         Quantity::from("0.0001"),
+        None,
         None,
         None,
         None,

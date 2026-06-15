@@ -729,6 +729,7 @@ fn test_perp_instrument() -> InstrumentAny {
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     ))
@@ -750,6 +751,7 @@ fn test_spot_instrument() -> InstrumentAny {
         Some(Quantity::from("0.01")),
         None,
         Some(Money::from("1.0000 USDC")),
+        None,
         None,
         None,
         None,

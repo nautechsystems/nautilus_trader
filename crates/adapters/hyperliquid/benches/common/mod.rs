@@ -97,6 +97,7 @@ fn perp_instrument(coin: &str, price_precision: u8, size_precision: u8) -> Instr
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     ))

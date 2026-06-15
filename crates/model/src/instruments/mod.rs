@@ -74,7 +74,9 @@ pub use crate::instruments::{
     option_spread::OptionSpread,
     perpetual_contract::PerpetualContract,
     synthetic::{SyntheticInstrument, SyntheticInstrumentError},
-    tick_scheme::{FixedTickScheme, TickScheme, TickSchemeRule, TieredTickScheme},
+    tick_scheme::{
+        FixedTickScheme, TickScheme, TickSchemeRule, TieredTickScheme, tick_scheme_rule_from_name,
+    },
     tokenized_asset::TokenizedAsset,
 };
 use crate::{
@@ -188,8 +190,13 @@ fn is_usd_equivalent_currency(currency: Currency) -> bool {
 
 #[enum_dispatch]
 pub trait Instrument: 'static + Send {
-    fn tick_scheme(&self) -> Option<&dyn TickSchemeRule> {
+    fn tick_scheme(&self) -> Option<Ustr> {
         None
+    }
+
+    fn tick_scheme_rule(&self) -> Option<&dyn TickSchemeRule> {
+        self.tick_scheme()
+            .and_then(|scheme| tick_scheme_rule_from_name(scheme.as_str()))
     }
 
     fn into_any(self) -> InstrumentAny
@@ -416,7 +423,11 @@ pub trait Instrument: 'static + Send {
 
     #[inline(always)]
     fn next_bid_price(&self, value: f64, n: i32) -> Option<Price> {
-        let price = if let Some(scheme) = self.tick_scheme() {
+        if n < 0 {
+            return None;
+        }
+
+        let price = if let Some(scheme) = self.tick_scheme_rule() {
             scheme.next_bid_price(value, n, self.price_precision())?
         } else {
             let value = Decimal::from_str(&value.to_string()).ok()?;
@@ -440,7 +451,11 @@ pub trait Instrument: 'static + Send {
 
     #[inline(always)]
     fn next_ask_price(&self, value: f64, n: i32) -> Option<Price> {
-        let price = if let Some(scheme) = self.tick_scheme() {
+        if n < 0 {
+            return None;
+        }
+
+        let price = if let Some(scheme) = self.tick_scheme_rule() {
             scheme.next_ask_price(value, n, self.price_precision())?
         } else {
             let value = Decimal::from_str(&value.to_string()).ok()?;
@@ -649,6 +664,82 @@ mod tests {
         let asks = currency_pair_btcusdt.next_ask_prices(start, 3);
         assert_eq!(asks.len(), 3);
         assert!(asks[0] > bid_0);
+    }
+
+    #[rstest]
+    fn tick_navigation_uses_tick_scheme() {
+        let instrument = CurrencyPair::new(
+            InstrumentId::from("TEST.VENUE"),
+            Symbol::from("TEST"),
+            Currency::from("BTC"),
+            Currency::from("USD"),
+            2,
+            2,
+            Price::new(0.01, 2),
+            Quantity::from("0.01"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(Ustr::from("FIXED_PRECISION_1")),
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        assert_eq!(
+            instrument.tick_scheme(),
+            Some(Ustr::from("FIXED_PRECISION_1"))
+        );
+        assert_eq!(instrument.next_bid_price(1.23, 0), Some(Price::new(1.2, 2)));
+        assert_eq!(instrument.next_ask_price(1.23, 0), Some(Price::new(1.3, 2)));
+    }
+
+    #[rstest]
+    #[case("BOGUS")]
+    #[case("FIXED_PRECISION_99")]
+    fn invalid_tick_scheme_returns_error(#[case] tick_scheme: &str) {
+        let err = CurrencyPair::new_checked(
+            InstrumentId::from("TEST.VENUE"),
+            Symbol::from("TEST"),
+            Currency::from("BTC"),
+            Currency::from("USD"),
+            2,
+            2,
+            Price::new(0.01, 2),
+            Quantity::from("0.01"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(Ustr::from(tick_scheme)),
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .expect_err("invalid tick scheme must fail");
+
+        assert!(
+            err.to_string()
+                .contains("tick_scheme not found in tick schemes"),
+            "{err}"
+        );
     }
 
     #[rstest]
@@ -1322,6 +1413,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             0.into(),
             0.into(),
         )
@@ -1340,6 +1432,7 @@ mod tests {
             2,                   // size_precision
             Price::new(0.50, 2), // price_increment with trailing zero
             Quantity::from("0.01"),
+            None,
             None,
             None,
             None,
@@ -1389,6 +1482,7 @@ mod tests {
             2, // size_precision
             Price::new(0.01, 2),
             Quantity::new(0.50, 2), // size_increment with trailing zero
+            None,
             None,
             None,
             None,

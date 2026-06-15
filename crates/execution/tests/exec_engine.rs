@@ -143,6 +143,7 @@ fn futures_contract_xcme() -> FuturesContract {
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     )

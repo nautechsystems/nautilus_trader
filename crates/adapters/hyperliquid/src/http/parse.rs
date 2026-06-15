@@ -808,6 +808,7 @@ pub fn create_instrument_from_def(
                 None,
                 None,
                 None,
+                None,
                 ts_init, // Identical to ts_init for now
                 ts_init,
             )))
@@ -850,6 +851,7 @@ pub fn create_instrument_from_def(
                 None,
                 None,
                 None,
+                None,
                 ts_init, // Identical to ts_init for now
                 ts_init,
             )))
@@ -881,6 +883,7 @@ pub fn create_instrument_from_def(
                 None, // margin_maint
                 None, // maker_fee
                 None, // taker_fee
+                None, // tick_scheme
                 outcome.info.clone(),
                 ts_init,
                 ts_init,

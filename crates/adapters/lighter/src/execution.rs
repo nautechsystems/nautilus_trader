@@ -4692,6 +4692,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         ));
@@ -7347,6 +7348,7 @@ mod tests {
             None,
             None,
             Some(Money::from("10.000000 USDC")),
+            None,
             None,
             None,
             None,

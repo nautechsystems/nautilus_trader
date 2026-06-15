@@ -432,6 +432,7 @@ mod tests {
             None, // margin_maint
             None, // maker_fee
             None, // taker_fee
+            None, // tick_scheme
             None, // info
             UnixNanos::default(),
             UnixNanos::default(),

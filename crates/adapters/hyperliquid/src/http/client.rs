@@ -1345,6 +1345,7 @@ impl HyperliquidHttpClient {
                 None, // margin_maint
                 None, // maker_fee
                 None, // taker_fee
+                None, // tick_scheme
                 None, // info
                 ts_event,
                 ts_event,
@@ -3665,8 +3666,9 @@ mod tests {
             None,
             None,
             None,
-            None,
+            None, // maker_fee
             None, // taker_fee
+            None, // tick_scheme
             None, // info
             ts,
             ts,
@@ -3771,6 +3773,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             ts,
             ts,
         ));
@@ -3828,6 +3831,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             ts,
             ts,
         ));
@@ -3841,6 +3845,7 @@ mod tests {
             2,
             Price::from("0.00001"),
             Quantity::from("0.01"),
+            None,
             None,
             None,
             None,
@@ -3907,6 +3912,7 @@ mod tests {
             3,
             Price::from("0.000001"),
             Quantity::from("0.001"),
+            None,
             None,
             None,
             None,

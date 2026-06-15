@@ -2473,6 +2473,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -2998,6 +2999,7 @@ mod tests {
             None, // margin_maint
             None, // maker_fee
             None, // taker_fee
+            None, // tick_scheme
             None, // info
             UnixNanos::default(),
             UnixNanos::default(),
@@ -3082,6 +3084,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -3134,6 +3137,7 @@ mod tests {
             8,     // size_precision
             Price::from("0.01"),
             Quantity::from("0.00000001"),
+            None,
             None,
             None,
             None,
@@ -3282,6 +3286,7 @@ mod tests {
             None, // margin_maint
             None, // maker_fee
             None, // taker_fee
+            None, // tick_scheme
             None, // info
             UnixNanos::default(),
             UnixNanos::default(),
@@ -3477,6 +3482,7 @@ mod tests {
             8,
             Price::from("0.01"),
             Quantity::from("0.00000001"),
+            None,
             None,
             None,
             None,
@@ -3695,6 +3701,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -3890,6 +3897,7 @@ mod tests {
             8,
             Price::from("0.01"),
             Quantity::from("0.00000001"),
+            None,
             None,
             None,
             None,
@@ -4390,7 +4398,8 @@ mod tests {
             None,
             None,
             None,
-            None,
+            None,     // tick_scheme
+            None,     // info
             0.into(), // ts_event
             0.into(), // ts_init
         );
@@ -4455,7 +4464,8 @@ mod tests {
             None,
             None,
             None,
-            None,
+            None,     // tick_scheme
+            None,     // info
             0.into(), // ts_event
             0.into(), // ts_init
         );
@@ -4519,7 +4529,8 @@ mod tests {
             None,
             None,
             None,
-            None,
+            None,     // tick_scheme
+            None,     // info
             0.into(), // ts_event
             0.into(), // ts_init
         );
@@ -4593,7 +4604,8 @@ mod tests {
             None,
             None,
             None,
-            None,
+            None,     // tick_scheme
+            None,     // info
             0.into(), // ts_event
             0.into(), // ts_init
         );
@@ -4668,7 +4680,8 @@ mod tests {
             None,
             None,
             None,
-            None,
+            None,     // tick_scheme
+            None,     // info
             0.into(), // ts_event
             0.into(), // ts_init
         );
@@ -4746,6 +4759,7 @@ mod tests {
             8,
             Price::from("0.01"),
             Quantity::from("0.00000001"),
+            None,
             None,
             None,
             None,

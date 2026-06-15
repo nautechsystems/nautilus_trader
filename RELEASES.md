@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added Polymarket RTDS custom data subscriptions (#4214), thanks @graceyangfan
 - Added Postgres cache position event-log persistence and restart recovery (Rust)
 - Added PyO3 cache purge APIs (#4249), thanks @graceyangfan
+- Added PyO3 instrument `tick_scheme` fields with Arrow persistence
 - Added Redis cache adapter order, position, and order-index write persistence (Rust)
 - Added SEC1 EC private key support to socket TLS configuration (Rust)
 - Added Tardis Lighter venue mapping
@@ -30,6 +31,7 @@ Released on TBD (UTC).
 - Changed Redis cache account/order/position storage to event logs; clear old typed state (Rust)
 - Changed `SyntheticInstrument` fallible methods to return `SyntheticInstrumentError` instead of `anyhow::Error` (Rust)
 - Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)
+- Renamed Rust/PyO3 instrument `tick_scheme_name` to `tick_scheme`; Cython keeps `tick_scheme_name`
 
 ### Security
 - Hardened Docker toolchain pins

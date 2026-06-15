@@ -11049,6 +11049,7 @@ fn option_contract(
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -11083,6 +11084,7 @@ fn crypto_option_call_btc(venue: &str, expiration_ns: UnixNanos, strike: Price) 
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -11098,6 +11100,7 @@ fn underlying_index(venue: &str) -> IndexInstrument {
         Price::from("0.01"),
         Quantity::from(1),
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -11111,6 +11114,7 @@ fn underlying_equity(venue: &str) -> Equity {
         Currency::USD(),
         2,
         Price::from("0.01"),
+        None,
         None,
         None,
         None,
@@ -12519,6 +12523,7 @@ fn test_crypto_option_cash_settlement(account_id: AccountId) {
         0,
         Price::from("0.01"),
         Quantity::from(1),
+        None,
         None,
         UnixNanos::default(),
         UnixNanos::default(),

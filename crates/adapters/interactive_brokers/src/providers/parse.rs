@@ -251,6 +251,7 @@ fn parse_equity_contract(
         None,                            // margin_maint
         None,                            // maker_fee
         None,                            // taker_fee
+        None,                            // tick_scheme
         Some(ib_contract_info(details)), // info
         timestamp,
         timestamp,
@@ -289,6 +290,7 @@ fn parse_forex_contract(
         None,                            // margin_maint
         None,                            // maker_fee
         None,                            // taker_fee
+        None,                            // tick_scheme
         Some(ib_contract_info(details)), // info
         timestamp,
         timestamp,
@@ -329,6 +331,7 @@ fn parse_crypto_contract(
         None,                            // margin_maint
         None,                            // maker_fee
         None,                            // taker_fee
+        None,                            // tick_scheme
         Some(ib_contract_info(details)), // info
         timestamp,
         timestamp,
@@ -412,6 +415,7 @@ fn parse_futures_contract(
         None,                            // margin_maint
         None,                            // maker_fee
         None,                            // taker_fee
+        None,                            // tick_scheme
         Some(ib_contract_info(details)), // info
         timestamp,
         timestamp,
@@ -490,6 +494,7 @@ fn parse_option_contract(
         None,                            // margin_maint
         None,                            // maker_fee
         None,                            // taker_fee
+        None,                            // tick_scheme
         Some(ib_contract_info(details)), // info
         timestamp,
         timestamp,
@@ -690,6 +695,7 @@ fn parse_index_contract(
         size_precision,
         Price::new(details.min_tick, price_precision),
         Quantity::new(details.size_increment, size_precision),
+        None,
         Some(ib_contract_info(details)), // info
         timestamp,
         timestamp,
@@ -775,6 +781,7 @@ pub fn parse_spread_instrument_id(
         Some(Decimal::ZERO), // margin_maint
         Some(Decimal::ZERO), // maker_fee
         Some(Decimal::ZERO), // taker_fee
+        None,                // tick_scheme
         None,                // info
         timestamp,
         timestamp,
@@ -844,6 +851,7 @@ pub fn parse_futures_spread_instrument_id(
         Some(Decimal::ZERO),
         Some(Decimal::ZERO),
         Some(Decimal::ZERO),
+        None,
         bag_contract.map(ib_contract_info_for_contract),
         timestamp,
         timestamp,
@@ -916,6 +924,7 @@ fn parse_cfd_contract(
         None,
         None,
         None,
+        None,
         Some(ib_contract_info(details)),
         timestamp,
         timestamp,
@@ -942,6 +951,7 @@ fn parse_commodity_contract(
         size_precision,
         Price::new(details.min_tick, price_precision),
         Quantity::new(details.size_increment, size_precision),
+        None,
         None,
         None,
         None,
@@ -987,6 +997,7 @@ fn parse_bond_contract(
         None,                            // margin_maint
         None,                            // maker_fee
         None,                            // taker_fee
+        None,                            // tick_scheme
         Some(ib_contract_info(details)), // info
         timestamp,
         timestamp,

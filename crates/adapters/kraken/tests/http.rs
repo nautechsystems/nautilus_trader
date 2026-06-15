@@ -167,7 +167,8 @@ fn create_test_futures_instrument() -> InstrumentAny {
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
-        None,
+        None, // tick_scheme
+        None, // info
         0.into(),
         0.into(),
     ))
@@ -2675,6 +2676,7 @@ async fn test_spot_domain_submit_orders_batch_preserves_status_order() {
         None,
         None,
         None,
+        None,
         0.into(),
         0.into(),
     )));
@@ -2792,6 +2794,7 @@ async fn test_spot_domain_submit_orders_batch_singleton_falls_back_to_add_order(
         8,
         Price::from("0.1"),
         Quantity::from("0.00000001"),
+        None,
         None,
         None,
         None,
@@ -3499,6 +3502,7 @@ fn create_xbtusd_spot_instrument() -> (InstrumentId, InstrumentAny) {
         None,
         None,
         None,
+        None,
         0.into(),
         0.into(),
     ));
@@ -3553,6 +3557,7 @@ async fn test_spot_margin_position_flat_when_fully_closed() {
         8,
         Price::from("0.1"),
         Quantity::from("0.00000001"),
+        None,
         None,
         None,
         None,

@@ -29,6 +29,7 @@ from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
+from tests.unit_tests.model.instruments import as_pyo3_instrument_dict
 
 
 _EURUSD_PERP = TestInstrumentProviderPyo3.perpetual_contract_eurusd()
@@ -137,6 +138,7 @@ def test_to_dict():
         "price_precision": 5,
         "size_precision": 0,
         "price_increment": "0.00001",
+        "tick_scheme": None,
         "size_increment": "1",
         "multiplier": "1",
         "lot_size": "1",
@@ -161,10 +163,9 @@ def test_pyo3_cython_conversion():
     pyo3_dict = pyo3_inst.to_dict()
     cython_inst = PerpetualContract.from_pyo3(pyo3_inst)
     cython_dict = PerpetualContract.to_dict(cython_inst)
-    del cython_dict["tick_scheme_name"]  # TODO: Under development
     pyo3_back = nautilus_pyo3.PerpetualContract.from_dict(cython_dict)
     assert pyo3_inst == pyo3_back
-    assert pyo3_dict == cython_dict
+    assert pyo3_dict == as_pyo3_instrument_dict(cython_dict)
 
 
 def test_get_base_currency_linear():

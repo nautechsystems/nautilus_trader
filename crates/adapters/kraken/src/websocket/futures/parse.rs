@@ -474,6 +474,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             None, // info
             TS,
             TS,
@@ -732,6 +733,7 @@ mod tests {
             3,
             Price::from("0.5"),
             Quantity::from("0.001"),
+            None,
             None,
             None,
             None,

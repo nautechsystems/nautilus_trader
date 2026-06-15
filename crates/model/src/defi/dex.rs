@@ -257,19 +257,20 @@ impl From<Pool> for CurrencyPair {
             size_precision,
             price_increment,
             size_increment,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            None, // multiplier
+            None, // lot_size
+            None, // max_quantity
+            None, // min_quantity
+            None, // max_notional
+            None, // min_notional
+            None, // max_price
+            None, // min_price
+            None, // margin_init
+            None, // margin_maint
+            None, // maker_fee
+            None, // taker_fee
+            None, // tick_scheme
+            None, // info
             0.into(),
             0.into(),
         )

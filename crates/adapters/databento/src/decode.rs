@@ -1296,6 +1296,7 @@ pub fn decode_equity(
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
+        None, // tick_scheme
         None, // info
         ts_event,
         ts_init,
@@ -1343,6 +1344,7 @@ pub fn decode_futures_contract(
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
+        None, // tick_scheme
         None, // info
         ts_event,
         ts_init,
@@ -1392,6 +1394,7 @@ pub fn decode_futures_spread(
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
+        None, // tick_scheme
         None, // info
         ts_event,
         ts_init,
@@ -1453,6 +1456,7 @@ pub fn decode_option_contract(
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
+        None, // tick_scheme
         None, // info
         ts_event,
         ts_init,
@@ -1507,6 +1511,7 @@ pub fn decode_option_spread(
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
+        None, // tick_scheme
         None, // info
         ts_event,
         ts_init,

@@ -440,6 +440,7 @@ fn parse_perp_instrument(
         Some(order_book.maker_fee),
         Some(order_book.taker_fee),
         None,
+        None,
         ts_init,
         ts_init,
     )
@@ -485,6 +486,7 @@ fn parse_spot_instrument(
         None,
         Some(order_book.maker_fee),
         Some(order_book.taker_fee),
+        None,
         None,
         ts_init,
         ts_init,
@@ -589,6 +591,7 @@ mod tests {
             4,
             Price::from("0.01"),
             Quantity::from("0.0001"),
+            None,
             None,
             None,
             None,

@@ -252,6 +252,7 @@ pub fn parse_usdm_instrument(
         Some(default_margin),
         None, // maker_fee
         None, // taker_fee
+        None, // tick_scheme
         None, // info
         ts_event,
         ts_init,
@@ -354,6 +355,7 @@ pub fn parse_coinm_instrument(
         Some(default_margin),
         None, // maker_fee
         None, // taker_fee
+        None, // tick_scheme
         None, // info
         ts_event,
         ts_init,
@@ -528,6 +530,7 @@ pub fn parse_spot_instrument_sbe(
         Some(default_margin),
         None, // maker_fee
         None, // taker_fee
+        None, // tick_scheme
         None, // info
         ts_event,
         ts_init,

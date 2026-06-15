@@ -1176,6 +1176,7 @@ fn test_position_ids_filtering(mut cache: Cache) {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1870,6 +1871,7 @@ fn es_option_contract() -> OptionContract {
         Price::from("0.01"),
         Quantity::from(1),
         Quantity::from(1),
+        None,
         None,
         None,
         None,
@@ -6592,6 +6594,7 @@ fn test_position_filters_with_state_and_side(mut cache: Cache) {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -6953,6 +6956,7 @@ fn test_positions_query_apis_are_consistent(mut cache: Cache) {
             4,
             Price::from("0.01"),
             Quantity::from("0.0001"),
+            None,
             None,
             None,
             None,

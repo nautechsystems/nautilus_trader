@@ -1067,6 +1067,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             ts_init,
         ))

@@ -1016,6 +1016,7 @@ fn make_es_future(instrument_id: &str, symbol: &str) -> FuturesContract {
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -1037,6 +1038,7 @@ fn make_es_option(instrument_id: &str, symbol: &str, kind: OptionKind) -> Option
         Price::from("0.01"),
         Quantity::from(1),
         Quantity::from(1),
+        None,
         None,
         None,
         None,
@@ -12734,6 +12736,7 @@ fn make_crypto_option(
         Some(Quantity::from("0.1")),
         None,
         Some(Money::new(10.00, Currency::USD())),
+        None,
         None,
         None,
         None,

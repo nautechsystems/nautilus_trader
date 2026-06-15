@@ -25,6 +25,7 @@ from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import Symbol
 from nautilus_trader.model.instruments import Cfd
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
+from tests.unit_tests.model.instruments import as_pyo3_instrument_dict
 
 
 _CFD = TestInstrumentProviderPyo3.cfd()
@@ -57,6 +58,7 @@ def test_to_dict():
         "price_precision": 5,
         "size_precision": 0,
         "price_increment": "0.00001",
+        "tick_scheme": None,
         "size_increment": "1",
         "lot_size": "1000",
         "max_quantity": None,
@@ -80,9 +82,8 @@ def test_pyo3_cython_conversion():
     cfd_pyo3_dict = cfd_pyo3.to_dict()
     cfd_cython = Cfd.from_pyo3(cfd_pyo3)
     cfd_cython_dict = Cfd.to_dict(cfd_cython)
-    del cfd_cython_dict["tick_scheme_name"]
     cfd_pyo3_back = nautilus_pyo3.Cfd.from_dict(cfd_cython_dict)
-    assert cfd_cython_dict == cfd_pyo3_dict
+    assert as_pyo3_instrument_dict(cfd_cython_dict) == cfd_pyo3_dict
     assert cfd_pyo3 == cfd_pyo3_back
 
 
@@ -124,6 +125,5 @@ def test_pyo3_cython_conversion_with_optional_fields():
     assert cfd_cython.taker_fee == Decimal("0.002")
 
     cfd_cython_dict = Cfd.to_dict(cfd_cython)
-    del cfd_cython_dict["tick_scheme_name"]
     cfd_pyo3_back = nautilus_pyo3.Cfd.from_dict(cfd_cython_dict)
     assert cfd_pyo3_back == cfd_pyo3

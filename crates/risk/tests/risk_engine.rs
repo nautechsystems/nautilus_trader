@@ -549,6 +549,7 @@ pub fn instrument_xbtusd_with_high_size_precision() -> InstrumentAny {
         Some(dec!(0.0035)),
         Some(dec!(-0.00025)),
         Some(dec!(0.00075)),
+        None,
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -4485,6 +4486,7 @@ fn test_submit_order_with_quote_quantity_skips_min_max_quantity_check(
         Some(dec!(0.1)),      // margin_maint
         Some(dec!(-0.00005)), // maker_fee
         Some(dec!(0.00015)),  // taker_fee
+        None,                 // tick_scheme
         None,                 // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -4606,6 +4608,7 @@ fn test_submit_order_with_quote_quantity_does_not_deny_on_base_max_quantity(
         Some(dec!(0.1)),
         Some(dec!(-0.00005)),
         Some(dec!(0.00015)),
+        None,
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -4719,6 +4722,7 @@ fn test_submit_order_with_quote_quantity_does_not_deny_on_base_min_quantity(
         Some(dec!(-0.00005)),
         Some(dec!(0.00015)),
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     ));
@@ -4830,6 +4834,7 @@ fn test_submit_order_with_quote_quantity_still_enforces_min_notional(
         Some(dec!(0.1)),
         Some(dec!(-0.00005)),
         Some(dec!(0.00015)),
+        None,
         None,
         UnixNanos::default(),
         UnixNanos::default(),

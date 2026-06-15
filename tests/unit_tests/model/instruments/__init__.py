@@ -12,3 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+
+def as_pyo3_instrument_dict(values: dict[str, object]) -> dict[str, object]:
+    normalized = dict(values)
+    if "tick_scheme_name" in normalized:
+        normalized["tick_scheme"] = normalized.pop("tick_scheme_name")
+    return normalized

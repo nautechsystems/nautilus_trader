@@ -1755,6 +1755,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1768,6 +1769,7 @@ mod tests {
             Currency::from("USD"),
             2,
             Price::from("0.01"),
+            None,
             None,
             None,
             None,
@@ -1825,6 +1827,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1853,6 +1856,7 @@ mod tests {
             Price::from("0.01"),
             Quantity::from(1),
             Quantity::from(1),
+            None,
             None,
             None,
             None,

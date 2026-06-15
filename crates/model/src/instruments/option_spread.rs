@@ -26,7 +26,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{Instrument, any::InstrumentAny};
+use super::{Instrument, any::InstrumentAny, tick_scheme::check_tick_scheme};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
@@ -96,6 +96,8 @@ pub struct OptionSpread {
     pub max_price: Option<Price>,
     /// The minimum allowable quoted price.
     pub min_price: Option<Price>,
+    /// The registered variable tick scheme name.
+    pub tick_scheme: Option<Ustr>,
     /// Additional instrument metadata as a JSON-serializable dictionary.
     pub info: Option<Params>,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
@@ -137,6 +139,7 @@ impl OptionSpread {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -150,6 +153,7 @@ impl OptionSpread {
             stringify!(price_increment.precision),
         )?;
         check_positive_price(price_increment, stringify!(price_increment))?;
+        check_tick_scheme(tick_scheme)?;
         check_positive_quantity(multiplier, stringify!(multiplier))?;
         check_positive_quantity(lot_size, stringify!(lot_size))?;
 
@@ -177,6 +181,7 @@ impl OptionSpread {
             min_quantity: Some(min_quantity.unwrap_or(1.into())),
             max_price,
             min_price,
+            tick_scheme,
             info,
             ts_event,
             ts_init,
@@ -212,6 +217,7 @@ impl OptionSpread {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -238,6 +244,7 @@ impl OptionSpread {
             margin_maint,
             maker_fee,
             taker_fee,
+            tick_scheme,
             info,
             ts_event,
             ts_init,
@@ -261,6 +268,9 @@ impl Hash for OptionSpread {
 }
 
 impl Instrument for OptionSpread {
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::OptionSpread(self)
     }
@@ -448,6 +458,7 @@ mod tests {
             Price::from("0.01"),
             Quantity::from(1),
             Quantity::from(1),
+            None,
             None,
             None,
             None,
