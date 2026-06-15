@@ -168,8 +168,51 @@ Unless specifically bypassed in the `RiskEngineConfig`, the engine validates:
 - Trading-state restrictions (`ACTIVE`, `HALTED`, `REDUCING`).
 
 If a submit-time risk check fails, the system generates an `OrderDenied` event with a
-human-readable reason. If a modify-time risk check fails, it generates an
+standardized reason code. If a modify-time risk check fails, it generates an
 `OrderModifyRejected` event.
+
+### Order denied reasons
+
+A local denial (`OrderDenied`) carries a standardized `CATEGORY_CONDITION` reason code followed by
+`key=value` context, for example `QUANTITY_EXCEEDS_MAXIMUM: effective_quantity=15, max_quantity=10`.
+These codes are the source of truth for locally-denied orders; venue rejections (`OrderRejected`)
+pass through the venue's own text unchanged.
+
+<!-- Generated from the `OrderDeniedReason` enum (crates/model). Regenerate with: cargo test -p nautilus-model regenerate_order_denied_reasons_doc -- --ignored -->
+<!-- BEGIN GENERATED: order-denied-reasons -->
+
+| Code                                  | Description                                                     |
+| ------------------------------------- | --------------------------------------------------------------- |
+| `QUANTITY_EXCEEDS_MAXIMUM`            | The effective order quantity exceeds the instrument maximum.    |
+| `QUANTITY_BELOW_MINIMUM`              | The effective order quantity is below the instrument minimum.   |
+| `NOTIONAL_EXCEEDS_MAX_PER_ORDER`      | The order notional exceeds the configured maximum per order.    |
+| `NOTIONAL_EXCEEDS_MAXIMUM`            | The order notional exceeds the instrument maximum.              |
+| `NOTIONAL_BELOW_MINIMUM`              | The order notional is below the instrument minimum.             |
+| `NOTIONAL_EXCEEDS_FREE_BALANCE`       | The order notional exceeds the account free balance.            |
+| `CUM_NOTIONAL_EXCEEDS_FREE_BALANCE`   | The cumulative order notional exceeds the account free balance. |
+| `MARGIN_EXCEEDS_FREE_BALANCE`         | The order initial margin exceeds the account free balance.      |
+| `CUM_MARGIN_EXCEEDS_FREE_BALANCE`     | The cumulative initial margin exceeds the account free balance. |
+| `INVALID_MAX_NOTIONAL_PER_ORDER`      | The configured maximum notional per order is invalid.           |
+| `INVALID_ORDER_SIDE`                  | The order side is invalid for this operation.                   |
+| `MISSING_EXPIRE_TIME`                 | A GTD order is missing its expire time.                         |
+| `EXPIRE_TIME_IN_PAST`                 | The order's expire time is in the past.                         |
+| `MISSING_TRIGGER_TYPE`                | The order is missing a required trigger type.                   |
+| `MISSING_TRAILING_OFFSET`             | The order is missing a required trailing offset.                |
+| `MISSING_TRAILING_OFFSET_TYPE`        | The order is missing a required trailing offset type.           |
+| `UNSUPPORTED_TRAILING_OFFSET_TYPE`    | The order's trailing offset type is not supported.              |
+| `TRAILING_STOP_CALC_FAILED`           | The trailing stop trigger price could not be calculated.        |
+| `QUANTITY_CONVERSION_FAILED`          | The order quantity could not be converted for risk checks.      |
+| `INSTRUMENT_NOT_FOUND`                | The instrument was not found in the cache.                      |
+| `POSITION_NOT_FOUND`                  | The position for a reduce‑only order was not found.             |
+| `REDUCE_ONLY_WOULD_INCREASE_POSITION` | A reduce‑only order would increase the position.                |
+| `ORDER_LIST_INCOMPLETE`               | The order list is missing orders in the cache.                  |
+| `ORDER_LIST_DENIED`                   | The order was denied because its order list failed risk checks. |
+| `TRADING_HALTED`                      | Trading is halted; new orders are denied.                       |
+| `TRADING_STATE_REDUCING`              | Trading is reducing; the order would increase exposure.         |
+| `RATE_LIMIT_EXCEEDED`                 | The order submission rate limit was exceeded.                   |
+| `UNSUPPORTED_TIME_IN_FORCE`           | The order's time in force is not supported.                     |
+
+<!-- END GENERATED: order-denied-reasons -->
 
 ### Trading state
 

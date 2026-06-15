@@ -36,6 +36,7 @@ pub mod cancel_rejected;
 pub mod canceled;
 pub mod canceled_batch;
 pub mod denied;
+pub mod denied_reason;
 pub mod emulated;
 pub mod expired;
 pub mod filled;

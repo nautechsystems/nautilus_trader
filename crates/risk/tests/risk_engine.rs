@@ -284,7 +284,7 @@ fn test_submit_market_order_with_no_order_side_then_denies(
     assert_eq!(saved[0].event_type(), OrderEventType::Denied);
     assert_eq!(
         saved[0].message().unwrap(),
-        Ustr::from("invalid `OrderSide`, was NO_ORDER_SIDE")
+        Ustr::from("INVALID_ORDER_SIDE: NO_ORDER_SIDE")
     );
 }
 
@@ -344,7 +344,7 @@ fn test_submit_limit_order_with_no_order_side_then_denies(
     assert_eq!(saved[0].event_type(), OrderEventType::Denied);
     assert_eq!(
         saved[0].message().unwrap(),
-        Ustr::from("invalid `OrderSide`, was NO_ORDER_SIDE")
+        Ustr::from("INVALID_ORDER_SIDE: NO_ORDER_SIDE")
     );
 }
 
@@ -1385,7 +1385,7 @@ fn test_submit_order_reduce_only_order_with_custom_position_id_not_open_then_den
     );
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from("Position CUSTOM-001 not found for reduce-only order")
+        Ustr::from("POSITION_NOT_FOUND: position_id=CUSTOM-001")
     );
 }
 
@@ -1449,7 +1449,7 @@ fn test_submit_order_when_instrument_not_in_cache_then_denies(
     );
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from("Instrument for AUD/USD.SIM not found")
+        Ustr::from("INSTRUMENT_NOT_FOUND: instrument_id=AUD/USD.SIM")
     );
 }
 
@@ -2250,7 +2250,7 @@ fn test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
         Ustr::from(
-            "NOTIONAL_LESS_THAN_MIN_FOR_INSTRUMENT: min_notional=Money(1.00, USD), notional=Money(0.90, USD)"
+            "NOTIONAL_BELOW_MINIMUM: min_notional=Money(1.00, USD), notional=Money(0.90, USD)"
         )
     );
 }
@@ -2333,7 +2333,7 @@ fn test_submit_order_when_greater_than_max_notional_for_instrument_then_denies(
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
         Ustr::from(
-            "NOTIONAL_GREATER_THAN_MAX_FOR_INSTRUMENT: max_notional=Money(10000000.00, USD), notional=Money(10000001.00, USD)"
+            "NOTIONAL_EXCEEDS_MAXIMUM: max_notional=Money(10000000.00, USD), notional=Money(10000001.00, USD)"
         )
     );
 }
@@ -2868,7 +2868,7 @@ fn test_submit_order_when_trading_halted_then_denies_order(
     assert_eq!(first_message.event_type(), OrderEventType::Denied);
     assert_eq!(
         first_message.message().unwrap(),
-        Ustr::from("TradingState::HALTED")
+        Ustr::from("TRADING_HALTED")
     );
 }
 
@@ -2940,7 +2940,7 @@ fn test_submit_order_beyond_rate_limit_then_denies_order(
     assert_eq!(first_message.event_type(), OrderEventType::Denied);
     assert_eq!(
         first_message.message().unwrap(),
-        Ustr::from("Exceeded MAX_ORDER_SUBMIT_RATE")
+        Ustr::from("RATE_LIMIT_EXCEEDED")
     );
 }
 
@@ -3038,7 +3038,7 @@ fn test_submit_order_list_when_trading_halted_then_denies_orders(
 
     for event in &saved_process_messages {
         assert_eq!(event.event_type(), OrderEventType::Denied);
-        assert_eq!(event.message().unwrap(), Ustr::from("TradingState::HALTED"));
+        assert_eq!(event.message().unwrap(), Ustr::from("TRADING_HALTED"));
     }
 }
 
@@ -3117,7 +3117,7 @@ fn test_submit_order_list_denies_when_non_representative_instrument_missing(
         assert_eq!(event.event_type(), OrderEventType::Denied);
         let msg = event.message().unwrap();
         assert!(
-            msg.as_str().contains("no instrument found")
+            msg.as_str().contains("INSTRUMENT_NOT_FOUND")
                 && msg.as_str().contains(&instrument_b.id().to_string()),
             "unexpected denial reason: {msg}",
         );
@@ -3194,7 +3194,7 @@ fn test_submit_order_list_denies_when_representative_instrument_not_in_list(
         assert_eq!(event.event_type(), OrderEventType::Denied);
         assert_eq!(
             event.message().unwrap(),
-            Ustr::from("no representative instrument found for USD/JPY.SIM")
+            Ustr::from("INSTRUMENT_NOT_FOUND: instrument_id=USD/JPY.SIM")
         );
     }
 }
@@ -3686,7 +3686,7 @@ fn test_submit_bracket_order_when_instrument_not_in_cache_then_denies(
         assert_eq!(event.event_type(), OrderEventType::Denied);
         assert_eq!(
             event.message().unwrap(),
-            Ustr::from("no instrument found for AUD/USD.SIM")
+            Ustr::from("INSTRUMENT_NOT_FOUND: instrument_id=AUD/USD.SIM")
         );
     }
 }
@@ -4915,7 +4915,7 @@ fn test_submit_order_with_quote_quantity_still_enforces_min_notional(
             .unwrap()
             .message()
             .unwrap()
-            .contains("NOTIONAL_LESS_THAN_MIN_FOR_INSTRUMENT")
+            .contains("NOTIONAL_BELOW_MINIMUM")
     );
 }
 
@@ -5044,7 +5044,7 @@ fn test_submit_order_list_beyond_rate_limit_then_denies_all_orders(
     assert_eq!(first_message.event_type(), OrderEventType::Denied);
     assert_eq!(
         first_message.message().unwrap(),
-        Ustr::from("Exceeded MAX_ORDER_SUBMIT_RATE")
+        Ustr::from("RATE_LIMIT_EXCEEDED")
     );
 }
 
@@ -5179,10 +5179,7 @@ fn test_submit_order_list_beyond_rate_limit_denies_all_orders_in_list(
 
     for event in &saved_process_messages {
         assert_eq!(event.event_type(), OrderEventType::Denied);
-        assert_eq!(
-            event.message().unwrap(),
-            Ustr::from("Exceeded MAX_ORDER_SUBMIT_RATE")
-        );
+        assert_eq!(event.message().unwrap(), Ustr::from("RATE_LIMIT_EXCEEDED"));
     }
 }
 
