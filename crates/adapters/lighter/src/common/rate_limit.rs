@@ -30,6 +30,8 @@ use std::{
 use nautilus_network::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
 use ustr::Ustr;
 
+use crate::common::consts::INFLIGHT_MAX;
+
 /// Conservative Lighter REST rate limit for standard accounts.
 ///
 /// Lighter documents 60 REST requests per rolling minute for standard accounts. Builder and
@@ -47,6 +49,23 @@ pub const LIGHTER_REST_BUCKET: &str = "lighter:rest";
 /// [`LighterTxRateLimiter`] keyed on this so their combined rate stays under the
 /// single venue limit.
 pub const LIGHTER_TX_BUCKET: &str = "lighter:tx";
+
+/// Rate-limit bucket key for non-transaction WebSocket client messages.
+pub const LIGHTER_WS_MESSAGE_BUCKET: &str = "lighter:ws:messages";
+
+/// Lighter WebSocket client-message limit, excluding `sendTx` / `sendTxBatch`.
+///
+/// The venue documents 200 client messages per minute and 50 inflight messages.
+/// The adapter applies the 200/min rate and caps the token burst at 50 so
+/// subscription and unsubscribe floods cannot be emitted in a single burst.
+pub static LIGHTER_WS_MESSAGE_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_minute(NonZeroU32::new(200).expect("non-zero"))
+        .allow_burst(NonZeroU32::new(INFLIGHT_MAX as u32).expect("non-zero"))
+});
+
+/// Pre-interned rate-limit key for non-transaction WebSocket client messages.
+pub static LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from(LIGHTER_WS_MESSAGE_BUCKET)]);
 
 /// Per-account transaction rate limiter, shared across the HTTP and WebSocket
 /// `sendTx` paths so their combined rate honours the single venue bucket.
@@ -70,6 +89,15 @@ pub fn build_tx_rate_limiter(sendtx_per_min: Option<u32>) -> Arc<LighterTxRateLi
         None,
         vec![(Ustr::from(LIGHTER_TX_BUCKET), resolve_quota(sendtx_per_min))],
     ))
+}
+
+/// Builds keyed quotas for the WebSocket client's non-transaction message bucket.
+#[must_use]
+pub fn build_ws_rate_limit_quotas() -> Vec<(String, Quota)> {
+    vec![(
+        LIGHTER_WS_MESSAGE_BUCKET.to_string(),
+        *LIGHTER_WS_MESSAGE_QUOTA,
+    )]
 }
 
 /// Awaits transaction-bucket capacity before a `sendTx` on either transport.
@@ -110,5 +138,42 @@ mod tests {
             let limiter = build_tx_rate_limiter(sendtx);
             assert!(limiter.check_key(&key).is_ok());
         }
+    }
+
+    #[rstest]
+    fn test_ws_message_quota_uses_documented_limit_and_inflight_burst() {
+        let expected = Quota::per_minute(NonZeroU32::new(200).unwrap())
+            .allow_burst(NonZeroU32::new(INFLIGHT_MAX as u32).unwrap());
+        assert_eq!(*LIGHTER_WS_MESSAGE_QUOTA, expected);
+    }
+
+    #[rstest]
+    fn test_build_ws_rate_limit_quotas_uses_message_bucket() {
+        assert_eq!(
+            build_ws_rate_limit_quotas(),
+            vec![(
+                LIGHTER_WS_MESSAGE_BUCKET.to_string(),
+                *LIGHTER_WS_MESSAGE_QUOTA
+            )],
+        );
+        assert_eq!(
+            LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY.as_slice(),
+            [Ustr::from(LIGHTER_WS_MESSAGE_BUCKET)].as_slice(),
+        );
+    }
+
+    #[rstest]
+    fn test_ws_message_rate_limiter_enforces_inflight_burst() {
+        let quotas = build_ws_rate_limit_quotas()
+            .into_iter()
+            .map(|(key, quota)| (Ustr::from(&key), quota))
+            .collect();
+        let limiter = RateLimiter::new_with_quota(None, quotas);
+        let key = LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY[0];
+
+        for _ in 0..INFLIGHT_MAX {
+            assert!(limiter.check_key(&key).is_ok());
+        }
+        assert!(limiter.check_key(&key).is_err());
     }
 }

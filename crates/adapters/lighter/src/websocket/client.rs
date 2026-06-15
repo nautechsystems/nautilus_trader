@@ -43,6 +43,7 @@ use crate::{
     common::{
         consts::{HEARTBEAT_INTERVAL, RECONNECT_BASE_BACKOFF, RECONNECT_MAX_BACKOFF},
         enums::{LighterCandleResolution, LighterEnvironment},
+        rate_limit::build_ws_rate_limit_quotas,
         symbol::MarketRegistry,
         urls::lighter_ws_url,
     },
@@ -275,8 +276,15 @@ impl LighterWebSocketClient {
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
         };
-        let client =
-            WebSocketClient::connect(cfg, Some(message_handler), None, None, vec![], None).await?;
+        let client = WebSocketClient::connect(
+            cfg,
+            Some(message_handler),
+            None,
+            None,
+            build_ws_rate_limit_quotas(),
+            None,
+        )
+        .await?;
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();

@@ -483,11 +483,23 @@ client config:
   from reads. Unset keeps it at the standard 60 req/min, independent of `rest_quota_per_min`.
   Execution client only.
 
+Higher-tier REST quotas are weighted in the venue docs. The adapter REST limiter does not model
+per-endpoint weights; it paces one token per HTTP call through a shared REST bucket and a route
+bucket. When setting `rest_quota_per_min` above the standard default, use an effective request rate
+for the endpoint mix you plan to call, not the raw weighted quota. For example, Lighter documents
+`/api/v1/trades` and `/api/v1/recentTrades` with weight 600, so a 24,000 weighted req/min premium
+limit equates to 40 of those calls per minute.
+
 The venue meters transactions per account across both transports in one bucket. The execution
 client enforces `sendtx_quota_per_min` with a single shared limiter across both paths it submits
 on: the WebSocket `sendTx` path (single order submit, cancel, modify, leverage) and the HTTP
 `sendTx` / `sendTxBatch` endpoints (native batch submit/cancel and the startup integrator
 approval). Their combined rate therefore stays under the one venue limit.
+
+The WebSocket client separately paces non-transaction control frames such as subscribe,
+unsubscribe, and resubscribe requests at the venue's 200 messages/minute cap, with the burst
+capped at 50 messages to stay within Lighter's inflight-message ceiling. `sendTx` is not counted
+against that WebSocket client-message bucket.
 
 | Scope                                  | Venue limit                 | Adapter behavior                                     |
 |----------------------------------------|-----------------------------|------------------------------------------------------|
@@ -503,6 +515,15 @@ approval). Their combined rate therefore stays under the one venue limit.
 | Pending orders                         | 500/account, 16/market      | Venue limit; adapter does not pre‑count it.          |
 | Active orders                          | 1,500/account, 1,000/market | Venue limit; adapter does not pre‑count it.          |
 
+Common REST endpoint weights from the official docs:
+
+| Endpoint group                       | Weight | Adapter behavior                                |
+|--------------------------------------|--------|-------------------------------------------------|
+| `sendTx`, `sendTxBatch`, `nextNonce` | 6      | Tx calls use tx limiter; `nextNonce` uses REST. |
+| `accountInactiveOrders`              | 100    | Adapter counts one REST token per HTTP call.    |
+| `trades`, `recentTrades`             | 600    | Adapter counts one REST token per HTTP call.    |
+| Other endpoints                      | 300    | Adapter counts one REST token per HTTP call.    |
+
 | Endpoint or transport                  | Limit      | Notes                                              |
 |----------------------------------------|------------|----------------------------------------------------|
 | `/api/v1/trades`                       | 100 rows   | Adapter paginates reconciliation at this cap.      |
@@ -513,11 +534,11 @@ approval). Their combined rate therefore stays under the one venue limit.
 | WebSocket subscriptions / connection   | 500        | Venue limit.                                       |
 | WebSocket unique accounts / connection | 500        | Venue limit.                                       |
 | WebSocket connections / minute         | 80         | Venue limit.                                       |
-| WebSocket client messages / minute     | 200        | Excludes `sendTx` and `sendTxBatch`.               |
-| WebSocket inflight messages            | 50         | Excludes `sendTx` and `sendTxBatch`.               |
+| WebSocket client messages / minute     | 200        | Adapter paces non‑tx control frames at this cap.   |
+| WebSocket inflight messages            | 50         | Adapter caps non‑tx control‑frame burst at 50.     |
 | `sendTxBatch` batch size               | 15 txs     | Applies to native HTTP submit and cancel batches.  |
 | WebSocket keepalive                    | 2 minutes  | Adapter sends heartbeats every 30 seconds.         |
-| WebSocket outbound command queue       | 1000       | Adapter backpressure starts at this queue depth.   |
+| WebSocket outbound command queue       | Not capped | Paced before writes; no queue‑depth cap.           |
 
 Premium volume quota is a separate venue constraint for `L2CreateOrder`, `L2CancelAllOrders`,
 `L2ModifyOrder`, and `L2CreateGroupedOrders`. The adapter does not inspect remaining quota; use
@@ -560,10 +581,10 @@ Lighter signing requires all three credential values:
 Config values take precedence. When config fields are omitted, the adapter reads environment
 variables based on the selected environment.
 
-| Environment | API key index                   | API private key              | Account index                    |
-|-------------|---------------------------------|------------------------------|----------------------------------|
-| Mainnet     | `LIGHTER_API_KEY_INDEX`         | `LIGHTER_API_SECRET`         | `LIGHTER_ACCOUNT_INDEX`          |
-| Testnet     | `LIGHTER_TESTNET_API_KEY_INDEX` | `LIGHTER_TESTNET_API_SECRET` | `LIGHTER_TESTNET_ACCOUNT_INDEX`  |
+| Environment | API key index                   | API private key              | Account index                   |
+|-------------|---------------------------------|------------------------------|---------------------------------|
+| Mainnet     | `LIGHTER_API_KEY_INDEX`         | `LIGHTER_API_SECRET`         | `LIGHTER_ACCOUNT_INDEX`         |
+| Testnet     | `LIGHTER_TESTNET_API_KEY_INDEX` | `LIGHTER_TESTNET_API_SECRET` | `LIGHTER_TESTNET_ACCOUNT_INDEX` |
 
 Execution rejects incomplete credentials. The data client can run without credentials for public
 streams and public REST endpoints; authenticated data requests such as `request_trades` use the
@@ -573,19 +594,20 @@ same values when all three are available.
 
 ### Data client configuration options
 
-| Option                             | Default   | Description                                          |
-|------------------------------------|-----------|------------------------------------------------------|
-| `base_url_http`                    | `None`    | Optional REST URL override.                          |
-| `base_url_ws`                      | `None`    | Optional WebSocket URL override.                     |
-| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket.           |
-| `environment`                      | `Mainnet` | `LighterEnvironment::Mainnet` or `Testnet`.          |
-| `account_index`                    | `None`    | Lighter account index for authenticated REST data.   |
-| `api_key_index`                    | `None`    | Lighter API key slot for authenticated REST data.    |
-| `private_key`                      | `None`    | Hex private key for REST auth tokens.                |
-| `http_timeout_secs`                | `60`      | HTTP request timeout in seconds.                     |
-| `ws_timeout_secs`                  | `30`      | WebSocket connect timeout in seconds.                |
-| `update_instruments_interval_mins` | `60`      | Instrument metadata refresh interval in minutes.     |
-| `transport_backend`                | Default   | WebSocket transport backend.                         |
+| Option                             | Default   | Description                                         |
+|------------------------------------|-----------|-----------------------------------------------------|
+| `base_url_http`                    | `None`    | Optional REST URL override.                         |
+| `base_url_ws`                      | `None`    | Optional WebSocket URL override.                    |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket.          |
+| `environment`                      | `Mainnet` | `LighterEnvironment::Mainnet` or `Testnet`.         |
+| `account_index`                    | `None`    | Lighter account index for authenticated REST data.  |
+| `api_key_index`                    | `None`    | Lighter API key slot for authenticated REST data.   |
+| `private_key`                      | `None`    | Hex private key for REST auth tokens.               |
+| `http_timeout_secs`                | `60`      | HTTP request timeout in seconds.                    |
+| `ws_timeout_secs`                  | `30`      | WebSocket connect timeout in seconds.               |
+| `update_instruments_interval_mins` | `60`      | Instrument metadata refresh interval in minutes.    |
+| `rest_quota_per_min`               | `None`    | REST quota override; unset keeps 60 req/min.        |
+| `transport_backend`                | Default   | WebSocket transport backend.                        |
 
 ### Execution client configuration options
 
@@ -604,6 +626,8 @@ same values when all three are available.
 | `ws_timeout_secs`           | `30`      | WebSocket connect timeout in seconds.                      |
 | `active_markets`            | `[]`      | Lighter market IDs to poll during unscoped reconciliation. |
 | `market_order_slippage_bps` | `50`      | Slippage cap (bps) for `MARKET` / `STOP_MARKET` / `MIT`.   |
+| `rest_quota_per_min`        | `None`    | REST quota override; unset keeps 60 req/min.               |
+| `sendtx_quota_per_min`      | `None`    | Transaction quota override; unset keeps 60 req/min.        |
 | `transport_backend`         | Default   | WebSocket transport backend.                               |
 
 ### Configuration example

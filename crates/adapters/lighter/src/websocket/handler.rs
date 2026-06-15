@@ -58,6 +58,7 @@ use crate::{
             LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL,
         },
         enums::LighterCandleResolution,
+        rate_limit::LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY,
     },
     http::models::{LighterOrder, LighterPriceLevel, LighterTrade},
 };
@@ -275,7 +276,10 @@ impl FeedHandler {
                         let payload = payload.clone();
                         async move {
                             client
-                                .send_text(payload, None)
+                                .send_text(
+                                    payload,
+                                    Some(LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY.as_slice()),
+                                )
                                 .await
                                 .map_err(LighterWsError::Transport)
                         }
