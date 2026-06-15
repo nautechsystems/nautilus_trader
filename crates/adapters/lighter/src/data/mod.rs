@@ -153,13 +153,7 @@ impl LighterDataClient {
         let http_client =
             LighterHttpClient::from_raw_with_registry(raw_http, Arc::clone(&registry));
 
-        let ws_client = LighterWebSocketClient::new(
-            Some(config.ws_url()),
-            config.environment,
-            Arc::clone(&registry),
-            config.transport_backend,
-            config.proxy_url.clone(),
-        );
+        let ws_client = Self::create_ws_client(&config, Arc::clone(&registry));
 
         Ok(Self {
             clock,
@@ -188,6 +182,43 @@ impl LighterDataClient {
     #[must_use]
     pub fn has_credentials(&self) -> bool {
         self.credential.is_some()
+    }
+
+    fn create_ws_client(
+        config: &LighterDataClientConfig,
+        registry: Arc<MarketRegistry>,
+    ) -> LighterWebSocketClient {
+        LighterWebSocketClient::new(
+            Some(config.ws_url()),
+            config.environment,
+            registry,
+            config.transport_backend,
+            config.proxy_url.clone(),
+        )
+    }
+
+    fn take_ws_client(&mut self) -> LighterWebSocketClient {
+        std::mem::replace(
+            &mut self.ws_client,
+            Self::create_ws_client(&self.config, Arc::clone(&self.registry)),
+        )
+    }
+
+    fn spawn_ws_disconnect(&mut self) {
+        let ws_client = self.take_ws_client();
+        get_runtime().spawn(Self::disconnect_ws_client(ws_client));
+    }
+
+    async fn disconnect_ws_client(mut ws_client: LighterWebSocketClient) {
+        if let Err(e) = ws_client.disconnect().await {
+            log::warn!("Error disconnecting Lighter WebSocket client: {e}");
+        }
+    }
+
+    fn abort_tasks(&mut self) {
+        for task in self.tasks.drain(..) {
+            task.abort();
+        }
     }
 
     async fn bootstrap_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
@@ -655,6 +686,8 @@ impl DataClient for LighterDataClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Lighter data client {}", self.client_id);
         self.cancellation_token.cancel();
+        self.abort_tasks();
+        self.spawn_ws_disconnect();
         self.clear_instrument_status_subscriptions();
         self.clear_market_stats_subscriptions();
         self.is_connected.store(false, Ordering::Relaxed);
@@ -663,11 +696,13 @@ impl DataClient for LighterDataClient {
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting Lighter data client {}", self.client_id);
+        self.cancellation_token.cancel();
+        self.abort_tasks();
+        self.spawn_ws_disconnect();
         self.clear_instrument_status_subscriptions();
         self.clear_market_stats_subscriptions();
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
-        self.tasks.clear();
         Ok(())
     }
 
@@ -734,9 +769,8 @@ impl DataClient for LighterDataClient {
             }
         }
 
-        if let Err(e) = self.ws_client.disconnect().await {
-            log::warn!("Error disconnecting Lighter WebSocket client: {e}");
-        }
+        let ws_client = self.take_ws_client();
+        Self::disconnect_ws_client(ws_client).await;
 
         self.instruments.store(AHashMap::new());
         self.instrument_statuses.clear();
@@ -1582,6 +1616,16 @@ mod tests {
         common::enums::{LighterFundingResolution, LighterProductType},
         http::query::{LighterFundingsQuery, LighterRecentTradesQuery},
     };
+
+    struct DropSignal(Option<tokio::sync::oneshot::Sender<()>>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            if let Some(sender) = self.0.take() {
+                let _ = sender.send(());
+            }
+        }
+    }
 
     const HTTP_ORDER_BOOK_DETAILS: &str =
         include_str!("../../test_data/http_order_book_details.json");
@@ -2523,6 +2567,32 @@ mod tests {
         for task in client.tasks.drain(..) {
             task.await.unwrap();
         }
+    }
+
+    #[tokio::test]
+    async fn test_reset_aborts_registered_tasks_before_rotating_token() {
+        let (mut client, _receiver) = create_data_client_with_receiver_for_test();
+        let old_token = client.cancellation_token.clone();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
+
+        let handle = get_runtime().spawn(async move {
+            let _drop_signal = DropSignal(Some(dropped_tx));
+            let _ = started_tx.send(());
+            std::future::pending::<()>().await;
+        });
+        client.tasks.push(handle);
+        started_rx.await.expect("registered task started");
+
+        client.reset().expect("reset");
+
+        assert!(old_token.is_cancelled());
+        assert!(client.tasks.is_empty());
+        assert!(!client.cancellation_token.is_cancelled());
+        tokio::time::timeout(Duration::from_secs(2), dropped_rx)
+            .await
+            .expect("registered task was not aborted")
+            .expect("drop signal sender dropped");
     }
 
     // Tests that observe `has_credentials()` semantics under controlled env
