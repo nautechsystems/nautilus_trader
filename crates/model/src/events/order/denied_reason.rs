@@ -580,7 +580,12 @@ mod tests {
         const CODE_HEADER: &str = "Code";
         const DESC_HEADER: &str = "Description";
 
-        let rows: Vec<(String, &'static str)> = OrderDeniedCode::iter()
+        // Sort codes alphabetically so families (UNSUPPORTED_, MISSING_, ...) cluster in the
+        // table; the enum itself stays in declaration order to track the rollout phases.
+        let mut codes: Vec<OrderDeniedCode> = OrderDeniedCode::iter().collect();
+        codes.sort_by_key(ToString::to_string);
+        let rows: Vec<(String, &'static str)> = codes
+            .iter()
             .map(|code| (format!("`{code}`"), code.description()))
             .collect();
         let code_w = rows
