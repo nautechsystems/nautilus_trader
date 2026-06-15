@@ -40,7 +40,7 @@ pub use data::{DataResponse, SubscribeCommand, UnsubscribeCommand};
 pub use execution::ExecutionReport;
 
 // TODO: Refine this to reduce disparity between enum sizes
-#[expect(
+#[allow(
     clippy::large_enum_variant,
     reason = "event enum keeps all data variants in one routing type"
 )]

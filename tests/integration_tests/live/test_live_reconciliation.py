@@ -321,6 +321,63 @@ async def test_missed_fill_reconciliation_scenario(
 
 
 @pytest.mark.asyncio
+async def test_fill_reconciliation_skips_client_order_id_mismatch(
+    exec_engine,
+    cache,
+    clock,
+    account_id,
+    order_factory,
+):
+    # Arrange
+    order = order_factory.limit(
+        instrument_id=AUDUSD_SIM.id,
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(2),
+        price=AUDUSD_SIM.make_price(1.00000),
+    )
+    cache.add_order(order)
+
+    submitted_event = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted_event)
+    exec_engine.process(submitted_event)
+
+    venue_order_id = VenueOrderId("V-COLLIDED-001")
+    accepted_event = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        venue_order_id=venue_order_id,
+    )
+    order.apply(accepted_event)
+    exec_engine.process(accepted_event)
+    cache.add_venue_order_id(order.client_order_id, venue_order_id, overwrite=True)
+
+    fill_report = FillReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=ClientOrderId("O-TRUE-OWNER-001"),
+        venue_order_id=venue_order_id,
+        trade_id=TradeId("T-COLLIDED-001"),
+        order_side=OrderSide.BUY,
+        last_qty=Quantity.from_int(1),
+        last_px=Price.from_str("1.00000"),
+        commission=Money(1.00, USD),
+        liquidity_side=LiquiditySide.TAKER,
+        report_id=UUID4(),
+        ts_event=clock.timestamp_ns(),
+        ts_init=clock.timestamp_ns(),
+    )
+
+    # Act
+    result = exec_engine._reconcile_fill_report_single(fill_report)
+
+    # Assert
+    assert result is True
+    assert order.status == OrderStatus.ACCEPTED
+    assert order.filled_qty == Quantity.from_int(0)
+    assert TradeId("T-COLLIDED-001") not in order.trade_ids
+
+
+@pytest.mark.asyncio
 async def test_order_state_discrepancy_reconciliation(
     exec_engine,
     exec_client,

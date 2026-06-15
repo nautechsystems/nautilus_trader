@@ -49,10 +49,10 @@ pub(crate) fn should_use_avg_fill_price(avg_fill_price: f64, instrument_id: &Ins
 }
 
 pub(crate) fn ib_venue_order_id(order_id: i32, perm_id: i64) -> VenueOrderId {
-    if order_id != 0 {
-        VenueOrderId::new(order_id.to_string())
-    } else {
+    if perm_id != 0 {
         VenueOrderId::new(format!("PERM-{perm_id}"))
+    } else {
+        VenueOrderId::new(order_id.to_string())
     }
 }
 
@@ -692,9 +692,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_ib_venue_order_id_prefers_order_id_and_falls_back_to_perm_id() {
-        assert_eq!(ib_venue_order_id(123, 456).to_string(), "123");
-        assert_eq!(ib_venue_order_id(0, 456).to_string(), "PERM-456");
+    fn test_ib_venue_order_id_prefers_perm_id_and_falls_back_to_order_id() {
+        assert_eq!(ib_venue_order_id(123, 456).to_string(), "PERM-456");
+        assert_eq!(ib_venue_order_id(123, 0).to_string(), "123");
     }
 
     #[rstest]
