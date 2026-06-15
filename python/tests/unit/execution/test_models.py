@@ -28,6 +28,7 @@ from nautilus_trader.execution import MarketHoursFillModel
 from nautilus_trader.execution import OneTickSlippageFillModel
 from nautilus_trader.execution import PerContractFeeModel
 from nautilus_trader.execution import ProbabilisticFillModel
+from nautilus_trader.execution import ProbabilityPriceFeeModel
 from nautilus_trader.execution import SizeAwareFillModel
 from nautilus_trader.execution import StaticLatencyModel
 from nautilus_trader.execution import ThreeTierFillModel
@@ -163,6 +164,12 @@ def test_maker_taker_fee_model():
 
 def test_per_contract_fee_model():
     model = PerContractFeeModel(commission=Money.from_str("1.25 USD"))
+
+    assert model is not None
+
+
+def test_probability_price_fee_model():
+    model = ProbabilityPriceFeeModel()
 
     assert model is not None
 

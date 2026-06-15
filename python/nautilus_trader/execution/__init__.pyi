@@ -19,6 +19,7 @@ __all__ = [
     "OrderEmulatorConfig",
     "PerContractFeeModel",
     "ProbabilisticFillModel",
+    "ProbabilityPriceFeeModel",
     "SizeAwareFillModel",
     "StaticLatencyModel",
     "ThreeTierFillModel",
@@ -145,6 +146,10 @@ class ProbabilisticFillModel:
     def __init__(
         self, prob_fill_on_limit: float, prob_slippage: float, random_seed: int | None = ...
     ) -> None: ...
+
+@typing.final
+class ProbabilityPriceFeeModel:
+    def __init__(self) -> None: ...
 
 @typing.final
 class SizeAwareFillModel:
