@@ -610,7 +610,7 @@ The adapter supports the following data subscriptions. All perpetual data types
 
 | Data type         | Sub. | Snapshot | Hist. | Nautilus type                 | Notes                                 |
 |-------------------|------|----------|-------|-------------------------------|---------------------------------------|
-| Trade ticks       | ✓    | -        | -     | `TradeTick`                   | WebSocket trades.                     |
+| Trade ticks       | ✓    | -        | ✓     | `TradeTick`                   | WebSocket trades; `recentTrades`.     |
 | Quote ticks       | ✓    | -        | -     | `QuoteTick`                   | Best bid/offer.                       |
 | Order book deltas | ✓    | ✓        | -     | `OrderBookDelta`              | L2 snapshots.                         |
 | Order book depth  | ✓    | -        | -     | `OrderBookDepth10`            | Top-10 L2 snapshots.                  |
@@ -623,9 +623,15 @@ The adapter supports the following data subscriptions. All perpetual data types
 | All dex contexts  | ✓    | -        | -     | `HyperliquidAllDexsAssetCtxs` | Custom data from `allDexsAssetCtxs`.  |
 
 :::note
-Historical quote and trade requests are not supported. Hyperliquid does not publish
-a public trade-tape endpoint; real-time trades are available via the WebSocket
-`trades` channel. `request_trades` returns an explicit error.
+Historical quote requests are not supported. Historical trade requests use the
+`recentTrades` info endpoint, which returns a recent snapshot of public trades
+(newest first) with no time range. `request_trades` filters that snapshot to the
+requested `[start, end]` window and applies `limit` by keeping the most recent
+trades. When the request reaches below the snapshot's oldest trade, the adapter
+logs a warning and serves the available subset (or an empty response). The
+endpoint depends on the Hyperliquid indexer: self-hosted `/info` nodes return
+HTTP 422, which the adapter treats as no coverage and answers with an empty
+response. Real-time trades remain available via the WebSocket `trades` channel.
 :::
 
 ### Order book precision controls

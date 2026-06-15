@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added Binance order-list submission in Rust
 - Added cache order index crash-recovery restore for Redis and Postgres adapters (Rust)
 - Added Hyperliquid builder attribution opt-out
+- Added Hyperliquid historical trade requests
 - Added Hyperliquid minimum notional handling
 - Added Polymarket RTDS custom data subscriptions (#4214), thanks @graceyangfan
 - Added Postgres cache position event-log persistence and restart recovery (Rust)

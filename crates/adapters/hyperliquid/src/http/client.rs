@@ -86,9 +86,9 @@ use crate::{
             HyperliquidExecPlaceOrderRequest, HyperliquidExecSplitOutcomeParams,
             HyperliquidExecTif, HyperliquidExecTpSl, HyperliquidExecTriggerParams,
             HyperliquidExecUserOutcomeOp, HyperliquidFills, HyperliquidFundingHistoryEntry,
-            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus, OutcomeMeta, PerpDex,
-            PerpMeta, PerpMetaAndCtxs, RESPONSE_STATUS_OK, SpotClearinghouseState, SpotMeta,
-            SpotMetaAndCtxs,
+            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus, HyperliquidRecentTrade,
+            OutcomeMeta, PerpDex, PerpMeta, PerpMetaAndCtxs, RESPONSE_STATUS_OK,
+            SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
         },
         parse::{
             HyperliquidInstrumentDef, instruments_from_defs_owned, parse_fill_report,
@@ -381,6 +381,16 @@ impl HyperliquidRawHttpClient {
     /// Get L2 order book for a coin.
     pub async fn info_l2_book(&self, coin: &str) -> Result<HyperliquidL2Book> {
         let request = InfoRequest::l2_book(coin);
+        let response = self.send_info_request(&request).await?;
+        serde_json::from_value(response).map_err(Error::Serde)
+    }
+
+    /// Get recent public trades for a coin.
+    ///
+    /// Returns a recent snapshot (newest first) with no time range. Depends on the
+    /// Hyperliquid indexer: self-hosted `/info` nodes return HTTP 422.
+    pub async fn info_recent_trades(&self, coin: &str) -> Result<Vec<HyperliquidRecentTrade>> {
+        let request = InfoRequest::recent_trades(coin);
         let response = self.send_info_request(&request).await?;
         serde_json::from_value(response).map_err(Error::Serde)
     }
@@ -1668,6 +1678,11 @@ impl HyperliquidHttpClient {
     /// Get L2 order book for a coin.
     pub async fn info_l2_book(&self, coin: &str) -> Result<HyperliquidL2Book> {
         self.inner.info_l2_book(coin).await
+    }
+
+    /// Get recent public trades for a coin.
+    pub async fn info_recent_trades(&self, coin: &str) -> Result<Vec<HyperliquidRecentTrade>> {
+        self.inner.info_recent_trades(coin).await
     }
 
     /// Get user fills (trading history).

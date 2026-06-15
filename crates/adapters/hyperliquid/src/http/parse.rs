@@ -16,11 +16,12 @@
 use anyhow::Context;
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
+    data::TradeTick,
     enums::{
-        AssetClass, CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
+        AggressorSide, AssetClass, CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
         PositionSideSpecified, TimeInForce, TriggerType,
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     instruments::{BinaryOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Money, Price, Quantity},
@@ -31,8 +32,8 @@ use serde_json::{Value, json};
 use ustr::Ustr;
 
 use super::models::{
-    AssetPosition, HyperliquidFill, OutcomeMarket, OutcomeMeta, OutcomeQuestion, PerpMeta,
-    SpotBalance, SpotMeta,
+    AssetPosition, HyperliquidFill, HyperliquidRecentTrade, OutcomeMarket, OutcomeMeta,
+    OutcomeQuestion, PerpMeta, SpotBalance, SpotMeta,
 };
 use crate::{
     common::{
@@ -43,7 +44,7 @@ use crate::{
         },
         parse::{
             format_outcome_nautilus_symbol, is_conditional_order_data, make_fill_trade_id,
-            parse_trigger_order_type,
+            millis_to_nanos, parse_trigger_order_type,
         },
         types::HyperliquidAssetId,
     },
@@ -1062,6 +1063,53 @@ pub fn parse_order_status_report_from_basic(
     Ok(report)
 }
 
+/// Parses a `recentTrades` info entry into a [`TradeTick`].
+///
+/// Mirrors the field mapping of the WebSocket trade parser
+/// [`parse_ws_trade_tick`](crate::websocket::parse::parse_ws_trade_tick): both the
+/// `trades` channel and the `recentTrades` endpoint carry the same
+/// `px`/`sz`/`side`/`time`/`tid` fields. For this historical snapshot `ts_init` is
+/// set to the trade's `ts_event` (venue time), matching the other request
+/// converters so the data engine's window trimming keeps bounded requests.
+///
+/// # Errors
+///
+/// Returns an error if the price, size, trade identifier, or timestamp is invalid.
+pub fn parse_recent_trade(
+    trade: &HyperliquidRecentTrade,
+    instrument: &InstrumentAny,
+) -> anyhow::Result<TradeTick> {
+    let price_decimal: Decimal = trade
+        .px
+        .parse()
+        .with_context(|| format!("Failed to parse price from '{}'", trade.px))?;
+    let price = Price::from_decimal_dp(price_decimal, instrument.price_precision())
+        .with_context(|| format!("Failed to create price from '{}'", trade.px))?;
+
+    let size_decimal: Decimal = trade
+        .sz
+        .parse()
+        .with_context(|| format!("Failed to parse size from '{}'", trade.sz))?;
+    let size = Quantity::from_decimal_dp(size_decimal.abs(), instrument.size_precision())
+        .with_context(|| format!("Failed to create size from '{}'", trade.sz))?;
+
+    let aggressor = AggressorSide::from(trade.side);
+    let trade_id = TradeId::new_checked(trade.tid.to_string())
+        .context("invalid trade identifier in Hyperliquid recent trade")?;
+    let ts_event = millis_to_nanos(trade.time)?;
+
+    TradeTick::new_checked(
+        instrument.id(),
+        price,
+        size,
+        aggressor,
+        trade_id,
+        ts_event,
+        ts_event,
+    )
+    .context("failed to construct TradeTick from Hyperliquid recent trade")
+}
+
 /// Parse Hyperliquid fill to FillReport.
 ///
 /// # Errors
@@ -1344,6 +1392,55 @@ mod tests {
         assert_eq!(atom.base, "ATOM");
         assert_eq!(atom.size_decimals, 2);
         assert_eq!(atom.max_leverage, Some(5));
+    }
+
+    #[rstest]
+    fn test_parse_recent_trade() {
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+        let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+
+        let trade = HyperliquidRecentTrade {
+            coin: Ustr::from("BTC"),
+            side: HyperliquidSide::Sell,
+            px: "50000.0".to_string(),
+            sz: "0.5".to_string(),
+            time: 1_769_916_000_000,
+            tid: 987_654_321,
+        };
+
+        let tick = parse_recent_trade(&trade, &instrument).unwrap();
+
+        assert_eq!(tick.instrument_id, instrument.id());
+        assert_eq!(tick.price.as_decimal(), dec!(50000));
+        assert_eq!(tick.size.as_decimal(), dec!(0.5));
+        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.trade_id.to_string(), "987654321");
+        assert_eq!(
+            tick.ts_event,
+            UnixNanos::from(1_769_916_000_000 * 1_000_000)
+        );
+        // Historical trades carry ts_init == ts_event so the engine's window
+        // trimming (by ts_init) keeps bounded requests.
+        assert_eq!(tick.ts_init, tick.ts_event);
+    }
+
+    #[rstest]
+    fn test_parse_recent_trade_rejects_invalid_price() {
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+        let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+
+        let trade = HyperliquidRecentTrade {
+            coin: Ustr::from("BTC"),
+            side: HyperliquidSide::Buy,
+            px: "not-a-number".to_string(),
+            sz: "0.5".to_string(),
+            time: 1_769_916_000_000,
+            tid: 1,
+        };
+
+        assert!(parse_recent_trade(&trade, &instrument).is_err());
     }
 
     #[rstest]

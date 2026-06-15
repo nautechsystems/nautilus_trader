@@ -460,6 +460,26 @@ pub struct HyperliquidFundingHistoryEntry {
     pub time: u64,
 }
 
+/// Represents a single trade from the `recentTrades` info endpoint.
+///
+/// The endpoint returns a recent snapshot of public trades (newest first) and
+/// shares the field layout of the `trades` WebSocket channel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HyperliquidRecentTrade {
+    /// Coin symbol (raw Hyperliquid name, e.g. `"BTC"`).
+    pub coin: Ustr,
+    /// Aggressor side: `"A"` (ask/sell) or `"B"` (bid/buy).
+    pub side: HyperliquidSide,
+    /// Trade price as a decimal string.
+    pub px: String,
+    /// Trade size as a decimal string.
+    pub sz: String,
+    /// Trade timestamp in milliseconds.
+    pub time: u64,
+    /// Venue trade identifier.
+    pub tid: u64,
+}
+
 /// Represents an individual fill from user fills.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HyperliquidFill {
@@ -734,6 +754,30 @@ mod tests {
 
         assert!(entry.premium.is_none());
         assert_eq!(entry.funding_rate, "0.0000033");
+    }
+
+    #[rstest]
+    fn test_recent_trade_deserializes() {
+        // The venue payload carries `hash`/`users` fields the model ignores.
+        let json = r#"{
+            "coin": "BTC",
+            "side": "B",
+            "px": "104250.0",
+            "sz": "0.0123",
+            "hash": "0xabc",
+            "time": 1769916000000,
+            "tid": 987654321,
+            "users": ["0xbuyer", "0xseller"]
+        }"#;
+
+        let trade: HyperliquidRecentTrade = serde_json::from_str(json).unwrap();
+
+        assert_eq!(trade.coin.as_str(), "BTC");
+        assert_eq!(trade.side, HyperliquidSide::Buy);
+        assert_eq!(trade.px, "104250.0");
+        assert_eq!(trade.sz, "0.0123");
+        assert_eq!(trade.time, 1769916000000);
+        assert_eq!(trade.tid, 987654321);
     }
 
     #[rstest]
