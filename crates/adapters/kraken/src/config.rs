@@ -59,6 +59,27 @@ pub struct KrakenDataClientConfig {
     pub timeout_secs: u64,
     #[builder(default = 30)]
     pub heartbeat_interval_secs: u64,
+    /// Idle timeout (milliseconds) for the spot v2 WebSocket.
+    ///
+    /// If no application data (any text or binary frame) is received within this
+    /// window, the connection is treated as dead and the client reconnects and
+    /// resubscribes. This recovers from a backend that acknowledges a
+    /// subscription but never attaches the data fan-out: the socket stays open
+    /// with no close frame or transport error, so nothing else detects it.
+    ///
+    /// Kraken sends a `heartbeat` text frame once per second while at least one
+    /// subscription is active, so a live subscribed connection resets this timer
+    /// well within the window. Note the client's keepalive `ping` is answered
+    /// with a `pong` *text* frame, which also resets the timer roughly every
+    /// `heartbeat_interval_secs`; the default below is therefore kept short
+    /// enough to rely on the 1/s heartbeats rather than the keepalive, which
+    /// assumes the connection carries at least one subscription. A connection
+    /// held open without any subscription should disable this (`0`) or raise it
+    /// above `heartbeat_interval_secs`.
+    ///
+    /// `0` disables the idle timeout.
+    #[builder(default = 10_000)]
+    pub ws_idle_timeout_ms: u64,
     pub max_requests_per_second: Option<u32>,
     #[builder(default)]
     pub transport_backend: TransportBackend,
@@ -281,6 +302,19 @@ validate_l3_checksum = false
         assert_eq!(config.environment, KrakenEnvironment::Live);
         assert_eq!(config.timeout_secs, 45);
         assert!(!config.validate_l3_checksum);
+    }
+
+    #[rstest]
+    fn test_data_config_ws_idle_timeout_default() {
+        let config = KrakenDataClientConfig::default();
+        assert_eq!(config.ws_idle_timeout_ms, 10_000);
+    }
+
+    #[rstest]
+    fn test_data_config_ws_idle_timeout_override() {
+        let config: KrakenDataClientConfig = toml::from_str("ws_idle_timeout_ms = 0").unwrap();
+
+        assert_eq!(config.ws_idle_timeout_ms, 0);
     }
 
     #[rstest]

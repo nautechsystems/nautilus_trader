@@ -161,6 +161,9 @@ impl KrakenSpotExecutionClient {
             proxy_url: config.proxy_url.clone(),
             timeout_secs: config.timeout_secs,
             heartbeat_interval_secs: config.heartbeat_interval_secs,
+            // The authenticated order-routing WS keeps its prior behavior (no
+            // idle timeout); issue #4255 concerns the public spot data WS.
+            ws_idle_timeout_ms: 0,
             max_requests_per_second: config.max_requests_per_second,
             transport_backend: config.transport_backend,
         };
