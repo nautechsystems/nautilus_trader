@@ -28,7 +28,7 @@ use thiserror::Error;
 
 use crate::{
     enums::{OrderSide, TimeInForce, TrailingOffsetType},
-    identifiers::{InstrumentId, OrderListId, PositionId},
+    identifiers::{ClientId, InstrumentId, OrderListId, PositionId, Venue},
     types::{Money, Quantity},
 };
 
@@ -213,6 +213,40 @@ pub enum OrderDeniedReason {
     /// The order submission rate limit was exceeded.
     #[error("RATE_LIMIT_EXCEEDED")]
     RateLimitExceeded,
+    /// No execution client was found for the routed command.
+    #[error("NO_EXECUTION_CLIENT: client_id={client_id:?}, routing_context={routing_context}")]
+    NoExecutionClient {
+        /// The explicitly requested client, if one was supplied.
+        client_id: Option<ClientId>,
+        /// The routing context used to look up an execution client.
+        routing_context: String,
+    },
+    /// The execution client does not handle the order venue.
+    #[error(
+        "CLIENT_VENUE_MISMATCH: client_id={client_id}, order_venue={order_venue}, client_venue={client_venue}"
+    )]
+    ClientVenueMismatch {
+        /// The routed execution client.
+        client_id: ClientId,
+        /// The order venue.
+        order_venue: Venue,
+        /// The execution client's venue.
+        client_venue: Venue,
+    },
+    /// Submitting the order to the execution client failed.
+    #[error("SUBMIT_FAILED: {detail}")]
+    SubmitFailed {
+        /// The underlying submission error.
+        detail: String,
+    },
+    /// The supplied position ID is invalid for the order submission.
+    #[error("INVALID_POSITION_ID: position_id={position_id}, detail={detail}")]
+    InvalidPositionId {
+        /// The invalid position ID.
+        position_id: PositionId,
+        /// The validation failure detail.
+        detail: String,
+    },
     /// The order's time in force is not supported.
     #[error("UNSUPPORTED_TIME_IN_FORCE: {0}")]
     UnsupportedTimeInForce(TimeInForce),
@@ -278,6 +312,12 @@ impl OrderDeniedCode {
             Self::TradingHalted => "Trading is halted; new orders are denied.",
             Self::TradingStateReducing => "Trading is reducing; the order would increase exposure.",
             Self::RateLimitExceeded => "The order submission rate limit was exceeded.",
+            Self::NoExecutionClient => "No execution client was found for the routed command.",
+            Self::ClientVenueMismatch => "The execution client does not handle the order venue.",
+            Self::SubmitFailed => "Submitting the order to the execution client failed.",
+            Self::InvalidPositionId => {
+                "The supplied position ID is invalid for the order submission."
+            }
             Self::UnsupportedTimeInForce => "The order's time in force is not supported.",
         }
     }
@@ -355,6 +395,40 @@ mod tests {
         assert_eq!(
             reducing.to_string(),
             "TRADING_STATE_REDUCING: order_side=BUY, instrument_id=AUD/USD.SIM"
+        );
+    }
+
+    #[rstest]
+    fn renders_routing_messages() {
+        let missing_client = OrderDeniedReason::NoExecutionClient {
+            client_id: Some(ClientId::from("SIM")),
+            routing_context: "venue=SIM".to_string(),
+        };
+        let mismatch = OrderDeniedReason::ClientVenueMismatch {
+            client_id: ClientId::from("IB"),
+            order_venue: Venue::from("XCME"),
+            client_venue: Venue::from("IB"),
+        };
+        let submit_failed = OrderDeniedReason::SubmitFailed {
+            detail: "transport closed".to_string(),
+        };
+        let invalid_position_id = OrderDeniedReason::InvalidPositionId {
+            position_id: PositionId::from("P-1"),
+            detail: "not valid for NETTING OMS".to_string(),
+        };
+
+        assert_eq!(
+            missing_client.to_string(),
+            "NO_EXECUTION_CLIENT: client_id=Some(\"SIM\"), routing_context=venue=SIM"
+        );
+        assert_eq!(
+            mismatch.to_string(),
+            "CLIENT_VENUE_MISMATCH: client_id=IB, order_venue=XCME, client_venue=IB"
+        );
+        assert_eq!(submit_failed.to_string(), "SUBMIT_FAILED: transport closed");
+        assert_eq!(
+            invalid_position_id.to_string(),
+            "INVALID_POSITION_ID: position_id=P-1, detail=not valid for NETTING OMS"
         );
     }
 
@@ -450,6 +524,22 @@ mod tests {
                 instrument_id: InstrumentId::from("AUD/USD.SIM"),
             },
             OrderDeniedReason::RateLimitExceeded,
+            OrderDeniedReason::NoExecutionClient {
+                client_id: Some(ClientId::from("SIM")),
+                routing_context: "venue=SIM".to_string(),
+            },
+            OrderDeniedReason::ClientVenueMismatch {
+                client_id: ClientId::from("IB"),
+                order_venue: Venue::from("XCME"),
+                client_venue: Venue::from("IB"),
+            },
+            OrderDeniedReason::SubmitFailed {
+                detail: "boom".to_string(),
+            },
+            OrderDeniedReason::InvalidPositionId {
+                position_id: PositionId::from("P-1"),
+                detail: "boom".to_string(),
+            },
             OrderDeniedReason::UnsupportedTimeInForce(TimeInForce::Gtd),
         ];
 

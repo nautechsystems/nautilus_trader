@@ -175,8 +175,9 @@ standardized reason code. If a modify-time risk check fails, it generates an
 
 A local denial (`OrderDenied`) carries a standardized `CATEGORY_CONDITION` reason code followed by
 `key=value` context, for example `QUANTITY_EXCEEDS_MAXIMUM: effective_quantity=15, max_quantity=10`.
-These codes are the source of truth for locally-denied orders; venue rejections (`OrderRejected`)
-pass through the venue's own text unchanged.
+The table covers local denials emitted by the risk and execution engines. These codes are the
+source of truth for locally-denied orders; venue rejections (`OrderRejected`) pass through the
+venue's own text unchanged.
 
 <!-- Generated from the `OrderDeniedReason` enum (crates/model). Regenerate with: cargo test -p nautilus-model regenerate_order_denied_reasons_doc -- --ignored -->
 <!-- BEGIN GENERATED: order-denied-reasons -->
@@ -210,6 +211,10 @@ pass through the venue's own text unchanged.
 | `TRADING_HALTED`                      | Trading is halted; new orders are denied.                       |
 | `TRADING_STATE_REDUCING`              | Trading is reducing; the order would increase exposure.         |
 | `RATE_LIMIT_EXCEEDED`                 | The order submission rate limit was exceeded.                   |
+| `NO_EXECUTION_CLIENT`                 | No execution client was found for the routed command.           |
+| `CLIENT_VENUE_MISMATCH`               | The execution client does not handle the order venue.           |
+| `SUBMIT_FAILED`                       | Submitting the order to the execution client failed.            |
+| `INVALID_POSITION_ID`                 | The supplied position ID is invalid for the order submission.   |
 | `UNSUPPORTED_TIME_IN_FORCE`           | The order's time in force is not supported.                     |
 
 <!-- END GENERATED: order-denied-reasons -->

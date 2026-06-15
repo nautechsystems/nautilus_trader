@@ -126,6 +126,7 @@ Released on TBD (UTC).
 - Improved OTO contingency position ID recovery to persist re-indexed assignments (Rust)
 - Improved Polymarket data client module structure (#4260), thanks @graceyangfan
 - Optimized `Cache` query filtering to scale with open orders and positions (#4242), thanks for reporting @magnified103
+- Standardized Rust `OrderDenied` reason codes
 - Upgraded Interactive Brokers Rust adapter to `ibapi` 3.0.1 (#4209), thanks @faysou
 - Upgraded PyO3 to 0.29.0 with a temporary `pyo3-stub-gen` bridge before v2 removes legacy stubs
 

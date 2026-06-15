@@ -66,9 +66,9 @@ use nautilus_model::{
         TrailingOffsetType,
     },
     events::{
-        OrderAccepted, OrderCanceled, OrderDenied, OrderEvent, OrderEventAny, OrderExpired,
-        OrderFilled, OrderInitialized, PositionChanged, PositionClosed, PositionEvent,
-        PositionOpened,
+        OrderAccepted, OrderCanceled, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny,
+        OrderExpired, OrderFilled, OrderInitialized, PositionChanged, PositionClosed,
+        PositionEvent, PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, Venue,
@@ -1952,10 +1952,11 @@ impl ExecutionEngine {
                 command.client_id(),
             );
 
-            let reason = format!(
-                "No execution client found for client_id={:?}, {routing_context}",
-                command.client_id(),
-            );
+            let reason = OrderDeniedReason::NoExecutionClient {
+                client_id: command.client_id(),
+                routing_context,
+            }
+            .to_string();
 
             match command {
                 TradingCommand::SubmitOrder(cmd) => {
@@ -2107,12 +2108,13 @@ impl ExecutionEngine {
         let client_venue = client.venue();
         if !client.handles_order_venue(order_venue) {
             let client_id = client.client_id();
-            self.deny_order(
-                &order,
-                &format!(
-                    "Client {client_id} does not handle order venue {order_venue} (client venue {client_venue})"
-                ),
-            );
+            let reason = OrderDeniedReason::ClientVenueMismatch {
+                client_id,
+                order_venue,
+                client_venue,
+            }
+            .to_string();
+            self.deny_order(&order, &reason);
             return;
         }
 
@@ -2122,7 +2124,7 @@ impl ExecutionEngine {
             cmd.position_id,
             client,
         ) {
-            self.deny_order(&order, &reason);
+            self.deny_order(&order, &reason.to_string());
             return;
         }
 
@@ -2148,7 +2150,13 @@ impl ExecutionEngine {
         }
 
         if let Err(e) = client.submit_order(cmd) {
-            self.deny_order(&order, &format!("failed-to-submit-order-to-client: {e}"));
+            self.deny_order(
+                &order,
+                &OrderDeniedReason::SubmitFailed {
+                    detail: e.to_string(),
+                }
+                .to_string(),
+            );
         }
     }
 
@@ -2194,11 +2202,13 @@ impl ExecutionEngine {
         }
 
         if orders.len() != cmd.order_list.client_order_ids.len() {
+            let reason = OrderDeniedReason::OrderListIncomplete {
+                order_list_id: cmd.order_list.id,
+            }
+            .to_string();
+
             for order in &orders {
-                self.deny_order(
-                    order,
-                    &format!("Incomplete order list: missing orders in cache for {cmd}"),
-                );
+                self.deny_order(order, &reason);
             }
             return;
         }
@@ -2207,14 +2217,15 @@ impl ExecutionEngine {
         let client_venue = client.venue();
         if !client.handles_order_venue(order_list_venue) {
             let client_id = client.client_id();
+            let reason = OrderDeniedReason::ClientVenueMismatch {
+                client_id,
+                order_venue: order_list_venue,
+                client_venue,
+            }
+            .to_string();
 
             for order in &orders {
-                self.deny_order(
-                    order,
-                    &format!(
-                        "Client {client_id} does not handle order list venue {order_list_venue} (client venue {client_venue})"
-                    ),
-                );
+                self.deny_order(order, &reason);
             }
             return;
         }
@@ -2226,10 +2237,12 @@ impl ExecutionEngine {
         if let Some(position_id) = cmd.position_id
             && !is_uniform_instrument
         {
-            let reason = format!(
-                "`position_id` {position_id} is not valid for a mixed-instrument order list; \
-                 a position belongs to a single instrument",
-            );
+            let reason = OrderDeniedReason::InvalidPositionId {
+                position_id,
+                detail: "not valid for a mixed-instrument order list; a position belongs to a single instrument"
+                    .to_string(),
+            }
+            .to_string();
 
             for order in &orders {
                 self.deny_order(order, &reason);
@@ -2243,6 +2256,7 @@ impl ExecutionEngine {
             cmd.position_id,
             client,
         ) {
+            let reason = reason.to_string();
             for order in &orders {
                 self.deny_order(order, &reason);
             }
@@ -2279,11 +2293,13 @@ impl ExecutionEngine {
 
         if let Err(e) = client.submit_order_list(cmd) {
             log::error!("Error submitting order list to client: {e}");
+            let reason = OrderDeniedReason::SubmitFailed {
+                detail: e.to_string(),
+            }
+            .to_string();
+
             for order in &orders {
-                self.deny_order(
-                    order,
-                    &format!("failed-to-submit-order-list-to-client: {e}"),
-                );
+                self.deny_order(order, &reason);
             }
         }
     }
@@ -2678,7 +2694,7 @@ impl ExecutionEngine {
         strategy_id: StrategyId,
         position_id: Option<PositionId>,
         client: &dyn ExecutionClient,
-    ) -> Option<String> {
+    ) -> Option<OrderDeniedReason> {
         let position_id = position_id?;
 
         if self.resolve_oms_type_for_client(strategy_id, client) != OmsType::Netting {
@@ -2690,10 +2706,12 @@ impl ExecutionEngine {
             return None;
         }
 
-        Some(format!(
-            "`position_id` {position_id} is not valid for NETTING OMS; \
-             expected '{expected}' (use HEDGING for custom position IDs)"
-        ))
+        Some(OrderDeniedReason::InvalidPositionId {
+            position_id,
+            detail: format!(
+                "not valid for NETTING OMS; expected '{expected}' (use HEDGING for custom position IDs)"
+            ),
+        })
     }
 
     fn determine_position_id(
