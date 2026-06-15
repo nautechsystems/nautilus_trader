@@ -23,6 +23,7 @@ use std::{
     rc::Rc,
 };
 
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use nautilus_core::{
     from_pydict,
@@ -1830,16 +1831,13 @@ impl PyDataActor {
         py: Python<'_>,
         data_type: DataType,
         client_id: ClientId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_data(
             self.inner_mut(),
             data_type,
@@ -1859,15 +1857,12 @@ impl PyDataActor {
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         let params = dict_to_params(py, params)?;
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_instrument(
             self.inner_mut(),
             instrument_id,
@@ -1886,15 +1881,12 @@ impl PyDataActor {
         &mut self,
         py: Python<'_>,
         venue: Option<Venue>,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         let params = dict_to_params(py, params)?;
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id =
             DataActor::request_instruments(self.inner_mut(), venue, start, end, client_id, params)
                 .map_err(to_pyvalue_err)?;
@@ -1932,17 +1924,14 @@ impl PyDataActor {
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_book_deltas(
             self.inner_mut(),
             instrument_id,
@@ -1963,8 +1952,8 @@ impl PyDataActor {
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         depth: Option<usize>,
         client_id: Option<ClientId>,
@@ -1973,9 +1962,6 @@ impl PyDataActor {
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let depth = depth.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_book_depth(
             self.inner_mut(),
             instrument_id,
@@ -1997,17 +1983,14 @@ impl PyDataActor {
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_quotes(
             self.inner_mut(),
             instrument_id,
@@ -2028,17 +2011,14 @@ impl PyDataActor {
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_trades(
             self.inner_mut(),
             instrument_id,
@@ -2059,17 +2039,14 @@ impl PyDataActor {
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_funding_rates(
             self.inner_mut(),
             instrument_id,
@@ -2090,17 +2067,14 @@ impl PyDataActor {
         &mut self,
         py: Python<'_>,
         bar_type: BarType,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_bars(
             self.inner_mut(),
             bar_type,

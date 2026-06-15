@@ -34,6 +34,7 @@ from nautilus_trader.model import BarType
 from nautilus_trader.model import BookAction
 from nautilus_trader.model import BookOrder
 from nautilus_trader.model import BookType
+from nautilus_trader.model import ClientId
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import Currency
 from nautilus_trader.model import DataType
@@ -103,26 +104,80 @@ from tests.unit.common.actor import PortfolioProbeStrategy
 from tests.unit.common.actor import TestStrategy
 
 
-class BookHistoryRequestProbeStrategy(Strategy):
-    observed_book_deltas_request_id = None
-    observed_book_depth_request_id = None
+HISTORICAL_REQUEST_DATETIME_CASES = [
+    pytest.param("datetime-utc", id="datetime-utc"),
+    pytest.param("pandas-timestamp-utc", id="pandas-timestamp-utc"),
+    pytest.param("pandas-timestamp-utc-nanos", id="pandas-timestamp-utc-nanos"),
+]
+
+
+class HistoricalRequestProbeStrategy(Strategy):
+    observed_request_ids = {}
+    request_time = dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
 
     def on_start(self):
         instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+        client_id = ClientId("SIM")
+        venue = Venue("SIM")
+        bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
+        request_time = type(self).request_time
 
-        type(self).observed_book_deltas_request_id = self.request_book_deltas(
-            instrument_id,
-            start=0,
-            limit=1,
-            params={"kind": "deltas"},
-        )
-        type(self).observed_book_depth_request_id = self.request_book_depth(
-            instrument_id,
-            end=0,
-            limit=2,
-            depth=5,
-            params={"kind": "depth"},
-        )
+        type(self).observed_request_ids = {
+            "data": self.request_data(
+                DataType("TestData"),
+                client_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "data"},
+            ),
+            "instrument": self.request_instrument(
+                instrument_id,
+                start=request_time,
+                params={"kind": "instrument"},
+            ),
+            "instruments": self.request_instruments(
+                venue,
+                end=request_time,
+                params={"kind": "instruments"},
+            ),
+            "book_deltas": self.request_book_deltas(
+                instrument_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "deltas"},
+            ),
+            "book_depth": self.request_book_depth(
+                instrument_id,
+                end=request_time,
+                limit=2,
+                depth=5,
+                params={"kind": "depth"},
+            ),
+            "quotes": self.request_quotes(
+                instrument_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "quotes"},
+            ),
+            "trades": self.request_trades(
+                instrument_id,
+                end=request_time,
+                limit=1,
+                params={"kind": "trades"},
+            ),
+            "funding_rates": self.request_funding_rates(
+                instrument_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "funding-rates"},
+            ),
+            "bars": self.request_bars(
+                bar_type,
+                end=request_time,
+                limit=1,
+                params={"kind": "bars"},
+            ),
+        }
 
 
 def test_strategy_default_construction():
@@ -435,13 +490,14 @@ def test_strategy_book_request_methods_expose_expected_signatures(method_name, p
     assert tuple(signature.parameters) == parameter_names
 
 
-def test_strategy_book_history_requests_return_ids_when_registered():
-    BookHistoryRequestProbeStrategy.observed_book_deltas_request_id = None
-    BookHistoryRequestProbeStrategy.observed_book_depth_request_id = None
+@pytest.mark.parametrize("request_time", HISTORICAL_REQUEST_DATETIME_CASES)
+def test_strategy_historical_requests_accept_datetimes_when_registered(request_time):
+    HistoricalRequestProbeStrategy.observed_request_ids = {}
+    HistoricalRequestProbeStrategy.request_time = _historical_request_time(request_time)
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     engine.add_strategy_from_config(
         ImportableStrategyConfig(
-            strategy_path="tests.unit.trading.test_trading:BookHistoryRequestProbeStrategy",
+            strategy_path="tests.unit.trading.test_trading:HistoricalRequestProbeStrategy",
             config_path="nautilus_trader.trading:StrategyConfig",
             config={},
         ),
@@ -450,10 +506,37 @@ def test_strategy_book_history_requests_return_ids_when_registered():
     try:
         engine.run()
 
-        assert UUID4.from_str(BookHistoryRequestProbeStrategy.observed_book_deltas_request_id)
-        assert UUID4.from_str(BookHistoryRequestProbeStrategy.observed_book_depth_request_id)
+        assert set(HistoricalRequestProbeStrategy.observed_request_ids) == {
+            "data",
+            "instrument",
+            "instruments",
+            "book_deltas",
+            "book_depth",
+            "quotes",
+            "trades",
+            "funding_rates",
+            "bars",
+        }
+
+        for request_id in HistoricalRequestProbeStrategy.observed_request_ids.values():
+            assert UUID4.from_str(request_id)
     finally:
         engine.dispose()
+
+
+def _historical_request_time(request_time):
+    if request_time == "datetime-utc":
+        return dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
+
+    pd = pytest.importorskip("pandas")
+
+    if request_time == "pandas-timestamp-utc":
+        return pd.Timestamp("1970-01-01T00:00:00Z")
+
+    if request_time == "pandas-timestamp-utc-nanos":
+        return pd.Timestamp(0, unit="ns", tz="UTC")
+
+    raise ValueError(f"Unknown historical request datetime case: {request_time}")
 
 
 def test_strategy_config_defaults():

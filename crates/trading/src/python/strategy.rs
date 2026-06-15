@@ -25,6 +25,7 @@ use std::{
     rc::Rc,
 };
 
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use nautilus_common::{
     actor::{
@@ -48,7 +49,6 @@ use nautilus_common::{
 };
 use nautilus_core::{
     Params, from_pydict,
-    nanos::UnixNanos,
     python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::{
@@ -2675,8 +2675,8 @@ impl PyStrategy {
         &mut self,
         data_type: DataType,
         client_id: ClientId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
@@ -2687,9 +2687,6 @@ impl PyStrategy {
             }
         })?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_data(
             self.inner_mut(),
             data_type,
@@ -2708,8 +2705,8 @@ impl PyStrategy {
     fn py_request_instrument(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
@@ -2719,9 +2716,6 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_instrument(
             self.inner_mut(),
             instrument_id,
@@ -2739,8 +2733,8 @@ impl PyStrategy {
     fn py_request_instruments(
         &mut self,
         venue: Option<Venue>,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
@@ -2750,9 +2744,6 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_instruments(
             self.inner_mut(),
             venue,
@@ -2798,8 +2789,8 @@ impl PyStrategy {
     fn py_request_book_deltas(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
@@ -2811,9 +2802,6 @@ impl PyStrategy {
             }
         })?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_book_deltas(
             self.inner_mut(),
             instrument_id,
@@ -2833,8 +2821,8 @@ impl PyStrategy {
     fn py_request_book_depth(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         depth: Option<usize>,
         client_id: Option<ClientId>,
@@ -2848,9 +2836,6 @@ impl PyStrategy {
         })?;
         let limit = limit.and_then(NonZeroUsize::new);
         let depth = depth.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_book_depth(
             self.inner_mut(),
             instrument_id,
@@ -2870,8 +2855,8 @@ impl PyStrategy {
     fn py_request_quotes(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
@@ -2883,9 +2868,6 @@ impl PyStrategy {
             }
         })?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_quotes(
             self.inner_mut(),
             instrument_id,
@@ -2904,8 +2886,8 @@ impl PyStrategy {
     fn py_request_trades(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
@@ -2917,9 +2899,6 @@ impl PyStrategy {
             }
         })?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_trades(
             self.inner_mut(),
             instrument_id,
@@ -2938,8 +2917,8 @@ impl PyStrategy {
     fn py_request_funding_rates(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
@@ -2951,9 +2930,6 @@ impl PyStrategy {
             }
         })?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_funding_rates(
             self.inner_mut(),
             instrument_id,
@@ -2972,8 +2948,8 @@ impl PyStrategy {
     fn py_request_bars(
         &mut self,
         bar_type: BarType,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
@@ -2985,9 +2961,6 @@ impl PyStrategy {
             }
         })?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_bars(
             self.inner_mut(),
             bar_type,

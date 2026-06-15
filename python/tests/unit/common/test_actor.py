@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import datetime as dt
 import inspect
 from decimal import Decimal
 
@@ -37,6 +38,7 @@ from nautilus_trader.model import BookAction
 from nautilus_trader.model import BookOrder
 from nautilus_trader.model import BookType
 from nautilus_trader.model import Chain
+from nautilus_trader.model import ClientId
 from nautilus_trader.model import DataType
 from nautilus_trader.model import Dex
 from nautilus_trader.model import FundingRateUpdate
@@ -66,6 +68,7 @@ from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import Token
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TradeTick
+from nautilus_trader.model import Venue
 from tests.providers import TestInstrumentProvider
 from tests.unit.common.actor import TestActor
 from tests.unit.common.actor import TestActorConfig
@@ -239,6 +242,11 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("request_funding_rates", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
     ("request_bars", BAR_REQUEST_PARAMETERS),
 ]
+HISTORICAL_REQUEST_DATETIME_CASES = [
+    pytest.param("datetime-utc", id="datetime-utc"),
+    pytest.param("pandas-timestamp-utc", id="pandas-timestamp-utc"),
+    pytest.param("pandas-timestamp-utc-nanos", id="pandas-timestamp-utc-nanos"),
+]
 
 
 def _make_recording_method(method_name):
@@ -263,26 +271,73 @@ def _create_recording_actor_type():
 RecordingActor = _create_recording_actor_type()
 
 
-class BookHistoryRequestProbeActor(TestActor):
-    observed_book_deltas_request_id = None
-    observed_book_depth_request_id = None
+class HistoricalRequestProbeActor(TestActor):
+    observed_request_ids = {}
+    request_time = dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
 
     def on_start(self):
         instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+        client_id = ClientId("SIM")
+        venue = Venue("SIM")
+        bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
+        request_time = type(self).request_time
 
-        type(self).observed_book_deltas_request_id = self.request_book_deltas(
-            instrument_id,
-            start=0,
-            limit=1,
-            params={"kind": "deltas"},
-        )
-        type(self).observed_book_depth_request_id = self.request_book_depth(
-            instrument_id,
-            end=0,
-            limit=2,
-            depth=5,
-            params={"kind": "depth"},
-        )
+        type(self).observed_request_ids = {
+            "data": self.request_data(
+                DataType("TestData"),
+                client_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "data"},
+            ),
+            "instrument": self.request_instrument(
+                instrument_id,
+                start=request_time,
+                params={"kind": "instrument"},
+            ),
+            "instruments": self.request_instruments(
+                venue,
+                end=request_time,
+                params={"kind": "instruments"},
+            ),
+            "book_deltas": self.request_book_deltas(
+                instrument_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "deltas"},
+            ),
+            "book_depth": self.request_book_depth(
+                instrument_id,
+                end=request_time,
+                limit=2,
+                depth=5,
+                params={"kind": "depth"},
+            ),
+            "quotes": self.request_quotes(
+                instrument_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "quotes"},
+            ),
+            "trades": self.request_trades(
+                instrument_id,
+                end=request_time,
+                limit=1,
+                params={"kind": "trades"},
+            ),
+            "funding_rates": self.request_funding_rates(
+                instrument_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "funding-rates"},
+            ),
+            "bars": self.request_bars(
+                bar_type,
+                end=request_time,
+                limit=1,
+                params={"kind": "bars"},
+            ),
+        }
 
 
 def test_data_actor_pre_registration_surface(actor):
@@ -418,25 +473,53 @@ def test_data_actor_registration_gated_methods_expose_expected_signatures(
     assert tuple(signature.parameters) == parameter_names
 
 
-def test_data_actor_book_history_requests_return_ids_when_registered():
-    BookHistoryRequestProbeActor.observed_book_deltas_request_id = None
-    BookHistoryRequestProbeActor.observed_book_depth_request_id = None
+@pytest.mark.parametrize("request_time", HISTORICAL_REQUEST_DATETIME_CASES)
+def test_data_actor_historical_requests_accept_datetimes_when_registered(request_time):
+    HistoricalRequestProbeActor.observed_request_ids = {}
+    HistoricalRequestProbeActor.request_time = _historical_request_time(request_time)
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     engine.add_actor_from_config(
         ImportableActorConfig(
-            actor_path="tests.unit.common.test_actor:BookHistoryRequestProbeActor",
+            actor_path="tests.unit.common.test_actor:HistoricalRequestProbeActor",
             config_path="tests.unit.common.actor:TestActorConfig",
-            config={"actor_id": "BOOK-HISTORY-REQUEST-ACTOR"},
+            config={"actor_id": "HISTORICAL-REQUEST-ACTOR"},
         ),
     )
 
     try:
         engine.run()
 
-        assert UUID4.from_str(BookHistoryRequestProbeActor.observed_book_deltas_request_id)
-        assert UUID4.from_str(BookHistoryRequestProbeActor.observed_book_depth_request_id)
+        assert set(HistoricalRequestProbeActor.observed_request_ids) == {
+            "data",
+            "instrument",
+            "instruments",
+            "book_deltas",
+            "book_depth",
+            "quotes",
+            "trades",
+            "funding_rates",
+            "bars",
+        }
+
+        for request_id in HistoricalRequestProbeActor.observed_request_ids.values():
+            assert UUID4.from_str(request_id)
     finally:
         engine.dispose()
+
+
+def _historical_request_time(request_time):
+    if request_time == "datetime-utc":
+        return dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
+
+    pd = pytest.importorskip("pandas")
+
+    if request_time == "pandas-timestamp-utc":
+        return pd.Timestamp("1970-01-01T00:00:00Z")
+
+    if request_time == "pandas-timestamp-utc-nanos":
+        return pd.Timestamp(0, unit="ns", tz="UTC")
+
+    raise ValueError(f"Unknown historical request datetime case: {request_time}")
 
 
 @pytest.fixture
