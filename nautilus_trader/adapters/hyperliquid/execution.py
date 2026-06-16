@@ -687,7 +687,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             cloid = nautilus_pyo3.hyperliquid_cloid_from_client_order_id(pyo3_client_order_id)
             self._ws_client.cache_cloid_mapping(cloid, pyo3_client_order_id)
 
-            await self._ws_client.submit_order(
+            pyo3_report = await self._ws_client.submit_order(
                 self._client,
                 instrument_id=pyo3_instrument_id,
                 client_order_id=pyo3_client_order_id,
@@ -721,6 +721,10 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 ts_event=self._clock.timestamp_ns(),
                 due_post_only=due_post_only,
             )
+            return
+
+        # Reconcile the venue's immediate response at submit time
+        self._process_submit_reports([pyo3_report] if pyo3_report is not None else None)
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         order_list = command.order_list
@@ -760,7 +764,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         try:
             pyo3_orders = [transform_order_to_pyo3(order) for order in orders]
-            await self._ws_client.submit_orders(self._client, pyo3_orders)
+            pyo3_reports = await self._ws_client.submit_orders(self._client, pyo3_orders)
         except Exception as e:
             if _is_transport_error(e):
                 self._log.warning(
@@ -782,6 +786,26 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                     reason=error_str,
                     ts_event=self._clock.timestamp_ns(),
                     due_post_only=due_post_only,
+                )
+            return
+
+        # Deferred trigger children are intentionally absent from pyo3_reports;
+        # they stay SUBMITTED until the user-events stream delivers the accept.
+        self._process_submit_reports(pyo3_reports)
+
+    def _process_submit_reports(
+        self,
+        pyo3_reports: list[nautilus_pyo3.OrderStatusReport] | None,
+    ) -> None:
+        # Same handler as the WS user stream; a missing report (Rust-side build
+        # failure) leaves the order SUBMITTED for reconciliation.
+        for pyo3_report in pyo3_reports or ():
+            try:
+                self._handle_order_status_report_pyo3(pyo3_report)
+            except Exception as e:
+                self._log.warning(
+                    f"Failed to process submit response report "
+                    f"({type(e).__name__}: {e}); awaiting WS reconciliation",
                 )
 
     async def _modify_order(self, command: ModifyOrder) -> None:  # noqa: C901 (sequence of guard clauses)

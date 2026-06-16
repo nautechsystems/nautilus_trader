@@ -9591,12 +9591,12 @@ class HyperliquidWebSocketClient:
         trigger_price: Price | None = None,
         post_only: bool = False,
         reduce_only: bool = False,
-    ) -> None: ...
+    ) -> OrderStatusReport | None: ...
     async def submit_orders(
         self,
         signer: HyperliquidHttpClient,
         orders: list[Any],
-    ) -> None: ...
+    ) -> list[OrderStatusReport]: ...
     async def cancel_order(
         self,
         signer: HyperliquidHttpClient,

@@ -1061,6 +1061,36 @@ mod tests {
     }
 
     #[rstest]
+    fn test_order_response_normal_tpsl_with_waiting_children() {
+        // `normalTpsl` bracket: the entry rests with an oid, while the SL/TP
+        // children come back as bare strings until the parent fills or the
+        // trigger fires.
+        let json = r#"{
+            "statuses": [
+                {"resting": {"oid": 446050656712}},
+                "waitingForFill",
+                "waitingForTrigger"
+            ]
+        }"#;
+
+        let data: HyperliquidExecOrderResponseData = serde_json::from_str(json).unwrap();
+        assert_eq!(data.statuses.len(), 3);
+
+        assert!(matches!(
+            data.statuses[0],
+            HyperliquidExecOrderStatus::Resting { ref resting } if resting.oid == 446050656712
+        ));
+        assert!(matches!(
+            data.statuses[1],
+            HyperliquidExecOrderStatus::Tag(HyperliquidExecOrderStatusTag::WaitingForFill)
+        ));
+        assert!(matches!(
+            data.statuses[2],
+            HyperliquidExecOrderStatus::Tag(HyperliquidExecOrderStatusTag::WaitingForTrigger)
+        ));
+    }
+
+    #[rstest]
     fn test_user_outcome_split_serialization() {
         let action = HyperliquidExecAction::UserOutcome {
             op: HyperliquidExecUserOutcomeOp::SplitOutcome(HyperliquidExecSplitOutcomeParams {
@@ -1726,6 +1756,25 @@ pub enum HyperliquidExecOrderStatus {
         /// Error message.
         error: String,
     },
+    /// Bare status string for a trigger child of a `normalTpsl` group (SL/TP),
+    /// which Hyperliquid serializes as a JSON string rather than an object
+    /// (for example `"waitingForFill"` or `"waitingForTrigger"`).
+    Tag(HyperliquidExecOrderStatusTag),
+}
+
+/// Status tags Hyperliquid serializes as a bare JSON string.
+///
+/// Trigger children of a `normalTpsl` group, plus standalone trigger orders
+/// that have not armed yet, fall in this bucket: the venue defers order-id
+/// assignment until activation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HyperliquidExecOrderStatusTag {
+    /// Trigger child parked until the parent (entry) order fills.
+    #[serde(rename = "waitingForFill")]
+    WaitingForFill,
+    /// Trigger child parked until its trigger price condition is met.
+    #[serde(rename = "waitingForTrigger")]
+    WaitingForTrigger,
 }
 
 /// Information about a resting order via exchange endpoint.

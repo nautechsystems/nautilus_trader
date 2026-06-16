@@ -1060,6 +1060,7 @@ async fn create_test_trade_signer(addr: SocketAddr) -> HyperliquidHttpClient {
     .unwrap();
     signer.set_base_info_url(format!("http://{addr}/info"));
     signer.set_base_exchange_url(format!("http://{addr}/exchange"));
+    signer.set_account_id(AccountId::from("HYPERLIQUID-001"));
 
     let instruments = signer.request_instruments().await.unwrap();
     for instrument in instruments {
