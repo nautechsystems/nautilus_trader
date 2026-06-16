@@ -86,8 +86,5 @@ pub const RECONNECT_MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// Default HTTP request timeout.
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Maximum WebSocket inflight messages per connection (venue-imposed).
-pub const INFLIGHT_MAX: usize = 50;
-
 /// Outbound command queue depth before backpressure kicks in.
 pub const QUEUE_MAX: usize = 1000;
