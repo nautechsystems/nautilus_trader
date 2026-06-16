@@ -33,7 +33,11 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
-use nautilus_execution::{client::core::ExecutionClientCore, engine::ExecutionEngine};
+use nautilus_execution::{
+    client::core::ExecutionClientCore,
+    engine::ExecutionEngine,
+    models::fee::{FeeModelAny, ProbabilityPriceFeeModel},
+};
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, BarType, Data, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick},
@@ -98,6 +102,7 @@ fn create_config(
         default_leverage: Decimal::ONE,
         leverages: ahash::AHashMap::new(),
         book_type: BookType::L1_MBP,
+        fee_model: None,
         frozen_account: false,
         bar_execution: false,
         trade_execution: false,
@@ -507,6 +512,7 @@ fn test_config_default() {
     assert_eq!(config.account_type, AccountType::Margin);
     assert_eq!(config.default_leverage, Decimal::ONE);
     assert_eq!(config.book_type, BookType::L1_MBP);
+    assert!(config.fee_model.is_none());
     assert!(!config.frozen_account);
     assert!(config.bar_execution);
     assert!(config.trade_execution);
@@ -516,6 +522,83 @@ fn test_config_default() {
     assert!(config.use_position_ids);
     assert!(!config.use_random_ids);
     assert!(config.use_reduce_only);
+}
+
+#[rstest]
+#[case::sports_p50("0.03", "0.500", "0.00750")]
+#[case::sports_p30("0.03", "0.300", "0.00630")]
+#[case::crypto_p97("0.072", "0.970", "0.00210")]
+fn test_probability_price_fee_model_config_drives_sandbox_commission(
+    #[case] taker_fee: &str,
+    #[case] price: &str,
+    #[case] expected: &str,
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    setup_order_event_handler();
+
+    let mut binary = binary_option();
+    binary.taker_fee = Decimal::from_str_exact(taker_fee).unwrap();
+    let instrument = InstrumentAny::BinaryOption(binary);
+    let venue = instrument.id().venue;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+
+    let mut config = create_config(trader_id, account_id, venue);
+    config.base_currency = Some(Currency::USDC());
+    config.starting_balances = vec![Money::new(100_000.0, Currency::USDC())];
+    config.fee_model = Some(FeeModelAny::ProbabilityPrice(ProbabilityPriceFeeModel));
+
+    let core = ExecutionClientCore::new(
+        config.trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    client.start().unwrap();
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from(price),
+        Price::from(price),
+        Quantity::new(100.0, 2),
+        Quantity::new(100.0, 2),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    client.process_quote_tick(&quote).unwrap();
+
+    submit_market_open_order(&client, &cache, trader_id, &instrument, "OPEN-FEE", 10);
+
+    let mut fill_commission = None;
+
+    for event in std::iter::from_fn(|| rx.try_recv().ok()) {
+        let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = event else {
+            continue;
+        };
+
+        if fill.client_order_id.as_str() == "OPEN-FEE" {
+            fill_commission = fill.commission;
+        }
+    }
+
+    assert_eq!(
+        fill_commission,
+        Some(Money::from(format!("{expected} USDC").as_str()))
+    );
 }
 
 #[rstest]
@@ -1468,6 +1551,7 @@ fn test_submit_order_through_exec_engine_no_reentrant_panic(
         default_leverage: Decimal::ONE,
         leverages: ahash::AHashMap::new(),
         book_type: BookType::L1_MBP,
+        fee_model: None,
         frozen_account: false,
         bar_execution: false,
         trade_execution: false,

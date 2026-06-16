@@ -26,18 +26,17 @@ use nautilus_core::{
     UUID4, UnixNanos,
     python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
 };
-use nautilus_execution::models::{
-    fee::{
-        CappedOptionFeeModel, FeeModelAny, FixedFeeModel, MakerTakerFeeModel, PerContractFeeModel,
-        TieredNotionalOptionFeeModel,
+use nautilus_execution::{
+    models::{
+        fill::{
+            BestPriceFillModel, CompetitionAwareFillModel, DefaultFillModel, FillModelAny,
+            LimitOrderPartialFillModel, MarketHoursFillModel, OneTickSlippageFillModel,
+            ProbabilisticFillModel, SizeAwareFillModel, ThreeTierFillModel, TwoTierFillModel,
+            VolumeSensitiveFillModel,
+        },
+        latency::{LatencyModelAny, StaticLatencyModel},
     },
-    fill::{
-        BestPriceFillModel, CompetitionAwareFillModel, DefaultFillModel, FillModelAny,
-        LimitOrderPartialFillModel, MarketHoursFillModel, OneTickSlippageFillModel,
-        ProbabilisticFillModel, SizeAwareFillModel, ThreeTierFillModel, TwoTierFillModel,
-        VolumeSensitiveFillModel,
-    },
-    latency::{LatencyModelAny, StaticLatencyModel},
+    python::fee::pyobject_to_fee_model_any,
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::DefiData;
@@ -230,7 +229,7 @@ impl PyBacktestEngine {
             .transpose()?
             .unwrap_or_default();
         let fee_model = fee_model
-            .map(|obj| Python::attach(|py| pyobject_to_fee_model_any(py, obj.bind(py))))
+            .map(|obj| Python::attach(|py| pyobject_to_fee_model_any(obj.bind(py))))
             .transpose()?
             .unwrap_or_default();
         let latency_model = latency_model
@@ -1104,36 +1103,6 @@ pub(crate) fn pyobject_to_fill_model_any(
     let type_name = obj.get_type().name()?;
     Err(to_pytype_err(format!(
         "Cannot convert {type_name} to FillModel"
-    )))
-}
-
-pub(crate) fn pyobject_to_fee_model_any(
-    _py: Python,
-    obj: &Bound<'_, PyAny>,
-) -> PyResult<FeeModelAny> {
-    if let Ok(m) = obj.extract::<FixedFeeModel>() {
-        return Ok(FeeModelAny::Fixed(m));
-    }
-
-    if let Ok(m) = obj.extract::<MakerTakerFeeModel>() {
-        return Ok(FeeModelAny::MakerTaker(m));
-    }
-
-    if let Ok(m) = obj.extract::<PerContractFeeModel>() {
-        return Ok(FeeModelAny::PerContract(m));
-    }
-
-    if let Ok(m) = obj.extract::<CappedOptionFeeModel>() {
-        return Ok(FeeModelAny::CappedOption(m));
-    }
-
-    if let Ok(m) = obj.extract::<TieredNotionalOptionFeeModel>() {
-        return Ok(FeeModelAny::TieredNotionalOption(m));
-    }
-
-    let type_name = obj.get_type().name()?;
-    Err(to_pytype_err(format!(
-        "Cannot convert {type_name} to FeeModel"
     )))
 }
 

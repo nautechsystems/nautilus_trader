@@ -60,6 +60,7 @@ pub enum FeeModelAny {
     Fixed(FixedFeeModel),
     MakerTaker(MakerTakerFeeModel),
     PerContract(PerContractFeeModel),
+    ProbabilityPrice(ProbabilityPriceFeeModel),
     CappedOption(CappedOptionFeeModel),
     TieredNotionalOption(TieredNotionalOptionFeeModel),
 }
@@ -78,6 +79,9 @@ impl FeeModel for FeeModelAny {
                 model.get_commission(order, fill_quantity, fill_px, instrument)
             }
             Self::PerContract(model) => {
+                model.get_commission(order, fill_quantity, fill_px, instrument)
+            }
+            Self::ProbabilityPrice(model) => {
                 model.get_commission(order, fill_quantity, fill_px, instrument)
             }
             Self::CappedOption(model) => {
@@ -113,6 +117,13 @@ impl FeeModel for FeeModelAny {
                 underlying_px,
             ),
             Self::PerContract(model) => model.get_commission_with_context(
+                order,
+                fill_quantity,
+                fill_px,
+                instrument,
+                underlying_px,
+            ),
+            Self::ProbabilityPrice(model) => model.get_commission_with_context(
                 order,
                 fill_quantity,
                 fill_px,
@@ -273,6 +284,61 @@ impl FeeModel for MakerTakerFeeModel {
         } else {
             Money::from_decimal(commission, instrument.quote_currency()).map_err(Into::into)
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+)]
+/// Fee model for probability-priced outcome shares.
+///
+/// Applies `qty * fee_rate * p * (1 - p)` using the instrument's maker or
+/// taker fee rate. This matches venues that represent outcome shares as
+/// [`InstrumentAny::BinaryOption`] instruments quoted on a `[0, 1]`
+/// probability scale.
+///
+/// This model covers quote-currency match-time exchange fees only.
+/// Venue-specific rebate programs or non-quote fee assets remain outside the
+/// core execution layer.
+pub struct ProbabilityPriceFeeModel;
+
+impl FeeModel for ProbabilityPriceFeeModel {
+    fn get_commission(
+        &self,
+        order: &OrderAny,
+        fill_quantity: Quantity,
+        fill_px: Price,
+        instrument: &InstrumentAny,
+    ) -> anyhow::Result<Money> {
+        if !matches!(instrument, InstrumentAny::BinaryOption(_)) {
+            anyhow::bail!("ProbabilityPriceFeeModel requires a binary option instrument");
+        }
+
+        let fill_price = fill_px.as_decimal();
+        if !(Decimal::ZERO..=Decimal::ONE).contains(&fill_price) {
+            anyhow::bail!("ProbabilityPriceFeeModel requires a fill price in [0, 1]");
+        }
+
+        let fee_rate = match order.liquidity_side() {
+            Some(LiquiditySide::Maker) => instrument.maker_fee(),
+            Some(LiquiditySide::Taker) => instrument.taker_fee(),
+            Some(LiquiditySide::NoLiquiditySide) | None => anyhow::bail!("Liquidity side not set"),
+        };
+
+        let commission =
+            (fill_quantity.as_decimal() * fee_rate * fill_price * (Decimal::ONE - fill_price))
+                .round_dp(5);
+
+        Money::from_decimal(commission, instrument.quote_currency()).map_err(Into::into)
     }
 }
 
@@ -472,8 +538,8 @@ mod tests {
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderType},
         instruments::{
-            CryptoOption, Instrument, InstrumentAny, OptionContract,
-            stubs::{audusd_sim, crypto_option_btc_deribit, option_contract_appl},
+            BinaryOption, CryptoOption, Instrument, InstrumentAny, OptionContract,
+            stubs::{audusd_sim, binary_option, crypto_option_btc_deribit, option_contract_appl},
         },
         orders::{
             Order, OrderAny,
@@ -488,7 +554,7 @@ mod tests {
 
     use super::{
         CappedOptionFeeModel, FeeModel, FeeModelAny, FixedFeeModel, MakerTakerFeeModel,
-        PerContractFeeModel, TieredNotionalOptionFeeModel,
+        PerContractFeeModel, ProbabilityPriceFeeModel, TieredNotionalOptionFeeModel,
     };
 
     #[rstest]
@@ -699,6 +765,74 @@ mod tests {
     #[rstest]
     fn test_per_contract_fee_model_negative_commission_fails() {
         let result = PerContractFeeModel::new(Money::new(-1.0, Currency::USD()));
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::crypto_p97("0.072", "0.970", "0.00210")]
+    #[case::sports_p50("0.03", "0.500", "0.00750")]
+    #[case::sports_p30("0.03", "0.300", "0.00630")]
+    fn test_probability_price_fee_model_taker_commission(
+        mut binary_option: BinaryOption,
+        #[case] taker_fee: &str,
+        #[case] price: &str,
+        #[case] expected: &str,
+    ) {
+        binary_option.taker_fee = Decimal::from_str_exact(taker_fee).unwrap();
+        let instrument = InstrumentAny::BinaryOption(binary_option);
+        let fill = binary_option_fill_order(&instrument, LiquiditySide::Taker, price);
+        let fee_model = ProbabilityPriceFeeModel;
+
+        let commission = fee_model
+            .get_commission(
+                &fill,
+                Quantity::from("1.00"),
+                Price::from(price),
+                &instrument,
+            )
+            .unwrap();
+
+        assert_eq!(commission.currency, Currency::USDC());
+        assert_eq!(
+            commission.as_decimal(),
+            Decimal::from_str_exact(expected).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_probability_price_fee_model_maker_commission_uses_instrument_rate(
+        mut binary_option: BinaryOption,
+    ) {
+        binary_option.maker_fee = dec!(0.01);
+        let instrument = InstrumentAny::BinaryOption(binary_option);
+        let fill = binary_option_fill_order(&instrument, LiquiditySide::Maker, "0.500");
+        let fee_model = FeeModelAny::ProbabilityPrice(ProbabilityPriceFeeModel);
+
+        let commission = fee_model
+            .get_commission(
+                &fill,
+                Quantity::from("1.00"),
+                Price::from("0.500"),
+                &instrument,
+            )
+            .unwrap();
+
+        assert_eq!(commission, Money::from("0.00250 USDC"));
+    }
+
+    #[rstest]
+    fn test_probability_price_fee_model_rejects_non_binary_instrument() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let fill = binary_option_fill_order(&instrument, LiquiditySide::Taker, "0.500");
+        let fee_model = ProbabilityPriceFeeModel;
+
+        let result = fee_model.get_commission(
+            &fill,
+            Quantity::from("1.00"),
+            Price::from("0.500"),
+            &instrument,
+        );
+
         assert!(result.is_err());
     }
 
@@ -960,6 +1094,21 @@ mod tests {
             .side(OrderSide::Buy)
             .price(Price::from("100.00"))
             .quantity(Quantity::from("2.0"))
+            .build();
+
+        TestOrderStubs::make_filled_order(&limit_order, instrument, liquidity_side)
+    }
+
+    fn binary_option_fill_order(
+        instrument: &InstrumentAny,
+        liquidity_side: LiquiditySide,
+        price: &str,
+    ) -> OrderAny {
+        let limit_order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .price(Price::from(price))
+            .quantity(Quantity::from("1.00"))
             .build();
 
         TestOrderStubs::make_filled_order(&limit_order, instrument, liquidity_side)
