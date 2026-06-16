@@ -97,6 +97,20 @@ fn parse_filter_quantity(filter: &Value, field: &str) -> anyhow::Result<Quantity
         .map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}': {e}"))
 }
 
+/// Parses the futures `MIN_NOTIONAL` filter into a `Money` value in `currency`.
+///
+/// Returns `None` when the filter is absent, the `notional` field cannot be
+/// parsed, or the value is non-positive.
+fn parse_futures_min_notional(filters: &[Value], currency: Currency) -> Option<Money> {
+    let filter = get_filter(filters, "MIN_NOTIONAL")?;
+    let raw = filter.get("notional").and_then(|v| v.as_str())?;
+    let amount = f64::from_str(raw).ok()?;
+    if amount <= 0.0 {
+        return None;
+    }
+    Some(Money::new(amount, currency))
+}
+
 /// Parses a venue quantity string into a `Quantity` at the given precision.
 ///
 /// Returns `None` for unparsable, zero, or negative values. Goes through
@@ -226,6 +240,8 @@ pub fn parse_usdm_instrument(
     let max_quantity = parse_filter_quantity(lot_filter, "maxQty").ok();
     let min_quantity = parse_filter_quantity(lot_filter, "minQty").ok();
 
+    let min_notional = parse_futures_min_notional(&symbol.filters, quote_currency);
+
     // Default margin (0.1 = 10x leverage)
     let default_margin = Decimal::new(1, 1);
 
@@ -245,7 +261,7 @@ pub fn parse_usdm_instrument(
         max_quantity,
         min_quantity,
         None, // max_notional
-        None, // min_notional
+        min_notional,
         max_price,
         min_price,
         Some(default_margin),
@@ -329,6 +345,8 @@ pub fn parse_coinm_instrument(
     // COIN-M has contract_size as the multiplier
     let multiplier = Quantity::new(symbol.contract_size as f64, 0);
 
+    let min_notional = parse_futures_min_notional(&symbol.filters, quote_currency);
+
     // Default margin (0.1 = 10x leverage)
     let default_margin = Decimal::new(1, 1);
 
@@ -348,7 +366,7 @@ pub fn parse_coinm_instrument(
         max_quantity,
         min_quantity,
         None, // max_notional
-        None, // min_notional
+        min_notional,
         max_price,
         min_price,
         Some(default_margin),
@@ -1186,6 +1204,10 @@ mod tests {
                     "maxQty": "1000",
                     "minQty": "0.001"
                 }),
+                json!({
+                    "filterType": "MIN_NOTIONAL",
+                    "notional": "5"
+                }),
             ],
         }
     }
@@ -1226,6 +1248,10 @@ mod tests {
                     "stepSize": "1",
                     "maxQty": "1000",
                     "minQty": "1"
+                }),
+                json!({
+                    "filterType": "MIN_NOTIONAL",
+                    "notional": "1"
                 }),
             ],
         }
@@ -1295,6 +1321,10 @@ mod tests {
                 assert!(!perp.is_inverse);
                 assert_eq!(perp.price_increment, Price::from_str("0.10").unwrap());
                 assert_eq!(perp.size_increment, Quantity::from_str("0.001").unwrap());
+                assert_eq!(
+                    perp.min_notional,
+                    Some(Money::new(5.0, perp.quote_currency)),
+                );
             }
             other => panic!("Expected CryptoPerpetual, was {other:?}"),
         }
@@ -1354,6 +1384,10 @@ mod tests {
                 assert!(perp.is_inverse);
                 assert_eq!(perp.price_increment, Price::from_str("0.10").unwrap());
                 assert_eq!(perp.size_increment, Quantity::from_str("1").unwrap());
+                assert_eq!(
+                    perp.min_notional,
+                    Some(Money::new(1.0, perp.quote_currency)),
+                );
             }
             other => panic!("Expected CryptoPerpetual, was {other:?}"),
         }
