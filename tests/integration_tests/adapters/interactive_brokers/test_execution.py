@@ -17,6 +17,7 @@ import asyncio
 from decimal import Decimal
 from functools import partial
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from ibapi.order_state import OrderState as IBOrderState
@@ -201,6 +202,10 @@ def on_cancel_order_setup(exec_client, client, status, order_id, manual_cancel_o
 
 def test_resolve_ib_order_id_uses_raw_mapping_for_perm_venue_order_id(exec_client):
     client_order_id = ClientOrderId("O-IB-PERM-001")
+    exec_client._client._order_id_to_order_ref[VenueOrderId("PERM-987654")] = AccountOrderRef(
+        account_id="DU123456",
+        order_id=client_order_id.value,
+    )
     exec_client._client._order_id_to_order_ref[VenueOrderId("1514")] = AccountOrderRef(
         account_id="DU123456",
         order_id=client_order_id.value,
@@ -212,6 +217,39 @@ def test_resolve_ib_order_id_uses_raw_mapping_for_perm_venue_order_id(exec_clien
     )
 
     assert ib_order_id == 1514
+
+
+def test_order_status_migrates_raw_filled_qty_to_perm_venue_order_id(exec_client):
+    client_order_id = ClientOrderId("O-IB-PERM-FILLED")
+    raw_venue_order_id = VenueOrderId("1514")
+    perm_venue_order_id = VenueOrderId("PERM-987654")
+    exec_client._client._order_id_to_order_ref[raw_venue_order_id] = AccountOrderRef(
+        account_id="DU123456",
+        order_id=client_order_id.value,
+    )
+    exec_client._order_filled_qty[raw_venue_order_id] = Decimal(2)
+
+    exec_client._on_order_status(
+        order_ref=client_order_id.value,
+        order_status="Submitted",
+        avg_fill_price=0.0,
+        filled=Decimal(1),
+        remaining=Decimal(99),
+        venue_order_id=perm_venue_order_id,
+    )
+
+    assert raw_venue_order_id not in exec_client._order_filled_qty
+    assert exec_client._order_filled_qty[perm_venue_order_id] == Decimal(2)
+
+
+@pytest.mark.asyncio
+async def test_initialize_position_tracking_skips_none_position_snapshot(exec_client):
+    exec_client._known_positions[123] = Decimal(1)
+    exec_client._client.get_positions = AsyncMock(return_value=None)
+
+    await exec_client._initialize_position_tracking()
+
+    assert exec_client._known_positions == {123: Decimal(1)}
 
 
 @pytest.mark.asyncio

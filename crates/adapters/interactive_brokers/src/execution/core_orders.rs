@@ -196,11 +196,18 @@ impl InteractiveBrokersExecutionClient {
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
         _exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
         _clock: &'static AtomicTime,
-        _account_id: AccountId,
+        account_id: AccountId,
         original_order: Option<&Arc<OrderAny>>,
         request_timeout_secs: u64,
     ) -> anyhow::Result<()> {
-        let target_ib_order_id = Self::target_ib_order_id_for_modify(cmd, order_id_map)?;
+        let target_ib_order_id = Self::target_ib_order_id_for_modify(
+            cmd,
+            client,
+            order_id_map,
+            account_id,
+            request_timeout_secs,
+        )
+        .await?;
 
         if let Some(original_order) = original_order {
             let ib_order_id = target_ib_order_id.context("Order ID not found in mapping")?;
@@ -247,15 +254,18 @@ impl InteractiveBrokersExecutionClient {
         .await
     }
 
-    fn target_ib_order_id_for_modify(
+    async fn target_ib_order_id_for_modify(
         cmd: &ModifyOrder,
+        client: &Arc<Client>,
         order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
+        account_id: AccountId,
+        request_timeout_secs: u64,
     ) -> anyhow::Result<Option<i32>> {
         if let Some(venue_order_id) = &cmd.venue_order_id {
-            let order_id = venue_order_id
-                .as_str()
-                .parse()
-                .context("Failed to parse venue_order_id as IB order id")?;
+            let order_selector = IbOrderSelector::from_venue_order_id(venue_order_id)?;
+            let order_id =
+                Self::resolve_ib_order_id(client, order_selector, account_id, request_timeout_secs)
+                    .await?;
             return Ok(Some(order_id));
         }
 

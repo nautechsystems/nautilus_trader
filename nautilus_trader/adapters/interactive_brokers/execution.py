@@ -390,6 +390,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         """
         try:
             positions = await self._client.get_positions(self.account_id.get_id())
+            if positions is None:
+                self._log.warning(
+                    "Skipping initial position tracking because get_positions() did not complete",
+                )
+                return
 
             if positions:
                 for position in positions:
@@ -451,7 +456,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # since IB's openOrder callback doesn't include accurate filledQuantity.
         # Use venue_order_id as key since orderRef may be empty for external orders.
         venue_order_id = get_venue_order_id(ib_order.orderId, ib_order.permId)
-        cached_filled = self._order_filled_qty.get(venue_order_id)
+        client_order_id = ClientOrderId(ib_order.orderRef) if ib_order.orderRef else None
+        cached_filled = self._cached_order_filled_qty(venue_order_id, client_order_id)
         if cached_filled is not None:
             filled_qty = Quantity.from_str(str(cached_filled))
         elif ib_order.filledQuantity == UNSET_DECIMAL:
@@ -1592,6 +1598,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         if client_order_id is None:
             return None
 
+        return self._raw_ib_order_id_for_client_order_id(client_order_id)
+
+    def _raw_ib_order_id_for_client_order_id(
+        self,
+        client_order_id: ClientOrderId,
+    ) -> int | None:
         for raw_venue_order_id, order_ref in self._client._order_id_to_order_ref.items():
             if order_ref.order_id != client_order_id.value:
                 continue
@@ -1602,6 +1614,33 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 continue
 
         return None
+
+    def _cached_order_filled_qty(
+        self,
+        venue_order_id: VenueOrderId,
+        client_order_id: ClientOrderId | None,
+    ) -> Decimal | None:
+        cached_filled = self._order_filled_qty.get(venue_order_id)
+
+        if cached_filled is not None or client_order_id is None:
+            return cached_filled
+
+        raw_ib_order_id = self._raw_ib_order_id_for_client_order_id(client_order_id)
+
+        if raw_ib_order_id is None:
+            return None
+
+        raw_venue_order_id = VenueOrderId(str(raw_ib_order_id))
+
+        if raw_venue_order_id == venue_order_id:
+            return None
+
+        cached_filled = self._order_filled_qty.pop(raw_venue_order_id, None)
+
+        if cached_filled is not None:
+            self._order_filled_qty[venue_order_id] = cached_filled
+
+        return cached_filled
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         for order in command.cancels:
@@ -1876,6 +1915,19 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Convert to Decimal defensively in case IB API sends it as a string (IB API bug/edge case)
         filled_decimal = Decimal(filled) if not isinstance(filled, Decimal) else filled
         if filled_decimal > 0 and venue_order_id is not None:
+            if order_ref:
+                raw_ib_order_id = self._raw_ib_order_id_for_client_order_id(
+                    ClientOrderId(order_ref),
+                )
+
+                if raw_ib_order_id is not None:
+                    raw_venue_order_id = VenueOrderId(str(raw_ib_order_id))
+
+                    if raw_venue_order_id != venue_order_id:
+                        raw_filled = self._order_filled_qty.pop(raw_venue_order_id, None)
+
+                        if raw_filled is not None and raw_filled > filled_decimal:
+                            filled_decimal = raw_filled
             self._order_filled_qty[venue_order_id] = filled_decimal
 
         ignore_order_event = False

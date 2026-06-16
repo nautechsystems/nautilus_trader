@@ -108,8 +108,8 @@ pub fn parse_execution_to_fill_report(
     let last_qty = Quantity::new(execution.shares, instrument.size_precision());
     let last_px = Price::new(execution_price, instrument.price_precision());
 
-    // Create commission — clamp IB's -1 pending sentinel to 0.0 to avoid invalid Money values
-    let commission_clamped = if commission < 0.0 { 0.0 } else { commission };
+    // Clamp only IB's -1 pending sentinel to 0.0 to preserve rebates
+    let commission_clamped = if commission == -1.0 { 0.0 } else { commission };
     let commission_money = Money::new(commission_clamped, Currency::from_str(commission_currency)?);
 
     // Parse execution time
@@ -428,6 +428,7 @@ mod tests {
     use nautilus_model::{
         enums::TrailingOffsetType,
         identifiers::{Symbol, Venue},
+        instruments::{InstrumentAny, stubs::equity_aapl},
     };
     use rust_decimal::Decimal;
 
@@ -963,6 +964,56 @@ mod tests {
                 assert_eq!(fill.order_side, OrderSide::Buy);
                 assert_eq!(fill.trade_id.to_string(), "EXEC-001");
             }
+        }
+    }
+
+    #[rstest]
+    fn test_parse_execution_to_fill_report_clamps_only_pending_commission_sentinel() {
+        let instrument_provider = create_test_instrument_provider();
+        let instrument = equity_aapl();
+        let instrument_id = instrument.id();
+        instrument_provider.insert_test_instrument(InstrumentAny::from(instrument), 265598, 1);
+        let account_id = AccountId::from("IB-001");
+        let contract = Contract::default();
+
+        for (commission, expected) in [(-1.0, 0.0), (-0.25, -0.25)] {
+            let execution = Execution {
+                order_id: 12345,
+                client_id: 0,
+                execution_id: format!("EXEC-{commission}"),
+                time: String::from("20230223 00:43:36 Universal"),
+                account_number: String::new(),
+                exchange: String::new(),
+                side: ExecutionSide::Bought,
+                shares: 100.0,
+                price: 150.25,
+                perm_id: 0,
+                liquidation: 0,
+                cumulative_quantity: 100.0,
+                average_price: 150.25,
+                order_reference: String::from("ORDER-REF-001"),
+                ev_rule: String::new(),
+                ev_multiplier: None,
+                model_code: String::new(),
+                last_liquidity: Liquidity::None,
+                pending_price_revision: false,
+                submitter: String::new(),
+            };
+
+            let report = parse_execution_to_fill_report(
+                &execution,
+                &contract,
+                commission,
+                "USD",
+                instrument_id,
+                account_id,
+                &instrument_provider,
+                UnixNanos::new(0),
+                None,
+            )
+            .unwrap();
+
+            assert_eq!(report.commission, Money::new(expected, Currency::USD()));
         }
     }
 
