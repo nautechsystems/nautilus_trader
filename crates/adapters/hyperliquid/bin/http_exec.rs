@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{env, str::FromStr};
+use std::env;
 
 use nautilus_hyperliquid::{
     common::{credential::Secrets, enums::HyperliquidEnvironment},
@@ -26,7 +26,6 @@ use nautilus_hyperliquid::{
     },
 };
 use nautilus_model::identifiers::ClientOrderId;
-use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 #[tokio::main]
@@ -102,8 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Fetching BTC order book...");
     let book = client.info_l2_book("BTC").await?;
 
-    let best_bid_str = &book.levels[0][0].px;
-    let best_bid = Decimal::from_str(best_bid_str)?;
+    let best_bid = book.levels[0][0].px;
 
     log::info!("Best bid: ${best_bid}");
 

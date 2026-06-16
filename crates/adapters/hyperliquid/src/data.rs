@@ -1108,15 +1108,7 @@ impl DataClient for HyperliquidDataClient {
 
             let mut funding_rates: Vec<FundingRateUpdate> = entries
                 .iter()
-                .filter_map(
-                    |entry| match funding_entry_to_update(entry, instrument_id) {
-                        Ok(update) => Some(update),
-                        Err(e) => {
-                            log::warn!("Skipping funding history entry for {instrument_id}: {e}",);
-                            None
-                        }
-                    },
-                )
+                .map(|entry| funding_entry_to_update(entry, instrument_id))
                 .collect();
 
             if let Some(limit) = limit
@@ -1290,37 +1282,35 @@ pub(crate) fn parse_l2_book_snapshot(
     };
 
     for (i, level) in bids.iter().enumerate() {
-        let Ok(px) = level.px.parse::<f64>() else {
+        if level.sz <= Decimal::ZERO {
+            continue;
+        }
+        let Ok(price) = Price::from_decimal_dp(level.px, price_precision) else {
             continue;
         };
-        let Ok(sz) = level.sz.parse::<f64>() else {
+        let Ok(size) = Quantity::from_decimal_dp(level.sz, size_precision) else {
             continue;
         };
 
-        if sz > 0.0 {
-            let price = Price::new(px, price_precision);
-            let size = Quantity::new(sz, size_precision);
-            let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
-            book.add(order, 0, i as u64, ts_event);
-        }
+        let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
+        book.add(order, 0, i as u64, ts_event);
     }
 
     let bids_len = bids.len();
 
     for (i, level) in asks.iter().enumerate() {
-        let Ok(px) = level.px.parse::<f64>() else {
+        if level.sz <= Decimal::ZERO {
+            continue;
+        }
+        let Ok(price) = Price::from_decimal_dp(level.px, price_precision) else {
             continue;
         };
-        let Ok(sz) = level.sz.parse::<f64>() else {
+        let Ok(size) = Quantity::from_decimal_dp(level.sz, size_precision) else {
             continue;
         };
 
-        if sz > 0.0 {
-            let price = Price::new(px, price_precision);
-            let size = Quantity::new(sz, size_precision);
-            let order = BookOrder::new(OrderSide::Sell, price, size, (bids_len + i) as u64);
-            book.add(order, 0, (bids_len + i) as u64, ts_event);
-        }
+        let order = BookOrder::new(OrderSide::Sell, price, size, (bids_len + i) as u64);
+        book.add(order, 0, (bids_len + i) as u64, ts_event);
     }
 
     log::info!(
@@ -1360,20 +1350,10 @@ pub(crate) fn parse_book_precision_params(
 pub(crate) fn funding_entry_to_update(
     entry: &HyperliquidFundingHistoryEntry,
     instrument_id: InstrumentId,
-) -> anyhow::Result<FundingRateUpdate> {
-    let rate: Decimal = entry
-        .funding_rate
-        .parse()
-        .with_context(|| format!("invalid fundingRate '{}'", entry.funding_rate))?;
+) -> FundingRateUpdate {
+    let rate = entry.funding_rate;
     let ts = UnixNanos::from(entry.time * 1_000_000);
-    Ok(FundingRateUpdate::new(
-        instrument_id,
-        rate,
-        Some(60),
-        None,
-        ts,
-        ts,
-    ))
+    FundingRateUpdate::new(instrument_id, rate, Some(60), None, ts, ts)
 }
 
 pub(crate) fn candle_to_bar(
@@ -1385,21 +1365,19 @@ pub(crate) fn candle_to_bar(
     let ts_init = UnixNanos::from(candle.timestamp * 1_000_000);
     let ts_event = ts_init;
 
-    let open = candle.open.parse::<f64>().context("parse open price")?;
-    let high = candle.high.parse::<f64>().context("parse high price")?;
-    let low = candle.low.parse::<f64>().context("parse low price")?;
-    let close = candle.close.parse::<f64>().context("parse close price")?;
-    let volume = candle.volume.parse::<f64>().context("parse volume")?;
+    let open = Price::from_decimal_dp(candle.open, price_precision)
+        .map_err(|e| anyhow::anyhow!("invalid open price: {e}"))?;
+    let high = Price::from_decimal_dp(candle.high, price_precision)
+        .map_err(|e| anyhow::anyhow!("invalid high price: {e}"))?;
+    let low = Price::from_decimal_dp(candle.low, price_precision)
+        .map_err(|e| anyhow::anyhow!("invalid low price: {e}"))?;
+    let close = Price::from_decimal_dp(candle.close, price_precision)
+        .map_err(|e| anyhow::anyhow!("invalid close price: {e}"))?;
+    let volume = Quantity::from_decimal_dp(candle.volume, size_precision)
+        .map_err(|e| anyhow::anyhow!("invalid volume: {e}"))?;
 
     Ok(Bar::new(
-        bar_type,
-        Price::new(open, price_precision),
-        Price::new(high, price_precision),
-        Price::new(low, price_precision),
-        Price::new(close, price_precision),
-        Quantity::new(volume, size_precision),
-        ts_event,
-        ts_init,
+        bar_type, open, high, low, close, volume, ts_event, ts_init,
     ))
 }
 
@@ -1489,13 +1467,13 @@ mod tests {
     fn test_funding_entry_to_update_parses_positive_rate() {
         let entry = HyperliquidFundingHistoryEntry {
             coin: Ustr::from("BTC"),
-            funding_rate: "0.0000125".to_string(),
-            premium: Some("0.00029005".to_string()),
+            funding_rate: dec!(0.0000125),
+            premium: Some(dec!(0.00029005)),
             time: 1769908800000,
         };
         let instrument_id = btc_perp_id();
 
-        let update = funding_entry_to_update(&entry, instrument_id).unwrap();
+        let update = funding_entry_to_update(&entry, instrument_id);
 
         assert_eq!(update.instrument_id, instrument_id);
         assert_eq!(update.rate, dec!(0.0000125));
@@ -1509,24 +1487,20 @@ mod tests {
     fn test_funding_entry_to_update_handles_negative_rate() {
         let entry = HyperliquidFundingHistoryEntry {
             coin: Ustr::from("BTC"),
-            funding_rate: "-0.0000081".to_string(),
+            funding_rate: dec!(-0.0000081),
             premium: None,
             time: 1769912400000,
         };
-        let update = funding_entry_to_update(&entry, btc_perp_id()).unwrap();
+        let update = funding_entry_to_update(&entry, btc_perp_id());
         assert_eq!(update.rate, dec!(-0.0000081));
     }
 
     #[rstest]
-    fn test_funding_entry_to_update_rejects_invalid_rate() {
-        let entry = HyperliquidFundingHistoryEntry {
-            coin: Ustr::from("BTC"),
-            funding_rate: "not-a-number".to_string(),
-            premium: None,
-            time: 1769912400000,
-        };
-        let result = funding_entry_to_update(&entry, btc_perp_id());
-        assert!(result.is_err());
+    fn test_funding_history_entry_rejects_invalid_rate() {
+        // The funding rate is now a Decimal field, so an invalid value is
+        // rejected at deserialization rather than by funding_entry_to_update.
+        let json = r#"{"coin":"BTC","fundingRate":"not-a-number","time":1769912400000}"#;
+        assert!(serde_json::from_str::<HyperliquidFundingHistoryEntry>(json).is_err());
     }
 
     #[rstest]
@@ -1569,13 +1543,13 @@ mod tests {
             load_test_data("http_funding_history.json");
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].coin.as_str(), "BTC");
-        assert_eq!(entries[0].funding_rate, "0.0000125");
-        assert_eq!(entries[0].premium.as_deref(), Some("0.00029005"));
+        assert_eq!(entries[0].funding_rate, dec!(0.0000125));
+        assert_eq!(entries[0].premium, Some(dec!(0.00029005)));
         assert!(entries[2].premium.is_none());
 
         let updates: Vec<FundingRateUpdate> = entries
             .iter()
-            .map(|e| funding_entry_to_update(e, btc_perp_id()).unwrap())
+            .map(|e| funding_entry_to_update(e, btc_perp_id()))
             .collect();
         assert_eq!(updates.len(), 3);
         assert_eq!(updates[0].rate, dec!(0.0000125));
@@ -1585,8 +1559,8 @@ mod tests {
 
     fn level(px: &str, sz: &str) -> crate::http::models::HyperliquidLevel {
         crate::http::models::HyperliquidLevel {
-            px: px.to_string(),
-            sz: sz.to_string(),
+            px: px.parse().unwrap(),
+            sz: sz.parse().unwrap(),
         }
     }
 
@@ -1664,18 +1638,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_l2_book_snapshot_skips_unparsable_levels() {
+    fn test_parse_l2_book_snapshot_skips_zero_size_levels() {
         let book_data = HyperliquidL2Book {
             coin: Ustr::from("BTC"),
             levels: vec![
-                vec![level("not-a-number", "1.0"), level("98449.00", "1.2")],
-                vec![level("98451.00", "garbage"), level("98452.00", "1.5")],
+                vec![level("98448.00", "0.0"), level("98449.00", "1.2")],
+                vec![level("98451.00", "0.0"), level("98452.00", "1.5")],
             ],
             time: 1769908800000,
         };
         let book = parse_l2_book_snapshot(&book_data, btc_perp_id(), 2, 4, None);
 
-        // Each side has one parseable level remaining.
+        // Zero-size levels are skipped; one priced level remains per side.
         assert_eq!(book.update_count, 2);
         assert_eq!(book.best_bid_price(), Some(Price::new(98449.00, 2)));
         assert_eq!(book.best_ask_price(), Some(Price::new(98452.00, 2)));
