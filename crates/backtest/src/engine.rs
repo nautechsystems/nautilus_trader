@@ -2101,7 +2101,7 @@ mod tests {
         let order_emulator = engine.kernel.order_emulator.emulator();
         let mut order_emulator = order_emulator.borrow_mut();
         order_emulator.cache_submit_order_command(command.clone());
-        order_emulator.handle_submit_order(command);
+        order_emulator.handle_submit_order(&command);
         drop(order_emulator);
         data_commands.clear();
 

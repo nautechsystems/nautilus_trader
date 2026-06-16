@@ -47,11 +47,14 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
-        BookType, InstrumentCloseType, OmsType, OptionKind, OrderSide, PositionAdjustmentType,
-        PriceType,
+        BookType, ContingencyType, InstrumentCloseType, OmsType, OptionKind, OrderSide,
+        OrderStatus, PositionAdjustmentType, PriceType, TimeInForce, TrailingOffsetType,
+        TriggerType,
     },
     events::{OrderEventAny, OrderFilled},
-    identifiers::{ActorId, ExecAlgorithmId, InstrumentId, StrategyId, Symbol, TradeId, Venue},
+    identifiers::{
+        ActorId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, Venue,
+    },
     instruments::{
         CryptoPerpetual, Equity, Instrument, InstrumentAny, OptionContract,
         stubs::{crypto_perpetual_ethusdt, default_fx_ccy},
@@ -2726,6 +2729,447 @@ fn test_cascading_stop_loss_on_fill_settled_same_tick(crypto_perpetual_ethusdt: 
         "Expected 2 orders (entry + cascading stop-loss), was {}",
         bt_result.total_orders
     );
+}
+
+struct EmulatedStopEntryOnQuote {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+    trigger_price: Price,
+    position_id: Option<PositionId>,
+    submitted: Cell<bool>,
+}
+
+impl EmulatedStopEntryOnQuote {
+    fn new(instrument_id: InstrumentId, trade_size: Quantity, trigger_price: Price) -> Self {
+        Self::with_position(instrument_id, trade_size, trigger_price, None)
+    }
+
+    fn with_position(
+        instrument_id: InstrumentId,
+        trade_size: Quantity,
+        trigger_price: Price,
+        position_id: Option<PositionId>,
+    ) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("EMULATED-STOP-ENTRY-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size,
+            trigger_price,
+            position_id,
+            submitted: Cell::new(false),
+        }
+    }
+}
+
+nautilus_strategy!(EmulatedStopEntryOnQuote);
+
+impl Debug for EmulatedStopEntryOnQuote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(EmulatedStopEntryOnQuote))
+            .finish()
+    }
+}
+
+impl DataActor for EmulatedStopEntryOnQuote {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        self.submitted.set(false);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        if self.submitted.get() {
+            return Ok(());
+        }
+        self.submitted.set(true);
+
+        let order = self.core.order_factory().stop_market(
+            self.instrument_id,
+            OrderSide::Buy,
+            self.trade_size,
+            self.trigger_price,
+            Some(TriggerType::BidAsk),
+            Some(TimeInForce::Gtc),
+            None,
+            None,
+            None,
+            None,
+            Some(TriggerType::BidAsk),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.submit_order(order, self.position_id, None, None)
+    }
+}
+
+#[rstest]
+fn test_emulated_stop_entry_releases_to_execution(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    engine
+        .add_strategy(EmulatedStopEntryOnQuote::new(
+            instrument_id,
+            Quantity::from("1.000"),
+            Price::from("1005.00"),
+        ))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1005.00", "1006.00", 2_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+    let orders = cache.orders(None, Some(&instrument_id), None, None, None);
+    let [order] = orders.as_slice() else {
+        panic!("expected one emulated stop entry order");
+    };
+
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert!(
+        order
+            .events()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Emulated(_)))
+    );
+    assert!(
+        order
+            .events()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Released(_)))
+    );
+    assert!(
+        order
+            .events()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_)))
+    );
+    assert_eq!(
+        cache
+            .positions_open(None, Some(&instrument_id), None, None, None)
+            .len(),
+        1,
+    );
+}
+
+struct EmulatedTrailingStopOnQuote {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+    trade_count: std::rc::Rc<Cell<u32>>,
+    submitted: Cell<bool>,
+}
+
+impl EmulatedTrailingStopOnQuote {
+    fn new(
+        instrument_id: InstrumentId,
+        trade_size: Quantity,
+        trade_count: std::rc::Rc<Cell<u32>>,
+    ) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("EMULATED-TRAILING-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size,
+            trade_count,
+            submitted: Cell::new(false),
+        }
+    }
+}
+
+nautilus_strategy!(EmulatedTrailingStopOnQuote);
+
+impl Debug for EmulatedTrailingStopOnQuote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(EmulatedTrailingStopOnQuote))
+            .finish()
+    }
+}
+
+impl DataActor for EmulatedTrailingStopOnQuote {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        self.subscribe_trades(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        if self.submitted.get() {
+            return Ok(());
+        }
+        self.submitted.set(true);
+
+        let order = self.core.order_factory().trailing_stop_market(
+            self.instrument_id,
+            OrderSide::Buy,
+            self.trade_size,
+            Decimal::from(5),
+            Some(TrailingOffsetType::Price),
+            None,
+            Some(Price::from("1010.00")),
+            Some(TriggerType::BidAsk),
+            Some(TimeInForce::Gtc),
+            None,
+            None,
+            None,
+            None,
+            Some(TriggerType::BidAsk),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.submit_order(order, None, None, None)
+    }
+
+    fn on_trade(&mut self, _tick: &TradeTick) -> anyhow::Result<()> {
+        self.trade_count.set(self.trade_count.get() + 1);
+        Ok(())
+    }
+}
+
+#[rstest]
+fn test_emulated_trailing_stop_updates_trigger_and_releases(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    let trade_count = std::rc::Rc::new(Cell::new(0));
+    engine
+        .add_strategy(EmulatedTrailingStopOnQuote::new(
+            instrument_id,
+            Quantity::from("1.000"),
+            trade_count.clone(),
+        ))
+        .unwrap();
+
+    let data = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        trade(instrument_id, "999.50", "1.000", 1_500_000_000),
+        quote(instrument_id, "995.00", "996.00", 2_000_000_000),
+        quote(instrument_id, "1001.00", "1001.50", 3_000_000_000),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+    let orders = cache.orders(None, Some(&instrument_id), None, None, None);
+    let [order] = orders.as_slice() else {
+        panic!("expected one emulated trailing stop order");
+    };
+
+    assert_eq!(trade_count.get(), 1);
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert!(
+        order
+            .events()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Updated(_)))
+    );
+    assert!(
+        order
+            .events()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Released(_)))
+    );
+}
+
+struct EmulatedBracketOnQuote {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+    submitted: Cell<bool>,
+}
+
+impl EmulatedBracketOnQuote {
+    fn new(instrument_id: InstrumentId, trade_size: Quantity) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("EMULATED-BRACKET-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size,
+            submitted: Cell::new(false),
+        }
+    }
+}
+
+nautilus_strategy!(EmulatedBracketOnQuote);
+
+impl Debug for EmulatedBracketOnQuote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(EmulatedBracketOnQuote)).finish()
+    }
+}
+
+impl DataActor for EmulatedBracketOnQuote {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        if self.submitted.get() {
+            return Ok(());
+        }
+        self.submitted.set(true);
+
+        let orders = self
+            .core
+            .order_factory()
+            .bracket()
+            .instrument_id(self.instrument_id)
+            .order_side(OrderSide::Buy)
+            .quantity(self.trade_size)
+            .emulation_trigger(TriggerType::BidAsk)
+            .contingency_type(ContingencyType::Oco)
+            .tp_price(Price::from("1010.00"))
+            .tp_post_only(false)
+            .sl_trigger_price(Price::from("990.00"))
+            .call();
+        self.submit_order_list(orders, None, None, None)
+    }
+}
+
+#[rstest]
+fn test_emulated_oco_cancels_sibling_without_reentrant_borrow(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    engine
+        .add_strategy(EmulatedBracketOnQuote::new(
+            instrument_id,
+            Quantity::from("1.000"),
+        ))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1010.00", "1011.00", 2_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+    let orders = cache.orders(None, Some(&instrument_id), None, None, None);
+    let stop_loss_tag = Ustr::from("STOP_LOSS");
+    let take_profit_tag = Ustr::from("TAKE_PROFIT");
+    let stop_loss = orders
+        .iter()
+        .find(|order| {
+            order
+                .tags()
+                .is_some_and(|tags| tags.contains(&stop_loss_tag))
+        })
+        .expect("expected stop-loss child order");
+    let take_profit = orders
+        .iter()
+        .find(|order| {
+            order
+                .tags()
+                .is_some_and(|tags| tags.contains(&take_profit_tag))
+        })
+        .expect("expected take-profit child order");
+
+    assert_eq!(orders.len(), 3);
+    assert_eq!(take_profit.status(), OrderStatus::Filled);
+    assert_eq!(stop_loss.status(), OrderStatus::Canceled);
+    assert!(
+        stop_loss
+            .events()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Canceled(_)))
+    );
+}
+
+#[rstest]
+fn test_reset_between_emulated_runs_clears_order_emulator_state(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    engine
+        .add_strategy(EmulatedStopEntryOnQuote::with_position(
+            instrument_id,
+            Quantity::from("1.000"),
+            Price::from("1010.00"),
+            Some(PositionId::from("P-EMULATED-RESET-001")),
+        ))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1002.00", "1003.00", 2_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+    {
+        let emulator = engine.kernel().order_emulator.get_emulator();
+        assert!(emulator.get_matching_core(&instrument_id).is_some());
+        assert_eq!(emulator.subscribed_quotes(), vec![instrument_id]);
+        assert_eq!(emulator.subscribed_strategy_count(), 1);
+        assert_eq!(emulator.monitored_position_count(), 1);
+        assert_eq!(emulator.get_submit_order_commands().len(), 1);
+    }
+
+    engine.reset();
+    {
+        let emulator = engine.kernel().order_emulator.get_emulator();
+        assert!(emulator.get_matching_core(&instrument_id).is_none());
+        assert!(emulator.subscribed_quotes().is_empty());
+        assert!(emulator.subscribed_trades().is_empty());
+        assert_eq!(emulator.subscribed_strategy_count(), 0);
+        assert_eq!(emulator.monitored_position_count(), 0);
+        assert!(emulator.get_submit_order_commands().is_empty());
+    }
+
+    engine.run(None, None, None, false).unwrap();
+    let emulator = engine.kernel().order_emulator.get_emulator();
+    assert!(emulator.get_matching_core(&instrument_id).is_some());
+    assert_eq!(emulator.subscribed_quotes(), vec![instrument_id]);
+    assert_eq!(emulator.subscribed_strategy_count(), 1);
+    assert_eq!(emulator.monitored_position_count(), 1);
+    assert_eq!(emulator.get_submit_order_commands().len(), 1);
 }
 
 // Strategy that sets two timers at the same timestamp, each submitting
