@@ -413,8 +413,8 @@ fn parse_perp_instrument(
     let raw_symbol = Symbol::from_ustr_unchecked(order_book.symbol);
     let (base_currency, quote_currency) = symbol_currencies(order_book.symbol.as_str(), "USDC");
     let settlement_currency = quote_currency;
-    let price_increment = price_increment(detail.price_decimals);
-    let size_increment = quantity_increment(detail.size_decimals);
+    let price_increment = price_increment(detail.price_decimals)?;
+    let size_increment = quantity_increment(detail.size_decimals)?;
 
     let instrument = CryptoPerpetual::new_checked(
         instrument_id,
@@ -462,8 +462,8 @@ fn parse_spot_instrument(
     );
     let raw_symbol = Symbol::from_ustr_unchecked(order_book.symbol);
     let (base_currency, quote_currency) = symbol_currencies(order_book.symbol.as_str(), "USDC");
-    let price_increment = price_increment(detail.price_decimals);
-    let size_increment = quantity_increment(detail.size_decimals);
+    let price_increment = price_increment(detail.price_decimals)?;
+    let size_increment = quantity_increment(detail.size_decimals)?;
 
     let instrument = CurrencyPair::new_checked(
         instrument_id,
@@ -504,20 +504,19 @@ fn symbol_currencies(symbol: &str, default_quote: &str) -> (Currency, Currency) 
     )
 }
 
-fn price_increment(decimals: u8) -> Price {
-    Price::from(decimal_increment(decimals))
+fn price_increment(decimals: u8) -> anyhow::Result<Price> {
+    Price::from_decimal_dp(decimal_increment(decimals), decimals)
+        .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
-fn quantity_increment(decimals: u8) -> Quantity {
-    Quantity::from(decimal_increment(decimals))
+fn quantity_increment(decimals: u8) -> anyhow::Result<Quantity> {
+    Quantity::from_decimal_dp(decimal_increment(decimals), decimals)
+        .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
-fn decimal_increment(decimals: u8) -> String {
-    if decimals == 0 {
-        return "1".to_string();
-    }
-
-    format!("0.{}1", "0".repeat(usize::from(decimals - 1)))
+// `10^-decimals` as an exact decimal (e.g. 3 -> 0.001, 0 -> 1).
+fn decimal_increment(decimals: u8) -> Decimal {
+    Decimal::new(1, u32::from(decimals))
 }
 
 fn min_quantity(
