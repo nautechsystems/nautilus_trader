@@ -45,6 +45,7 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce, TrailingOffsetType},
+    events::OrderDeniedReason,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
     },
@@ -1835,7 +1836,8 @@ impl ExecutionClient for OKXExecutionClient {
             }
 
             if let Err(reason) = validate_okx_client_order_id(cmd.client_order_id.as_str()) {
-                self.emitter.emit_order_denied(&order, &reason);
+                let denied = OrderDeniedReason::InvalidClientOrderId { detail: reason };
+                self.emitter.emit_order_denied(&order, &denied.to_string());
                 return Ok(());
             }
 
@@ -1858,12 +1860,16 @@ impl ExecutionClient for OKXExecutionClient {
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         if is_spread_instrument(cmd.instrument_id) {
             let cache = self.core.cache();
+            let denied = OrderDeniedReason::UnsupportedOrderList {
+                detail: "spread instruments are not supported in order lists".to_string(),
+            }
+            .to_string();
+
             for client_order_id in &cmd.order_list.client_order_ids {
                 let order = cache
                     .order(client_order_id)
                     .ok_or_else(|| anyhow::anyhow!("Order not found: {client_order_id}"))?;
-                self.emitter
-                    .emit_order_denied(&order, "OKX spread order lists are not supported");
+                self.emitter.emit_order_denied(&order, &denied);
             }
             return Ok(());
         }
@@ -1886,23 +1892,20 @@ impl ExecutionClient for OKXExecutionClient {
             })
             .collect();
 
-        if let Some((first_offender, first_reason)) = invalid.first() {
+        if !invalid.is_empty() {
+            let order_list_id = cmd.order_list.id;
             for client_order_id in &cmd.order_list.client_order_ids {
                 let order = cache
                     .order(client_order_id)
                     .ok_or_else(|| anyhow::anyhow!("Order not found: {client_order_id}"))?;
-                let reason = invalid
+                let denied = invalid
                     .iter()
                     .find(|(cid, _)| cid == client_order_id)
                     .map_or_else(
-                        || {
-                            format!(
-                                "OKX order list denied: sibling {first_offender} {first_reason}"
-                            )
-                        },
-                        |(_, r)| r.clone(),
+                        || OrderDeniedReason::OrderListDenied { order_list_id },
+                        |(_, r)| OrderDeniedReason::InvalidClientOrderId { detail: r.clone() },
                     );
-                self.emitter.emit_order_denied(&order, &reason);
+                self.emitter.emit_order_denied(&order, &denied.to_string());
             }
             return Ok(());
         }

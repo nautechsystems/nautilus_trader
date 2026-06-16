@@ -94,6 +94,7 @@ venue's own text unchanged.
 | `CUM_NOTIONAL_EXCEEDS_FREE_BALANCE`   | The cumulative order notional exceeds the account free balance. |
 | `EXPIRE_TIME_IN_PAST`                 | The order's expire time is in the past.                         |
 | `INSTRUMENT_NOT_FOUND`                | The instrument was not found in the cache.                      |
+| `INVALID_CLIENT_ORDER_ID`             | The client order ID is invalid for the venue.                   |
 | `INVALID_MAX_NOTIONAL_PER_ORDER`      | The configured maximum notional per order is invalid.           |
 | `INVALID_ORDER_SIDE`                  | The order side is invalid for this operation.                   |
 | `INVALID_POSITION_ID`                 | The supplied position ID is invalid for the order submission.   |
@@ -119,6 +120,7 @@ venue's own text unchanged.
 | `TRADING_HALTED`                      | Trading is halted; new orders are denied.                       |
 | `TRADING_STATE_REDUCING`              | Trading is reducing; the order would increase exposure.         |
 | `TRAILING_STOP_CALC_FAILED`           | The trailing stop trigger price could not be calculated.        |
+| `UNSUPPORTED_ORDER_LIST`              | The venue does not support the requested order list.            |
 | `UNSUPPORTED_TIME_IN_FORCE`           | The order's time in force is not supported.                     |
 | `UNSUPPORTED_TRAILING_OFFSET_TYPE`    | The order's trailing offset type is not supported.              |
 

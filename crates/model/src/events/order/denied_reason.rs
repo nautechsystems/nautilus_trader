@@ -250,6 +250,18 @@ pub enum OrderDeniedReason {
     /// The order's time in force is not supported.
     #[error("UNSUPPORTED_TIME_IN_FORCE: {0}")]
     UnsupportedTimeInForce(TimeInForce),
+    /// The client order ID is invalid for the venue.
+    #[error("INVALID_CLIENT_ORDER_ID: {detail}")]
+    InvalidClientOrderId {
+        /// The validation failure detail.
+        detail: String,
+    },
+    /// The venue does not support the requested order list.
+    #[error("UNSUPPORTED_ORDER_LIST: {detail}")]
+    UnsupportedOrderList {
+        /// The reason the order list is unsupported.
+        detail: String,
+    },
 }
 
 impl OrderDeniedCode {
@@ -319,6 +331,8 @@ impl OrderDeniedCode {
                 "The supplied position ID is invalid for the order submission."
             }
             Self::UnsupportedTimeInForce => "The order's time in force is not supported.",
+            Self::InvalidClientOrderId => "The client order ID is invalid for the venue.",
+            Self::UnsupportedOrderList => "The venue does not support the requested order list.",
         }
     }
 }
@@ -438,6 +452,25 @@ mod tests {
         assert_eq!(reason.to_string(), "UNSUPPORTED_TIME_IN_FORCE: GTD");
     }
 
+    #[rstest]
+    fn renders_adapter_messages() {
+        let invalid_client_order_id = OrderDeniedReason::InvalidClientOrderId {
+            detail: "clOrdId must be alphanumeric".to_string(),
+        };
+        let unsupported_order_list = OrderDeniedReason::UnsupportedOrderList {
+            detail: "spread instruments are not supported in order lists".to_string(),
+        };
+
+        assert_eq!(
+            invalid_client_order_id.to_string(),
+            "INVALID_CLIENT_ORDER_ID: clOrdId must be alphanumeric"
+        );
+        assert_eq!(
+            unsupported_order_list.to_string(),
+            "UNSUPPORTED_ORDER_LIST: spread instruments are not supported in order lists"
+        );
+    }
+
     // Drift pin: each variant's rendered message must start with its discriminant code, keeping
     // the hand-written `#[error]` prefix in sync with the strum-derived `OrderDeniedCode`.
     #[rstest]
@@ -541,6 +574,12 @@ mod tests {
                 detail: "boom".to_string(),
             },
             OrderDeniedReason::UnsupportedTimeInForce(TimeInForce::Gtd),
+            OrderDeniedReason::InvalidClientOrderId {
+                detail: "boom".to_string(),
+            },
+            OrderDeniedReason::UnsupportedOrderList {
+                detail: "boom".to_string(),
+            },
         ];
 
         for reason in samples {
