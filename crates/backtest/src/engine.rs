@@ -891,6 +891,8 @@ impl BacktestEngine {
         self.kernel.risk_engine.borrow_mut().stop();
         self.kernel.risk_engine.borrow_mut().reset();
 
+        self.kernel.order_emulator.reset();
+
         // Reset trader
         if let Err(e) = self.kernel.trader.borrow_mut().reset() {
             log::error!("Error resetting trader: {e:?}");
@@ -1840,19 +1842,34 @@ fn log_portfolio_performance(analyzer: &PortfolioAnalyzer) {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::enums::Environment;
+    use nautilus_common::{
+        enums::Environment,
+        messages::{
+            data::{DataCommand, UnsubscribeCommand},
+            execution::SubmitOrder,
+        },
+        msgbus::{
+            self, MessagingSwitchboard,
+            stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
+        },
+    };
     use nautilus_execution::engine::SnapshotAnchorer;
     use nautilus_model::{
         data::{Data, InstrumentStatus},
-        enums::{AccountType, BookType, MarketStatus, MarketStatusAction, OmsType},
+        enums::{
+            AccountType, BookType, MarketStatus, MarketStatusAction, OmsType, OrderSide, OrderType,
+            TriggerType,
+        },
         identifiers::Venue,
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
         },
-        types::Money,
+        orders::{Order, OrderAny, OrderTestBuilder},
+        types::{Money, Price, Quantity},
     };
     use nautilus_system::{KernelEventStore, RegisteredComponents};
     use rstest::*;
+    use ustr::Ustr;
 
     use super::*;
 
@@ -1942,6 +1959,43 @@ mod tests {
         engine
     }
 
+    fn create_stop_market_order(instrument: &CryptoPerpetual) -> OrderAny {
+        OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("5100.00"))
+            .quantity(Quantity::from(1))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build()
+    }
+
+    fn create_submit_order_command(order: &OrderAny) -> SubmitOrder {
+        SubmitOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.init_event().clone(),
+            order.exec_algorithm_id(),
+            None,
+            None,
+            UUID4::new(),
+            0.into(),
+            None, // correlation_id
+        )
+    }
+
+    fn register_data_command_handler(id: &str) -> TypedIntoMessageSavingHandler<DataCommand> {
+        let (handler, saving_handler) =
+            get_typed_into_message_saving_handler::<DataCommand>(Some(Ustr::from(id)));
+        msgbus::register_data_command_endpoint(
+            MessagingSwitchboard::data_engine_queue_execute(),
+            handler,
+        );
+        saving_handler
+    }
+
     #[rstest]
     fn test_run_impl_event_store_replay_skips_trader_start() {
         let mut engine = create_engine_with_replay_store(false);
@@ -2026,6 +2080,43 @@ mod tests {
             "instrument must survive engine.reset(); user-supplied \
              drop_instruments_on_reset={user_value:?} must not leak through",
         );
+    }
+
+    #[rstest]
+    fn test_reset_resets_order_emulator_state(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let mut engine = create_engine();
+        let data_commands =
+            register_data_command_handler("DataEngine.queue_execute.backtest_reset");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+        let instrument_id = instrument.id();
+        engine.add_instrument(&instrument).unwrap();
+        let order = create_stop_market_order(&crypto_perpetual_ethusdt);
+        let command = create_submit_order_command(&order);
+        engine
+            .kernel
+            .cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        let order_emulator = engine.kernel.order_emulator.emulator();
+        let mut order_emulator = order_emulator.borrow_mut();
+        order_emulator.cache_submit_order_command(command.clone());
+        order_emulator.handle_submit_order(command);
+        drop(order_emulator);
+        data_commands.clear();
+
+        engine.reset();
+
+        let commands = data_commands.get_messages();
+        let emulator = engine.kernel.order_emulator.get_emulator();
+        assert!(emulator.subscribed_quotes().is_empty());
+        assert!(emulator.subscribed_trades().is_empty());
+        assert!(emulator.get_matching_core(&instrument_id).is_none());
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
+                if command.instrument_id == instrument_id
+        )));
     }
 
     #[rstest]

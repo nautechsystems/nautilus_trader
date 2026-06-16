@@ -339,6 +339,7 @@ impl OrderEmulator {
                 None, // correlation_id
             );
 
+            self.manager.cache_submit_order_command(command.clone());
             self.handle_submit_order(command);
         }
 
@@ -524,8 +525,8 @@ impl OrderEmulator {
             self.dispatch_manager_actions(actions);
             return;
         }
-
-        self.check_monitoring(command.strategy_id, command.position_id);
+        let strategy_id = command.strategy_id;
+        let position_id = command.position_id;
 
         // Get or create matching core
         let trigger_instrument_id = order
@@ -671,6 +672,8 @@ impl OrderEmulator {
                 &event,
             );
         }
+
+        self.check_monitoring(strategy_id, position_id);
 
         // Since we are cloning the matching core, we need to insert it back into the original hashmap
         self.matching_cores
@@ -1575,11 +1578,11 @@ mod tests {
     use nautilus_model::{
         data::{QuoteTick, TradeTick},
         enums::{AggressorSide, OrderSide, OrderType, TriggerType},
-        identifiers::{ClientOrderId, StrategyId, TradeId, TraderId},
+        identifiers::{ClientOrderId, OrderListId, StrategyId, TradeId, TraderId},
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
         },
-        orders::OrderTestBuilder,
+        orders::{OrderList, OrderTestBuilder},
         types::{Price, Quantity},
     };
     use rstest::{fixture, rstest};
@@ -1628,6 +1631,22 @@ mod tests {
             .trigger_price(Price::from("5100.00"))
             .quantity(Quantity::from(1))
             .emulation_trigger(trigger)
+            .build()
+    }
+
+    fn create_list_stop_market_order(
+        instrument: &CryptoPerpetual,
+        client_order_id: &str,
+        order_list_id: OrderListId,
+    ) -> OrderAny {
+        OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(client_order_id))
+            .order_list_id(order_list_id)
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("5100.00"))
+            .quantity(Quantity::from(1))
+            .emulation_trigger(TriggerType::BidAsk)
             .build()
     }
 
@@ -2161,6 +2180,70 @@ mod tests {
         assert_eq!(core.bid, None);
         assert_eq!(core.ask, None);
         assert_eq!(core.last, None);
+    }
+
+    #[rstest]
+    fn test_submit_order_list_handles_reentrant_order_events(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let data_commands = register_data_command_handler("DataEngine.queue_execute.list");
+        add_instrument_to_cache(&cache, &instrument);
+        let order_list_id = OrderListId::from("OL-EMULATOR-001");
+        let first_order = create_list_stop_market_order(&instrument, "O-LIST-001", order_list_id);
+        let second_order = create_list_stop_market_order(&instrument, "O-LIST-002", order_list_id);
+        let orders = vec![first_order.clone(), second_order.clone()];
+        let order_list = OrderList::from_orders(&orders, 0.into());
+        let order_inits = orders
+            .iter()
+            .map(|order| order.init_event().clone())
+            .collect();
+        cache
+            .borrow_mut()
+            .add_order(first_order.clone(), None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(second_order.clone(), None, None, false)
+            .unwrap();
+        let command = SubmitOrderList::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("STRATEGY-001"),
+            order_list,
+            order_inits,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            0.into(),
+            None,
+        );
+
+        emulator
+            .borrow_mut()
+            .execute(TradingCommand::SubmitOrderList(command));
+
+        let commands = data_commands.get_messages();
+        let cache = cache.borrow();
+        let first_status = cache
+            .order(&first_order.client_order_id())
+            .unwrap()
+            .status();
+        let second_status = cache
+            .order(&second_order.client_order_id())
+            .unwrap()
+            .status();
+        drop(cache);
+        let emulator = emulator.borrow();
+
+        assert_eq!(first_status, OrderStatus::Emulated);
+        assert_eq!(second_status, OrderStatus::Emulated);
+        assert!(emulator.get_matching_core(&instrument.id()).is_some());
+        assert_eq!(emulator.subscribed_quotes(), vec![instrument.id()]);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            DataCommand::Subscribe(SubscribeCommand::Quotes(command))
+                if command.instrument_id == instrument.id()
+        )));
     }
 
     #[rstest]

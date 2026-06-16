@@ -49,4 +49,20 @@ impl OrderEmulatorAdapter {
     pub fn emulator(&self) -> Rc<RefCell<OrderEmulator>> {
         self.emulator.clone()
     }
+
+    pub fn start(&self) {
+        self.emulator.borrow_mut().start();
+    }
+
+    pub fn stop(&self) {
+        self.emulator.borrow().stop();
+    }
+
+    pub fn reset(&self) {
+        self.emulator.borrow_mut().reset();
+    }
+
+    pub fn dispose(&self) {
+        self.emulator.borrow_mut().dispose();
+    }
 }
