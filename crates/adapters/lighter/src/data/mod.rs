@@ -2783,7 +2783,10 @@ mod tests {
         assert_eq!(query.resolution, LighterFundingResolution::OneHour);
         assert_eq!(query.start_timestamp, 1_778_702_400_000);
         assert_eq!(query.end_timestamp, 1_778_706_000_000);
-        assert_eq!(query.count_back, 2);
+        assert_eq!(
+            query.count_back,
+            i64::from(crate::http::client::LIGHTER_FUNDINGS_MAX_LIMIT)
+        );
         (StatusCode::OK, HTTP_FUNDINGS).into_response()
     }
 

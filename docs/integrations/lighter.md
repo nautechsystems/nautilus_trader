@@ -446,7 +446,9 @@ Perpetual `market_stats` frames emit `MarkPriceUpdate`, `IndexPriceUpdate`, and
 `FundingRateUpdate` events. Spot `spot_market_stats` frames emit `IndexPriceUpdate` events.
 
 Historical funding-rate requests use the public `/api/v1/fundings` endpoint and emit
-`FundingRateUpdate` responses for settled hourly rows.
+`FundingRateUpdate` responses for settled hourly rows. The adapter paginates the requested
+range across pages, so a wide window is not truncated to a single page; an explicit `limit`
+still caps the number of rows returned.
 
 ## Account tiers
 
@@ -530,6 +532,7 @@ Common REST endpoint weights from the official docs:
 | `/api/v1/accountInactiveOrders`        | 100 rows   | Adapter follows `next_cursor` at this cap.         |
 | `/api/v1/orderBookOrders`              | 250 levels | Snapshot depth is clamped to the venue cap.        |
 | `/api/v1/candles`                      | 500 rows   | Adapter caps REST bar pages at this venue maximum. |
+| `/api/v1/fundings`                     | 100 rows   | Adapter paginates funding pages at this venue cap. |
 | WebSocket connections                  | 200 / IP   | Venue limit.                                       |
 | WebSocket subscriptions / connection   | 500        | Venue limit.                                       |
 | WebSocket unique accounts / connection | 500        | Venue limit.                                       |

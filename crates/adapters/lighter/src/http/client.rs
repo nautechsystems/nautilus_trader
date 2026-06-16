@@ -98,9 +98,13 @@ const MULTIPART_BOUNDARY: &str = "nautilus-lighter-form-boundary";
 pub const LIGHTER_REST_PAGE_SIZE: u16 = 100;
 pub const LIGHTER_CANDLES_MAX_LIMIT: u16 = 500;
 
+/// Maximum rows returned per `/api/v1/fundings` call (the venue per-call cap).
+pub const LIGHTER_FUNDINGS_MAX_LIMIT: u16 = 100;
+
 const DEFAULT_BARS_LIMIT: usize = LIGHTER_CANDLES_MAX_LIMIT as usize;
 const DEFAULT_FUNDING_RATES_LIMIT: usize = 100;
 const MAX_BAR_REQUEST_PAGES: usize = 500;
+const MAX_FUNDING_REQUEST_PAGES: usize = 500;
 
 trait LighterResponseCheck {
     fn response_code(&self) -> i32;
@@ -1145,38 +1149,78 @@ impl LighterHttpClient {
             return Ok(Vec::new());
         }
 
-        let query = LighterFundingsQuery {
-            market_id,
-            resolution,
-            start_timestamp: start_ms,
-            end_timestamp: end_ms,
-            count_back: i64::try_from(target_limit).unwrap_or(i64::MAX),
-        };
-        let response = self.get_fundings(&query).await?;
         let ts_init = self.generate_ts_init();
         let interval = Some(resolution.interval_minutes());
-        let mut funding_rates = Vec::with_capacity(response.fundings.len());
+        let mut funding_rates = Vec::new();
+        let mut cursor_ms = start_ms;
+        let mut pages = 0_usize;
+        // `cap - 1`, not `cap`: the endpoint excludes `end_timestamp`, so a
+        // full-cap span with `count_back = cap` would drop the row at the cursor.
+        let page_span_ms =
+            interval_ms.saturating_mul(i64::from(LIGHTER_FUNDINGS_MAX_LIMIT.saturating_sub(1)));
 
-        for funding in &response.fundings {
-            let update = parse_funding_rate_update(funding, instrument.id(), interval, ts_init)
-                .map_err(LighterHttpError::from)?;
-            let timestamp_ms = i64::try_from(update.ts_event.as_u64() / 1_000_000)
-                .map_err(|e| LighterHttpError::Parse(e.to_string()))?;
-
-            if timestamp_ms < start_ms || timestamp_ms > end_ms {
-                continue;
+        while cursor_ms < end_ms && pages < MAX_FUNDING_REQUEST_PAGES {
+            if !start_was_unspecified
+                && let Some(limit) = requested_limit
+                && funding_rates.len() >= limit
+            {
+                break;
             }
-            funding_rates.push(update);
+
+            let window_end_ms = cursor_ms.saturating_add(page_span_ms).min(end_ms);
+            if window_end_ms <= cursor_ms {
+                break;
+            }
+
+            let query = LighterFundingsQuery {
+                market_id,
+                resolution,
+                start_timestamp: cursor_ms,
+                end_timestamp: window_end_ms,
+                count_back: i64::from(LIGHTER_FUNDINGS_MAX_LIMIT),
+            };
+            let response = self.get_fundings(&query).await?;
+
+            let mut page = Vec::with_capacity(response.fundings.len());
+            for funding in &response.fundings {
+                let update = parse_funding_rate_update(funding, instrument.id(), interval, ts_init)
+                    .map_err(LighterHttpError::from)?;
+                let timestamp_ms = i64::try_from(update.ts_event.as_u64() / 1_000_000)
+                    .map_err(|e| LighterHttpError::Parse(e.to_string()))?;
+                if timestamp_ms < cursor_ms || timestamp_ms > end_ms {
+                    continue;
+                }
+                page.push(update);
+            }
+
+            page.sort_by_key(|rate| rate.ts_event);
+            for update in page {
+                if funding_rates
+                    .last()
+                    .is_some_and(|last: &FundingRateUpdate| last.ts_event == update.ts_event)
+                {
+                    continue;
+                }
+                funding_rates.push(update);
+
+                if !start_was_unspecified
+                    && let Some(limit) = requested_limit
+                    && funding_rates.len() >= limit
+                {
+                    break;
+                }
+            }
+
+            cursor_ms = window_end_ms;
+            pages += 1;
         }
 
-        funding_rates.sort_by_key(|rate| rate.ts_event);
+        if pages >= MAX_FUNDING_REQUEST_PAGES {
+            log::warn!("Stopped Lighter funding request after {MAX_FUNDING_REQUEST_PAGES} pages");
+        }
 
         if start_was_unspecified && funding_rates.len() > target_limit {
             funding_rates = funding_rates.split_off(funding_rates.len() - target_limit);
-        } else if let Some(limit) = requested_limit
-            && funding_rates.len() > limit
-        {
-            funding_rates.truncate(limit);
         }
 
         Ok(funding_rates)
