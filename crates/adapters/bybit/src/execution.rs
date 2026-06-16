@@ -45,6 +45,7 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{OmsType, OrderSide, OrderType, TimeInForce},
+    events::OrderDeniedReason,
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
@@ -1108,26 +1109,38 @@ impl ExecutionClient for BybitExecutionClient {
         let product_type = self.get_product_type_for_instrument(instrument_id);
 
         // Validate order params before emitting submitted event
-        if let Err(e) = BybitOrderSide::try_from(order.order_side()) {
-            self.emitter.emit_order_denied(&order, &e.to_string());
+        if BybitOrderSide::try_from(order.order_side()).is_err() {
+            let denied = OrderDeniedReason::InvalidOrderSide {
+                order_side: order.order_side(),
+            };
+            self.emitter.emit_order_denied(&order, &denied.to_string());
             return Ok(());
         }
 
-        if let Err(e) = Self::map_order_type(order.order_type()) {
-            self.emitter.emit_order_denied(&order, &e.to_string());
+        if Self::map_order_type(order.order_type()).is_err() {
+            let denied = OrderDeniedReason::UnsupportedOrderType {
+                order_type: order.order_type(),
+            };
+            self.emitter.emit_order_denied(&order, &denied.to_string());
             return Ok(());
         }
 
         let tp_sl = match parse_bybit_tp_sl_params(cmd.params.as_ref()) {
             Ok(p) => p,
             Err(e) => {
-                self.emitter.emit_order_denied(&order, &e.to_string());
+                let denied = OrderDeniedReason::ValidationFailed {
+                    detail: e.to_string(),
+                };
+                self.emitter.emit_order_denied(&order, &denied.to_string());
                 return Ok(());
             }
         };
 
         if let Err(e) = Self::validate_bbo_params(&order, product_type, &tp_sl) {
-            self.emitter.emit_order_denied(&order, &e.to_string());
+            let denied = OrderDeniedReason::ValidationFailed {
+                detail: e.to_string(),
+            };
+            self.emitter.emit_order_denied(&order, &denied.to_string());
             return Ok(());
         }
 
@@ -1136,10 +1149,10 @@ impl ExecutionClient for BybitExecutionClient {
         if self.config.environment == BybitEnvironment::Demo
             && (tp_sl.tp_trigger_price.is_some() || tp_sl.sl_trigger_price.is_some())
         {
-            self.emitter.emit_order_denied(
-                &order,
-                "TP/SL trigger prices are not supported in demo mode",
-            );
+            let denied = OrderDeniedReason::UnsupportedTpSl {
+                detail: "TP/SL trigger prices are not supported in demo mode".to_string(),
+            };
+            self.emitter.emit_order_denied(&order, &denied.to_string());
             return Ok(());
         }
 
@@ -1293,10 +1306,14 @@ impl ExecutionClient for BybitExecutionClient {
             Ok(p) => p,
             Err(e) => {
                 let cache = self.core.cache();
+                let denied = OrderDeniedReason::ValidationFailed {
+                    detail: e.to_string(),
+                }
+                .to_string();
 
                 for cid in &cmd.order_list.client_order_ids {
                     if let Some(order) = cache.order(cid) {
-                        self.emitter.emit_order_denied(&order, &e.to_string());
+                        self.emitter.emit_order_denied(&order, &denied);
                     }
                 }
                 return Ok(());
@@ -1312,13 +1329,14 @@ impl ExecutionClient for BybitExecutionClient {
             && (tp_sl.tp_trigger_price.is_some() || tp_sl.sl_trigger_price.is_some())
         {
             let cache = self.core.cache();
+            let denied = OrderDeniedReason::UnsupportedTpSl {
+                detail: "TP/SL trigger prices are not supported in demo mode".to_string(),
+            }
+            .to_string();
 
             for cid in &cmd.order_list.client_order_ids {
                 if let Some(order) = cache.order(cid) {
-                    self.emitter.emit_order_denied(
-                        &order,
-                        "TP/SL trigger prices are not supported in demo mode",
-                    );
+                    self.emitter.emit_order_denied(&order, &denied);
                 }
             }
             return Ok(());
@@ -1329,42 +1347,80 @@ impl ExecutionClient for BybitExecutionClient {
         let mut valid_orders = Vec::with_capacity(cmd.order_list.client_order_ids.len());
         {
             let cache = self.core.cache();
-            let mut deny_reason: Option<String> = None;
+            let order_list_id = cmd.order_list.id;
+            let list_denied = OrderDeniedReason::OrderListDenied { order_list_id };
+            // (offending leg, reason for the offending leg, reason for the remaining legs). A
+            // single offending leg carries its specific reason and the rest render
+            // `ORDER_LIST_DENIED`; a list-level failure renders the same reason for every leg.
+            let mut denial: Option<(ClientOrderId, OrderDeniedReason, OrderDeniedReason)> = None;
 
             for cid in &cmd.order_list.client_order_ids {
                 let Some(order) = cache.order(cid) else {
-                    deny_reason = Some(format!("Order not found in cache: {cid}"));
+                    let reason = OrderDeniedReason::OrderListIncomplete { order_list_id };
+                    denial = Some((*cid, reason.clone(), reason));
                     break;
                 };
 
                 if order.is_closed() {
-                    deny_reason = Some(format!("Cannot submit closed order {cid}"));
+                    denial = Some((
+                        *cid,
+                        OrderDeniedReason::ValidationFailed {
+                            detail: format!("cannot submit closed order {cid}"),
+                        },
+                        list_denied,
+                    ));
                     break;
                 }
 
-                if let Err(e) = BybitOrderSide::try_from(order.order_side()) {
-                    deny_reason = Some(e.to_string());
+                if BybitOrderSide::try_from(order.order_side()).is_err() {
+                    denial = Some((
+                        *cid,
+                        OrderDeniedReason::InvalidOrderSide {
+                            order_side: order.order_side(),
+                        },
+                        list_denied,
+                    ));
                     break;
                 }
 
-                if let Err(e) = Self::map_order_type(order.order_type()) {
-                    deny_reason = Some(e.to_string());
+                if Self::map_order_type(order.order_type()).is_err() {
+                    denial = Some((
+                        *cid,
+                        OrderDeniedReason::UnsupportedOrderType {
+                            order_type: order.order_type(),
+                        },
+                        list_denied,
+                    ));
                     break;
                 }
 
                 if let Err(e) = Self::validate_bbo_params(&order, product_type, &tp_sl) {
-                    deny_reason = Some(e.to_string());
+                    denial = Some((
+                        *cid,
+                        OrderDeniedReason::ValidationFailed {
+                            detail: e.to_string(),
+                        },
+                        list_denied,
+                    ));
                     break;
                 }
 
                 valid_orders.push(order.clone());
             }
 
-            // Deny entire list if any order fails validation
-            if let Some(reason) = deny_reason {
+            // Deny the entire list if any leg fails validation
+            if let Some((offender, offender_reason, rest_reason)) = denial {
+                let offender_reason = offender_reason.to_string();
+                let rest_reason = rest_reason.to_string();
+
                 for cid in &cmd.order_list.client_order_ids {
                     if let Some(order) = cache.order(cid) {
-                        self.emitter.emit_order_denied(&order, &reason);
+                        let reason = if *cid == offender {
+                            offender_reason.as_str()
+                        } else {
+                            rest_reason.as_str()
+                        };
+                        self.emitter.emit_order_denied(&order, reason);
                     }
                 }
                 return Ok(());

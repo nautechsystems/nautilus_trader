@@ -27,7 +27,7 @@ use strum::{AsRefStr, Display, EnumDiscriminants, EnumIter, EnumString};
 use thiserror::Error;
 
 use crate::{
-    enums::{OrderSide, TimeInForce, TrailingOffsetType},
+    enums::{OrderSide, OrderType, TimeInForce, TrailingOffsetType},
     identifiers::{ClientId, InstrumentId, OrderListId, PositionId, Venue},
     types::{Money, Quantity},
 };
@@ -262,6 +262,24 @@ pub enum OrderDeniedReason {
         /// The reason the order list is unsupported.
         detail: String,
     },
+    /// The order type is not supported by the venue.
+    #[error("UNSUPPORTED_ORDER_TYPE: {order_type}")]
+    UnsupportedOrderType {
+        /// The unsupported order type.
+        order_type: OrderType,
+    },
+    /// The venue does not support the requested take-profit/stop-loss parameters.
+    #[error("UNSUPPORTED_TP_SL: {detail}")]
+    UnsupportedTpSl {
+        /// The reason the take-profit/stop-loss parameters are unsupported.
+        detail: String,
+    },
+    /// The order failed adapter validation before submission.
+    #[error("VALIDATION_FAILED: {detail}")]
+    ValidationFailed {
+        /// The validation failure detail.
+        detail: String,
+    },
 }
 
 impl OrderDeniedCode {
@@ -333,6 +351,11 @@ impl OrderDeniedCode {
             Self::UnsupportedTimeInForce => "The order's time in force is not supported.",
             Self::InvalidClientOrderId => "The client order ID is invalid for the venue.",
             Self::UnsupportedOrderList => "The venue does not support the requested order list.",
+            Self::UnsupportedOrderType => "The order type is not supported by the venue.",
+            Self::UnsupportedTpSl => {
+                "The venue does not support the requested take‑profit/stop‑loss parameters."
+            }
+            Self::ValidationFailed => "The order failed adapter validation before submission.",
         }
     }
 }
@@ -460,6 +483,16 @@ mod tests {
         let unsupported_order_list = OrderDeniedReason::UnsupportedOrderList {
             detail: "spread instruments are not supported in order lists".to_string(),
         };
+        let unsupported_order_type = OrderDeniedReason::UnsupportedOrderType {
+            order_type: OrderType::TrailingStopMarket,
+        };
+        let unsupported_tp_sl = OrderDeniedReason::UnsupportedTpSl {
+            detail: "TP/SL trigger prices are not supported in demo mode".to_string(),
+        };
+        let validation_failed = OrderDeniedReason::ValidationFailed {
+            detail: "`bbo_side_type` and `bbo_level` are only supported for linear products"
+                .to_string(),
+        };
 
         assert_eq!(
             invalid_client_order_id.to_string(),
@@ -468,6 +501,18 @@ mod tests {
         assert_eq!(
             unsupported_order_list.to_string(),
             "UNSUPPORTED_ORDER_LIST: spread instruments are not supported in order lists"
+        );
+        assert_eq!(
+            unsupported_order_type.to_string(),
+            "UNSUPPORTED_ORDER_TYPE: TRAILING_STOP_MARKET"
+        );
+        assert_eq!(
+            unsupported_tp_sl.to_string(),
+            "UNSUPPORTED_TP_SL: TP/SL trigger prices are not supported in demo mode"
+        );
+        assert_eq!(
+            validation_failed.to_string(),
+            "VALIDATION_FAILED: `bbo_side_type` and `bbo_level` are only supported for linear products"
         );
     }
 
@@ -578,6 +623,15 @@ mod tests {
                 detail: "boom".to_string(),
             },
             OrderDeniedReason::UnsupportedOrderList {
+                detail: "boom".to_string(),
+            },
+            OrderDeniedReason::UnsupportedOrderType {
+                order_type: OrderType::TrailingStopMarket,
+            },
+            OrderDeniedReason::UnsupportedTpSl {
+                detail: "boom".to_string(),
+            },
+            OrderDeniedReason::ValidationFailed {
                 detail: "boom".to_string(),
             },
         ];
