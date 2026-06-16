@@ -29,12 +29,7 @@ use nautilus_core::{UUID4, WeakCell};
 use nautilus_model::identifiers::TraderId;
 use ustr::Ustr;
 
-use crate::{
-    order_emulator::{emulator::OrderEmulator, handlers::OrderEmulatorOnEventHandler},
-    order_manager::handlers::{
-        CancelOrderHandlerAny, ModifyOrderHandlerAny, SubmitOrderHandlerAny,
-    },
-};
+use crate::order_emulator::{emulator::OrderEmulator, handlers::OrderEmulatorOnEventHandler};
 
 #[derive(Debug)]
 pub struct OrderEmulatorAdapter {
@@ -67,9 +62,6 @@ impl OrderEmulatorAdapter {
 
         Self::initialize_execute_handler(&emulator);
         Self::initialize_on_event_handler(&emulator);
-        Self::initialize_submit_order_handler(&emulator);
-        Self::initialize_cancel_order_handler(&emulator);
-        Self::initialize_modify_order_handler(&emulator);
 
         Self { emulator }
     }
@@ -77,21 +69,6 @@ impl OrderEmulatorAdapter {
     fn initialize_self_ref(emulator: &Rc<RefCell<OrderEmulator>>) {
         let self_ref = WeakCell::from(Rc::downgrade(emulator));
         emulator.borrow_mut().set_self_ref(self_ref);
-    }
-
-    fn initialize_submit_order_handler(emulator: &Rc<RefCell<OrderEmulator>>) {
-        let handler = SubmitOrderHandlerAny::OrderEmulator(WeakCell::from(Rc::downgrade(emulator)));
-        emulator.borrow_mut().set_submit_order_handler(handler);
-    }
-
-    fn initialize_cancel_order_handler(emulator: &Rc<RefCell<OrderEmulator>>) {
-        let handler = CancelOrderHandlerAny::OrderEmulator(WeakCell::from(Rc::downgrade(emulator)));
-        emulator.borrow_mut().set_cancel_order_handler(handler);
-    }
-
-    fn initialize_modify_order_handler(emulator: &Rc<RefCell<OrderEmulator>>) {
-        let handler = ModifyOrderHandlerAny::OrderEmulator(WeakCell::from(Rc::downgrade(emulator)));
-        emulator.borrow_mut().set_modify_order_handler(handler);
     }
 
     fn initialize_execute_handler(emulator: &Rc<RefCell<OrderEmulator>>) {

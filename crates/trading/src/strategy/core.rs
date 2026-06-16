@@ -189,7 +189,7 @@ impl StrategyCore {
             self.config.use_hyphens_in_client_order_ids,
         ))));
 
-        self.order_manager = Some(OrderManager::new(clock, cache, false, None, None, None));
+        self.order_manager = Some(OrderManager::new(clock, cache, false));
 
         self.portfolio = Some(portfolio);
 
