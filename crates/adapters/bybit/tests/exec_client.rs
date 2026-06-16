@@ -59,7 +59,7 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, params::Params};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
@@ -1542,6 +1542,119 @@ async fn test_exec_client_demo_submit_post_lookup_failure_does_not_reject() {
             }
         }
     }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_demo_submit_tp_trigger_price_emits_order_denied() {
+    let (addr, state) = start_test_server().await.unwrap();
+
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("BYBIT-001");
+    let client_id = *BYBIT_CLIENT_ID;
+    let strategy_id = StrategyId::from("S-001");
+    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE);
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    add_test_account_to_cache(&cache, account_id);
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        *BYBIT_VENUE,
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+
+    let config = create_test_demo_exec_config(addr);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = BybitExecutionClient::new(core, config).unwrap();
+    client.connect().await.unwrap();
+    client.start().unwrap();
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 4 },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    while tokio::time::timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .is_ok()
+    {}
+
+    let cid = ClientOrderId::from("test-tp-trigger-denied");
+    let order = OrderAny::Market(MarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        cid,
+        OrderSide::Buy,
+        Quantity::from("0.01"),
+        TimeInForce::Gtc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+    let init = order.init_event().clone();
+
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(client_id), false)
+        .unwrap();
+
+    let mut params = Params::new();
+    params.insert("take_profit".to_string(), json!("3000"));
+    params.insert("tp_trigger_price".to_string(), json!("2950"));
+
+    let cmd = SubmitOrder::new(
+        trader_id,
+        Some(client_id),
+        strategy_id,
+        instrument_id,
+        cid,
+        init,
+        None,
+        None,
+        Some(params),
+        UUID4::new(),
+        UnixNanos::default(),
+        None, // correlation_id
+    );
+
+    client.submit_order(cmd).unwrap();
+
+    // The demo path cannot carry TP/SL trigger prices, so the first event must be OrderDenied
+    // (no OrderSubmitted, no HTTP submission).
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timed out waiting for OrderDenied")
+        .expect("channel closed");
+    let text = match event {
+        ExecutionEvent::Order(ref order_event) => order_event.to_string(),
+        other => panic!("Expected OrderDenied, was {other:?}"),
+    };
+    assert!(
+        text.contains("OrderDenied")
+            && text.contains("TP/SL trigger prices are not supported in demo mode"),
+        "Expected OrderDenied with trigger-price reason, was {text}",
+    );
 
     client.disconnect().await.unwrap();
 }

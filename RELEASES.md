@@ -28,6 +28,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Changed plug-in loader to reject build mismatches by default; opt out with `set_allow_build_mismatch` (Rust)
+- Changed Bybit `BybitHttpClient::submit_order` to take a trailing native TP/SL params argument; the PyO3 binding defaults it to `None` (Rust)
 - Changed `CacheDatabaseAdapter::load_index_order_position` to return position IDs instead of positions (Rust)
 - Changed `PoolProfiler.price_sqrt_ratio_x96` to return `int` instead of `str`
 - Changed PyO3 `DataActor`/`Strategy` historical request `start`/`end` to require UTC datetimes
@@ -57,6 +58,7 @@ Released on TBD (UTC).
 - Fixed blocking Python HTTP functions holding the GIL for the full request duration
 - Fixed Blockchain snapshot bootstrap checks
 - Fixed Blockchain pool-event replay to require durable timestamps before checkpoints
+- Fixed Bybit demo native TP/SL and option params being denied instead of routed through the create-order endpoint (Rust and Python)
 - Fixed custom `DataType` metadata ordering and shared custom-data unsubscribes (Rust)
 - Fixed data option-chain delta warmup
 - Fixed DeFi replay bootstrap gaps in `PoolSwap` payload exposure, block timestamp units, and actor IDs (Rust)

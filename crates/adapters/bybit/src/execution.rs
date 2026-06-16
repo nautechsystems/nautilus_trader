@@ -504,11 +504,7 @@ impl BybitExecutionClient {
                 None
             },
             trigger_direction: trigger_dir.map(|d| d as i32),
-            tpsl_mode: if has_tp_sl {
-                Some(BybitTpSlMode::Full)
-            } else {
-                None
-            },
+            tpsl_mode: tp_sl.tpsl_mode.or(has_tp_sl.then_some(BybitTpSlMode::Full)),
             take_profit: tp_sl.take_profit.map(|p| p.to_string()),
             stop_loss: tp_sl.stop_loss.map(|p| p.to_string()),
             tp_trigger_by: tp_sl.tp_trigger_by.or(tp_sl
@@ -1135,12 +1131,14 @@ impl ExecutionClient for BybitExecutionClient {
             return Ok(());
         }
 
+        // The demo HTTP create-order entry cannot carry TP/SL trigger prices (only the mainnet
+        // WS path can), so deny rather than submit an order missing the user's trigger prices.
         if self.config.environment == BybitEnvironment::Demo
-            && (tp_sl.has_tp_sl() || tp_sl.order_iv.is_some() || tp_sl.mmp.is_some())
+            && (tp_sl.tp_trigger_price.is_some() || tp_sl.sl_trigger_price.is_some())
         {
             self.emitter.emit_order_denied(
                 &order,
-                "Native TP/SL and option params are not supported in demo mode",
+                "TP/SL trigger prices are not supported in demo mode",
             );
             return Ok(());
         }
@@ -1199,10 +1197,12 @@ impl ExecutionClient for BybitExecutionClient {
             let is_quote_quantity = order.is_quote_quantity();
             let is_leverage = tp_sl.is_leverage;
             let bbo_side_type = tp_sl.bbo_side_type;
-            let bbo_level = tp_sl.bbo_level;
+            let bbo_level = tp_sl.bbo_level.clone();
+            let native_tp_sl = tp_sl.to_native_tp_sl();
             let dispatch_state = Arc::clone(&self.dispatch_state);
 
             self.spawn_task("submit_order_http", async move {
+                let native_tp_sl_ref = (!native_tp_sl.is_empty()).then_some(&native_tp_sl);
                 let result = http_client
                     .submit_order(
                         account_id,
@@ -1222,6 +1222,7 @@ impl ExecutionClient for BybitExecutionClient {
                         position_idx,
                         bbo_side_type,
                         bbo_level,
+                        native_tp_sl_ref,
                     )
                     .await;
 
@@ -1305,8 +1306,10 @@ impl ExecutionClient for BybitExecutionClient {
         let instrument_id = cmd.instrument_id;
         let product_type = self.get_product_type_for_instrument(instrument_id);
 
+        // The demo HTTP create-order entry cannot carry TP/SL trigger prices (only the mainnet
+        // WS path can), so deny rather than submit orders missing the user's trigger prices.
         if self.config.environment == BybitEnvironment::Demo
-            && (tp_sl.has_tp_sl() || tp_sl.order_iv.is_some() || tp_sl.mmp.is_some())
+            && (tp_sl.tp_trigger_price.is_some() || tp_sl.sl_trigger_price.is_some())
         {
             let cache = self.core.cache();
 
@@ -1314,7 +1317,7 @@ impl ExecutionClient for BybitExecutionClient {
                 if let Some(order) = cache.order(cid) {
                     self.emitter.emit_order_denied(
                         &order,
-                        "Native TP/SL and option params are not supported in demo mode",
+                        "TP/SL trigger prices are not supported in demo mode",
                     );
                 }
             }
@@ -1414,6 +1417,7 @@ impl ExecutionClient for BybitExecutionClient {
             let is_leverage = tp_sl.is_leverage;
             let bbo_side_type = tp_sl.bbo_side_type;
             let bbo_level = tp_sl.bbo_level.clone();
+            let native_tp_sl = tp_sl.to_native_tp_sl();
             let dispatch_state = Arc::clone(&self.dispatch_state);
 
             let order_data: Vec<_> = valid_orders
@@ -1444,6 +1448,8 @@ impl ExecutionClient for BybitExecutionClient {
                 .collect();
 
             self.spawn_task("submit_order_list_http", async move {
+                let native_tp_sl_ref = (!native_tp_sl.is_empty()).then_some(&native_tp_sl);
+
                 for (
                     cid,
                     side,
@@ -1477,6 +1483,7 @@ impl ExecutionClient for BybitExecutionClient {
                             position_idx,
                             bbo_side_type,
                             bbo_level.clone(),
+                            native_tp_sl_ref,
                         )
                         .await
                     {

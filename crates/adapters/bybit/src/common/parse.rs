@@ -155,14 +155,17 @@ use crate::{
             BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarketUnit,
             BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
             BybitPositionMode, BybitPositionSide, BybitProductType, BybitStopOrderType,
-            BybitTimeInForce, BybitTriggerDirection, BybitTriggerType,
+            BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
         },
         symbol::BybitSymbol,
     },
-    http::models::{
-        BybitExecution, BybitFeeRate, BybitFunding, BybitInstrumentInverse, BybitInstrumentLinear,
-        BybitInstrumentOption, BybitInstrumentSpot, BybitKline, BybitOrderbookResult,
-        BybitPosition, BybitTrade, BybitWalletBalance,
+    http::{
+        models::{
+            BybitExecution, BybitFeeRate, BybitFunding, BybitInstrumentInverse,
+            BybitInstrumentLinear, BybitInstrumentOption, BybitInstrumentSpot, BybitKline,
+            BybitOrderbookResult, BybitPosition, BybitTrade, BybitWalletBalance,
+        },
+        query::BybitNativeTpSlParams,
     },
     websocket::parse::parse_millis_i64,
 };
@@ -1568,6 +1571,7 @@ pub struct BybitTpSlParams {
     pub sl_limit_price: Option<String>,
     pub tp_trigger_price: Option<String>,
     pub sl_trigger_price: Option<String>,
+    pub tpsl_mode: Option<BybitTpSlMode>,
     pub close_on_trigger: Option<bool>,
     pub is_leverage: bool,
     pub order_iv: Option<String>,
@@ -1584,6 +1588,27 @@ impl BybitTpSlParams {
 
     pub fn has_bbo(&self) -> bool {
         self.bbo_side_type.is_some()
+    }
+
+    /// Projects the native TP/SL and option fields onto the bundle the HTTP `submit_order` entry
+    /// expects. BBO, `position_idx`, and leverage stay separate because they are already
+    /// first-class arguments on the `submit_order` signature.
+    #[must_use]
+    pub fn to_native_tp_sl(&self) -> BybitNativeTpSlParams {
+        BybitNativeTpSlParams {
+            take_profit: self.take_profit.map(|p| p.to_string()),
+            stop_loss: self.stop_loss.map(|p| p.to_string()),
+            tp_trigger_by: self.tp_trigger_by,
+            sl_trigger_by: self.sl_trigger_by,
+            tp_order_type: self.tp_order_type,
+            sl_order_type: self.sl_order_type,
+            tp_limit_price: self.tp_limit_price.clone(),
+            sl_limit_price: self.sl_limit_price.clone(),
+            tpsl_mode: self.tpsl_mode,
+            close_on_trigger: self.close_on_trigger,
+            order_iv: self.order_iv.clone(),
+            mmp: self.mmp,
+        }
     }
 }
 
@@ -1686,6 +1711,10 @@ pub fn parse_bybit_tp_sl_params(params: Option<&Params>) -> anyhow::Result<Bybit
         result.sl_order_type = Some(parse_tp_sl_order_type(s)?);
     }
 
+    if let Some(s) = params.get_str("tpsl_mode") {
+        result.tpsl_mode = Some(parse_tpsl_mode(s)?);
+    }
+
     let has_tp_fields = result.tp_trigger_by.is_some()
         || result.tp_order_type.is_some()
         || result.tp_limit_price.is_some()
@@ -1780,7 +1809,7 @@ pub fn parse_bybit_tp_sl_params(params: Option<&Params>) -> anyhow::Result<Bybit
     Ok(result)
 }
 
-fn parse_trigger_type(s: &str) -> anyhow::Result<BybitTriggerType> {
+pub(crate) fn parse_trigger_type(s: &str) -> anyhow::Result<BybitTriggerType> {
     match s {
         "LastPrice" => Ok(BybitTriggerType::LastPrice),
         "MarkPrice" => Ok(BybitTriggerType::MarkPrice),
@@ -1791,11 +1820,21 @@ fn parse_trigger_type(s: &str) -> anyhow::Result<BybitTriggerType> {
     }
 }
 
-fn parse_tp_sl_order_type(s: &str) -> anyhow::Result<BybitOrderType> {
+pub(crate) fn parse_tp_sl_order_type(s: &str) -> anyhow::Result<BybitOrderType> {
     match s {
         "Market" => Ok(BybitOrderType::Market),
         "Limit" => Ok(BybitOrderType::Limit),
         _ => anyhow::bail!("invalid Bybit TP/SL order type: '{s}', expected Market or Limit"),
+    }
+}
+
+// A plain `serde_json` deserialize would accept unknown strings: `BybitTpSlMode` carries a
+// `#[serde(other)] Unknown` variant, so garbage would silently map to `Unknown`.
+pub(crate) fn parse_tpsl_mode(s: &str) -> anyhow::Result<BybitTpSlMode> {
+    match s {
+        "Full" => Ok(BybitTpSlMode::Full),
+        "Partial" => Ok(BybitTpSlMode::Partial),
+        _ => anyhow::bail!("invalid Bybit TP/SL mode: '{s}', expected Full or Partial"),
     }
 }
 
@@ -2254,6 +2293,28 @@ mod tests {
         assert_eq!(result.tp_limit_price.as_deref(), Some("54990.00"));
         assert_eq!(result.close_on_trigger, Some(true));
         assert!(result.is_leverage);
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_preserves_tpsl_mode() {
+        let p = params_from(&[
+            ("take_profit", json!("55000.00")),
+            ("tpsl_mode", json!("Partial")),
+        ]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+
+        assert_eq!(result.tpsl_mode, Some(BybitTpSlMode::Partial));
+    }
+
+    #[rstest]
+    #[case("Unknown")]
+    #[case("partial")]
+    #[case("garbage")]
+    fn test_parse_tp_sl_params_rejects_invalid_tpsl_mode(#[case] mode: &str) {
+        let p = params_from(&[("tpsl_mode", json!(mode))]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+
+        assert!(err.to_string().contains("invalid Bybit TP/SL mode"));
     }
 
     #[rstest]

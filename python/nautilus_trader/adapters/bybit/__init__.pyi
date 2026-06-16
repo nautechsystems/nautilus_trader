@@ -24,6 +24,7 @@ __all__ = [
     "BybitMarginMode",
     "BybitMarginRepayResult",
     "BybitMarginStatusResult",
+    "BybitNativeTpSlParams",
     "BybitOpenOnly",
     "BybitOrder",
     "BybitOrderCursorList",
@@ -192,6 +193,7 @@ class BybitHttpClient:
         position_idx: BybitPositionIdx | None = None,
         bbo_side_type: str | None = None,
         bbo_level: str | None = None,
+        native_tp_sl: BybitNativeTpSlParams | None = None,
     ) -> typing.Any: ...
     def modify_order(
         self,
@@ -348,6 +350,24 @@ class BybitMarginStatusResult:
     def ts_event(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
+
+@typing.final
+class BybitNativeTpSlParams:
+    def __init__(
+        self,
+        take_profit: str | None = None,
+        stop_loss: str | None = None,
+        tp_trigger_by: str | None = None,
+        sl_trigger_by: str | None = None,
+        tp_order_type: str | None = None,
+        sl_order_type: str | None = None,
+        tp_limit_price: str | None = None,
+        sl_limit_price: str | None = None,
+        tpsl_mode: str | None = None,
+        close_on_trigger: bool | None = None,
+        order_iv: str | None = None,
+        mmp: bool | None = None,
+    ) -> None: ...
 
 @typing.final
 class BybitOrder: ...

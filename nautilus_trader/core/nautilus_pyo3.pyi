@@ -7309,6 +7309,20 @@ class BybitRawHttpClient:
         cursor: str | None = None,
     ) -> BybitOrderCursorList: ...
 
+class BybitNativeTpSlParams:
+    take_profit: str | None
+    stop_loss: str | None
+    tp_trigger_by: str | None
+    sl_trigger_by: str | None
+    tp_order_type: str | None
+    sl_order_type: str | None
+    tp_limit_price: str | None
+    sl_limit_price: str | None
+    tpsl_mode: str | None
+    close_on_trigger: bool | None
+    order_iv: str | None
+    mmp: bool | None
+
 class BybitHttpClient:
     def __init__(
         self,
@@ -7468,6 +7482,7 @@ class BybitHttpClient:
         position_idx: BybitPositionIdx | None = None,
         bbo_side_type: str | None = None,
         bbo_level: str | None = None,
+        native_tp_sl: BybitNativeTpSlParams | None = None,
     ) -> OrderStatusReport: ...
     async def cancel_order(
         self,
