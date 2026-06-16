@@ -68,6 +68,7 @@ use nautilus_model::{
     accounts::AccountAny,
     data::Data,
     enums::{AccountType, OmsType, OrderStatus, OrderType, TimeInForce},
+    events::OrderDeniedReason,
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue, VenueOrderId},
     instruments::InstrumentAny,
     orders::Order,
@@ -144,9 +145,6 @@ pub struct BetfairExecutionClient {
 }
 
 impl BetfairExecutionClient {
-    const RECONCILING_REASON: &'static str =
-        "STREAM_RECONCILING: post-reconnect reconciliation in progress, retry once it completes";
-
     /// Creates a new [`BetfairExecutionClient`] instance.
     #[must_use]
     pub fn new(
@@ -1205,7 +1203,7 @@ impl ExecutionClient for BetfairExecutionClient {
                 order.client_order_id(),
             );
             self.emitter
-                .emit_order_denied(&order, Self::RECONCILING_REASON);
+                .emit_order_denied(&order, &OrderDeniedReason::StreamReconciling.to_string());
             return Ok(());
         }
 
@@ -2007,10 +2005,11 @@ impl ExecutionClient for BetfairExecutionClient {
                 cmd.order_list.client_order_ids.len(),
             );
 
+            let denied = OrderDeniedReason::StreamReconciling.to_string();
+
             for client_order_id in &cmd.order_list.client_order_ids {
                 if let Ok(order) = self.core.get_order(client_order_id) {
-                    self.emitter
-                        .emit_order_denied(&order, Self::RECONCILING_REASON);
+                    self.emitter.emit_order_denied(&order, &denied);
                 }
             }
             return Ok(());

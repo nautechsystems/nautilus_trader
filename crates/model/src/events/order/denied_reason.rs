@@ -280,6 +280,11 @@ pub enum OrderDeniedReason {
         /// The validation failure detail.
         detail: String,
     },
+    /// A post-reconnect stream reconciliation is in progress; retry once it completes.
+    #[error(
+        "STREAM_RECONCILING: post-reconnect reconciliation in progress, retry once it completes"
+    )]
+    StreamReconciling,
 }
 
 impl OrderDeniedCode {
@@ -356,6 +361,9 @@ impl OrderDeniedCode {
                 "The venue does not support the requested take‑profit/stop‑loss parameters."
             }
             Self::ValidationFailed => "The order failed adapter validation before submission.",
+            Self::StreamReconciling => {
+                "A post‑reconnect stream reconciliation is in progress; retry once it completes."
+            }
         }
     }
 }
@@ -514,6 +522,10 @@ mod tests {
             validation_failed.to_string(),
             "VALIDATION_FAILED: `bbo_side_type` and `bbo_level` are only supported for linear products"
         );
+        assert_eq!(
+            OrderDeniedReason::StreamReconciling.to_string(),
+            "STREAM_RECONCILING: post-reconnect reconciliation in progress, retry once it completes"
+        );
     }
 
     // Drift pin: each variant's rendered message must start with its discriminant code, keeping
@@ -634,6 +646,7 @@ mod tests {
             OrderDeniedReason::ValidationFailed {
                 detail: "boom".to_string(),
             },
+            OrderDeniedReason::StreamReconciling,
         ];
 
         for reason in samples {
