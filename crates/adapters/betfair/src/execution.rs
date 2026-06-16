@@ -418,7 +418,7 @@ impl BetfairExecutionClient {
                 }
                 StreamMessage::Status(status) => {
                     if status.connection_closed {
-                        log::error!(
+                        log::warn!(
                             "Betfair execution stream closed: {:?} - {:?}",
                             status.error_code,
                             status.error_message,
@@ -799,7 +799,7 @@ impl ExecutionClient for BetfairExecutionClient {
                     Err(ref e) if e.is_login_failed() => {
                         log::warn!("Betfair execution session expired, attempting re-login: {e}");
                         if let Err(e) = keep_alive_client.reconnect().await {
-                            log::error!("Betfair execution re-login failed: {e}");
+                            log::warn!("Betfair execution re-login failed: {e}");
                             continue;
                         }
                     }
@@ -883,7 +883,7 @@ impl ExecutionClient for BetfairExecutionClient {
                         Err(ref e) if e.is_login_failed() => {
                             log::warn!("Session expired on reconnect, attempting re-login: {e}",);
                             if let Err(e) = reconnect_http.reconnect().await {
-                                log::error!("Re-login failed on reconnect: {e}");
+                                log::warn!("Re-login failed on reconnect: {e}");
                                 return;
                             }
                         }
@@ -1060,7 +1060,7 @@ impl ExecutionClient for BetfairExecutionClient {
             let mut report = match parse_current_order_report(order, account_id, ts_init) {
                 Ok(r) => r,
                 Err(e) => {
-                    log::error!("Failed to parse order report for {}: {e}", order.bet_id);
+                    log::warn!("Failed to parse order report for {}: {e}", order.bet_id);
                     return Ok(());
                 }
             };

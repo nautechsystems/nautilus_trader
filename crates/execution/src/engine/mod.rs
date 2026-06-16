@@ -2364,13 +2364,13 @@ impl ExecutionEngine {
 
     fn handle_query_account(&self, client: &dyn ExecutionClient, cmd: QueryAccount) {
         if let Err(e) = client.query_account(cmd) {
-            log::error!("Error querying account: {e}");
+            log::warn!("Error querying account: {e}");
         }
     }
 
     fn handle_query_order(&self, client: &dyn ExecutionClient, cmd: QueryOrder) {
         if let Err(e) = client.query_order(cmd) {
-            log::error!("Error querying order: {e}");
+            log::warn!("Error querying order: {e}");
         }
     }
 
@@ -2382,7 +2382,7 @@ impl ExecutionEngine {
         if self.cache.borrow().has_backing()
             && let Err(e) = self.cache.borrow().snapshot_order_state(order)
         {
-            log::error!("Failed to snapshot order state: {e}");
+            log::warn!("Failed to snapshot order state: {e}");
         }
     }
 
@@ -2428,7 +2428,7 @@ impl ExecutionEngine {
                 Some(open_only),
             )
         {
-            log::error!("Failed to snapshot position state: {e}");
+            log::warn!("Failed to snapshot position state: {e}");
         }
     }
 
@@ -2905,7 +2905,20 @@ impl ExecutionEngine {
                     e.downcast_ref::<OrderError>(),
                     Some(OrderError::InvalidStateTransition)
                 ) {
-                    log::warn!("InvalidStateTrigger: {e}, did not apply {event}");
+                    // A non-fill event that fails to apply to an already-closed order is an
+                    // expected venue race (e.g. a place reject then a stream cancel for the same
+                    // order), not an anomaly. A dropped fill stays at warn even on a closed order,
+                    // since it represents real, possibly lost, execution.
+                    let already_closed = self
+                        .cache
+                        .borrow()
+                        .order(&client_order_id)
+                        .is_some_and(|o| o.is_closed());
+                    if already_closed && !matches!(event, OrderEventAny::Filled(_)) {
+                        log::debug!("InvalidStateTrigger: {e}, did not apply {event}");
+                    } else {
+                        log::warn!("InvalidStateTrigger: {e}, did not apply {event}");
+                    }
                     return None;
                 }
 
@@ -3319,7 +3332,7 @@ impl ExecutionEngine {
         };
 
         if let Err(e) = anchorer(snapshot_ref) {
-            log::error!("Failed to record cache snapshot anchor: {e}");
+            log::warn!("Failed to record cache snapshot anchor: {e}");
         }
     }
 
@@ -3453,7 +3466,7 @@ impl ExecutionEngine {
             if oms_type == OmsType::Netting {
                 match self.cache.borrow_mut().snapshot_position(position) {
                     Ok(snapshot_ref) => self.anchor_snapshot(snapshot_ref),
-                    Err(e) => log::error!("Failed to snapshot position during flip: {e:?}"),
+                    Err(e) => log::warn!("Failed to snapshot position during flip: {e:?}"),
                 }
             }
         }

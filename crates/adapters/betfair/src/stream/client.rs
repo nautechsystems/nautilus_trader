@@ -158,7 +158,7 @@ impl BetfairStreamClient {
                                  next reconnect will request a full image",
                             );
                         } else if status.connection_closed {
-                            log::error!(
+                            log::warn!(
                                 "Betfair stream connection closed by server: {:?} - {:?}",
                                 status.error_code,
                                 status.error_message,
@@ -434,7 +434,7 @@ impl BetfairRaceStreamClient {
                 }
 
                 if status.connection_closed {
-                    log::error!(
+                    log::warn!(
                         "Betfair race stream closed: {:?} - {:?}",
                         status.error_code,
                         status.error_message,
