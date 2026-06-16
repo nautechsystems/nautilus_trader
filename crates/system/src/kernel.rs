@@ -37,7 +37,10 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
-use nautilus_execution::{engine::ExecutionEngine, order_emulator::adapter::OrderEmulatorAdapter};
+use nautilus_execution::{
+    engine::ExecutionEngine,
+    order_emulator::{adapter::OrderEmulatorAdapter, emulator::OrderEmulator},
+};
 use nautilus_model::identifiers::{ClientId, TraderId};
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_risk::engine::RiskEngine;
@@ -193,8 +196,7 @@ impl NautilusKernel {
         let exec_engine = ExecutionEngine::new(clock.clone(), cache.clone(), config.exec_engine());
         let exec_engine = Rc::new(RefCell::new(exec_engine));
 
-        let order_emulator =
-            OrderEmulatorAdapter::new(config.trader_id(), clock.clone(), cache.clone());
+        let order_emulator = OrderEmulatorAdapter::new(clock.clone(), cache.clone());
 
         let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine());
         let data_engine = Rc::new(RefCell::new(data_engine));
@@ -202,6 +204,7 @@ impl NautilusKernel {
         DataEngine::register_msgbus_handlers(&data_engine);
         RiskEngine::register_msgbus_handlers(&risk_engine);
         ExecutionEngine::register_msgbus_handlers(&exec_engine);
+        OrderEmulator::register_msgbus_handlers(&order_emulator.emulator());
 
         let shutdown_requested = Rc::new(Cell::new(false));
         Self::register_shutdown_handler(config.trader_id(), shutdown_requested.clone());

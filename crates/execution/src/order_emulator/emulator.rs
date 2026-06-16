@@ -13,24 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    cell::RefCell,
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-    rc::Rc,
-};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_common::{
-    actor::{DataActorConfig, DataActorCore},
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, RECV, SEND},
-    messages::execution::{
-        CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+    messages::{
+        data::{
+            DataCommand, SubscribeCommand, SubscribeQuotes, SubscribeTrades, UnsubscribeCommand,
+            UnsubscribeQuotes, UnsubscribeTrades,
+        },
+        execution::{
+            CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+        },
     },
     msgbus::{
-        self, MessagingSwitchboard, TypedHandler,
+        self, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
         switchboard::{get_quotes_topic, get_trades_topic},
     },
 };
@@ -39,14 +39,14 @@ use nautilus_model::{
     data::{OrderBookDeltas, QuoteTick, TradeTick},
     enums::{ContingencyType, OrderSide, OrderSideSpecified, OrderStatus, OrderType, TriggerType},
     events::{OrderCanceled, OrderEmulated, OrderEventAny, OrderReleased, OrderUpdated},
-    identifiers::{
-        ActorId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
-    },
+    identifiers::{ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId},
     instruments::Instrument,
     orders::{LimitOrder, MarketOrder, Order, OrderAny},
     types::{Price, Quantity},
 };
+use ustr::Ustr;
 
+use super::handlers::OrderEmulatorOnEventHandler;
 use crate::{
     matching_core::{MatchAction, OrderMatchingCore, RestingOrder},
     order_manager::{OrderManagerAction, manager::OrderManager},
@@ -54,7 +54,6 @@ use crate::{
 };
 
 pub struct OrderEmulator {
-    actor: DataActorCore,
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     manager: OrderManager,
@@ -63,46 +62,30 @@ pub struct OrderEmulator {
     subscribed_trades: AHashSet<InstrumentId>,
     subscribed_strategies: AHashSet<StrategyId>,
     monitored_positions: AHashSet<PositionId>,
+    quote_tick_handler: Option<TypedHandler<QuoteTick>>,
+    trade_tick_handler: Option<TypedHandler<TradeTick>>,
+    quote_handlers: AHashMap<InstrumentId, TypedHandler<QuoteTick>>,
+    trade_handlers: AHashMap<InstrumentId, TypedHandler<TradeTick>>,
     on_event_handler: Option<TypedHandler<OrderEventAny>>,
-    self_ref: Option<WeakCell<Self>>,
 }
 
 impl Debug for OrderEmulator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(OrderEmulator))
-            .field("actor", &self.actor)
             .field("cores", &self.matching_cores.len())
             .field("subscribed_quotes", &self.subscribed_quotes.len())
+            .field("subscribed_trades", &self.subscribed_trades.len())
+            .field("subscribed_strategies", &self.subscribed_strategies.len())
             .finish()
-    }
-}
-
-impl Deref for OrderEmulator {
-    type Target = DataActorCore;
-
-    fn deref(&self) -> &Self::Target {
-        &self.actor
-    }
-}
-
-impl DerefMut for OrderEmulator {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.actor
     }
 }
 
 impl OrderEmulator {
     pub fn new(clock: Rc<RefCell<dyn Clock>>, cache: Rc<RefCell<Cache>>) -> Self {
-        let config = DataActorConfig {
-            actor_id: Some(ActorId::from("OrderEmulator")),
-            ..Default::default()
-        };
-
         let active_local = true;
         let manager = OrderManager::new(clock.clone(), cache.clone(), active_local);
 
         Self {
-            actor: DataActorCore::new(config),
             clock,
             cache,
             manager,
@@ -111,28 +94,51 @@ impl OrderEmulator {
             subscribed_trades: AHashSet::new(),
             subscribed_strategies: AHashSet::new(),
             monitored_positions: AHashSet::new(),
+            quote_tick_handler: None,
+            trade_tick_handler: None,
+            quote_handlers: AHashMap::new(),
+            trade_handlers: AHashMap::new(),
             on_event_handler: None,
-            self_ref: None,
         }
     }
 
-    /// Sets the weak self-reference for creating subscription handlers.
-    pub fn set_self_ref(&mut self, self_ref: WeakCell<Self>) {
-        self.self_ref = Some(self_ref);
-    }
+    pub fn register_msgbus_handlers(emulator: &Rc<RefCell<Self>>) {
+        let weak = WeakCell::from(Rc::downgrade(emulator));
 
-    /// Registers the emulator with the trading system.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if registration fails.
-    pub fn register(
-        &mut self,
-        trader_id: TraderId,
-        clock: Rc<RefCell<dyn Clock>>,
-        cache: Rc<RefCell<Cache>>,
-    ) -> anyhow::Result<()> {
-        self.actor.register(trader_id, clock, cache)
+        let execute_weak = weak.clone();
+        let execute_handler = TypedIntoHandler::from(move |cmd: TradingCommand| {
+            if let Some(emulator) = execute_weak.upgrade() {
+                emulator.borrow_mut().execute(cmd);
+            }
+        });
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::order_emulator_execute(),
+            execute_handler,
+        );
+
+        let quote_weak = weak.clone();
+        let quote_handler = TypedHandler::from(move |quote: &QuoteTick| {
+            if let Some(emulator) = quote_weak.upgrade() {
+                emulator.borrow_mut().on_quote_tick(*quote);
+            }
+        });
+
+        let trade_weak = weak.clone();
+        let trade_handler = TypedHandler::from(move |trade: &TradeTick| {
+            if let Some(emulator) = trade_weak.upgrade() {
+                emulator.borrow_mut().on_trade_tick(*trade);
+            }
+        });
+
+        let on_event_handler = TypedHandler::new(OrderEmulatorOnEventHandler::new(
+            Ustr::from(UUID4::new().as_str()),
+            weak,
+        ));
+
+        let mut emulator = emulator.borrow_mut();
+        emulator.quote_tick_handler = Some(quote_handler);
+        emulator.trade_tick_handler = Some(trade_handler);
+        emulator.on_event_handler = Some(on_event_handler);
     }
 
     pub fn set_on_event_handler(&mut self, handler: TypedHandler<OrderEventAny>) {
@@ -145,39 +151,63 @@ impl OrderEmulator {
     }
 
     /// Subscribes to quote data for the given instrument.
-    fn subscribe_quotes_for_instrument(&mut self, instrument_id: InstrumentId) {
-        let Some(self_ref) = self.self_ref.clone() else {
-            log::warn!("Cannot subscribe to quotes: self_ref not set");
-            return;
+    fn subscribe_quotes_for_instrument(&mut self, instrument_id: InstrumentId) -> bool {
+        if self.quote_handlers.contains_key(&instrument_id) {
+            log::warn!("OrderEmulator attempted duplicate quote subscription for {instrument_id}");
+            return true;
+        }
+
+        let Some(handler) = self.quote_tick_handler.clone() else {
+            log::warn!("Cannot subscribe to quotes: msgbus handlers not registered");
+            return false;
         };
 
         let topic = get_quotes_topic(instrument_id);
-        let handler = TypedHandler::from(move |quote: &QuoteTick| {
-            if let Some(emulator) = self_ref.upgrade() {
-                emulator.borrow_mut().on_quote_tick(*quote);
-            }
-        });
+        self.quote_handlers.insert(instrument_id, handler.clone());
+        msgbus::subscribe_quotes(topic.into(), handler, None);
+        self.send_data_command(DataCommand::Subscribe(SubscribeCommand::Quotes(
+            SubscribeQuotes::new(
+                instrument_id,
+                None,
+                Some(instrument_id.venue),
+                UUID4::new(),
+                self.clock.borrow().timestamp_ns(),
+                None,
+                None,
+            ),
+        )));
 
-        self.actor
-            .subscribe_quotes(topic, handler, instrument_id, None, None);
+        true
     }
 
     /// Subscribes to trade data for the given instrument.
-    fn subscribe_trades_for_instrument(&mut self, instrument_id: InstrumentId) {
-        let Some(self_ref) = self.self_ref.clone() else {
-            log::warn!("Cannot subscribe to trades: self_ref not set");
-            return;
+    fn subscribe_trades_for_instrument(&mut self, instrument_id: InstrumentId) -> bool {
+        if self.trade_handlers.contains_key(&instrument_id) {
+            log::warn!("OrderEmulator attempted duplicate trade subscription for {instrument_id}");
+            return true;
+        }
+
+        let Some(handler) = self.trade_tick_handler.clone() else {
+            log::warn!("Cannot subscribe to trades: msgbus handlers not registered");
+            return false;
         };
 
         let topic = get_trades_topic(instrument_id);
-        let handler = TypedHandler::from(move |trade: &TradeTick| {
-            if let Some(emulator) = self_ref.upgrade() {
-                emulator.borrow_mut().on_trade_tick(*trade);
-            }
-        });
+        self.trade_handlers.insert(instrument_id, handler.clone());
+        msgbus::subscribe_trades(topic.into(), handler, None);
+        self.send_data_command(DataCommand::Subscribe(SubscribeCommand::Trades(
+            SubscribeTrades::new(
+                instrument_id,
+                None,
+                Some(instrument_id.venue),
+                UUID4::new(),
+                self.clock.borrow().timestamp_ns(),
+                None,
+                None,
+            ),
+        )));
 
-        self.actor
-            .subscribe_trades(topic, handler, instrument_id, None, None);
+        true
     }
 
     #[must_use]
@@ -204,11 +234,37 @@ impl OrderEmulator {
         self.matching_cores.get(instrument_id).cloned()
     }
 
+    pub fn start(&mut self) {
+        if let Err(e) = self.on_start() {
+            log::error!("{e}");
+        }
+
+        log::info!("Started");
+    }
+
+    pub fn stop(&self) {
+        self.on_stop();
+
+        log::info!("Stopped");
+    }
+
+    pub fn reset(&mut self) {
+        self.on_reset();
+
+        log::info!("Reset");
+    }
+
+    pub fn dispose(&mut self) {
+        self.on_dispose();
+
+        log::info!("Disposed");
+    }
+
     /// Reactivates emulated orders from cache on start.
     ///
     /// # Errors
     ///
-    /// Returns an error if no emulated orders are found or processing fails.
+    /// Returns an error if processing fails.
     ///
     pub fn on_start(&mut self) -> anyhow::Result<()> {
         let emulated_orders: Vec<OrderAny> = self
@@ -220,7 +276,7 @@ impl OrderEmulator {
             .collect();
 
         if emulated_orders.is_empty() {
-            log::error!("No emulated orders to reactivate");
+            log::debug!("No emulated orders to reactivate");
             return Ok(());
         }
 
@@ -310,9 +366,75 @@ impl OrderEmulator {
     pub fn on_reset(&mut self) {
         self.manager.reset();
         self.matching_cores.clear();
+        self.unsubscribe_all_market_data();
+        self.unsubscribe_strategy_order_events();
+        self.monitored_positions.clear();
     }
 
-    pub const fn on_dispose(&self) {}
+    pub fn on_dispose(&mut self) {
+        self.on_reset();
+    }
+
+    fn unsubscribe_all_market_data(&mut self) {
+        let quote_instrument_ids: Vec<_> = self.subscribed_quotes.drain().collect();
+        for instrument_id in quote_instrument_ids {
+            self.unsubscribe_quotes_for_instrument(instrument_id);
+        }
+
+        let trade_instrument_ids: Vec<_> = self.subscribed_trades.drain().collect();
+        for instrument_id in trade_instrument_ids {
+            self.unsubscribe_trades_for_instrument(instrument_id);
+        }
+    }
+
+    fn unsubscribe_quotes_for_instrument(&mut self, instrument_id: InstrumentId) {
+        if let Some(handler) = self.quote_handlers.remove(&instrument_id) {
+            let topic = get_quotes_topic(instrument_id);
+            msgbus::unsubscribe_quotes(topic.into(), &handler);
+        }
+
+        self.send_data_command(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(
+            UnsubscribeQuotes::new(
+                instrument_id,
+                None,
+                Some(instrument_id.venue),
+                UUID4::new(),
+                self.clock.borrow().timestamp_ns(),
+                None,
+                None,
+            ),
+        )));
+    }
+
+    fn unsubscribe_trades_for_instrument(&mut self, instrument_id: InstrumentId) {
+        if let Some(handler) = self.trade_handlers.remove(&instrument_id) {
+            let topic = get_trades_topic(instrument_id);
+            msgbus::unsubscribe_trades(topic.into(), &handler);
+        }
+
+        self.send_data_command(DataCommand::Unsubscribe(UnsubscribeCommand::Trades(
+            UnsubscribeTrades::new(
+                instrument_id,
+                None,
+                Some(instrument_id.venue),
+                UUID4::new(),
+                self.clock.borrow().timestamp_ns(),
+                None,
+                None,
+            ),
+        )));
+    }
+
+    fn unsubscribe_strategy_order_events(&mut self) {
+        let strategy_ids: Vec<_> = self.subscribed_strategies.drain().collect();
+        let Some(handler) = &self.on_event_handler else {
+            return;
+        };
+
+        for strategy_id in strategy_ids {
+            msgbus::unsubscribe_order_events(format!("events.order.{strategy_id}").into(), handler);
+        }
+    }
 
     pub fn execute(&mut self, command: TradingCommand) {
         log::info!("{RECV}{CMD} {command}");
@@ -489,14 +611,16 @@ impl OrderEmulator {
         // Handle data subscriptions
         match emulation_trigger.unwrap() {
             TriggerType::Default | TriggerType::BidAsk => {
-                if !self.subscribed_quotes.contains(&trigger_instrument_id) {
-                    self.subscribe_quotes_for_instrument(trigger_instrument_id);
+                if !self.subscribed_quotes.contains(&trigger_instrument_id)
+                    && self.subscribe_quotes_for_instrument(trigger_instrument_id)
+                {
                     self.subscribed_quotes.insert(trigger_instrument_id);
                 }
             }
             TriggerType::LastPrice => {
-                if !self.subscribed_trades.contains(&trigger_instrument_id) {
-                    self.subscribe_trades_for_instrument(trigger_instrument_id);
+                if !self.subscribed_trades.contains(&trigger_instrument_id)
+                    && self.subscribe_trades_for_instrument(trigger_instrument_id)
+                {
                     self.subscribed_trades.insert(trigger_instrument_id);
                 }
             }
@@ -1403,6 +1527,12 @@ impl OrderEmulator {
         let endpoint = MessagingSwitchboard::exec_engine_process();
         msgbus::send_order_event(endpoint, event);
     }
+
+    fn send_data_command(&self, command: DataCommand) {
+        log::info!("{CMD}{SEND} {command:?}");
+        let endpoint = MessagingSwitchboard::data_engine_queue_execute();
+        msgbus::send_data_command(endpoint, command);
+    }
 }
 
 fn publish_order_event(event: &OrderEventAny) {
@@ -1432,6 +1562,7 @@ mod tests {
     use nautilus_common::{
         cache::Cache,
         clock::TestClock,
+        messages::data::{DataCommand, SubscribeCommand, UnsubscribeCommand},
         msgbus::{
             MessagingSwitchboard,
             stubs::{
@@ -1440,11 +1571,11 @@ mod tests {
             },
         },
     };
-    use nautilus_core::{UUID4, WeakCell};
+    use nautilus_core::UUID4;
     use nautilus_model::{
         data::{QuoteTick, TradeTick},
         enums::{AggressorSide, OrderSide, OrderType, TriggerType},
-        identifiers::{StrategyId, TradeId, TraderId},
+        identifiers::{ClientOrderId, StrategyId, TradeId, TraderId},
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
         },
@@ -1474,15 +1605,7 @@ mod tests {
             cache.clone(),
         )));
 
-        // Register with trader for subscription support
-        emulator
-            .borrow_mut()
-            .register(TraderId::from("TRADER-001"), clock.clone(), cache.clone())
-            .unwrap();
-
-        // Set self-ref for subscription handlers
-        let self_ref = WeakCell::from(Rc::downgrade(&emulator));
-        emulator.borrow_mut().set_self_ref(self_ref);
+        OrderEmulator::register_msgbus_handlers(&emulator);
 
         (clock, cache, emulator)
     }
@@ -1570,6 +1693,16 @@ mod tests {
         saving_handler
     }
 
+    fn register_data_command_handler(id: &str) -> TypedIntoMessageSavingHandler<DataCommand> {
+        let (handler, saving_handler) =
+            get_typed_into_message_saving_handler::<DataCommand>(Some(Ustr::from(id)));
+        msgbus::register_data_command_endpoint(
+            MessagingSwitchboard::data_engine_queue_execute(),
+            handler,
+        );
+        saving_handler
+    }
+
     fn subscribe_order_topic(
         strategy_id: StrategyId,
     ) -> (TypedHandler<OrderEventAny>, Rc<RefCell<Vec<OrderEventAny>>>) {
@@ -1643,6 +1776,43 @@ mod tests {
         assert_eq!(cached_order.status(), OrderStatus::Emulated);
         assert_eq!(risk_events.len(), 1);
         assert!(matches!(risk_events[0], OrderEventAny::Emulated(_)));
+    }
+
+    #[rstest]
+    fn test_registered_execute_endpoint_routes_submit_order(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let risk_events = register_risk_event_handler("RiskEngine.process.endpoint_emulated");
+        let data_commands = register_data_command_handler("DataEngine.queue_execute.endpoint");
+        add_instrument_to_cache(&cache, &instrument);
+        let order = create_stop_market_order(&instrument, TriggerType::BidAsk);
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        emulator
+            .borrow_mut()
+            .cache_submit_order_command(command.clone());
+
+        msgbus::send_trading_command(
+            MessagingSwitchboard::order_emulator_execute(),
+            TradingCommand::SubmitOrder(command),
+        );
+        let cache = cache.borrow();
+        let cached_order = cache.order(&client_order_id).unwrap();
+        let risk_events = risk_events.get_messages();
+        let data_commands = data_commands.get_messages();
+
+        assert_eq!(cached_order.status(), OrderStatus::Emulated);
+        assert_eq!(risk_events.len(), 1);
+        assert!(matches!(risk_events[0], OrderEventAny::Emulated(_)));
+        assert_eq!(data_commands.len(), 1);
+        assert!(matches!(
+            &data_commands[0],
+            DataCommand::Subscribe(SubscribeCommand::Quotes(command))
+                if command.instrument_id == instrument.id()
+        ));
     }
 
     #[rstest]
@@ -1847,6 +2017,7 @@ mod tests {
     #[rstest]
     fn test_submit_order_bid_ask_trigger_tracks_quote_subscription(instrument: CryptoPerpetual) {
         let (_clock, cache, emulator) = create_emulator();
+        let data_commands = register_data_command_handler("DataEngine.queue_execute.quotes");
         add_instrument_to_cache(&cache, &instrument);
         let order = create_stop_market_order(&instrument, TriggerType::BidAsk);
         let command = create_submit_order(&instrument, &order);
@@ -1862,11 +2033,29 @@ mod tests {
 
         assert_eq!(emulator.borrow().subscribed_quotes(), vec![instrument.id()]);
         assert!(emulator.borrow().subscribed_trades().is_empty());
+
+        let commands = data_commands.get_messages();
+        assert_eq!(commands.len(), 1);
+        assert!(matches!(
+            &commands[0],
+            DataCommand::Subscribe(SubscribeCommand::Quotes(command))
+                if command.instrument_id == instrument.id()
+        ));
+
+        let quote = create_quote_tick(&instrument, "5060.00", "5070.00");
+        msgbus::publish_quote(get_quotes_topic(instrument.id()), &quote);
+        let core = emulator
+            .borrow()
+            .get_matching_core(&instrument.id())
+            .unwrap();
+        assert_eq!(core.bid, Some(Price::from("5060.00")));
+        assert_eq!(core.ask, Some(Price::from("5070.00")));
     }
 
     #[rstest]
     fn test_submit_order_last_price_trigger_tracks_trade_subscription(instrument: CryptoPerpetual) {
         let (_clock, cache, emulator) = create_emulator();
+        let data_commands = register_data_command_handler("DataEngine.queue_execute.trades");
         add_instrument_to_cache(&cache, &instrument);
         let order = create_stop_market_order(&instrument, TriggerType::LastPrice);
         let command = create_submit_order(&instrument, &order);
@@ -1882,6 +2071,96 @@ mod tests {
 
         assert!(emulator.borrow().subscribed_quotes().is_empty());
         assert_eq!(emulator.borrow().subscribed_trades(), vec![instrument.id()]);
+
+        let commands = data_commands.get_messages();
+        assert_eq!(commands.len(), 1);
+        assert!(matches!(
+            &commands[0],
+            DataCommand::Subscribe(SubscribeCommand::Trades(command))
+                if command.instrument_id == instrument.id()
+        ));
+
+        let trade = create_trade_tick(&instrument, "5065.00");
+        msgbus::publish_trade(get_trades_topic(instrument.id()), &trade);
+        let core = emulator
+            .borrow()
+            .get_matching_core(&instrument.id())
+            .unwrap();
+        assert_eq!(core.last, Some(Price::from("5065.00")));
+    }
+
+    #[rstest]
+    fn test_reset_unsubscribes_market_data_and_clears_state(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let data_commands = register_data_command_handler("DataEngine.queue_execute.reset");
+        add_instrument_to_cache(&cache, &instrument);
+        let quote_order = create_stop_market_order(&instrument, TriggerType::BidAsk);
+        let quote_command = create_submit_order(&instrument, &quote_order);
+        let trade_order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-RESET-TRADE"))
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("5100.00"))
+            .quantity(Quantity::from(1))
+            .emulation_trigger(TriggerType::LastPrice)
+            .build();
+        let trade_command = create_submit_order(&instrument, &trade_order);
+        cache
+            .borrow_mut()
+            .add_order(quote_order, None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(trade_order, None, None, false)
+            .unwrap();
+        emulator
+            .borrow_mut()
+            .cache_submit_order_command(quote_command.clone());
+        emulator.borrow_mut().handle_submit_order(quote_command);
+        emulator
+            .borrow_mut()
+            .cache_submit_order_command(trade_command.clone());
+        emulator.borrow_mut().handle_submit_order(trade_command);
+        data_commands.clear();
+
+        emulator.borrow_mut().reset();
+        let commands = data_commands.get_messages();
+        let emulator_ref = emulator.borrow();
+
+        assert!(emulator_ref.subscribed_quotes.is_empty());
+        assert!(emulator_ref.subscribed_trades.is_empty());
+        assert!(emulator_ref.subscribed_strategies.is_empty());
+        assert!(emulator_ref.monitored_positions.is_empty());
+        assert!(emulator_ref.quote_handlers.is_empty());
+        assert!(emulator_ref.trade_handlers.is_empty());
+        assert!(emulator_ref.get_submit_order_commands().is_empty());
+        assert!(emulator_ref.get_matching_core(&instrument.id()).is_none());
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
+                if command.instrument_id == instrument.id()
+        )));
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(command))
+                if command.instrument_id == instrument.id()
+        )));
+
+        drop(emulator_ref);
+        emulator
+            .borrow_mut()
+            .create_matching_core(instrument.id(), instrument.price_increment);
+        let quote = create_quote_tick(&instrument, "5060.00", "5070.00");
+        let trade = create_trade_tick(&instrument, "5065.00");
+        msgbus::publish_quote(get_quotes_topic(instrument.id()), &quote);
+        msgbus::publish_trade(get_trades_topic(instrument.id()), &trade);
+        let core = emulator
+            .borrow()
+            .get_matching_core(&instrument.id())
+            .unwrap();
+        assert_eq!(core.bid, None);
+        assert_eq!(core.ask, None);
+        assert_eq!(core.last, None);
     }
 
     #[rstest]
