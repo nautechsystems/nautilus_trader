@@ -260,7 +260,7 @@ impl AtomicTime {
 
     /// Increments the current (static-mode) time by `delta` nanoseconds and returns the updated value.
     ///
-    /// Internally this uses [`AtomicU64::fetch_update`] with [`Ordering::AcqRel`] to ensure the increment is
+    /// Internally this uses [`AtomicU64::try_update`] with [`Ordering::AcqRel`] to ensure the increment is
     /// atomic and visible to readers using `Acquire` loads.
     ///
     /// # Errors
@@ -284,7 +284,7 @@ impl AtomicTime {
         let previous =
             match self
                 .timestamp_ns
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                .try_update(Ordering::AcqRel, Ordering::Acquire, |current| {
                     current.checked_add(delta)
                 }) {
                 Ok(prev) => prev,
@@ -328,11 +328,13 @@ impl AtomicTime {
         loop {
             // Acquire to observe the latest stored value
             let last = self.timestamp_ns.load(Ordering::Acquire);
+
             // Ensure we never wrap past u64::MAX – treat that as a fatal error
             let incremented = last
                 .checked_add(1)
                 .expect("AtomicTime overflow: reached u64::MAX");
             let next = now.max(incremented);
+
             // AcqRel on success ensures this new value is published,
             // Acquire on failure reloads if we lost a CAS race.
             //
@@ -784,7 +786,7 @@ mod tests {
 
     #[rstest]
     fn test_acquire_release_contract_increment_time() {
-        // Similar test for increment_time, which uses fetch_update with AcqRel (see AtomicTime::increment_time)
+        // Similar test for increment_time, which uses try_update with AcqRel (see AtomicTime::increment_time)
 
         let clock = Arc::new(AtomicTime::new(false, UnixNanos::from(0)));
         let aux_data = Arc::new(AtomicU64::new(0));
