@@ -810,9 +810,13 @@ impl BlockchainDataClientCore {
 
     /// Processes a swap event and converts it to a pool swap.
     ///
+    /// Trade-info computation can fail for degenerate MIN/MAX-tick swaps on near-zero-liquidity
+    /// pools, whose spot price overflows the price representation. Such failures are non-fatal: the
+    /// swap is kept with empty trade-info so an otherwise-valid event does not abort the pool sync.
+    ///
     /// # Errors
     ///
-    /// Returns an error if swap event processing fails.
+    /// Returns an error if the swap event's block timestamp is missing from the cache.
     pub fn process_pool_swap_event(
         &self,
         swap_event: &SwapEvent,
@@ -829,7 +833,14 @@ impl BlockchainDataClientCore {
             pool.pool_identifier,
             timestamp,
         );
-        swap.calculate_trade_info(&pool.token0, &pool.token1, None)?;
+        // Keep the swap and leave price metadata empty rather than aborting the pool sync
+        if let Err(e) = swap.calculate_trade_info(&pool.token0, &pool.token1, None) {
+            log::warn!(
+                "Skipping trade info for swap at block {} on pool {}: {e}",
+                swap_event.block_number,
+                pool.instrument_id,
+            );
+        }
 
         Ok(swap)
     }
@@ -1382,7 +1393,7 @@ impl BlockchainDataClientCore {
                         );
                     } else if !comparison.is_exact_match() {
                         log::warn!(
-                            "Pool profiler snapshot has a sqrt ratio mismatch only; accepting snapshot"
+                            "Pool profiler snapshot has a non-structural mismatch (sqrt ratio or fee protocol); accepting snapshot"
                         );
                     }
                     (valid, on_chain_snapshot.block_position)

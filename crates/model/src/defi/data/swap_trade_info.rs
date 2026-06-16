@@ -417,7 +417,10 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::defi::stubs::{usdc, weth};
+    use crate::defi::{
+        stubs::{usdc, weth},
+        tick_map::tick_math::MAX_SQRT_RATIO,
+    };
 
     #[rstest]
     fn test_swap_trade_info_calculator_calculations_buy(weth: Token, usdc: Token) {
@@ -469,5 +472,23 @@ mod tests {
             result.execution_price.as_decimal(),
             dec!(3576.5947980503469024)
         );
+    }
+
+    #[rstest]
+    fn test_swap_trade_info_calculator_spot_price_overflow_is_recoverable(
+        weth: Token,
+        usdc: Token,
+    ) {
+        // A near-MAX_SQRT_RATIO swap overflows spot-price decoding, so compute must return a
+        // recoverable error rather than panic, letting the sync keep the swap with empty metadata.
+        let raw_data = RawSwapData::new(
+            I256::from_str("1").unwrap(),
+            I256::from_str("-1").unwrap(),
+            MAX_SQRT_RATIO - U160::from(1),
+        );
+
+        let calculator = SwapTradeInfoCalculator::new(&weth, &usdc, raw_data);
+
+        assert!(calculator.compute(None).is_err());
     }
 }

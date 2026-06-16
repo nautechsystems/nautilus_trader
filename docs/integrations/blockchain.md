@@ -146,6 +146,24 @@ For Uniswap V3 snapshots, bootstrap uses a two-stage process:
 If final RPC hydration fails, the adapter must fail closed. It must not emit a snapshot built from
 replayed events with stale price state.
 
+### Snapshot validation
+
+Before marking a snapshot valid, the bootstrap compares the replayed profiler against the on-chain
+state. Structural state must match exactly: the current tick, active liquidity, per-tick net and
+gross liquidity, and position liquidity. A mismatch in any of these fails closed, and the snapshot
+is not marked valid.
+
+Two fields are tolerated as non-blocking and logged as a warning rather than an error:
+
+- Sqrt price, which differs when replay is event-scoped but the RPC snapshot is block-scoped.
+- Fee protocol, which lags the on-chain value until `SetFeeProtocol` events are indexed and
+  replayed.
+
+A fee-protocol-only mismatch still accepts the snapshot, matching backtest replay behavior. The
+accepted snapshot carries the replayed `fee_protocol`, so a profiler restored from it splits protocol
+and LP fees with that lagging setting until `SetFeeProtocol` replay lands. The protocol-fee split on
+such a snapshot can diverge from on-chain until then.
+
 ### Snapshot bootstrap guard
 
 Use `--require-existing-snapshot` when a pool analysis job should prepare a bounded replay only from

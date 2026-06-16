@@ -761,6 +761,25 @@ fn test_process_swap_snaps_sqrt_price_to_event() {
 }
 
 #[rstest]
+fn test_compare_pool_profiler_reports_exact_match(mut profiler: PoolProfiler) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    let mint_event = create_mint_event(lp_address(), min_tick, max_tick, 10000);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+
+    let snapshot = profiler.extract_snapshot();
+
+    assert_eq!(
+        compare_pool_profiler_detailed(&profiler, &snapshot),
+        PoolProfilerComparison::Match
+    );
+    assert!(PoolProfilerComparison::Match.is_exact_match());
+    assert!(compare_pool_profiler(&profiler, &snapshot));
+}
+
+#[rstest]
 fn test_compare_pool_profiler_reports_sqrt_only_mismatch(mut profiler: PoolProfiler) {
     let min_tick = PoolTick::get_min_tick(TICK_SPACING);
     let max_tick = PoolTick::get_max_tick(TICK_SPACING);
@@ -781,6 +800,28 @@ fn test_compare_pool_profiler_reports_sqrt_only_mismatch(mut profiler: PoolProfi
         PoolProfilerComparison::SqrtPriceMismatch
     );
     assert!(PoolProfilerComparison::SqrtPriceMismatch.is_valid_for_snapshot());
+    assert!(!compare_pool_profiler(&profiler, &snapshot));
+}
+
+#[rstest]
+fn test_compare_pool_profiler_reports_fee_protocol_only_mismatch(mut profiler: PoolProfiler) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    let mint_event = create_mint_event(lp_address(), min_tick, max_tick, 10000);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+
+    // Profiler fee protocol lags on-chain until SetFeeProtocol events are indexed and replayed
+    let mut snapshot = profiler.extract_snapshot();
+    snapshot.state.fee_protocol = 68;
+
+    assert_eq!(
+        compare_pool_profiler_detailed(&profiler, &snapshot),
+        PoolProfilerComparison::FeeProtocolMismatch
+    );
+    assert!(PoolProfilerComparison::FeeProtocolMismatch.is_valid_for_snapshot());
+    assert!(!PoolProfilerComparison::FeeProtocolMismatch.is_exact_match());
     assert!(!compare_pool_profiler(&profiler, &snapshot));
 }
 
