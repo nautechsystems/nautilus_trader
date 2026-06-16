@@ -116,10 +116,11 @@ impl Credential {
     /// Resolves credentials from provided config values or environment
     /// variables.
     ///
-    /// Config values take precedence. Environment variables follow
-    /// [`credential_env_vars`]. `LIGHTER_API_KEY_INDEX` is the per-account
-    /// API key slot (0..=254), separate from any hex public key the venue
-    /// reports for that slot.
+    /// Config values take precedence, but a blank or whitespace-only
+    /// `private_key` falls back to the environment variable. Environment
+    /// variables follow [`credential_env_vars`]. `LIGHTER_API_KEY_INDEX` is
+    /// the per-account API key slot (0..=254), separate from any hex public
+    /// key the venue reports for that slot.
     ///
     /// # Errors
     ///
@@ -137,7 +138,8 @@ impl Credential {
         let api_key_index = resolve_api_key_index(api_key_index, api_key_var)?;
         let account_index = resolve_account_index(account_index, account_index_var)?;
         let api_secret =
-            get_or_env_var_opt(private_key, api_secret_var).filter(|s| !s.trim().is_empty());
+            get_or_env_var_opt(private_key.filter(|s| !s.trim().is_empty()), api_secret_var)
+                .filter(|s| !s.trim().is_empty());
 
         credential_from_resolved_values(
             api_key_index,
@@ -416,5 +418,126 @@ mod tests {
     #[rstest]
     fn scrub_auth_empty_input_returns_empty() {
         assert_eq!(scrub_auth(""), "");
+    }
+
+    // Tests that observe the env-var fallback live in the workspace `serial_tests`
+    // group (see `.config/nextest.toml`) so env-var mutation is pinned to a single
+    // thread.
+    #[allow(unsafe_code)] // env-var mutation in tests; restored via `EnvGuard`.
+    mod serial_tests {
+        use super::*;
+
+        const LIGHTER_ENV_VARS: &[&str] = &[
+            "LIGHTER_API_KEY_INDEX",
+            "LIGHTER_API_SECRET",
+            "LIGHTER_ACCOUNT_INDEX",
+            "LIGHTER_TESTNET_API_KEY_INDEX",
+            "LIGHTER_TESTNET_API_SECRET",
+            "LIGHTER_TESTNET_ACCOUNT_INDEX",
+        ];
+
+        /// Snapshots and clears the Lighter credential env vars, restoring the
+        /// original values on drop.
+        struct EnvGuard {
+            saved: Vec<(&'static str, Option<String>)>,
+        }
+
+        impl EnvGuard {
+            fn clear_lighter() -> Self {
+                let saved = LIGHTER_ENV_VARS
+                    .iter()
+                    .map(|&name| (name, std::env::var(name).ok()))
+                    .collect::<Vec<_>>();
+                for &(name, _) in &saved {
+                    // SAFETY: the `serial_tests` nextest group serializes these
+                    // tests, and no other lighter test reads or writes the
+                    // LIGHTER_* env vars concurrently.
+                    unsafe { std::env::remove_var(name) };
+                }
+                Self { saved }
+            }
+        }
+
+        impl Drop for EnvGuard {
+            fn drop(&mut self) {
+                for (name, original) in &self.saved {
+                    match original {
+                        // SAFETY: see `EnvGuard::clear_lighter`.
+                        Some(value) => unsafe { std::env::set_var(name, value) },
+                        None => unsafe { std::env::remove_var(name) },
+                    }
+                }
+            }
+        }
+
+        #[rstest]
+        #[case::empty("")]
+        #[case::whitespace("   ")]
+        fn resolve_blank_private_key_falls_back_to_env_secret(#[case] blank: &str) {
+            let _guard = EnvGuard::clear_lighter();
+            // SAFETY: see `EnvGuard::clear_lighter`; the guard restores on drop.
+            unsafe { std::env::set_var("LIGHTER_API_SECRET", PRIVATE_KEY_HEX) };
+
+            let credential = Credential::resolve(
+                Some(blank.to_string()),
+                Some(12_345),
+                Some(4),
+                LighterEnvironment::Mainnet,
+            )
+            .unwrap()
+            .unwrap();
+
+            let from_env = Credential::new(4, PRIVATE_KEY_HEX, 12_345).unwrap();
+            assert_eq!(
+                credential.private_key().unwrap().to_le_bytes(),
+                from_env.private_key().unwrap().to_le_bytes(),
+            );
+        }
+
+        #[rstest]
+        fn resolve_blank_private_key_without_env_returns_none() {
+            let _guard = EnvGuard::clear_lighter();
+
+            let resolved = Credential::resolve(
+                Some("   ".to_string()),
+                None,
+                None,
+                LighterEnvironment::Mainnet,
+            )
+            .unwrap();
+
+            assert!(resolved.is_none());
+        }
+
+        #[rstest]
+        fn resolve_blank_env_secret_returns_none() {
+            let _guard = EnvGuard::clear_lighter();
+            // SAFETY: see `EnvGuard::clear_lighter`; the guard restores on drop.
+            unsafe { std::env::set_var("LIGHTER_API_SECRET", "   ") };
+
+            let resolved =
+                Credential::resolve(None, None, None, LighterEnvironment::Mainnet).unwrap();
+
+            assert!(resolved.is_none());
+        }
+
+        #[rstest]
+        fn resolve_prefers_non_blank_config_over_env_secret() {
+            let _guard = EnvGuard::clear_lighter();
+            // An invalid env secret: resolution succeeds only if the config value wins.
+            // SAFETY: see `EnvGuard::clear_lighter`.
+            unsafe { std::env::set_var("LIGHTER_API_SECRET", "not-hex") };
+
+            let credential = Credential::resolve(
+                Some(PRIVATE_KEY_HEX.to_string()),
+                Some(12_345),
+                Some(4),
+                LighterEnvironment::Mainnet,
+            )
+            .unwrap()
+            .unwrap();
+
+            assert!(credential.private_key().is_ok());
+        }
     }
 }

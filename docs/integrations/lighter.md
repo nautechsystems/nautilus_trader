@@ -578,8 +578,9 @@ Lighter signing requires all three credential values:
   desktop/mobile clients.
 - API private key: 40-byte hex private key, with or without a `0x` prefix.
 
-Config values take precedence. When config fields are omitted, the adapter reads environment
-variables based on the selected environment.
+Config values take precedence. A missing config field, or a blank API private key (empty or
+whitespace only), falls back to the corresponding environment variable for the selected
+environment.
 
 | Environment | API key index                   | API private key              | Account index                   |
 |-------------|---------------------------------|------------------------------|---------------------------------|
