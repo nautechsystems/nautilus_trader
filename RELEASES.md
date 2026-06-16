@@ -86,6 +86,7 @@ Released on TBD (UTC).
 - Fixed local catalog queries and backtests for non-ASCII instrument IDs (#4259), thanks for reporting @seungpyoson
 - Fixed matching engine fill commission side in Rust
 - Fixed OKX instrument parsing for malformed venue payloads
+- Fixed Polymarket instrument expiration precision for Gamma markets (#4278), thanks for reporting @OnlyC
 - Fixed portfolio account update scoping in Rust
 - Fixed rate limiter arithmetic to saturate so extreme quotas deny instead of admitting every request (Rust)
 - Fixed reconnect backoff jitter collapsing to zero at the maximum delay (Rust)
