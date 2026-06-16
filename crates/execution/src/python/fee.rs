@@ -95,6 +95,16 @@ impl PerContractFeeModel {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ProbabilityPriceFeeModel {
+    /// Fee model for probability-priced outcome shares.
+    ///
+    /// Applies `qty * fee_rate * p * (1 - p)` using the instrument's maker or
+    /// taker fee rate. This matches venues that represent outcome shares as
+    /// `InstrumentAny.BinaryOption` instruments quoted on a `[0, 1]`
+    /// probability scale.
+    ///
+    /// This model covers quote-currency match-time exchange fees only.
+    /// Venue-specific rebate programs or non-quote fee assets remain outside the
+    /// core execution layer.
     #[new]
     fn py_new() -> Self {
         Self

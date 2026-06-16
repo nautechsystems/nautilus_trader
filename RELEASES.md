@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added Hyperliquid minimum notional handling
 - Added Polymarket RTDS custom data subscriptions (#4214), thanks @graceyangfan
 - Added Postgres cache position event-log persistence and restart recovery (Rust)
+- Added `ProbabilityPriceFeeModel` and configurable sandbox fee models (#4262), thanks @graceyangfan
 - Added PyO3 cache purge APIs (#4249), thanks @graceyangfan
 - Added PyO3 instrument `tick_scheme` fields with Arrow persistence
 - Added Redis cache adapter order, position, and order-index write persistence (Rust)
@@ -70,6 +71,8 @@ Released on TBD (UTC).
 - Fixed `HttpClient` rejecting invalid response header keys instead of silently dropping them (Rust)
 - Fixed Hyperliquid cancel-replace fill stranding on a dropped `ACCEPTED` (#4270), thanks for reporting @AlphaTraderK
 - Fixed Interactive Brokers reconnect startup handling (#4210), thanks @faysou
+- Fixed Interactive Brokers to use `permId` for stable order identity (#4276), thanks @faysou
+- Fixed Kraken spot WebSocket dead-connection detection with an idle timeout (#4275), thanks @folknor
 - Fixed Lighter AccountState to include perp-side margin balance (#4246), thanks @filipmacek
 - Fixed Lighter cancel and modify rejections for local, venue, and acked no-op failures
 - Fixed Lighter concurrent batch nonce-ordering race (#4263), thanks @filipmacek
@@ -128,7 +131,8 @@ Released on TBD (UTC).
 - Optimized `Cache` query filtering to scale with open orders and positions (#4242), thanks for reporting @magnified103
 - Standardized Rust `OrderDenied` reason codes
 - Upgraded Interactive Brokers Rust adapter to `ibapi` 3.0.1 (#4209), thanks @faysou
-- Upgraded PyO3 to 0.29.0 with a temporary `pyo3-stub-gen` bridge before v2 removes legacy stubs
+- Upgraded `redis` crate to v1.2.3
+- Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.29.0
 
 ### Documentation Updates
 - Updated plugins concept guide for panic recovery, build pinning, and UTF-8 validation semantics

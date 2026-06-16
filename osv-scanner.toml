@@ -48,14 +48,6 @@ id = "RUSTSEC-2025-0100"
 reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)"
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2026-0176"
-reason = "pyo3 list/tuple iterator OOB read; no local affected API use"
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2026-0177"
-reason = "pyo3 PyCFunction Sync bound; local wrappers enforce Sync"
-
-[[IgnoredVulns]]
 id = "RUSTSEC-2025-0141"
 reason = "bincode unmaintained, transitive via hypersync-client (not a security vulnerability)"
 

@@ -353,7 +353,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.16
+    rev: v0.15.17
     hooks:
       - id: ruff
         name: ruff
