@@ -790,6 +790,7 @@ definitive list of Rust config options.
 | `futures_margin_types`                  | `None`    | Mapping of `BinanceSymbol` to futures margin type (isolated/cross). |
 | `use_ws_trading`                        | `True`    | Use the WebSocket trading API for order operations (Spot and USD-M Futures). When `False`, HTTP is used. |
 | `default_taker_fee`                     | `0.0004`  | Default taker fee rate for commission estimation on exchange‑generated fills (liquidation, ADL, settlement). |
+| `bnfcr_currency`                        | `USDT`    | USD-M Futures Credits Trading Mode: currency that `BNFCR` balances and fees resolve to. See [Futures Credits Trading Mode (BNFCR)](#futures-credits-trading-mode-bnfcr). |
 | `log_rejected_due_post_only_as_warning` | `True`    | Log post‑only rejections as warnings when `True`; otherwise as errors. |
 | `transport_backend`                     | `Sockudo` | *Rust only.* WebSocket transport backend. |
 
@@ -844,6 +845,17 @@ node.add_exec_client_factory(BINANCE, BinanceLiveExecClientFactory)
 # Finally build the node
 node.build()
 ```
+
+### Futures Credits Trading Mode (BNFCR)
+
+Binance Futures Credits Trading Mode is an EU regulatory mode in which the USD-M
+futures wallet, margin, PnL, and fees are denominated in `BNFCR`: an internal credit
+unit pegged 1:1 to USD that replaces stablecoin balances. Because `BNFCR` is not a
+tradable asset, the adapter maps it to the `bnfcr_currency` execution config option
+(default `USDT`) so account balances and commissions reconcile against the stablecoin
+the traded contracts settle in. Set `bnfcr_currency` to `USDC` when trading
+USDC-margined perpetuals. Any other unrecognized futures asset is registered as a
+generic crypto currency rather than failing.
 
 ### Spot market data mode
 

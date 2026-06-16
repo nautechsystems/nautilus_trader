@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added Binance Futures `bnfcr_currency` config for Credits Trading Mode
 - Added Binance Futures funding-rate history support in Rust
 - Added Binance Futures ticker data support in Rust
 - Added Binance order-list submission in Rust
@@ -53,6 +54,7 @@ Released on TBD (UTC).
 - Fixed account-currency trade PnL stats for foreign-currency instruments (#4211), thanks @faysou
 - Fixed Binance Futures empty algo order IDs
 - Fixed Binance Futures hedge reduce-only orders in Rust
+- Fixed Binance Futures node panic on `BNFCR` Credits Trading Mode balances
 - Fixed Binance Spot expired order handling
 - Fixed Binance Spot/Futures WebSocket connection pool race (#4244), thanks @filipmacek
 - Fixed blocking Python HTTP functions holding the GIL for the full request duration

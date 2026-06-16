@@ -18,7 +18,10 @@
 use std::{any::Any, collections::HashMap};
 
 use nautilus_common::factories::ClientConfig;
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_model::{
+    identifiers::{AccountId, TraderId},
+    types::Currency,
+};
 use nautilus_network::websocket::TransportBackend;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -167,6 +170,9 @@ pub struct BinanceExecClientConfig {
     pub futures_leverages: Option<HashMap<String, u32>>,
     /// Margin type per Binance symbol (e.g. BTCUSDT -> Cross), applied during connect.
     pub futures_margin_types: Option<HashMap<String, BinanceMarginType>>,
+    /// Currency that Binance Futures Credits (`BNFCR`) balances and fees resolve to (defaults to USDT).
+    #[builder(default = Currency::USDT())]
+    pub bnfcr_currency: Currency,
     /// If true, the EXPIRED execution type emits `OrderCanceled` instead of `OrderExpired`.
     ///
     /// Binance uses EXPIRED for certain cancel scenarios depending on order type

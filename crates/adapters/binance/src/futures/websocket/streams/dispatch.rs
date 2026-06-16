@@ -63,7 +63,10 @@ use crate::{
         },
         symbol::format_instrument_id,
     },
-    futures::http::client::{BinanceFuturesHttpClient, BinanceFuturesInstrument},
+    futures::{
+        conversions::normalize_futures_asset,
+        http::client::{BinanceFuturesHttpClient, BinanceFuturesInstrument},
+    },
 };
 
 /// Shared state required by the user data stream dispatch task.
@@ -78,6 +81,7 @@ pub(crate) struct DispatchCtx {
     pub algo_client_ids: Arc<AtomicSet<ClientOrderId>>,
     pub use_position_ids: bool,
     pub default_taker_fee: Decimal,
+    pub bnfcr_currency: Currency,
     pub treat_expired_as_canceled: bool,
     pub use_trade_lite: bool,
     pub seen_trade_ids: Arc<Mutex<FifoCache<(ustr::Ustr, i64), 10_000>>>,
@@ -146,6 +150,7 @@ pub(crate) fn dispatch_user_stream_message(
         &ctx.algo_client_ids,
         ctx.use_position_ids,
         ctx.default_taker_fee,
+        ctx.bnfcr_currency,
         ctx.treat_expired_as_canceled,
         ctx.use_trade_lite,
         &ctx.seen_trade_ids,
@@ -166,6 +171,7 @@ pub(crate) fn dispatch_ws_message(
     algo_client_ids: &Arc<AtomicSet<ClientOrderId>>,
     use_position_ids: bool,
     default_taker_fee: Decimal,
+    bnfcr_currency: Currency,
     treat_expired_as_canceled: bool,
     use_trade_lite: bool,
     seen_trade_ids: &Arc<Mutex<FifoCache<(ustr::Ustr, i64), 10_000>>>,
@@ -183,6 +189,7 @@ pub(crate) fn dispatch_ws_message(
                 dispatch_state,
                 use_position_ids,
                 default_taker_fee,
+                bnfcr_currency,
                 treat_expired_as_canceled,
                 use_trade_lite,
                 seen_trade_ids,
@@ -217,7 +224,9 @@ pub(crate) fn dispatch_ws_message(
         BinanceFuturesWsStreamsMessage::AccountUpdate(update) => {
             let ts_init = clock.get_time_ns();
 
-            if let Some(state) = parse_futures_account_update(&update, account_id, ts_init) {
+            if let Some(state) =
+                parse_futures_account_update(&update, account_id, bnfcr_currency, ts_init)
+            {
                 emitter.send_account_state(state);
             }
         }
@@ -288,6 +297,7 @@ pub(crate) fn dispatch_order_update(
     dispatch_state: &WsDispatchState,
     use_position_ids: bool,
     default_taker_fee: Decimal,
+    bnfcr_currency: Currency,
     treat_expired_as_canceled: bool,
     use_trade_lite: bool,
     seen_trade_ids: &Arc<Mutex<FifoCache<(ustr::Ustr, i64), 10_000>>>,
@@ -354,6 +364,7 @@ pub(crate) fn dispatch_order_update(
             ts_init,
             taker_fee,
             quote_currency,
+            bnfcr_currency,
             venue_position_id,
             seen_trade_ids,
         );
@@ -452,7 +463,12 @@ pub(crate) fn dispatch_order_update(
                 // cleanup below fires (it needs `z` from ORDER_TRADE_UPDATE,
                 // which TRADE_LITE does not carry).
                 if !use_trade_lite && !is_duplicate {
-                    match parse_order_fill_event_fields(order, price_precision, size_precision) {
+                    match parse_order_fill_event_fields(
+                        order,
+                        price_precision,
+                        size_precision,
+                        bnfcr_currency,
+                    ) {
                         Ok((last_qty, last_px, commission_currency, commission)) => {
                             let liquidity_side = if order.is_maker {
                                 LiquiditySide::Maker
@@ -646,6 +662,7 @@ pub(crate) fn dispatch_order_update(
                     size_precision,
                     None,
                     None,
+                    bnfcr_currency,
                     None,
                     ts_init,
                 ) {
@@ -706,6 +723,7 @@ fn parse_order_fill_event_fields(
     order: &OrderUpdateData,
     price_precision: u8,
     size_precision: u8,
+    bnfcr_currency: Currency,
 ) -> anyhow::Result<(Quantity, Price, Currency, Option<Money>)> {
     let last_qty = parse_required_quantity_at_precision(
         &order.last_filled_qty,
@@ -717,19 +735,22 @@ fn parse_order_fill_event_fields(
         price_precision,
         "last_filled_price",
     )?;
-    let (commission_currency, commission) = match parse_order_commission(order) {
+    let (commission_currency, commission) = match parse_order_commission(order, bnfcr_currency) {
         Ok(commission) => commission,
         Err(e) => {
             log::error!("Failed to parse order commission: {e}");
-            (order_commission_currency(order), None)
+            (order_commission_currency(order, bnfcr_currency), None)
         }
     };
 
     Ok((last_qty, last_px, commission_currency, commission))
 }
 
-fn parse_order_commission(order: &OrderUpdateData) -> anyhow::Result<(Currency, Option<Money>)> {
-    let currency = order_commission_currency(order);
+fn parse_order_commission(
+    order: &OrderUpdateData,
+    bnfcr_currency: Currency,
+) -> anyhow::Result<(Currency, Option<Money>)> {
+    let currency = order_commission_currency(order, bnfcr_currency);
 
     let Some(raw_commission) = order.commission.as_deref() else {
         return Ok((currency, None));
@@ -742,11 +763,13 @@ fn parse_order_commission(order: &OrderUpdateData) -> anyhow::Result<(Currency, 
     Ok((currency, Some(commission)))
 }
 
-fn order_commission_currency(order: &OrderUpdateData) -> Currency {
+fn order_commission_currency(order: &OrderUpdateData, bnfcr_currency: Currency) -> Currency {
     order
         .commission_asset
         .as_ref()
-        .map_or_else(Currency::USDT, |asset| Currency::from(asset.as_str()))
+        .map_or(bnfcr_currency, |asset| {
+            normalize_futures_asset(asset.as_str(), bnfcr_currency)
+        })
 }
 
 fn parse_order_terminal_quantities(order: &OrderUpdateData) -> anyhow::Result<(Decimal, Decimal)> {
@@ -1114,6 +1137,7 @@ pub(crate) fn dispatch_exchange_generated_fill(
     ts_init: UnixNanos,
     taker_fee: Option<Decimal>,
     quote_currency: Currency,
+    bnfcr_currency: Currency,
     venue_position_id: Option<PositionId>,
     seen_trade_ids: &Arc<Mutex<FifoCache<(ustr::Ustr, i64), 10_000>>>,
 ) {
@@ -1174,6 +1198,7 @@ pub(crate) fn dispatch_exchange_generated_fill(
         size_precision,
         taker_fee,
         Some(quote_currency),
+        bnfcr_currency,
         venue_position_id,
         ts_init,
     ) {
@@ -1574,6 +1599,7 @@ mod tests {
             &dispatch_state,
             true,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             false,
             &seen_trade_ids,
@@ -1588,6 +1614,7 @@ mod tests {
             &dispatch_state,
             true,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             false,
             &seen_trade_ids,
@@ -1635,6 +1662,7 @@ mod tests {
             &dispatch_state,
             true,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             false,
             &seen_trade_ids,
@@ -1649,6 +1677,7 @@ mod tests {
             &dispatch_state,
             true,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             false,
             &seen_trade_ids,
@@ -1694,6 +1723,7 @@ mod tests {
             &dispatch_state,
             true,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             false,
             &seen_trade_ids,
@@ -1708,6 +1738,7 @@ mod tests {
             &dispatch_state,
             true,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             false,
             &seen_trade_ids,
@@ -1953,6 +1984,7 @@ mod tests {
             &dispatch_state,
             false,
             Decimal::new(4, 4),
+            Currency::USDT(),
             treat_expired_as_canceled,
             false,
             &seen_trade_ids,
@@ -2004,6 +2036,7 @@ mod tests {
             &dispatch_state,
             false,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             false,
             &seen_trade_ids,
@@ -2052,6 +2085,7 @@ mod tests {
             &dispatch_state,
             false,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             false,
             &seen_trade_ids,
@@ -2101,6 +2135,7 @@ mod tests {
             &dispatch_state,
             false,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             false,
             &seen_trade_ids,
@@ -2153,6 +2188,7 @@ mod tests {
             &dispatch_state,
             false,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             false,
             &seen_trade_ids,
@@ -2195,6 +2231,7 @@ mod tests {
             &dispatch_state,
             false,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             false,
             &seen_trade_ids,
@@ -2239,6 +2276,7 @@ mod tests {
             &dispatch_state,
             false,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             false,
             &seen_trade_ids,
@@ -2302,6 +2340,7 @@ mod tests {
                 &dispatch_state,
                 false,
                 Decimal::new(4, 4),
+                Currency::USDT(),
                 false,
                 false,
                 &seen_trade_ids,
@@ -2507,6 +2546,7 @@ mod tests {
             &dispatch_state,
             false,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             false,
             &seen_trade_ids,
@@ -2547,6 +2587,7 @@ mod tests {
             &dispatch_state,
             false,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             false,
             &seen_trade_ids,
@@ -2741,6 +2782,7 @@ mod tests {
             &dispatch_state,
             true,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             true, // use_trade_lite
             &seen_trade_ids,
@@ -2784,6 +2826,7 @@ mod tests {
             &dispatch_state,
             true,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             true, // use_trade_lite
             &seen_trade_ids,
@@ -2823,6 +2866,7 @@ mod tests {
             &dispatch_state,
             true,
             Decimal::new(4, 4),
+            Currency::USDT(),
             false,
             true, // use_trade_lite
             &seen_trade_ids,

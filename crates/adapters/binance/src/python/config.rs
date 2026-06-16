@@ -17,7 +17,10 @@
 
 use std::collections::HashMap;
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_model::{
+    identifiers::{AccountId, TraderId},
+    types::Currency,
+};
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 
@@ -100,6 +103,7 @@ impl BinanceExecClientConfig {
         futures_margin_types = None,
         treat_expired_as_canceled = false,
         use_trade_lite = false,
+        bnfcr_currency = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -119,6 +123,7 @@ impl BinanceExecClientConfig {
         futures_margin_types: Option<HashMap<String, BinanceMarginType>>,
         treat_expired_as_canceled: bool,
         use_trade_lite: bool,
+        bnfcr_currency: Option<Currency>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -138,6 +143,7 @@ impl BinanceExecClientConfig {
             api_secret: api_secret.or(defaults.api_secret),
             futures_leverages,
             futures_margin_types,
+            bnfcr_currency: bnfcr_currency.unwrap_or(defaults.bnfcr_currency),
             treat_expired_as_canceled,
             use_trade_lite,
             transport_backend: defaults.transport_backend,
@@ -210,7 +216,7 @@ mod tests {
         let account_id = AccountId::from("BINANCE-001");
         let config = BinanceExecClientConfig::py_new(
             trader_id, account_id, None, None, None, None, None, true, true, None, None, None,
-            None, None, false, false,
+            None, None, false, false, None,
         );
         let defaults = BinanceExecClientConfig::default();
 
@@ -226,6 +232,8 @@ mod tests {
         assert_eq!(config.api_secret, defaults.api_secret);
         assert_eq!(config.futures_leverages, defaults.futures_leverages);
         assert_eq!(config.futures_margin_types, defaults.futures_margin_types);
+        assert_eq!(config.bnfcr_currency, defaults.bnfcr_currency);
+        assert_eq!(config.bnfcr_currency, Currency::USDT());
         assert_eq!(
             config.treat_expired_as_canceled,
             defaults.treat_expired_as_canceled
@@ -258,6 +266,7 @@ mod tests {
             Some(margin_types.clone()),
             true,
             true,
+            Some(Currency::USDC()),
         );
 
         assert_eq!(config.product_type, BinanceProductType::UsdM);
@@ -278,6 +287,7 @@ mod tests {
         assert_eq!(config.api_secret.as_deref(), Some("api-secret"));
         assert_eq!(config.futures_leverages, Some(leverages));
         assert_eq!(config.futures_margin_types, Some(margin_types));
+        assert_eq!(config.bnfcr_currency, Currency::USDC());
         assert!(config.treat_expired_as_canceled);
         assert!(config.use_trade_lite);
     }
@@ -302,6 +312,7 @@ mod tests {
             None,
             false,
             false,
+            None,
         );
 
         assert_eq!(config.default_taker_fee, defaults.default_taker_fee);

@@ -15,10 +15,31 @@
 
 //! Value conversions between Nautilus domain types and Binance Futures venue types.
 
-use nautilus_model::enums::OrderSide;
+use nautilus_model::{enums::OrderSide, types::Currency};
 use rust_decimal::Decimal;
 
 use crate::common::enums::BinancePositionSide;
+
+const BNFCR_ASSET: &str = "BNFCR";
+
+/// Resolves a Binance Futures asset code to a Nautilus [`Currency`].
+///
+/// In Credits Trading Mode (EU), the futures wallet is denominated in `BNFCR`, a
+/// USD-pegged credit unit absent from the currency table; it resolves to
+/// `bnfcr_currency` so the account reconciles against stablecoin-settled instruments.
+/// Any other unrecognized asset is registered as a generic crypto rather than panicking.
+#[must_use]
+pub(crate) fn normalize_futures_asset<T: AsRef<str>>(
+    asset: T,
+    bnfcr_currency: Currency,
+) -> Currency {
+    let code = asset.as_ref().trim();
+    if code.eq_ignore_ascii_case(BNFCR_ASSET) {
+        bnfcr_currency
+    } else {
+        Currency::get_or_create_crypto_with_context(code, Some("futures asset"))
+    }
+}
 
 /// Determines the Binance `positionSide` for hedge mode from the Nautilus order side.
 ///
@@ -107,6 +128,7 @@ pub(crate) fn format_callback_rate(rate: Decimal) -> String {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::enums::CurrencyType;
     use rstest::rstest;
 
     use super::*;
@@ -165,5 +187,26 @@ mod tests {
         #[case] expected: Option<bool>,
     ) {
         assert_eq!(reduce_only_param(reduce_only, position_side), expected);
+    }
+
+    #[rstest]
+    #[case::bnfcr_to_usdt("BNFCR", Currency::USDT(), Currency::USDT())]
+    #[case::bnfcr_to_usdc("BNFCR", Currency::USDC(), Currency::USDC())]
+    #[case::bnfcr_trim_and_case(" bnfcr ", Currency::USDC(), Currency::USDC())]
+    #[case::known_asset_bypasses_alias("USDT", Currency::USDC(), Currency::USDT())]
+    fn test_normalize_futures_asset_resolves_currency(
+        #[case] asset: &str,
+        #[case] bnfcr_currency: Currency,
+        #[case] expected: Currency,
+    ) {
+        assert_eq!(normalize_futures_asset(asset, bnfcr_currency), expected);
+    }
+
+    #[rstest]
+    fn test_normalize_futures_asset_registers_unknown_as_crypto() {
+        let currency = normalize_futures_asset("XYZ", Currency::USDT());
+
+        assert_eq!(currency.code.as_str(), "XYZ");
+        assert_eq!(currency.currency_type, CurrencyType::Crypto);
     }
 }

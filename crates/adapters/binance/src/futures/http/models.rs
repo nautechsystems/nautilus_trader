@@ -35,17 +35,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
 
-use crate::common::{
-    consts::BINANCE_NAUTILUS_FUTURES_BROKER_ID,
-    encoder::decode_broker_id,
-    enums::{
-        BinanceAlgoStatus, BinanceAlgoType, BinanceContractStatus, BinanceFuturesOrderType,
-        BinanceIncomeType, BinanceMarginType, BinanceOrderStatus, BinancePositionSide,
-        BinancePriceMatch, BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce,
-        BinanceTradingStatus, BinanceWorkingType,
+use crate::{
+    common::{
+        consts::BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+        encoder::decode_broker_id,
+        enums::{
+            BinanceAlgoStatus, BinanceAlgoType, BinanceContractStatus, BinanceFuturesOrderType,
+            BinanceIncomeType, BinanceMarginType, BinanceOrderStatus, BinancePositionSide,
+            BinancePriceMatch, BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce,
+            BinanceTradingStatus, BinanceWorkingType,
+        },
+        models::BinanceRateLimit,
+        parse::parse_required_decimal,
     },
-    models::BinanceRateLimit,
-    parse::parse_required_decimal,
+    futures::conversions::normalize_futures_asset,
 };
 
 /// Server time response from `GET /fapi/v1/time`.
@@ -1195,6 +1198,7 @@ impl BinanceUserTrade {
         instrument_id: InstrumentId,
         price_precision: u8,
         size_precision: u8,
+        bnfcr_currency: Currency,
         ts_init: UnixNanos,
     ) -> anyhow::Result<FillReport> {
         let ts_event = UnixNanos::from_millis(self.time as u64);
@@ -1219,7 +1223,9 @@ impl BinanceUserTrade {
         let commission_currency = self
             .commission_asset
             .as_ref()
-            .map_or_else(Currency::USDT, Currency::from);
+            .map_or(bnfcr_currency, |asset| {
+                normalize_futures_asset(asset, bnfcr_currency)
+            });
         let commission = match self.commission.as_ref() {
             Some(raw) => {
                 let decimal = parse_required_decimal(raw, "commission")?;
@@ -1980,6 +1986,7 @@ mod tests {
             InstrumentId::from("BTCUSDT-PERP.BINANCE"),
             2,
             3,
+            Currency::USDT(),
             UnixNanos::from(1_000_000_000u64),
         );
 
