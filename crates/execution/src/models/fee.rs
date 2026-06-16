@@ -287,6 +287,16 @@ impl FeeModel for MakerTakerFeeModel {
     }
 }
 
+/// Fee model for probability-priced outcome shares.
+///
+/// Applies `qty * fee_rate * p * (1 - p)` using the instrument's maker or
+/// taker fee rate. This matches venues that represent outcome shares as
+/// [`InstrumentAny::BinaryOption`] instruments quoted on a `[0, 1]`
+/// probability scale.
+///
+/// This model covers quote-currency match-time exchange fees only.
+/// Venue-specific rebate programs or non-quote fee assets remain outside the
+/// core execution layer.
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
@@ -299,16 +309,6 @@ impl FeeModel for MakerTakerFeeModel {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
 )]
-/// Fee model for probability-priced outcome shares.
-///
-/// Applies `qty * fee_rate * p * (1 - p)` using the instrument's maker or
-/// taker fee rate. This matches venues that represent outcome shares as
-/// [`InstrumentAny::BinaryOption`] instruments quoted on a `[0, 1]`
-/// probability scale.
-///
-/// This model covers quote-currency match-time exchange fees only.
-/// Venue-specific rebate programs or non-quote fee assets remain outside the
-/// core execution layer.
 pub struct ProbabilityPriceFeeModel;
 
 impl FeeModel for ProbabilityPriceFeeModel {
