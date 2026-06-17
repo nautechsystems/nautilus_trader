@@ -640,10 +640,10 @@ pub enum BitmexInstrumentType {
     #[serde(rename = "FFICSX")]
     PredictionMarket,
 
-    /// Stock-based Perpetual Contracts (e.g., SPY, equity derivatives).
-    /// CFI code FFSCSX - financial future on stocks, cash settled.
+    /// TradFi Perpetual Contracts (equities, FX, and commodities).
+    /// CFI code FFSCSX - financial future on non-crypto underlyings, cash settled.
     #[serde(rename = "FFSCSX")]
-    StockPerpetual,
+    TradFiPerpetual,
 
     /// Perpetual Contracts (crypto).
     #[serde(rename = "FFWCSX")]
@@ -828,6 +828,9 @@ pub enum BitmexInstrumentState {
     Settled,
     /// Instrument is delisted.
     Delisted,
+    /// Unrecognized instrument state received from the venue.
+    #[serde(other)]
+    Unknown,
 }
 
 impl From<&BitmexInstrumentState> for MarketStatusAction {
@@ -838,6 +841,7 @@ impl From<&BitmexInstrumentState> for MarketStatusAction {
             BitmexInstrumentState::Settled => Self::Close,
             BitmexInstrumentState::Unlisted => Self::NotAvailableForTrading,
             BitmexInstrumentState::Delisted => Self::NotAvailableForTrading,
+            BitmexInstrumentState::Unknown => Self::NotAvailableForTrading,
         }
     }
 }
@@ -991,7 +995,7 @@ mod tests {
             r#""FFWCSF""#
         );
         assert_eq!(
-            serde_json::to_string(&BitmexInstrumentType::StockPerpetual).unwrap(),
+            serde_json::to_string(&BitmexInstrumentType::TradFiPerpetual).unwrap(),
             r#""FFSCSX""#
         );
         assert_eq!(
@@ -1085,7 +1089,7 @@ mod tests {
         );
         assert_eq!(
             serde_json::from_str::<BitmexInstrumentType>(r#""FFSCSX""#).unwrap(),
-            BitmexInstrumentType::StockPerpetual
+            BitmexInstrumentType::TradFiPerpetual
         );
         assert_eq!(
             serde_json::from_str::<BitmexInstrumentType>(r#""IFXXXP""#).unwrap(),
@@ -1323,10 +1327,20 @@ mod tests {
         BitmexInstrumentState::Delisted,
         MarketStatusAction::NotAvailableForTrading
     )]
+    #[case(
+        BitmexInstrumentState::Unknown,
+        MarketStatusAction::NotAvailableForTrading
+    )]
     fn test_bitmex_instrument_state_to_market_status_action(
         #[case] state: BitmexInstrumentState,
         #[case] expected: MarketStatusAction,
     ) {
         assert_eq!(MarketStatusAction::from(&state), expected);
+    }
+
+    #[rstest]
+    fn test_bitmex_instrument_state_unknown_deserializes_from_unrecognized_string() {
+        let state: BitmexInstrumentState = serde_json::from_str(r#""SomeFutureState""#).unwrap();
+        assert_eq!(state, BitmexInstrumentState::Unknown);
     }
 }

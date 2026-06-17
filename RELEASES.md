@@ -7,6 +7,8 @@ Released on TBD (UTC).
 - Added Binance Futures funding-rate history support in Rust
 - Added Binance Futures ticker data support in Rust
 - Added Binance order-list submission in Rust
+- Added `BitmexInstrumentState::Unknown` to tolerate unrecognized venue states without bootstrap failure
+- Added BitMEX legacy futures, spreads, and reference basket instrument parsing
 - Added cache order index crash-recovery restore for Redis and Postgres adapters (Rust)
 - Added Hyperliquid builder attribution opt-out
 - Added Hyperliquid historical trade requests
@@ -36,6 +38,7 @@ Released on TBD (UTC).
 - Changed Redis cache account/order/position storage to event logs; clear old typed state (Rust)
 - Changed `SyntheticInstrument` fallible methods to return `SyntheticInstrumentError` instead of `anyhow::Error` (Rust)
 - Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)
+- Renamed `BitmexInstrumentType::StockPerpetual` to `TradFiPerpetual` (covers equities, FX, and commodities)
 - Renamed Rust/PyO3 instrument `tick_scheme_name` to `tick_scheme`; Cython keeps `tick_scheme_name`
 
 ### Security
@@ -57,6 +60,7 @@ Released on TBD (UTC).
 - Fixed Binance Futures node panic on `BNFCR` Credits Trading Mode balances
 - Fixed Binance Spot expired order handling
 - Fixed Binance Spot/Futures WebSocket connection pool race (#4244), thanks @filipmacek
+- Fixed BitMEX instrument bootstrap aborting on any row deserialize failure (#4283), thanks for reporting @seungpyoson
 - Fixed blocking Python HTTP functions holding the GIL for the full request duration
 - Fixed Blockchain snapshot bootstrap checks
 - Fixed Blockchain pool-event replay to require durable timestamps before checkpoints
@@ -78,6 +82,7 @@ Released on TBD (UTC).
 - Fixed `HttpClient` rejecting invalid response header keys instead of silently dropping them (Rust)
 - Fixed Hyperliquid bracket trigger-child statuses and atomic market fills orphaning orders at submission (#4160), thanks @sonnymai
 - Fixed Hyperliquid cancel-replace fill stranding on a dropped `ACCEPTED` (#4270), thanks for reporting @AlphaTraderK
+- Fixed `Instrument` rejecting negative `min_price`, preventing spread instruments from loading in Python
 - Fixed Interactive Brokers reconnect startup handling (#4210), thanks @faysou
 - Fixed Interactive Brokers to use `permId` for stable order identity (#4276), thanks @faysou
 - Fixed Kraken spot WebSocket dead-connection detection with an idle timeout (#4275), thanks @folknor

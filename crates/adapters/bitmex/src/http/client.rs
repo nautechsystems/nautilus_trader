@@ -512,9 +512,13 @@ impl BitmexRawHttpClient {
 
     /// Get all instruments.
     ///
+    /// Instruments that cannot be deserialized (e.g. unknown fields for new BitMEX
+    /// instrument types) are skipped with a warning rather than failing the whole
+    /// response.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the request fails, the response cannot be parsed, or the API returns an error.
+    /// Returns an error if the HTTP request fails or the response is not a JSON array.
     pub async fn get_instruments(
         &self,
         active_only: bool,
@@ -524,8 +528,29 @@ impl BitmexRawHttpClient {
         } else {
             "/instrument"
         };
-        self.send_request::<_, ()>(Method::GET, path, None, None, false)
-            .await
+        let raw: Vec<serde_json::Value> = self
+            .send_request::<_, ()>(Method::GET, path, None, None, false)
+            .await?;
+
+        let raw_len = raw.len();
+        let mut instruments = Vec::with_capacity(raw_len);
+
+        for value in raw {
+            match serde_json::from_value::<BitmexInstrument>(value) {
+                Ok(inst) => instruments.push(inst),
+                Err(e) => {
+                    log::warn!("Skipping instrument that could not be deserialized: {e}");
+                }
+            }
+        }
+
+        if raw_len > 0 && instruments.is_empty() {
+            return Err(BitmexHttpError::JsonError(format!(
+                "All {raw_len} instrument(s) failed to deserialize; venue schema may have changed"
+            )));
+        }
+
+        Ok(instruments)
     }
 
     /// Requests the current server time from BitMEX.
