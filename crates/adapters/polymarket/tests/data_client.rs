@@ -30,6 +30,7 @@ use axum::{
     response::{Json, Response},
     routing::get,
 };
+use chrono::{Duration as ChronoDuration, Utc};
 use futures_util::StreamExt;
 use nautilus_common::{
     clients::DataClient,
@@ -72,6 +73,35 @@ fn load_json(filename: &str) -> Value {
     let content = std::fs::read_to_string(data_path().join(filename))
         .unwrap_or_else(|_| panic!("failed to read {filename}"));
     serde_json::from_str(&content).expect("invalid json")
+}
+
+fn future_end_date_string() -> String {
+    let future_date = (Utc::now() + ChronoDuration::days(365)).date_naive();
+    format!("{}T00:00:00Z", future_date.format("%Y-%m-%d"))
+}
+
+fn set_future_end_date(value: &mut Value) {
+    let end_date = future_end_date_string();
+    let end_date_iso = end_date[..10].to_string();
+
+    if let Some(root) = value.as_object_mut() {
+        root.insert("endDate".to_string(), Value::String(end_date.clone()));
+        root.insert("endDateIso".to_string(), Value::String(end_date_iso));
+
+        if let Some(events) = root.get_mut("events").and_then(Value::as_array_mut) {
+            for event in events {
+                if let Some(event_obj) = event.as_object_mut() {
+                    event_obj.insert("endDate".to_string(), Value::String(end_date.clone()));
+                }
+            }
+        }
+    }
+}
+
+fn gamma_market_request_fixture() -> Value {
+    let mut value = load_json("gamma_market.json");
+    set_future_end_date(&mut value);
+    value
 }
 
 #[derive(Clone, Default)]
@@ -201,10 +231,6 @@ fn create_test_data_client(
     (client, rx)
 }
 
-fn gamma_market_fixture() -> Value {
-    load_json("gamma_market.json")
-}
-
 fn yes_instrument_id() -> InstrumentId {
     InstrumentId::from(format!("{TEST_CONDITION_ID}-{TEST_TOKEN_ID_YES}.POLYMARKET").as_str())
 }
@@ -239,12 +265,8 @@ async fn wait_for_market_payload_count(
 #[rstest]
 #[tokio::test]
 async fn test_request_instrument_publishes_event_and_response() {
-    // Regression test for the `DataEvent::Instrument` publish in
-    // `request_instrument` (data.rs:1183-1187). Without it the exec client
-    // does not pick up newly fetched instruments and the WS dispatcher
-    // logs `Unknown asset_id in order update`.
     let state = TestServerState::default();
-    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_fixture()]));
+    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
     let addr = start_mock_server(state.clone()).await;
     let (client, mut rx) = create_test_data_client(addr);
 
@@ -285,11 +307,9 @@ async fn test_request_instrument_publishes_event_and_response() {
 #[rstest]
 #[tokio::test]
 async fn test_request_instrument_not_found_emits_no_publish() {
-    // Gamma returns an empty array. The instrument lookup misses, the
-    // method logs an error, and no events are emitted.
     let state = TestServerState::default();
     *state.gamma_response.lock().await = Some(serde_json::json!([]));
-    let addr = start_mock_server(state.clone()).await;
+    let addr = start_mock_server(state).await;
     let (client, mut rx) = create_test_data_client(addr);
 
     let request = RequestInstrument::new(
@@ -316,7 +336,7 @@ async fn test_request_instrument_not_found_emits_no_publish() {
 #[tokio::test]
 async fn test_request_instruments_emits_response() {
     let state = TestServerState::default();
-    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_fixture()]));
+    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
     let addr = start_mock_server(state.clone()).await;
     let (client, mut rx) = create_test_data_client(addr);
 
@@ -394,10 +414,8 @@ async fn test_request_instruments_emits_response() {
 #[rstest]
 #[tokio::test]
 async fn test_request_book_snapshot_returns_book_response() {
-    // request_book_snapshot needs the instrument cached; we prime the
-    // cache by issuing a request_instrument first, then the book snapshot.
     let state = TestServerState::default();
-    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_fixture()]));
+    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
     let addr = start_mock_server(state).await;
     let (client, mut rx) = create_test_data_client(addr);
 
@@ -441,11 +459,6 @@ async fn test_request_book_snapshot_returns_book_response() {
 #[rstest]
 #[tokio::test]
 async fn test_request_trades_returns_trades_response() {
-    // The data API returns trades for all outcomes of a condition; the
-    // adapter filters by token_id. Build an inline fixture where two
-    // trades match TEST_TOKEN_ID_YES and one belongs to a sibling token,
-    // so we exercise the filter and assert exact counts/fields rather
-    // than a bare "response was emitted" check.
     let other_token = "0".repeat(76);
     let trades_fixture = serde_json::json!([
         {
@@ -487,14 +500,13 @@ async fn test_request_trades_returns_trades_response() {
     ]);
 
     let state = TestServerState::default();
-    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_fixture()]));
+    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
     *state.trades_response.lock().await = Some(trades_fixture);
     let addr = start_mock_server(state).await;
     let (client, mut rx) = create_test_data_client(addr);
 
     let instrument_id = yes_instrument_id();
 
-    // Prime cache so request_trades can resolve the instrument.
     let request = RequestInstrument::new(
         instrument_id,
         None,
@@ -534,7 +546,6 @@ async fn test_request_trades_returns_trades_response() {
         trades_response.instrument_id, instrument_id,
         "response must carry the requested instrument_id",
     );
-    // Two of three trades match TEST_TOKEN_ID_YES; the sibling token is filtered out.
     assert_eq!(
         trades_response.data.len(),
         2,
@@ -562,12 +573,8 @@ async fn test_request_trades_returns_trades_response() {
 #[rstest]
 #[tokio::test]
 async fn test_reset_reconnect_does_not_replay_stale_market_subscriptions() {
-    // Rotation safety regression:
-    // after reset(), reconnect must not replay stale market subscriptions from
-    // a previous generation. A new subscribe should be required for the next
-    // active instrument cycle.
     let state = TestServerState::default();
-    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_fixture()]));
+    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx) = create_test_data_client(addr);
     let instrument_id = yes_instrument_id();
@@ -602,7 +609,6 @@ async fn test_reset_reconnect_does_not_replay_stale_market_subscriptions() {
     client.reset().expect("reset");
     client.connect().await.expect("connect #2");
 
-    // Give reconnect path time to replay (if stale state leaked).
     tokio::time::sleep(Duration::from_millis(300)).await;
     let replay_count = state.market_payloads.lock().await.len();
     assert_eq!(
@@ -610,7 +616,6 @@ async fn test_reset_reconnect_does_not_replay_stale_market_subscriptions() {
         "reset + reconnect must not replay stale market subscriptions, saw {replay_count} payload(s)",
     );
 
-    // Reset clears instrument cache; prime current active instrument again.
     let prime_2 = RequestInstrument::new(
         instrument_id,
         None,

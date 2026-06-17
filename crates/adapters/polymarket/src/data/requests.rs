@@ -30,7 +30,9 @@ use nautilus_common::{
 use nautilus_core::datetime::datetime_to_unix_nanos;
 use nautilus_model::{data::CustomData, instruments::Instrument};
 
-use super::{PolymarketDataClient, dispatch::WsMessageContext, instruments::cache_instrument};
+use super::{
+    PolymarketDataClient, dispatch::WsMessageContext, instruments::cache_instrument_if_active,
+};
 use crate::{
     common::consts::POLYMARKET_VENUE,
     providers::extract_condition_id,
@@ -229,7 +231,17 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
         };
 
         for instrument in &instruments {
-            cache_instrument(&instruments_cache, &token_meta, instrument);
+            if !cache_instrument_if_active(
+                clock.get_time_ns(),
+                &instruments_cache,
+                &token_meta,
+                instrument,
+            ) {
+                log::debug!(
+                    "Skipping expired instrument {} during request_instruments cache update",
+                    instrument.id()
+                );
+            }
         }
 
         let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -285,12 +297,17 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
         };
 
         if let Some(inst) = instrument {
-            cache_instrument(&instruments_cache, &token_meta, &inst);
-
-            // Publish onto the data bus so other clients (e.g. the exec
-            // client's token map) can update from the same fetch.
-            if let Err(e) = sender.send(DataEvent::Instrument(inst.clone())) {
-                log::warn!("Failed to publish instrument {instrument_id}: {e}");
+            if cache_instrument_if_active(clock.get_time_ns(), &instruments_cache, &token_meta, &inst)
+            {
+                // Publish onto the data bus so other clients (e.g. the exec
+                // client's token map) can update from the same fetch.
+                if let Err(e) = sender.send(DataEvent::Instrument(inst.clone())) {
+                    log::warn!("Failed to publish instrument {instrument_id}: {e}");
+                }
+            } else {
+                log::debug!(
+                    "Skipping expired instrument {instrument_id} during request_instrument cache update"
+                );
             }
 
             let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
@@ -318,10 +335,7 @@ pub(super) fn request_book_snapshot(
     request: RequestBookSnapshot,
 ) -> anyhow::Result<()> {
     let instrument_id = request.instrument_id;
-    let instruments = client.instruments.load();
-    let instrument = instruments
-        .get(&instrument_id)
-        .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
+    let instrument = client.ensure_market_data_request_allowed(instrument_id)?;
 
     let token_id = instrument.raw_symbol().as_str().to_string();
     let price_precision = instrument.price_precision();
@@ -368,10 +382,7 @@ pub(super) fn request_trades(
     request: RequestTrades,
 ) -> anyhow::Result<()> {
     let instrument_id = request.instrument_id;
-    let instruments = client.instruments.load();
-    let instrument = instruments
-        .get(&instrument_id)
-        .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
+    let instrument = client.ensure_market_data_request_allowed(instrument_id)?;
 
     let condition_id = extract_condition_id(&instrument_id)?;
     let token_id = instrument.raw_symbol().as_str().to_string();
