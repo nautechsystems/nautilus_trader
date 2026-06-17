@@ -85,6 +85,7 @@ Released on TBD (UTC).
 - Fixed Lighter concurrent batch nonce-ordering race (#4263), thanks @filipmacek
 - Fixed Lighter maker-only key lookup authentication (#4234), thanks @filipmacek
 - Fixed Lighter positions falsely flattening on malformed snapshots
+- Fixed Lighter WebSocket subscribe storm tripping inflight rate limits, thanks for reporting @filipmacek
 - Fixed live external order claim registration in Rust
 - Fixed live reconciliation logging below-cached fill mismatches as errors, halting `shutdown_on_error` nodes (Rust)
 - Fixed live reconciliation logging transient venue report-query failures as errors (Rust)
@@ -143,6 +144,7 @@ Released on TBD (UTC).
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.29.0
 
 ### Documentation Updates
+- Added developer-guide rate-limiting policy distinguishing data and execution paths
 - Updated plugins concept guide for panic recovery, build pinning, and UTF-8 validation semantics
 - Updated event sourcing guide for capture dedup, recovery resilience, and snapshot-anchor verification
 - Updated commodity instrument and execution concept guides for negative price support

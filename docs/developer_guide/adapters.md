@@ -840,6 +840,35 @@ Pass rate limit keys when sending WebSocket messages to enforce per-operation qu
 self.send_with_retry(payload, Some(vec![OKX_RATE_LIMIT_KEY_ORDER.to_string()])).await
 ```
 
+**Policy:**
+
+Adapters should converge on the following rate-limiting principles.
+
+- Map each quota to the scope the venue meters it against (per IP, account, API key, connection,
+  URL, transport, or operation class). Draw every client that shares a scope (data, execution,
+  pollers) from one limiter keyed by that scope; separate limiters for a shared cap silently double
+  the effective rate. Add distinct keys only for sub-caps the venue meters independently.
+- Bucket data and execution traffic apart only when the venue meters them apart. The split still
+  matters for recovery: a data-path trip (subscribe, unsubscribe, control frames) rejects a
+  subscription, surfaces as missing market data, and recovers through adapter retry or reconnect,
+  usually without the strategy knowing; an execution-path trip is strategy-visible and governed by
+  the outcome policy below.
+- Pace to the venue's actual metering, not just its headline number. Match the window shape, burst,
+  and any endpoint weights: a token bucket at the documented rate can still overrun a strict rolling
+  window after an idle burst. Wire latency does not create rate headroom, since a constant delay
+  shifts arrival times without changing the rate and jitter bunches messages as readily as it
+  spreads them. Add headroom only when window semantics or shared external traffic require it, never
+  as a round-number buffer.
+- Bound inflight with a closed-loop gate, not the limiter. When a venue caps concurrent
+  unacknowledged messages separately from the send rate, gate dispatch on a count that releases a
+  slot on every terminal outcome: acknowledgement, rejection, send failure, and reconnect. A
+  send-rate limiter cannot do this, because inflight tracks send rate times acknowledgement latency,
+  which it never observes.
+- Treat an execution-path rate-limit response as an unknown outcome, not a rejection. Per the
+  [order command outcome policy](#order-command-outcome-policy), a rate-limited command may still
+  have reached the venue, so retry only when the command is idempotent or the venue proves it was
+  not processed; otherwise leave the order in flight and reconcile.
+
 ## WebSocket client patterns
 
 WebSocket clients handle real-time streaming data. They manage connection state, authentication,

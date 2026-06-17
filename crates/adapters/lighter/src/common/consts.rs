@@ -86,5 +86,11 @@ pub const RECONNECT_MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// Default HTTP request timeout.
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Maximum subscribe messages awaiting venue acknowledgement at once.
+///
+/// Held below Lighter's 50-per-IP inflight cap; see the WebSocket rate-limit
+/// strategy in [`crate::common::rate_limit`].
+pub const SUBSCRIBE_INFLIGHT_MAX: usize = 35;
+
 /// Outbound command queue depth before backpressure kicks in.
 pub const QUEUE_MAX: usize = 1000;

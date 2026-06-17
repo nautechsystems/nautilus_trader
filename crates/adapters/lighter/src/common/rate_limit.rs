@@ -13,14 +13,34 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Rate-limit keys, quotas, and the shared transaction limiter for the Lighter adapter.
+//! Rate-limit keys, quotas, and limiters for the Lighter adapter.
 //!
 //! Lighter meters requests against both the caller IP and the account L1 address.
-//! REST reads draw on a per-client read quota; transactions (`sendTx` /
+//!
+//! REST reads draw on a per-client read quota. Transactions (`sendTx` /
 //! `sendTxBatch`) are metered in one venue bucket per account regardless of
-//! transport. Single orders are submitted over the WebSocket and batches over
-//! HTTP, so both paths share one [`LighterTxRateLimiter`] to keep their combined
-//! rate under the single venue transaction limit.
+//! transport; single orders go over the WebSocket and batches over HTTP, so both
+//! share one [`LighterTxRateLimiter`] to keep their combined rate under the single
+//! venue transaction limit.
+//!
+//! # WebSocket client messages
+//!
+//! Non-transaction WS frames (subscribe, unsubscribe, resubscribe) face two
+//! independent per-IP caps: 200 messages per minute and 50 unacknowledged
+//! (inflight) messages. The adapter honours each with a separate mechanism:
+//!
+//! - Rate: one [`ws_message_rate_limiter`] per venue URL, shared by the data and
+//!   execution clients so their combined send rate counts against a single
+//!   bucket. It paces at the documented 200/min with a matching 50-message burst.
+//! - Inflight: a rate limiter cannot bound inflight, because the unacknowledged
+//!   count tracks venue acknowledgement latency (multi-second and fat-tailed),
+//!   not emission rate. The feed handler instead gates subscribe dispatch on a
+//!   closed-loop count of unacknowledged subscribes
+//!   ([`crate::common::consts::SUBSCRIBE_INFLIGHT_MAX`]), releasing a slot on each
+//!   ack. Without it, a subscribe storm at startup or reconnect drives inflight
+//!   past 50 and the venue returns `30009` / `30010`.
+//!
+//! `sendTx` is metered in the transaction bucket, not the WS message bucket.
 
 use std::{
     num::NonZeroU32,
@@ -52,20 +72,18 @@ pub const LIGHTER_TX_BUCKET: &str = "lighter:tx";
 /// Rate-limit bucket key for non-transaction WebSocket client messages.
 pub const LIGHTER_WS_MESSAGE_BUCKET: &str = "lighter:ws:messages";
 
-/// Sustained WS message rate, set below the documented 200/min to leave headroom
-/// for the venue's rolling-window misalignment with our token bucket and for
-/// network jitter that can stamp adjacent messages into different venue windows.
-pub const LIGHTER_WS_MESSAGE_RATE_PER_MIN: u32 = 180;
+/// Lighter's documented WebSocket message rate: 200 per IP per minute.
+pub const LIGHTER_WS_MESSAGE_RATE_PER_MIN: u32 = 200;
 
-/// Burst capacity, set strictly below the venue's documented 50 inflight cap
-/// so even a full burst plus a slow venue ACK stays under it.
-pub const LIGHTER_WS_MESSAGE_BURST: u32 = 40;
+/// Rate-limiter burst, at Lighter's documented 50-message inflight cap. The
+/// closed-loop subscribe gate ([`crate::common::consts::SUBSCRIBE_INFLIGHT_MAX`])
+/// is the real inflight bound; this burst only shapes send rate.
+pub const LIGHTER_WS_MESSAGE_BURST: u32 = 50;
 
-/// Lighter WebSocket client-message limit, excluding `sendTx` / `sendTxBatch`.
+/// Lighter WebSocket client-message quota, excluding `sendTx` / `sendTxBatch`.
 ///
-/// The venue documents 200 client messages per minute and 50 inflight messages.
-/// We pace below both caps — see [`LIGHTER_WS_MESSAGE_RATE_PER_MIN`] and
-/// [`LIGHTER_WS_MESSAGE_BURST`].
+/// Paces at the documented 200/min with a 50-message burst; the inflight cap is
+/// enforced separately by the subscribe gate (see the module docs).
 pub static LIGHTER_WS_MESSAGE_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
     Quota::per_minute(NonZeroU32::new(LIGHTER_WS_MESSAGE_RATE_PER_MIN).expect("non-zero"))
         .allow_burst(NonZeroU32::new(LIGHTER_WS_MESSAGE_BURST).expect("non-zero"))
@@ -177,9 +195,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_ws_message_quota_stays_under_venue_caps() {
-        const { assert!(LIGHTER_WS_MESSAGE_RATE_PER_MIN < 200) };
-        const { assert!(LIGHTER_WS_MESSAGE_BURST < 50) };
+    fn test_ws_message_quota_matches_venue_caps() {
+        // Documented caps, not under-paced: the subscribe gate owns the inflight cap
+        assert_eq!(LIGHTER_WS_MESSAGE_RATE_PER_MIN, 200);
+        assert_eq!(LIGHTER_WS_MESSAGE_BURST, 50);
         let expected = Quota::per_minute(NonZeroU32::new(LIGHTER_WS_MESSAGE_RATE_PER_MIN).unwrap())
             .allow_burst(NonZeroU32::new(LIGHTER_WS_MESSAGE_BURST).unwrap());
         assert_eq!(*LIGHTER_WS_MESSAGE_QUOTA, expected);

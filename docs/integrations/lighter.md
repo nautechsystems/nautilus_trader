@@ -497,10 +497,14 @@ on: the WebSocket `sendTx` path (single order submit, cancel, modify, leverage) 
 `sendTx` / `sendTxBatch` endpoints (native batch submit/cancel and the startup integrator
 approval). Their combined rate therefore stays under the one venue limit.
 
-The WebSocket client separately paces non-transaction control frames such as subscribe,
-unsubscribe, and resubscribe requests at the venue's 200 messages/minute cap, with the burst
-capped at 50 messages to stay within Lighter's inflight-message ceiling. `sendTx` is not counted
-against that WebSocket client-message bucket.
+The data and execution clients share one WebSocket message limiter per venue URL, so their combined
+send rate honors the venue's per-IP cap. It paces non-transaction control frames such as subscribe,
+unsubscribe, and resubscribe requests at the venue's documented 200 messages/minute. Subscribe dispatch
+is additionally bounded by a closed-loop inflight gate: the feed handler holds back queued subscribes
+once the unacknowledged count reaches its cap (35), keeping it below Lighter's 50-message per-IP
+inflight ceiling while subscriptions fan out at startup and reconnect. A rate cap alone cannot bound
+this, because the unacknowledged count tracks venue acknowledgement latency rather than emission
+rate. `sendTx` is not counted against the WebSocket client-message bucket.
 
 | Scope                                  | Venue limit                 | Adapter behavior                                     |
 |----------------------------------------|-----------------------------|------------------------------------------------------|

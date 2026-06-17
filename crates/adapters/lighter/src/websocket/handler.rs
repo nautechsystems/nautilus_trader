@@ -16,6 +16,7 @@
 //! Inner WebSocket feed handler running on a dedicated tokio task.
 
 use std::{
+    collections::VecDeque,
     fmt::Debug,
     sync::{
         Arc,
@@ -55,7 +56,7 @@ use crate::{
     common::{
         consts::{
             LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED, LIGHTER_ERROR_CODE_TX_RANGE,
-            LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL,
+            LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL, SUBSCRIBE_INFLIGHT_MAX,
         },
         enums::LighterCandleResolution,
         rate_limit::LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY,
@@ -193,6 +194,10 @@ impl Debug for HandlerCommand {
 
 /// Inner feed handler. Owns the [`WebSocketClient`] exclusively and routes
 /// raw frames into the venue-message channel.
+///
+/// Subscribe dispatch is gated by a closed-loop inflight count: the venue caps
+/// unacknowledged client messages per connection, and acknowledgement latency
+/// is multi-second, so queued subscribes are held back until acks free a slot.
 pub(super) struct FeedHandler {
     clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
@@ -203,7 +208,9 @@ pub(super) struct FeedHandler {
     out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
     subscriptions: SubscriptionState,
     retry_manager: RetryManager<LighterWsError>,
-    pending_messages: std::collections::VecDeque<NautilusWsMessage>,
+    pending_messages: VecDeque<NautilusWsMessage>,
+    pending_subs: VecDeque<(LighterWsChannel, Option<String>)>,
+    inflight_subs: AHashSet<Ustr>,
     instruments: AHashMap<i16, InstrumentAny>,
     book_delta_subs: AHashSet<i16>,
     book_depth_10_subs: AHashSet<i16>,
@@ -238,7 +245,9 @@ impl FeedHandler {
             out_tx,
             subscriptions,
             retry_manager: create_websocket_retry_manager(),
-            pending_messages: std::collections::VecDeque::new(),
+            pending_messages: VecDeque::new(),
+            pending_subs: VecDeque::new(),
+            inflight_subs: AHashSet::new(),
             instruments: AHashMap::new(),
             book_delta_subs: AHashSet::new(),
             book_depth_10_subs: AHashSet::new(),
@@ -310,7 +319,8 @@ impl FeedHandler {
         }
     }
 
-    async fn dispatch_subscribe(&self, channel: LighterWsChannel, auth: Option<String>) {
+    // False when the send fails: no ack will arrive, so the caller frees the slot
+    async fn dispatch_subscribe(&self, channel: LighterWsChannel, auth: Option<String>) -> bool {
         let topic = channel.topic_key();
         self.subscriptions.mark_subscribe(&topic);
 
@@ -328,11 +338,15 @@ impl FeedHandler {
                 if let Err(e) = self.send_with_retry(payload).await {
                     log::error!("Error subscribing to {topic}: {e}");
                     self.subscriptions.mark_failure(&topic);
+                    false
+                } else {
+                    true
                 }
             }
             Err(e) => {
                 log::error!("Error serializing subscription for {topic}: {e}");
                 self.subscriptions.mark_failure(&topic);
+                false
             }
         }
     }
@@ -393,6 +407,9 @@ impl FeedHandler {
         }
 
         loop {
+            // Pump each iteration: the select below drains acks that free slots
+            self.pump_pending_subscribes().await;
+
             tokio::select! {
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
@@ -409,9 +426,14 @@ impl FeedHandler {
                             return None;
                         }
                         HandlerCommand::Subscribe { channel, auth } => {
-                            self.dispatch_subscribe(channel, auth).await;
+                            self.pending_subs.push_back((channel, auth));
                         }
                         HandlerCommand::Unsubscribe { channel } => {
+                            // Drop a queued-but-unsent subscribe for this channel so a freed
+                            // slot cannot resubscribe after the caller unsubscribed.
+                            let topic = channel.topic_key();
+                            self.pending_subs.retain(|(queued, _)| queued.topic_key() != topic);
+
                             if let LighterWsChannel::OrderBook(market_index) = &channel {
                                 self.book_snapshots_seen.remove(market_index);
                                 self.book_states.remove(market_index);
@@ -480,6 +502,10 @@ impl FeedHandler {
                                 self.book_states.clear();
                                 // Resubscribe replays a fresh `subscribed/candle`; pre-disconnect cache is stale.
                                 self.last_candles.clear();
+                                // The new socket starts with zero inflight and restore_subscriptions
+                                // re-queues every topic, so drop stale gate state to avoid leaking slots.
+                                self.pending_subs.clear();
+                                self.inflight_subs.clear();
                                 self.account_state_reconciler.reset();
                                 return Some(NautilusWsMessage::Reconnected);
                             }
@@ -547,6 +573,27 @@ impl FeedHandler {
         Some(first)
     }
 
+    // Non-blocking count check, not a permit await: this task also drains the
+    // acks that free slots, so awaiting a permit here would deadlock.
+    async fn pump_pending_subscribes(&mut self) {
+        while self.inflight_subs.len() < SUBSCRIBE_INFLIGHT_MAX {
+            let Some((channel, auth)) = self.pending_subs.pop_front() else {
+                break;
+            };
+            let topic = Ustr::from(channel.topic_key().as_str());
+            self.inflight_subs.insert(topic);
+            if !self.dispatch_subscribe(channel, auth).await {
+                self.inflight_subs.remove(&topic);
+            }
+        }
+    }
+
+    // True only on the first ack for a topic; handle_frame calls this per frame,
+    // so later frames for an already-confirmed topic are no-ops.
+    fn release_subscribe_inflight(&mut self, topic: &str) -> bool {
+        self.inflight_subs.remove(&Ustr::from(topic))
+    }
+
     /// Returns `(matched, msg)` where `matched=true` means the frame's
     /// `type` was recognized as a known control type (whether or not a
     /// message is emitted); `matched=false` lets the caller surface the
@@ -603,6 +650,7 @@ impl FeedHandler {
                 if let Some(topic) = value.get("channel").and_then(|v| v.as_str()) {
                     if kind == CTRL_TYPE_SUBSCRIBED {
                         self.subscriptions.confirm_subscribe(topic);
+                        self.release_subscribe_inflight(topic);
                     } else {
                         let was_pending_unsubscribe = self
                             .subscriptions
@@ -670,6 +718,9 @@ impl FeedHandler {
     ) -> Vec<NautilusWsMessage> {
         let topic = frame_topic(&frame);
         self.subscriptions.confirm_subscribe(&topic);
+        if !self.inflight_subs.is_empty() {
+            self.release_subscribe_inflight(&topic);
+        }
 
         match frame {
             LighterWsFrame::OrderBookSnapshot {
@@ -2963,5 +3014,174 @@ mod tests {
             matches!(err, LighterWsError::Transport(_)),
             "expected Transport variant, was {err:?}",
         );
+    }
+
+    #[tokio::test]
+    async fn subscribe_command_parks_in_pending_subs_when_inflight_at_cap() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+        let mut handler =
+            FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
+
+        // Saturate the gate so the pump cannot dispatch the queued subscribe
+        for i in 0..SUBSCRIBE_INFLIGHT_MAX {
+            handler
+                .inflight_subs
+                .insert(Ustr::from(format!("dummy:{i}").as_str()));
+        }
+
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                channel: LighterWsChannel::Candle {
+                    market_index: 0,
+                    resolution: LighterCandleResolution::OneMinute,
+                },
+                auth: None,
+            })
+            .expect("queue subscribe");
+        drop(cmd_tx);
+        drop(raw_tx);
+
+        let next = tokio::time::timeout(Duration::from_secs(2), handler.next())
+            .await
+            .expect("timed out waiting for handler to drain command");
+
+        assert!(next.is_none());
+        assert_eq!(handler.inflight_subs.len(), SUBSCRIBE_INFLIGHT_MAX);
+        assert_eq!(handler.pending_subs.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn unsubscribe_drops_queued_subscribe_while_gate_full() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+        let mut handler =
+            FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
+
+        // Saturate the gate so the queued subscribe cannot dispatch before the unsubscribe
+        for i in 0..SUBSCRIBE_INFLIGHT_MAX {
+            handler
+                .inflight_subs
+                .insert(Ustr::from(format!("dummy:{i}").as_str()));
+        }
+
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                channel: LighterWsChannel::Trade(0),
+                auth: None,
+            })
+            .expect("queue subscribe");
+        cmd_tx
+            .send(HandlerCommand::Unsubscribe {
+                channel: LighterWsChannel::Trade(0),
+            })
+            .expect("queue unsubscribe");
+        drop(cmd_tx);
+        drop(raw_tx);
+
+        let next = tokio::time::timeout(Duration::from_secs(2), handler.next())
+            .await
+            .expect("timed out waiting for handler to drain commands");
+
+        assert!(next.is_none());
+        assert!(handler.pending_subs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn reconnect_clears_gate_state() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+        let mut handler =
+            FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
+
+        // Gate saturated with a subscribe still queued, as during a reconnect storm
+        for i in 0..SUBSCRIBE_INFLIGHT_MAX {
+            handler
+                .inflight_subs
+                .insert(Ustr::from(format!("dummy:{i}").as_str()));
+        }
+        handler
+            .pending_subs
+            .push_back((LighterWsChannel::Trade(0), None));
+
+        raw_tx
+            .send(Message::Text(RECONNECTED.to_string().into()))
+            .expect("queue reconnect sentinel");
+
+        let next = tokio::time::timeout(Duration::from_secs(2), handler.next())
+            .await
+            .expect("timed out waiting for reconnect");
+
+        assert!(matches!(next, Some(NautilusWsMessage::Reconnected)));
+        assert!(handler.inflight_subs.is_empty());
+        assert!(handler.pending_subs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn pump_releases_inflight_slot_on_send_failure() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+        let mut handler =
+            FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
+
+        // No active client, so every dispatch fails; the gate must not leak slots
+        for market_index in 0..3 {
+            handler
+                .pending_subs
+                .push_back((LighterWsChannel::Trade(market_index), None));
+        }
+
+        handler.pump_pending_subscribes().await;
+
+        assert!(handler.pending_subs.is_empty());
+        assert!(handler.inflight_subs.is_empty());
+    }
+
+    #[rstest]
+    fn subscribed_control_frame_releases_inflight_slot() {
+        let mut handler = make_handler_with_account();
+        handler.inflight_subs.insert(Ustr::from("candle:0:1m"));
+
+        let (matched, msg) =
+            handler.handle_control_text(r#"{"type":"subscribed","channel":"candle:0:1m"}"#);
+
+        assert!(matched);
+        assert!(msg.is_none());
+        assert!(!handler.inflight_subs.contains(&Ustr::from("candle:0:1m")));
+    }
+
+    #[rstest]
+    fn typed_frame_releases_inflight_slot() {
+        let mut handler = make_handler_with_account();
+        handler.inflight_subs.insert(Ustr::from("candle:0:1m"));
+
+        handler.handle_frame(
+            candle_frame(
+                "candle:0:1m",
+                stub_candle(1_000_000, 10_000, 10_000, 10_000, 10_000, 10_000),
+                true,
+            ),
+            UnixNanos::from(1),
+        );
+
+        assert!(!handler.inflight_subs.contains(&Ustr::from("candle:0:1m")));
+    }
+
+    #[rstest]
+    fn release_subscribe_inflight_reports_first_ack_only() {
+        let mut handler = make_handler_with_account();
+        handler.inflight_subs.insert(Ustr::from("trade:7"));
+
+        assert!(handler.release_subscribe_inflight("trade:7"));
+        assert!(!handler.release_subscribe_inflight("trade:7"));
+        assert!(!handler.release_subscribe_inflight("never:1"));
     }
 }
