@@ -48,7 +48,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpResponse, Method},
+    http::{HttpClient, HttpResponse, Method, USER_AGENT},
     ratelimiter::quota::Quota,
 };
 use serde::Serialize;
@@ -458,7 +458,7 @@ impl BinanceRawSpotHttpClient {
 
     fn default_headers(credential: &Option<SigningCredential>) -> HashMap<String, String> {
         let mut headers = HashMap::new();
-        headers.insert("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string());
+        headers.insert(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
         headers.insert("Accept".to_string(), "application/sbe".to_string());
         headers.insert("X-MBX-SBE".to_string(), SBE_SCHEMA_HEADER.to_string());
 

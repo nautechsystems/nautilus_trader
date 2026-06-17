@@ -36,7 +36,7 @@ use nautilus_model::{
     types::{Currency, Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpResponse, Method},
+    http::{HttpClient, HttpResponse, Method, USER_AGENT},
     ratelimiter::quota::Quota,
 };
 use rust_decimal::Decimal;
@@ -497,7 +497,7 @@ impl BinanceRawFuturesHttpClient {
 
     fn default_headers(credential: &Option<SigningCredential>) -> HashMap<String, String> {
         let mut headers = HashMap::new();
-        headers.insert("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string());
+        headers.insert(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
 
         if let Some(cred) = credential {
             headers.insert(

@@ -39,6 +39,7 @@ use nautilus_model::{
 };
 use nautilus_network::{
     backoff::ExponentialBackoff,
+    http::USER_AGENT,
     mode::ConnectionMode,
     websocket::{
         AuthTracker, PingHandler, SubscriptionState, TransportBackend, WebSocketClient,
@@ -1890,7 +1891,7 @@ impl BybitWebSocketClient {
     fn default_headers() -> Vec<(String, String)> {
         vec![
             ("Content-Type".to_string(), "application/json".to_string()),
-            ("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string()),
+            (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
         ]
     }
 

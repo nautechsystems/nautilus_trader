@@ -41,6 +41,7 @@ use nautilus_model::{
 };
 use nautilus_network::{
     backoff::ExponentialBackoff,
+    http::USER_AGENT,
     mode::ConnectionMode,
     websocket::{
         AuthTracker, PingHandler, TransportBackend, WebSocketClient, WebSocketConfig,
@@ -374,7 +375,7 @@ impl AxOrdersWebSocketClient {
         let config = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![
-                ("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string()),
+                (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
                 (
                     "Authorization".to_string(),
                     format!("Bearer {bearer_token}"),
