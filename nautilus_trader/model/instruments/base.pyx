@@ -186,8 +186,6 @@ cdef class Instrument(Data):
         If `min_notional` is negative (< 0).
     ValueError
         If `max_price` is not positive (> 0).
-    ValueError
-        If `min_price` is negative (< 0).
 
     """
 
@@ -255,9 +253,6 @@ cdef class Instrument(Data):
 
         if max_price is not None:
             Condition.positive(max_price, "max_price")
-
-        if min_price is not None:
-            Condition.not_negative(min_price, "min_price")
 
         Condition.type(margin_init, Decimal, "margin_init")
         Condition.not_negative(margin_init, "margin_init")
