@@ -27,7 +27,7 @@ use ustr::Ustr;
 use super::{
     Instrument,
     any::InstrumentAny,
-    tick_scheme::{BETFAIR_TICK_SCHEME, BETFAIR_TICK_SCHEME_NAME, TickSchemeRule},
+    tick_scheme::{BETFAIR_TICK_SCHEME, BETFAIR_TICK_SCHEME_NAME, check_tick_scheme},
 };
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
@@ -118,6 +118,8 @@ pub struct BettingInstrument {
     pub max_price: Option<Price>,
     /// The minimum allowable quoted price.
     pub min_price: Option<Price>,
+    /// The registered variable tick scheme name.
+    pub tick_scheme: Option<Ustr>,
     /// Additional instrument metadata as a JSON-serializable dictionary.
     pub info: Option<Params>,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
@@ -171,6 +173,7 @@ impl BettingInstrument {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -189,6 +192,7 @@ impl BettingInstrument {
         )?;
         check_positive_price(price_increment, stringify!(price_increment))?;
         check_positive_quantity(size_increment, stringify!(size_increment))?;
+        check_tick_scheme(tick_scheme)?;
 
         Ok(Self {
             id: instrument_id,
@@ -224,6 +228,7 @@ impl BettingInstrument {
             margin_maint: margin_maint.unwrap_or(dec!(1)),
             maker_fee: maker_fee.unwrap_or_default(),
             taker_fee: taker_fee.unwrap_or_default(),
+            tick_scheme,
             info,
             ts_event,
             ts_init,
@@ -271,6 +276,7 @@ impl BettingInstrument {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -309,6 +315,7 @@ impl BettingInstrument {
             margin_maint,
             maker_fee,
             taker_fee,
+            tick_scheme,
             info,
             ts_event,
             ts_init,
@@ -336,9 +343,11 @@ impl Hash for BettingInstrument {
 }
 
 impl Instrument for BettingInstrument {
-    fn tick_scheme(&self) -> Option<&dyn TickSchemeRule> {
-        self.uses_betfair_tick_scheme()
-            .then_some(&*BETFAIR_TICK_SCHEME as &dyn TickSchemeRule)
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme.or_else(|| {
+            self.uses_betfair_tick_scheme()
+                .then(|| Ustr::from(BETFAIR_TICK_SCHEME_NAME))
+        })
     }
 
     fn into_any(self) -> InstrumentAny {
@@ -536,6 +545,7 @@ mod tests {
             2,
             Price::from("0.01"),
             Quantity::from("0.01"),
+            None,
             None,
             None,
             None,

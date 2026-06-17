@@ -75,7 +75,10 @@ use crate::{
         },
         urls::get_kraken_http_base_url,
     },
-    http::error::{KrakenHttpError, kraken_http_should_retry},
+    http::{
+        apply_count_limit,
+        error::{KrakenHttpError, kraken_http_should_retry},
+    },
 };
 
 /// Default Kraken Spot REST API rate limit (requests per second).
@@ -1469,12 +1472,6 @@ impl KrakenSpotHttpClient {
                             continue;
                         }
                         trades.push(trade_tick);
-
-                        if let Some(limit_count) = limit
-                            && trades.len() >= limit_count as usize
-                        {
-                            return Ok(trades);
-                        }
                     }
                     Err(e) => {
                         log::warn!("Failed to parse trade tick: {e}");
@@ -1482,6 +1479,9 @@ impl KrakenSpotHttpClient {
                 }
             }
         }
+
+        // Count-only keeps the most recent `limit` trades, not the oldest
+        apply_count_limit(&mut trades, start, limit);
 
         Ok(trades)
     }
@@ -1549,12 +1549,6 @@ impl KrakenSpotHttpClient {
                             continue;
                         }
                         bars.push(bar);
-
-                        if let Some(limit_count) = limit
-                            && bars.len() >= limit_count as usize
-                        {
-                            return Ok(bars);
-                        }
                     }
                     Err(e) => {
                         log::warn!("Failed to parse bar: {e}");
@@ -1562,6 +1556,10 @@ impl KrakenSpotHttpClient {
                 }
             }
         }
+
+        // Kraken returns the page oldest-first; keep the most recent `limit`
+        // bars for count-only requests rather than the oldest (issue #4254).
+        apply_count_limit(&mut bars, start, limit);
 
         Ok(bars)
     }
@@ -3091,6 +3089,7 @@ mod tests {
             8,
             Price::from("0.1"),
             Quantity::from("0.00000001"),
+            None,
             None,
             None,
             None,

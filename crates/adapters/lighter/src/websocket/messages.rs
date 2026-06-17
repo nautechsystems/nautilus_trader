@@ -61,7 +61,10 @@ pub enum NautilusWsMessage {
     IndexPrice(IndexPriceUpdate),
     FundingRate(FundingRateUpdate),
     ExecutionReports(Vec<ExecutionReport>),
-    PositionSnapshot(Vec<PositionStatusReport>),
+    PositionSnapshot {
+        reports: Vec<PositionStatusReport>,
+        skipped_market_ids: Vec<i16>,
+    },
     AccountState(Box<AccountState>),
     SendTxAck {
         tx_hash: Option<String>,

@@ -94,7 +94,7 @@ The current adapter scope is deliberately narrower than the venue's full transac
   position status generation replay the latest cached stream state.
 - Unscoped order reconciliation is bounded to configured or observed active markets to avoid a full
   venue-wide fan-out under the standard REST quota.
-- Historical trade requests require credentials for master accounts and sub-accounts.
+- Historical trade requests use the public `recentTrades` endpoint and need no credentials.
 
 ## Symbology
 
@@ -149,8 +149,8 @@ Script source:
 
 ```python
 # Python (PyO3 binding) - reads the same env vars as the Rust bin
-from nautilus_trader.core.nautilus_pyo3 import revoke_lighter_integrator
-from nautilus_trader.core.nautilus_pyo3 import LighterEnvironment
+from nautilus_trader.adapters.lighter import revoke_lighter_integrator
+from nautilus_trader.adapters.lighter import LighterEnvironment
 
 await revoke_lighter_integrator()                            # mainnet (default)
 await revoke_lighter_integrator(LighterEnvironment.TESTNET)  # testnet
@@ -162,19 +162,19 @@ binding does not prompt: review the active env vars yourself before calling.
 
 ## Data subscriptions
 
-| Data type            | Sub.         | Snapshot | Hist. | Nautilus type       | Notes                                                  |
-|----------------------|--------------|----------|-------|---------------------|--------------------------------------------------------|
-| Instrument metadata  | Cache replay | ✓        | -     | `InstrumentAny`     | Loaded from `orderBookDetails`.                        |
-| Trade ticks          | ✓            | -        | ✓     | `TradeTick`         | WebSocket trades; historical REST trades require auth. |
-| Quote ticks          | ✓            | -        | -     | `QuoteTick`         | Best bid and ask ticker stream.                        |
-| Order book deltas    | ✓            | ✓        | -     | `OrderBookDeltas`   | `L2_MBP` only.                                         |
-| Order book depth10   | ✓            | ✓        | -     | `OrderBookDepth10`  | Live top-10 view from maintained book state.           |
-| Order book snapshots | -            | ✓        | -     | `OrderBook`         | REST snapshot, max depth 250.                          |
-| Mark prices          | ✓            | -        | -     | `MarkPriceUpdate`   | Perp market stats stream.                              |
-| Index prices         | ✓            | -        | -     | `IndexPriceUpdate`  | Market and spot stats streams.                         |
-| Funding rates        | ✓            | -        | ✓     | `FundingRateUpdate` | Current estimates and REST hourly history.             |
-| Bars                 | ✓            | -        | ✓     | `Bar`               | WebSocket candle stream; REST history for backfill.    |
-| Instrument status    | REST         | ✓        | -     | `InstrumentStatus`  | `active` / `inactive` snapshots.                       |
+| Data type            | Sub.         | Snapshot | Hist. | Nautilus type       | Notes                                                    |
+|----------------------|--------------|----------|-------|---------------------|----------------------------------------------------------|
+| Instrument metadata  | Cache replay | ✓        | -     | `InstrumentAny`     | Loaded from `orderBookDetails`.                          |
+| Trade ticks          | ✓            | -        | ✓     | `TradeTick`         | WebSocket trades; public `recentTrades` REST history.    |
+| Quote ticks          | ✓            | -        | -     | `QuoteTick`         | Best bid and ask ticker stream.                          |
+| Order book deltas    | ✓            | ✓        | -     | `OrderBookDeltas`   | `L2_MBP` only.                                           |
+| Order book depth10   | ✓            | -        | -     | `OrderBookDepth10`  | Live top-10 view from maintained book; no REST snapshot. |
+| Order book snapshots | -            | ✓        | -     | `OrderBook`         | REST snapshot, max depth 250.                            |
+| Mark prices          | ✓            | -        | -     | `MarkPriceUpdate`   | Perp market stats stream.                                |
+| Index prices         | ✓            | -        | -     | `IndexPriceUpdate`  | Market and spot stats streams.                           |
+| Funding rates        | ✓            | -        | ✓     | `FundingRateUpdate` | Current estimates and REST hourly history.               |
+| Bars                 | ✓            | -        | ✓     | `Bar`               | WebSocket candle stream; REST history for backfill.      |
+| Instrument status    | REST         | ✓        | -     | `InstrumentStatus`  | `active` / `inactive` snapshots.                         |
 
 Only `BookType::L2_MBP` is accepted for book-delta and depth10 subscriptions. Other book types
 return an error before subscribing.
@@ -204,10 +204,9 @@ field controls the sign: `long` stays positive because longs pay shorts, while `
 negative because shorts pay longs. The adapter does not use account-specific `positionFunding`
 payloads for public funding history.
 
-Trade subscriptions use the public WebSocket trade stream. Historical trade requests use
-`/api/v1/trades`; live mainnet testing shows that endpoint rejects unauthenticated requests. The
-data client mints a Lighter auth token for this request when credentials are available. Without
-credentials, the data client logs a warning and rejects the request.
+Trade subscriptions use the public WebSocket trade stream. Historical trade requests use the
+public `/api/v1/recentTrades` endpoint, which needs no credentials; the adapter clamps the
+request to the venue per-call cap and filters the returned ticks to the requested time range.
 
 ### Unsupported data requests
 
@@ -413,9 +412,12 @@ will not connect until `private_key`, `account_index`, and `api_key_index` resol
 
 Perpetual positions are reported in netting mode: one position per market. Spot balances arrive
 through account asset state rather than position reports.
-Each `account_all_positions` frame is treated as a complete venue snapshot. If a new frame omits a
+Each `account_all_positions` frame is treated as a venue snapshot. If a new frame omits a
 previously cached market, the adapter emits a flat position report for that instrument; an empty
 `positions` map clears all cached perpetual positions and emits a flat report for each.
+Rows present in the frame whose market cannot be mapped or whose position cannot be parsed are
+retained by market ID instead: parsed rows still update the cache, and cached markets absent from
+both the parsed rows and skipped market IDs still flatten.
 
 | Feature                 | Perpetuals | Spot | Notes                                                        |
 |-------------------------|------------|------|--------------------------------------------------------------|
@@ -443,7 +445,9 @@ Perpetual `market_stats` frames emit `MarkPriceUpdate`, `IndexPriceUpdate`, and
 `FundingRateUpdate` events. Spot `spot_market_stats` frames emit `IndexPriceUpdate` events.
 
 Historical funding-rate requests use the public `/api/v1/fundings` endpoint and emit
-`FundingRateUpdate` responses for settled hourly rows.
+`FundingRateUpdate` responses for settled hourly rows. The adapter paginates the requested
+range across pages, so a wide window is not truncated to a single page; an explicit `limit`
+still caps the number of rows returned.
 
 ## Account tiers
 
@@ -480,11 +484,23 @@ client config:
   from reads. Unset keeps it at the standard 60 req/min, independent of `rest_quota_per_min`.
   Execution client only.
 
+Higher-tier REST quotas are weighted in the venue docs. The adapter REST limiter does not model
+per-endpoint weights; it paces one token per HTTP call through a shared REST bucket and a route
+bucket. When setting `rest_quota_per_min` above the standard default, use an effective request rate
+for the endpoint mix you plan to call, not the raw weighted quota. For example, Lighter documents
+`/api/v1/trades` and `/api/v1/recentTrades` with weight 600, so a 24,000 weighted req/min premium
+limit equates to 40 of those calls per minute.
+
 The venue meters transactions per account across both transports in one bucket. The execution
 client enforces `sendtx_quota_per_min` with a single shared limiter across both paths it submits
 on: the WebSocket `sendTx` path (single order submit, cancel, modify, leverage) and the HTTP
 `sendTx` / `sendTxBatch` endpoints (native batch submit/cancel and the startup integrator
 approval). Their combined rate therefore stays under the one venue limit.
+
+The WebSocket client separately paces non-transaction control frames such as subscribe,
+unsubscribe, and resubscribe requests at the venue's 200 messages/minute cap, with the burst
+capped at 50 messages to stay within Lighter's inflight-message ceiling. `sendTx` is not counted
+against that WebSocket client-message bucket.
 
 | Scope                                  | Venue limit                 | Adapter behavior                                     |
 |----------------------------------------|-----------------------------|------------------------------------------------------|
@@ -500,21 +516,31 @@ approval). Their combined rate therefore stays under the one venue limit.
 | Pending orders                         | 500/account, 16/market      | Venue limit; adapter does not pre‑count it.          |
 | Active orders                          | 1,500/account, 1,000/market | Venue limit; adapter does not pre‑count it.          |
 
+Common REST endpoint weights from the official docs:
+
+| Endpoint group                       | Weight | Adapter behavior                                |
+|--------------------------------------|--------|-------------------------------------------------|
+| `sendTx`, `sendTxBatch`, `nextNonce` | 6      | Tx calls use tx limiter; `nextNonce` uses REST. |
+| `accountInactiveOrders`              | 100    | Adapter counts one REST token per HTTP call.    |
+| `trades`, `recentTrades`             | 600    | Adapter counts one REST token per HTTP call.    |
+| Other endpoints                      | 300    | Adapter counts one REST token per HTTP call.    |
+
 | Endpoint or transport                  | Limit      | Notes                                              |
 |----------------------------------------|------------|----------------------------------------------------|
 | `/api/v1/trades`                       | 100 rows   | Adapter paginates reconciliation at this cap.      |
 | `/api/v1/accountInactiveOrders`        | 100 rows   | Adapter follows `next_cursor` at this cap.         |
 | `/api/v1/orderBookOrders`              | 250 levels | Snapshot depth is clamped to the venue cap.        |
 | `/api/v1/candles`                      | 500 rows   | Adapter caps REST bar pages at this venue maximum. |
+| `/api/v1/fundings`                     | 100 rows   | Adapter paginates funding pages at this venue cap. |
 | WebSocket connections                  | 200 / IP   | Venue limit.                                       |
 | WebSocket subscriptions / connection   | 500        | Venue limit.                                       |
 | WebSocket unique accounts / connection | 500        | Venue limit.                                       |
 | WebSocket connections / minute         | 80         | Venue limit.                                       |
-| WebSocket client messages / minute     | 200        | Excludes `sendTx` and `sendTxBatch`.               |
-| WebSocket inflight messages            | 50         | Excludes `sendTx` and `sendTxBatch`.               |
+| WebSocket client messages / minute     | 200        | Adapter paces non‑tx control frames at this cap.   |
+| WebSocket inflight messages            | 50         | Adapter caps non‑tx control‑frame burst at 50.     |
 | `sendTxBatch` batch size               | 15 txs     | Applies to native HTTP submit and cancel batches.  |
 | WebSocket keepalive                    | 2 minutes  | Adapter sends heartbeats every 30 seconds.         |
-| WebSocket outbound command queue       | 1000       | Adapter backpressure starts at this queue depth.   |
+| WebSocket outbound command queue       | Not capped | Paced before writes; no queue‑depth cap.           |
 
 Premium volume quota is a separate venue constraint for `L2CreateOrder`, `L2CancelAllOrders`,
 `L2ModifyOrder`, and `L2CreateGroupedOrders`. The adapter does not inspect remaining quota; use
@@ -542,7 +568,7 @@ race the venue's initial state and find the venue order id lookup table or posit
 The gate clears any prior-session position and account caches at the start of each connect attempt
 so a reconnect cycle observes the new session's frames, not stale data.
 By contrast, transparent WebSocket reconnects do not re-enter `connect()`: they keep cached
-positions until the next `account_all_positions` frame, then apply the same complete-snapshot
+positions until the next `account_all_positions` frame, then apply the same position snapshot
 replacement rules.
 
 ## API credentials
@@ -554,54 +580,58 @@ Lighter signing requires all three credential values:
   desktop/mobile clients.
 - API private key: 40-byte hex private key, with or without a `0x` prefix.
 
-Config values take precedence. When config fields are omitted, the adapter reads environment
-variables based on the selected environment.
+Config values take precedence. A missing config field, or a blank API private key (empty or
+whitespace only), falls back to the corresponding environment variable for the selected
+environment.
 
-| Environment | API key index                   | API private key              | Account index                    |
-|-------------|---------------------------------|------------------------------|----------------------------------|
-| Mainnet     | `LIGHTER_API_KEY_INDEX`         | `LIGHTER_API_SECRET`         | `LIGHTER_ACCOUNT_INDEX`          |
-| Testnet     | `LIGHTER_TESTNET_API_KEY_INDEX` | `LIGHTER_TESTNET_API_SECRET` | `LIGHTER_TESTNET_ACCOUNT_INDEX`  |
+| Environment | API key index                   | API private key              | Account index                   |
+|-------------|---------------------------------|------------------------------|---------------------------------|
+| Mainnet     | `LIGHTER_API_KEY_INDEX`         | `LIGHTER_API_SECRET`         | `LIGHTER_ACCOUNT_INDEX`         |
+| Testnet     | `LIGHTER_TESTNET_API_KEY_INDEX` | `LIGHTER_TESTNET_API_SECRET` | `LIGHTER_TESTNET_ACCOUNT_INDEX` |
 
-Execution rejects incomplete credentials. The data client can run without credentials for public
-streams and public REST endpoints; authenticated data requests such as `request_trades` use the
-same values when all three are available.
+Execution rejects incomplete credentials. The data client runs without credentials: its
+subscriptions and REST requests (instruments, book, trades, bars, funding) all use public
+endpoints.
 
 ## Configuration
 
 ### Data client configuration options
 
-| Option                             | Default   | Description                                          |
-|------------------------------------|-----------|------------------------------------------------------|
-| `base_url_http`                    | `None`    | Optional REST URL override.                          |
-| `base_url_ws`                      | `None`    | Optional WebSocket URL override.                     |
-| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket.           |
-| `environment`                      | `Mainnet` | `LighterEnvironment::Mainnet` or `Testnet`.          |
-| `account_index`                    | `None`    | Lighter account index for authenticated REST data.   |
-| `api_key_index`                    | `None`    | Lighter API key slot for authenticated REST data.    |
-| `private_key`                      | `None`    | Hex private key for REST auth tokens.                |
-| `http_timeout_secs`                | `60`      | HTTP request timeout in seconds.                     |
-| `ws_timeout_secs`                  | `30`      | WebSocket connect timeout in seconds.                |
-| `update_instruments_interval_mins` | `60`      | Instrument metadata refresh interval in minutes.     |
-| `transport_backend`                | Default   | WebSocket transport backend.                         |
+| Option                             | Default   | Description                                         |
+|------------------------------------|-----------|-----------------------------------------------------|
+| `base_url_http`                    | `None`    | Optional REST URL override.                         |
+| `base_url_ws`                      | `None`    | Optional WebSocket URL override.                    |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket.          |
+| `environment`                      | `Mainnet` | `LighterEnvironment::Mainnet` or `Testnet`.         |
+| `account_index`                    | `None`    | Lighter account index for authenticated REST data.  |
+| `api_key_index`                    | `None`    | Lighter API key slot for authenticated REST data.   |
+| `private_key`                      | `None`    | Hex private key for REST auth tokens.               |
+| `http_timeout_secs`                | `60`      | HTTP request timeout in seconds.                    |
+| `ws_timeout_secs`                  | `30`      | WebSocket connect timeout in seconds.               |
+| `update_instruments_interval_mins` | `60`      | Instrument metadata refresh interval in minutes.    |
+| `rest_quota_per_min`               | `None`    | REST quota override; unset keeps 60 req/min.        |
+| `transport_backend`                | Default   | WebSocket transport backend.                        |
 
 ### Execution client configuration options
 
-| Option                      | Default   | Description                                                |
-|-----------------------------|-----------|------------------------------------------------------------|
-| `trader_id`                 | Required  | Nautilus trader identifier.                                |
-| `account_id`                | Required  | Nautilus account identifier for the venue.                 |
-| `account_index`             | `None`    | Lighter account index.                                     |
-| `api_key_index`             | `None`    | Lighter API key slot.                                      |
-| `private_key`               | `None`    | Hex private key for auth and L2 transaction signing.       |
-| `base_url_http`             | `None`    | Optional REST URL override.                                |
-| `base_url_ws`               | `None`    | Optional WebSocket URL override.                           |
-| `proxy_url`                 | `None`    | Optional proxy URL for HTTP and WebSocket.                 |
-| `environment`               | `Mainnet` | `LighterEnvironment::Mainnet` or `Testnet`.                |
-| `http_timeout_secs`         | `60`      | HTTP request timeout in seconds.                           |
-| `ws_timeout_secs`           | `30`      | WebSocket connect timeout in seconds.                      |
-| `active_markets`            | `[]`      | Lighter market IDs to poll during unscoped reconciliation. |
-| `market_order_slippage_bps` | `50`      | Slippage cap (bps) for `MARKET` / `STOP_MARKET` / `MIT`.   |
-| `transport_backend`         | Default   | WebSocket transport backend.                               |
+| Option                      | Default       | Description                                                |
+|-----------------------------|---------------|------------------------------------------------------------|
+| `trader_id`                 | `TRADER-001`  | Nautilus trader identifier.                                |
+| `account_id`                | `LIGHTER-001` | Nautilus account identifier for the venue.                 |
+| `account_index`             | `None`        | Lighter account index.                                     |
+| `api_key_index`             | `None`        | Lighter API key slot.                                      |
+| `private_key`               | `None`        | Hex private key for auth and L2 transaction signing.       |
+| `base_url_http`             | `None`        | Optional REST URL override.                                |
+| `base_url_ws`               | `None`        | Optional WebSocket URL override.                           |
+| `proxy_url`                 | `None`        | Optional proxy URL for HTTP and WebSocket.                 |
+| `environment`               | `Mainnet`     | `LighterEnvironment::Mainnet` or `Testnet`.                |
+| `http_timeout_secs`         | `60`          | HTTP request timeout in seconds.                           |
+| `ws_timeout_secs`           | `30`          | WebSocket connect timeout in seconds.                      |
+| `active_markets`            | `[]`          | Lighter market IDs to poll during unscoped reconciliation. |
+| `market_order_slippage_bps` | `50`          | Slippage cap (bps) for `MARKET` / `STOP_MARKET` / `MIT`.   |
+| `rest_quota_per_min`        | `None`        | REST quota override; unset keeps 60 req/min.               |
+| `sendtx_quota_per_min`      | `None`        | Transaction quota override; unset keeps 60 req/min.        |
+| `transport_backend`         | Default       | WebSocket transport backend.                               |
 
 ### Configuration example
 

@@ -18,7 +18,9 @@
 use std::time::Duration;
 
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::{call_python_threadsafe, to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::python::{
+    IntoPyObjectNautilusExt, call_python_threadsafe, to_pyruntime_err, to_pyvalue_err,
+};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
     enums::{OrderSide, OrderType, TimeInForce},
@@ -31,7 +33,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::websocket::TransportBackend;
-use pyo3::{conversion::IntoPyObjectExt, prelude::*};
+use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
 use crate::{
     common::enums::HyperliquidEnvironment,
@@ -104,6 +106,12 @@ impl HyperliquidWebSocketClient {
     ///
     /// The HTTP client supplies signing credentials, builder attribution, and
     /// cached instrument metadata. The action itself is sent over WebSocket.
+    ///
+    /// Returns an `OrderStatusReport` describing the venue's immediate
+    /// response (`Filled` for an atomic IOC fill, `Accepted` for a resting
+    /// order), or `None` when the venue deferred the order without an oid (for
+    /// example a `waitingForFill` trigger child): the order stays `SUBMITTED`
+    /// until the user-events stream delivers the first `OrderAccepted`.
     #[pyo3(name = "submit_order", signature = (
         signer,
         instrument_id,
@@ -137,7 +145,7 @@ impl HyperliquidWebSocketClient {
         let signer = signer.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client
+            let report = client
                 .submit_order(
                     &signer,
                     instrument_id,
@@ -153,11 +161,20 @@ impl HyperliquidWebSocketClient {
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(())
+
+            Python::attach(|py| match report {
+                Some(r) => Ok(r.into_py_any_unwrap(py)),
+                None => Ok(py.None()),
+            })
         })
     }
 
     /// Submit multiple orders through the Hyperliquid WebSocket post API.
+    ///
+    /// Returns one `OrderStatusReport` per accepted order in submission
+    /// order. Deferred trigger children of a `normalTpsl` bracket are absent
+    /// from the result; they stay `SUBMITTED` until the user-events stream
+    /// delivers an `OrderAccepted` with the real oid.
     #[pyo3(name = "submit_orders")]
     fn py_submit_orders<'py>(
         &self,
@@ -178,11 +195,16 @@ impl HyperliquidWebSocketClient {
             })?;
             let order_refs: Vec<&OrderAny> = order_anys.iter().collect();
 
-            client
+            let reports = client
                 .submit_orders(&signer, &order_refs)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(())
+
+            Python::attach(|py| {
+                let pylist =
+                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
         })
     }
 

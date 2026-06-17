@@ -777,15 +777,26 @@ impl WsDispatchState {
     /// Instruments absent from `snapshot` are evicted; an empty input
     /// clears the cache entirely.
     pub(crate) fn replace_positions(&self, snapshot: &[PositionStatusReport]) -> Vec<InstrumentId> {
+        self.replace_positions_except(snapshot, &[])
+    }
+
+    /// Replace the cache from a snapshot while retaining instruments whose
+    /// venue rows were skipped and therefore cannot be treated as closed.
+    pub(crate) fn replace_positions_except(
+        &self,
+        snapshot: &[PositionStatusReport],
+        retained: &[InstrumentId],
+    ) -> Vec<InstrumentId> {
         let mut guard = self.last_positions.lock().expect(MUTEX_POISONED);
         let new_ids: ahash::AHashSet<InstrumentId> =
             snapshot.iter().map(|r| r.instrument_id).collect();
+        let retained_ids: ahash::AHashSet<InstrumentId> = retained.iter().copied().collect();
         let removed: Vec<InstrumentId> = guard
             .keys()
-            .filter(|id| !new_ids.contains(id))
+            .filter(|id| !new_ids.contains(id) && !retained_ids.contains(id))
             .copied()
             .collect();
-        guard.clear();
+        guard.retain(|id, _| retained_ids.contains(id));
         for report in snapshot {
             guard.insert(report.instrument_id, report.clone());
         }
@@ -1476,6 +1487,37 @@ mod tests {
         state.replace_positions(&[]);
 
         assert!(state.snapshot_positions(None).is_empty());
+    }
+
+    #[rstest]
+    fn replace_positions_except_keeps_only_retained_absent_positions() {
+        let state = WsDispatchState::new();
+        state.replace_positions(&[
+            stub_position_report("ETH-PERP.LIGHTER", "1.0"),
+            stub_position_report("BTC-PERP.LIGHTER", "2.0"),
+            stub_position_report("DOGE-PERP.LIGHTER", "4.0"),
+        ]);
+
+        let removed = state.replace_positions_except(
+            &[stub_position_report("ETH-PERP.LIGHTER", "3.0")],
+            &[InstrumentId::from("BTC-PERP.LIGHTER")],
+        );
+
+        let mut actual: Vec<(String, String)> = state
+            .snapshot_positions(None)
+            .into_iter()
+            .map(|r| (r.instrument_id.to_string(), r.quantity.to_string()))
+            .collect();
+        actual.sort();
+
+        assert_eq!(removed, vec![InstrumentId::from("DOGE-PERP.LIGHTER")]);
+        assert_eq!(
+            actual,
+            vec![
+                ("BTC-PERP.LIGHTER".to_string(), "2.0".to_string()),
+                ("ETH-PERP.LIGHTER".to_string(), "3.0".to_string()),
+            ],
+        );
     }
 
     #[rstest]

@@ -26,7 +26,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{Instrument, any::InstrumentAny};
+use super::{Instrument, any::InstrumentAny, tick_scheme::check_tick_scheme};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
@@ -98,6 +98,8 @@ pub struct OptionContract {
     pub max_price: Option<Price>,
     /// The minimum allowable quoted price.
     pub min_price: Option<Price>,
+    /// The registered variable tick scheme name.
+    pub tick_scheme: Option<Ustr>,
     /// Additional instrument metadata as a JSON-serializable dictionary.
     pub info: Option<Params>,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
@@ -140,6 +142,7 @@ impl OptionContract {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -153,6 +156,7 @@ impl OptionContract {
             stringify!(price_increment.precision),
         )?;
         check_positive_price(price_increment, stringify!(price_increment))?;
+        check_tick_scheme(tick_scheme)?;
         check_positive_quantity(multiplier, stringify!(multiplier))?;
         check_positive_quantity(lot_size, stringify!(lot_size))?;
 
@@ -177,6 +181,7 @@ impl OptionContract {
             margin_maint: margin_maint.unwrap_or_default(),
             maker_fee: maker_fee.unwrap_or_default(),
             taker_fee: taker_fee.unwrap_or_default(),
+            tick_scheme,
             info,
             max_quantity,
             min_quantity: Some(min_quantity.unwrap_or(1.into())),
@@ -217,6 +222,7 @@ impl OptionContract {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -244,6 +250,7 @@ impl OptionContract {
             margin_maint,
             maker_fee,
             taker_fee,
+            tick_scheme,
             info,
             ts_event,
             ts_init,
@@ -267,6 +274,9 @@ impl Hash for OptionContract {
 }
 
 impl Instrument for OptionContract {
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::OptionContract(self)
     }
@@ -471,6 +481,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             0.into(),
             0.into(),
         );
@@ -494,6 +505,7 @@ mod tests {
             Price::from("0.01"),
             Quantity::from("0"), // zero multiplier
             Quantity::from(1),
+            None,
             None,
             None,
             None,

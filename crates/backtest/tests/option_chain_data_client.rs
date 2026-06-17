@@ -72,6 +72,7 @@ fn make_btc_option(strike: &str, kind: OptionKind) -> InstrumentAny {
         None,
         None,
         None,
+        None,
         0.into(),
         0.into(),
     ))

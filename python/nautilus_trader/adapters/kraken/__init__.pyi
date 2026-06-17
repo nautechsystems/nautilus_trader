@@ -56,6 +56,7 @@ class KrakenDataClientConfig:
         proxy_url: str | None = None,
         timeout_secs: int | None = None,
         heartbeat_interval_secs: int | None = None,
+        ws_idle_timeout_ms: int | None = None,
         max_requests_per_second: int | None = None,
     ) -> None: ...
 

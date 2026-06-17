@@ -667,8 +667,11 @@ async fn start_server() -> (SocketAddr, Arc<TestServerState>) {
     tokio::spawn(async move {
         axum::serve(listener, router).await.expect("serve");
     });
-    // Let axum start accepting connections before tests dial in.
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    wait_until_async(
+        || async { tokio::net::TcpStream::connect(addr).await.is_ok() },
+        Duration::from_secs(2),
+    )
+    .await;
     (addr, state)
 }
 
@@ -729,6 +732,7 @@ fn test_perp_instrument() -> InstrumentAny {
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     ))
@@ -750,6 +754,7 @@ fn test_spot_instrument() -> InstrumentAny {
         Some(Quantity::from("0.01")),
         None,
         Some(Money::from("1.0000 USDC")),
+        None,
         None,
         None,
         None,
@@ -1366,36 +1371,27 @@ async fn test_connect_disconnect_lifecycle() {
 
     {
         let mut connect_fut = std::pin::pin!(client.connect());
-
-        // Race connect against the first four frames; connect must stay
-        // pending after each push since the strict-await gate requires all
-        // five streams to land.
-        let push_four = {
-            let state = Arc::clone(&state);
-            let frames = [
-                orders_frame.clone(),
-                trades_frame.clone(),
-                positions_frame.clone(),
-                assets_frame.clone(),
-            ];
-            async move {
-                await_subscribe_count(&state, 5).await;
-                for frame in frames {
-                    state.push_frame(&frame);
-                    tokio::time::sleep(Duration::from_millis(80)).await;
-                }
-                // Settle so a buggy implementation that unblocks early has
-                // time to surface here.
-                tokio::time::sleep(Duration::from_millis(200)).await;
-            }
-        };
-
         tokio::select! {
             result = &mut connect_fut => {
-                panic!("connect returned with fewer than five account frames: {result:?}");
+                panic!("connect returned before account subscriptions were sent: {result:?}");
             }
-            () = push_four => {}
+            () = await_subscribe_count(&state, 5) => {}
         }
+
+        for frame in [
+            orders_frame.clone(),
+            trades_frame.clone(),
+            positions_frame.clone(),
+            assets_frame.clone(),
+        ] {
+            state.push_frame(&frame);
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(250), &mut connect_fut)
+                .await
+                .is_err(),
+            "connect returned with fewer than five account frames",
+        );
 
         // Push the fifth frame; connect must now return promptly.
         state.push_frame(&user_stats_frame);
@@ -1590,27 +1586,24 @@ async fn connect_returns_only_after_each_distinct_stream_marks_its_own_flag(
 
     {
         let mut connect_fut = std::pin::pin!(client.connect());
-
-        let push_first_four = {
-            let state = Arc::clone(&state);
-            async move {
-                await_subscribe_count(&state, 5).await;
-                for frame in first_four {
-                    state.push_frame(&frame);
-                    tokio::time::sleep(Duration::from_millis(80)).await;
-                }
-                tokio::time::sleep(Duration::from_millis(200)).await;
-            }
-        };
-
         tokio::select! {
             result = &mut connect_fut => {
                 panic!(
-                    "connect returned before {last_stream} frame landed: {result:?}",
+                    "connect returned before account subscriptions were sent: {result:?}",
                 );
             }
-            () = push_first_four => {}
+            () = await_subscribe_count(&state, 5) => {}
         }
+
+        for frame in first_four {
+            state.push_frame(&frame);
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(250), &mut connect_fut)
+                .await
+                .is_err(),
+            "connect returned before {last_stream} frame landed",
+        );
 
         state.push_frame(&last_frame);
         tokio::time::timeout(Duration::from_secs(2), &mut connect_fut)
@@ -3550,6 +3543,67 @@ async fn test_account_all_positions_empty_snapshot_clears_cache_and_emits_flat_r
         positions.is_empty(),
         "empty position snapshot must clear the prior cache, was {positions:?}",
     );
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_all_positions_invalid_known_market_does_not_flatten_cached_position() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    await_subscribe_count(&state, 4).await;
+
+    state.push_frame(&load_json("ws_account_all_positions_update.json"));
+
+    next_event_matching(&mut rx, Duration::from_secs(2), |e| {
+        matches!(
+            e,
+            ExecutionEvent::Report(ExecutionReport::Position(report))
+                if report.instrument_id == eth_perp_id()
+                    && report.quantity == Quantity::from("1.5000")
+        )
+    })
+    .await
+    .expect("initial position report");
+
+    let mut invalid_position = load_json("ws_account_all_positions_update.json");
+    invalid_position["positions"]["0"]["position"] = json!("-1.5000");
+    state.push_frame(&invalid_position);
+
+    let unexpected_flat = next_event_matching(&mut rx, Duration::from_millis(250), |e| {
+        matches!(
+            e,
+            ExecutionEvent::Report(ExecutionReport::Position(report))
+                if report.instrument_id == eth_perp_id()
+                    && report.position_side == PositionSideSpecified::Flat
+                    && report.quantity.is_zero()
+        )
+    })
+    .await;
+
+    assert!(
+        unexpected_flat.is_none(),
+        "invalid position row must not flatten cached positions: {unexpected_flat:?}",
+    );
+
+    let positions = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect("position reports");
+
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].instrument_id, eth_perp_id());
+    assert_eq!(positions[0].quantity, Quantity::from("1.5000"));
 
     client.disconnect().await.expect("disconnect");
 }

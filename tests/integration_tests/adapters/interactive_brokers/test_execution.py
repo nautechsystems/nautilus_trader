@@ -17,10 +17,12 @@ import asyncio
 from decimal import Decimal
 from functools import partial
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from ibapi.order_state import OrderState as IBOrderState
 
+from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
 from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveExecClientFactory,
@@ -53,6 +55,16 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
+
+
+def make_ib_execution_for_venue_order_id(venue_order_id: VenueOrderId):
+    value = venue_order_id.value
+    if value.startswith("PERM-"):
+        execution = IBTestExecStubs.execution(order_id=1, perm_id=int(value.removeprefix("PERM-")))
+    else:
+        execution = IBTestExecStubs.execution(order_id=int(value), perm_id=0)
+
+    return execution
 
 
 @pytest.fixture
@@ -186,6 +198,58 @@ def on_cancel_order_setup(exec_client, client, status, order_id, manual_cancel_o
             remaining=Decimal(100),
             venue_order_id=venue_order_id,
         )
+
+
+def test_resolve_ib_order_id_uses_raw_mapping_for_perm_venue_order_id(exec_client):
+    client_order_id = ClientOrderId("O-IB-PERM-001")
+    exec_client._client._order_id_to_order_ref[VenueOrderId("PERM-987654")] = AccountOrderRef(
+        account_id="DU123456",
+        order_id=client_order_id.value,
+    )
+    exec_client._client._order_id_to_order_ref[VenueOrderId("1514")] = AccountOrderRef(
+        account_id="DU123456",
+        order_id=client_order_id.value,
+    )
+
+    ib_order_id = exec_client._resolve_ib_order_id(
+        venue_order_id=VenueOrderId("PERM-987654"),
+        client_order_id=client_order_id,
+    )
+
+    assert ib_order_id == 1514
+
+
+def test_order_status_migrates_raw_filled_qty_to_perm_venue_order_id(exec_client):
+    client_order_id = ClientOrderId("O-IB-PERM-FILLED")
+    raw_venue_order_id = VenueOrderId("1514")
+    perm_venue_order_id = VenueOrderId("PERM-987654")
+    exec_client._client._order_id_to_order_ref[raw_venue_order_id] = AccountOrderRef(
+        account_id="DU123456",
+        order_id=client_order_id.value,
+    )
+    exec_client._order_filled_qty[raw_venue_order_id] = Decimal(2)
+
+    exec_client._on_order_status(
+        order_ref=client_order_id.value,
+        order_status="Submitted",
+        avg_fill_price=0.0,
+        filled=Decimal(1),
+        remaining=Decimal(99),
+        venue_order_id=perm_venue_order_id,
+    )
+
+    assert raw_venue_order_id not in exec_client._order_filled_qty
+    assert exec_client._order_filled_qty[perm_venue_order_id] == Decimal(2)
+
+
+@pytest.mark.asyncio
+async def test_initialize_position_tracking_skips_none_position_snapshot(exec_client):
+    exec_client._known_positions[123] = Decimal(1)
+    exec_client._client.get_positions = AsyncMock(return_value=None)
+
+    await exec_client._initialize_position_tracking()
+
+    assert exec_client._known_positions == {123: Decimal(1)}
 
 
 @pytest.mark.asyncio
@@ -992,9 +1056,9 @@ async def test_on_exec_details(
 
     # Call process_exec_details directly to bypass message queue
     # The execution's orderRef must match the order's client_order_id
-    execution = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution = make_ib_execution_for_venue_order_id(venue_order_id)
     # Set the orderRef to match the client_order_id (with order_id suffix as IB does)
-    execution.orderRef = f"{client_order_id.value}:{venue_order_id.value}"
+    execution.orderRef = f"{client_order_id.value}:{execution.orderId}"
     # Use the contract from contract_details - process_exec_details expects a Contract, not IBContract
     from ibapi.contract import Contract
 
@@ -1184,7 +1248,7 @@ async def test_on_exec_details_resolves_cached_external_order_by_venue_order_id(
     )
     cache.add_venue_order_id(order.client_order_id, venue_order_id)
 
-    execution = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution = make_ib_execution_for_venue_order_id(venue_order_id)
     execution.orderRef = ""
     commission_report = IBTestExecStubs.commission()
 
@@ -1255,9 +1319,9 @@ async def test_on_exec_details_uses_stored_avg_px(
 
     # Call process_exec_details directly to bypass message queue
     # The execution's orderRef must match the order's client_order_id
-    execution = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution = make_ib_execution_for_venue_order_id(venue_order_id)
     # Set the orderRef to match the client_order_id (with order_id suffix as IB does)
-    execution.orderRef = f"{client_order_id.value}:{venue_order_id.value}"
+    execution.orderRef = f"{client_order_id.value}:{execution.orderId}"
     # Execution price is 50.0 (from IBTestExecStubs.execution default)
     # Use the contract from contract_details - process_exec_details expects a Contract, not IBContract
     from ibapi.contract import Contract
@@ -1327,7 +1391,7 @@ async def test_spread_combo_fill_waits_for_order_status_avg_px(mocker, exec_clie
 
     generate_order_filled = mocker.patch.object(exec_client, "generate_order_filled")
 
-    execution = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution = make_ib_execution_for_venue_order_id(venue_order_id)
     execution.orderRef = str(client_order_id)
     execution.execId = "combo-fill-1"
     execution.shares = Decimal(1)
@@ -1403,7 +1467,7 @@ async def test_spread_combo_fill_allows_negative_avg_px_credit(
 
     generate_order_filled = mocker.patch.object(exec_client, "generate_order_filled")
 
-    execution = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution = make_ib_execution_for_venue_order_id(venue_order_id)
     execution.orderRef = str(client_order_id)
     execution.execId = "combo-credit-fill-1"
     execution.shares = Decimal(1)
@@ -1486,7 +1550,7 @@ async def test_spread_combo_fill_uses_incremental_avg_px_for_multiple_fills(
 
     generate_order_filled = mocker.patch.object(exec_client, "generate_order_filled")
 
-    execution1 = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution1 = make_ib_execution_for_venue_order_id(venue_order_id)
     execution1.orderRef = str(client_order_id)
     execution1.execId = "combo-fill-1"
     execution1.shares = Decimal(1)
@@ -1501,7 +1565,7 @@ async def test_spread_combo_fill_uses_incremental_avg_px_for_multiple_fills(
         commission_report=commission_report1,
         contract=put_contract,
     )
-    execution1_leg2 = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution1_leg2 = make_ib_execution_for_venue_order_id(venue_order_id)
     execution1_leg2.orderRef = str(client_order_id)
     execution1_leg2.execId = "combo-fill-1-leg-2"
     execution1_leg2.shares = Decimal(1)
@@ -1525,7 +1589,7 @@ async def test_spread_combo_fill_uses_incremental_avg_px_for_multiple_fills(
         venue_order_id=venue_order_id,
     )
 
-    execution2 = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution2 = make_ib_execution_for_venue_order_id(venue_order_id)
     execution2.orderRef = str(client_order_id)
     execution2.execId = "combo-fill-2"
     execution2.shares = Decimal(2)
@@ -1540,7 +1604,7 @@ async def test_spread_combo_fill_uses_incremental_avg_px_for_multiple_fills(
         commission_report=commission_report2,
         contract=put_contract,
     )
-    execution2_leg2 = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution2_leg2 = make_ib_execution_for_venue_order_id(venue_order_id)
     execution2_leg2.orderRef = str(client_order_id)
     execution2_leg2.execId = "combo-fill-2-leg-2"
     execution2_leg2.shares = Decimal(2)
@@ -1620,7 +1684,7 @@ async def test_spread_execution_handles_exec_details_before_open_order(mocker, e
     generate_order_accepted = mocker.spy(exec_client, "generate_order_accepted")
     generate_order_filled = mocker.patch.object(exec_client, "generate_order_filled")
 
-    execution = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution = make_ib_execution_for_venue_order_id(venue_order_id)
     execution.orderRef = str(client_order_id)
     execution.execId = "race-fill-1"
     execution.shares = Decimal(1)
@@ -1689,7 +1753,7 @@ async def test_exec_details_does_not_accept_rejected_order(
     generate_order_accepted = mocker.spy(exec_client, "generate_order_accepted")
     mocker.patch.object(exec_client, "generate_order_filled")
 
-    execution = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution = make_ib_execution_for_venue_order_id(venue_order_id)
     execution.orderRef = str(client_order_id)
     commission_report = IBTestExecStubs.commission()
     commission_report.execId = execution.execId

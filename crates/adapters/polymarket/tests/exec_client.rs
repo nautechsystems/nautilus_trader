@@ -2212,6 +2212,7 @@ fn add_instrument_to_cache_with_size_precision(
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
+        None, // tick_scheme
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),

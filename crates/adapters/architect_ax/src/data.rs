@@ -1355,6 +1355,7 @@ mod tests {
             Some(Decimal::new(2, 4)),
             Some(Decimal::new(5, 4)),
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         );

@@ -346,7 +346,7 @@ fn top_of_book_reference(book: &HyperliquidL2Book, is_buy: bool) -> Option<Decim
     // levels[0] = bids, levels[1] = asks; close-BUY (cover short) targets asks
     let side = usize::from(is_buy);
     let level = book.levels.get(side).and_then(|v| v.first())?;
-    Decimal::from_str(&level.px).ok()
+    Some(level.px)
 }
 
 fn check_response(context: &str, response: &HyperliquidExchangeResponse) -> anyhow::Result<()> {
@@ -422,6 +422,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         ))
@@ -432,8 +433,8 @@ mod tests {
             entries
                 .iter()
                 .map(|(px, sz)| HyperliquidLevel {
-                    px: (*px).to_string(),
-                    sz: (*sz).to_string(),
+                    px: Decimal::from_str(px).unwrap(),
+                    sz: Decimal::from_str(sz).unwrap(),
                 })
                 .collect()
         };

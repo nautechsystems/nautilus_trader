@@ -1189,7 +1189,7 @@ impl BinanceFuturesInstrument {
             Self::UsdM(s) => &s.quote_asset,
             Self::CoinM(s) => &s.quote_asset,
         };
-        Currency::from(quote_asset.as_str())
+        Currency::get_or_create_crypto_with_context(quote_asset.as_str(), Some("futures quote"))
     }
 }
 
@@ -2330,6 +2330,7 @@ impl BinanceFuturesHttpClient {
     /// # Errors
     ///
     /// Returns an error if the request fails or parsing fails.
+    #[expect(clippy::too_many_arguments)]
     pub async fn request_fill_reports(
         &self,
         account_id: AccountId,
@@ -2338,6 +2339,7 @@ impl BinanceFuturesHttpClient {
         start: Option<i64>,
         end: Option<i64>,
         limit: Option<u32>,
+        bnfcr_currency: Currency,
     ) -> anyhow::Result<Vec<FillReport>> {
         let symbol = format_binance_symbol(&instrument_id);
         let size_precision = self.get_size_precision(&symbol)?;
@@ -2369,6 +2371,7 @@ impl BinanceFuturesHttpClient {
                 instrument_id,
                 price_precision,
                 size_precision,
+                bnfcr_currency,
                 ts_init,
             ) {
                 Ok(report) => reports.push(report),

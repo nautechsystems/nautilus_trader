@@ -35,17 +35,20 @@ use super::messages::{
     AlgoOrderUpdateData, BinanceFuturesAccountUpdateMsg, BinanceFuturesOrderUpdateMsg,
     OrderUpdateData,
 };
-use crate::common::{
-    consts::BINANCE_NAUTILUS_FUTURES_BROKER_ID,
-    encoder::decode_broker_id,
-    enums::{
-        BinanceAlgoStatus, BinanceFuturesOrderType, BinanceOrderStatus, BinanceSide,
-        BinanceTimeInForce,
+use crate::{
+    common::{
+        consts::BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+        encoder::decode_broker_id,
+        enums::{
+            BinanceAlgoStatus, BinanceFuturesOrderType, BinanceOrderStatus, BinanceSide,
+            BinanceTimeInForce,
+        },
+        parse::{
+            parse_required_decimal, parse_required_price_at_precision,
+            parse_required_quantity_at_precision,
+        },
     },
-    parse::{
-        parse_required_decimal, parse_required_price_at_precision,
-        parse_required_quantity_at_precision,
-    },
+    futures::conversions::normalize_futures_asset,
 };
 
 /// Converts a Binance Futures order update to a Nautilus order status report.
@@ -155,14 +158,14 @@ pub fn resolve_commission(
     last_px: Price,
     taker_fee: Option<Decimal>,
     quote_currency: Option<Currency>,
+    bnfcr_currency: Currency,
 ) -> anyhow::Result<Money> {
     if order.commission.is_some() || order.commission_asset.is_some() {
         let raw_commission = order.commission.as_deref().unwrap_or("0");
         let amount = parse_required_decimal(raw_commission, "commission")?;
-        let currency = order
-            .commission_asset
-            .as_ref()
-            .map_or_else(Currency::USDT, |a| Currency::from(a.as_str()));
+        let currency = order.commission_asset.as_ref().map_or(bnfcr_currency, |a| {
+            normalize_futures_asset(a.as_str(), bnfcr_currency)
+        });
         Money::from_decimal(amount, currency)
             .map_err(|e| anyhow::anyhow!("invalid commission='{raw_commission}': {e}"))
     } else if let Some(fee) = taker_fee {
@@ -201,6 +204,7 @@ pub fn parse_futures_order_update_to_fill(
     size_precision: u8,
     taker_fee: Option<Decimal>,
     quote_currency: Option<Currency>,
+    bnfcr_currency: Currency,
     venue_position_id: Option<PositionId>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
@@ -232,7 +236,14 @@ pub fn parse_futures_order_update_to_fill(
         price_precision,
         "last_filled_price",
     )?;
-    let commission = resolve_commission(order, last_qty, last_px, taker_fee, quote_currency)?;
+    let commission = resolve_commission(
+        order,
+        last_qty,
+        last_px,
+        taker_fee,
+        quote_currency,
+        bnfcr_currency,
+    )?;
 
     Ok(FillReport::new(
         account_id,
@@ -322,6 +333,7 @@ pub fn parse_futures_algo_update_to_order_status(
 pub fn parse_futures_account_update(
     msg: &BinanceFuturesAccountUpdateMsg,
     account_id: AccountId,
+    bnfcr_currency: Currency,
     ts_init: UnixNanos,
 ) -> Option<AccountState> {
     let ts_event = UnixNanos::from_millis(msg.event_time as u64);
@@ -335,7 +347,7 @@ pub fn parse_futures_account_update(
                 return None;
             }
 
-            let currency = Currency::from(&b.asset);
+            let currency = normalize_futures_asset(b.asset, bnfcr_currency);
             AccountBalance::from_total_and_free(b.wallet_balance, b.cross_wallet_balance, currency)
                 .ok()
         })
@@ -608,6 +620,7 @@ mod tests {
             SIZE_PRECISION,
             None,
             None,
+            Currency::USDT(),
             None,
             ts_init,
         )
@@ -638,6 +651,7 @@ mod tests {
             SIZE_PRECISION,
             None,
             None,
+            Currency::USDT(),
             None,
             ts_init,
         );
@@ -661,6 +675,7 @@ mod tests {
             SIZE_PRECISION,
             None,
             None,
+            Currency::USDT(),
             None,
             ts_init,
         );
@@ -684,6 +699,7 @@ mod tests {
             SIZE_PRECISION,
             None,
             None,
+            Currency::USDT(),
             None,
             ts_init,
         );
@@ -697,12 +713,37 @@ mod tests {
         let msg: BinanceFuturesAccountUpdateMsg = load_user_data_fixture("account_update.json");
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let state = parse_futures_account_update(&msg, account_id(), ts_init).unwrap();
+        let state =
+            parse_futures_account_update(&msg, account_id(), Currency::USDT(), ts_init).unwrap();
 
         assert_eq!(state.account_id, account_id());
         assert_eq!(state.account_type, AccountType::Margin);
         assert!(state.is_reported);
         assert_eq!(state.balances.len(), 1);
+    }
+
+    // Credits Trading Mode (EU) reports the wallet in BNFCR, which is absent from the
+    // currency table; resolving it to the configured `bnfcr_currency` keeps the balance
+    // denominated in the stablecoin the contracts settle in instead of panicking.
+    #[rstest]
+    #[case(Currency::USDT())]
+    #[case(Currency::USDC())]
+    fn test_parse_account_update_maps_bnfcr_to_configured_currency(
+        #[case] bnfcr_currency: Currency,
+    ) {
+        let msg: BinanceFuturesAccountUpdateMsg =
+            load_user_data_fixture("account_update_bnfcr.json");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let state =
+            parse_futures_account_update(&msg, account_id(), bnfcr_currency, ts_init).unwrap();
+
+        assert_eq!(state.balances.len(), 1);
+        assert_eq!(state.balances[0].total.currency, bnfcr_currency);
+        assert_eq!(
+            state.balances[0].total.as_decimal(),
+            Decimal::from_str_exact("5001.28983031").unwrap()
+        );
     }
 
     // Regression for the #3867 bug class: WS balances whose `wb` and `cw` have more decimal
@@ -727,7 +768,8 @@ mod tests {
         let msg: BinanceFuturesAccountUpdateMsg = serde_json::from_str(json).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let state = parse_futures_account_update(&msg, account_id(), ts_init).unwrap();
+        let state =
+            parse_futures_account_update(&msg, account_id(), Currency::USDT(), ts_init).unwrap();
 
         assert_eq!(state.balances.len(), 1);
         let balance = &state.balances[0];
@@ -858,6 +900,7 @@ mod tests {
             SIZE_PRECISION,
             None,
             None,
+            Currency::USDT(),
             None,
             ts_init,
         )
@@ -928,6 +971,7 @@ mod tests {
             SIZE_PRECISION,
             None,
             None,
+            Currency::USDT(),
             None,
             ts_init,
         )
@@ -983,6 +1027,7 @@ mod tests {
             SIZE_PRECISION,
             None,
             None,
+            Currency::USDT(),
             None,
             ts_init,
         )
@@ -1083,6 +1128,7 @@ mod tests {
             SIZE_PRECISION,
             None,
             None,
+            Currency::USDT(),
             None,
             UnixNanos::from(1_000_000_000u64),
         )
@@ -1185,8 +1231,15 @@ mod tests {
         let taker_fee = taker_fee_str.map(|s| Decimal::from_str_exact(s).unwrap());
         let quote_currency = quote_currency_str.map(Currency::from);
 
-        let commission =
-            resolve_commission(&msg.order, last_qty, last_px, taker_fee, quote_currency).unwrap();
+        let commission = resolve_commission(
+            &msg.order,
+            last_qty,
+            last_px,
+            taker_fee,
+            quote_currency,
+            Currency::USDT(),
+        )
+        .unwrap();
 
         assert_eq!(commission.currency, Currency::from(expected_currency));
         let diff = (commission.as_f64() - expected_amount).abs();
@@ -1221,6 +1274,7 @@ mod tests {
             SIZE_PRECISION,
             taker_fee,
             quote_currency,
+            Currency::USDT(),
             venue_position_id,
             ts_init,
         )

@@ -16,6 +16,7 @@
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.instruments import OptionSpread
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
+from tests.unit_tests.model.instruments import as_pyo3_instrument_dict
 
 
 _OPTION_SPREAD = TestInstrumentProviderPyo3.option_spread()
@@ -47,6 +48,7 @@ def test_to_dict():
         "currency": "USDT",
         "price_precision": 2,
         "price_increment": "0.01",
+        "tick_scheme": None,
         "size_increment": "1",
         "size_precision": 0,
         "multiplier": "1",
@@ -76,7 +78,6 @@ def test_pyo3_cython_conversion():
     option_spread_pyo3_dict = option_spread_pyo3.to_dict()
     option_spread_cython = OptionSpread.from_pyo3(option_spread_pyo3)
     option_spread_cython_dict = OptionSpread.to_dict(option_spread_cython)
-    del option_spread_cython_dict["tick_scheme_name"]  # TODO: Under development
     option_spread_pyo3_back = nautilus_pyo3.OptionSpread.from_dict(option_spread_cython_dict)
-    assert option_spread_cython_dict == option_spread_pyo3_dict
+    assert as_pyo3_instrument_dict(option_spread_cython_dict) == option_spread_pyo3_dict
     assert option_spread_pyo3 == option_spread_pyo3_back

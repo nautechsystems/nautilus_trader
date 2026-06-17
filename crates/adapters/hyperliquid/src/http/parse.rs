@@ -16,11 +16,12 @@
 use anyhow::Context;
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
+    data::TradeTick,
     enums::{
-        AssetClass, CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
+        AggressorSide, AssetClass, CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
         PositionSideSpecified, TimeInForce, TriggerType,
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     instruments::{BinaryOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Money, Price, Quantity},
@@ -31,8 +32,8 @@ use serde_json::{Value, json};
 use ustr::Ustr;
 
 use super::models::{
-    AssetPosition, HyperliquidFill, OutcomeMarket, OutcomeMeta, OutcomeQuestion, PerpMeta,
-    SpotBalance, SpotMeta,
+    AssetPosition, HyperliquidFill, HyperliquidRecentTrade, OutcomeMarket, OutcomeMeta,
+    OutcomeQuestion, PerpMeta, SpotBalance, SpotMeta,
 };
 use crate::{
     common::{
@@ -43,7 +44,7 @@ use crate::{
         },
         parse::{
             format_outcome_nautilus_symbol, is_conditional_order_data, make_fill_trade_id,
-            parse_trigger_order_type,
+            millis_to_nanos, parse_trigger_order_type,
         },
         types::HyperliquidAssetId,
     },
@@ -808,6 +809,7 @@ pub fn create_instrument_from_def(
                 None,
                 None,
                 None,
+                None,
                 ts_init, // Identical to ts_init for now
                 ts_init,
             )))
@@ -850,6 +852,7 @@ pub fn create_instrument_from_def(
                 None,
                 None,
                 None,
+                None,
                 ts_init, // Identical to ts_init for now
                 ts_init,
             )))
@@ -881,6 +884,7 @@ pub fn create_instrument_from_def(
                 None, // margin_maint
                 None, // maker_fee
                 None, // taker_fee
+                None, // tick_scheme
                 outcome.info.clone(),
                 ts_init,
                 ts_init,
@@ -959,8 +963,7 @@ pub fn parse_order_status_report_from_basic(
     let venue_order_id = VenueOrderId::new(order.oid.to_string());
     let order_side = OrderSide::from(order.side);
 
-    let is_conditional =
-        is_conditional_order_data(order.trigger_px.as_deref(), order.tpsl.as_ref());
+    let is_conditional = is_conditional_order_data(order.trigger_px, order.tpsl.as_ref());
     let order_type = if is_conditional {
         match (order.is_market, order.tpsl.as_ref()) {
             (Some(is_market), Some(tpsl)) => parse_trigger_order_type(is_market, tpsl),
@@ -980,14 +983,8 @@ pub fn parse_order_status_report_from_basic(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let orig_sz: Decimal = order
-        .orig_sz
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse orig_sz: {e}"))?;
-    let current_sz: Decimal = order
-        .sz
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse sz: {e}"))?;
+    let orig_sz = order.orig_sz;
+    let current_sz = order.sz;
 
     let quantity = Quantity::from_decimal_dp(orig_sz.abs(), size_precision)
         .map_err(|e| anyhow::anyhow!("Failed to create quantity from orig_sz: {e}"))?;
@@ -1036,20 +1033,13 @@ pub fn parse_order_status_report_from_basic(
         order_status,
         OrderStatus::Filled | OrderStatus::PartiallyFilled
     ) {
-        let limit_px: Decimal = order
-            .limit_px
-            .parse()
-            .map_err(|e| anyhow::anyhow!("Failed to parse limit_px: {e}"))?;
-        let price = Price::from_decimal_dp(limit_px, price_precision)
+        let price = Price::from_decimal_dp(order.limit_px, price_precision)
             .map_err(|e| anyhow::anyhow!("Failed to create price from limit_px: {e}"))?;
         report = report.with_price(price);
     }
 
-    if is_conditional && let Some(trigger_px) = &order.trigger_px {
-        let trig_px: Decimal = trigger_px
-            .parse()
-            .map_err(|e| anyhow::anyhow!("Failed to parse trigger_px: {e}"))?;
-        let trigger_price = Price::from_decimal_dp(trig_px, price_precision)
+    if is_conditional && let Some(trigger_px) = order.trigger_px {
+        let trigger_price = Price::from_decimal_dp(trigger_px, price_precision)
             .map_err(|e| anyhow::anyhow!("Failed to create trigger price: {e}"))?;
         report = report
             .with_trigger_price(trigger_price)
@@ -1057,6 +1047,45 @@ pub fn parse_order_status_report_from_basic(
     }
 
     Ok(report)
+}
+
+/// Parses a `recentTrades` info entry into a [`TradeTick`].
+///
+/// Mirrors the field mapping of the WebSocket trade parser
+/// [`parse_ws_trade_tick`](crate::websocket::parse::parse_ws_trade_tick): both the
+/// `trades` channel and the `recentTrades` endpoint carry the same
+/// `px`/`sz`/`side`/`time`/`tid` fields. For this historical snapshot `ts_init` is
+/// set to the trade's `ts_event` (venue time), matching the other request
+/// converters so the data engine's window trimming keeps bounded requests.
+///
+/// # Errors
+///
+/// Returns an error if the price, size, trade identifier, or timestamp is invalid.
+pub fn parse_recent_trade(
+    trade: &HyperliquidRecentTrade,
+    instrument: &InstrumentAny,
+) -> anyhow::Result<TradeTick> {
+    let price = Price::from_decimal_dp(trade.px, instrument.price_precision())
+        .with_context(|| format!("Failed to create price from '{}'", trade.px))?;
+
+    let size = Quantity::from_decimal_dp(trade.sz.abs(), instrument.size_precision())
+        .with_context(|| format!("Failed to create size from '{}'", trade.sz))?;
+
+    let aggressor = AggressorSide::from(trade.side);
+    let trade_id = TradeId::new_checked(trade.tid.to_string())
+        .context("invalid trade identifier in Hyperliquid recent trade")?;
+    let ts_event = millis_to_nanos(trade.time)?;
+
+    TradeTick::new_checked(
+        instrument.id(),
+        price,
+        size,
+        aggressor,
+        trade_id,
+        ts_event,
+        ts_event,
+    )
+    .context("failed to construct TradeTick from Hyperliquid recent trade")
 }
 
 /// Parse Hyperliquid fill to FillReport.
@@ -1085,34 +1114,22 @@ pub fn parse_fill_report(
     let trade_id = make_fill_trade_id(
         &fill.hash,
         fill.oid,
-        &fill.px,
-        &fill.sz,
+        fill.px,
+        fill.sz,
         fill.time,
-        &fill.start_position,
+        fill.start_position,
     );
     let order_side = parse_fill_side(&fill.side);
 
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let px: Decimal = fill
-        .px
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse fill price: {e}"))?;
-    let sz: Decimal = fill
-        .sz
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse fill size: {e}"))?;
-
-    let last_px = Price::from_decimal_dp(px, price_precision)
+    let last_px = Price::from_decimal_dp(fill.px, price_precision)
         .map_err(|e| anyhow::anyhow!("Failed to create price from fill px: {e}"))?;
-    let last_qty = Quantity::from_decimal_dp(sz.abs(), size_precision)
+    let last_qty = Quantity::from_decimal_dp(fill.sz.abs(), size_precision)
         .map_err(|e| anyhow::anyhow!("Failed to create quantity from fill sz: {e}"))?;
 
-    let fee_amount: Decimal = fill
-        .fee
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse fee: {e}"))?;
+    let fee_amount = fill.fee;
 
     let fee_currency = resolve_fee_currency(fill.fee_token.as_str(), fee_amount, instrument)?;
     let commission = Money::from_decimal(fee_amount, fee_currency)
@@ -1344,6 +1361,45 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_recent_trade() {
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+        let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+
+        let trade = HyperliquidRecentTrade {
+            coin: Ustr::from("BTC"),
+            side: HyperliquidSide::Sell,
+            px: dec!(50000.0),
+            sz: dec!(0.5),
+            time: 1_769_916_000_000,
+            tid: 987_654_321,
+        };
+
+        let tick = parse_recent_trade(&trade, &instrument).unwrap();
+
+        assert_eq!(tick.instrument_id, instrument.id());
+        assert_eq!(tick.price.as_decimal(), dec!(50000));
+        assert_eq!(tick.size.as_decimal(), dec!(0.5));
+        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.trade_id.to_string(), "987654321");
+        assert_eq!(
+            tick.ts_event,
+            UnixNanos::from(1_769_916_000_000 * 1_000_000)
+        );
+        // Historical trades carry ts_init == ts_event so the engine's window
+        // trimming (by ts_init) keeps bounded requests.
+        assert_eq!(tick.ts_init, tick.ts_event);
+    }
+
+    #[rstest]
+    fn test_recent_trade_rejects_invalid_price() {
+        // Price is now a Decimal field, so an invalid value is rejected at
+        // deserialization rather than by parse_recent_trade.
+        let json = r#"{"coin":"BTC","side":"B","px":"not-a-number","sz":"0.5","time":1769916000000,"tid":1}"#;
+        assert!(serde_json::from_str::<HyperliquidRecentTrade>(json).is_err());
+    }
+
+    #[rstest]
     fn test_create_instrument_from_def_perp_sets_min_notional() {
         let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
         let defs = parse_perp_instruments(&meta, 0).unwrap();
@@ -1494,15 +1550,15 @@ mod tests {
 
         // Bids should be descending (highest first)
         for i in 1..bids.len() {
-            let prev_price = bids[i - 1].px.parse::<f64>().unwrap();
-            let curr_price = bids[i].px.parse::<f64>().unwrap();
+            let prev_price = bids[i - 1].px;
+            let curr_price = bids[i].px;
             assert!(prev_price >= curr_price, "Bids should be descending");
         }
 
         // Asks should be ascending (lowest first)
         for i in 1..asks.len() {
-            let prev_price = asks[i - 1].px.parse::<f64>().unwrap();
-            let curr_price = asks[i].px.parse::<f64>().unwrap();
+            let prev_price = asks[i - 1].px;
+            let curr_price = asks[i].px;
             assert!(prev_price <= curr_price, "Asks should be ascending");
         }
     }
@@ -2076,17 +2132,17 @@ mod tests {
 
         let fill = HyperliquidFill {
             coin: Ustr::from("#420"),
-            px: "0.5500".to_string(),
-            sz: "1000.00".to_string(),
+            px: dec!(0.5500),
+            sz: dec!(1000.00),
             side: HyperliquidSide::Buy,
             time: 1_704_470_400_000,
-            start_position: "0.00".to_string(),
+            start_position: dec!(0.00),
             dir: HyperliquidFillDirection::OpenLong,
-            closed_pnl: "0.0".to_string(),
+            closed_pnl: dec!(0.0),
             hash: "0xfeed".to_string(),
             oid: 99_001,
             crossed: true,
-            fee: "0.0".to_string(),
+            fee: dec!(0.0),
             fee_token: Ustr::from("+420"),
         };
 

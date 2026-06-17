@@ -613,6 +613,7 @@ pub(crate) fn create_test_instrument(symbol: &str) -> InstrumentAny {
         Some(Decimal::new(2, 4)),
         Some(Decimal::new(5, 4)),
         None,
+        None,
         0.into(),
         0.into(),
     );

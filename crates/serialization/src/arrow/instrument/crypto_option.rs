@@ -40,7 +40,8 @@ use serde_json::Value;
 
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column,
+    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name_or_index,
+    extract_optional_string_column_by_name, optional_ustr_value,
 };
 
 // Helper function to convert OptionKind to string
@@ -92,6 +93,7 @@ impl ArrowSchemaProvider for CryptoOption {
             Field::new("margin_maint", DataType::Utf8, false),
             Field::new("maker_fee", DataType::Utf8, false),
             Field::new("taker_fee", DataType::Utf8, false),
+            Field::new("tick_scheme", DataType::Utf8, true),
             Field::new("info", DataType::Binary, true), // nullable
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
@@ -139,6 +141,7 @@ impl EncodeToRecordBatch for CryptoOption {
         let mut margin_maint_builder = StringBuilder::new();
         let mut maker_fee_builder = StringBuilder::new();
         let mut taker_fee_builder = StringBuilder::new();
+        let mut tick_scheme_builder = StringBuilder::new();
         let mut info_builder = BinaryBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
@@ -202,6 +205,12 @@ impl EncodeToRecordBatch for CryptoOption {
             maker_fee_builder.append_value(co.maker_fee.to_string());
             taker_fee_builder.append_value(co.taker_fee.to_string());
 
+            if let Some(tick_scheme) = co.tick_scheme {
+                tick_scheme_builder.append_value(tick_scheme);
+            } else {
+                tick_scheme_builder.append_null();
+            }
+
             // Encode info dict as JSON bytes (matching Python's msgspec.json.encode)
             if let Some(ref info) = co.info {
                 match serde_json::to_vec(info) {
@@ -254,6 +263,7 @@ impl EncodeToRecordBatch for CryptoOption {
                 Arc::new(margin_maint_builder.finish()),
                 Arc::new(maker_fee_builder.finish()),
                 Arc::new(taker_fee_builder.finish()),
+                Arc::new(tick_scheme_builder.finish()),
                 Arc::new(info_builder.finish()),
                 Arc::new(ts_event_builder.finish()),
                 Arc::new(ts_init_builder.finish()),
@@ -347,13 +357,25 @@ pub fn decode_crypto_option_batch(
         extract_column::<StringArray>(cols, "maker_fee", 23 + lot_size_offset, DataType::Utf8)?;
     let taker_fee_values =
         extract_column::<StringArray>(cols, "taker_fee", 24 + lot_size_offset, DataType::Utf8)?;
-    let info_values = cols
-        .get(25 + lot_size_offset)
-        .ok_or_else(|| EncodingError::MissingColumn("info", 25 + lot_size_offset))?;
-    let ts_event_values =
-        extract_column::<UInt64Array>(cols, "ts_event", 26 + lot_size_offset, DataType::UInt64)?;
-    let ts_init_values =
-        extract_column::<UInt64Array>(cols, "ts_init", 27 + lot_size_offset, DataType::UInt64)?;
+    let tick_scheme_values = extract_optional_string_column_by_name(record_batch, "tick_scheme")?;
+    let info_values = extract_column_by_name_or_index::<BinaryArray>(
+        record_batch,
+        "info",
+        25 + lot_size_offset,
+        DataType::Binary,
+    )?;
+    let ts_event_values = extract_column_by_name_or_index::<UInt64Array>(
+        record_batch,
+        "ts_event",
+        26 + lot_size_offset,
+        DataType::UInt64,
+    )?;
+    let ts_init_values = extract_column_by_name_or_index::<UInt64Array>(
+        record_batch,
+        "ts_init",
+        27 + lot_size_offset,
+        DataType::UInt64,
+    )?;
 
     let mut result = Vec::with_capacity(num_rows);
 
@@ -536,6 +558,8 @@ pub fn decode_crypto_option_batch(
         let ts_event = nautilus_core::UnixNanos::from(ts_event_values.value(i));
         let ts_init = nautilus_core::UnixNanos::from(ts_init_values.value(i));
 
+        let tick_scheme = optional_ustr_value(tick_scheme_values, i);
+
         let crypto_option = CryptoOption::new(
             id,
             raw_symbol,
@@ -563,6 +587,7 @@ pub fn decode_crypto_option_batch(
             Some(margin_maint),
             Some(maker_fee),
             Some(taker_fee),
+            tick_scheme,
             info,
             ts_event,
             ts_init,

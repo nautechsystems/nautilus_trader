@@ -291,6 +291,13 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             order_id=order.orderRef,
         )
 
+        if order.permId != 0 and order.orderId != 0:
+            self._set_order_id_ref(
+                venue_order_id=VenueOrderId(str(order.orderId)),
+                account_id=order.account,
+                order_id=order.orderRef,
+            )
+
         # Handle response to on-demand request
         if request := self._requests.get(name="OpenOrders"):
             request.result.append(order)
@@ -336,6 +343,16 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         """
         venue_order_id = get_venue_order_id(order_id, perm_id)
         order_ref = self._order_id_to_order_ref.get(venue_order_id, None)
+
+        if order_ref is None and perm_id != 0 and order_id != 0:
+            raw_venue_order_id = VenueOrderId(str(order_id))
+            order_ref = self._order_id_to_order_ref.get(raw_venue_order_id, None)
+            if order_ref is not None:
+                self._set_order_id_ref(
+                    venue_order_id=venue_order_id,
+                    account_id=order_ref.account_id,
+                    order_id=order_ref.order_id,
+                )
 
         if order_ref is None:
             order_ref = self._resolve_order_ref_from_cache(venue_order_id)

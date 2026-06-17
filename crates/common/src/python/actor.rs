@@ -23,6 +23,7 @@ use std::{
     rc::Rc,
 };
 
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use nautilus_core::{
     from_pydict,
@@ -1830,16 +1831,13 @@ impl PyDataActor {
         py: Python<'_>,
         data_type: DataType,
         client_id: ClientId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_data(
             self.inner_mut(),
             data_type,
@@ -1859,15 +1857,12 @@ impl PyDataActor {
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         let params = dict_to_params(py, params)?;
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_instrument(
             self.inner_mut(),
             instrument_id,
@@ -1886,15 +1881,12 @@ impl PyDataActor {
         &mut self,
         py: Python<'_>,
         venue: Option<Venue>,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         let params = dict_to_params(py, params)?;
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id =
             DataActor::request_instruments(self.inner_mut(), venue, start, end, client_id, params)
                 .map_err(to_pyvalue_err)?;
@@ -1925,6 +1917,65 @@ impl PyDataActor {
         Ok(request_id.to_string())
     }
 
+    #[pyo3(name = "request_book_deltas")]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[expect(clippy::too_many_arguments)]
+    fn py_request_book_deltas(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<usize>,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<String> {
+        let params = dict_to_params(py, params)?;
+        let limit = limit.and_then(NonZeroUsize::new);
+        let request_id = DataActor::request_book_deltas(
+            self.inner_mut(),
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            params,
+        )
+        .map_err(to_pyvalue_err)?;
+        Ok(request_id.to_string())
+    }
+
+    #[pyo3(name = "request_book_depth")]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, depth=None, client_id=None, params=None))]
+    #[expect(clippy::too_many_arguments)]
+    fn py_request_book_depth(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<usize>,
+        depth: Option<usize>,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<String> {
+        let params = dict_to_params(py, params)?;
+        let limit = limit.and_then(NonZeroUsize::new);
+        let depth = depth.and_then(NonZeroUsize::new);
+        let request_id = DataActor::request_book_depth(
+            self.inner_mut(),
+            instrument_id,
+            start,
+            end,
+            limit,
+            depth,
+            client_id,
+            params,
+        )
+        .map_err(to_pyvalue_err)?;
+        Ok(request_id.to_string())
+    }
+
     #[pyo3(name = "request_quotes")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
     #[expect(clippy::too_many_arguments)]
@@ -1932,17 +1983,14 @@ impl PyDataActor {
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_quotes(
             self.inner_mut(),
             instrument_id,
@@ -1963,17 +2011,14 @@ impl PyDataActor {
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_trades(
             self.inner_mut(),
             instrument_id,
@@ -1994,17 +2039,14 @@ impl PyDataActor {
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_funding_rates(
             self.inner_mut(),
             instrument_id,
@@ -2025,17 +2067,14 @@ impl PyDataActor {
         &mut self,
         py: Python<'_>,
         bar_type: BarType,
-        start: Option<u64>,
-        end: Option<u64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-        let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
-
         let request_id = DataActor::request_bars(
             self.inner_mut(),
             bar_type,
@@ -2430,6 +2469,7 @@ mod tests {
 
         let error = result.unwrap_err();
         pyo3::Python::initialize();
+
         pyo3::Python::attach(|py| {
             assert!(error.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
         });
@@ -2497,6 +2537,7 @@ mod tests {
         let mut actor = create_registered_actor(clock, cache, trader_id);
 
         pyo3::Python::initialize();
+
         pyo3::Python::attach(|py| {
             assert!(
                 actor
@@ -2595,6 +2636,7 @@ mod tests {
         msgbus::subscribe_any(pattern, handler, None);
 
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let val1: Py<PyAny> = 1.0_f64.into_py_any_unwrap(py);
             let val2: Py<PyAny> = "HIGH".into_py_any_unwrap(py);
@@ -2644,6 +2686,7 @@ mod tests {
         msgbus::subscribe_any(pattern, handler, None);
 
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let int_value: Py<PyAny> = 42_i64.into_py_any_unwrap(py);
             let float_value: Py<PyAny> = 3.5_f64.into_py_any_unwrap(py);
@@ -2712,6 +2755,7 @@ mod tests {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let py_actor = create_tracking_python_actor(py).unwrap();
 
@@ -2745,6 +2789,7 @@ mod tests {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let py_actor = create_tracking_python_actor(py).unwrap();
 
@@ -2780,6 +2825,7 @@ mod tests {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let py_actor = create_tracking_python_actor(py).unwrap();
 
@@ -2816,6 +2862,7 @@ mod tests {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let py_actor = create_tracking_python_actor(py).unwrap();
 
@@ -2853,6 +2900,7 @@ mod tests {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let capture_code = c_str!(
                 r#"
@@ -2976,6 +3024,7 @@ class CapturingActor:
         audusd_sim: CurrencyPair,
     ) {
         pyo3::Python::initialize();
+
         let mut actor = create_registered_actor(clock, cache, trader_id);
 
         pyo3::Python::attach(|py| {
@@ -3607,6 +3656,7 @@ class IndicatorEventActor:
         #[case] method_name: &str,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             assert_python_dispatch(py, clock, cache, trader_id, method_name, |rust_actor| {
                 match method_name {
@@ -3633,6 +3683,7 @@ class IndicatorEventActor:
         #[case] method_name: &str,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             assert_python_dispatch(py, clock, cache, trader_id, method_name, |rust_actor| {
                 match method_name {
@@ -3662,6 +3713,7 @@ class IndicatorEventActor:
         trader_id: TraderId,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let py_actor = create_tracking_python_actor(py).unwrap();
 
@@ -3700,6 +3752,7 @@ class IndicatorEventActor:
         bar_type: BarType,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let mut rust_actor = PyDataActor::new(None);
             let indicator = create_tracking_python_indicator(py).unwrap();
@@ -3750,6 +3803,7 @@ class IndicatorEventActor:
         trader_id: TraderId,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let events = PyList::empty(py);
             let py_actor = create_indicator_event_actor(py, &events).unwrap();
@@ -3815,6 +3869,7 @@ class IndicatorEventActor:
         trader_id: TraderId,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let events = PyList::empty(py);
             let py_actor = create_indicator_event_actor(py, &events).unwrap();
@@ -3844,6 +3899,7 @@ class IndicatorEventActor:
     #[rstest]
     fn test_registered_indicators_receive_historical_quote_trade_and_bar_batches() {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let mut rust_actor = PyDataActor::new(None);
             let indicator = create_tracking_python_indicator(py).unwrap();
@@ -3911,6 +3967,7 @@ class IndicatorEventActor:
     #[rstest]
     fn test_indicators_initialized_requires_all_registered_indicators(audusd_sim: CurrencyPair) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let mut rust_actor = PyDataActor::new(None);
             let first = create_tracking_python_indicator(py).unwrap();
@@ -3944,6 +4001,7 @@ class IndicatorEventActor:
         trader_id: TraderId,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let mut rust_actor = PyDataActor::new(None);
             let indicator = create_tracking_python_indicator(py).unwrap();
@@ -4002,6 +4060,7 @@ class IndicatorEventActor:
         trader_id: TraderId,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let events = PyList::empty(py);
             let py_actor = create_indicator_event_actor(py, &events).unwrap();
@@ -4047,6 +4106,7 @@ class IndicatorEventActor:
         #[case] method_name: &str,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             assert_python_dispatch(py, clock, cache, trader_id, method_name, |rust_actor| {
                 match method_name {
@@ -4135,6 +4195,7 @@ class IndicatorEventActor:
         #[case] method_name: &str,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             assert_python_dispatch(py, clock, cache, trader_id, method_name, |rust_actor| {
                 match method_name {
@@ -4193,6 +4254,7 @@ class IndicatorEventActor:
         #[case] method_name: &str,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             assert_python_dispatch(py, clock, cache, trader_id, method_name, |rust_actor| {
                 match method_name {
@@ -4234,6 +4296,7 @@ class IndicatorEventActor:
         audusd_sim: CurrencyPair,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|py| {
             let py_actor = create_tracking_python_actor(py).unwrap();
 
@@ -4266,6 +4329,7 @@ class IndicatorEventActor:
         trader_id: TraderId,
     ) {
         pyo3::Python::initialize();
+
         Python::attach(|_py| {
             let mut rust_actor = PyDataActor::new(None);
             rust_actor.register(trader_id, clock, cache).unwrap();
@@ -4283,6 +4347,7 @@ class IndicatorEventActor:
         trader_id: TraderId,
     ) {
         pyo3::Python::initialize();
+
         let mut rust_actor = PyDataActor::new(None);
         rust_actor.register(trader_id, clock, cache).unwrap();
 

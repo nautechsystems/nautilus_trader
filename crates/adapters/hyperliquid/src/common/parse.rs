@@ -106,10 +106,10 @@ use crate::{
 pub fn make_fill_trade_id(
     hash: &str,
     oid: u64,
-    px: &str,
-    sz: &str,
+    px: Decimal,
+    sz: Decimal,
     time: u64,
-    start_position: &str,
+    start_position: Decimal,
 ) -> TradeId {
     // FNV-1a with fixed seed for deterministic output
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
@@ -123,12 +123,12 @@ pub fn make_fill_trade_id(
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
 
-    for &b in px.as_bytes() {
+    for &b in px.to_string().as_bytes() {
         h ^= b as u64;
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
 
-    for &b in sz.as_bytes() {
+    for &b in sz.to_string().as_bytes() {
         h ^= b as u64;
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
@@ -138,7 +138,7 @@ pub fn make_fill_trade_id(
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
 
-    for &b in start_position.as_bytes() {
+    for &b in start_position.to_string().as_bytes() {
         h ^= b as u64;
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
@@ -815,7 +815,10 @@ pub fn extract_error_message(response: &HyperliquidExchangeResponse) -> String {
 /// # Returns
 ///
 /// `true` if the order is a conditional order, `false` otherwise.
-pub fn is_conditional_order_data(trigger_px: Option<&str>, tpsl: Option<&HyperliquidTpSl>) -> bool {
+pub fn is_conditional_order_data(
+    trigger_px: Option<Decimal>,
+    tpsl: Option<&HyperliquidTpSl>,
+) -> bool {
     trigger_px.is_some() && tpsl.is_some()
 }
 
@@ -1099,6 +1102,21 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     use super::*;
+
+    #[rstest]
+    fn test_make_fill_trade_id_is_stable() {
+        // Pins the deterministic FNV output so the Decimal `Display` hashing
+        // stays stable for reconciliation dedup across the String->Decimal change.
+        let id = make_fill_trade_id(
+            "0xabc123",
+            12345,
+            dec!(50000.0),
+            dec!(0.1),
+            1704470400000,
+            dec!(0.0),
+        );
+        assert_eq!(id.to_string(), "a846ae6f557868e9-0000000000003039");
+    }
 
     #[derive(Serialize, Deserialize)]
     struct TestStruct {
@@ -1429,12 +1447,12 @@ mod tests {
     fn test_is_conditional_order_data() {
         // Test with trigger price and tpsl (conditional)
         assert!(is_conditional_order_data(
-            Some("50000.0"),
+            Some(dec!(50000.0)),
             Some(&HyperliquidTpSl::Sl)
         ));
 
         // Test with only trigger price (not conditional - needs both)
-        assert!(!is_conditional_order_data(Some("50000.0"), None));
+        assert!(!is_conditional_order_data(Some(dec!(50000.0)), None));
 
         // Test with only tpsl (not conditional - needs both)
         assert!(!is_conditional_order_data(None, Some(&HyperliquidTpSl::Tp)));

@@ -972,6 +972,7 @@ fn test_query_instruments_filtered_non_ascii_instrument_id() {
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
+        None, // tick_scheme
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -4878,6 +4879,7 @@ fn test_instrument_roundtrip_with_info_params() {
         Some(Decimal::from(3) / Decimal::from(100)),
         Some(Decimal::from(2) / Decimal::from(100_000)),
         Some(Decimal::from(2) / Decimal::from(100_000)),
+        None,
         Some(info.clone()),
         UnixNanos::default(),
         UnixNanos::default(),
@@ -5034,6 +5036,7 @@ fn test_instrument_roundtrip_with_unregistered_base_currency() {
         None,
         Some(Decimal::from(2) / Decimal::from(10_000)),
         Some(Decimal::from(4) / Decimal::from(10_000)),
+        None,
         None,
         UnixNanos::default(),
         UnixNanos::default(),

@@ -520,6 +520,7 @@ fn create_test_option_spread() -> OptionSpread {
         None,
         None,
         None,
+        None,
         UnixNanos::new(0),
         UnixNanos::new(0),
     )

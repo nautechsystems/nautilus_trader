@@ -639,6 +639,7 @@ async fn test_request_spot_position_status_reports_emits_for_cached_instrument()
         None,
         None,
         None,
+        None,
         ts,
         ts,
     );
@@ -696,6 +697,7 @@ async fn test_request_spot_position_status_reports_skips_usdc() {
         0,
         Price::from("0.00001"),
         Quantity::from("1"),
+        None,
         None,
         None,
         None,
@@ -770,6 +772,7 @@ async fn test_request_spot_position_status_reports_filters_by_instrument_id() {
         None,
         None,
         None,
+        None,
         ts,
         ts,
     );
@@ -786,6 +789,7 @@ async fn test_request_spot_position_status_reports_filters_by_instrument_id() {
         2,
         Price::from("0.00001"),
         Quantity::from("0.01"),
+        None,
         None,
         None,
         None,
@@ -881,6 +885,7 @@ async fn test_request_position_status_reports_skips_perp_fetch_for_spot_filter()
         None,
         None,
         None,
+        None,
         ts,
         ts,
     );
@@ -954,6 +959,7 @@ async fn test_request_spot_position_status_reports_resolves_outcome_side_token()
         None,
         None,
         None,
+        None,
         ts,
         ts,
     );
@@ -1006,6 +1012,7 @@ async fn test_request_position_status_reports_skips_perp_fetch_for_outcome_filte
         2,
         Price::from("0.0001"),
         Quantity::from("0.01"),
+        None,
         None,
         None,
         None,
@@ -1457,6 +1464,7 @@ fn cache_btc_instrument(client: &HyperliquidHttpClient) {
         None,
         None,
         Some(Money::from("0.1 USDC")),
+        None,
         None,
         None,
         None,

@@ -26,6 +26,7 @@ from nautilus_trader.core.nautilus_pyo3 import Symbol
 from nautilus_trader.core.nautilus_pyo3 import Venue
 from nautilus_trader.model.instruments import Commodity
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
+from tests.unit_tests.model.instruments import as_pyo3_instrument_dict
 
 
 _COMMODITY = TestInstrumentProviderPyo3.commodity()
@@ -53,6 +54,7 @@ def test_to_dict():
         "price_precision": 2,
         "size_precision": 0,
         "price_increment": "0.01",
+        "tick_scheme": None,
         "size_increment": "1",
         "lot_size": "1",
         "max_quantity": None,
@@ -76,9 +78,8 @@ def test_pyo3_cython_conversion():
     commodity_pyo3_dict = commodity_pyo3.to_dict()
     commodity_cython = Commodity.from_pyo3(commodity_pyo3)
     commodity_cython_dict = Commodity.to_dict(commodity_cython)
-    del commodity_cython_dict["tick_scheme_name"]
     commodity_pyo3_back = nautilus_pyo3.Commodity.from_dict(commodity_cython_dict)
-    assert commodity_cython_dict == commodity_pyo3_dict
+    assert as_pyo3_instrument_dict(commodity_cython_dict) == commodity_pyo3_dict
     assert commodity_pyo3 == commodity_pyo3_back
 
 
@@ -118,6 +119,5 @@ def test_pyo3_cython_conversion_with_optional_fields():
     assert commodity_cython.taker_fee == Decimal("0.002")
 
     commodity_cython_dict = Commodity.to_dict(commodity_cython)
-    del commodity_cython_dict["tick_scheme_name"]
     commodity_pyo3_back = nautilus_pyo3.Commodity.from_dict(commodity_cython_dict)
     assert commodity_pyo3_back == commodity_pyo3

@@ -45,13 +45,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .levels
             .first()
             .and_then(|bids| bids.first())
-            .map(|l| l.px.clone())
+            .map(|l| l.px)
             .unwrap_or_default();
         let best_ask = book
             .levels
             .get(1)
             .and_then(|asks| asks.first())
-            .map(|l| l.px.clone())
+            .map(|l| l.px)
             .unwrap_or_default();
 
         log::info!("BTC best bid: {best_bid}, best ask: {best_ask}");

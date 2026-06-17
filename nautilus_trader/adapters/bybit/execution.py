@@ -938,17 +938,16 @@ class BybitExecutionClient(LiveExecutionClient):
             )
             return
 
+        # The demo HTTP create-order entry cannot carry TP/SL trigger prices (only the mainnet
+        # WS path can), so deny rather than submit an order missing the user's trigger prices.
         if self._is_demo and (
-            tp_sl.get("take_profit")
-            or tp_sl.get("stop_loss")
-            or tp_sl.get("order_iv") is not None
-            or tp_sl.get("mmp") is not None
+            tp_sl.get("tp_trigger_price") is not None or tp_sl.get("sl_trigger_price") is not None
         ):
             self.generate_order_denied(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
-                reason="Native TP/SL and option params are not supported in demo mode",
+                reason="TP/SL trigger prices are not supported in demo mode",
                 ts_event=self._clock.timestamp_ns(),
             )
             return
@@ -1014,6 +1013,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     position_idx=position_idx,
                     bbo_side_type=tp_sl.get("bbo_side_type"),
                     bbo_level=tp_sl.get("bbo_level"),
+                    native_tp_sl=_build_native_tp_sl_params(tp_sl),
                 )
             elif (
                 tp_sl.get("take_profit")
@@ -1124,11 +1124,11 @@ class BybitExecutionClient(LiveExecutionClient):
             return
 
         if self._is_demo:
+            # The demo HTTP create-order entry cannot carry TP/SL trigger prices (only the
+            # mainnet WS path can), so deny rather than submit orders missing trigger prices.
             if (
-                tp_sl.get("take_profit")
-                or tp_sl.get("stop_loss")
-                or tp_sl.get("order_iv") is not None
-                or tp_sl.get("mmp") is not None
+                tp_sl.get("tp_trigger_price") is not None
+                or tp_sl.get("sl_trigger_price") is not None
             ):
                 now_ns = self._clock.timestamp_ns()
                 for order in command.order_list.orders:
@@ -1136,7 +1136,7 @@ class BybitExecutionClient(LiveExecutionClient):
                         strategy_id=order.strategy_id,
                         instrument_id=order.instrument_id,
                         client_order_id=order.client_order_id,
-                        reason="Native TP/SL and option params are not supported in demo mode",
+                        reason="TP/SL trigger prices are not supported in demo mode",
                         ts_event=now_ns,
                     )
                 return
@@ -1222,6 +1222,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     position_idx=position_idx,
                     bbo_side_type=tp_sl.get("bbo_side_type"),
                     bbo_level=tp_sl.get("bbo_level"),
+                    native_tp_sl=_build_native_tp_sl_params(tp_sl),
                 )
             except Exception as e:
                 error_msg = str(e)
@@ -2023,6 +2024,7 @@ class BybitExecutionClient(LiveExecutionClient):
 # Bybit V5 API uses PascalCase strings for these enum fields.
 _BYBIT_VALID_TRIGGER_TYPES: frozenset[str] = frozenset({"LastPrice", "IndexPrice", "MarkPrice"})
 _BYBIT_VALID_ORDER_TYPES: frozenset[str] = frozenset({"Market", "Limit"})
+_BYBIT_VALID_TPSL_MODES: frozenset[str] = frozenset({"Full", "Partial"})
 _BYBIT_VALID_BBO_SIDE_TYPES: frozenset[str] = frozenset({"Queue", "Counterparty"})
 _BYBIT_VALID_BBO_LEVELS: frozenset[str] = frozenset({"1", "2", "3", "4", "5"})
 _BYBIT_BBO_ORDER_TYPES: frozenset[OrderType] = frozenset(
@@ -2158,6 +2160,7 @@ def _parse_bybit_tp_sl_params(params: dict | None) -> dict:
         ("sl_trigger_by", _BYBIT_VALID_TRIGGER_TYPES, "trigger type"),
         ("tp_order_type", _BYBIT_VALID_ORDER_TYPES, "order type"),
         ("sl_order_type", _BYBIT_VALID_ORDER_TYPES, "order type"),
+        ("tpsl_mode", _BYBIT_VALID_TPSL_MODES, "TP/SL mode"),
     ):
         val = p.get(key)
         if val is not None:
@@ -2229,6 +2232,7 @@ def _apply_tp_sl_fields(order_params: object, tp_sl: dict) -> None:
         "sl_trigger_price",
         "tp_limit_price",
         "sl_limit_price",
+        "tpsl_mode",
         "close_on_trigger",
         "order_iv",
         "mmp",
@@ -2238,3 +2242,26 @@ def _apply_tp_sl_fields(order_params: object, tp_sl: dict) -> None:
         val = tp_sl.get(attr)
         if val is not None:
             setattr(order_params, attr, val)
+
+
+def _build_native_tp_sl_params(tp_sl: dict) -> nautilus_pyo3.BybitNativeTpSlParams | None:
+    # tp_trigger_price / sl_trigger_price are omitted: the HTTP create-order entry does not
+    # carry them (the mainnet WS Trade API does, via separate fields).
+    fields = (
+        "take_profit",
+        "stop_loss",
+        "tp_trigger_by",
+        "sl_trigger_by",
+        "tp_order_type",
+        "sl_order_type",
+        "tp_limit_price",
+        "sl_limit_price",
+        "tpsl_mode",
+        "close_on_trigger",
+        "order_iv",
+        "mmp",
+    )
+    kwargs = {field: tp_sl[field] for field in fields if tp_sl.get(field) is not None}
+    if not kwargs:
+        return None
+    return nautilus_pyo3.BybitNativeTpSlParams(**kwargs)

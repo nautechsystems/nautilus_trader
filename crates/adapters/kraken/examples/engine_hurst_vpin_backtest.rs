@@ -93,6 +93,7 @@ fn main() -> anyhow::Result<()> {
         Some(dec!(0.0002)),
         Some(dec!(0.0005)),
         None,
+        None,
         0.into(),
         0.into(),
     );

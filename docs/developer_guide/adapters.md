@@ -1517,8 +1517,10 @@ venues without unbounded memory growth.
 
 Some venues (e.g. Hyperliquid) implement a modify as a cancel-replace: the venue assigns a new
 venue order ID and emits `ACCEPTED(new_voi)` with `CANCELED(old_voi)`. The dispatch promotes the
-new leg to `OrderUpdated` and suppresses the stale cancel. Fills on the old venue order ID count
-separately, so the replacement is sized at the remaining (`target - filled`), not the total.
+new leg to `OrderUpdated` and suppresses the stale cancel. A fill carrying the replacement venue
+order ID drives the same promotion (falling back to buffering only when the order has no price), so
+a dropped `ACCEPTED` does not strand the fill. Fills on the old venue order ID count separately, so
+the replacement is sized at the remaining (`target - filled`), not the total.
 
 That subtraction runs when the modify is dispatched, so a fill landing after the request is sent
 leaves the replacement oversized and the venue can overfill the order. To prevent this, the

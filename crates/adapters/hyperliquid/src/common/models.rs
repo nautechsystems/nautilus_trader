@@ -481,20 +481,20 @@ impl HyperliquidDataConverter {
 /// Convert HTTP level to price and size
 fn parse_level(
     level: &HyperliquidLevel,
-    inst_info: &HyperliquidInstrumentInfo,
+    _inst_info: &HyperliquidInstrumentInfo,
 ) -> Result<(Price, Quantity), ConversionError> {
-    let price = parse_price(&level.px, inst_info)?;
-    let size = parse_size(&level.sz, inst_info)?;
+    let price = price_from_decimal(level.px)?;
+    let size = size_from_decimal(level.sz)?;
     Ok((price, size))
 }
 
 /// Convert WebSocket level to price and size
 fn parse_ws_level(
     level: &WsLevelData,
-    config: &HyperliquidInstrumentInfo,
+    _config: &HyperliquidInstrumentInfo,
 ) -> Result<(Price, Quantity), ConversionError> {
-    let price = parse_price(&level.px, config)?;
-    let size = parse_size(&level.sz, config)?;
+    let price = price_from_decimal(level.px)?;
+    let size = size_from_decimal(level.sz)?;
     Ok((price, size))
 }
 
@@ -523,6 +523,20 @@ fn parse_size(
 
     Quantity::from_decimal(decimal).map_err(|_| ConversionError::InvalidSize {
         value: size_str.to_string(),
+    })
+}
+
+/// Convert a decimal price to a `Price`, inferring precision from its scale.
+fn price_from_decimal(value: Decimal) -> Result<Price, ConversionError> {
+    Price::from_decimal(value).map_err(|_| ConversionError::InvalidPrice {
+        value: value.to_string(),
+    })
+}
+
+/// Convert a decimal size to a `Quantity`, inferring precision from its scale.
+fn size_from_decimal(value: Decimal) -> Result<Quantity, ConversionError> {
+    Quantity::from_decimal(value).map_err(|_| ConversionError::InvalidSize {
+        value: value.to_string(),
     })
 }
 

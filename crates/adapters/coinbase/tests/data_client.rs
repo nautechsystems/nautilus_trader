@@ -1189,12 +1189,17 @@ async fn test_data_client_reconnect_resumes_derivatives_polls() {
     // index update can be queued before this drain.
     while rx.try_recv().is_ok() {}
 
-    product_release.add_permits(1);
     product_stall_enabled.store(false, Ordering::SeqCst);
 
     let mut resumed = false;
     wait_until_async(
         || {
+            // A leftover poll request from the pre-disconnect connection can
+            // park on the stall ahead of the resumed poll's request, so
+            // release a permit each iteration until the live request unblocks
+            // rather than freeing a single (possibly stale) parked handler.
+            product_release.add_permits(1);
+
             while let Ok(evt) = rx.try_recv() {
                 if matches!(evt, DataEvent::Data(Data::IndexPriceUpdate(_))) {
                     resumed = true;

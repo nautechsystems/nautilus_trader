@@ -2230,6 +2230,15 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
                 return False  # Failed
 
+        if report.client_order_id is not None and report.client_order_id != order.client_order_id:
+            self._log.warning(
+                f"Skipping fill reconciliation for {report.trade_id!r}: "
+                f"report.client_order_id={report.client_order_id!r} does not match "
+                f"order.client_order_id={order.client_order_id!r} resolved from "
+                f"venue_order_id={report.venue_order_id!r}",
+            )
+            return True  # Mismatched owner; skip without retry storm
+
         # Log external order processing for better visibility
         if order.strategy_id.value == "EXTERNAL":
             self._log.debug(

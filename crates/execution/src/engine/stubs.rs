@@ -59,6 +59,8 @@ pub struct StubExecutionClient {
     submitted_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     queried_account_ids: Rc<RefCell<Vec<AccountId>>>,
     handles_all_order_venues: bool,
+    submit_order_error: Option<String>,
+    submit_order_list_error: Option<String>,
 }
 
 impl StubExecutionClient {
@@ -87,6 +89,8 @@ impl StubExecutionClient {
             submitted_order_ids: Rc::new(RefCell::new(Vec::new())),
             queried_account_ids: Rc::new(RefCell::new(Vec::new())),
             handles_all_order_venues: false,
+            submit_order_error: None,
+            submit_order_list_error: None,
         }
     }
 
@@ -94,6 +98,20 @@ impl StubExecutionClient {
     #[must_use]
     pub fn with_handles_all_order_venues(mut self) -> Self {
         self.handles_all_order_venues = true;
+        self
+    }
+
+    /// Configures this stub to fail single-order submissions.
+    #[must_use]
+    pub fn with_submit_order_error(mut self, error: impl Into<String>) -> Self {
+        self.submit_order_error = Some(error.into());
+        self
+    }
+
+    /// Configures this stub to fail order-list submissions.
+    #[must_use]
+    pub fn with_submit_order_list_error(mut self, error: impl Into<String>) -> Self {
+        self.submit_order_list_error = Some(error.into());
         self
     }
 
@@ -203,6 +221,10 @@ impl ExecutionClient for StubExecutionClient {
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
+        if let Some(error) = &self.submit_order_error {
+            anyhow::bail!("{error}");
+        }
+
         self.submitted_order_ids
             .borrow_mut()
             .push(cmd.client_order_id);
@@ -211,6 +233,10 @@ impl ExecutionClient for StubExecutionClient {
     }
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
+        if let Some(error) = &self.submit_order_list_error {
+            anyhow::bail!("{error}");
+        }
+
         self.submitted_order_ids
             .borrow_mut()
             .extend(cmd.order_list.client_order_ids);

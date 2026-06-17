@@ -276,6 +276,7 @@ pub fn parse_market_catalogue(
             Some(Decimal::ONE), // margin_maint
             Some(fee_rate),     // maker_fee
             Some(fee_rate),     // taker_fee
+            None,               // tick_scheme
             None,               // info
             ts_init,            // ts_event
             ts_init,            // ts_init
@@ -409,6 +410,7 @@ pub fn parse_market_definition(
             Some(Decimal::ONE), // margin_maint
             Some(fee_rate),     // maker_fee
             Some(fee_rate),     // taker_fee
+            None,               // tick_scheme
             None,               // info
             ts_init,            // ts_event
             ts_init,            // ts_init

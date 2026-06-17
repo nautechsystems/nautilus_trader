@@ -25,12 +25,12 @@ use nautilus_common::{
     actor::DataActor,
     component::Component,
     enums::ComponentState,
-    logging::{EVT, RECV},
+    logging::{CMD, EVT, RECV, SEND},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
         SubmitOrder, SubmitOrderList, TradingCommand,
     },
-    msgbus,
+    msgbus::{self, MessagingSwitchboard},
     timer::TimeEvent,
 };
 use nautilus_core::{Params, UUID4};
@@ -43,7 +43,8 @@ use nautilus_model::{
         OrderUpdated, PositionChanged, PositionClosed, PositionEvent, PositionOpened,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId,
+        AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
+        TraderId,
     },
     orders::{
         LIMIT_ORDER_TYPES, Order, OrderAny, OrderCore, OrderError, OrderList, STOP_ORDER_TYPES,
@@ -166,14 +167,12 @@ pub trait Strategy: DataActor {
             None, // correlation_id
         );
 
-        let manager = core.order_manager();
-
         if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger) {
-            manager.send_emulator_command(TradingCommand::SubmitOrder(command));
+            send_emulator_command(TradingCommand::SubmitOrder(command));
         } else if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
-            manager.send_algo_command(command, exec_algorithm_id);
+            send_algo_command(command, exec_algorithm_id);
         } else {
-            manager.send_risk_command(TradingCommand::SubmitOrder(command));
+            send_risk_command(TradingCommand::SubmitOrder(command));
         }
 
         self.set_gtd_expiry(&order)?;
@@ -309,15 +308,13 @@ pub trait Strategy: DataActor {
                 || o.is_emulated()
         });
 
-        let manager = core.order_manager();
-
         if has_emulated_order {
-            manager.send_emulator_command(TradingCommand::SubmitOrderList(command));
+            send_emulator_command(TradingCommand::SubmitOrderList(command));
         } else if let Some(algo_id) = exec_algorithm_id {
             let endpoint = format!("{algo_id}.execute");
             msgbus::send_any(endpoint.into(), &TradingCommand::SubmitOrderList(command));
         } else {
-            manager.send_risk_command(TradingCommand::SubmitOrderList(command));
+            send_risk_command(TradingCommand::SubmitOrderList(command));
         }
 
         for order in &orders {
@@ -427,12 +424,10 @@ pub trait Strategy: DataActor {
             None, // correlation_id
         );
 
-        let manager = self.core_mut().order_manager();
-
         if order.is_emulated() {
-            manager.send_emulator_command(TradingCommand::ModifyOrder(command));
+            send_emulator_command(TradingCommand::ModifyOrder(command));
         } else {
-            manager.send_risk_command(TradingCommand::ModifyOrder(command));
+            send_risk_command(TradingCommand::ModifyOrder(command));
         }
         Ok(())
     }
@@ -460,7 +455,7 @@ pub trait Strategy: DataActor {
         let params = params.filter(|params| !params.is_empty());
 
         // TODO: Snapshot the order from the cache. Callers identify it by ID; we own the
-        // snapshot so the helpers (which take `&OrderAny` and may re-enter the cache)
+        // snapshot so later calls (which take `&OrderAny` and may re-enter the cache)
         // run without holding a live cache borrow.
         let order = match self
             .core_mut()
@@ -489,12 +484,10 @@ pub trait Strategy: DataActor {
             None, // correlation_id
         );
 
-        let manager = self.core_mut().order_manager();
-
         if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger)
             || order.is_emulated()
         {
-            manager.send_emulator_command(TradingCommand::CancelOrder(command));
+            send_emulator_command(TradingCommand::CancelOrder(command));
         } else if let Some(algo_id) = order
             .exec_algorithm_id()
             .filter(|_| order.is_active_local())
@@ -502,7 +495,7 @@ pub trait Strategy: DataActor {
             let endpoint = format!("{algo_id}.execute");
             msgbus::send_any(endpoint.into(), &TradingCommand::CancelOrder(command));
         } else {
-            manager.send_exec_command(TradingCommand::CancelOrder(command));
+            send_exec_command(TradingCommand::CancelOrder(command));
         }
 
         if self.core().config.manage_gtd_expiry
@@ -596,7 +589,6 @@ pub trait Strategy: DataActor {
             return Ok(());
         }
 
-        let manager = self.core_mut().order_manager();
         let command = BatchCancelOrders::new(
             trader_id,
             client_id,
@@ -609,7 +601,7 @@ pub trait Strategy: DataActor {
             None, // correlation_id
         );
 
-        manager.send_exec_command(TradingCommand::BatchCancelOrders(command));
+        send_exec_command(TradingCommand::BatchCancelOrders(command));
         Ok(())
     }
 
@@ -815,8 +807,6 @@ pub trait Strategy: DataActor {
             return Ok(());
         }
 
-        let manager = core.order_manager();
-
         let side_str = order_side.map(|s| format!(" {s}")).unwrap_or_default();
 
         if open_count > 0 {
@@ -853,7 +843,7 @@ pub trait Strategy: DataActor {
                 None, // correlation_id
             );
 
-            manager.send_exec_command(TradingCommand::CancelAllOrders(command));
+            send_exec_command(TradingCommand::CancelAllOrders(command));
         }
 
         if emulated_count > 0 {
@@ -869,7 +859,7 @@ pub trait Strategy: DataActor {
                 None, // correlation_id
             );
 
-            manager.send_emulator_command(TradingCommand::CancelAllOrders(command));
+            send_emulator_command(TradingCommand::CancelAllOrders(command));
         }
 
         for order in algo_orders {
@@ -1022,8 +1012,7 @@ pub trait Strategy: DataActor {
             None, // correlation_id
         );
 
-        core.order_manager()
-            .send_exec_command(TradingCommand::QueryAccount(command));
+        send_exec_command(TradingCommand::QueryAccount(command));
         Ok(())
     }
 
@@ -1060,8 +1049,7 @@ pub trait Strategy: DataActor {
             None, // correlation_id
         );
 
-        core.order_manager()
-            .send_exec_command(TradingCommand::QueryOrder(command));
+        send_exec_command(TradingCommand::QueryOrder(command));
         Ok(())
     }
 
@@ -1114,7 +1102,11 @@ pub trait Strategy: DataActor {
         {
             let core = self.core_mut();
             if let Some(manager) = &mut core.order_manager {
-                manager.handle_event(&event);
+                let actions = manager.handle_event(&event);
+                debug_assert!(
+                    actions.is_empty(),
+                    "inactive strategy order manager returned actions"
+                );
             }
         }
 
@@ -1892,6 +1884,40 @@ fn publish_order_initialized(order: &OrderAny) {
     msgbus::publish_order_event(topic.into(), &event);
 }
 
+fn send_emulator_command(command: TradingCommand) {
+    log_cmd_send(&command);
+    let endpoint = MessagingSwitchboard::order_emulator_execute();
+    msgbus::send_trading_command(endpoint, command);
+}
+
+fn send_algo_command(command: SubmitOrder, exec_algorithm_id: ExecAlgorithmId) {
+    let id = command.strategy_id;
+    log::info!("{id} {CMD}{SEND} {command}");
+
+    let endpoint = format!("{exec_algorithm_id}.execute");
+    msgbus::send_any(endpoint.into(), &TradingCommand::SubmitOrder(command));
+}
+
+fn send_risk_command(command: TradingCommand) {
+    log_cmd_send(&command);
+    let endpoint = MessagingSwitchboard::risk_engine_queue_execute();
+    msgbus::send_trading_command(endpoint, command);
+}
+
+fn send_exec_command(command: TradingCommand) {
+    log_cmd_send(&command);
+    let endpoint = MessagingSwitchboard::exec_engine_queue_execute();
+    msgbus::send_trading_command(endpoint, command);
+}
+
+fn log_cmd_send(command: &TradingCommand) {
+    if let Some(id) = command.strategy_id() {
+        log::info!("{id} {CMD}{SEND} {command}");
+    } else {
+        log::info!("{CMD}{SEND} {command}");
+    }
+}
+
 fn registered_trader_id(core: &StrategyCore) -> anyhow::Result<TraderId> {
     core.trader_id()
         .ok_or_else(|| anyhow::anyhow!("Strategy not registered: trader_id is not set"))
@@ -1935,7 +1961,7 @@ mod tests {
             TraderId, VenueOrderId,
         },
         orderbook::own::OwnOrderBook,
-        orders::{LimitOrder, MarketOrder, stubs::TestOrderEventStubs},
+        orders::{LimitOrder, MarketOrder, OrderTestBuilder, stubs::TestOrderEventStubs},
         stubs::TestDefault,
         types::{Currency, Money, Price},
     };
@@ -2538,6 +2564,46 @@ mod tests {
             OrderEventAny::Initialized(order.init_event().clone())
         );
         assert_eq!(timeline.borrow().as_slice(), &["init", "command"]);
+    }
+
+    #[rstest]
+    fn test_submit_order_routes_emulated_order_to_order_emulator() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        let (emulator_handler, emulator_messages): (
+            _,
+            TypedIntoMessageSavingHandler<TradingCommand>,
+        ) = get_typed_into_message_saving_handler(Some(Ustr::from("OrderEmulator.execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::order_emulator_execute(),
+            emulator_handler,
+        );
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-20250208-EMULATED-001"))
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("51000.0"))
+            .quantity(Quantity::from(100_000))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        let client_order_id = order.client_order_id();
+
+        strategy.submit_order(order, None, None, None).unwrap();
+
+        let emulator_messages = emulator_messages.get_messages();
+        assert_eq!(emulator_messages.len(), 1);
+        assert!(matches!(
+            emulator_messages.first(),
+            Some(TradingCommand::SubmitOrder(command))
+                if command.client_order_id == client_order_id
+        ));
+        assert!(risk_messages.get_messages().is_empty());
     }
 
     #[rstest]

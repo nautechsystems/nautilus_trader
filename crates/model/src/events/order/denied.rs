@@ -310,7 +310,7 @@ mod tests {
         let display = format!("{order_denied_max_submitted_rate}");
         assert_eq!(
             display,
-            "OrderDenied(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, reason='Exceeded MAX_ORDER_SUBMIT_RATE')"
+            "OrderDenied(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, reason='RATE_LIMIT_EXCEEDED')"
         );
     }
 

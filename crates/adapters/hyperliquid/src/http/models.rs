@@ -22,9 +22,16 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ustr::Ustr;
 
-use crate::common::enums::{
-    HyperliquidFillDirection, HyperliquidLeverageType,
-    HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidPositionType, HyperliquidSide,
+use crate::common::{
+    enums::{
+        HyperliquidFillDirection, HyperliquidLeverageType,
+        HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidPositionType,
+        HyperliquidSide,
+    },
+    parse::{
+        deserialize_decimal_from_str, deserialize_optional_decimal_from_str,
+        serialize_decimal_as_str, serialize_optional_decimal_as_str,
+    },
 };
 
 /// Response from candleSnapshot endpoint (returns array directly).
@@ -184,8 +191,12 @@ pub struct MarginTable {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MarginTier {
-    /// Lower bound for this tier (as string to preserve precision).
-    pub lower_bound: String,
+    /// Lower bound for this tier.
+    #[serde(
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub lower_bound: Decimal,
     /// Maximum leverage for this tier.
     pub max_leverage: u32,
 }
@@ -345,18 +356,34 @@ pub enum PerpMetaAndCtxs {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PerpAssetCtx {
-    /// Mark price as string.
-    #[serde(default)]
-    pub mark_px: Option<String>,
-    /// Mid price as string.
-    #[serde(default)]
-    pub mid_px: Option<String>,
-    /// Funding rate as string.
-    #[serde(default)]
-    pub funding: Option<String>,
-    /// Open interest as string.
-    #[serde(default)]
-    pub open_interest: Option<String>,
+    /// Mark price.
+    #[serde(
+        default,
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub mark_px: Option<Decimal>,
+    /// Mid price.
+    #[serde(
+        default,
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub mid_px: Option<Decimal>,
+    /// Funding rate.
+    #[serde(
+        default,
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub funding: Option<Decimal>,
+    /// Open interest.
+    #[serde(
+        default,
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub open_interest: Option<Decimal>,
 }
 
 /// Optional spot metadata with asset contexts from `{ "type": "spotMetaAndAssetCtxs" }`.
@@ -372,15 +399,27 @@ pub enum SpotMetaAndCtxs {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpotAssetCtx {
-    /// Mark price as string.
-    #[serde(default)]
-    pub mark_px: Option<String>,
-    /// Mid price as string.
-    #[serde(default)]
-    pub mid_px: Option<String>,
-    /// 24h volume as string.
-    #[serde(default)]
-    pub day_volume: Option<String>,
+    /// Mark price.
+    #[serde(
+        default,
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub mark_px: Option<Decimal>,
+    /// Mid price.
+    #[serde(
+        default,
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub mid_px: Option<Decimal>,
+    /// 24h volume.
+    #[serde(
+        default,
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub day_volume: Option<Decimal>,
 }
 
 /// Represents an L2 order book snapshot from `POST /info`.
@@ -398,9 +437,17 @@ pub struct HyperliquidL2Book {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HyperliquidLevel {
     /// Price level.
-    pub px: String,
+    #[serde(
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub px: Decimal,
     /// Size at this level.
-    pub sz: String,
+    #[serde(
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub sz: Decimal,
 }
 
 /// Represents user fills response from `POST /info`.
@@ -426,20 +473,40 @@ pub struct HyperliquidCandle {
     #[serde(rename = "T")]
     pub end_timestamp: u64,
     /// Open price.
-    #[serde(rename = "o")]
-    pub open: String,
+    #[serde(
+        rename = "o",
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub open: Decimal,
     /// High price.
-    #[serde(rename = "h")]
-    pub high: String,
+    #[serde(
+        rename = "h",
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub high: Decimal,
     /// Low price.
-    #[serde(rename = "l")]
-    pub low: String,
+    #[serde(
+        rename = "l",
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub low: Decimal,
     /// Close price.
-    #[serde(rename = "c")]
-    pub close: String,
+    #[serde(
+        rename = "c",
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub close: Decimal,
     /// Volume.
-    #[serde(rename = "v")]
-    pub volume: String,
+    #[serde(
+        rename = "v",
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub volume: Decimal,
     /// Number of trades (optional).
     #[serde(rename = "n", default)]
     pub num_trades: Option<u64>,
@@ -450,14 +517,50 @@ pub struct HyperliquidCandle {
 pub struct HyperliquidFundingHistoryEntry {
     /// Coin symbol (raw Hyperliquid name, e.g. `"BTC"`).
     pub coin: Ustr,
-    /// Funding rate applied at the interval end, as a decimal string.
-    #[serde(rename = "fundingRate")]
-    pub funding_rate: String,
-    /// Premium at the time of funding, as a decimal string.
-    #[serde(default)]
-    pub premium: Option<String>,
+    /// Funding rate applied at the interval end.
+    #[serde(
+        rename = "fundingRate",
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub funding_rate: Decimal,
+    /// Premium at the time of funding.
+    #[serde(
+        default,
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub premium: Option<Decimal>,
     /// Timestamp in milliseconds marking the end of the funding interval.
     pub time: u64,
+}
+
+/// Represents a single trade from the `recentTrades` info endpoint.
+///
+/// The endpoint returns a recent snapshot of public trades (newest first) and
+/// shares the field layout of the `trades` WebSocket channel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HyperliquidRecentTrade {
+    /// Coin symbol (raw Hyperliquid name, e.g. `"BTC"`).
+    pub coin: Ustr,
+    /// Aggressor side: `"A"` (ask/sell) or `"B"` (bid/buy).
+    pub side: HyperliquidSide,
+    /// Trade price.
+    #[serde(
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub px: Decimal,
+    /// Trade size.
+    #[serde(
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub sz: Decimal,
+    /// Trade timestamp in milliseconds.
+    pub time: u64,
+    /// Venue trade identifier.
+    pub tid: u64,
 }
 
 /// Represents an individual fill from user fills.
@@ -466,21 +569,37 @@ pub struct HyperliquidFill {
     /// Coin symbol.
     pub coin: Ustr,
     /// Fill price.
-    pub px: String,
+    #[serde(
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub px: Decimal,
     /// Fill size.
-    pub sz: String,
+    #[serde(
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub sz: Decimal,
     /// Order side (buy/sell).
     pub side: HyperliquidSide,
     /// Fill timestamp in milliseconds.
     pub time: u64,
     /// Position size before this fill.
-    #[serde(rename = "startPosition")]
-    pub start_position: String,
+    #[serde(
+        rename = "startPosition",
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub start_position: Decimal,
     /// Fill direction (open/close).
     pub dir: HyperliquidFillDirection,
     /// Closed P&L from this fill.
-    #[serde(rename = "closedPnl")]
-    pub closed_pnl: String,
+    #[serde(
+        rename = "closedPnl",
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub closed_pnl: Decimal,
     /// Hash reference.
     pub hash: String,
     /// Order ID that generated this fill.
@@ -488,7 +607,11 @@ pub struct HyperliquidFill {
     /// Crossed status.
     pub crossed: bool,
     /// Fee paid for this fill.
-    pub fee: String,
+    #[serde(
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub fee: Decimal,
     /// Token the fee was paid in (e.g. "USDC", "HYPE").
     #[serde(rename = "feeToken")]
     pub fee_token: Ustr,
@@ -536,17 +659,29 @@ pub struct HyperliquidOrderInfo {
     /// Order side (buy/sell).
     pub side: HyperliquidSide,
     /// Limit price.
-    #[serde(rename = "limitPx")]
-    pub limit_px: String,
+    #[serde(
+        rename = "limitPx",
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub limit_px: Decimal,
     /// Order size.
-    pub sz: String,
+    #[serde(
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub sz: Decimal,
     /// Order ID.
     pub oid: u64,
     /// Order timestamp in milliseconds.
     pub timestamp: u64,
     /// Original order size.
-    #[serde(rename = "origSz")]
-    pub orig_sz: String,
+    #[serde(
+        rename = "origSz",
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub orig_sz: Decimal,
     /// Optional client order ID (hex representation of the venue CLOID).
     #[serde(default)]
     pub cloid: Option<String>,
@@ -715,8 +850,8 @@ mod tests {
         let entry: HyperliquidFundingHistoryEntry = serde_json::from_str(json).unwrap();
 
         assert_eq!(entry.coin.as_str(), "BTC");
-        assert_eq!(entry.funding_rate, "0.0000125");
-        assert_eq!(entry.premium.as_deref(), Some("0.00029005"));
+        assert_eq!(entry.funding_rate, dec!(0.0000125));
+        assert_eq!(entry.premium, Some(dec!(0.00029005)));
         assert_eq!(entry.time, 1769908800000);
     }
 
@@ -733,7 +868,31 @@ mod tests {
         let entry: HyperliquidFundingHistoryEntry = serde_json::from_str(json).unwrap();
 
         assert!(entry.premium.is_none());
-        assert_eq!(entry.funding_rate, "0.0000033");
+        assert_eq!(entry.funding_rate, dec!(0.0000033));
+    }
+
+    #[rstest]
+    fn test_recent_trade_deserializes() {
+        // The venue payload carries `hash`/`users` fields the model ignores.
+        let json = r#"{
+            "coin": "BTC",
+            "side": "B",
+            "px": "104250.0",
+            "sz": "0.0123",
+            "hash": "0xabc",
+            "time": 1769916000000,
+            "tid": 987654321,
+            "users": ["0xbuyer", "0xseller"]
+        }"#;
+
+        let trade: HyperliquidRecentTrade = serde_json::from_str(json).unwrap();
+
+        assert_eq!(trade.coin.as_str(), "BTC");
+        assert_eq!(trade.side, HyperliquidSide::Buy);
+        assert_eq!(trade.px, dec!(104250.0));
+        assert_eq!(trade.sz, dec!(0.0123));
+        assert_eq!(trade.time, 1769916000000);
+        assert_eq!(trade.tid, 987654321);
     }
 
     #[rstest]
@@ -902,6 +1061,36 @@ mod tests {
     }
 
     #[rstest]
+    fn test_order_response_normal_tpsl_with_waiting_children() {
+        // `normalTpsl` bracket: the entry rests with an oid, while the SL/TP
+        // children come back as bare strings until the parent fills or the
+        // trigger fires.
+        let json = r#"{
+            "statuses": [
+                {"resting": {"oid": 446050656712}},
+                "waitingForFill",
+                "waitingForTrigger"
+            ]
+        }"#;
+
+        let data: HyperliquidExecOrderResponseData = serde_json::from_str(json).unwrap();
+        assert_eq!(data.statuses.len(), 3);
+
+        assert!(matches!(
+            data.statuses[0],
+            HyperliquidExecOrderStatus::Resting { ref resting } if resting.oid == 446050656712
+        ));
+        assert!(matches!(
+            data.statuses[1],
+            HyperliquidExecOrderStatus::Tag(HyperliquidExecOrderStatusTag::WaitingForFill)
+        ));
+        assert!(matches!(
+            data.statuses[2],
+            HyperliquidExecOrderStatus::Tag(HyperliquidExecOrderStatusTag::WaitingForTrigger)
+        ));
+    }
+
+    #[rstest]
     fn test_user_outcome_split_serialization() {
         let action = HyperliquidExecAction::UserOutcome {
             op: HyperliquidExecUserOutcomeOp::SplitOutcome(HyperliquidExecSplitOutcomeParams {
@@ -938,6 +1127,18 @@ mod tests {
                 "splitOutcome": { "outcome": 4, "amount": "10" }
             })
         );
+    }
+
+    #[rstest]
+    fn test_hyperliquid_level_serializes_decimals_as_strings() {
+        // Decimal fields must serialize back to the string wire form, not a
+        // JSON number.
+        let level = HyperliquidLevel {
+            px: dec!(98450.5),
+            sz: dec!(2.5),
+        };
+        let value = serde_json::to_value(&level).unwrap();
+        assert_eq!(value, json!({ "px": "98450.5", "sz": "2.5" }));
     }
 
     #[rstest]
@@ -1105,8 +1306,8 @@ pub struct HyperliquidExecTriggerParams {
     pub is_market: bool,
     /// Trigger price as a string.
     #[serde(
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub trigger_px: Decimal,
     /// Whether this is a take profit or stop loss.
@@ -1142,15 +1343,15 @@ pub struct HyperliquidExecPlaceOrderRequest {
     /// Price as a string with no trailing zeros.
     #[serde(
         rename = "p",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub price: Decimal,
     /// Size as a string with no trailing zeros.
     #[serde(
         rename = "s",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub size: Decimal,
     /// Reduce-only flag.
@@ -1209,8 +1410,8 @@ pub struct HyperliquidExecSplitOutcomeParams {
     pub outcome: u32,
     /// Quote-token amount to split, serialized as a decimal string (e.g. `"123.0"`).
     #[serde(
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub amount: Decimal,
 }
@@ -1227,8 +1428,8 @@ pub struct HyperliquidExecMergeOutcomeParams {
     /// Side-token amount to merge, or `None` to merge the maximum available.
     #[serde(
         default,
-        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str"
     )]
     pub amount: Option<Decimal>,
 }
@@ -1245,8 +1446,8 @@ pub struct HyperliquidExecMergeQuestionParams {
     /// Yes-share amount to merge per outcome, or `None` for the max.
     #[serde(
         default,
-        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str"
     )]
     pub amount: Option<Decimal>,
 }
@@ -1263,8 +1464,8 @@ pub struct HyperliquidExecNegateOutcomeParams {
     pub outcome: u32,
     /// Side-token amount to negate, serialized as a decimal string.
     #[serde(
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub amount: Decimal,
 }
@@ -1306,8 +1507,8 @@ pub struct HyperliquidExecTwapRequest {
     /// Total size to execute.
     #[serde(
         rename = "s",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub size: Decimal,
     /// Duration in milliseconds.
@@ -1397,8 +1598,8 @@ pub enum HyperliquidExecAction {
         /// Margin delta as a string.
         #[serde(
             rename = "delta",
-            serialize_with = "crate::common::parse::serialize_decimal_as_str",
-            deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+            serialize_with = "serialize_decimal_as_str",
+            deserialize_with = "deserialize_decimal_from_str"
         )]
         delta: Decimal,
     },
@@ -1412,8 +1613,8 @@ pub enum HyperliquidExecAction {
         to: String,
         /// Amount to transfer.
         #[serde(
-            serialize_with = "crate::common::parse::serialize_decimal_as_str",
-            deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+            serialize_with = "serialize_decimal_as_str",
+            deserialize_with = "deserialize_decimal_from_str"
         )]
         amount: Decimal,
     },
@@ -1555,6 +1756,25 @@ pub enum HyperliquidExecOrderStatus {
         /// Error message.
         error: String,
     },
+    /// Bare status string for a trigger child of a `normalTpsl` group (SL/TP),
+    /// which Hyperliquid serializes as a JSON string rather than an object
+    /// (for example `"waitingForFill"` or `"waitingForTrigger"`).
+    Tag(HyperliquidExecOrderStatusTag),
+}
+
+/// Status tags Hyperliquid serializes as a bare JSON string.
+///
+/// Trigger children of a `normalTpsl` group, plus standalone trigger orders
+/// that have not armed yet, fall in this bucket: the venue defers order-id
+/// assignment until activation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HyperliquidExecOrderStatusTag {
+    /// Trigger child parked until the parent (entry) order fills.
+    #[serde(rename = "waitingForFill")]
+    WaitingForFill,
+    /// Trigger child parked until its trigger price condition is met.
+    #[serde(rename = "waitingForTrigger")]
+    WaitingForTrigger,
 }
 
 /// Information about a resting order via exchange endpoint.
@@ -1570,15 +1790,15 @@ pub struct HyperliquidExecFilledInfo {
     /// Total filled size.
     #[serde(
         rename = "totalSz",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub total_sz: Decimal,
     /// Average fill price.
     #[serde(
         rename = "avgPx",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub avg_px: Decimal,
     /// Order ID.
@@ -1625,8 +1845,8 @@ pub struct ClearinghouseState {
     /// Withdrawable balance (top-level field).
     #[serde(
         default,
-        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str"
     )]
     pub withdrawable: Option<Decimal>,
     /// Time of the state snapshot (milliseconds since epoch).
@@ -1662,22 +1882,22 @@ pub struct CumFundingInfo {
     /// All-time cumulative funding.
     #[serde(
         rename = "allTime",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub all_time: Decimal,
     /// Funding since position opened.
     #[serde(
         rename = "sinceOpen",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub since_open: Decimal,
     /// Funding since last position change.
     #[serde(
         rename = "sinceChange",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub since_change: Decimal,
 }
@@ -1694,8 +1914,8 @@ pub struct PositionData {
     /// Entry price for the position.
     #[serde(
         rename = "entryPx",
-        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str",
         default
     )]
     pub entry_px: Option<Decimal>,
@@ -1704,16 +1924,16 @@ pub struct PositionData {
     /// Liquidation price.
     #[serde(
         rename = "liquidationPx",
-        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str",
         default
     )]
     pub liquidation_px: Option<Decimal>,
     /// Margin used for this position.
     #[serde(
         rename = "marginUsed",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub margin_used: Decimal,
     /// Maximum leverage allowed for this asset.
@@ -1722,29 +1942,29 @@ pub struct PositionData {
     /// Position value.
     #[serde(
         rename = "positionValue",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub position_value: Decimal,
     /// Return on equity percentage.
     #[serde(
         rename = "returnOnEquity",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub return_on_equity: Decimal,
     /// Position size (positive for long, negative for short).
     #[serde(
         rename = "szi",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub szi: Decimal,
     /// Unrealized PnL.
     #[serde(
         rename = "unrealizedPnl",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub unrealized_pnl: Decimal,
 }
@@ -1774,21 +1994,21 @@ pub struct SpotBalance {
     pub token: Option<u32>,
     /// Total token balance (on-hold plus available).
     #[serde(
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub total: Decimal,
     /// Portion currently reserved for resting orders.
     #[serde(
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub hold: Decimal,
     /// Entry notional value (position cost basis in USDC).
     #[serde(
         default,
-        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str"
     )]
     pub entry_ntl: Option<Decimal>,
 }
@@ -1820,37 +2040,37 @@ pub struct CrossMarginSummary {
     /// Account value in USD.
     #[serde(
         rename = "accountValue",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub account_value: Decimal,
     /// Total notional position value.
     #[serde(
         rename = "totalNtlPos",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub total_ntl_pos: Decimal,
     /// Total raw USD value (collateral).
     #[serde(
         rename = "totalRawUsd",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub total_raw_usd: Decimal,
     /// Total margin used across all positions.
     #[serde(
         rename = "totalMarginUsed",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
     )]
     pub total_margin_used: Decimal,
     /// Withdrawable balance.
     #[serde(
         rename = "withdrawable",
         default,
-        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str"
     )]
     pub withdrawable: Option<Decimal>,
 }

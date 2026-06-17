@@ -71,6 +71,8 @@ class Strategy:
     @property
     def portfolio(self) -> portfolio.Portfolio: ...
     @property
+    def order_factory(self) -> common.OrderFactory: ...
+    @property
     def log(self) -> common.Logger: ...
     def state(self) -> common.ComponentState: ...
     def is_ready(self) -> bool: ...
@@ -428,24 +430,24 @@ class Strategy:
         self,
         data_type: model.DataType,
         client_id: model.ClientId,
-        start: int | None = None,
-        end: int | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
         limit: int | None = None,
         params: dict | None = None,
     ) -> str: ...
     def request_instrument(
         self,
         instrument_id: model.InstrumentId,
-        start: int | None = None,
-        end: int | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> str: ...
     def request_instruments(
         self,
         venue: model.Venue | None = None,
-        start: int | None = None,
-        end: int | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> str: ...
@@ -456,11 +458,30 @@ class Strategy:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> str: ...
+    def request_book_deltas(
+        self,
+        instrument_id: model.InstrumentId,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> str: ...
+    def request_book_depth(
+        self,
+        instrument_id: model.InstrumentId,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
+        depth: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> str: ...
     def request_quotes(
         self,
         instrument_id: model.InstrumentId,
-        start: int | None = None,
-        end: int | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
@@ -468,8 +489,8 @@ class Strategy:
     def request_trades(
         self,
         instrument_id: model.InstrumentId,
-        start: int | None = None,
-        end: int | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
@@ -477,8 +498,8 @@ class Strategy:
     def request_funding_rates(
         self,
         instrument_id: model.InstrumentId,
-        start: int | None = None,
-        end: int | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
@@ -486,8 +507,8 @@ class Strategy:
     def request_bars(
         self,
         bar_type: model.BarType,
-        start: int | None = None,
-        end: int | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,

@@ -85,7 +85,7 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin>=1.13.3", "mypy>=1.20.2,<2.0.0", "ruff>=0.15.16"]
+dev = ["maturin>=1.13.3", "mypy>=1.20.2,<2.0.0", "ruff>=0.15.17"]
 test = [
   "pytest>=9.0.3",
   "pytest-asyncio>=1.4.0",

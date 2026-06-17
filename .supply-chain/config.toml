@@ -165,7 +165,7 @@ version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloc-stdlib]]
-version = "0.2.2"
+version = "0.2.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy]]
@@ -625,11 +625,11 @@ version = "1.53.1-rc.29.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.bon]]
-version = "3.9.2"
+version = "3.9.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.bon-macros]]
-version = "3.9.2"
+version = "3.9.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.borsh]]
@@ -641,11 +641,11 @@ version = "1.6.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.brotli]]
-version = "8.0.3"
+version = "8.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.brotli-decompressor]]
-version = "5.0.1"
+version = "5.0.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.bs58]]
@@ -1305,7 +1305,7 @@ version = "0.13.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.h2]]
-version = "0.4.14"
+version = "0.4.15"
 criteria = "safe-to-deploy"
 
 [[exemptions.half]]
@@ -2125,7 +2125,7 @@ version = "4.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.redis]]
-version = "1.2.1"
+version = "1.2.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.redox_syscall]]
@@ -2625,7 +2625,15 @@ version = "0.17.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.time]]
-version = "0.3.47"
+version = "0.3.49"
+criteria = "safe-to-deploy"
+
+[[exemptions.time-core]]
+version = "0.1.9"
+criteria = "safe-to-deploy"
+
+[[exemptions.time-macros]]
+version = "0.2.29"
 criteria = "safe-to-deploy"
 
 [[exemptions.time-tz]]

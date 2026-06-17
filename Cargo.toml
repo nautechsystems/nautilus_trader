@@ -145,7 +145,7 @@ aws-lc-rs = { version = "1.17.0", default-features = false, features = [
 base64 = "0.22.1"
 bincode = { version = "2.0.1", features = ["serde"] }
 blake3 = { version = "1.8.5", default-features = false, features = ["std"] }
-bon = "3.9.2"
+bon = "3.9.3"
 bytes = { version = "1.11.1", features = ["serde"] }
 capnp = "0.25.5"
 chrono = { version = "0.4.45", default-features = false, features = [
@@ -222,7 +222,7 @@ rand = { version = "0.10.1", default-features = false, features = [
   "thread_rng",
 ] }
 redb = { version = "4.1.0", default-features = false }
-redis = { version = "1.2.2", default-features = false, features = [
+redis = { version = "1.2.3", default-features = false, features = [
   "connection-manager",
   "sentinel",
   "streams",
@@ -347,7 +347,7 @@ ibapi = "=3.0.1"
 itoa = "1.0.18"
 ryu = "1.0.23"
 serde_repr = "0.1.20"
-time = { version = "0.3.47", default-features = false, features = [
+time = { version = "0.3.49", default-features = false, features = [
   "macros",
   "parsing",
   "serde",
@@ -401,7 +401,7 @@ pyo3-stub-gen = { path = "patches/pyo3-stub-gen" }
 # -----------------------------------------------------------------------------
 [workspace.metadata.tools]
 cargo-audit = "0.22.2"
-cargo-deny = "0.19.8"
+cargo-deny = "0.19.9"
 cargo-edit = "0.13.11"
 cargo-fuzz = "0.13.2"
 cargo-llvm-cov = "0.8.7"

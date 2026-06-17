@@ -261,9 +261,10 @@ def normalize_gamma_market_to_clob_format(gamma_market: dict[str, Any]) -> dict[
         "active": gamma_market.get("active", False),
         "closed": gamma_market.get("closed", False),
         "archived": gamma_market.get("archived", False),
-        # Dates
-        "end_date_iso": gamma_market.get("endDateIso"),
-        "game_start_time": gamma_market.get("startDateIso"),
+        # Dates: `endDate`/`eventStartTime` carry the full timestamp; the `*Iso`
+        # variants are date-only and would truncate `expiration_ns` to midnight.
+        "end_date_iso": gamma_market.get("endDate") or gamma_market.get("endDateIso"),
+        "game_start_time": gamma_market.get("eventStartTime") or gamma_market.get("startDateIso"),
         # Fee structure
         "maker_base_fee": 0,
         "taker_base_fee": 0,

@@ -35,19 +35,21 @@ use nautilus_common::{
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
             SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates,
             SubscribeIndexPrices, SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes,
-            SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-            UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates,
+            UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
 use nautilus_core::{
     AtomicMap, MUTEX_POISONED, Params, UnixNanos,
-    datetime::datetime_to_unix_nanos,
+    datetime::{datetime_to_unix_nanos, unix_nanos_to_iso8601},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Bar, BarType, BookOrder, Data, DataType, FundingRateUpdate, OrderBookDeltas_API},
+    data::{
+        Bar, BarType, BookOrder, Data, DataType, FundingRateUpdate, OrderBookDeltas_API, TradeTick,
+    },
     enums::{BarAggregation, BookType, OrderSide},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -70,6 +72,7 @@ use crate::{
     http::{
         client::HyperliquidHttpClient,
         models::{HyperliquidCandle, HyperliquidFundingHistoryEntry, HyperliquidL2Book},
+        parse::parse_recent_trade,
     },
     websocket::{client::HyperliquidWebSocketClient, messages::NautilusWsMessage},
 };
@@ -989,15 +992,76 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        // Hyperliquid has no public trade-tape REST endpoint; real-time
-        // trades are available via the `trades` WebSocket channel and
-        // account-scoped fills via `userFills`/`userFillsByTime`, but
-        // market-wide trade history cannot be served.
-        anyhow::bail!(
-            "Historical trade requests are not supported by Hyperliquid for {}; \
-             subscribe to trades via WebSocket for live trade ticks",
-            request.instrument_id,
-        )
+        let instrument_id = request.instrument_id;
+        log::debug!("Requesting trades for {instrument_id}");
+
+        let instruments = self.instruments.load();
+        let instrument = instruments
+            .get(&instrument_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
+
+        let coin = instrument.raw_symbol().to_string();
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let request_id = request.request_id;
+        let params = request.params;
+        let clock = self.clock;
+        let limit = request.limit.map(|n| n.get());
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
+
+        self.spawn_task("request_trades", async move {
+            // `recentTrades` depends on the Hyperliquid indexer; nodes without it
+            // return HTTP 422. Treat that as "no coverage" and serve an empty
+            // response so the awaiting caller still completes.
+            let raw_trades = match http.info_recent_trades(&coin).await {
+                Ok(trades) => trades,
+                Err(e) if e.is_unprocessable_entity() => {
+                    log::warn!(
+                        "Recent trades endpoint unavailable for {instrument_id} \
+                         (requires the Hyperliquid indexer); sending empty response"
+                    );
+                    Vec::new()
+                }
+                Err(e) => {
+                    return Err(anyhow::Error::new(e))
+                        .with_context(|| format!("trades request failed for {instrument_id}"));
+                }
+            };
+
+            let mut trades: Vec<TradeTick> = Vec::with_capacity(raw_trades.len());
+            for raw in &raw_trades {
+                match parse_recent_trade(raw, &instrument) {
+                    Ok(trade) => trades.push(trade),
+                    Err(e) => log::warn!("Skipping recent trade for {instrument_id}: {e}"),
+                }
+            }
+            trades.sort_by_key(|trade| trade.ts_event);
+
+            let trades = filter_recent_trades(trades, start_nanos, end_nanos, limit, instrument_id);
+
+            log::debug!("Fetched {} trades for {instrument_id}", trades.len());
+
+            let response = DataResponse::Trades(TradesResponse::new(
+                request_id,
+                client_id,
+                instrument_id,
+                trades,
+                start_nanos,
+                end_nanos,
+                clock.get_time_ns(),
+                params,
+            ));
+
+            if let Err(e) = sender.send(DataEvent::Response(response)) {
+                log::error!("Failed to send trades response: {e}");
+            }
+            Ok(())
+        });
+
+        Ok(())
     }
 
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
@@ -1044,15 +1108,7 @@ impl DataClient for HyperliquidDataClient {
 
             let mut funding_rates: Vec<FundingRateUpdate> = entries
                 .iter()
-                .filter_map(
-                    |entry| match funding_entry_to_update(entry, instrument_id) {
-                        Ok(update) => Some(update),
-                        Err(e) => {
-                            log::warn!("Skipping funding history entry for {instrument_id}: {e}",);
-                            None
-                        }
-                    },
-                )
+                .map(|entry| funding_entry_to_update(entry, instrument_id))
                 .collect();
 
             if let Some(limit) = limit
@@ -1140,6 +1196,60 @@ impl DataClient for HyperliquidDataClient {
     }
 }
 
+// Applies the request window and limit to a snapshot of recent trades. `trades`
+// must be sorted ascending by `ts_event`. Returns the subset within `[start, end]`
+// (each bound unbounded when `None`), keeping at most the most recent `limit`
+// trades. Because `recentTrades` exposes only a recent snapshot with no historical
+// depth, a warning is logged when the request reaches below the snapshot's
+// coverage floor (its oldest trade).
+fn filter_recent_trades(
+    trades: Vec<TradeTick>,
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+    limit: Option<usize>,
+    instrument_id: InstrumentId,
+) -> Vec<TradeTick> {
+    let Some(floor) = trades.first().map(|trade| trade.ts_event) else {
+        return Vec::new();
+    };
+
+    if let Some(end) = end
+        && end < floor
+    {
+        log::warn!(
+            "Recent trades for {instrument_id} are entirely older than the requested window; \
+             snapshot only covers back to {}",
+            unix_nanos_to_iso8601(floor),
+        );
+        return Vec::new();
+    }
+
+    if let Some(start) = start
+        && start < floor
+    {
+        log::warn!(
+            "Recent trades for {instrument_id} only cover back to {}; \
+             the requested start is earlier and cannot be served",
+            unix_nanos_to_iso8601(floor),
+        );
+    }
+
+    let mut filtered: Vec<TradeTick> = trades
+        .into_iter()
+        .filter(|trade| start.is_none_or(|s| trade.ts_event >= s))
+        .filter(|trade| end.is_none_or(|e| trade.ts_event <= e))
+        .collect();
+
+    if let Some(limit) = limit
+        && filtered.len() > limit
+    {
+        // Keep the most recent `limit` trades; ascending order is preserved
+        filtered.drain(0..filtered.len() - limit);
+    }
+
+    filtered
+}
+
 // Levels with unparsable px/sz or non-positive size are skipped rather than
 // erroring; the snapshot's `time` field (ms) becomes `ts_event` after the
 // ms->ns conversion.
@@ -1172,37 +1282,35 @@ pub(crate) fn parse_l2_book_snapshot(
     };
 
     for (i, level) in bids.iter().enumerate() {
-        let Ok(px) = level.px.parse::<f64>() else {
+        if level.sz <= Decimal::ZERO {
+            continue;
+        }
+        let Ok(price) = Price::from_decimal_dp(level.px, price_precision) else {
             continue;
         };
-        let Ok(sz) = level.sz.parse::<f64>() else {
+        let Ok(size) = Quantity::from_decimal_dp(level.sz, size_precision) else {
             continue;
         };
 
-        if sz > 0.0 {
-            let price = Price::new(px, price_precision);
-            let size = Quantity::new(sz, size_precision);
-            let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
-            book.add(order, 0, i as u64, ts_event);
-        }
+        let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
+        book.add(order, 0, i as u64, ts_event);
     }
 
     let bids_len = bids.len();
 
     for (i, level) in asks.iter().enumerate() {
-        let Ok(px) = level.px.parse::<f64>() else {
+        if level.sz <= Decimal::ZERO {
+            continue;
+        }
+        let Ok(price) = Price::from_decimal_dp(level.px, price_precision) else {
             continue;
         };
-        let Ok(sz) = level.sz.parse::<f64>() else {
+        let Ok(size) = Quantity::from_decimal_dp(level.sz, size_precision) else {
             continue;
         };
 
-        if sz > 0.0 {
-            let price = Price::new(px, price_precision);
-            let size = Quantity::new(sz, size_precision);
-            let order = BookOrder::new(OrderSide::Sell, price, size, (bids_len + i) as u64);
-            book.add(order, 0, (bids_len + i) as u64, ts_event);
-        }
+        let order = BookOrder::new(OrderSide::Sell, price, size, (bids_len + i) as u64);
+        book.add(order, 0, (bids_len + i) as u64, ts_event);
     }
 
     log::info!(
@@ -1242,20 +1350,10 @@ pub(crate) fn parse_book_precision_params(
 pub(crate) fn funding_entry_to_update(
     entry: &HyperliquidFundingHistoryEntry,
     instrument_id: InstrumentId,
-) -> anyhow::Result<FundingRateUpdate> {
-    let rate: Decimal = entry
-        .funding_rate
-        .parse()
-        .with_context(|| format!("invalid fundingRate '{}'", entry.funding_rate))?;
+) -> FundingRateUpdate {
+    let rate = entry.funding_rate;
     let ts = UnixNanos::from(entry.time * 1_000_000);
-    Ok(FundingRateUpdate::new(
-        instrument_id,
-        rate,
-        Some(60),
-        None,
-        ts,
-        ts,
-    ))
+    FundingRateUpdate::new(instrument_id, rate, Some(60), None, ts, ts)
 }
 
 pub(crate) fn candle_to_bar(
@@ -1267,21 +1365,19 @@ pub(crate) fn candle_to_bar(
     let ts_init = UnixNanos::from(candle.timestamp * 1_000_000);
     let ts_event = ts_init;
 
-    let open = candle.open.parse::<f64>().context("parse open price")?;
-    let high = candle.high.parse::<f64>().context("parse high price")?;
-    let low = candle.low.parse::<f64>().context("parse low price")?;
-    let close = candle.close.parse::<f64>().context("parse close price")?;
-    let volume = candle.volume.parse::<f64>().context("parse volume")?;
+    let open = Price::from_decimal_dp(candle.open, price_precision)
+        .map_err(|e| anyhow::anyhow!("invalid open price: {e}"))?;
+    let high = Price::from_decimal_dp(candle.high, price_precision)
+        .map_err(|e| anyhow::anyhow!("invalid high price: {e}"))?;
+    let low = Price::from_decimal_dp(candle.low, price_precision)
+        .map_err(|e| anyhow::anyhow!("invalid low price: {e}"))?;
+    let close = Price::from_decimal_dp(candle.close, price_precision)
+        .map_err(|e| anyhow::anyhow!("invalid close price: {e}"))?;
+    let volume = Quantity::from_decimal_dp(candle.volume, size_precision)
+        .map_err(|e| anyhow::anyhow!("invalid volume: {e}"))?;
 
     Ok(Bar::new(
-        bar_type,
-        Price::new(open, price_precision),
-        Price::new(high, price_precision),
-        Price::new(low, price_precision),
-        Price::new(close, price_precision),
-        Quantity::new(volume, size_precision),
-        ts_event,
-        ts_init,
+        bar_type, open, high, low, close, volume, ts_event, ts_init,
     ))
 }
 
@@ -1355,6 +1451,7 @@ async fn request_bars_from_http(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::{enums::AggressorSide, identifiers::TradeId};
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use ustr::Ustr;
@@ -1370,13 +1467,13 @@ mod tests {
     fn test_funding_entry_to_update_parses_positive_rate() {
         let entry = HyperliquidFundingHistoryEntry {
             coin: Ustr::from("BTC"),
-            funding_rate: "0.0000125".to_string(),
-            premium: Some("0.00029005".to_string()),
+            funding_rate: dec!(0.0000125),
+            premium: Some(dec!(0.00029005)),
             time: 1769908800000,
         };
         let instrument_id = btc_perp_id();
 
-        let update = funding_entry_to_update(&entry, instrument_id).unwrap();
+        let update = funding_entry_to_update(&entry, instrument_id);
 
         assert_eq!(update.instrument_id, instrument_id);
         assert_eq!(update.rate, dec!(0.0000125));
@@ -1390,24 +1487,20 @@ mod tests {
     fn test_funding_entry_to_update_handles_negative_rate() {
         let entry = HyperliquidFundingHistoryEntry {
             coin: Ustr::from("BTC"),
-            funding_rate: "-0.0000081".to_string(),
+            funding_rate: dec!(-0.0000081),
             premium: None,
             time: 1769912400000,
         };
-        let update = funding_entry_to_update(&entry, btc_perp_id()).unwrap();
+        let update = funding_entry_to_update(&entry, btc_perp_id());
         assert_eq!(update.rate, dec!(-0.0000081));
     }
 
     #[rstest]
-    fn test_funding_entry_to_update_rejects_invalid_rate() {
-        let entry = HyperliquidFundingHistoryEntry {
-            coin: Ustr::from("BTC"),
-            funding_rate: "not-a-number".to_string(),
-            premium: None,
-            time: 1769912400000,
-        };
-        let result = funding_entry_to_update(&entry, btc_perp_id());
-        assert!(result.is_err());
+    fn test_funding_history_entry_rejects_invalid_rate() {
+        // The funding rate is now a Decimal field, so an invalid value is
+        // rejected at deserialization rather than by funding_entry_to_update.
+        let json = r#"{"coin":"BTC","fundingRate":"not-a-number","time":1769912400000}"#;
+        assert!(serde_json::from_str::<HyperliquidFundingHistoryEntry>(json).is_err());
     }
 
     #[rstest]
@@ -1450,13 +1543,13 @@ mod tests {
             load_test_data("http_funding_history.json");
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].coin.as_str(), "BTC");
-        assert_eq!(entries[0].funding_rate, "0.0000125");
-        assert_eq!(entries[0].premium.as_deref(), Some("0.00029005"));
+        assert_eq!(entries[0].funding_rate, dec!(0.0000125));
+        assert_eq!(entries[0].premium, Some(dec!(0.00029005)));
         assert!(entries[2].premium.is_none());
 
         let updates: Vec<FundingRateUpdate> = entries
             .iter()
-            .map(|e| funding_entry_to_update(e, btc_perp_id()).unwrap())
+            .map(|e| funding_entry_to_update(e, btc_perp_id()))
             .collect();
         assert_eq!(updates.len(), 3);
         assert_eq!(updates[0].rate, dec!(0.0000125));
@@ -1466,8 +1559,8 @@ mod tests {
 
     fn level(px: &str, sz: &str) -> crate::http::models::HyperliquidLevel {
         crate::http::models::HyperliquidLevel {
-            px: px.to_string(),
-            sz: sz.to_string(),
+            px: px.parse().unwrap(),
+            sz: sz.parse().unwrap(),
         }
     }
 
@@ -1545,18 +1638,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_l2_book_snapshot_skips_unparsable_levels() {
+    fn test_parse_l2_book_snapshot_skips_zero_size_levels() {
         let book_data = HyperliquidL2Book {
             coin: Ustr::from("BTC"),
             levels: vec![
-                vec![level("not-a-number", "1.0"), level("98449.00", "1.2")],
-                vec![level("98451.00", "garbage"), level("98452.00", "1.5")],
+                vec![level("98448.00", "0.0"), level("98449.00", "1.2")],
+                vec![level("98451.00", "0.0"), level("98452.00", "1.5")],
             ],
             time: 1769908800000,
         };
         let book = parse_l2_book_snapshot(&book_data, btc_perp_id(), 2, 4, None);
 
-        // Each side has one parseable level remaining.
+        // Zero-size levels are skipped; one priced level remains per side.
         assert_eq!(book.update_count, 2);
         assert_eq!(book.best_bid_price(), Some(Price::new(98449.00, 2)));
         assert_eq!(book.best_ask_price(), Some(Price::new(98452.00, 2)));
@@ -1574,5 +1667,153 @@ mod tests {
         assert_eq!(book.update_count, 0);
         assert!(book.best_bid_price().is_none());
         assert!(book.best_ask_price().is_none());
+    }
+
+    fn trade_at(ts_ns: u64, tid: u64) -> TradeTick {
+        TradeTick::new(
+            btc_perp_id(),
+            Price::from("104300.0"),
+            Quantity::from("0.01000"),
+            AggressorSide::Buyer,
+            TradeId::new(tid.to_string()),
+            UnixNanos::from(ts_ns),
+            UnixNanos::from(ts_ns),
+        )
+    }
+
+    // A snapshot of three trades at 1000/2000/3000ns, sorted ascending. The
+    // coverage floor (oldest) is 1000ns.
+    fn sample_trades() -> Vec<TradeTick> {
+        vec![trade_at(1000, 1), trade_at(2000, 2), trade_at(3000, 3)]
+    }
+
+    #[rstest]
+    fn test_recent_trades_fixture_parses_and_sorts() {
+        let raw: Vec<crate::http::models::HyperliquidRecentTrade> =
+            load_test_data("http_recent_trades_btc.json");
+        assert_eq!(raw.len(), 3);
+        // Fixture is newest-first as the venue returns it.
+        assert_eq!(raw[0].tid, 300003);
+
+        let meta: crate::http::models::PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let defs = crate::http::parse::parse_perp_instruments(&meta, 0).unwrap();
+        let instrument =
+            crate::http::parse::create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+
+        let mut trades: Vec<TradeTick> = raw
+            .iter()
+            .map(|t| parse_recent_trade(t, &instrument).unwrap())
+            .collect();
+        trades.sort_by_key(|trade| trade.ts_event);
+
+        // Ascending after sort: oldest tid first.
+        assert_eq!(trades[0].trade_id.to_string(), "300001");
+        assert_eq!(trades[2].trade_id.to_string(), "300003");
+        assert!(trades[0].ts_event <= trades[2].ts_event);
+        // Historical ticks carry ts_init == ts_event.
+        assert_eq!(trades[0].ts_init, trades[0].ts_event);
+    }
+
+    #[rstest]
+    fn test_filter_recent_trades_full_window_returns_all() {
+        let filtered = filter_recent_trades(sample_trades(), None, None, None, btc_perp_id());
+
+        assert_eq!(filtered.len(), 3);
+    }
+
+    #[rstest]
+    fn test_filter_recent_trades_empty_snapshot_returns_empty() {
+        let filtered = filter_recent_trades(
+            Vec::new(),
+            Some(UnixNanos::from(500)),
+            Some(UnixNanos::from(2500)),
+            None,
+            btc_perp_id(),
+        );
+
+        assert!(filtered.is_empty());
+    }
+
+    #[rstest]
+    fn test_filter_recent_trades_entirely_older_returns_empty() {
+        // Requested window ends before the snapshot floor (1000ns).
+        let filtered = filter_recent_trades(
+            sample_trades(),
+            Some(UnixNanos::from(100)),
+            Some(UnixNanos::from(500)),
+            None,
+            btc_perp_id(),
+        );
+
+        assert!(filtered.is_empty());
+    }
+
+    #[rstest]
+    fn test_filter_recent_trades_partial_keeps_in_range_subset() {
+        // Start (500ns) is below the floor; end (2500ns) drops the 3000ns trade.
+        let filtered = filter_recent_trades(
+            sample_trades(),
+            Some(UnixNanos::from(500)),
+            Some(UnixNanos::from(2500)),
+            None,
+            btc_perp_id(),
+        );
+
+        let ts: Vec<u64> = filtered.iter().map(|t| t.ts_event.as_u64()).collect();
+        assert_eq!(ts, vec![1000, 2000]);
+    }
+
+    #[rstest]
+    fn test_filter_recent_trades_within_window_filters_bounds() {
+        let filtered = filter_recent_trades(
+            sample_trades(),
+            Some(UnixNanos::from(1500)),
+            Some(UnixNanos::from(3000)),
+            None,
+            btc_perp_id(),
+        );
+
+        let ts: Vec<u64> = filtered.iter().map(|t| t.ts_event.as_u64()).collect();
+        assert_eq!(ts, vec![2000, 3000]);
+    }
+
+    #[rstest]
+    fn test_filter_recent_trades_limit_keeps_most_recent() {
+        let filtered = filter_recent_trades(sample_trades(), None, None, Some(2), btc_perp_id());
+
+        let ts: Vec<u64> = filtered.iter().map(|t| t.ts_event.as_u64()).collect();
+        assert_eq!(ts, vec![2000, 3000]);
+    }
+
+    #[rstest]
+    fn test_filter_recent_trades_end_equal_to_floor_keeps_floor_trade() {
+        // `end` exactly on the floor (1000ns) is inclusive: not "entirely
+        // older". Distinguishes `end < floor` from `end <= floor`.
+        let filtered = filter_recent_trades(
+            sample_trades(),
+            None,
+            Some(UnixNanos::from(1000)),
+            None,
+            btc_perp_id(),
+        );
+
+        let ts: Vec<u64> = filtered.iter().map(|t| t.ts_event.as_u64()).collect();
+        assert_eq!(ts, vec![1000]);
+    }
+
+    #[rstest]
+    fn test_filter_recent_trades_bounds_are_inclusive() {
+        // `start`/`end` landing exactly on a trade's ts_event keep that trade.
+        // Distinguishes `>=`/`<=` from strict `>`/`<`.
+        let filtered = filter_recent_trades(
+            sample_trades(),
+            Some(UnixNanos::from(2000)),
+            Some(UnixNanos::from(3000)),
+            None,
+            btc_perp_id(),
+        );
+
+        let ts: Vec<u64> = filtered.iter().map(|t| t.ts_event.as_u64()).collect();
+        assert_eq!(ts, vec![2000, 3000]);
     }
 }

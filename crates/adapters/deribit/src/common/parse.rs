@@ -234,6 +234,7 @@ fn parse_spot_instrument(
         Some(maker_fee),
         Some(taker_fee),
         None,
+        None,
         ts_event,
         ts_init,
     );
@@ -296,6 +297,7 @@ fn parse_perpetual_instrument(
         None, // margin_maint
         Some(maker_fee),
         Some(taker_fee),
+        None,
         None,
         ts_event,
         ts_init,
@@ -368,6 +370,7 @@ fn parse_future_instrument(
         None, // margin_maint
         Some(maker_fee),
         Some(taker_fee),
+        None,
         None,
         ts_event,
         ts_init,
@@ -454,6 +457,7 @@ fn parse_option_instrument(
         Some(maker_fee),
         Some(taker_fee),
         None,
+        None,
         ts_event,
         ts_init,
     );
@@ -495,6 +499,7 @@ fn parse_option_combo_instrument(
         Some(spread.maker_fee),
         Some(spread.taker_fee),
         None,
+        None,
         ts_event,
         ts_init,
     );
@@ -534,6 +539,7 @@ fn parse_future_combo_instrument(
         None,
         Some(spread.maker_fee),
         Some(spread.taker_fee),
+        None,
         None,
         ts_event,
         ts_init,

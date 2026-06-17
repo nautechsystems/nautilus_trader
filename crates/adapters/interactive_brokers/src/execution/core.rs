@@ -1706,6 +1706,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let exec_sender = get_exec_event_sender();
         let clock = get_atomic_clock_realtime();
         let account_id = self.core.account_id;
+        let request_timeout_secs = self.config.request_timeout;
 
         let handle = get_runtime().spawn(async move {
             if let Err(e) = Self::handle_cancel_all_orders_async(
@@ -1718,6 +1719,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 &exec_sender,
                 clock.get_time_ns(),
                 account_id,
+                request_timeout_secs,
                 orders_to_cancel,
             )
             .await
@@ -1976,13 +1978,9 @@ impl InteractiveBrokersExecutionClient {
                     .context("No IB order ID mapping found for client order ID")?,
             )
         };
-        let ib_order_id = Self::resolve_ib_order_id_for_cancel(
-            client,
-            order_selector,
-            account_id,
-            request_timeout_secs,
-        )
-        .await?;
+        let ib_order_id =
+            Self::resolve_ib_order_id(client, order_selector, account_id, request_timeout_secs)
+                .await?;
 
         let _cancel_subscription = client
             .cancel_order(ib_order_id, "")
@@ -2004,7 +2002,7 @@ impl InteractiveBrokersExecutionClient {
         Ok(())
     }
 
-    async fn resolve_ib_order_id_for_cancel(
+    async fn resolve_ib_order_id(
         client: &Arc<Client>,
         order_selector: IbOrderSelector,
         account_id: AccountId,
@@ -2039,14 +2037,14 @@ impl InteractiveBrokersExecutionClient {
 
             if data.order_id == 0 {
                 anyhow::bail!(
-                    "Cannot cancel PERM-{target_perm_id}: matching open order has no IB order_id"
+                    "Cannot resolve PERM-{target_perm_id}: matching open order has no IB order_id"
                 );
             }
 
             return Ok(data.order_id);
         }
 
-        anyhow::bail!("No open order found for PERM-{target_perm_id}")
+        anyhow::bail!("Cannot resolve PERM-{target_perm_id}: no matching open order found")
     }
 
     async fn handle_cancel_all_orders_async(
@@ -2059,10 +2057,11 @@ impl InteractiveBrokersExecutionClient {
         exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
         ts_init: UnixNanos,
         account_id: AccountId,
+        request_timeout_secs: u64,
         orders_to_cancel: Vec<(ClientOrderId, Option<VenueOrderId>)>,
     ) -> anyhow::Result<()> {
-        // Get all IB order IDs first, then drop the guard before awaiting
-        let ib_order_ids: Vec<(ClientOrderId, i32)> = {
+        // Get all IB order selectors first, then drop the guard before awaiting
+        let order_selectors: Vec<(ClientOrderId, IbOrderSelector)> = {
             let order_id_map_guard = order_id_map
                 .lock()
                 .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?;
@@ -2071,23 +2070,44 @@ impl InteractiveBrokersExecutionClient {
                 .into_iter()
                 .filter_map(|(client_order_id, venue_order_id)| {
                     if let Some(venue_order_id) = venue_order_id {
-                        return venue_order_id
-                            .as_str()
-                            .parse::<i32>()
-                            .ok()
-                            .map(|ib_order_id| (client_order_id, ib_order_id));
+                        match IbOrderSelector::from_venue_order_id(&venue_order_id) {
+                            Ok(order_selector) => return Some((client_order_id, order_selector)),
+                            Err(e) => {
+                                tracing::error!(
+                                    "Failed resolve cancel-all order {} from venue order ID {}: {e}",
+                                    client_order_id,
+                                    venue_order_id
+                                );
+                                return None;
+                            }
+                        }
                     }
 
                     order_id_map_guard
                         .get(&client_order_id)
                         .copied()
-                        .map(|ib_order_id| (client_order_id, ib_order_id))
+                        .map(|ib_order_id| (client_order_id, IbOrderSelector::OrderId(ib_order_id)))
                 })
                 .collect()
         };
 
         // Now cancel each order (guard is dropped, so we can await)
-        for (client_order_id, ib_order_id) in ib_order_ids {
+        for (client_order_id, order_selector) in order_selectors {
+            let ib_order_id = match Self::resolve_ib_order_id(
+                client,
+                order_selector,
+                account_id,
+                request_timeout_secs,
+            )
+            .await
+            {
+                Ok(ib_order_id) => ib_order_id,
+                Err(e) => {
+                    tracing::error!("Failed resolve cancel-all order {client_order_id}: {e}");
+                    continue;
+                }
+            };
+
             if let Err(e) = client.cancel_order(ib_order_id, "").await {
                 tracing::error!(
                     "Failed to cancel order {} (IB order ID: {}): {e}",

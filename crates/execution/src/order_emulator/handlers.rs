@@ -73,7 +73,18 @@ impl Handler<OrderEventAny> for OrderEmulatorOnEventHandler {
 
     fn handle(&self, event: &OrderEventAny) {
         if let Some(emulator) = self.emulator.upgrade() {
-            emulator.borrow_mut().on_event(event);
+            match emulator.try_borrow_mut() {
+                Ok(mut emulator) => emulator.on_event(event),
+                Err(_) => {
+                    log::debug!(
+                        concat!(
+                            "Skipping reentrant order event while OrderEmulator is already handling ",
+                            "a command or event; expected for self-published emulator events: {}"
+                        ),
+                        event
+                    );
+                }
+            }
         }
     }
 }

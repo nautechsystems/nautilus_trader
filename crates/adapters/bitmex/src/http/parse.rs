@@ -235,6 +235,7 @@ pub fn parse_index_instrument(
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
+        None, // tick_scheme
         None, // info
         ts_init,
         ts_init,
@@ -327,6 +328,7 @@ pub fn parse_spot_instrument(
         Some(margin_maint),
         Some(maker_fee),
         Some(taker_fee),
+        None,
         None, // info
         ts_event,
         ts_init,
@@ -425,6 +427,7 @@ pub fn parse_perpetual_instrument(
         Some(margin_maint),
         Some(maker_fee),
         Some(taker_fee),
+        None,
         None, // info
         ts_event,
         ts_init,
@@ -531,6 +534,7 @@ pub fn parse_futures_instrument(
         Some(margin_maint),
         Some(maker_fee),
         Some(taker_fee),
+        None,
         None, // info
         ts_event,
         ts_init,
@@ -636,6 +640,7 @@ pub fn parse_crypto_futures_spread_instrument(
         Some(margin_maint),
         Some(maker_fee),
         Some(taker_fee),
+        None,
         None,
         ts_event,
         ts_init,

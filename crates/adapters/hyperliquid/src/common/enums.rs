@@ -847,6 +847,8 @@ pub enum HyperliquidInfoRequestType {
     L2Book,
     /// Get all mid prices.
     AllMids,
+    /// Get recent public trades for a coin.
+    RecentTrades,
     /// Get user fills.
     UserFills,
     /// Get user fills by time range.
@@ -909,6 +911,7 @@ impl HyperliquidInfoRequestType {
             Self::OutcomeMeta => "outcomeMeta",
             Self::L2Book => "l2Book",
             Self::AllMids => "allMids",
+            Self::RecentTrades => "recentTrades",
             Self::UserFills => "userFills",
             Self::UserFillsByTime => "userFillsByTime",
             Self::OrderStatus => "orderStatus",
@@ -1142,6 +1145,14 @@ mod tests {
         assert_eq!(
             HyperliquidInfoRequestType::OutcomeMeta.as_str(),
             "outcomeMeta"
+        );
+    }
+
+    #[rstest]
+    fn test_info_request_type_recent_trades_as_str() {
+        assert_eq!(
+            HyperliquidInfoRequestType::RecentTrades.as_str(),
+            "recentTrades"
         );
     }
 

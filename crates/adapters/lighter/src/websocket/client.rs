@@ -43,6 +43,7 @@ use crate::{
     common::{
         consts::{HEARTBEAT_INTERVAL, RECONNECT_BASE_BACKOFF, RECONNECT_MAX_BACKOFF},
         enums::{LighterCandleResolution, LighterEnvironment},
+        rate_limit::ws_message_rate_limiter,
         symbol::MarketRegistry,
         urls::lighter_ws_url,
     },
@@ -275,8 +276,14 @@ impl LighterWebSocketClient {
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
         };
-        let client =
-            WebSocketClient::connect(cfg, Some(message_handler), None, None, vec![], None).await?;
+        let client = WebSocketClient::connect_with_rate_limiter(
+            cfg,
+            Some(message_handler),
+            None,
+            None,
+            ws_message_rate_limiter(&self.url),
+        )
+        .await?;
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
@@ -323,6 +330,7 @@ impl LighterWebSocketClient {
         let task = get_runtime().spawn(async move {
             let mut handler =
                 FeedHandler::new(Arc::clone(&signal), cmd_rx, raw_rx, out_tx, subscriptions);
+            handler.set_command_sender(cmd_tx_for_reconnect.clone());
 
             let restore_subscriptions = || {
                 if subscription_args.is_empty() {
@@ -966,6 +974,7 @@ mod tests {
             4,
             Price::from("0.01"),
             Quantity::from("0.0001"),
+            None,
             None,
             None,
             None,

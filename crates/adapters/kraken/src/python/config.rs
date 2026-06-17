@@ -45,6 +45,7 @@ impl KrakenDataClientConfig {
         proxy_url = None,
         timeout_secs = None,
         heartbeat_interval_secs = None,
+        ws_idle_timeout_ms = None,
         max_requests_per_second = None,
     ))]
     #[expect(clippy::too_many_arguments)]
@@ -61,6 +62,7 @@ impl KrakenDataClientConfig {
         proxy_url: Option<String>,
         timeout_secs: Option<u64>,
         heartbeat_interval_secs: Option<u64>,
+        ws_idle_timeout_ms: Option<u64>,
         max_requests_per_second: Option<u32>,
     ) -> Self {
         let defaults = Self::default();
@@ -78,6 +80,7 @@ impl KrakenDataClientConfig {
             timeout_secs: timeout_secs.unwrap_or(defaults.timeout_secs),
             heartbeat_interval_secs: heartbeat_interval_secs
                 .unwrap_or(defaults.heartbeat_interval_secs),
+            ws_idle_timeout_ms: ws_idle_timeout_ms.unwrap_or(defaults.ws_idle_timeout_ms),
             max_requests_per_second,
             transport_backend: defaults.transport_backend,
         }

@@ -102,6 +102,7 @@ fn binary_option(token_id: &str, outcome: &str) -> InstrumentAny {
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     );

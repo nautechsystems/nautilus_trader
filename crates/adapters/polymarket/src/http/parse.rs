@@ -232,6 +232,7 @@ pub fn create_instrument_from_def(
         None, // margin_maint
         def.maker_fee,
         def.taker_fee,
+        None,
         Some(info),
         ts_init,
         ts_init,
@@ -298,6 +299,7 @@ pub fn rebuild_instrument_with_tick_size(
         Some(bo.margin_maint),
         Some(bo.maker_fee),
         Some(bo.taker_fee),
+        None,
         bo.info.clone(),
         ts_event,
         ts_init,

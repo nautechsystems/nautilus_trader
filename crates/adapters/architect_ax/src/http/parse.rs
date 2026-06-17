@@ -286,6 +286,7 @@ pub fn parse_perp_instrument(
         Some(margin_maint),
         Some(maker_fee),
         Some(taker_fee),
+        None,
         Some(info),
         ts_event,
         ts_init,

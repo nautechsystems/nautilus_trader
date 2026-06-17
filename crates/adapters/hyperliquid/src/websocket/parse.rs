@@ -15,8 +15,6 @@
 
 //! Parsing helpers for Hyperliquid WebSocket payloads.
 
-use std::str::FromStr;
-
 use anyhow::Context;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
@@ -51,29 +49,21 @@ use crate::{
 };
 
 fn parse_price(
-    price_str: &str,
+    value: Decimal,
     instrument: &InstrumentAny,
     field_name: &str,
 ) -> anyhow::Result<Price> {
-    let decimal = Decimal::from_str(price_str)
-        .with_context(|| format!("Failed to parse price from '{price_str}' for {field_name}"))?;
-
-    Price::from_decimal_dp(decimal, instrument.price_precision())
-        .with_context(|| format!("Failed to create price from '{price_str}' for {field_name}"))
+    Price::from_decimal_dp(value, instrument.price_precision())
+        .with_context(|| format!("Failed to create price from '{value}' for {field_name}"))
 }
 
 fn parse_quantity(
-    quantity_str: &str,
+    value: Decimal,
     instrument: &InstrumentAny,
     field_name: &str,
 ) -> anyhow::Result<Quantity> {
-    let decimal = Decimal::from_str(quantity_str).with_context(|| {
-        format!("Failed to parse quantity from '{quantity_str}' for {field_name}")
-    })?;
-
-    Quantity::from_decimal_dp(decimal.abs(), instrument.size_precision()).with_context(|| {
-        format!("Failed to create quantity from '{quantity_str}' for {field_name}")
-    })
+    Quantity::from_decimal_dp(value.abs(), instrument.size_precision())
+        .with_context(|| format!("Failed to create quantity from '{value}' for {field_name}"))
 }
 
 /// Parses a WebSocket trade frame into a [`TradeTick`].
@@ -82,8 +72,8 @@ pub fn parse_ws_trade_tick(
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<TradeTick> {
-    let price = parse_price(&trade.px, instrument, "trade.px")?;
-    let size = parse_quantity(&trade.sz, instrument, "trade.sz")?;
+    let price = parse_price(trade.px, instrument, "trade.px")?;
+    let size = parse_quantity(trade.sz, instrument, "trade.sz")?;
     let aggressor = AggressorSide::from(trade.side);
     let trade_id = TradeId::new_checked(trade.tid.to_string())
         .context("invalid trade identifier in Hyperliquid trade message")?;
@@ -116,8 +106,8 @@ pub fn parse_ws_order_book_deltas(
     deltas.push(OrderBookDelta::clear(instrument.id(), 0, ts_event, ts_init));
 
     for level in bids {
-        let price = parse_price(&level.px, instrument, "book.bid.px")?;
-        let size = parse_quantity(&level.sz, instrument, "book.bid.sz")?;
+        let price = parse_price(level.px, instrument, "book.bid.px")?;
+        let size = parse_quantity(level.sz, instrument, "book.bid.sz")?;
 
         if !size.is_positive() {
             continue;
@@ -139,8 +129,8 @@ pub fn parse_ws_order_book_deltas(
     }
 
     for level in asks {
-        let price = parse_price(&level.px, instrument, "book.ask.px")?;
-        let size = parse_quantity(&level.sz, instrument, "book.ask.sz")?;
+        let price = parse_price(level.px, instrument, "book.ask.px")?;
+        let size = parse_quantity(level.sz, instrument, "book.ask.sz")?;
 
         if !size.is_positive() {
             continue;
@@ -188,8 +178,8 @@ pub fn parse_ws_order_book_depth10(
     let raw_asks = book.levels.get(1).map_or(&[][..], |v| v.as_slice());
 
     for (i, level) in raw_bids.iter().take(DEPTH10_LEN).enumerate() {
-        let price = parse_price(&level.px, instrument, "book.bid.px")?;
-        let size = parse_quantity(&level.sz, instrument, "book.bid.sz")?;
+        let price = parse_price(level.px, instrument, "book.bid.px")?;
+        let size = parse_quantity(level.sz, instrument, "book.bid.sz")?;
         bids[i] = BookOrder::new(OrderSide::Buy, price, size, 0);
         bid_counts[i] = level.n;
     }
@@ -204,8 +194,8 @@ pub fn parse_ws_order_book_depth10(
     }
 
     for (i, level) in raw_asks.iter().take(DEPTH10_LEN).enumerate() {
-        let price = parse_price(&level.px, instrument, "book.ask.px")?;
-        let size = parse_quantity(&level.sz, instrument, "book.ask.sz")?;
+        let price = parse_price(level.px, instrument, "book.ask.px")?;
+        let size = parse_quantity(level.sz, instrument, "book.ask.sz")?;
         asks[i] = BookOrder::new(OrderSide::Sell, price, size, 0);
         ask_counts[i] = level.n;
     }
@@ -245,10 +235,10 @@ pub fn parse_ws_quote_tick(
         .as_ref()
         .context("BBO message missing ask level")?;
 
-    let bid_price = parse_price(&bid_level.px, instrument, "bbo.bid.px")?;
-    let ask_price = parse_price(&ask_level.px, instrument, "bbo.ask.px")?;
-    let bid_size = parse_quantity(&bid_level.sz, instrument, "bbo.bid.sz")?;
-    let ask_size = parse_quantity(&ask_level.sz, instrument, "bbo.ask.sz")?;
+    let bid_price = parse_price(bid_level.px, instrument, "bbo.bid.px")?;
+    let ask_price = parse_price(ask_level.px, instrument, "bbo.ask.px")?;
+    let bid_size = parse_quantity(bid_level.sz, instrument, "bbo.bid.sz")?;
+    let ask_size = parse_quantity(ask_level.sz, instrument, "bbo.ask.sz")?;
 
     let ts_event = millis_to_nanos(bbo.time)?;
 
@@ -271,11 +261,11 @@ pub fn parse_ws_candle(
     bar_type: &BarType,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Bar> {
-    let open = parse_price(&candle.o, instrument, "candle.o")?;
-    let high = parse_price(&candle.h, instrument, "candle.h")?;
-    let low = parse_price(&candle.l, instrument, "candle.l")?;
-    let close = parse_price(&candle.c, instrument, "candle.c")?;
-    let volume = parse_quantity(&candle.v, instrument, "candle.v")?;
+    let open = parse_price(candle.o, instrument, "candle.o")?;
+    let high = parse_price(candle.h, instrument, "candle.h")?;
+    let low = parse_price(candle.l, instrument, "candle.l")?;
+    let close = parse_price(candle.c, instrument, "candle.c")?;
+    let volume = parse_quantity(candle.v, instrument, "candle.v")?;
 
     let ts_event = millis_to_nanos(candle.t)?;
 
@@ -300,7 +290,7 @@ pub fn parse_ws_order_status_report(
 
     // Determine order type based on trigger info
     let is_conditional =
-        is_conditional_order_data(order.order.trigger_px.as_deref(), order.order.tpsl.as_ref());
+        is_conditional_order_data(order.order.trigger_px, order.order.tpsl.as_ref());
     let order_type = if is_conditional {
         if let (Some(is_market), Some(tpsl)) = (order.order.is_market, order.order.tpsl.as_ref()) {
             parse_trigger_order_type(is_market, tpsl)
@@ -318,14 +308,14 @@ pub fn parse_ws_order_status_report(
     let order_status = OrderStatus::from(order.status);
 
     // orig_sz is the original order quantity, sz is the remaining quantity
-    let orig_qty = parse_quantity(&order.order.orig_sz, instrument, "order.orig_sz")?;
-    let remaining_qty = parse_quantity(&order.order.sz, instrument, "order.sz")?;
+    let orig_qty = parse_quantity(order.order.orig_sz, instrument, "order.orig_sz")?;
+    let remaining_qty = parse_quantity(order.order.sz, instrument, "order.sz")?;
     let filled_qty = Quantity::from_raw(
         orig_qty.raw.saturating_sub(remaining_qty.raw),
         instrument.size_precision(),
     );
 
-    let price = parse_price(&order.order.limit_px, instrument, "order.limitPx")?;
+    let price = parse_price(order.order.limit_px, instrument, "order.limitPx")?;
 
     let ts_accepted = millis_to_nanos(order.order.timestamp)?;
     let ts_last = millis_to_nanos(order.status_timestamp)?;
@@ -361,8 +351,8 @@ pub fn parse_ws_order_status_report(
 
     report = report.with_price(price);
 
-    if is_conditional && let Some(ref trigger_px_str) = order.order.trigger_px {
-        let trigger_price = parse_price(trigger_px_str, instrument, "order.triggerPx")?;
+    if is_conditional && let Some(trigger_px) = order.order.trigger_px {
+        let trigger_price = parse_price(trigger_px, instrument, "order.triggerPx")?;
         report = report.with_trigger_price(trigger_price);
     }
 
@@ -405,23 +395,22 @@ pub fn parse_ws_fill_report(
     let trade_id = make_fill_trade_id(
         &fill.hash,
         fill.oid,
-        &fill.px,
-        &fill.sz,
+        fill.px,
+        fill.sz,
         fill.time,
-        &fill.start_position,
+        fill.start_position,
     );
 
     let order_side = OrderSide::from(fill.side);
-    let last_qty = parse_quantity(&fill.sz, instrument, "fill.sz")?;
-    let last_px = parse_price(&fill.px, instrument, "fill.px")?;
+    let last_qty = parse_quantity(fill.sz, instrument, "fill.sz")?;
+    let last_px = parse_price(fill.px, instrument, "fill.px")?;
     let liquidity_side = if fill.crossed {
         LiquiditySide::Taker
     } else {
         LiquiditySide::Maker
     };
 
-    let fee_amount = Decimal::from_str(&fill.fee)
-        .with_context(|| format!("Failed to parse fee='{}' as decimal", fill.fee))?;
+    let fee_amount = fill.fee;
 
     let commission_currency =
         crate::http::parse::resolve_fee_currency(fill.fee_token.as_str(), fee_amount, instrument)?;
@@ -469,19 +458,17 @@ pub fn parse_ws_asset_context(
 
     match ctx {
         WsActiveAssetCtxData::Perp { coin: _, ctx } => {
-            let mark_price = parse_price(&ctx.shared.mark_px, instrument, "ctx.mark_px")?;
+            let mark_price = parse_price(ctx.shared.mark_px, instrument, "ctx.mark_px")?;
             let mark_price_update =
                 MarkPriceUpdate::new(instrument_id, mark_price, ts_init, ts_init);
 
-            let index_price = parse_price(&ctx.oracle_px, instrument, "ctx.oracle_px")?;
+            let index_price = parse_price(ctx.oracle_px, instrument, "ctx.oracle_px")?;
             let index_price_update =
                 IndexPriceUpdate::new(instrument_id, index_price, ts_init, ts_init);
 
-            let funding_rate_decimal = Decimal::from_str(&ctx.funding)
-                .with_context(|| format!("Failed to parse funding rate from '{}'", ctx.funding))?;
             let funding_rate_update = FundingRateUpdate::new(
                 instrument_id,
-                funding_rate_decimal,
+                ctx.funding,
                 Some(60), // Hyperliquid exchanges funding hourly
                 None,     // Hyperliquid doesn't provide next funding time in this message
                 ts_init,
@@ -495,7 +482,7 @@ pub fn parse_ws_asset_context(
             ))
         }
         WsActiveAssetCtxData::Spot { coin: _, ctx } => {
-            let mark_price = parse_price(&ctx.shared.mark_px, instrument, "ctx.mark_px")?;
+            let mark_price = parse_price(ctx.shared.mark_px, instrument, "ctx.mark_px")?;
             let mark_price_update =
                 MarkPriceUpdate::new(instrument_id, mark_price, ts_init, ts_init);
 
@@ -509,16 +496,13 @@ pub fn parse_ws_asset_context(
 /// The caller is responsible for restricting this to the perpetual branch; spot
 /// `activeAssetCtx` payloads carry no open interest field.
 pub fn parse_ws_open_interest(
-    open_interest: &str,
+    open_interest: Decimal,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<HyperliquidOpenInterest> {
-    let open_interest_decimal = Decimal::from_str(open_interest)
-        .with_context(|| format!("failed to parse open interest from '{open_interest}'"))?;
-
     Ok(HyperliquidOpenInterest::new(
         instrument.id(),
-        open_interest_decimal,
+        open_interest,
         ts_init,
         ts_init,
     ))
@@ -526,12 +510,15 @@ pub fn parse_ws_open_interest(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use nautilus_model::{
         identifiers::{InstrumentId, Symbol},
         instruments::CryptoPerpetual,
         types::currency::Currency,
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use super::*;
@@ -576,6 +563,7 @@ mod tests {
             None, // margin_maint
             None, // maker_fee
             None, // taker_fee
+            None, // tick_scheme
             None, // info
             UnixNanos::default(),
             UnixNanos::default(),
@@ -592,15 +580,15 @@ mod tests {
             order: WsBasicOrderData {
                 coin: Ustr::from("BTC"),
                 side: HyperliquidSide::Buy,
-                limit_px: "50000.0".to_string(),
-                sz: "0.5".to_string(),
+                limit_px: dec!(50000.0),
+                sz: dec!(0.5),
                 oid: 12345,
                 timestamp: 1704470400000,
-                orig_sz: "1.0".to_string(),
+                orig_sz: dec!(1.0),
                 cloid: Some("test-order-1".to_string()),
                 tif: Some(HyperliquidTimeInForce::Alo),
                 reduce_only: Some(true),
-                trigger_px: Some("0.0".to_string()),
+                trigger_px: Some(dec!(0.0)),
                 is_market: None,
                 tpsl: None,
                 trigger_activated: None,
@@ -631,17 +619,17 @@ mod tests {
 
         let fill_data = WsFillData {
             coin: Ustr::from("BTC"),
-            px: "50000.0".to_string(),
-            sz: "0.1".to_string(),
+            px: dec!(50000.0),
+            sz: dec!(0.1),
             side: HyperliquidSide::Buy,
             time: 1704470400000,
-            start_position: "0.0".to_string(),
+            start_position: dec!(0.0),
             dir: HyperliquidFillDirection::OpenLong,
-            closed_pnl: "0.0".to_string(),
+            closed_pnl: dec!(0.0),
             hash: "0xabc123".to_string(),
             oid: 12345,
             crossed: true,
-            fee: "0.05".to_string(),
+            fee: dec!(0.05),
             tid: 98765,
             liquidation: None,
             fee_token: Ustr::from("USDC"),
@@ -666,21 +654,21 @@ mod tests {
 
         let fill_data = WsFillData {
             coin: Ustr::from("BTC"),
-            px: "50000.0".to_string(),
-            sz: "0.1".to_string(),
+            px: dec!(50000.0),
+            sz: dec!(0.1),
             side: HyperliquidSide::Sell,
             time: 1704470400000,
-            start_position: "0.1".to_string(),
+            start_position: dec!(0.1),
             dir: HyperliquidFillDirection::CloseLong,
-            closed_pnl: "-25.0".to_string(),
+            closed_pnl: dec!(-25.0),
             hash: "0xdef456".to_string(),
             oid: 54321,
             crossed: true,
-            fee: "0.0".to_string(),
+            fee: dec!(0.0),
             tid: 12345,
             liquidation: Some(FillLiquidationData {
                 liquidated_user: Some("0xuser".to_string()),
-                mark_px: 50_000.0,
+                mark_px: dec!(50000.0),
                 method: HyperliquidLiquidationMethod::Market,
             }),
             fee_token: Ustr::from("USDC"),
@@ -721,17 +709,17 @@ mod tests {
 
         let fill_data = WsFillData {
             coin: Ustr::from("#990"),
-            px: "0.4500".to_string(),
-            sz: "1500.00".to_string(),
+            px: dec!(0.4500),
+            sz: dec!(1500.00),
             side: HyperliquidSide::Buy,
             time: 1_704_470_400_000,
-            start_position: "0.00".to_string(),
+            start_position: dec!(0.00),
             dir: HyperliquidFillDirection::OpenLong,
-            closed_pnl: "0.0".to_string(),
+            closed_pnl: dec!(0.0),
             hash: "0xabc789".to_string(),
             oid: 42_42,
             crossed: true,
-            fee: "0.0".to_string(),
+            fee: dec!(0.0),
             tid: 7777,
             liquidation: None,
             fee_token: Ustr::from("+990"),
@@ -765,13 +753,13 @@ mod tests {
             coin: Ustr::from("BTC"),
             levels: [
                 vec![WsLevelData {
-                    px: "50000.0".to_string(),
-                    sz: "1.0".to_string(),
+                    px: dec!(50000.0),
+                    sz: dec!(1.0),
                     n: 1,
                 }],
                 vec![WsLevelData {
-                    px: "50001.0".to_string(),
-                    sz: "2.0".to_string(),
+                    px: dec!(50001.0),
+                    sz: dec!(2.0),
                     n: 1,
                 }],
             ],
@@ -807,30 +795,30 @@ mod tests {
             levels: [
                 vec![
                     WsLevelData {
-                        px: "100.00".to_string(),
-                        sz: "1.0".to_string(),
+                        px: dec!(100.00),
+                        sz: dec!(1.0),
                         n: 2,
                     },
                     WsLevelData {
-                        px: "99.99".to_string(),
-                        sz: "2.0".to_string(),
+                        px: dec!(99.99),
+                        sz: dec!(2.0),
                         n: 3,
                     },
                     WsLevelData {
-                        px: "99.98".to_string(),
-                        sz: "3.0".to_string(),
+                        px: dec!(99.98),
+                        sz: dec!(3.0),
                         n: 1,
                     },
                 ],
                 vec![
                     WsLevelData {
-                        px: "100.01".to_string(),
-                        sz: "1.5".to_string(),
+                        px: dec!(100.01),
+                        sz: dec!(1.5),
                         n: 1,
                     },
                     WsLevelData {
-                        px: "100.02".to_string(),
-                        sz: "2.5".to_string(),
+                        px: dec!(100.02),
+                        sz: dec!(2.5),
                         n: 4,
                     },
                 ],
@@ -885,8 +873,8 @@ mod tests {
         let mk_levels = |base: f64, n: usize| -> Vec<WsLevelData> {
             (0..n)
                 .map(|i| WsLevelData {
-                    px: format!("{:.2}", base - i as f64 * 0.01),
-                    sz: "1.0".to_string(),
+                    px: Decimal::from_str(&format!("{:.2}", base - i as f64 * 0.01)).unwrap(),
+                    sz: dec!(1.0),
                     n: 1,
                 })
                 .collect()
@@ -922,17 +910,17 @@ mod tests {
             coin: Ustr::from("BTC"),
             ctx: PerpsAssetCtx {
                 shared: SharedAssetCtx {
-                    day_ntl_vlm: "1000000.0".to_string(),
-                    prev_day_px: "49000.0".to_string(),
-                    mark_px: "50000.0".to_string(),
-                    mid_px: Some("50001.0".to_string()),
+                    day_ntl_vlm: dec!(1000000.0),
+                    prev_day_px: dec!(49000.0),
+                    mark_px: dec!(50000.0),
+                    mid_px: Some(dec!(50001.0)),
                     impact_pxs: Some(vec!["50000.0".to_string(), "50002.0".to_string()]),
-                    day_base_vlm: Some("100.0".to_string()),
+                    day_base_vlm: Some(dec!(100.0)),
                 },
-                funding: "0.0001".to_string(),
-                open_interest: "100000.0".to_string(),
-                oracle_px: "50005.0".to_string(),
-                premium: Some("-0.0001".to_string()),
+                funding: dec!(0.0001),
+                open_interest: dec!(100000.0),
+                oracle_px: dec!(50005.0),
+                premium: Some(dec!(-0.0001)),
             },
         };
 
@@ -965,14 +953,14 @@ mod tests {
             coin: Ustr::from("BTC"),
             ctx: SpotAssetCtx {
                 shared: SharedAssetCtx {
-                    day_ntl_vlm: "1000000.0".to_string(),
-                    prev_day_px: "49000.0".to_string(),
-                    mark_px: "50000.0".to_string(),
-                    mid_px: Some("50001.0".to_string()),
+                    day_ntl_vlm: dec!(1000000.0),
+                    prev_day_px: dec!(49000.0),
+                    mark_px: dec!(50000.0),
+                    mid_px: Some(dec!(50001.0)),
                     impact_pxs: Some(vec!["50000.0".to_string(), "50002.0".to_string()]),
-                    day_base_vlm: Some("100.0".to_string()),
+                    day_base_vlm: Some(dec!(100.0)),
                 },
-                circulating_supply: "19000000.0".to_string(),
+                circulating_supply: dec!(19000000.0),
             },
         };
 
@@ -1003,16 +991,16 @@ mod tests {
             coin: Ustr::from("BTC"),
             ctx: PerpsAssetCtx {
                 shared: SharedAssetCtx {
-                    day_ntl_vlm: "1000000.0".to_string(),
-                    prev_day_px: "49000.0".to_string(),
-                    mark_px: "50000.0".to_string(),
+                    day_ntl_vlm: dec!(1000000.0),
+                    prev_day_px: dec!(49000.0),
+                    mark_px: dec!(50000.0),
                     mid_px: None,
                     impact_pxs: None,
                     day_base_vlm: None,
                 },
-                funding: funding_str.to_string(),
-                open_interest: "100000.0".to_string(),
-                oracle_px: "50005.0".to_string(),
+                funding: Decimal::from_str(funding_str).unwrap(),
+                open_interest: dec!(100000.0),
+                oracle_px: dec!(50005.0),
                 premium: None,
             },
         };
@@ -1028,7 +1016,7 @@ mod tests {
         let instrument = create_test_instrument();
         let ts_init = UnixNanos::default();
 
-        let open_interest = parse_ws_open_interest("100000.0", &instrument, ts_init).unwrap();
+        let open_interest = parse_ws_open_interest(dec!(100000.0), &instrument, ts_init).unwrap();
 
         assert_eq!(open_interest.instrument_id, instrument.id());
         assert_eq!(open_interest.open_interest.to_string(), "100000.0");
@@ -1045,8 +1033,12 @@ mod tests {
 
         let expected = Decimal::from_str(open_interest_str).unwrap();
 
-        let open_interest =
-            parse_ws_open_interest(open_interest_str, &instrument, ts_init).unwrap();
+        let open_interest = parse_ws_open_interest(
+            Decimal::from_str(open_interest_str).unwrap(),
+            &instrument,
+            ts_init,
+        )
+        .unwrap();
 
         assert_eq!(open_interest.open_interest, expected);
     }

@@ -34,6 +34,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
+    reports::OrderStatusReport,
     types::{Price, Quantity},
 };
 use nautilus_network::{
@@ -484,6 +485,12 @@ impl HyperliquidWebSocketClient {
     ///
     /// The HTTP client supplies signing credentials, builder attribution, and
     /// cached instrument metadata. The action itself is sent over WebSocket.
+    ///
+    /// Returns an [`OrderStatusReport`] describing the venue's immediate
+    /// response (`Filled` for an atomic IOC fill, `Accepted` for a resting
+    /// order), or `None` when the venue deferred the order without an oid (for
+    /// example a `waitingForFill` trigger child): the order stays `SUBMITTED`
+    /// until the user-events stream delivers the first `OrderAccepted`.
     #[allow(
         clippy::too_many_arguments,
         reason = "matches the Python and HTTP order submit surface"
@@ -501,7 +508,7 @@ impl HyperliquidWebSocketClient {
         trigger_price: Option<Price>,
         post_only: bool,
         reduce_only: bool,
-    ) -> HyperliquidResult<()> {
+    ) -> HyperliquidResult<Option<OrderStatusReport>> {
         let symbol = instrument_id.symbol.inner();
         let asset = signer.get_asset_index_for_symbol(symbol).ok_or_else(|| {
             HyperliquidError::bad_request(format!(
@@ -572,15 +579,42 @@ impl HyperliquidWebSocketClient {
         };
         let response = self.post_action_exec(signer, &action).await?;
 
-        ensure_ws_action_accepted(&response, "Order submission")
+        // Verdict first: a real rejection must still error
+        ensure_ws_action_accepted(&response, "Order submission")?;
+
+        // Past the verdict, a build failure is local; defer to WS, never reject
+        match signer.build_submit_order_report(
+            instrument_id,
+            client_order_id,
+            order_side,
+            order_type,
+            quantity,
+            time_in_force,
+            price,
+            trigger_price,
+            response,
+        ) {
+            Ok(report) => Ok(report),
+            Err(e) => {
+                log::warn!(
+                    "Failed to build submit report for {client_order_id}: {e}; awaiting WS reconciliation"
+                );
+                Ok(None)
+            }
+        }
     }
 
     /// Submit multiple orders through the Hyperliquid WebSocket post API.
+    ///
+    /// Returns one [`OrderStatusReport`] per accepted order in submission
+    /// order. Deferred trigger children of a `normalTpsl` bracket are absent
+    /// from the result; they stay `SUBMITTED` until the user-events stream
+    /// delivers an `OrderAccepted` with the real oid.
     pub async fn submit_orders(
         &self,
         signer: &HyperliquidHttpClient,
         orders: &[&OrderAny],
-    ) -> HyperliquidResult<()> {
+    ) -> HyperliquidResult<Vec<OrderStatusReport>> {
         let mut hyperliquid_orders = Vec::with_capacity(orders.len());
         let mut client_order_ids = Vec::with_capacity(orders.len());
 
@@ -621,7 +655,18 @@ impl HyperliquidWebSocketClient {
         };
         let response = self.post_action_exec(signer, &action).await?;
 
-        ensure_ws_action_accepted(&response, "Order list submission")
+        ensure_ws_action_accepted(&response, "Order list submission")?;
+
+        // Past the verdict, a build failure is local; defer to WS, never reject
+        match signer.build_submit_orders_reports(orders, grouping, response) {
+            Ok(reports) => Ok(reports),
+            Err(e) => {
+                log::warn!(
+                    "Failed to build submit reports for order list: {e}; awaiting WS reconciliation"
+                );
+                Ok(Vec::new())
+            }
+        }
     }
 
     /// Cancel an order through the Hyperliquid WebSocket post API.

@@ -95,12 +95,12 @@ dev = [
   "setuptools>=82",
   "mypy==1.20.2,<2.0.0", # Pinned to 1.20.2 (keep in line with .pre-commit-config.yaml)
   "pandas-stubs>=2.3.3,<3.0.0",
-  "ruff==0.15.16", # Pinned to 0.15.16 (keep in line with .pre-commit-config.yaml)
+  "ruff==0.15.17", # Pinned to 0.15.17 (keep in line with .pre-commit-config.yaml)
   "types-pytz>=2026.2,<2027.0",
   "types-toml>=0.10.8,<1.0.0",
 ]
 test = [
-  "aiohttp==3.14.0,<4.0.0",
+  "aiohttp==3.14.1,<4.0.0",
   "coverage>=7.14.1,<8.0.0",
   "pytest>=7.4.4,<8.0.0", # Intentionally held at 7.x
   "pytest-aiohttp>=1.1.1,<2.0.0",

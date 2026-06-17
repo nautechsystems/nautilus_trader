@@ -619,6 +619,7 @@ mod tests {
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
 
@@ -714,7 +715,8 @@ mod tests {
             None,                  // margin_maint
             None,                  // maker_fee
             None,                  // taker_fee
-            None,                  // info
+            Some(Ustr::from("FOREX_5DECIMAL")),
+            None, // info
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -743,6 +745,54 @@ mod tests {
                 assert_eq!(decoded_cp.quote_currency, original_cp.quote_currency);
                 assert_eq!(decoded_cp.price_precision, original_cp.price_precision);
                 assert_eq!(decoded_cp.size_precision, original_cp.size_precision);
+                assert_eq!(decoded_cp.tick_scheme, original_cp.tick_scheme);
+            }
+            _ => panic!("Decoded instrument type mismatch"),
+        }
+    }
+
+    #[rstest]
+    fn test_decode_currency_pair_without_tick_scheme_column_defaults_none() {
+        let instrument_id = InstrumentId::from("EUR/USD.SIM");
+        let currency_pair = CurrencyPair::new(
+            instrument_id,
+            Symbol::from("EUR/USD"),
+            Currency::from("EUR"),
+            Currency::from("USD"),
+            5,
+            0,
+            Price::new(0.00001, 5),
+            Quantity::new(1.0, 0),
+            None, // multiplier
+            None, // lot_size
+            None, // max_quantity
+            None, // min_quantity
+            None, // max_notional
+            None, // min_notional
+            None, // max_price
+            None, // min_price
+            None, // margin_init
+            None, // margin_maint
+            None, // maker_fee
+            None, // taker_fee
+            Some(Ustr::from("FOREX_5DECIMAL")),
+            None, // info
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        let instrument = InstrumentAny::CurrencyPair(currency_pair);
+
+        let metadata = instrument.metadata();
+        let record_batch =
+            InstrumentAny::encode_batch(&metadata, std::slice::from_ref(&instrument)).unwrap();
+        let record_batch = batch_without_column(&record_batch, "tick_scheme");
+        let decoded = decode_instrument_any_batch(&metadata, &record_batch).unwrap();
+
+        assert_eq!(decoded.len(), 1);
+        match &decoded[0] {
+            InstrumentAny::CurrencyPair(decoded_cp) => {
+                assert_eq!(decoded_cp.id, instrument.id());
+                assert_eq!(decoded_cp.tick_scheme, None);
             }
             _ => panic!("Decoded instrument type mismatch"),
         }
@@ -769,6 +819,7 @@ mod tests {
             None, // margin_maint
             None, // maker_fee
             None, // taker_fee
+            None, // tick_scheme
             None, // info
             UnixNanos::default(),
             UnixNanos::default(),

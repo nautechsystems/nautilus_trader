@@ -1243,6 +1243,7 @@ mod tests {
             None, // margin_maint
             None, // maker_fee
             None, // taker_fee
+            None, // tick_scheme
             None, // info
             UnixNanos::default(),
             UnixNanos::default(),
@@ -2117,6 +2118,7 @@ mod tests {
             None,                 // margin_maint
             None,                 // maker_fee
             None,                 // taker_fee
+            None,                 // tick_scheme
             None,                 // info
             UnixNanos::default(), // ts_event
             UnixNanos::default(), // ts_init
@@ -2169,6 +2171,7 @@ mod tests {
             8,     // size_precision
             Price::from("0.0001"),
             Quantity::from("0.00000001"),
+            None,
             None,
             None,
             None,

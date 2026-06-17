@@ -79,6 +79,9 @@ struct TestServerState {
     subscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     unsubscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     asset_context_updates: Arc<tokio::sync::Notify>,
+    // When set, the `recentTrades` info endpoint responds with HTTP 422 to
+    // emulate a node without the Hyperliquid indexer.
+    recent_trades_unavailable: Arc<tokio::sync::Mutex<bool>>,
 }
 
 fn data_path() -> PathBuf {
@@ -170,6 +173,16 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         "l2Book" => {
             let book = load_json("http_l2_book_btc.json");
             Json(book).into_response()
+        }
+        "recentTrades" => {
+            if *state.recent_trades_unavailable.lock().await {
+                return (
+                    axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(json!({"error": "recentTrades unavailable"})),
+                )
+                    .into_response();
+            }
+            Json(load_json("http_recent_trades_btc.json")).into_response()
         }
         "candleSnapshot" => Json(json!([{
             "t": 1703875200000u64,
@@ -1499,21 +1512,27 @@ async fn test_data_client_request_book_snapshot_with_depth() {
 }
 
 #[rstest]
-#[tokio::test]
-async fn test_request_trades_returns_not_supported_error() {
-    // Hyperliquid has no public trade-tape REST endpoint; `request_trades`
-    // must bail explicitly so callers see an unambiguous error rather than
-    // a silent empty response.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_request_trades() {
+    // `request_trades` fetches the `recentTrades` snapshot and always emits a
+    // `TradesResponse` so the awaiting caller completes.
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
-    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
 
+    // Drain instrument events from connect
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
     let cmd = RequestTrades::new(
-        InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
+        instrument_id,
         None,
         None,
         None,
@@ -1522,14 +1541,82 @@ async fn test_request_trades_returns_not_supported_error() {
         UnixNanos::default(),
         None,
     );
+    client.request_trades(cmd).unwrap();
 
-    let result = client.request_trades(cmd);
-    let err = result.expect_err("request_trades should bail");
-    let msg = err.to_string().to_lowercase();
-    assert!(
-        msg.contains("not supported"),
-        "error should explain why: {err}",
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for trades response")
+        .expect("channel closed");
+
+    match event {
+        DataEvent::Response(DataResponse::Trades(trades_response)) => {
+            assert_eq!(trades_response.instrument_id, instrument_id);
+            // Fixture carries three trades; the response is sorted ascending.
+            assert_eq!(trades_response.data.len(), 3);
+            assert_eq!(trades_response.data[0].trade_id.to_string(), "300001");
+            assert_eq!(trades_response.data[2].trade_id.to_string(), "300003");
+            assert!(
+                trades_response.data[0].ts_event <= trades_response.data[2].ts_event,
+                "trades should be ascending by ts_event",
+            );
+        }
+        other => panic!("Expected Trades response, was: {other:?}"),
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_request_trades_endpoint_unavailable() {
+    // A node without the indexer returns HTTP 422 for `recentTrades`; the
+    // client must still emit an empty `TradesResponse` rather than erroring.
+    let state = TestServerState::default();
+    *state.recent_trades_unavailable.lock().await = true;
+    let addr = start_mock_server(state).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    // Drain instrument events from connect
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let cmd = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(*HYPERLIQUID_CLIENT_ID),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
     );
+    client.request_trades(cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for trades response")
+        .expect("channel closed");
+
+    match event {
+        DataEvent::Response(DataResponse::Trades(trades_response)) => {
+            assert_eq!(trades_response.instrument_id, instrument_id);
+            assert!(
+                trades_response.data.is_empty(),
+                "422 should yield an empty response, was: {:?}",
+                trades_response.data,
+            );
+        }
+        other => panic!("Expected empty Trades response, was: {other:?}"),
+    }
+
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]

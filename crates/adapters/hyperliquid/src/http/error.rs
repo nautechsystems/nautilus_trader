@@ -186,6 +186,14 @@ impl Error {
     pub fn is_transport_error(&self) -> bool {
         matches!(self, Self::Transport(_) | Self::Timeout | Self::Io(_))
     }
+
+    /// Check if the error is an HTTP 422 Unprocessable Entity response.
+    ///
+    /// Hyperliquid returns 422 from info endpoints that depend on the indexer
+    /// (such as `recentTrades`) when served by a node without it.
+    pub fn is_unprocessable_entity(&self) -> bool {
+        matches!(self, Self::Http { status: 422, .. })
+    }
 }
 
 /// Result type alias for Hyperliquid operations
@@ -252,6 +260,15 @@ mod tests {
         assert!(!Error::exchange("HTTP 500").is_transport_error());
         assert!(!Error::decode("bad json").is_transport_error());
         assert!(!Error::nonce_window("stale").is_transport_error());
+    }
+
+    #[rstest]
+    fn test_is_unprocessable_entity() {
+        assert!(Error::http(422, "indexer unavailable").is_unprocessable_entity());
+
+        assert!(!Error::http(404, "not found").is_unprocessable_entity());
+        assert!(!Error::http(500, "server error").is_unprocessable_entity());
+        assert!(!Error::bad_request("malformed payload").is_unprocessable_entity());
     }
 
     #[rstest]

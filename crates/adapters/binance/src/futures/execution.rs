@@ -107,8 +107,8 @@ use crate::{
     config::BinanceExecClientConfig,
     futures::{
         conversions::{
-            determine_position_side, reduce_only_param, trailing_offset_to_callback_rate,
-            trailing_offset_to_callback_rate_string,
+            determine_position_side, normalize_futures_asset, reduce_only_param,
+            trailing_offset_to_callback_rate, trailing_offset_to_callback_rate_string,
         },
         http::{
             client::order_type_to_binance_futures,
@@ -277,6 +277,7 @@ impl BinanceFuturesExecutionClient {
             account_info,
             self.core.account_id,
             self.core.account_type,
+            self.config.bnfcr_currency,
             self.clock,
         )
     }
@@ -285,6 +286,7 @@ impl BinanceFuturesExecutionClient {
         account_info: &BinanceFuturesAccountInfo,
         account_id: AccountId,
         account_type: AccountType,
+        bnfcr_currency: Currency,
         clock: &'static AtomicTime,
     ) -> AccountState {
         let ts_now = clock.get_time_ns();
@@ -297,7 +299,7 @@ impl BinanceFuturesExecutionClient {
                     return None;
                 }
 
-                let currency = Currency::from(&b.asset);
+                let currency = normalize_futures_asset(b.asset, bnfcr_currency);
                 AccountBalance::from_total_and_free(b.wallet_balance, b.available_balance, currency)
                     .ok()
             })
@@ -317,7 +319,7 @@ impl BinanceFuturesExecutionClient {
                 continue;
             }
 
-            let currency = Currency::from(&asset.asset);
+            let currency = normalize_futures_asset(asset.asset, bnfcr_currency);
             let initial = Money::from_decimal(initial_dec, currency)
                 .unwrap_or_else(|_| Money::zero(currency));
             let maintenance =
@@ -354,6 +356,7 @@ impl BinanceFuturesExecutionClient {
         let http_client = self.http_client.clone();
         let account_id = self.core.account_id;
         let account_type = self.core.account_type;
+        let bnfcr_currency = self.config.bnfcr_currency;
         let emitter = self.emitter.clone();
         let clock = self.clock;
 
@@ -362,8 +365,13 @@ impl BinanceFuturesExecutionClient {
                 .query_account()
                 .await
                 .context("Binance Futures account state request failed")?;
-            let account_state =
-                Self::create_account_state_from(&account_info, account_id, account_type, clock);
+            let account_state = Self::create_account_state_from(
+                &account_info,
+                account_id,
+                account_type,
+                bnfcr_currency,
+                clock,
+            );
             let ts_now = clock.get_time_ns();
             emitter.emit_account_state(
                 account_state.balances.clone(),
@@ -1213,6 +1221,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             algo_client_ids: self.algo_client_order_ids.clone(),
             use_position_ids: self.config.use_position_ids,
             default_taker_fee: self.config.default_taker_fee,
+            bnfcr_currency: self.config.bnfcr_currency,
             treat_expired_as_canceled: self.config.treat_expired_as_canceled,
             use_trade_lite: self.config.use_trade_lite,
             seen_trade_ids,
@@ -1682,6 +1691,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 instrument_id,
                 price_precision,
                 size_precision,
+                self.config.bnfcr_currency,
                 ts_init,
             ) {
                 reports.push(report);

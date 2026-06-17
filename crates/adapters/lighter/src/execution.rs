@@ -21,11 +21,13 @@
 //! Reconciliation and report generation combine Lighter's account WebSocket
 //! streams with the HTTP read endpoints.
 //!
-//! Auth-token rotation is owned by
+//! Auth-token rotation is owned by this execution client and refreshes the
+//! private account-stream subscriptions on
 //! [`crate::websocket::client::LighterWebSocketClient`].
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    future::Future,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -130,10 +132,23 @@ const ACKED_ORDER_LOOKUP_DELAY: Duration = Duration::from_secs(2);
 
 /// Refresh the auth token this far before its issuance deadline. The
 /// [`crate::signing::auth_token::DEFAULT_AUTH_TOKEN_TTL_SECS`] is 7 hours;
-/// rotating at 6 hours leaves an hour of head room for transient refresh
+/// rotating at 6 hours leaves an hour of headroom for transient refresh
 /// failures.
 const AUTH_TOKEN_REFRESH_INTERVAL: std::time::Duration =
     std::time::Duration::from_secs(6 * 60 * 60);
+
+// Retry budget after a scheduled rotation failure: 7 h TTL minus the 6 h
+// refresh cadence leaves one hour before the old token expires.
+const AUTH_TOKEN_REFRESH_RETRY_WINDOW: Duration = Duration::from_secs(60 * 60);
+const AUTH_TOKEN_REFRESH_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(30);
+
+// Also used as the cadence after a retry window is exhausted
+const AUTH_TOKEN_REFRESH_RETRY_MAX_DELAY: Duration = Duration::from_secs(5 * 60);
+const AUTH_TOKEN_REFRESH_BACKOFF: AuthTokenRefreshBackoff = AuthTokenRefreshBackoff {
+    initial_delay: AUTH_TOKEN_REFRESH_RETRY_INITIAL_DELAY,
+    max_delay: AUTH_TOKEN_REFRESH_RETRY_MAX_DELAY,
+    window: AUTH_TOKEN_REFRESH_RETRY_WINDOW,
+};
 const WS_CONSUMER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 // Bounds the informational tier-detection call so a slow or failing
 // `/account` endpoint cannot stall connect for the HTTP retry budget.
@@ -689,9 +704,12 @@ impl LighterExecutionClient {
                                     "Lighter execution batch: orders={order_count} fills={fill_count}",
                                 );
                             }
-                            Some(NautilusWsMessage::PositionSnapshot(reports)) => {
-                                // Replace even when empty: Lighter sends complete
-                                // `account_all_positions` snapshots.
+                            Some(NautilusWsMessage::PositionSnapshot {
+                                reports,
+                                skipped_market_ids,
+                            }) => {
+                                // Replace even when empty, but keep rows the
+                                // handler could not parse or map.
                                 for r in &reports {
                                     if let Some(idx) =
                                         registry_for_loop.market_index(&r.instrument_id)
@@ -700,9 +718,20 @@ impl LighterExecutionClient {
                                     }
                                 }
                                 let position_count = reports.len();
-                                let removed = dispatch.replace_positions(&reports);
+                                let retained_positions: Vec<InstrumentId> = skipped_market_ids
+                                    .iter()
+                                    .filter_map(|market_id| {
+                                        registry_for_loop.instrument_id(*market_id)
+                                    })
+                                    .collect();
+                                let removed = if retained_positions.is_empty() {
+                                    dispatch.replace_positions(&reports)
+                                } else {
+                                    dispatch.replace_positions_except(&reports, &retained_positions)
+                                };
                                 log::debug!(
-                                    "Lighter position snapshot: positions={position_count}, removed={}",
+                                    "Lighter position snapshot: positions={position_count}, skipped_markets={}, removed={}",
+                                    skipped_market_ids.len(),
                                     removed.len(),
                                 );
 
@@ -985,13 +1014,7 @@ impl LighterExecutionClient {
         let ws_client = self.ws_client.clone();
         let cancellation_token = self.cancellation_token.clone();
         let account_index = credential.account_index();
-        let channels = [
-            LighterWsChannel::AccountAllOrders(account_index),
-            LighterWsChannel::AccountAllTrades(account_index),
-            LighterWsChannel::AccountAllPositions(account_index),
-            LighterWsChannel::AccountAllAssets(account_index),
-            LighterWsChannel::UserStats(account_index),
-        ];
+        let channels = auth_token_rotation_channels(account_index);
 
         get_runtime().spawn(async move {
             log::debug!(
@@ -999,40 +1022,43 @@ impl LighterExecutionClient {
                 AUTH_TOKEN_REFRESH_INTERVAL.as_secs(),
             );
 
+            let mut next_refresh_delay = AUTH_TOKEN_REFRESH_INTERVAL;
+
             loop {
-                tokio::select! {
-                    () = cancellation_token.cancelled() => {
-                        log::debug!("Lighter auth-token refresh task cancelled");
-                        break;
-                    }
-                    () = tokio::time::sleep(AUTH_TOKEN_REFRESH_INTERVAL) => {
-                        match build_auth_token_for(&credential) {
-                            Ok(token) => {
-                                let mut all_ok = true;
+                if !sleep_or_auth_token_refresh_cancelled(
+                    next_refresh_delay,
+                    &cancellation_token,
+                )
+                .await
+                {
+                    log::debug!("Lighter auth-token refresh task cancelled");
+                    break;
+                }
 
-                                for channel in channels.clone() {
-                                    if let Err(e) = ws_client
-                                        .subscribe_account(channel.clone(), token.clone())
-                                        .await
-                                    {
-                                        all_ok = false;
-                                        log::error!(
-                                            "Lighter auth-token rotation: re-subscribe failed for {channel:?}: {e}",
-                                        );
-                                    }
-                                }
+                let outcome = refresh_auth_token_until_rotated(
+                    &credential,
+                    &channels,
+                    &cancellation_token,
+                    AUTH_TOKEN_REFRESH_BACKOFF,
+                    |credential| -> anyhow::Result<String> { build_auth_token_for(credential) },
+                    |channel, token| {
+                        let ws_client = ws_client.clone();
+                        async move { ws_client.subscribe_account(channel, token).await }
+                    },
+                )
+                .await;
 
-                                if all_ok {
-                                    log::debug!(
-                                        "Lighter auth-token rotated for account_index={account_index}",
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                log::error!("Lighter auth-token mint failed during rotation: {e}");
-                            }
-                        }
+                if let Some(delay) = auth_token_refresh_next_delay(outcome) {
+                    if outcome == AuthTokenRefreshOutcome::Exhausted {
+                        log::error!(
+                            "Lighter auth-token rotation exhausted retry window; retrying again in {}s: account_index={account_index}",
+                            delay.as_secs(),
+                        );
                     }
+                    next_refresh_delay = delay;
+                } else {
+                    log::debug!("Lighter auth-token refresh task cancelled");
+                    break;
                 }
             }
         });
@@ -1835,6 +1861,144 @@ impl LighterExecutionClient {
 
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthTokenRefreshOutcome {
+    Rotated,
+    Cancelled,
+    Exhausted,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AuthTokenRefreshBackoff {
+    initial_delay: Duration,
+    max_delay: Duration,
+    window: Duration,
+}
+
+fn auth_token_rotation_channels(account_index: i64) -> [LighterWsChannel; 5] {
+    [
+        LighterWsChannel::AccountAllOrders(account_index),
+        LighterWsChannel::AccountAllTrades(account_index),
+        LighterWsChannel::AccountAllPositions(account_index),
+        LighterWsChannel::AccountAllAssets(account_index),
+        LighterWsChannel::UserStats(account_index),
+    ]
+}
+
+async fn refresh_auth_token_until_rotated<MintToken, Subscribe, SubscribeFuture>(
+    credential: &Credential,
+    channels: &[LighterWsChannel],
+    cancellation_token: &CancellationToken,
+    backoff: AuthTokenRefreshBackoff,
+    mut mint_token: MintToken,
+    mut subscribe: Subscribe,
+) -> AuthTokenRefreshOutcome
+where
+    MintToken: FnMut(&Credential) -> anyhow::Result<String>,
+    Subscribe: FnMut(LighterWsChannel, String) -> SubscribeFuture,
+    SubscribeFuture: Future<Output = Result<(), crate::websocket::error::LighterWsError>>,
+{
+    let retry_started = tokio::time::Instant::now();
+    let mut retry_delay = backoff.initial_delay.min(backoff.max_delay);
+    let mut attempt = 1_u32;
+
+    loop {
+        match rotate_auth_token_once(credential, channels, &mut mint_token, &mut subscribe).await {
+            Ok(()) => {
+                log::debug!(
+                    "Lighter auth-token rotated for account_index={}, attempts={attempt}",
+                    credential.account_index(),
+                );
+                return AuthTokenRefreshOutcome::Rotated;
+            }
+            Err(e) => {
+                log::error!("Lighter auth-token rotation attempt {attempt} failed: {e:#}");
+            }
+        }
+
+        let Some(remaining) = backoff.window.checked_sub(retry_started.elapsed()) else {
+            log::error!(
+                "Lighter auth-token rotation retry window exhausted: account_index={}, attempts={attempt}",
+                credential.account_index(),
+            );
+            return AuthTokenRefreshOutcome::Exhausted;
+        };
+
+        if remaining.as_nanos() == 0 {
+            log::error!(
+                "Lighter auth-token rotation retry window exhausted: account_index={}, attempts={attempt}",
+                credential.account_index(),
+            );
+            return AuthTokenRefreshOutcome::Exhausted;
+        }
+
+        let delay = retry_delay.min(remaining);
+        log::warn!(
+            "Retrying Lighter auth-token rotation in {:.3}s: account_index={}, attempts={attempt}",
+            delay.as_secs_f64(),
+            credential.account_index(),
+        );
+
+        if !sleep_or_auth_token_refresh_cancelled(delay, cancellation_token).await {
+            return AuthTokenRefreshOutcome::Cancelled;
+        }
+
+        retry_delay = next_auth_token_refresh_retry_delay(retry_delay, backoff.max_delay);
+        attempt = attempt.saturating_add(1);
+    }
+}
+
+async fn rotate_auth_token_once<MintToken, Subscribe, SubscribeFuture>(
+    credential: &Credential,
+    channels: &[LighterWsChannel],
+    mint_token: &mut MintToken,
+    subscribe: &mut Subscribe,
+) -> anyhow::Result<()>
+where
+    MintToken: FnMut(&Credential) -> anyhow::Result<String>,
+    Subscribe: FnMut(LighterWsChannel, String) -> SubscribeFuture,
+    SubscribeFuture: Future<Output = Result<(), crate::websocket::error::LighterWsError>>,
+{
+    let token =
+        mint_token(credential).context("failed to mint Lighter auth token during rotation")?;
+    let mut first_error = None;
+
+    for channel in channels {
+        if let Err(e) = subscribe(channel.clone(), token.clone()).await {
+            log::error!("Lighter auth-token rotation: re-subscribe failed for {channel:?}: {e}",);
+            first_error.get_or_insert_with(|| format!("{channel:?}: {e}"));
+        }
+    }
+
+    if let Some(error) = first_error {
+        anyhow::bail!("failed to re-subscribe Lighter account channels: {error}");
+    }
+
+    Ok(())
+}
+
+async fn sleep_or_auth_token_refresh_cancelled(
+    duration: Duration,
+    cancellation_token: &CancellationToken,
+) -> bool {
+    tokio::select! {
+        () = cancellation_token.cancelled() => false,
+        () = tokio::time::sleep(duration) => true,
+    }
+}
+
+fn auth_token_refresh_next_delay(outcome: AuthTokenRefreshOutcome) -> Option<Duration> {
+    match outcome {
+        AuthTokenRefreshOutcome::Rotated => Some(AUTH_TOKEN_REFRESH_INTERVAL),
+        AuthTokenRefreshOutcome::Cancelled => None,
+        AuthTokenRefreshOutcome::Exhausted => Some(AUTH_TOKEN_REFRESH_RETRY_MAX_DELAY),
+    }
+}
+
+fn next_auth_token_refresh_retry_delay(current: Duration, max: Duration) -> Duration {
+    current.checked_mul(2).unwrap_or(max).min(max)
 }
 
 #[derive(Debug)]
@@ -4370,7 +4534,11 @@ fn ensure_accepted_emitted(
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc, sync::atomic::AtomicUsize};
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        sync::{Arc, atomic::AtomicUsize},
+    };
 
     use axum::{
         Router,
@@ -4517,6 +4685,7 @@ mod tests {
             None,
             None,
             Some(Money::from("10.000000 USDC")),
+            None,
             None,
             None,
             None,
@@ -4736,6 +4905,266 @@ mod tests {
                 .unwrap(),
             TEST_NEXT_NONCE,
         );
+    }
+
+    #[tokio::test]
+    async fn auth_token_rotation_retries_failed_mint() {
+        let credential = test_credential();
+        let channels = auth_token_rotation_channels(TEST_ACCOUNT_INDEX_I64);
+        let cancellation_token = CancellationToken::new();
+        let mint_attempts = Arc::new(AtomicUsize::new(0));
+        let subscribe_attempts = Arc::new(AtomicUsize::new(0));
+
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(3),
+            refresh_auth_token_until_rotated(
+                &credential,
+                &channels,
+                &cancellation_token,
+                AuthTokenRefreshBackoff {
+                    initial_delay: Duration::from_millis(10),
+                    max_delay: Duration::from_millis(20),
+                    window: Duration::from_secs(1),
+                },
+                {
+                    let mint_attempts = Arc::clone(&mint_attempts);
+                    move |_| {
+                        let attempt = mint_attempts.fetch_add(1, Ordering::AcqRel);
+                        if attempt == 0 {
+                            Err(anyhow::anyhow!("mint unavailable"))
+                        } else {
+                            Ok(format!("token-{attempt}"))
+                        }
+                    }
+                },
+                {
+                    let subscribe_attempts = Arc::clone(&subscribe_attempts);
+                    move |_channel, _token| {
+                        let subscribe_attempts = Arc::clone(&subscribe_attempts);
+                        async move {
+                            subscribe_attempts.fetch_add(1, Ordering::AcqRel);
+                            Ok::<(), crate::websocket::error::LighterWsError>(())
+                        }
+                    }
+                },
+            ),
+        )
+        .await
+        .expect("rotation retry must complete within the test window");
+
+        assert_eq!(outcome, AuthTokenRefreshOutcome::Rotated);
+        assert_eq!(
+            mint_attempts.load(Ordering::Acquire),
+            2,
+            "failed mint must retry before the next refresh interval",
+        );
+        assert_eq!(
+            subscribe_attempts.load(Ordering::Acquire),
+            channels.len(),
+            "subscriptions must wait until token mint succeeds",
+        );
+    }
+
+    #[tokio::test]
+    async fn auth_token_rotation_retries_failed_resubscribe() {
+        let credential = test_credential();
+        let channels = auth_token_rotation_channels(TEST_ACCOUNT_INDEX_I64);
+        let cancellation_token = CancellationToken::new();
+        let mint_attempts = Arc::new(AtomicUsize::new(0));
+        let subscribe_attempts = Arc::new(AtomicUsize::new(0));
+
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(3),
+            refresh_auth_token_until_rotated(
+                &credential,
+                &channels,
+                &cancellation_token,
+                AuthTokenRefreshBackoff {
+                    initial_delay: Duration::from_millis(10),
+                    max_delay: Duration::from_millis(20),
+                    window: Duration::from_secs(1),
+                },
+                {
+                    let mint_attempts = Arc::clone(&mint_attempts);
+                    move |_| {
+                        let attempt = mint_attempts.fetch_add(1, Ordering::AcqRel);
+                        Ok(format!("token-{attempt}"))
+                    }
+                },
+                {
+                    let subscribe_attempts = Arc::clone(&subscribe_attempts);
+                    move |_channel, _token| {
+                        let subscribe_attempts = Arc::clone(&subscribe_attempts);
+                        async move {
+                            let attempt = subscribe_attempts.fetch_add(1, Ordering::AcqRel);
+                            if attempt == 0 {
+                                Err(crate::websocket::error::LighterWsError::Client(
+                                    "handler unavailable".to_string(),
+                                ))
+                            } else {
+                                Ok(())
+                            }
+                        }
+                    }
+                },
+            ),
+        )
+        .await
+        .expect("rotation retry must complete within the test window");
+
+        assert_eq!(outcome, AuthTokenRefreshOutcome::Rotated);
+        assert_eq!(
+            mint_attempts.load(Ordering::Acquire),
+            2,
+            "failed resubscribe must trigger a fresh auth-token mint",
+        );
+        assert_eq!(
+            subscribe_attempts.load(Ordering::Acquire),
+            channels.len() * 2,
+            "failed resubscribe must retry the private account-channel set",
+        );
+    }
+
+    #[tokio::test]
+    async fn auth_token_rotation_exhausts_retry_window() {
+        let credential = test_credential();
+        let channels = auth_token_rotation_channels(TEST_ACCOUNT_INDEX_I64);
+        let cancellation_token = CancellationToken::new();
+        let mint_attempts = Arc::new(AtomicUsize::new(0));
+
+        let refresh = refresh_auth_token_until_rotated(
+            &credential,
+            &channels,
+            &cancellation_token,
+            AuthTokenRefreshBackoff {
+                initial_delay: Duration::from_millis(100),
+                max_delay: Duration::from_millis(100),
+                window: Duration::from_secs(1),
+            },
+            {
+                let mint_attempts = Arc::clone(&mint_attempts);
+                move |_| {
+                    mint_attempts.fetch_add(1, Ordering::AcqRel);
+                    Err(anyhow::anyhow!("mint unavailable"))
+                }
+            },
+            |_channel, _token| async { Ok::<(), crate::websocket::error::LighterWsError>(()) },
+        );
+        let observe_retry = wait_until_async(
+            || async { mint_attempts.load(Ordering::Acquire) > 1 },
+            Duration::from_secs(2),
+        );
+
+        let (outcome, ()) = tokio::time::timeout(Duration::from_secs(3), async {
+            tokio::join!(refresh, observe_retry)
+        })
+        .await
+        .expect("rotation retry exhaustion must complete within the test window");
+
+        assert_eq!(outcome, AuthTokenRefreshOutcome::Exhausted);
+        assert!(
+            mint_attempts.load(Ordering::Acquire) > 1,
+            "persistent mint failure must retry until the window is exhausted",
+        );
+    }
+
+    #[tokio::test]
+    async fn auth_token_rotation_cancels_during_retry_backoff() {
+        let credential = test_credential();
+        let channels = auth_token_rotation_channels(TEST_ACCOUNT_INDEX_I64);
+        let cancellation_token = CancellationToken::new();
+        let mint_attempts = Arc::new(AtomicUsize::new(0));
+
+        let cancel = cancellation_token.clone();
+        let cancel_after_first_attempt = wait_until_async(
+            || async { mint_attempts.load(Ordering::Acquire) > 0 },
+            Duration::from_secs(2),
+        );
+
+        let refresh = refresh_auth_token_until_rotated(
+            &credential,
+            &channels,
+            &cancellation_token,
+            AuthTokenRefreshBackoff {
+                initial_delay: Duration::from_secs(2),
+                max_delay: Duration::from_secs(2),
+                window: Duration::from_secs(5),
+            },
+            {
+                let mint_attempts = Arc::clone(&mint_attempts);
+                move |_| {
+                    mint_attempts.fetch_add(1, Ordering::AcqRel);
+                    Err(anyhow::anyhow!("mint unavailable"))
+                }
+            },
+            |_channel, _token| async { Ok::<(), crate::websocket::error::LighterWsError>(()) },
+        );
+
+        let cancel_task = async move {
+            cancel_after_first_attempt.await;
+            cancel.cancel();
+        };
+
+        let (outcome, ()) = tokio::time::timeout(Duration::from_secs(6), async {
+            tokio::join!(refresh, cancel_task)
+        })
+        .await
+        .expect("rotation cancellation must complete within the test window");
+
+        assert_eq!(outcome, AuthTokenRefreshOutcome::Cancelled);
+        assert_eq!(
+            mint_attempts.load(Ordering::Acquire),
+            1,
+            "cancellation during backoff must stop before the next retry",
+        );
+    }
+
+    #[rstest]
+    #[case::rotated(AuthTokenRefreshOutcome::Rotated, Some(AUTH_TOKEN_REFRESH_INTERVAL))]
+    #[case::cancelled(AuthTokenRefreshOutcome::Cancelled, None)]
+    #[case::exhausted(
+        AuthTokenRefreshOutcome::Exhausted,
+        Some(AUTH_TOKEN_REFRESH_RETRY_MAX_DELAY)
+    )]
+    fn auth_token_refresh_next_delay_matches_outcome(
+        #[case] outcome: AuthTokenRefreshOutcome,
+        #[case] expected: Option<Duration>,
+    ) {
+        assert_eq!(auth_token_refresh_next_delay(outcome), expected);
+    }
+
+    #[rstest]
+    fn auth_token_rotation_channels_match_private_account_streams() {
+        assert_eq!(
+            auth_token_rotation_channels(TEST_ACCOUNT_INDEX_I64),
+            [
+                LighterWsChannel::AccountAllOrders(TEST_ACCOUNT_INDEX_I64),
+                LighterWsChannel::AccountAllTrades(TEST_ACCOUNT_INDEX_I64),
+                LighterWsChannel::AccountAllPositions(TEST_ACCOUNT_INDEX_I64),
+                LighterWsChannel::AccountAllAssets(TEST_ACCOUNT_INDEX_I64),
+                LighterWsChannel::UserStats(TEST_ACCOUNT_INDEX_I64),
+            ],
+        );
+    }
+
+    #[rstest]
+    #[case::below_max(
+        Duration::from_millis(10),
+        Duration::from_millis(100),
+        Duration::from_millis(20)
+    )]
+    #[case::at_max(
+        Duration::from_millis(100),
+        Duration::from_millis(100),
+        Duration::from_millis(100)
+    )]
+    #[case::overflow_clamps(Duration::MAX, Duration::from_secs(300), Duration::from_secs(300))]
+    fn next_auth_token_refresh_retry_delay_doubles_and_caps(
+        #[case] current: Duration,
+        #[case] max: Duration,
+        #[case] expected: Duration,
+    ) {
+        assert_eq!(next_auth_token_refresh_retry_delay(current, max), expected);
     }
 
     #[tokio::test]
@@ -6928,6 +7357,7 @@ mod tests {
             None,
             None,
             Some(Money::from("10.000000 USDC")),
+            None,
             None,
             None,
             None,

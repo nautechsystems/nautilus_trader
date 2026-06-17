@@ -969,6 +969,7 @@ mod tests {
             Some(rust_decimal_macros::dec!(0.03)),
             Some(rust_decimal_macros::dec!(0.0002)),
             Some(rust_decimal_macros::dec!(0.0005)),
+            None,
             None, // info: Option<Params>
             UnixNanos::default(),
             UnixNanos::default(),

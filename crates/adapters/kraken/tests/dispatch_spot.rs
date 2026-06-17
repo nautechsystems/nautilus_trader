@@ -75,6 +75,7 @@ fn make_spot_pair() -> InstrumentAny {
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     ))

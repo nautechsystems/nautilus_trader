@@ -1602,7 +1602,7 @@ def test_handle_fill_report_uses_cached_position_id_across_partial_fills(
 
 
 @pytest.mark.asyncio
-async def test_submit_order_with_tp_sl_in_demo_mode_emits_order_denied(
+async def test_submit_order_with_tp_sl_in_demo_mode_routes_to_http(
     exec_client_builder,
     monkeypatch,
     instrument,
@@ -1643,9 +1643,77 @@ async def test_submit_order_with_tp_sl_in_demo_mode_emits_order_denied(
     try:
         await client._submit_order(command)
 
+        # Native TP/SL on demo now routes through the HTTP create-order endpoint
+        # (Bybit demo accepts the same fields as mainnet) instead of being denied.
+        # The mainnet WS Trade API is still bypassed in demo.
         ws_trade_client.submit_order.assert_not_awaited()
         ws_trade_client.batch_place_orders.assert_not_awaited()
+        http_client.submit_order.assert_awaited_once()
+        kwargs = http_client.submit_order.call_args.kwargs
+        native_tp_sl = kwargs["native_tp_sl"]
+        assert native_tp_sl is not None
+        assert native_tp_sl.take_profit == "55000.00"
+        assert native_tp_sl.stop_loss == "47000.00"
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_with_tp_trigger_price_in_demo_mode_emits_order_denied(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+):
+    """
+    The demo HTTP create-order entry cannot carry TP/SL trigger prices, so a demo order
+    that sets one must be denied rather than submitted without it.
+    """
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+        config_kwargs={"environment": nautilus_pyo3.BybitEnvironment.DEMO},
+    )
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+    ws_trade_client.batch_place_orders = AsyncMock()
+    http_client.submit_order = AsyncMock()
+    mock_generate_denied = MagicMock()
+    monkeypatch.setattr(client, "generate_order_denied", mock_generate_denied)
+
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"take_profit": "55000.00", "tp_trigger_price": "54000.00"},
+    )
+
+    try:
+        await client._submit_order(command)
+
+        mock_generate_denied.assert_called_once()
+        assert (
+            "trigger prices are not supported in demo mode"
+            in (mock_generate_denied.call_args.kwargs["reason"])
+        )
         http_client.submit_order.assert_not_awaited()
+        ws_trade_client.submit_order.assert_not_awaited()
     finally:
         await client._disconnect()
 
