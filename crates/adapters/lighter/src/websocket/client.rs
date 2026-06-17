@@ -43,7 +43,7 @@ use crate::{
     common::{
         consts::{HEARTBEAT_INTERVAL, RECONNECT_BASE_BACKOFF, RECONNECT_MAX_BACKOFF},
         enums::{LighterCandleResolution, LighterEnvironment},
-        rate_limit::build_ws_rate_limit_quotas,
+        rate_limit::ws_message_rate_limiter,
         symbol::MarketRegistry,
         urls::lighter_ws_url,
     },
@@ -276,13 +276,12 @@ impl LighterWebSocketClient {
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
         };
-        let client = WebSocketClient::connect(
+        let client = WebSocketClient::connect_with_rate_limiter(
             cfg,
             Some(message_handler),
             None,
             None,
-            build_ws_rate_limit_quotas(),
-            None,
+            ws_message_rate_limiter(&self.url),
         )
         .await?;
 
