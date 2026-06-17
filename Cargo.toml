@@ -147,7 +147,7 @@ bincode = { version = "2.0.1", features = ["serde"] }
 blake3 = { version = "1.8.5", default-features = false, features = ["std"] }
 bon = "3.9.3"
 bytes = { version = "1.11.1", features = ["serde"] }
-capnp = "0.25.5"
+capnp = "0.26.0"
 chrono = { version = "0.4.45", default-features = false, features = [
   "serde",
   "std",
@@ -181,7 +181,7 @@ http = "1.4.2"
 implied-vol = { version = "2.0.0" }
 indexmap = { version = "2.14.0", features = ["serde"] }
 itchy = "0.3"
-itertools = "0.14.0"
+itertools = "0.15.0"
 libloading = "0.9.0"
 log = { version = "0.4.32", features = [
   "std",
@@ -316,12 +316,12 @@ unbounded-interval-tree = { version = "1.1.2", default-features = false }
 url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.23.3", features = ["v4", "serde"] }
-webpki-roots = "1.0.7"
+webpki-roots = "1.0.8"
 
 # -----------------------------------------------------------------------------
 # Adapter dependencies
 # -----------------------------------------------------------------------------
-alloy = { version = "2.0.5", default-features = false, features = [
+alloy = { version = "2.1.0", default-features = false, features = [
   "sol-types",
   "contract",
   "signers",
@@ -388,7 +388,7 @@ turmoil = "0.7.2"
 # -----------------------------------------------------------------------------
 # Build dependencies
 # -----------------------------------------------------------------------------
-capnpc = "0.25.3"
+capnpc = "0.26.0"
 cbindgen = "0.29.4"
 walkdir = "2.5.0"
 

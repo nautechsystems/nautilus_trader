@@ -2,7 +2,7 @@
 // DO NOT EDIT.
 // source: commands/data.capnp
 // capnp binary version: 1.4.0
-// capnpc crate version: 0.25.3
+// capnpc crate version: 0.26.0
 
 
 pub mod data_command_header {

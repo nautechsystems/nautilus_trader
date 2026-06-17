@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added Binance Futures `bnfcr_currency` config for Credits Trading Mode
 - Added Binance Futures funding-rate history support in Rust
+- Added Binance Futures `MIN_NOTIONAL` parsing for `min_notional` (#4280), thanks @filipmacek
 - Added Binance Futures ticker data support in Rust
 - Added Binance order-list submission in Rust
 - Added `BitmexInstrumentState::Unknown` to tolerate unrecognized venue states without bootstrap failure
@@ -84,21 +85,25 @@ Released on TBD (UTC).
 - Fixed Hyperliquid cancel-replace fill stranding on a dropped `ACCEPTED` (#4270), thanks for reporting @AlphaTraderK
 - Fixed `Instrument` rejecting negative `min_price`, preventing spread instruments from loading in Python
 - Fixed Interactive Brokers reconnect startup handling (#4210), thanks @faysou
+- Fixed Interactive Brokers PERM cancel/modify routing and pending commission parsing (#4281), thanks @faysou
 - Fixed Interactive Brokers to use `permId` for stable order identity (#4276), thanks @faysou
 - Fixed Kraken spot WebSocket dead-connection detection with an idle timeout (#4275), thanks @folknor
+- Fixed Kraken count-only bar requests returning oldest bars instead of latest (#4274), thanks @folknor
 - Fixed Lighter AccountState to include perp-side margin balance (#4246), thanks @filipmacek
 - Fixed Lighter cancel and modify rejections for local, venue, and acked no-op failures
 - Fixed Lighter concurrent batch nonce-ordering race (#4263), thanks @filipmacek
 - Fixed Lighter maker-only key lookup authentication (#4234), thanks @filipmacek
 - Fixed Lighter positions falsely flattening on malformed snapshots
-- Fixed Lighter WebSocket subscribe storm tripping inflight rate limits, thanks for reporting @filipmacek
+- Fixed Lighter WebSocket clients exceeding shared venue rate limits (#4282), thanks @filipmacek
 - Fixed live external order claim registration in Rust
 - Fixed live reconciliation logging below-cached fill mismatches as errors, halting `shutdown_on_error` nodes (Rust)
 - Fixed live reconciliation logging transient venue report-query failures as errors (Rust)
 - Fixed local catalog queries and backtests for non-ASCII instrument IDs (#4259), thanks for reporting @seungpyoson
 - Fixed matching engine fill commission side in Rust
 - Fixed OKX instrument parsing for malformed venue payloads
+- Fixed OKX conditional and attached TP/SL algo amend fields (#4268), thanks @jhavie
 - Fixed Polymarket instrument expiration precision for Gamma markets (#4278), thanks for reporting @OnlyC
+- Fixed Polymarket expired instruments re-entering live data paths (#4272), thanks @graceyangfan
 - Fixed portfolio account update scoping in Rust
 - Fixed rate limiter arithmetic to saturate so extreme quotas deny instead of admitting every request (Rust)
 - Fixed reconnect backoff jitter collapsing to zero at the maximum delay (Rust)
@@ -113,6 +118,7 @@ Released on TBD (UTC).
 - Fixed socket reconnect confirmation hanging when a stalled peer blocks the buffer drain (Rust)
 - Fixed stream-mode WebSocket clients accepting a zero heartbeat interval (Rust)
 - Fixed streaming index prices and PyO3 mark, index, and funding data paths
+- Fixed per-instrument streaming paths for `MarkPriceUpdate` (#4267), thanks @graceyangfan
 - Fixed TLS client authentication silently dropped for combined key and certificate PEM files (Rust)
 - Fixed `TwapAlgorithm` rejecting primary orders already cached by the engine submit path (Rust)
 - Fixed `TwapAlgorithm` time event and lifecycle dispatch so all scheduled slices execute (Rust)
@@ -143,9 +149,12 @@ Released on TBD (UTC).
 - Improved Postgres order-client index restore to pick the latest client ID per order (Rust)
 - Improved OTO contingency position ID recovery to persist re-indexed assignments (Rust)
 - Improved Polymarket data client module structure (#4260), thanks @graceyangfan
+- Improved Polymarket execution module structure (#4271), thanks @graceyangfan
+- Improved Polymarket resolution module structure (#4269), thanks @graceyangfan
 - Optimized `Cache` query filtering to scale with open orders and positions (#4242), thanks for reporting @magnified103
 - Standardized Rust `OrderDenied` reason codes
 - Upgraded Interactive Brokers Rust adapter to `ibapi` 3.0.1 (#4209), thanks @faysou
+- Upgraded `capnp` and `capnpc` crates to v0.26.0
 - Upgraded `redis` crate to v1.2.3
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.29.0
 

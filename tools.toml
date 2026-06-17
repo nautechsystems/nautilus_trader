@@ -9,13 +9,10 @@
 version = "0.4.4"
 
 [pip-audit]
-version = "2.10.0"
+version = "2.10.1"
 
 [pypi-attestations]
 version = "0.0.29"
-
-[maturin]
-version = "1.13.3"
 
 [osv-scanner]
 version = "2.3.8"

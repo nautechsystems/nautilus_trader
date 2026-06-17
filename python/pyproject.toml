@@ -31,7 +31,8 @@ repository = "https://github.com/nautechsystems/nautilus_trader"
 docs = "https://nautilustrader.io/docs"
 
 [build-system]
-requires = ["maturin>=1.13.3", "patchelf"]
+# Keep the maturin pin exact; scripts/maturin-version.bash uses it for CI wheel builds.
+requires = ["maturin==1.14.0", "patchelf"]
 build-backend = "maturin"
 
 [tool.maturin]
@@ -85,7 +86,7 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin>=1.13.3", "mypy>=1.20.2,<2.0.0", "ruff>=0.15.17"]
+dev = ["maturin==1.14.0", "mypy>=1.20.2,<2.0.0", "ruff>=0.15.17"]
 test = [
   "pytest>=9.0.3",
   "pytest-asyncio>=1.4.0",
