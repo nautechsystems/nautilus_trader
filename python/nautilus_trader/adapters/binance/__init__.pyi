@@ -95,6 +95,7 @@ class BinanceExecClientConfig:
         futures_margin_types: typing.Mapping[str, BinanceMarginType] | None = None,
         treat_expired_as_canceled: bool = False,
         use_trade_lite: bool = False,
+        bnfcr_currency: model.Currency | None = None,
     ) -> None: ...
 
 @typing.final

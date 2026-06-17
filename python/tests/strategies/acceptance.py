@@ -25,10 +25,12 @@ from __future__ import annotations
 
 from datetime import UTC
 from datetime import datetime
+from decimal import Decimal
 
 from nautilus_trader.core import UUID4
 from nautilus_trader.indicators import MovingAverageConvergenceDivergence
 from nautilus_trader.model import Bar
+from nautilus_trader.model import BarType
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentId
@@ -43,6 +45,7 @@ from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import StopMarketOrder
 from nautilus_trader.model import TimeInForce
 from nautilus_trader.model import TradeTick
+from nautilus_trader.model import TrailingOffsetType
 from nautilus_trader.model import TriggerType
 from nautilus_trader.trading import Strategy
 from nautilus_trader.trading import StrategyConfig
@@ -284,6 +287,282 @@ class MultiInstrumentTickScheduled(Strategy):
 
     def on_stop(self):
         pass
+
+
+class EMACrossStopEntryConfig(StrategyConfig):
+    _CUSTOM_FIELDS = (
+        "instrument_id",
+        "bar_type",
+        "trade_size",
+        "fast_ema_period",
+        "slow_ema_period",
+        "atr_period",
+        "trailing_atr_multiple",
+        "trailing_offset_type",
+        "trigger_type",
+        "emulation_trigger",
+    )
+
+    def __new__(cls, *args, **kwargs):
+        for key in cls._CUSTOM_FIELDS:
+            kwargs.pop(key, None)
+        return super().__new__(cls, *args, **kwargs)
+
+    def __init__(
+        self,
+        instrument_id: str,
+        bar_type: str,
+        trade_size: str,
+        fast_ema_period: int = 10,
+        slow_ema_period: int = 20,
+        atr_period: int = 20,
+        trailing_atr_multiple: float = 3.0,
+        trailing_offset_type: str = "PRICE",
+        trigger_type: str = "LAST_PRICE",
+        emulation_trigger: str = "NO_TRIGGER",
+        **kwargs,
+    ):
+        super().__init__()
+        self.instrument_id = instrument_id
+        self.bar_type = bar_type
+        self.trade_size = trade_size
+        self.fast_ema_period = fast_ema_period
+        self.slow_ema_period = slow_ema_period
+        self.atr_period = atr_period
+        self.trailing_atr_multiple = trailing_atr_multiple
+        self.trailing_offset_type = trailing_offset_type
+        self.trigger_type = trigger_type
+        self.emulation_trigger = emulation_trigger
+
+
+class EMACrossTrailingStopConfig(StrategyConfig):
+    _CUSTOM_FIELDS = (
+        "instrument_id",
+        "bar_type",
+        "trade_size",
+        "fast_ema_period",
+        "slow_ema_period",
+        "atr_period",
+        "trailing_atr_multiple",
+        "trailing_offset_type",
+        "trigger_type",
+        "emulation_trigger",
+    )
+
+    def __new__(cls, *args, **kwargs):
+        for key in cls._CUSTOM_FIELDS:
+            kwargs.pop(key, None)
+        return super().__new__(cls, *args, **kwargs)
+
+    def __init__(
+        self,
+        instrument_id: str,
+        bar_type: str,
+        trade_size: str,
+        fast_ema_period: int = 10,
+        slow_ema_period: int = 20,
+        atr_period: int = 20,
+        trailing_atr_multiple: float = 2.0,
+        trailing_offset_type: str = "PRICE",
+        trigger_type: str = "BID_ASK",
+        emulation_trigger: str = "BID_ASK",
+        **kwargs,
+    ):
+        super().__init__()
+        self.instrument_id = instrument_id
+        self.bar_type = bar_type
+        self.trade_size = trade_size
+        self.fast_ema_period = fast_ema_period
+        self.slow_ema_period = slow_ema_period
+        self.atr_period = atr_period
+        self.trailing_atr_multiple = trailing_atr_multiple
+        self.trailing_offset_type = trailing_offset_type
+        self.trigger_type = trigger_type
+        self.emulation_trigger = emulation_trigger
+
+
+class _EMACrossTrailingWorkflow(Strategy):
+    def __init__(self, config):
+        super().__init__(config)
+        self._instrument_id = InstrumentId.from_str(config.instrument_id)
+        self._bar_type = BarType.from_str(config.bar_type)
+        self._trade_size = Decimal(str(config.trade_size))
+        self._fast_period = config.fast_ema_period
+        self._slow_period = config.slow_ema_period
+        self._atr_period = config.atr_period
+        self._fast_alpha = Decimal(2) / Decimal(self._fast_period + 1)
+        self._slow_alpha = Decimal(2) / Decimal(self._slow_period + 1)
+        self._trailing_atr_multiple = Decimal(str(config.trailing_atr_multiple))
+        self._trailing_offset_type = TrailingOffsetType.from_str(config.trailing_offset_type)
+        self._trigger_type = TriggerType.from_str(config.trigger_type)
+        self._emulation_trigger = TriggerType.from_str(config.emulation_trigger)
+
+        self._instrument = None
+        self._tick_size = Decimal(0)
+        self._bar_count = 0
+        self._fast_ema = Decimal(0)
+        self._slow_ema = Decimal(0)
+        self._atr = Decimal(0)
+        self._prev_close = Decimal(0)
+        self.entry = None
+        self.trailing_stop = None
+
+    def on_start(self):
+        self._instrument = self.cache.instrument(self._instrument_id)
+        if self._instrument is None:
+            self.log.error(f"Could not find instrument for {self._instrument_id}")
+            self.stop()
+            return
+
+        self._tick_size = self._instrument.price_increment.as_decimal()
+        self.subscribe_bars(self._bar_type)
+        self.subscribe_quotes(self._instrument_id)
+        self.subscribe_trades(self._instrument_id)
+
+    def on_bar(self, bar: Bar):
+        self._update_indicators(bar)
+        if not self._indicators_ready():
+            return
+        if not self.portfolio.is_flat(self._instrument_id):
+            return
+        if self.entry is not None and not self.entry.is_closed():
+            return
+
+        if self._fast_ema >= self._slow_ema:
+            self._submit_entry(OrderSide.BUY, bar)
+        else:
+            self._submit_entry(OrderSide.SELL, bar)
+
+    def on_order_filled(self, event: OrderFilled):
+        if self.entry and event.client_order_id == self.entry.client_order_id:
+            if event.order_side == OrderSide.BUY:
+                self._submit_trailing_stop(OrderSide.SELL, event.last_px, event.position_id)
+            else:
+                self._submit_trailing_stop(OrderSide.BUY, event.last_px, event.position_id)
+        elif self.trailing_stop and event.client_order_id == self.trailing_stop.client_order_id:
+            self.entry = None
+            self.trailing_stop = None
+
+    def on_order_rejected(self, event):
+        self._clear_terminal_entry(event.client_order_id)
+
+    def on_order_canceled(self, event):
+        self._clear_terminal_entry(event.client_order_id)
+
+    def on_order_expired(self, event):
+        self._clear_terminal_entry(event.client_order_id)
+
+    def on_stop(self):
+        self.cancel_all_orders(self._instrument_id)
+        self.close_all_positions(self._instrument_id)
+
+    def on_reset(self):
+        self._bar_count = 0
+        self._fast_ema = Decimal(0)
+        self._slow_ema = Decimal(0)
+        self._atr = Decimal(0)
+        self._prev_close = Decimal(0)
+        self.entry = None
+        self.trailing_stop = None
+
+    def _submit_entry(self, side: OrderSide, bar: Bar):
+        raise NotImplementedError
+
+    def _submit_trailing_stop(self, side: OrderSide, activation_price: Price, position_id):
+        if self._instrument is None:
+            self.log.error("No instrument loaded")
+            return
+
+        offset = self._atr * self._trailing_atr_multiple
+        trailing_offset = Decimal(f"{offset:.{self._instrument.price_precision}f}")
+        order = self.order_factory.trailing_stop_market(
+            instrument_id=self._instrument_id,
+            order_side=side,
+            quantity=self._instrument.make_qty(self._trade_size),
+            trailing_offset=trailing_offset,
+            trailing_offset_type=self._trailing_offset_type,
+            activation_price=activation_price,
+            trigger_type=self._trigger_type,
+            reduce_only=True,
+            emulation_trigger=self._emulation_trigger,
+            tags=["ema-cross-trailing-stop"],
+        )
+
+        self.trailing_stop = order
+        self.submit_order(order, position_id=position_id)
+
+    def _update_indicators(self, bar: Bar):
+        high = bar.high.as_decimal()
+        low = bar.low.as_decimal()
+        close = bar.close.as_decimal()
+        true_range = high - low
+        if self._bar_count > 0:
+            true_range = max(true_range, abs(high - self._prev_close), abs(low - self._prev_close))
+
+        self._bar_count += 1
+        if self._bar_count == 1:
+            self._fast_ema = close
+            self._slow_ema = close
+            self._atr = true_range
+        else:
+            self._fast_ema = (
+                self._fast_alpha * close + (Decimal(1) - self._fast_alpha) * self._fast_ema
+            )
+            self._slow_ema = (
+                self._slow_alpha * close + (Decimal(1) - self._slow_alpha) * self._slow_ema
+            )
+            self._atr = ((self._atr * Decimal(self._atr_period - 1)) + true_range) / Decimal(
+                self._atr_period,
+            )
+        self._prev_close = close
+
+    def _indicators_ready(self) -> bool:
+        return self._bar_count >= max(self._slow_period, self._atr_period)
+
+    def _clear_terminal_entry(self, client_order_id: ClientOrderId):
+        if self.entry and client_order_id == self.entry.client_order_id:
+            self.entry = None
+
+
+class EMACrossStopEntry(_EMACrossTrailingWorkflow):
+    def _submit_entry(self, side: OrderSide, bar: Bar):
+        if self._instrument is None:
+            self.log.error("No instrument loaded")
+            return
+
+        if side == OrderSide.BUY:
+            trigger_price = bar.high.as_decimal() + (self._tick_size * 2)
+        else:
+            trigger_price = bar.low.as_decimal() - (self._tick_size * 2)
+
+        order = self.order_factory.market_if_touched(
+            instrument_id=self._instrument_id,
+            order_side=side,
+            quantity=self._instrument.make_qty(self._trade_size),
+            trigger_price=self._instrument.make_price(trigger_price),
+            trigger_type=self._trigger_type,
+            time_in_force=TimeInForce.IOC,
+            emulation_trigger=self._emulation_trigger,
+        )
+
+        self.entry = order
+        self.submit_order(order)
+
+
+class EMACrossTrailingStop(_EMACrossTrailingWorkflow):
+    def _submit_entry(self, side: OrderSide, bar: Bar):
+        if self._instrument is None:
+            self.log.error("No instrument loaded")
+            return
+
+        order = self.order_factory.market(
+            instrument_id=self._instrument_id,
+            order_side=side,
+            quantity=self._instrument.make_qty(self._trade_size),
+        )
+
+        self.entry = order
+        self.submit_order(order)
 
 
 class CascadingStopConfig(StrategyConfig):

@@ -81,6 +81,14 @@ MULTI_CASCADE_CONFIG = "strategies.acceptance:MultiCascadeConfig"
 DUAL_TIMER_STRATEGY = "strategies.acceptance:DualTimer"
 DUAL_TIMER_CONFIG = "strategies.acceptance:DualTimerConfig"
 
+EMA_CROSS_STOP_ENTRY_STRATEGY = "strategies.acceptance:EMACrossStopEntry"
+EMA_CROSS_STOP_ENTRY_CONFIG = "strategies.acceptance:EMACrossStopEntryConfig"
+
+EMA_CROSS_TRAILING_STOP_STRATEGY = "strategies.acceptance:EMACrossTrailingStop"
+EMA_CROSS_TRAILING_STOP_CONFIG = "strategies.acceptance:EMACrossTrailingStopConfig"
+
+EMA_CROSS_TRAILING_STOP_TAG = "ema-cross-trailing-stop"
+
 
 def _engine(
     *,
@@ -351,13 +359,74 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert result.iterations > 0
         assert result.total_orders > 0
 
-    @pytest.mark.skip(reason="v2 missing: EMACrossStopEntry example strategy")
     def test_run_ema_cross_stop_entry_trail_strategy(self):
-        pass
+        self.engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path=EMA_CROSS_STOP_ENTRY_STRATEGY,
+                config_path=EMA_CROSS_STOP_ENTRY_CONFIG,
+                config={
+                    "instrument_id": str(self.gbpusd.id),
+                    "bar_type": "GBP/USD.SIM-5-MINUTE-BID-INTERNAL",
+                    "trade_size": "1000000",
+                    "fast_ema_period": 10,
+                    "slow_ema_period": 20,
+                    "atr_period": 20,
+                    "trailing_atr_multiple": 0.01,
+                    "trailing_offset_type": "PRICE",
+                    "trigger_type": "LAST_PRICE",
+                },
+            ),
+        )
 
-    @pytest.mark.skip(reason="v2 missing: EMACrossTrailingStop example strategy + emulator")
+        self.engine.run()
+        result = self.engine.get_result()
+        trailing_stops = [
+            order
+            for order in self.engine.cache.orders()
+            if order.tags and EMA_CROSS_TRAILING_STOP_TAG in order.tags
+        ]
+
+        assert result.iterations > 0
+        assert result.total_orders > 0
+        assert result.total_positions > 0
+        assert result.total_events > 0
+        assert trailing_stops
+        assert self.engine.cache.positions_closed_count() > 0
+
     def test_run_ema_cross_stop_entry_trail_strategy_with_emulation(self):
-        pass
+        self.engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path=EMA_CROSS_TRAILING_STOP_STRATEGY,
+                config_path=EMA_CROSS_TRAILING_STOP_CONFIG,
+                config={
+                    "instrument_id": str(self.gbpusd.id),
+                    "bar_type": "GBP/USD.SIM-1-MINUTE-BID-INTERNAL",
+                    "trade_size": "1000000",
+                    "fast_ema_period": 10,
+                    "slow_ema_period": 20,
+                    "atr_period": 20,
+                    "trailing_atr_multiple": 0.01,
+                    "trailing_offset_type": "PRICE",
+                    "trigger_type": "BID_ASK",
+                    "emulation_trigger": "BID_ASK",
+                },
+            ),
+        )
+
+        self.engine.run()
+        result = self.engine.get_result()
+        trailing_stops = [
+            order
+            for order in self.engine.cache.orders()
+            if order.tags and EMA_CROSS_TRAILING_STOP_TAG in order.tags
+        ]
+
+        assert result.iterations > 0
+        assert result.total_orders > 0
+        assert result.total_positions > 0
+        assert result.total_events > 0
+        assert any(order.status == OrderStatus.FILLED for order in trailing_stops)
+        assert self.engine.cache.positions_closed_count() > 0
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
