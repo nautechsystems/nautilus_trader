@@ -696,13 +696,13 @@ mod tests {
     use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_model::{
         data::{CustomData as ModelCustomData, DataType},
-        enums::{AssetClass, InstrumentCloseType, OrderSide, PositionSide},
+        enums::{InstrumentCloseType, OrderSide, PositionSide},
         events::{PositionEvent, PositionOpened},
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol,
             TraderId,
         },
-        instruments::BinaryOption,
+        instruments::stubs::binary_option,
         types::{Currency, Price, Quantity},
     };
     use nautilus_network::{retry::RetryConfig, websocket::TransportBackend};
@@ -785,36 +785,17 @@ mod tests {
         price_increment: Price,
         size_increment: Quantity,
     ) -> InstrumentAny {
-        let price_precision = price_increment.precision;
-        let size_precision = size_increment.precision;
-        InstrumentAny::BinaryOption(BinaryOption::new(
-            InstrumentId::from(format!("{raw_symbol}.POLYMARKET").as_str()),
-            Symbol::new(raw_symbol),
-            AssetClass::Alternative,
-            Currency::pUSD(),
-            UnixNanos::default(),
-            UnixNanos::from(u64::MAX),
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        let mut binary = binary_option();
+        binary.id = InstrumentId::from(format!("{raw_symbol}.POLYMARKET").as_str());
+        binary.raw_symbol = Symbol::new(raw_symbol);
+        binary.currency = Currency::pUSD();
+        binary.activation_ns = UnixNanos::default();
+        binary.expiration_ns = UnixNanos::from(u64::MAX);
+        binary.price_precision = price_increment.precision;
+        binary.size_precision = size_increment.precision;
+        binary.price_increment = price_increment;
+        binary.size_increment = size_increment;
+        InstrumentAny::BinaryOption(binary)
     }
 
     fn make_ws_ctx_with_gamma_base_url(

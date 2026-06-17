@@ -25,12 +25,11 @@ use nautilus_model::{
 use super::{
     PolymarketDataClient,
     instruments::cache_instrument,
+    runtime::{is_instrument_expired, retire_local_instrument_state},
     subscriptions::{resolve_token_id_from, sync_ws_subscription_async},
 };
 use crate::{
-    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
-    data_runtime::{is_instrument_expired, retire_local_instrument_state},
-    http::query::GetGammaMarketsParams,
+    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE, http::query::GetGammaMarketsParams,
     providers::extract_condition_id,
 };
 

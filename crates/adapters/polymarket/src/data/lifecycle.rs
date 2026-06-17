@@ -27,9 +27,9 @@ use nautilus_model::events::PositionEvent;
 use super::{
     PolymarketDataClient,
     dispatch::{WsMessageContext, handle_ws_message},
+    runtime::{retire_expired_local_instruments, seed_token_meta_from_live_instruments},
 };
 use crate::{
-    data_runtime::{retire_expired_local_instruments, seed_token_meta_from_live_instruments},
     data_types::register_polymarket_custom_data,
     resolve::{
         ResolveBatchErrorMode, ResolveWatchSelectionMode, collect_resolve_watch_selection,
@@ -423,9 +423,9 @@ mod tests {
     use nautilus_core::{Params, UUID4, UnixNanos};
     use nautilus_model::{
         data::{DataType, QuoteTick},
-        enums::{AssetClass, BookType},
+        enums::BookType,
         identifiers::{ClientId, InstrumentId, PositionId, Symbol},
-        instruments::{BinaryOption, Instrument, InstrumentAny},
+        instruments::{Instrument, InstrumentAny, stubs::binary_option},
         orderbook::OrderBook,
         types::{Currency, Price, Quantity},
     };
@@ -438,15 +438,13 @@ mod tests {
     use crate::{
         common::consts::POLYMARKET_CLIENT_ID,
         config::PolymarketDataClientConfig,
-        data::instruments::cache_instrument,
-        data_runtime::retire_local_instrument_state,
+        data::{instruments::cache_instrument, runtime::retire_local_instrument_state},
         http::{
             clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
             gamma::PolymarketGammaHttpClient,
         },
         resolve::upsert_resolve_watch_entry_from_instrument,
-        websocket::client::PolymarketWebSocketClient,
-        websocket::messages::PolymarketWsMessage,
+        websocket::{client::PolymarketWebSocketClient, messages::PolymarketWsMessage},
     };
 
     fn make_client_for_reset_test() -> PolymarketDataClient {
@@ -531,56 +529,31 @@ mod tests {
         raw_symbol: &str,
         condition_id: &str,
     ) -> InstrumentAny {
-        let mut inst = InstrumentAny::BinaryOption(BinaryOption::new(
-            InstrumentId::from(format!("{raw_symbol}.POLYMARKET").as_str()),
-            Symbol::new(raw_symbol),
-            AssetClass::Alternative,
-            Currency::pUSD(),
-            UnixNanos::default(),
-            client.clock.get_time_ns(),
-            3,
-            2,
-            Price::from("0.001"),
-            Quantity::from("0.01"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ));
+        let mut binary = binary_option();
+        binary.id = InstrumentId::from(format!("{raw_symbol}.POLYMARKET").as_str());
+        binary.raw_symbol = Symbol::new(raw_symbol);
+        binary.currency = Currency::pUSD();
+        binary.activation_ns = UnixNanos::default();
+        binary.expiration_ns = UnixNanos::from(
+            client
+                .clock
+                .get_time_ns()
+                .as_u64()
+                .saturating_sub(1_000_000_000),
+        );
 
-        if let InstrumentAny::BinaryOption(ref mut binary) = inst {
-            binary.expiration_ns = UnixNanos::from(
-                client
-                    .clock
-                    .get_time_ns()
-                    .as_u64()
-                    .saturating_sub(1_000_000_000),
-            );
+        let mut info = Params::new();
+        info.insert(
+            "token_id".to_string(),
+            serde_json::Value::String(raw_symbol.to_string()),
+        );
+        info.insert(
+            "condition_id".to_string(),
+            serde_json::Value::String(condition_id.to_string()),
+        );
+        binary.info = Some(info);
 
-            let mut info = Params::new();
-            info.insert(
-                "token_id".to_string(),
-                serde_json::Value::String(raw_symbol.to_string()),
-            );
-            info.insert(
-                "condition_id".to_string(),
-                serde_json::Value::String(condition_id.to_string()),
-            );
-            binary.info = Some(info);
-        }
-
+        let inst = InstrumentAny::BinaryOption(binary);
         cache_instrument(&client.instruments, &client.token_meta, &inst);
         inst
     }

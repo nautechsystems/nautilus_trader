@@ -28,18 +28,14 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use crate::{
-    data::{
-        DataTokenMeta as TokenMeta, data_resolve_token_id_from as resolve_token_id_from,
-        data_sync_ws_subscription_async as sync_ws_subscription_async,
-    },
-    resolve::ResolveWatchEntry,
+use super::{
+    instruments::TokenMeta,
+    subscriptions::{resolve_token_id_from, sync_ws_subscription_async},
 };
+use crate::resolve::ResolveWatchEntry;
 
 pub(crate) fn is_instrument_expired(instrument: &InstrumentAny, now_ns: UnixNanos) -> bool {
-    instrument
-        .expiration_ns()
-        .is_some_and(|expiration_ns| expiration_ns.as_u64() != 0 && expiration_ns <= now_ns)
+    crate::filters::is_expired(instrument, now_ns)
 }
 
 pub(crate) fn seed_token_meta_from_live_instruments(
@@ -267,9 +263,9 @@ mod tests {
     use nautilus_core::{AtomicMap, AtomicSet, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_model::{
         data::QuoteTick,
-        enums::{AssetClass, BookType},
+        enums::BookType,
         identifiers::{InstrumentId, PositionId, Symbol},
-        instruments::{BinaryOption, Instrument},
+        instruments::{Instrument, stubs::binary_option},
         orderbook::OrderBook,
         types::{Currency, Price, Quantity},
     };
@@ -283,52 +279,26 @@ mod tests {
 
     fn seed_expired_instrument(raw_symbol: &str, condition_id: &str) -> InstrumentAny {
         let clock = get_atomic_clock_realtime();
-        let mut inst = InstrumentAny::BinaryOption(BinaryOption::new(
-            InstrumentId::from(format!("{raw_symbol}.POLYMARKET").as_str()),
-            Symbol::new(raw_symbol),
-            AssetClass::Alternative,
-            Currency::pUSD(),
-            UnixNanos::default(),
-            clock.get_time_ns(),
-            3,
-            2,
-            Price::from("0.001"),
-            Quantity::from("0.01"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ));
+        let mut binary = binary_option();
+        binary.id = InstrumentId::from(format!("{raw_symbol}.POLYMARKET").as_str());
+        binary.raw_symbol = Symbol::new(raw_symbol);
+        binary.currency = Currency::pUSD();
+        binary.activation_ns = UnixNanos::default();
+        binary.expiration_ns =
+            UnixNanos::from(clock.get_time_ns().as_u64().saturating_sub(1_000_000_000));
 
-        if let InstrumentAny::BinaryOption(ref mut binary) = inst {
-            binary.expiration_ns =
-                UnixNanos::from(clock.get_time_ns().as_u64().saturating_sub(1_000_000_000));
+        let mut info = nautilus_core::Params::new();
+        info.insert(
+            "token_id".to_string(),
+            serde_json::Value::String(raw_symbol.to_string()),
+        );
+        info.insert(
+            "condition_id".to_string(),
+            serde_json::Value::String(condition_id.to_string()),
+        );
+        binary.info = Some(info);
 
-            let mut info = nautilus_core::Params::new();
-            info.insert(
-                "token_id".to_string(),
-                serde_json::Value::String(raw_symbol.to_string()),
-            );
-            info.insert(
-                "condition_id".to_string(),
-                serde_json::Value::String(condition_id.to_string()),
-            );
-            binary.info = Some(info);
-        }
-
-        inst
+        InstrumentAny::BinaryOption(binary)
     }
 
     fn seed_cached_instrument(

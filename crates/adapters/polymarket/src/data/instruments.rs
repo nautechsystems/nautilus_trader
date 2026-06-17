@@ -24,11 +24,8 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use super::PolymarketDataClient;
-use crate::{
-    data_runtime::is_instrument_expired, filters::InstrumentFilter,
-    http::gamma::PolymarketGammaHttpClient,
-};
+use super::{PolymarketDataClient, runtime::is_instrument_expired};
+use crate::{filters::InstrumentFilter, http::gamma::PolymarketGammaHttpClient};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct TokenMeta {
