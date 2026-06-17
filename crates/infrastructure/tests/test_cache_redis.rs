@@ -1431,33 +1431,30 @@ mod serial_tests {
         let positions_closed_key =
             format!("{}:index:positions_closed", adapter.database.trader_key);
         let con = adapter.database.con.clone();
-        let trader_key = adapter.database.trader_key.clone();
         let encoding = adapter.database.get_encoding();
         let expected_position = reopened_position.clone();
         let wait_key = key.clone();
         let wait_positions_open_key = positions_open_key.clone();
         let wait_positions_closed_key = positions_closed_key.clone();
+        let reopen_event_id = reopen_fill.event_id;
 
         wait_until_async(
             move || {
                 let con = con.clone();
-                let trader_key = trader_key.clone();
                 let key = wait_key.clone();
                 let positions_open_key = wait_positions_open_key.clone();
                 let positions_closed_key = wait_positions_closed_key.clone();
                 let expected_position = expected_position.clone();
                 async move {
                     let mut conn = con.clone();
-                    DatabaseQueries::load_position(
-                        &con,
-                        &trader_key,
-                        &expected_position.id,
-                        encoding,
-                    )
-                    .await
-                    .unwrap()
-                    .is_some_and(|loaded| loaded == expected_position)
-                        && conn.llen::<_, usize>(&key).await.unwrap_or(0) == 1
+                    let frames: Vec<Bytes> = conn.lrange(&key, 0, -1).await.unwrap_or_default();
+
+                    if frames.len() != 1 {
+                        return false;
+                    }
+                    let fill: OrderFilled =
+                        DatabaseQueries::deserialize_payload(encoding, &frames[0]).unwrap();
+                    fill.event_id == reopen_event_id
                         && conn
                             .sismember::<_, _, bool>(
                                 &positions_open_key,

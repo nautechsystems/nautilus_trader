@@ -679,16 +679,11 @@ mod serial_tests {
 
         wait_until_async(
             || async {
-                pg_cache
-                    .load_position(&reopened_position.id)
-                    .await
-                    .unwrap()
-                    .is_some_and(|loaded| loaded == reopened_position)
-                    && DatabaseQueries::load_position_events(&pg_cache.pool, &reopened_position.id)
+                let events =
+                    DatabaseQueries::load_position_events(&pg_cache.pool, &reopened_position.id)
                         .await
-                        .unwrap()
-                        .len()
-                        == 1
+                        .unwrap();
+                events.len() == 1 && events[0].event_id == reopen_fill.event_id
             },
             Duration::from_secs(5),
         )
