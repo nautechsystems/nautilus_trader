@@ -181,6 +181,10 @@ async def test_openOrder(ib_client):
     # Assert
     venue_order_id = get_venue_order_id(order.orderId, order.permId)
     assert ib_client._order_id_to_order_ref[venue_order_id]
+    assert (
+        ib_client._order_id_to_order_ref[VenueOrderId(str(order_id))]
+        == (ib_client._order_id_to_order_ref[venue_order_id])
+    )
     assert mock_request.result == [order]
     handler_mock.assert_not_called()
 

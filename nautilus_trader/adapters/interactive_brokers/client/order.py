@@ -291,6 +291,13 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             order_id=order.orderRef,
         )
 
+        if order.permId != 0 and order.orderId != 0:
+            self._set_order_id_ref(
+                venue_order_id=VenueOrderId(str(order.orderId)),
+                account_id=order.account,
+                order_id=order.orderRef,
+            )
+
         # Handle response to on-demand request
         if request := self._requests.get(name="OpenOrders"):
             request.result.append(order)
