@@ -22,6 +22,7 @@ from unittest.mock import patch
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 import pytest
 
 from nautilus_trader import TEST_DATA_DIR
@@ -162,6 +163,78 @@ def test_catalog_instrument_ids_correctly_unmapped(catalog: ParquetDataCatalog) 
     # Assert
     assert instrument.id.value == "AUD/USD.SIM"
     assert trade_tick.instrument_id.value == "AUD/USD.SIM"
+
+
+def test_catalog_preserves_mixed_precision_order_book_delta_runs(
+    catalog: ParquetDataCatalog,
+) -> None:
+    # Arrange
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
+    deltas = [
+        OrderBookDelta(
+            instrument_id=instrument.id,
+            action=BookAction.UPDATE,
+            order=BookOrder(
+                OrderSide.BUY,
+                Price(1.11, 2),
+                Quantity(10.0001, 4),
+                1,
+            ),
+            flags=0,
+            sequence=0,
+            ts_event=100,
+            ts_init=100,
+        ),
+        OrderBookDelta(
+            instrument_id=instrument.id,
+            action=BookAction.UPDATE,
+            order=BookOrder(
+                OrderSide.BUY,
+                Price(1.123, 3),
+                Quantity(10.000001, 6),
+                2,
+            ),
+            flags=0,
+            sequence=0,
+            ts_event=200,
+            ts_init=200,
+        ),
+        OrderBookDelta(
+            instrument_id=instrument.id,
+            action=BookAction.UPDATE,
+            order=BookOrder(
+                OrderSide.BUY,
+                Price(1.12, 2),
+                Quantity(10.0002, 4),
+                3,
+            ),
+            flags=0,
+            sequence=0,
+            ts_event=300,
+            ts_init=300,
+        ),
+    ]
+
+    # Act
+    catalog.write_data(deltas)
+
+    # Assert
+    stored = sorted(catalog.order_book_deltas(["AUD/USD.SIM"]), key=lambda d: d.ts_init)
+    assert [delta.order.price.precision for delta in stored] == [2, 3, 2]
+    assert [delta.order.size.precision for delta in stored] == [4, 6, 4]
+    assert [str(delta.order.price) for delta in stored] == ["1.11", "1.123", "1.12"]
+    assert [str(delta.order.size) for delta in stored] == ["10.0001", "10.000001", "10.0002"]
+
+    files = catalog._query_files(OrderBookDelta, [str(instrument.id)], None, None)
+    assert len(files) == 3
+    assert [
+        pq.ParquetFile(file, filesystem=catalog.fs).schema_arrow.metadata
+        for file in files
+    ] == [
+        {b"instrument_id": b"AUD/USD.SIM", b"price_precision": b"2", b"size_precision": b"4"},
+        {b"instrument_id": b"AUD/USD.SIM", b"price_precision": b"3", b"size_precision": b"6"},
+        {b"instrument_id": b"AUD/USD.SIM", b"price_precision": b"2", b"size_precision": b"4"},
+    ]
 
 
 def test_enforce_monotonic_ts_already_sorted_returns_unchanged() -> None:

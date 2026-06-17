@@ -364,6 +364,22 @@ class ParquetDataCatalog(BaseDataCatalog):
         if isinstance(data[0], CustomData):
             data = [d.data for d in data]
 
+        if data_cls == OrderBookDelta:
+            precision_runs = self._order_book_delta_precision_runs(data)
+            if len(precision_runs) > 1:
+                for index, precision_run in enumerate(precision_runs):
+                    run_start = start if index == 0 else None
+                    run_end = end if index == len(precision_runs) - 1 else None
+                    self._write_chunk(
+                        data=precision_run,
+                        data_cls=data_cls,
+                        identifier=identifier,
+                        start=run_start,
+                        end=run_end,
+                        skip_disjoint_check=skip_disjoint_check,
+                    )
+                return
+
         table = self._objects_to_table(data, data_cls=data_cls)
         directory = self._make_path(data_cls=data_cls, identifier=identifier)
         self.fs.mkdirs(directory, exist_ok=True)
@@ -392,6 +408,60 @@ class ParquetDataCatalog(BaseDataCatalog):
             filesystem=self.fs,
             row_group_size=self.max_rows_per_group,
         )
+
+    @staticmethod
+    def _order_book_delta_precision_key(delta: OrderBookDelta) -> tuple[int, int] | None:
+        if delta.order is None:
+            return None
+
+        price_precision = delta.order.price.precision
+        size_precision = delta.order.size.precision
+
+        if price_precision == 0 and size_precision == 0:
+            return None
+
+        return price_precision, size_precision
+
+    @classmethod
+    def _order_book_delta_precision_runs(
+        cls,
+        data: list[Data],
+    ) -> list[list[Data]]:
+        runs: list[list[Data]] = []
+        pending_sentinels: list[Data] = []
+        current_run: list[Data] = []
+        current_key: tuple[int, int] | None = None
+
+        for delta in data:
+            key = cls._order_book_delta_precision_key(delta)
+
+            if key is None:
+                if current_run:
+                    current_run.append(delta)
+                else:
+                    pending_sentinels.append(delta)
+                continue
+
+            if current_key is None:
+                current_key = key
+                current_run = [*pending_sentinels, delta]
+                pending_sentinels = []
+                continue
+
+            if key == current_key:
+                current_run.append(delta)
+                continue
+
+            runs.append(current_run)
+            current_key = key
+            current_run = [delta]
+
+        if current_run:
+            runs.append(current_run)
+        elif pending_sentinels:
+            runs.append(pending_sentinels)
+
+        return runs
 
     def _objects_to_table(self, data: list[Data], data_cls: type) -> pa.Table:
         PyCondition.not_empty(data, "data")
@@ -1807,10 +1877,19 @@ class ParquetDataCatalog(BaseDataCatalog):
         if self.fs_protocol != "file":
             self._register_object_store_with_session(session)
 
-        if files is not None and not optimize_file_loading:
-            # Register files individually only when optimization is disabled
-            # (e.g., for consolidation operations requiring precise file control)
-            for file in files:
+        register_files_individually = (
+            files is not None and not optimize_file_loading
+        ) or (data_cls == OrderBookDelta and not optimize_file_loading)
+
+        if register_files_individually:
+            # OrderBookDelta stores precision in file metadata, so mixed-precision
+            # files must be decoded separately instead of merged as one directory.
+            if files is not None:
+                file_list = files
+            else:
+                file_list = self._query_files(data_cls, identifiers, start, end)
+
+            for file in file_list:
                 self._register_file_table(
                     session=session,
                     file=file,
