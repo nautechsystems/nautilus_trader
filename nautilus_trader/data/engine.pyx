@@ -1227,8 +1227,6 @@ cdef class DataEngine(Component):
             client.subscribe_funding_rates(command)
 
     cpdef void _handle_subscribe_bars(self, MarketDataClient client, SubscribeBars command):
-        Condition.not_none(client, "client")
-
         if command.params.get("continuous_future_transitions"):
             self._handle_subscribe_continuous_future_bars(client, command)
             return
@@ -1242,6 +1240,8 @@ cdef class DataEngine(Component):
                     "Cannot subscribe for externally aggregated synthetic instrument bar data",
                 )
                 return
+
+            Condition.not_none(client, "client")
 
             if "start_ns" not in command.params:
                 last_timestamp: datetime | None = self._catalog_last_timestamp(Bar, str(command.bar_type))[0]
@@ -1817,8 +1817,6 @@ cdef class DataEngine(Component):
                 client.unsubscribe_funding_rates(command)
 
     cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, UnsubscribeBars command):
-        Condition.not_none(client, "client")
-
         if self._msgbus.has_subscribers(self._topic_cache.get_bars_topic(command.bar_type.standard())):
             return
 
@@ -1833,6 +1831,10 @@ cdef class DataEngine(Component):
                 self._stop_bar_aggregator(client, command)
         else:
             # External aggregation
+            if command.bar_type.instrument_id.is_synthetic():
+                return  # External synthetic subscriptions are never created
+
+            Condition.not_none(client, "client")
             if command.bar_type in client.subscribed_bars():
                 client.unsubscribe_bars(command)
 

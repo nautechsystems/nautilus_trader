@@ -2111,6 +2111,36 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.subscribed_synthetic_trades() == [synthetic.id]
 
+    def test_subscribe_synthetic_bars_with_multiple_venue_clients_does_not_raise(self):
+        # Arrange: two real venue clients, no BACKTEST client
+        self.data_engine.register_client(self.binance_client)
+        self.data_engine.register_client(self.bitmex_client)
+        self.binance_client.start()
+        self.bitmex_client.start()
+
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+        self.cache.add_synthetic(synthetic)
+
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
+        bar_type = BarType(synthetic.id, bar_spec)
+
+        handler = []
+        self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
+
+        subscribe = SubscribeBars(
+            client_id=None,
+            venue=Venue("SYNTH"),
+            bar_type=bar_type,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        assert self.data_engine.command_count == 1
+
     def test_process_trade_tick_when_subscriber_then_sends_to_registered_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)

@@ -65,6 +65,7 @@ Released on TBD (UTC).
 - Fixed Bybit demo native TP/SL and option params being denied instead of routed through the create-order endpoint (Rust and Python)
 - Fixed custom `DataType` metadata ordering and shared custom-data unsubscribes (Rust)
 - Fixed data option-chain delta warmup
+- Fixed `DataEngine` synthetic bar subscriptions with multiple venue clients (#4279), thanks for reporting @HSGartley
 - Fixed DeFi replay bootstrap gaps in `PoolSwap` payload exposure, block timestamp units, and actor IDs (Rust)
 - Fixed Deribit chart bar volume for inverse perpetuals (#4245), thanks @filipmacek
 - Fixed `DonchianChannel` period window (#4239), thanks @KaizynX
