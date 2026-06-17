@@ -25,7 +25,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use nautilus_core::{UUID4, message::Message};
+use nautilus_core::UUID4;
 use ustr::Ustr;
 
 use crate::msgbus::{
@@ -33,11 +33,15 @@ use crate::msgbus::{
     typed_handler::shareable_handler,
 };
 
+/// Minimal message payload received by [`StubMessageHandler`].
+#[derive(Debug, Clone)]
+pub struct StubMessage;
+
 /// Stub handler which logs messages it receives.
 #[derive(Clone)]
 pub struct StubMessageHandler {
     id: Ustr,
-    callback: Arc<dyn Fn(Message) + Send>,
+    callback: Arc<dyn Fn(StubMessage) + Send>,
 }
 
 impl Debug for StubMessageHandler {
@@ -54,7 +58,7 @@ impl Handler<dyn Any> for StubMessageHandler {
     }
 
     fn handle(&self, message: &dyn Any) {
-        if let Some(msg) = message.downcast_ref::<Message>() {
+        if let Some(msg) = message.downcast_ref::<StubMessage>() {
             (self.callback)(msg.clone());
         }
     }
@@ -66,7 +70,7 @@ pub fn get_stub_shareable_handler(id: Option<Ustr>) -> ShareableMessageHandler {
     let unique_id = id.unwrap_or_else(|| Ustr::from(UUID4::new().as_str()));
     shareable_handler(Rc::new(StubMessageHandler {
         id: unique_id,
-        callback: Arc::new(|m: Message| {
+        callback: Arc::new(|m: StubMessage| {
             format!("{m:?}");
         }),
     }))

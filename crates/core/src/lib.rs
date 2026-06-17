@@ -75,7 +75,6 @@ pub mod drop;
 pub mod env;
 pub mod hex;
 pub mod math;
-pub mod message;
 pub mod nanos;
 pub mod params;
 pub mod paths;
