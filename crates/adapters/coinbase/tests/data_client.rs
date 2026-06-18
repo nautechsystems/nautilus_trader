@@ -1139,7 +1139,11 @@ async fn test_data_client_reconnect_resumes_derivatives_polls() {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
 
-    let config = create_deriv_data_client_config(addr);
+    let mut config = create_deriv_data_client_config(addr);
+
+    // The poll task fires once immediately. A long interval prevents a
+    // second pre-disconnect poll from racing the reconnect assertion.
+    config.derivatives_poll_interval_secs = 60;
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
@@ -1189,8 +1193,6 @@ async fn test_data_client_reconnect_resumes_derivatives_polls() {
     // index update can be queued before this drain.
     while rx.try_recv().is_ok() {}
 
-    product_stall_enabled.store(false, Ordering::SeqCst);
-
     let mut resumed = false;
     wait_until_async(
         || {
@@ -1215,6 +1217,7 @@ async fn test_data_client_reconnect_resumes_derivatives_polls() {
         "index-price poll must resume after disconnect + connect"
     );
 
+    product_stall_enabled.store(false, Ordering::SeqCst);
     client.disconnect().await.unwrap();
 }
 
@@ -1238,8 +1241,15 @@ async fn test_data_client_stop_halts_derivatives_poll() {
         .subscribe_index_prices(subscribe_index_cmd(instrument_id))
         .unwrap();
 
-    // Let at least one poll tick hit the mock server.
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    wait_until_async(
+        || {
+            let done = product_hits.load(Ordering::SeqCst) > 0;
+            async move { done }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
     let hits_before_stop = product_hits.load(Ordering::SeqCst);
     assert!(
         hits_before_stop > 0,
