@@ -14,16 +14,56 @@
 # -------------------------------------------------------------------------------------------------
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
+import pandas as pd
 import pytest
 
+from nautilus_trader.adapters.bitmex import data as bitmex_data_module
 from nautilus_trader.adapters.bitmex.config import BitmexDataClientConfig
 from nautilus_trader.adapters.bitmex.constants import BITMEX_VENUE
 from nautilus_trader.adapters.bitmex.data import BitmexDataClient
 from nautilus_trader.core.nautilus_pyo3 import BitmexEnvironment
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+
+
+class Pyo3BookPrice:
+    def __init__(self, value: float) -> None:
+        self._value = value
+
+    def as_double(self) -> float:
+        return self._value
+
+
+class Pyo3BookLevel:
+    def __init__(self, price: float, size: int) -> None:
+        self.price = Pyo3BookPrice(price)
+        self._size = size
+
+    def size(self) -> int:
+        return self._size
+
+
+class Pyo3BookSnapshot:
+    def __init__(self) -> None:
+        self.ts_last = 1_234_567_890
+        self.sequence = 42
+        self._bids = [Pyo3BookLevel(50_000.0, 3)]
+        self._asks = [Pyo3BookLevel(50_001.0, 5)]
+
+    def bids(self) -> list[Pyo3BookLevel]:
+        return self._bids
+
+    def asks(self) -> list[Pyo3BookLevel]:
+        return self._asks
 
 
 @pytest.fixture
@@ -89,6 +129,113 @@ async def test_connect_and_disconnect_manage_resources(
 
     # Assert
     mock_ws_client.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_request_order_book_snapshot_emits_snapshot_deltas(
+    bitmex_data_client,
+    instrument,
+    mock_http_client,
+    monkeypatch,
+):
+    # Arrange
+    bitmex_data_client._cache.add_instrument(instrument)
+    mock_http_client.request_book_snapshot = AsyncMock(return_value=Pyo3BookSnapshot())
+    handle_data_response = MagicMock()
+    monkeypatch.setattr(bitmex_data_client, "_handle_data_response", handle_data_response)
+
+    correlation_id = UUID4()
+    request = SimpleNamespace(
+        instrument_id=instrument.id,
+        limit=25,
+        id=correlation_id,
+        params={"source": "test"},
+    )
+
+    # Act
+    await bitmex_data_client._request_order_book_snapshot(request)
+
+    # Assert
+    mock_http_client.request_book_snapshot.assert_awaited_once()
+    _, kwargs = mock_http_client.request_book_snapshot.await_args
+    assert kwargs["instrument_id"].value == instrument.id.value
+    assert kwargs["depth"] == 25
+
+    handle_data_response.assert_called_once()
+    response = handle_data_response.call_args.kwargs
+    assert response["data_type"].type is OrderBookDeltas
+    assert response["data_type"].metadata == {"instrument_id": instrument.id}
+    assert response["correlation_id"] == correlation_id
+    assert response["start"] is None
+    assert response["end"] is None
+    assert response["params"] == {"source": "test"}
+
+    data = response["data"]
+    assert len(data) == 1
+    deltas = data[0]
+    assert deltas.is_snapshot
+    assert len(deltas.deltas) == 3
+    assert deltas.deltas[0].action == BookAction.CLEAR
+    assert deltas.deltas[0].order.side == OrderSide.NO_ORDER_SIDE
+    assert deltas.deltas[1].order.side == OrderSide.BUY
+    assert deltas.deltas[1].order.price == instrument.make_price(50_000.0)
+    assert deltas.deltas[1].order.size == instrument.make_qty(3)
+    assert deltas.deltas[2].order.side == OrderSide.SELL
+    assert deltas.deltas[2].order.price == instrument.make_price(50_001.0)
+    assert deltas.deltas[2].order.size == instrument.make_qty(5)
+    assert deltas.deltas[2].flags == RecordFlag.F_SNAPSHOT | RecordFlag.F_LAST
+
+
+@pytest.mark.asyncio
+async def test_request_funding_rates_converts_and_handles_rates(
+    bitmex_data_client,
+    instrument,
+    mock_http_client,
+    monkeypatch,
+):
+    # Arrange
+    pyo3_rates = [MagicMock(name="pyo3_rate")]
+    converted_rates = [MagicMock(name="funding_rate")]
+    mock_http_client.request_funding_rates = AsyncMock(return_value=pyo3_rates)
+    from_pyo3_list = MagicMock(return_value=converted_rates)
+    funding_rate_update = SimpleNamespace(from_pyo3_list=from_pyo3_list)
+    handle_funding_rates = MagicMock()
+    monkeypatch.setattr(bitmex_data_module, "FundingRateUpdate", funding_rate_update)
+    monkeypatch.setattr(bitmex_data_client, "_handle_funding_rates", handle_funding_rates)
+
+    start = pd.Timestamp("2025-01-01T00:00:00Z")
+    end = pd.Timestamp("2025-01-02T00:00:00Z")
+    expected_start = start.to_pydatetime()
+    expected_end = end.to_pydatetime()
+    correlation_id = UUID4()
+    request = SimpleNamespace(
+        instrument_id=instrument.id,
+        start=start,
+        end=end,
+        limit=2,
+        id=correlation_id,
+        params={"source": "test"},
+    )
+
+    # Act
+    await bitmex_data_client._request_funding_rates(request)
+
+    # Assert
+    mock_http_client.request_funding_rates.assert_awaited_once()
+    _, kwargs = mock_http_client.request_funding_rates.await_args
+    assert kwargs["instrument_id"].value == instrument.id.value
+    assert kwargs["start"] == expected_start
+    assert kwargs["end"] == expected_end
+    assert kwargs["limit"] == 2
+    from_pyo3_list.assert_called_once_with(pyo3_rates)
+    handle_funding_rates.assert_called_once_with(
+        instrument.id,
+        converted_rates,
+        correlation_id,
+        start,
+        end,
+        {"source": "test"},
+    )
 
 
 @pytest.mark.asyncio

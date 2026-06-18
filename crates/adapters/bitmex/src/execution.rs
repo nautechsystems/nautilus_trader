@@ -1065,7 +1065,11 @@ impl ExecutionClient for BitmexExecutionClient {
                 )
                 .await
             {
-                Ok(report) => emitter.send_order_status_report(report),
+                Ok(_) => {
+                    log::debug!(
+                        "BitMEX modify accepted by REST, awaiting websocket confirmation: client_order_id={client_order_id}"
+                    );
+                }
                 Err(e) => handle_modify_failure(&ModifyFailure {
                     err: &e,
                     emitter: &emitter,

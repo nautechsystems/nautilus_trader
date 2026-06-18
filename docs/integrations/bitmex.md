@@ -401,13 +401,17 @@ Upstream references:
 - Order book depth10 snapshots: fixed 10 levels via `orderBook10` channel.
 - Quotes, trades, and instrument updates are supported via WebSocket.
 - Funding rates, mark prices, and index prices are supported where applicable.
-- Historical requests via REST:
+- REST requests:
+  - Current L2 order book snapshots with optional depth.
   - Trade ticks with optional `start`, `end`, and `limit` filters (up to 1,000 results per call).
   - Time bars (`1m`, `5m`, `1h`, `1d`) for externally aggregated LAST prices, including optional partial bins.
+  - Funding rates with optional `start`, `end`, and `limit` filters.
 
 :::note
-BitMEX caps each REST response at 1,000 rows and requires manual pagination via `start`/`startTime`. The current adapter returns only the
-first page; wider pagination support is scheduled for a future update.
+BitMEX table REST page sizes vary by endpoint. Funding rate requests paginate in
+500-row pages until the requested limit or time range is exhausted; trade tick
+and bar requests currently return one venue page per request and allow up to
+1,000 rows.
 :::
 
 ### Trade ID derivation
@@ -862,21 +866,24 @@ mainnet_exec_config = BitmexExecClientConfig(
 
 ### Contingent orders
 
-The BitMEX execution adapter now maps Nautilus contingent order lists to the exchange's
+The BitMEX execution adapter maps Nautilus contingent order lists to the exchange's
 native `clOrdLinkID`/`contingencyType` mechanics. When the engine submits
-`ContingencyType::Oco` or `ContingencyType::Oto` orders the adapter will:
+`ContingencyType::Oco` or `ContingencyType::Oto` orders, the adapter:
 
-- Create/maintain the linked order group on BitMEX so child stops and targets inherit the
+- Creates/maintains the linked order group on BitMEX so child stops and targets inherit the
   parent order status.
-- Propagate order list updates and cancellations so that contingent peers stay aligned with
+- Propagates order list updates and cancellations so that contingent peers stay aligned with
   the current position state.
-- Surface execution reports with the appropriate contingency metadata, enabling strategy-level
+- Surfaces execution reports with the appropriate contingency metadata, enabling strategy-level
   tracking without additional manual wiring.
 
-This means common bracket flows (entry + stop + take-profit) and multi-leg stop structures can
-now be managed directly by BitMEX instead of being emulated client-side. When defining
-strategies, continue to use Nautilus `OrderList`/`ContingencyType` abstractions. The adapter
-handles the required BitMEX wiring automatically.
+The adapter does not map Nautilus `ContingencyType::Ouo` to BitMEX. For bracket
+flows with an entry, stop, and take-profit, BitMEX can natively link the OTO
+entry-to-contingent activation step, but the mutual cancel or update behavior
+between the stop-loss and take-profit legs requires strategy-level emulation.
+When defining strategies, continue to use Nautilus `OrderList`/`ContingencyType`
+abstractions, but do not rely on the adapter to provide OUO pairing for the
+contingent exit legs.
 
 ### Contract specifications
 

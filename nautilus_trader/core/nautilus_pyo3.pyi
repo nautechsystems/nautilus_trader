@@ -9137,6 +9137,18 @@ class BitmexHttpClient:
         limit: int | None = None,
         partial: bool = False,
     ) -> list[Bar]: ...
+    async def request_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        depth: int | None = None,
+    ) -> OrderBook: ...
+    async def request_funding_rates(
+        self,
+        instrument_id: InstrumentId,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+        limit: int | None = None,
+    ) -> list[FundingRateUpdate]: ...
     async def request_account_state(
         self,
         account_id: AccountId,

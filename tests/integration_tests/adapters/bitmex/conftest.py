@@ -215,6 +215,7 @@ def mock_ws_client():
     mock.subscribe_index_prices = AsyncMock()
     mock.subscribe_funding_rates = AsyncMock()
     mock.subscribe_bars = AsyncMock()
+    mock.cache_instrument = MagicMock()
 
     # Mock unsubscription methods
     mock.unsubscribe_orders = AsyncMock()

@@ -16,7 +16,7 @@
 //! Python bindings for the BitMEX HTTP client.
 
 use chrono::{DateTime, Utc};
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
     enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
@@ -250,6 +250,55 @@ impl BitmexHttpClient {
                 let py_bars: PyResult<Vec<_>> =
                     bars.into_iter().map(|bar| bar.into_py_any(py)).collect();
                 let pylist = PyList::new(py, py_bars?).unwrap().into_any().unbind();
+                Ok(pylist)
+            })
+        })
+    }
+
+    /// Request a current order book snapshot for the given instrument.
+    #[pyo3(name = "request_book_snapshot")]
+    #[pyo3(signature = (instrument_id, depth=None))]
+    fn py_request_book_snapshot<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        depth: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let book = client
+                .request_book_snapshot(instrument_id, depth)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(book.into_py_any_unwrap(py)))
+        })
+    }
+
+    /// Request funding rates for the given instrument.
+    #[pyo3(name = "request_funding_rates")]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
+    fn py_request_funding_rates<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let rates = client
+                .request_funding_rates(instrument_id, start, end, limit)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let py_rates: PyResult<Vec<_>> =
+                    rates.into_iter().map(|rate| rate.into_py_any(py)).collect();
+                let pylist = PyList::new(py, py_rates?).unwrap().into_any().unbind();
                 Ok(pylist)
             })
         })
