@@ -27,6 +27,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use dashmap::{DashMap, DashSet, mapref::entry::Entry};
 use nautilus_common::{
+    cache::InstrumentLookupError,
     clients::DataClient,
     live::{runner::get_data_event_sender, runtime::get_runtime},
     messages::{
@@ -567,7 +568,7 @@ impl LighterDataClient {
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found in cache"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         anyhow::ensure!(
             matches!(instrument, InstrumentAny::CryptoPerpetual(_)),
@@ -590,7 +591,7 @@ impl LighterDataClient {
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found in cache"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let market_index = self.registry.market_index(&instrument_id).ok_or_else(|| {
             anyhow::anyhow!("No Lighter market_index registered for {instrument_id}")
         })?;
@@ -1315,7 +1316,7 @@ impl DataClient for LighterDataClient {
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found in cache"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
@@ -1374,7 +1375,7 @@ impl DataClient for LighterDataClient {
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found in cache"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
@@ -1422,7 +1423,7 @@ impl DataClient for LighterDataClient {
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found in cache"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         anyhow::ensure!(
             matches!(instrument, InstrumentAny::CryptoPerpetual(_)),
@@ -1478,7 +1479,7 @@ impl DataClient for LighterDataClient {
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found in cache"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let market_index = self.registry.market_index(&instrument_id).ok_or_else(|| {
             anyhow::anyhow!("No Lighter market_index registered for {instrument_id}")

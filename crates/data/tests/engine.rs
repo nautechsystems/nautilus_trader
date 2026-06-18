@@ -8468,10 +8468,7 @@ fn test_process_instrument(
     let cache = &data_engine.get_cache();
     let messages = saving_handler.get_messages();
 
-    assert_eq!(
-        cache.instrument(&audusd_sim.id()),
-        Some(audusd_sim.clone()).as_ref()
-    );
+    assert_eq!(cache.instrument(&audusd_sim.id()).unwrap(), &audusd_sim);
     assert_eq!(messages.len(), 1);
     assert!(messages.contains(&audusd_sim));
 }

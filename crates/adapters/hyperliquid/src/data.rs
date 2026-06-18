@@ -25,6 +25,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use nautilus_common::{
+    cache::InstrumentLookupError,
     clients::DataClient,
     live::{runner::get_data_event_sender, runtime::get_runtime},
     messages::{
@@ -705,7 +706,7 @@ impl DataClient for HyperliquidDataClient {
 
         let instrument_id = subscription.bar_type.instrument_id();
         if !self.instruments.contains_key(&instrument_id) {
-            anyhow::bail!("Instrument {instrument_id} not found");
+            anyhow::bail!(InstrumentLookupError::not_found(instrument_id));
         }
 
         let bar_type = subscription.bar_type;
@@ -999,7 +1000,7 @@ impl DataClient for HyperliquidDataClient {
         let instrument = instruments
             .get(&instrument_id)
             .cloned()
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let coin = instrument.raw_symbol().to_string();
         let http = self.http_client.clone();
@@ -1071,7 +1072,7 @@ impl DataClient for HyperliquidDataClient {
         let instruments = self.instruments.load();
         let instrument = instruments
             .get(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         if !matches!(instrument, InstrumentAny::CryptoPerpetual(_)) {
             anyhow::bail!("Funding rates are only available for perpetual instruments");
@@ -1147,7 +1148,7 @@ impl DataClient for HyperliquidDataClient {
         let instruments = self.instruments.load();
         let instrument = instruments
             .get(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let raw_symbol = instrument.raw_symbol().to_string();
         let price_precision = instrument.price_precision();

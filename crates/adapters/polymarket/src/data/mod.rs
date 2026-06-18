@@ -34,6 +34,7 @@ use std::{
 use ahash::AHashSet;
 use dashmap::DashMap;
 use nautilus_common::{
+    cache::InstrumentLookupError,
     clients::DataClient,
     live::{get_runtime, runner::get_data_event_sender},
     messages::{
@@ -263,7 +264,7 @@ impl PolymarketDataClient {
         let loaded = self.instruments.load();
         let instrument = loaded
             .get(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?
             .clone();
 
         if is_instrument_expired(&instrument, self.clock.get_time_ns()) {

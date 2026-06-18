@@ -15,6 +15,7 @@
 
 use std::sync::Arc;
 
+use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{AtomicMap, AtomicSet};
 use nautilus_model::{
     identifiers::InstrumentId,
@@ -29,7 +30,7 @@ pub(crate) fn resolve_token_id_from(
     let loaded = instruments.load();
     let instrument = loaded
         .get(&instrument_id)
-        .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
+        .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
     Ok(instrument.raw_symbol().as_str().to_string())
 }
 

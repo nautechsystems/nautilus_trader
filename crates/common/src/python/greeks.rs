@@ -317,7 +317,10 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::{cache::Cache, clock::TestClock};
+    use crate::{
+        cache::{Cache, INSTRUMENT_NOT_FOUND},
+        clock::TestClock,
+    };
 
     #[derive(Clone, Copy)]
     enum MissingPriceCase {
@@ -360,7 +363,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("Instrument definition for AAPL211217C00150000.OPRA not found")
+                .contains(&format!("{INSTRUMENT_NOT_FOUND}: AAPL211217C00150000.OPRA"))
         );
     }
 

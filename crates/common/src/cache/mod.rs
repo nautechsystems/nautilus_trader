@@ -19,6 +19,7 @@
 
 pub mod config;
 pub mod database;
+mod error;
 pub mod fifo;
 pub mod quote;
 pub mod refs;
@@ -43,6 +44,7 @@ use bounded::BoundedVecDeque;
 use bytes::Bytes;
 pub use config::CacheConfig; // Re-export
 use database::{CacheDatabaseAdapter, CacheMap};
+pub use error::{INSTRUMENT_NOT_FOUND, InstrumentLookupError};
 use index::CacheIndex;
 use nautilus_core::{
     SharedCell, UUID4, UnixNanos,
@@ -5270,6 +5272,20 @@ impl Cache {
     #[must_use]
     pub fn instrument(&self, instrument_id: &InstrumentId) -> Option<&InstrumentAny> {
         self.instruments.get(instrument_id)
+    }
+
+    /// Returns a reference to the instrument for the `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InstrumentLookupError::NotFound`] when the instrument is not present in the cache.
+    pub fn try_instrument(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Result<&InstrumentAny, InstrumentLookupError> {
+        self.instruments
+            .get(instrument_id)
+            .ok_or_else(|| InstrumentLookupError::not_found(*instrument_id))
     }
 
     /// Returns references to all instrument IDs for the `venue`.

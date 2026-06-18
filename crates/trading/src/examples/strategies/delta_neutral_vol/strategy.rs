@@ -312,9 +312,7 @@ impl DeltaNeutralVol {
             .context("missing premium entry offset")?;
 
         let cache = self.cache();
-        let instrument = cache
-            .instrument(&instrument_id)
-            .with_context(|| format!("missing instrument {instrument_id} for premium entry"))?;
+        let instrument = cache.try_instrument(&instrument_id)?;
 
         instrument
             .next_ask_price(base_price, offset_ticks)
@@ -332,9 +330,7 @@ impl DeltaNeutralVol {
     ) -> anyhow::Result<f64> {
         let (strike, expiration_ns, is_call) = {
             let cache = self.cache();
-            let instrument = cache
-                .instrument(&instrument_id)
-                .with_context(|| format!("missing instrument {instrument_id} for premium entry"))?;
+            let instrument = cache.try_instrument(&instrument_id)?;
             let strike = instrument
                 .strike_price()
                 .with_context(|| format!("missing strike for {instrument_id}"))?

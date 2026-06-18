@@ -27,6 +27,7 @@ use std::{
 
 use ahash::AHashMap;
 use chrono::{DateTime, Utc};
+use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
     time::get_atomic_clock_realtime,
@@ -1809,7 +1810,7 @@ impl KrakenFuturesHttpClient {
     ) -> anyhow::Result<KrakenFuturesSendOrderParams> {
         let instrument = self
             .get_cached_instrument(&instrument_id.symbol.inner())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let raw_symbol = instrument.raw_symbol().inner();
 
@@ -1936,7 +1937,7 @@ impl KrakenFuturesHttpClient {
     ) -> anyhow::Result<OrderStatusReport> {
         let instrument = self
             .get_cached_instrument(&instrument_id.symbol.inner())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let params = self.build_send_order_params(
             instrument_id,
@@ -2141,7 +2142,7 @@ impl KrakenFuturesHttpClient {
     ) -> anyhow::Result<()> {
         let _ = self
             .get_cached_instrument(&instrument_id.symbol.inner())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let order_id = venue_order_id.as_ref().map(|id| id.to_string());
         let cli_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);
@@ -2445,7 +2446,7 @@ impl KrakenFuturesHttpClient {
     ) -> anyhow::Result<KrakenFuturesEditOrderParams> {
         let _ = self
             .get_cached_instrument(&instrument_id.symbol.inner())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let order_id = venue_order_id.as_ref().map(|id| id.to_string());
         let cli_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);

@@ -69,7 +69,7 @@ use ustr::Ustr;
 
 use crate::{
     cache::{
-        Cache, CacheConfig, CacheView, OrderRef,
+        Cache, CacheConfig, CacheView, INSTRUMENT_NOT_FOUND, InstrumentLookupError, OrderRef,
         database::{CacheDatabaseAdapter, CacheMap},
     },
     signal::Signal,
@@ -1826,6 +1826,17 @@ fn test_instrument_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
 }
 
 #[rstest]
+fn test_try_instrument_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+    let err = cache.try_instrument(&audusd_sim.id).unwrap_err();
+
+    assert_eq!(err, InstrumentLookupError::not_found(audusd_sim.id));
+    assert_eq!(
+        err.to_string(),
+        format!("{INSTRUMENT_NOT_FOUND}: {}", audusd_sim.id)
+    );
+}
+
+#[rstest]
 fn test_instrument_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
     cache
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
@@ -1833,6 +1844,16 @@ fn test_instrument_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
 
     let result = cache.instrument(&audusd_sim.id);
     assert_eq!(result, Some(&InstrumentAny::CurrencyPair(audusd_sim)));
+}
+
+#[rstest]
+fn test_try_instrument_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+
+    let result = cache.try_instrument(&audusd_sim.id).unwrap();
+    assert_eq!(result, &InstrumentAny::CurrencyPair(audusd_sim));
 }
 
 #[rstest]

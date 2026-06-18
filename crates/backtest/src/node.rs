@@ -190,11 +190,7 @@ impl BacktestNode {
                 for (instrument_id, raw_price) in settlement_prices {
                     let price = {
                         let cache = engine.kernel().cache.borrow();
-                        let instrument = cache.instrument(instrument_id).ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "No instrument found for settlement price configuration: {instrument_id}"
-                            )
-                        })?;
+                        let instrument = cache.try_instrument(instrument_id)?;
                         instrument.make_price(*raw_price)
                     };
                     engine.set_settlement_price(venue, *instrument_id, price)?;

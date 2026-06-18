@@ -1229,12 +1229,7 @@ impl LighterExecutionClient {
             anyhow::anyhow!("no Lighter market_index registered for instrument {instrument_id}")
         })?;
 
-        let instrument = self
-            .core
-            .cache()
-            .instrument(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("instrument not cached: {instrument_id}"))?
-            .clone();
+        let instrument = self.core.cache().try_instrument(&instrument_id)?.clone();
 
         let order_kind = nautilus_to_lighter_order_type(order.order_type())?;
 
@@ -1697,8 +1692,7 @@ impl LighterExecutionClient {
         let instrument = self
             .core
             .cache()
-            .instrument(&cmd.instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("instrument not cached: {}", cmd.instrument_id))?
+            .try_instrument(&cmd.instrument_id)?
             .clone();
 
         let new_qty = cmd.quantity.unwrap_or(order.quantity());
@@ -6586,7 +6580,12 @@ mod tests {
                         .as_str()
                         .contains("Lighter modify_order failed")
                 );
-                assert!(event.reason.as_str().contains("instrument not cached"));
+                assert!(
+                    event
+                        .reason
+                        .as_str()
+                        .contains("instrument not found in cache")
+                );
             }
             event => panic!("expected modify rejected event, was {event:?}"),
         }

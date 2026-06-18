@@ -26,6 +26,7 @@ use std::sync::{
 use ahash::AHashSet;
 use anyhow::Context;
 use nautilus_common::{
+    cache::InstrumentLookupError,
     clients::DataClient,
     live::{runner::get_data_event_sender, runtime::get_runtime},
     messages::{
@@ -572,7 +573,7 @@ impl DataClient for CoinbaseDataClient {
         let instrument_id = subscription.bar_type.instrument_id();
 
         if !self.instruments.contains_key(&instrument_id) {
-            anyhow::bail!("Instrument {instrument_id} not found");
+            anyhow::bail!(InstrumentLookupError::not_found(instrument_id));
         }
 
         let bar_type = subscription.bar_type;
@@ -846,7 +847,7 @@ impl DataClient for CoinbaseDataClient {
         let instruments = self.instruments.load();
         let instrument = instruments
             .get(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let price_precision = instrument.price_precision();
         let size_precision = instrument.size_precision();
         let depth = request.depth.map(|d| d.get() as u32);
@@ -932,7 +933,7 @@ impl DataClient for CoinbaseDataClient {
         let instruments = self.instruments.load();
         let instrument = instruments
             .get(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let price_precision = instrument.price_precision();
         let size_precision = instrument.size_precision();
 
@@ -1010,7 +1011,7 @@ impl DataClient for CoinbaseDataClient {
         let instruments = self.instruments.load();
         let instrument = instruments
             .get(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let price_precision = instrument.price_precision();
         let size_precision = instrument.size_precision();
 

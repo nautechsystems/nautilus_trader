@@ -26,7 +26,10 @@ use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
-use nautilus_common::{cache::fifo::FifoCacheMap, live::get_runtime};
+use nautilus_common::{
+    cache::{InstrumentLookupError, fifo::FifoCacheMap},
+    live::get_runtime,
+};
 use nautilus_core::{AtomicMap, MUTEX_POISONED};
 use nautilus_model::{
     data::BarType,
@@ -1134,7 +1137,7 @@ impl HyperliquidWebSocketClient {
     ) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
 
         let cmd_tx = self.cmd_tx.read().await;
@@ -1178,7 +1181,7 @@ impl HyperliquidWebSocketClient {
     ) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
 
         let cmd_tx = self.cmd_tx.read().await;
@@ -1220,7 +1223,7 @@ impl HyperliquidWebSocketClient {
     ) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
 
         self.cmd_tx
@@ -1238,7 +1241,7 @@ impl HyperliquidWebSocketClient {
     pub async fn subscribe_quotes(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
 
         let cmd_tx = self.cmd_tx.read().await;
@@ -1328,7 +1331,7 @@ impl HyperliquidWebSocketClient {
     pub async fn subscribe_trades(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
 
         let cmd_tx = self.cmd_tx.read().await;
@@ -1362,10 +1365,10 @@ impl HyperliquidWebSocketClient {
 
     /// Subscribe to candle/bar data for a specific coin and interval.
     pub async fn subscribe_bars(&self, bar_type: BarType) -> anyhow::Result<()> {
-        // Get the instrument to extract the raw_symbol (Hyperliquid ticker)
+        let instrument_id = bar_type.instrument_id();
         let instrument = self
-            .get_instrument(&bar_type.instrument_id())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {}", bar_type.instrument_id()))?;
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
         let interval = bar_type_to_interval(&bar_type)?;
         let subscription = SubscriptionRequest::Candle { coin, interval };
@@ -1467,7 +1470,7 @@ impl HyperliquidWebSocketClient {
     pub async fn unsubscribe_book(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
 
         let subscription = SubscriptionRequest::L2Book {
@@ -1490,7 +1493,7 @@ impl HyperliquidWebSocketClient {
     pub async fn unsubscribe_quotes(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
 
         let subscription = SubscriptionRequest::Bbo { coin };
@@ -1509,7 +1512,7 @@ impl HyperliquidWebSocketClient {
     pub async fn unsubscribe_trades(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
 
         let subscription = SubscriptionRequest::Trades { coin };
@@ -1541,10 +1544,10 @@ impl HyperliquidWebSocketClient {
 
     /// Unsubscribe from candle/bar data.
     pub async fn unsubscribe_bars(&self, bar_type: BarType) -> anyhow::Result<()> {
-        // Get the instrument to extract the raw_symbol (Hyperliquid ticker)
+        let instrument_id = bar_type.instrument_id();
         let instrument = self
-            .get_instrument(&bar_type.instrument_id())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {}", bar_type.instrument_id()))?;
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
         let interval = bar_type_to_interval(&bar_type)?;
         let subscription = SubscriptionRequest::Candle { coin, interval };
@@ -1608,7 +1611,7 @@ impl HyperliquidWebSocketClient {
     ) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
 
         let mut entry = self.asset_context_subs.entry(coin).or_default();
@@ -1654,7 +1657,7 @@ impl HyperliquidWebSocketClient {
     ) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
 
         if let Some(mut entry) = self.asset_context_subs.get_mut(&coin) {

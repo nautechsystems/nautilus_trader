@@ -29,6 +29,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, datetime::NANOSECONDS_IN_SECOND,
     nanos::UnixNanos, time::get_atomic_clock_realtime,
@@ -2476,7 +2477,7 @@ impl KrakenSpotHttpClient {
     ) -> anyhow::Result<VenueOrderId> {
         let _ = self
             .get_cached_instrument(&instrument_id.symbol.inner())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let txid = venue_order_id.as_ref().map(|id| id.to_string());
         let cl_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);
@@ -2537,7 +2538,7 @@ impl KrakenSpotHttpClient {
     ) -> anyhow::Result<()> {
         let _ = self
             .get_cached_instrument(&instrument_id.symbol.inner())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let txid = venue_order_id.as_ref().map(|id| id.to_string());
         let cl_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);
@@ -2610,7 +2611,7 @@ impl KrakenSpotHttpClient {
     ) -> anyhow::Result<KrakenSpotAddOrderParams> {
         let instrument = self
             .get_cached_instrument(&instrument_id.symbol.inner())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let raw_symbol = instrument.raw_symbol().inner();
         let asset_class = Self::asset_class_for(&instrument);

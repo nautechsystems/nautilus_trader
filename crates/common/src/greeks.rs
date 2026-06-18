@@ -374,10 +374,7 @@ impl GreeksCalculator {
 
         let instrument = {
             let cache = self.cache.borrow();
-            match cache.instrument(&instrument_id) {
-                Some(instrument) => instrument.clone(),
-                None => anyhow::bail!("Instrument definition for {instrument_id} not found"),
-            }
+            cache.try_instrument(&instrument_id)?.clone()
         };
 
         if instrument.instrument_class() != InstrumentClass::Option {

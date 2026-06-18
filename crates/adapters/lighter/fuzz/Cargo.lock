@@ -1296,6 +1296,7 @@ dependencies = [
  "smallvec",
  "strum",
  "sysinfo",
+ "thiserror",
  "tokio",
  "ustr",
 ]

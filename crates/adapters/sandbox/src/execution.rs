@@ -600,12 +600,7 @@ impl SandboxExecutionClient {
     /// Returns an error if the instrument is not found in the cache.
     pub fn process_quote_tick(&self, quote: &QuoteTick) -> anyhow::Result<()> {
         let instrument_id = quote.instrument_id;
-        let instrument = self
-            .cache
-            .borrow()
-            .instrument(&instrument_id)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let instrument = self.cache.borrow().try_instrument(&instrument_id)?.clone();
 
         if !check_quote_or_drop("quote tick", quote, &instrument) {
             return Ok(());
@@ -630,12 +625,7 @@ impl SandboxExecutionClient {
         }
 
         let instrument_id = trade.instrument_id;
-        let instrument = self
-            .cache
-            .borrow()
-            .instrument(&instrument_id)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let instrument = self.cache.borrow().try_instrument(&instrument_id)?.clone();
 
         if !check_trade_or_drop("trade tick", trade, &instrument) {
             return Ok(());
@@ -660,12 +650,7 @@ impl SandboxExecutionClient {
         }
 
         let instrument_id = bar.bar_type.instrument_id();
-        let instrument = self
-            .cache
-            .borrow()
-            .instrument(&instrument_id)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let instrument = self.cache.borrow().try_instrument(&instrument_id)?.clone();
 
         if !check_bar_or_drop("bar", bar, &instrument) {
             return Ok(());
@@ -686,12 +671,7 @@ impl SandboxExecutionClient {
     /// Returns an error if the instrument is not found in the cache.
     pub fn process_order_book_deltas(&self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         let instrument_id = deltas.instrument_id;
-        let instrument = self
-            .cache
-            .borrow()
-            .instrument(&instrument_id)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let instrument = self.cache.borrow().try_instrument(&instrument_id)?.clone();
 
         let mut inner = self.inner.borrow_mut();
         inner.ensure_matching_engine(&instrument);
@@ -887,12 +867,7 @@ impl ExecutionClient for SandboxExecutionClient {
         self.dispatch_order_event(event);
 
         let instrument_id = order.instrument_id();
-        let instrument = self
-            .cache
-            .borrow()
-            .instrument(&instrument_id)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let instrument = self.cache.borrow().try_instrument(&instrument_id)?.clone();
 
         let mut inner = self.inner.borrow_mut();
         inner.ensure_matching_engine(&instrument);

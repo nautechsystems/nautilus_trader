@@ -159,9 +159,7 @@ impl DataActor for GridMarketMaker {
         let instrument_id = self.config.instrument_id;
         let (instrument, size_precision, min_quantity) = {
             let cache = self.cache();
-            let instrument = cache
-                .instrument(&instrument_id)
-                .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found in cache"))?;
+            let instrument = cache.try_instrument(&instrument_id)?;
             (
                 instrument.clone(),
                 instrument.size_precision(),

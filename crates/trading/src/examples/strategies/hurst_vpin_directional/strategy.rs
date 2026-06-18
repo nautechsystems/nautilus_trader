@@ -367,9 +367,7 @@ impl DataActor for HurstVpinDirectional {
         }
         {
             let cache = self.cache();
-            if cache.instrument(&instrument_id).is_none() {
-                anyhow::bail!("Instrument {instrument_id} not found in cache");
-            }
+            cache.try_instrument(&instrument_id)?;
         }
 
         self.subscribe_bars(self.config.bar_type, None, None);
