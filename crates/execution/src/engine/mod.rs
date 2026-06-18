@@ -2587,11 +2587,8 @@ impl ExecutionEngine {
                 return;
             };
 
-        if self.cache.borrow().account(&fill.account_id).is_none() {
-            log::error!(
-                "Cannot handle leg fill: no account found for {}, {fill}",
-                fill.instrument_id.venue,
-            );
+        if let Err(e) = self.cache.borrow().try_account(&fill.account_id) {
+            log::error!("Cannot handle leg fill: {e}, {fill}");
             return;
         }
 
@@ -3096,12 +3093,12 @@ impl ExecutionEngine {
 
         let is_margin_account = {
             let cache = self.cache.borrow();
-            let Some(account) = cache.account(&fill.account_id) else {
-                log::error!(
-                    "Cannot handle order fill: no account found for {}, {fill}",
-                    fill.instrument_id.venue,
-                );
-                return Vec::new();
+            let account = match cache.try_account(&fill.account_id) {
+                Ok(account) => account,
+                Err(e) => {
+                    log::error!("Cannot handle order fill: {e}, {fill}");
+                    return Vec::new();
+                }
             };
 
             account.is_margin_account()

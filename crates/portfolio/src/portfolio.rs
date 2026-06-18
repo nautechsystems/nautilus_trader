@@ -21,7 +21,7 @@ use ahash::{AHashMap, AHashSet};
 use indexmap::{IndexMap, IndexSet};
 use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
-    cache::Cache,
+    cache::{AccountLookupError, Cache},
     clock::Clock,
     enums::LogColor,
     msgbus::{self, MessagingSwitchboard, TypedHandler, TypedIntoHandler},
@@ -1111,14 +1111,12 @@ impl Portfolio {
 
         for position in &positions_open {
             // Get account for THIS position
-            let account = if let Some(account) = cache.account(&position.account_id) {
-                account
-            } else {
-                log::error!(
-                    "Cannot calculate net exposure: no account for {}",
-                    position.account_id
-                );
-                return None;
+            let account = match cache.try_account(&position.account_id) {
+                Ok(account) => account,
+                Err(e) => {
+                    log::error!("Cannot calculate net exposure: {e}");
+                    return None;
+                }
             };
 
             // Validate consistent base currency across accounts
@@ -2247,11 +2245,12 @@ fn update_order(
     let (instrument, orders_open) = {
         let cache_ref = cache.borrow();
 
-        let account = if let Some(account) = cache_ref.account(&account_id) {
-            account
-        } else {
-            log::error!("Cannot update order: no account registered for {account_id}");
-            return;
+        let account = match cache_ref.try_account(&account_id) {
+            Ok(account) => account,
+            Err(e) => {
+                log::error!("Cannot update order: {e}");
+                return;
+            }
         };
 
         match &*account {
@@ -2325,11 +2324,15 @@ fn update_order(
     };
 
     // No cache borrow held: AccountsManager borrows cache internally for xrate lookups.
-    let mut working_account = if let Some(account) = cache.borrow_mut().take_account(&account_id) {
-        account
-    } else {
-        log::error!("Cannot update order: no account registered for {account_id}");
-        return;
+    let mut working_account = match cache.borrow_mut().take_account(&account_id) {
+        Some(account) => account,
+        None => {
+            log::error!(
+                "Cannot update order: {}",
+                AccountLookupError::not_found(account_id)
+            );
+            return;
+        }
     };
 
     if let OrderEventAny::Filled(order_filled) = event {

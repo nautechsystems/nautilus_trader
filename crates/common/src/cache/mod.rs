@@ -45,8 +45,9 @@ use bytes::Bytes;
 pub use config::CacheConfig; // Re-export
 use database::{CacheDatabaseAdapter, CacheMap};
 pub use error::{
-    CURRENCY_NOT_FOUND, CurrencyLookupError, INSTRUMENT_NOT_FOUND, InstrumentLookupError,
-    ORDER_NOT_FOUND, OrderLookupError, POSITION_NOT_FOUND, PositionLookupError,
+    ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, CurrencyLookupError,
+    INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_NOT_FOUND, OrderLookupError,
+    POSITION_NOT_FOUND, PositionLookupError,
 };
 use index::CacheIndex;
 use nautilus_core::{
@@ -5443,6 +5444,21 @@ impl Cache {
         self.accounts
             .get(account_id)
             .map(|account_cell| AccountRef::new(account_cell.borrow()))
+    }
+
+    /// Returns a borrow of the account for the `account_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AccountLookupError::NotFound`] when the account is not present in the cache.
+    pub fn try_account(
+        &self,
+        account_id: &AccountId,
+    ) -> Result<AccountRef<'_>, AccountLookupError> {
+        self.accounts
+            .get(account_id)
+            .map(|account_cell| AccountRef::new(account_cell.borrow()))
+            .ok_or_else(|| AccountLookupError::not_found(*account_id))
     }
 
     /// Gets an exclusive write borrow of the account with the `account_id` (if found).

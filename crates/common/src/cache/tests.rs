@@ -69,9 +69,9 @@ use ustr::Ustr;
 
 use crate::{
     cache::{
-        CURRENCY_NOT_FOUND, Cache, CacheConfig, CacheView, CurrencyLookupError,
-        INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_NOT_FOUND, OrderLookupError, OrderRef,
-        POSITION_NOT_FOUND, PositionLookupError,
+        ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, Cache, CacheConfig, CacheView,
+        CurrencyLookupError, INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_NOT_FOUND,
+        OrderLookupError, OrderRef, POSITION_NOT_FOUND, PositionLookupError,
         database::{CacheDatabaseAdapter, CacheMap},
     },
     signal::Signal,
@@ -2901,6 +2901,30 @@ fn test_cache_add_account(mut cache: Cache) {
     let result = cache.account(&account.id());
     assert!(result.is_some());
     assert_eq!(*result.unwrap(), account);
+}
+
+#[rstest]
+fn test_try_account_when_empty(cache: Cache) {
+    let account_id = AccountId::test_default();
+
+    let err = cache.try_account(&account_id).unwrap_err();
+
+    assert_eq!(err, AccountLookupError::not_found(account_id));
+    assert_eq!(
+        err.to_string(),
+        format!("{ACCOUNT_NOT_FOUND}: {account_id}")
+    );
+}
+
+#[rstest]
+fn test_try_account_when_some(mut cache: Cache) {
+    let account = AccountAny::default();
+    let account_id = account.id();
+    cache.add_account(account.clone()).unwrap();
+
+    let result = cache.try_account(&account_id).unwrap();
+
+    assert_eq!(*result, account);
 }
 
 #[rstest]

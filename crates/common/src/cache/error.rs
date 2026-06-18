@@ -13,9 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::identifiers::{ClientOrderId, InstrumentId, PositionId};
+use nautilus_model::identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId};
 use thiserror::Error;
 use ustr::Ustr;
+
+/// Message used for a missing account lookup.
+pub const ACCOUNT_NOT_FOUND: &str = "account not found in cache";
 
 /// Message used for a missing currency lookup.
 pub const CURRENCY_NOT_FOUND: &str = "currency not found in cache";
@@ -28,6 +31,25 @@ pub const ORDER_NOT_FOUND: &str = "order not found in cache";
 
 /// Message used for a missing position lookup.
 pub const POSITION_NOT_FOUND: &str = "position not found in cache";
+
+/// Error returned when an account cannot be resolved from a cache or store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum AccountLookupError {
+    /// The requested account is not present.
+    #[error("{message}: {account_id}", message = ACCOUNT_NOT_FOUND)]
+    NotFound {
+        /// The account identifier that was requested.
+        account_id: AccountId,
+    },
+}
+
+impl AccountLookupError {
+    /// Returns a not-found error for `account_id`.
+    #[must_use]
+    pub const fn not_found(account_id: AccountId) -> Self {
+        Self::NotFound { account_id }
+    }
+}
 
 /// Error returned when a currency cannot be resolved from a cache or store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
