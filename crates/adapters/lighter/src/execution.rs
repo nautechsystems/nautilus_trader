@@ -1512,12 +1512,7 @@ impl LighterExecutionClient {
                 )
             })?;
 
-        let order_cached = self.core.cache().order(&cmd.client_order_id).is_some();
-        anyhow::ensure!(
-            order_cached,
-            "order not found in cache: {}",
-            cmd.client_order_id,
-        );
+        self.core.cache().try_order(&cmd.client_order_id)?;
 
         // Lighter cancel_order targets a single order by venue order_id.
         // The map is populated on the first OrderStatusReport for the cloid.
@@ -1683,12 +1678,7 @@ impl LighterExecutionClient {
             .parse()
             .with_context(|| format!("Lighter venue_order_id `{voi}` is not an integer index"))?;
 
-        let order = self
-            .core
-            .cache()
-            .order(&cmd.client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| anyhow::anyhow!("order not found in cache: {}", cmd.client_order_id,))?;
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
         let instrument = self
             .core
             .cache()
@@ -3070,12 +3060,7 @@ impl ExecutionClient for LighterExecutionClient {
             anyhow::anyhow!("Lighter execution client cannot submit without credentials")
         })?;
 
-        let order = self
-            .core
-            .cache()
-            .order(&cmd.client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| anyhow::anyhow!("order not found in cache: {}", cmd.client_order_id))?;
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
 
         if order.is_closed() {
             log::warn!("Cannot submit closed order {}", order.client_order_id());

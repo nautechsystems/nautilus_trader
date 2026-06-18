@@ -233,10 +233,7 @@ impl ExecutionAlgorithmCore {
     ///
     /// Returns an error if the order is not found in the cache.
     pub fn get_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny> {
-        self.cache()
-            .order(client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| anyhow::anyhow!("Order not found in cache for {client_order_id}"))
+        Ok(self.cache().try_order_owned(client_order_id)?)
     }
 
     /// Returns all orders for the given order list from the cache.

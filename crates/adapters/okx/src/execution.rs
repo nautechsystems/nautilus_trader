@@ -308,10 +308,7 @@ impl OKXExecutionClient {
     fn submit_regular_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
         let order = {
             let cache = self.core.cache();
-            cache
-                .order(&cmd.client_order_id)
-                .map(|o| o.clone())
-                .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?
+            cache.try_order_owned(&cmd.client_order_id)?
         };
         let ws_private = self.ws_private.clone();
         let trade_mode = self.trade_mode_for_order(cmd.instrument_id, &cmd.params);
@@ -403,10 +400,7 @@ impl OKXExecutionClient {
     fn submit_order_http(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
         let order = {
             let cache = self.core.cache();
-            cache
-                .order(&cmd.client_order_id)
-                .map(|o| o.clone())
-                .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?
+            cache.try_order_owned(&cmd.client_order_id)?
         };
         let http_client = self.http_client.clone();
         let trade_mode = self.trade_mode_for_order(cmd.instrument_id, &cmd.params);
@@ -487,10 +481,7 @@ impl OKXExecutionClient {
     fn submit_conditional_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
         let order = {
             let cache = self.core.cache();
-            cache
-                .order(&cmd.client_order_id)
-                .map(|o| o.clone())
-                .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?
+            cache.try_order_owned(&cmd.client_order_id)?
         };
         let http_client = self.http_client.clone();
         let trade_mode = self.trade_mode_for_order(cmd.instrument_id, &cmd.params);
@@ -1826,9 +1817,7 @@ impl ExecutionClient for OKXExecutionClient {
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         let route = {
             let cache = self.core.cache();
-            let order = cache
-                .order(&cmd.client_order_id)
-                .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?;
+            let order = cache.try_order(&cmd.client_order_id)?;
 
             if order.is_closed() {
                 log::warn!("Cannot submit closed order {}", order.client_order_id());
@@ -1866,9 +1855,7 @@ impl ExecutionClient for OKXExecutionClient {
             .to_string();
 
             for client_order_id in &cmd.order_list.client_order_ids {
-                let order = cache
-                    .order(client_order_id)
-                    .ok_or_else(|| anyhow::anyhow!("Order not found: {client_order_id}"))?;
+                let order = cache.try_order(client_order_id)?;
                 self.emitter.emit_order_denied(&order, &denied);
             }
             return Ok(());
@@ -1895,9 +1882,7 @@ impl ExecutionClient for OKXExecutionClient {
         if !invalid.is_empty() {
             let order_list_id = cmd.order_list.id;
             for client_order_id in &cmd.order_list.client_order_ids {
-                let order = cache
-                    .order(client_order_id)
-                    .ok_or_else(|| anyhow::anyhow!("Order not found: {client_order_id}"))?;
+                let order = cache.try_order(client_order_id)?;
                 let denied = invalid
                     .iter()
                     .find(|(cid, _)| cid == client_order_id)
@@ -1911,9 +1896,7 @@ impl ExecutionClient for OKXExecutionClient {
         }
 
         for client_order_id in &cmd.order_list.client_order_ids {
-            let order = cache
-                .order(client_order_id)
-                .ok_or_else(|| anyhow::anyhow!("Order not found: {client_order_id}"))?;
+            let order = cache.try_order(client_order_id)?;
 
             if self.is_conditional_order(order.order_type()) {
                 anyhow::bail!("Conditional orders not supported in order lists: {client_order_id}");

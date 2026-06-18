@@ -756,9 +756,12 @@ is `AHashMap<ClientOrderId, SharedCell<OrderAny>>`; the smart-pointer leak stays
 internal. Public accessors return scoped newtypes that hide it: `Cache::order`
 returns `OrderRef<'_>` (read borrow), `Cache::order_mut` returns `OrderRefMut<'_>`
 (exclusive write borrow, requires `&mut Cache`), and `Cache::order_owned` returns
-an owned `OrderAny` snapshot when a value must cross a boundary. Engines drop
-the borrow before dispatching events and re-read the cache for post-event state,
-which keeps the dispatch a clean transaction boundary.
+an owned `OrderAny` snapshot when a value must cross a boundary. Use
+`Cache::try_order` or `Cache::try_order_owned` when a missing order is an error;
+they return `OrderLookupError` instead of forcing each caller to build an ad hoc
+not-found error. Engines drop the borrow before dispatching events and re-read
+the cache for post-event state, which keeps the dispatch a clean transaction
+boundary.
 
 `Cache::order_mut` takes `&mut Cache`, which means strategies and adapters
 receiving a `CacheView` (which only exposes immutable cache borrows) cannot reach

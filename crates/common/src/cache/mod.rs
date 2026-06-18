@@ -46,6 +46,7 @@ pub use config::CacheConfig; // Re-export
 use database::{CacheDatabaseAdapter, CacheMap};
 pub use error::{
     CURRENCY_NOT_FOUND, CurrencyLookupError, INSTRUMENT_NOT_FOUND, InstrumentLookupError,
+    ORDER_NOT_FOUND, OrderLookupError,
 };
 use index::CacheIndex;
 use nautilus_core::{
@@ -3999,6 +4000,21 @@ impl Cache {
             .map(|order_cell| OrderRef::new(order_cell.borrow()))
     }
 
+    /// Gets a borrow of the order with the `client_order_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OrderLookupError::NotFound`] when the order is not present in the cache.
+    pub fn try_order(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> Result<OrderRef<'_>, OrderLookupError> {
+        self.orders
+            .get(client_order_id)
+            .map(|order_cell| OrderRef::new(order_cell.borrow()))
+            .ok_or_else(|| OrderLookupError::not_found(*client_order_id))
+    }
+
     /// Gets an exclusive write borrow of the order with the `client_order_id` (if found).
     ///
     /// Requires `&mut Cache` so cache writes are reachable only by privileged crates that hold
@@ -4024,6 +4040,18 @@ impl Cache {
         self.orders
             .get(client_order_id)
             .map(|order_cell| order_cell.borrow().clone())
+    }
+
+    /// Gets an owned snapshot of the order with the `client_order_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OrderLookupError::NotFound`] when the order is not present in the cache.
+    pub fn try_order_owned(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> Result<OrderAny, OrderLookupError> {
+        self.try_order(client_order_id).map(|order| order.cloned())
     }
 
     /// Gets cloned orders for the given `client_order_ids`, logging an error for any missing.

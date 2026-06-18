@@ -70,7 +70,7 @@ use ustr::Ustr;
 use crate::{
     cache::{
         CURRENCY_NOT_FOUND, Cache, CacheConfig, CacheView, CurrencyLookupError,
-        INSTRUMENT_NOT_FOUND, InstrumentLookupError, OrderRef,
+        INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_NOT_FOUND, OrderLookupError, OrderRef,
         database::{CacheDatabaseAdapter, CacheMap},
     },
     signal::Signal,
@@ -640,6 +640,18 @@ fn test_order_when_empty(cache: Cache) {
 }
 
 #[rstest]
+fn test_try_order_when_empty(cache: Cache) {
+    let client_order_id = ClientOrderId::test_default();
+    let err = cache.try_order(&client_order_id).unwrap_err();
+
+    assert_eq!(err, OrderLookupError::not_found(client_order_id));
+    assert_eq!(
+        err.to_string(),
+        format!("{ORDER_NOT_FOUND}: {client_order_id}")
+    );
+}
+
+#[rstest]
 fn test_order_when_initialized(mut cache: Cache, audusd_sim: CurrencyPair) {
     let order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(audusd_sim.id)
@@ -688,6 +700,22 @@ fn test_order_when_initialized(mut cache: Cache, audusd_sim: CurrencyPair) {
     assert_eq!(cache.orders_inflight_count(None, None, None, None, None), 0);
     assert_eq!(cache.orders_total_count(None, None, None, None, None), 1);
     assert_eq!(cache.venue_order_id(&order.client_order_id()), None);
+}
+
+#[rstest]
+fn test_try_order_when_initialized(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let result = cache.try_order(&client_order_id).unwrap();
+
+    assert_eq!(result, order);
 }
 
 #[rstest]
@@ -832,6 +860,18 @@ fn test_order_mut_returns_none_for_missing_order(mut cache: Cache) {
 }
 
 #[rstest]
+fn test_try_order_owned_when_empty(cache: Cache) {
+    let client_order_id = ClientOrderId::test_default();
+    let err = cache.try_order_owned(&client_order_id).unwrap_err();
+
+    assert_eq!(err, OrderLookupError::not_found(client_order_id));
+    assert_eq!(
+        err.to_string(),
+        format!("{ORDER_NOT_FOUND}: {client_order_id}")
+    );
+}
+
+#[rstest]
 fn test_order_owned_returns_independent_snapshot(mut cache: Cache, audusd_sim: CurrencyPair) {
     let order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(audusd_sim.id)
@@ -845,6 +885,31 @@ fn test_order_owned_returns_independent_snapshot(mut cache: Cache, audusd_sim: C
     let snapshot = cache.order_owned(&client_order_id).unwrap();
 
     // Snapshot is independent: subsequent cache mutations do not affect it.
+    cache
+        .order_mut(&client_order_id)
+        .unwrap()
+        .set_position_id(Some(PositionId::from("P-001")));
+
+    assert!(snapshot.position_id().is_none());
+    assert_eq!(
+        cache.order(&client_order_id).unwrap().position_id(),
+        Some(PositionId::from("P-001"))
+    );
+}
+
+#[rstest]
+fn test_try_order_owned_returns_independent_snapshot(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order, None, None, false).unwrap();
+
+    let snapshot = cache.try_order_owned(&client_order_id).unwrap();
+
     cache
         .order_mut(&client_order_id)
         .unwrap()

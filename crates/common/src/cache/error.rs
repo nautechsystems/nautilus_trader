@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_model::identifiers::{ClientOrderId, InstrumentId};
 use thiserror::Error;
 use ustr::Ustr;
 
@@ -22,6 +22,9 @@ pub const CURRENCY_NOT_FOUND: &str = "currency not found in cache";
 
 /// Message used for a missing instrument lookup.
 pub const INSTRUMENT_NOT_FOUND: &str = "instrument not found in cache";
+
+/// Message used for a missing order lookup.
+pub const ORDER_NOT_FOUND: &str = "order not found in cache";
 
 /// Error returned when a currency cannot be resolved from a cache or store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
@@ -58,5 +61,24 @@ impl InstrumentLookupError {
     #[must_use]
     pub const fn not_found(instrument_id: InstrumentId) -> Self {
         Self::NotFound { instrument_id }
+    }
+}
+
+/// Error returned when an order cannot be resolved from a cache or store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum OrderLookupError {
+    /// The requested order is not present.
+    #[error("{message}: {client_order_id}", message = ORDER_NOT_FOUND)]
+    NotFound {
+        /// The client order identifier that was requested.
+        client_order_id: ClientOrderId,
+    },
+}
+
+impl OrderLookupError {
+    /// Returns a not-found error for `client_order_id`.
+    #[must_use]
+    pub const fn not_found(client_order_id: ClientOrderId) -> Self {
+        Self::NotFound { client_order_id }
     }
 }

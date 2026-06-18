@@ -724,12 +724,7 @@ impl ExecutionClient for DeribitExecutionClient {
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
-        let order = self
-            .core
-            .cache()
-            .order(&cmd.client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?;
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
         self.submit_single_order(&order, "submit_order");
         Ok(())
     }

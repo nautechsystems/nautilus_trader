@@ -20,6 +20,7 @@ pub use core::StrategyCore;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use ahash::AHashSet;
+use anyhow::Context;
 pub use config::{ImportableStrategyConfig, StrategyConfig};
 use nautilus_common::{
     actor::DataActor,
@@ -473,8 +474,8 @@ pub trait Strategy: DataActor {
             updates
                 .iter()
                 .map(|(client_order_id, _, _, _)| {
-                    cache.order_owned(client_order_id).ok_or_else(|| {
-                        anyhow::anyhow!("Cannot modify order: {client_order_id} not found in cache")
+                    cache.try_order_owned(client_order_id).with_context(|| {
+                        format!("Cannot modify order: {client_order_id} not found in cache")
                     })
                 })
                 .collect::<Result<_, _>>()?
@@ -694,9 +695,9 @@ pub trait Strategy: DataActor {
             client_order_ids
                 .iter()
                 .map(|id| {
-                    cache.order_owned(id).ok_or_else(|| {
-                        anyhow::anyhow!("Cannot cancel order: {id} not found in cache")
-                    })
+                    cache
+                        .try_order_owned(id)
+                        .with_context(|| format!("Cannot cancel order: {id} not found in cache"))
                 })
                 .collect::<Result<_, _>>()?
         };

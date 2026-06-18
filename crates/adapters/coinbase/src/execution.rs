@@ -941,19 +941,11 @@ impl ExecutionClient for CoinbaseExecutionClient {
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
-        let order = {
-            let cache = self.core.cache();
-            let order = cache
-                .order(&cmd.client_order_id)
-                .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?;
-
-            if order.is_closed() {
-                log::warn!("Cannot submit closed order {}", order.client_order_id());
-                return Ok(());
-            }
-
-            order.clone()
-        };
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
+        if order.is_closed() {
+            log::warn!("Cannot submit closed order {}", order.client_order_id());
+            return Ok(());
+        }
 
         // The connect-time bootstrap caches only the product family this
         // client was configured for (Cash -> spot, Margin -> futures). An

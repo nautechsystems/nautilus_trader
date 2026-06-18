@@ -396,12 +396,7 @@ impl BinanceFuturesExecutionClient {
     }
 
     fn submit_order_internal(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
-        let order = self
-            .core
-            .cache()
-            .order(&cmd.client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?;
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
 
         let emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;
@@ -1955,12 +1950,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
-        let order = self
-            .core
-            .cache()
-            .order(&cmd.client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?;
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
 
         if order.is_closed() {
             let client_order_id = order.client_order_id();

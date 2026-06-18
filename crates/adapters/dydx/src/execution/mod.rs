@@ -1240,14 +1240,7 @@ impl ExecutionClient for DydxExecutionClient {
 
         // Check block height is available for short-term orders
         let current_block = self.block_time_monitor.current_block_height();
-        let order = self
-            .core
-            .cache()
-            .order(&cmd.client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| {
-                anyhow::anyhow!("Order not found in cache for {}", cmd.client_order_id)
-            })?;
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
 
         let client_order_id = order.client_order_id();
         let instrument_id = order.instrument_id();

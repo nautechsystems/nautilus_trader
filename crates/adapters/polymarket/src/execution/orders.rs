@@ -395,14 +395,7 @@ impl PolymarketExecutionClient {
     }
 
     pub(super) fn submit_order_command(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
-        let order = self
-            .core
-            .cache()
-            .order(&cmd.client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| {
-                anyhow::anyhow!("Order not found in cache for {}", cmd.client_order_id)
-            })?;
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
 
         if order.is_closed() {
             log::warn!("Cannot submit closed order {}", order.client_order_id());
