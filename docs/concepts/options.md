@@ -124,10 +124,9 @@ magnitude (calls positive, puts negative, compared by absolute value) falls with
 each side of ATM. Before the ATM/forward price is known, `Delta` is deferred like other
 ATM-based ranges. After ATM is known, when no active strike's Greeks match the band
 (including before any Greeks arrive), `Delta` falls back to an ATM-relative window of five
-strikes either side of ATM. In raw mode the active set can narrow to the first strike that
-reports a matching delta before neighbouring Greeks arrive, dropping the rest of the window
-until the selection falls back or ATM shifts; snapshot mode reduces this by letting Greeks
-accumulate before the first publish.
+strikes either side of ATM. Before switching from the fallback window to selected delta
+strikes, the aggregator waits until every fallback leg has Greeks so partial early updates do
+not drop neighbouring strikes.
 
 ### Snapshot vs. raw mode
 

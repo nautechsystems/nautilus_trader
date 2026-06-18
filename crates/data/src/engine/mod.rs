@@ -1653,6 +1653,7 @@ impl DataEngine {
             self.handle_instrument_status(*status);
         } else if let Some(option_greeks) = data.downcast_ref::<OptionGreeks>() {
             self.cache.borrow_mut().add_option_greeks(*option_greeks);
+            self.feed_option_greeks_to_pre_bootstrap_chain(option_greeks);
             let topic = switchboard::get_option_greeks_topic(option_greeks.instrument_id);
             msgbus::publish_option_greeks(topic, option_greeks);
             self.drain_deferred_commands();
@@ -1704,6 +1705,7 @@ impl DataEngine {
             }
             Data::OptionGreeks(greeks) => {
                 self.cache.borrow_mut().add_option_greeks(greeks);
+                self.feed_option_greeks_to_pre_bootstrap_chain(&greeks);
                 let topic = switchboard::get_option_greeks_topic(greeks.instrument_id);
                 msgbus::publish_option_greeks(topic, &greeks);
                 self.drain_deferred_commands();
@@ -1712,6 +1714,24 @@ impl DataEngine {
             Data::Custom(custom) => self.handle_custom_data(&custom),
             #[cfg(feature = "defi")]
             Data::Defi(_) => unreachable!("handled before market data dispatch"),
+        }
+    }
+
+    fn feed_option_greeks_to_pre_bootstrap_chain(&self, greeks: &OptionGreeks) {
+        let Some(series_id) = self
+            .option_chain_instrument_index
+            .get(&greeks.instrument_id)
+            .copied()
+        else {
+            return;
+        };
+
+        let Some(manager_rc) = self.option_chain_managers.get(&series_id).cloned() else {
+            return;
+        };
+
+        if !manager_rc.borrow().is_bootstrapped() {
+            manager_rc.borrow_mut().handle_greeks(greeks);
         }
     }
 

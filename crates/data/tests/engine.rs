@@ -88,7 +88,7 @@ use nautilus_model::{
         IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta,
         OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
         greeks::OptionGreekValues,
-        option_chain::{OptionGreeks, StrikeRange},
+        option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
         stubs::{
             OrderBookDeltaTestBuilder, stub_custom_data, stub_delta, stub_deltas, stub_depth10,
         },
@@ -13416,6 +13416,168 @@ fn test_subscribe_option_chain_atm_relative_requests_forward_prices(
         quote_subs, 0,
         "No quote subscriptions before forward price bootstrap"
     );
+}
+
+#[rstest]
+#[case::data_enum(true)]
+#[case::typed_any(false)]
+fn test_option_chain_deferred_bootstrap_from_greeks_keeps_bootstrap_event(
+    #[case] use_data_enum: bool,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+
+    let client_id = ClientId::new("DERIBIT");
+    let venue = Venue::new("DERIBIT");
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let strikes = ["45000.000", "50000.000", "55000.000"];
+    for strike in &strikes {
+        let call = make_btc_option(strike, OptionKind::Call);
+        let put = make_btc_option(strike, OptionKind::Put);
+        let _ = cache.borrow_mut().add_instrument(call);
+        let _ = cache.borrow_mut().add_instrument(put);
+    }
+
+    let series_id = make_series_id();
+    let topic = switchboard::get_option_chain_topic(series_id);
+    let (handler, saver) = get_typed_message_saving_handler::<OptionChainSlice>(None);
+    msgbus::subscribe_option_chain(topic.into(), handler, None);
+
+    let cmd = DataCommand::Subscribe(SubscribeCommand::OptionChain(SubscribeOptionChain::new(
+        series_id,
+        StrikeRange::AtmRelative {
+            strikes_above: 1,
+            strikes_below: 1,
+        },
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(client_id),
+        Some(venue),
+        None,
+    )));
+    data_engine.borrow_mut().execute(cmd);
+
+    let request_id = recorder
+        .borrow()
+        .iter()
+        .find_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::ForwardPrices(req)) => Some(req.request_id),
+            _ => None,
+        })
+        .expect("forward price request should be recorded");
+
+    data_engine
+        .borrow_mut()
+        .response(DataResponse::ForwardPrices(ForwardPricesResponse::new(
+            request_id,
+            client_id,
+            venue,
+            Vec::new(),
+            UnixNanos::default(),
+            None,
+        )));
+    assert!(data_engine.borrow().has_option_chain_manager(&series_id));
+    assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 0);
+
+    recorder.borrow_mut().clear();
+
+    let call_id = InstrumentId::from("BTC-20240101-50000.000-C.DERIBIT");
+    let greeks = OptionGreeks {
+        instrument_id: call_id,
+        convention: GreeksConvention::BlackScholes,
+        greeks: OptionGreekValues {
+            delta: 0.55,
+            gamma: 0.001,
+            vega: 15.0,
+            theta: -5.0,
+            rho: 0.02,
+        },
+        mark_iv: Some(0.65),
+        bid_iv: Some(0.63),
+        ask_iv: Some(0.67),
+        underlying_price: Some(50000.0),
+        open_interest: Some(1000.0),
+        ts_event: UnixNanos::from(1u64),
+        ts_init: UnixNanos::from(1u64),
+    };
+
+    if use_data_enum {
+        data_engine
+            .borrow_mut()
+            .process_data(Data::OptionGreeks(greeks));
+    } else {
+        data_engine.borrow_mut().process(&greeks);
+    }
+
+    let recorded = recorder.borrow();
+    let quote_subs = recorded
+        .iter()
+        .filter(|cmd| matches!(cmd, DataCommand::Subscribe(SubscribeCommand::Quotes(_))))
+        .count();
+    let greeks_subs = recorded
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                DataCommand::Subscribe(SubscribeCommand::OptionGreeks(_))
+            )
+        })
+        .count();
+    let status_subs = recorded
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                DataCommand::Subscribe(SubscribeCommand::InstrumentStatus(_))
+            )
+        })
+        .count();
+    assert_eq!(quote_subs, 6);
+    assert_eq!(greeks_subs, 6);
+    assert_eq!(status_subs, 6);
+    drop(recorded);
+
+    assert!(saver.get_messages().is_empty());
+
+    let quote = QuoteTick::new(
+        call_id,
+        Price::from("100.00"),
+        Price::from("101.00"),
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::from(2u64),
+        UnixNanos::from(2u64),
+    );
+    data_engine.borrow_mut().process_data(Data::Quote(quote));
+
+    let messages = saver.get_messages();
+    assert_eq!(messages.len(), 1);
+    let slice = messages.last().expect("raw quote should publish a slice");
+    let strike = Price::from("50000.000");
+    let call = slice
+        .get_call(&strike)
+        .expect("quoted call strike should be present");
+    let greeks = call
+        .greeks
+        .as_ref()
+        .expect("bootstrap Greeks should be retained for the first quote");
+
+    assert_eq!(greeks.instrument_id, call_id);
+    assert_eq!(greeks.delta, 0.55);
 }
 
 fn synthetic_instrument_id() -> InstrumentId {

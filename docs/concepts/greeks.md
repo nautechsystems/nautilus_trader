@@ -137,11 +137,13 @@ The `BlackScholesGreeksResult` returned by these functions contains: `price`, `v
 
 The legacy Cython `GreeksCalculator` class in `nautilus_trader/model/greeks.pyx` computes
 Black-Scholes Greeks from cached market data. A PyO3 calculator is also exposed from
-`nautilus_trader.common.GreeksCalculator` for the v2 surface. Both use the cache and clock
-and are accessible from actors or strategies.
+`nautilus_trader.common.GreeksCalculator` for the v2 runtime surface.
+Both calculators use the cache and clock and are accessible from actors or strategies.
 
 ```python
-from nautilus_trader.model.greeks import GreeksCalculator
+from nautilus_trader.model.greeks import GreeksCalculator  # legacy Cython
+
+# v2 PyO3: from nautilus_trader.common import GreeksCalculator
 
 # Typically created in on_start()
 calculator = GreeksCalculator(cache=self.cache, clock=self.clock)
@@ -156,16 +158,20 @@ greeks = calculator.instrument_greeks(
     instrument_id=option_id,
     flat_interest_rate=0.0425,  # used if no yield curve in cache
 )
-# Returns GreeksData or None
+# Both surfaces return GreeksData or None while market data is warming up.
 ```
 
-The calculator:
+Both calculators:
 
-1. Looks up the instrument and its underlying in the cache.
-2. Retrieves current prices (MID preferred, LAST as fallback).
-3. Looks up yield curves from the cache (falls back to `flat_interest_rate`).
-4. Implies volatility from the market price using `imply_vol_and_greeks`.
-5. Returns a `GreeksData` object with all computed values.
+1. Look up the instrument and its underlying in the cache.
+2. Retrieve current prices (MID preferred, LAST as fallback).
+3. Look up yield curves from the cache (falls back to `flat_interest_rate`).
+4. Imply volatility from the market price using `imply_vol_and_greeks`.
+5. Return a `GreeksData` object with all computed values.
+
+Missing prices return `None`, which lets strategies treat warm-up as a normal no-op path.
+The v2 PyO3 surface still raises a Python exception for setup errors such as a missing
+instrument definition.
 
 For non-option instruments (futures, equities), the calculator returns a `GreeksData`
 with `delta=1` (or beta-weighted delta) and no gamma/vega/theta.

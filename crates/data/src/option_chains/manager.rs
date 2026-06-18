@@ -328,6 +328,12 @@ impl OptionChainManager {
         self.aggregator.series_id().venue
     }
 
+    /// Returns whether the active instrument set has been bootstrapped.
+    #[must_use]
+    pub const fn is_bootstrapped(&self) -> bool {
+        self.bootstrapped
+    }
+
     /// Tears down this manager: unregisters all msgbus handlers and cancels the timer.
     pub fn teardown(&mut self, clock: &Rc<RefCell<dyn Clock>>) {
         // Unsubscribe from all currently active instruments
