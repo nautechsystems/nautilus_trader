@@ -25,7 +25,7 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
     messages::{
-        execution::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
+        execution::{BatchModifyOrders, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
         system::trading::TradingStateChanged,
     },
     msgbus::{
@@ -3902,6 +3902,230 @@ fn test_modify_order_with_default_settings_then_sends_to_client(
         saved_execute_messages.first().unwrap().instrument_id(),
         instrument_audusd.id()
     );
+}
+
+#[expect(
+    clippy::float_cmp,
+    reason = "throttler usage is an integer counter represented as f64"
+)]
+#[rstest]
+fn test_batch_modify_orders_counts_each_child_against_rate_limit(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_audusd: InstrumentAny,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    let order1 = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-BATCH-MODIFY-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("100").unwrap())
+        .price(Price::new(1.0001, 4))
+        .build();
+    let order2 = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-BATCH-MODIFY-002"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("200").unwrap())
+        .price(Price::new(1.0002, 4))
+        .build();
+
+    simple_cache
+        .add_order(order1.clone(), None, Some(client_id_binance), true)
+        .unwrap();
+    simple_cache
+        .add_order(order2.clone(), None, Some(client_id_binance), true)
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let ts_init = risk_engine.clock().borrow().timestamp_ns();
+    let modifies = vec![
+        ModifyOrder::new(
+            trader_id,
+            Some(client_id_binance),
+            strategy_id_ema_cross,
+            instrument_audusd.id(),
+            order1.client_order_id(),
+            order1.venue_order_id(),
+            Some(Quantity::from_str("101").unwrap()),
+            Some(Price::new(1.0003, 4)),
+            None,
+            UUID4::new(),
+            ts_init,
+            None,
+            None, // correlation_id
+        ),
+        ModifyOrder::new(
+            trader_id,
+            Some(client_id_binance),
+            strategy_id_ema_cross,
+            instrument_audusd.id(),
+            order2.client_order_id(),
+            order2.venue_order_id(),
+            Some(Quantity::from_str("201").unwrap()),
+            Some(Price::new(1.0004, 4)),
+            None,
+            UUID4::new(),
+            ts_init,
+            None,
+            None, // correlation_id
+        ),
+    ];
+    let command = BatchModifyOrders::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_audusd.id(),
+        modifies,
+        UUID4::new(),
+        ts_init,
+        None,
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::ModifyOrders(command));
+
+    let saved_execute_messages =
+        get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(saved_execute_messages.len(), 1);
+    assert!(matches!(
+        saved_execute_messages.first(),
+        Some(TradingCommand::ModifyOrders(command)) if command.modifies.len() == 2
+    ));
+    assert_eq!(risk_engine.throttled_modify_order.recv_count, 2);
+    assert_eq!(risk_engine.throttled_modify_order.sent_count, 2);
+    assert_eq!(risk_engine.throttled_modify_order.used(), 0.4);
+}
+
+#[rstest]
+fn test_batch_modify_orders_rejects_all_children_when_one_child_fails_validation(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    let order1 = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-BATCH-MODIFY-PARTIAL-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("100").unwrap())
+        .price(Price::from("1.00010"))
+        .build();
+    let order2 = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-BATCH-MODIFY-PARTIAL-002"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("200").unwrap())
+        .price(Price::from("1.00020"))
+        .build();
+
+    simple_cache
+        .add_order(order1.clone(), None, Some(client_id_binance), true)
+        .unwrap();
+    simple_cache
+        .add_order(order2.clone(), None, Some(client_id_binance), true)
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let ts_init = risk_engine.clock().borrow().timestamp_ns();
+    let modifies = vec![
+        ModifyOrder::new(
+            trader_id,
+            Some(client_id_binance),
+            strategy_id_ema_cross,
+            instrument_audusd.id(),
+            order1.client_order_id(),
+            order1.venue_order_id(),
+            Some(Quantity::from_str("101").unwrap()),
+            Some(Price::from("1.00030")),
+            None,
+            UUID4::new(),
+            ts_init,
+            None,
+            None, // correlation_id
+        ),
+        ModifyOrder::new(
+            trader_id,
+            Some(client_id_binance),
+            strategy_id_ema_cross,
+            instrument_audusd.id(),
+            order2.client_order_id(),
+            order2.venue_order_id(),
+            Some(Quantity::from_str("201").unwrap()),
+            Some(Price::from("1.000001")),
+            None,
+            UUID4::new(),
+            ts_init,
+            None,
+            None, // correlation_id
+        ),
+    ];
+    let command = BatchModifyOrders::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_audusd.id(),
+        modifies,
+        UUID4::new(),
+        ts_init,
+        None,
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::ModifyOrders(command));
+
+    let saved_process_messages =
+        get_process_order_event_handler_messages(&process_order_event_handler);
+    let saved_execute_messages =
+        get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(saved_process_messages.len(), 2);
+    assert!(
+        saved_process_messages
+            .iter()
+            .all(|event| { event.event_type() == OrderEventType::ModifyRejected })
+    );
+    assert!(saved_process_messages.iter().any(|event| {
+        event.client_order_id() == order1.client_order_id()
+            && event
+                .message()
+                .unwrap()
+                .contains("one or more child modifications failed validation")
+    }));
+    assert!(
+        saved_process_messages
+            .iter()
+            .any(|event| { event.client_order_id() == order2.client_order_id() })
+    );
+    assert_eq!(saved_execute_messages.len(), 0);
 }
 
 #[rstest]

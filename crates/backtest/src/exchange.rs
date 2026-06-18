@@ -679,12 +679,12 @@ impl SimulatedExchange {
                 TradingCommand::SubmitOrder(_) | TradingCommand::SubmitOrderList(_) => {
                     command.ts_init() + latency_model.get_insert_latency()
                 }
-                TradingCommand::ModifyOrder(_) => {
+                TradingCommand::ModifyOrder(_) | TradingCommand::ModifyOrders(_) => {
                     command.ts_init() + latency_model.get_update_latency()
                 }
                 TradingCommand::CancelOrder(_)
-                | TradingCommand::CancelAllOrders(_)
-                | TradingCommand::BatchCancelOrders(_) => {
+                | TradingCommand::CancelOrders(_)
+                | TradingCommand::CancelAllOrders(_) => {
                     command.ts_init() + latency_model.get_delete_latency()
                 }
                 _ => panic!("Cannot handle command: {command:?}"),
@@ -1408,11 +1408,24 @@ impl SimulatedExchange {
             "Matching engine not found for instrument {instrument_id}",
         );
 
-        if let TradingCommand::ModifyOrder(ref command) = command
-            && self.process_modify_submitted_order(command)
-        {
-            return;
-        }
+        let command = match command {
+            TradingCommand::ModifyOrder(ref command)
+                if self.process_modify_submitted_order(command) =>
+            {
+                return;
+            }
+            TradingCommand::ModifyOrders(mut command) => {
+                command
+                    .modifies
+                    .retain(|modify| !self.process_modify_submitted_order(modify));
+
+                if command.modifies.is_empty() {
+                    return;
+                }
+                TradingCommand::ModifyOrders(command)
+            }
+            command => command,
+        };
 
         if let Some(matching_engine) = self.matching_engines.get_mut(&instrument_id) {
             let account_id = if let Some(exec_client) = &self.exec_client {
@@ -1434,14 +1447,17 @@ impl SimulatedExchange {
                 TradingCommand::ModifyOrder(ref command) => {
                     matching_engine.process_modify(command, account_id);
                 }
+                TradingCommand::ModifyOrders(ref command) => {
+                    matching_engine.process_batch_modify(command, account_id);
+                }
                 TradingCommand::CancelOrder(ref command) => {
                     matching_engine.process_cancel(command, account_id);
                 }
+                TradingCommand::CancelOrders(ref command) => {
+                    matching_engine.process_batch_cancel(command, account_id);
+                }
                 TradingCommand::CancelAllOrders(ref command) => {
                     matching_engine.process_cancel_all(command, account_id);
-                }
-                TradingCommand::BatchCancelOrders(ref command) => {
-                    matching_engine.process_batch_cancel(command, account_id);
                 }
                 TradingCommand::SubmitOrderList(ref command) => {
                     let mut orders: Vec<OrderAny> = self

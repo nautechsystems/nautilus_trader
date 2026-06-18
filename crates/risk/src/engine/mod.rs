@@ -27,7 +27,7 @@ use nautilus_common::{
     clock::Clock,
     logging::{CMD, EVT, RECV},
     messages::{
-        execution::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
+        execution::{BatchModifyOrders, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
         system::trading::TradingStateChanged,
     },
     msgbus,
@@ -547,6 +547,9 @@ impl RiskEngine {
                 self.handle_submit_order_list(submit_order_list);
             }
             TradingCommand::ModifyOrder(modify_order) => self.handle_modify_order(modify_order),
+            TradingCommand::ModifyOrders(modify_orders) => {
+                self.handle_batch_modify_orders(modify_orders);
+            }
             TradingCommand::QueryAccount(query_account) => {
                 Self::send_to_execution(TradingCommand::QueryAccount(query_account));
             }
@@ -723,6 +726,90 @@ impl RiskEngine {
             return;
         }
 
+        if !self.validate_modify_order(&command) {
+            return;
+        }
+
+        self.throttled_modify_order.send(command);
+    }
+
+    fn handle_batch_modify_orders(&mut self, command: BatchModifyOrders) {
+        if self.config.bypass {
+            Self::send_to_execution(TradingCommand::ModifyOrders(command));
+            return;
+        }
+
+        if command.modifies.is_empty() {
+            log::warn!("Cannot handle BatchModifyOrders: no modify commands");
+            return;
+        }
+
+        let mut rejected_client_order_ids = Vec::new();
+        let mut valid = true;
+
+        for modify in &command.modifies {
+            if modify.instrument_id != command.instrument_id {
+                if let Some(order) = self
+                    .cache
+                    .borrow()
+                    .order(&modify.client_order_id)
+                    .map(|o| o.clone())
+                {
+                    self.reject_modify_order(
+                        &order,
+                        &format!(
+                            "BatchModifyOrders instrument {} does not match child instrument {}",
+                            command.instrument_id, modify.instrument_id
+                        ),
+                    );
+                }
+                rejected_client_order_ids.push(modify.client_order_id);
+                valid = false;
+                continue;
+            }
+
+            if !self.validate_modify_order(modify) {
+                rejected_client_order_ids.push(modify.client_order_id);
+                valid = false;
+            }
+        }
+
+        if !valid {
+            let reason = "BatchModifyOrders rejected because one or more child modifications failed validation";
+
+            for modify in &command.modifies {
+                if rejected_client_order_ids.contains(&modify.client_order_id) {
+                    continue;
+                }
+
+                let Some(order) = Self::get_existing_order(&self.cache, modify) else {
+                    continue;
+                };
+
+                self.reject_modify_order(&order, reason);
+            }
+            return;
+        }
+
+        if !self
+            .throttled_modify_order
+            .try_reserve(command.modifies.len())
+        {
+            let reason = "Exceeded MAX_ORDER_MODIFY_RATE";
+
+            for modify in &command.modifies {
+                let Some(order) = Self::get_existing_order(&self.cache, modify) else {
+                    continue;
+                };
+                self.reject_modify_order(&order, reason);
+            }
+            return;
+        }
+
+        Self::send_to_execution(TradingCommand::ModifyOrders(command));
+    }
+
+    fn validate_modify_order(&self, command: &ModifyOrder) -> bool {
         let order_exists = {
             let cache = self.cache.borrow();
             cache.order(&command.client_order_id).map(|o| o.clone())
@@ -733,7 +820,7 @@ impl RiskEngine {
                 "ModifyOrder DENIED: Order with command.client_order_id: {} not found",
                 command.client_order_id
             );
-            return;
+            return false;
         };
 
         if order.is_closed() {
@@ -744,7 +831,7 @@ impl RiskEngine {
                     command.client_order_id
                 ),
             );
-            return;
+            return false;
         } else if order.status() == OrderStatus::PendingCancel {
             self.reject_modify_order(
                 &order,
@@ -753,7 +840,7 @@ impl RiskEngine {
                     command.client_order_id
                 ),
             );
-            return;
+            return false;
         }
 
         let maybe_instrument = {
@@ -766,35 +853,35 @@ impl RiskEngine {
                 &order,
                 &format!("no instrument found for {:?}", command.instrument_id),
             );
-            return; // Denied
+            return false;
         };
 
         // Check Price
         let mut risk_msg = Self::check_price(&instrument, command.price);
         if let Some(risk_msg) = risk_msg {
             self.reject_modify_order(&order, &risk_msg);
-            return; // Denied
+            return false;
         }
 
         // Check Trigger
         risk_msg = Self::check_price(&instrument, command.trigger_price);
         if let Some(risk_msg) = risk_msg {
             self.reject_modify_order(&order, &risk_msg);
-            return; // Denied
+            return false;
         }
 
         // Check Quantity
         risk_msg = Self::check_quantity(&instrument, command.quantity, order.is_quote_quantity());
         if let Some(risk_msg) = risk_msg {
             self.reject_modify_order(&order, &risk_msg);
-            return; // Denied
+            return false;
         }
 
         // Check TradingState
         match self.trading_state {
             TradingState::Halted => {
                 self.reject_modify_order(&order, "TradingState is HALTED: Cannot modify order");
-                return;
+                return false;
             }
             TradingState::Reducing => {
                 if let Some(quantity) = command.quantity
@@ -809,13 +896,13 @@ impl RiskEngine {
                             instrument.id()
                         ),
                     );
-                    return;
+                    return false;
                 }
             }
             TradingState::Active => {}
         }
 
-        self.throttled_modify_order.send(command);
+        true
     }
 
     fn check_order(&self, instrument: &InstrumentAny, order: &OrderAny) -> bool {

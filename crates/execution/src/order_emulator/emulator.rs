@@ -26,7 +26,8 @@ use nautilus_common::{
             UnsubscribeQuotes, UnsubscribeTrades,
         },
         execution::{
-            CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+            BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder,
+            SubmitOrderList, TradingCommand,
         },
     },
     msgbus::{
@@ -456,6 +457,7 @@ impl OrderEmulator {
             TradingCommand::SubmitOrder(command) => self.handle_submit_order(&command),
             TradingCommand::SubmitOrderList(ref command) => self.handle_submit_order_list(command),
             TradingCommand::ModifyOrder(ref command) => self.handle_modify_order(command),
+            TradingCommand::ModifyOrders(ref command) => self.handle_batch_modify_orders(command),
             TradingCommand::CancelOrder(command) => self.handle_cancel_order(command),
             TradingCommand::CancelAllOrders(ref command) => self.handle_cancel_all_orders(command),
             _ => log::error!("Cannot handle command: unrecognized {command:?}"),
@@ -782,6 +784,12 @@ impl OrderEmulator {
             }
         } else {
             log::error!("Cannot modify order: {} not found", command.client_order_id);
+        }
+    }
+
+    fn handle_batch_modify_orders(&mut self, command: &BatchModifyOrders) {
+        for modify in &command.modifies {
+            self.handle_modify_order(modify);
         }
     }
 

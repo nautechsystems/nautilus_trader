@@ -30,7 +30,7 @@ use strum::Display;
 
 pub use self::{
     cancel::{BatchCancelOrders, CancelAllOrders, CancelOrder},
-    modify::ModifyOrder,
+    modify::{BatchModifyOrders, ModifyOrder},
     query::{QueryAccount, QueryOrder},
     report::{
         GenerateExecutionMassStatus, GenerateExecutionMassStatusBuilder, GenerateFillReports,
@@ -51,16 +51,16 @@ pub enum ExecutionReport {
     MassStatus(Box<ExecutionMassStatus>),
 }
 
-// TODO
 #[expect(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Eq, PartialEq, Display)]
 pub enum TradingCommand {
     SubmitOrder(SubmitOrder),
     SubmitOrderList(SubmitOrderList),
     ModifyOrder(ModifyOrder),
+    ModifyOrders(BatchModifyOrders),
     CancelOrder(CancelOrder),
+    CancelOrders(BatchCancelOrders),
     CancelAllOrders(CancelAllOrders),
-    BatchCancelOrders(BatchCancelOrders),
     QueryOrder(QueryOrder),
     QueryAccount(QueryAccount),
 }
@@ -72,9 +72,10 @@ impl TradingCommand {
             Self::SubmitOrder(command) => command.client_id,
             Self::SubmitOrderList(command) => command.client_id,
             Self::ModifyOrder(command) => command.client_id,
+            Self::ModifyOrders(command) => command.client_id,
             Self::CancelOrder(command) => command.client_id,
+            Self::CancelOrders(command) => command.client_id,
             Self::CancelAllOrders(command) => command.client_id,
-            Self::BatchCancelOrders(command) => command.client_id,
             Self::QueryOrder(command) => command.client_id,
             Self::QueryAccount(command) => command.client_id,
         }
@@ -91,9 +92,10 @@ impl TradingCommand {
             Self::SubmitOrder(command) => command.instrument_id,
             Self::SubmitOrderList(command) => command.instrument_id,
             Self::ModifyOrder(command) => command.instrument_id,
+            Self::ModifyOrders(command) => command.instrument_id,
             Self::CancelOrder(command) => command.instrument_id,
+            Self::CancelOrders(command) => command.instrument_id,
             Self::CancelAllOrders(command) => command.instrument_id,
-            Self::BatchCancelOrders(command) => command.instrument_id,
             Self::QueryOrder(command) => command.instrument_id,
             Self::QueryAccount(_) => panic!("No instrument ID for command"),
         }
@@ -105,9 +107,10 @@ impl TradingCommand {
             Self::SubmitOrder(command) => command.ts_init,
             Self::SubmitOrderList(command) => command.ts_init,
             Self::ModifyOrder(command) => command.ts_init,
+            Self::ModifyOrders(command) => command.ts_init,
             Self::CancelOrder(command) => command.ts_init,
+            Self::CancelOrders(command) => command.ts_init,
             Self::CancelAllOrders(command) => command.ts_init,
-            Self::BatchCancelOrders(command) => command.ts_init,
             Self::QueryOrder(command) => command.ts_init,
             Self::QueryAccount(command) => command.ts_init,
         }
@@ -119,9 +122,10 @@ impl TradingCommand {
             Self::SubmitOrder(command) => Some(command.strategy_id),
             Self::SubmitOrderList(command) => Some(command.strategy_id),
             Self::ModifyOrder(command) => Some(command.strategy_id),
+            Self::ModifyOrders(command) => Some(command.strategy_id),
             Self::CancelOrder(command) => Some(command.strategy_id),
+            Self::CancelOrders(command) => Some(command.strategy_id),
             Self::CancelAllOrders(command) => Some(command.strategy_id),
-            Self::BatchCancelOrders(command) => Some(command.strategy_id),
             Self::QueryOrder(command) => Some(command.strategy_id),
             Self::QueryAccount(_) => None,
         }
@@ -133,9 +137,10 @@ impl TradingCommand {
             Self::SubmitOrder(command) => command.params.as_ref(),
             Self::SubmitOrderList(command) => command.params.as_ref(),
             Self::ModifyOrder(command) => command.params.as_ref(),
+            Self::ModifyOrders(command) => command.params.as_ref(),
             Self::CancelOrder(command) => command.params.as_ref(),
+            Self::CancelOrders(command) => command.params.as_ref(),
             Self::CancelAllOrders(command) => command.params.as_ref(),
-            Self::BatchCancelOrders(command) => command.params.as_ref(),
             Self::QueryOrder(command) => command.params.as_ref(),
             Self::QueryAccount(command) => command.params.as_ref(),
         }

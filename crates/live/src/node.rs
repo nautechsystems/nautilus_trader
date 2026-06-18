@@ -1332,6 +1332,11 @@ impl LiveNode {
                         TradingCommand::ModifyOrder(modify) => {
                             self.exec_manager.register_inflight(modify.client_order_id);
                         }
+                        TradingCommand::ModifyOrders(modify) => {
+                            for child in &modify.modifies {
+                                self.exec_manager.register_inflight(child.client_order_id);
+                            }
+                        }
                         TradingCommand::CancelOrder(cancel) => {
                             self.exec_manager.register_inflight(cancel.client_order_id);
                         }

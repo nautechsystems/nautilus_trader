@@ -254,6 +254,51 @@ where
         (self.output_send)(msg);
     }
 
+    /// Reserves capacity for `count` messages without sending callbacks.
+    ///
+    /// Returns `false` when the current window cannot accept all messages. No partial
+    /// reservation is made in that case.
+    #[inline]
+    pub fn try_reserve(&mut self, count: usize) -> bool {
+        self.recv_count += count;
+
+        if count == 0 {
+            return true;
+        }
+
+        let delta = self.delta_next();
+        if self.is_limiting && delta == 0 && self.buffer.is_empty() {
+            self.is_limiting = false;
+        }
+
+        if self.is_limiting {
+            return false;
+        }
+
+        let now = self.clock.borrow().timestamp_ns();
+        let interval_start = now.as_i64() - self.interval as i64;
+        let used = self
+            .timestamps
+            .iter()
+            .take_while(|&&ts| ts.as_i64() > interval_start)
+            .count();
+
+        if self.limit.saturating_sub(used) < count {
+            self.is_limiting = true;
+            self.set_timer(Some(throttler_resume::<T, F>(self.actor_id)));
+            return false;
+        }
+
+        for _ in 0..count {
+            if self.timestamps.len() >= self.limit {
+                self.timestamps.pop_back();
+            }
+            self.timestamps.push_front(now);
+        }
+        self.sent_count += count;
+        true
+    }
+
     #[inline]
     pub fn limit_msg(&mut self, msg: T) {
         if self.output_drop.is_none() {
@@ -544,6 +589,35 @@ mod tests {
         assert_eq!(throttler.used(), 0.6);
         assert_eq!(throttler.recv_count, 3);
         assert_eq!(throttler.sent_count, 3);
+    }
+
+    #[rstest]
+    fn test_try_reserve_counts_messages_without_output(test_throttler_buffered: TestThrottler) {
+        let throttler = test_throttler_buffered.get_throttler();
+
+        assert!(throttler.try_reserve(3));
+
+        assert_eq!(throttler.used(), 0.6);
+        assert_eq!(throttler.recv_count, 3);
+        assert_eq!(throttler.sent_count, 3);
+        assert_eq!(throttler.qsize(), 0);
+    }
+
+    #[rstest]
+    fn test_try_reserve_rejects_when_full_batch_exceeds_limit(
+        test_throttler_buffered: TestThrottler,
+    ) {
+        let throttler = test_throttler_buffered.get_throttler();
+
+        assert!(throttler.try_reserve(3));
+        assert!(!throttler.try_reserve(3));
+
+        assert_eq!(throttler.used(), 0.6);
+        assert_eq!(throttler.recv_count, 6);
+        assert_eq!(throttler.sent_count, 3);
+        assert_eq!(throttler.qsize(), 0);
+        assert!(throttler.is_limiting);
+        assert_eq!(throttler.clock.borrow().timer_names(), vec!["buffer_timer"]);
     }
 
     #[rstest]

@@ -33,8 +33,8 @@ use nautilus_common::{
     messages::{
         ExecutionReport,
         execution::{
-            CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, SubmitOrder, SubmitOrderList,
-            TradingCommand,
+            BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount,
+            SubmitOrder, SubmitOrderList, TradingCommand,
         },
     },
     msgbus::{
@@ -583,6 +583,72 @@ fn test_external_client_command_publishes_to_client_topic_and_skips_local_routin
         TradingCommand::CancelAllOrders(command),
         "external client command should publish to the client command topic",
     );
+}
+
+#[rstest]
+fn test_batch_modify_orders_routes_to_client_batch_modify_orders(
+    mut execution_engine: ExecutionEngine,
+) {
+    let client = StubExecutionClient::new(
+        ClientId::from("MODIFY-CLIENT"),
+        AccountId::from("MODIFY-ACCOUNT"),
+        audusd_sim().id().venue,
+        OmsType::Netting,
+        None,
+    );
+    let modified_order_ids = client.modified_order_ids();
+    execution_engine.register_client(Box::new(client)).unwrap();
+
+    let instrument_id = audusd_sim().id();
+    let order1 = ClientOrderId::from("O-BATCH-EXEC-001");
+    let order2 = ClientOrderId::from("O-BATCH-EXEC-002");
+    let ts_init = UnixNanos::default();
+    let command = BatchModifyOrders::new(
+        TraderId::test_default(),
+        Some(ClientId::from("MODIFY-CLIENT")),
+        StrategyId::test_default(),
+        instrument_id,
+        vec![
+            ModifyOrder::new(
+                TraderId::test_default(),
+                Some(ClientId::from("MODIFY-CLIENT")),
+                StrategyId::test_default(),
+                instrument_id,
+                order1,
+                None,
+                Some(Quantity::from("10")),
+                Some(Price::from("1.00010")),
+                None,
+                UUID4::new(),
+                ts_init,
+                None,
+                None,
+            ),
+            ModifyOrder::new(
+                TraderId::test_default(),
+                Some(ClientId::from("MODIFY-CLIENT")),
+                StrategyId::test_default(),
+                instrument_id,
+                order2,
+                None,
+                Some(Quantity::from("20")),
+                Some(Price::from("1.00020")),
+                None,
+                UUID4::new(),
+                ts_init,
+                None,
+                None,
+            ),
+        ],
+        UUID4::new(),
+        ts_init,
+        None,
+        None,
+    );
+
+    execution_engine.execute(TradingCommand::ModifyOrders(command));
+
+    assert_eq!(modified_order_ids.borrow().as_slice(), &[order1, order2]);
 }
 
 #[rstest]

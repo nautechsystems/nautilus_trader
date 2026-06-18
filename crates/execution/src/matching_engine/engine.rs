@@ -26,7 +26,9 @@ use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
-    messages::execution::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder},
+    messages::execution::{
+        BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
+    },
     msgbus::{self, MessagingSwitchboard},
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -3291,6 +3293,13 @@ impl OrderMatchingEngine {
     pub fn process_batch_cancel(&mut self, command: &BatchCancelOrders, account_id: AccountId) {
         for order in &command.cancels {
             self.process_cancel(order, account_id);
+        }
+    }
+
+    /// Processes a batch modify orders command.
+    pub fn process_batch_modify(&mut self, command: &BatchModifyOrders, account_id: AccountId) {
+        for order in &command.modifies {
+            self.process_modify(order, account_id);
         }
     }
 

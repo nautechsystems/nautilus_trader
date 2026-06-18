@@ -28,9 +28,10 @@ use nautilus_common::{
     messages::{
         ExecutionEvent,
         execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+            BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder,
+            GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
+            GeneratePositionStatusReports, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+            SubmitOrderList,
         },
     },
     msgbus::{
@@ -996,6 +997,19 @@ impl ExecutionClient for SandboxExecutionClient {
         let mut inner = self.inner.borrow_mut();
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
             engine.get_engine_mut().process_modify(&cmd, account_id);
+        }
+        Ok(())
+    }
+
+    fn batch_modify_orders(&self, cmd: BatchModifyOrders) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        let account_id = self.core.borrow().account_id;
+
+        let mut inner = self.inner.borrow_mut();
+        if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
+            engine
+                .get_engine_mut()
+                .process_batch_modify(&cmd, account_id);
         }
         Ok(())
     }

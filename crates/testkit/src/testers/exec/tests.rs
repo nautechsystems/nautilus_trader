@@ -2632,7 +2632,7 @@ fn test_batch_submit_limit_pair_flows_through_batch_cancel(
     let messages = saver.get_messages();
     let batch_count = messages
         .iter()
-        .filter(|c| matches!(c, TradingCommand::BatchCancelOrders(_)))
+        .filter(|c| matches!(c, TradingCommand::CancelOrders(_)))
         .count();
     let cancel_count = messages
         .iter()

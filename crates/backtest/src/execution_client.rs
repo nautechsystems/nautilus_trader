@@ -24,8 +24,8 @@ use nautilus_common::{
     clock::Clock,
     factories::OrderEventFactory,
     messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
-        SubmitOrder, SubmitOrderList, TradingCommand,
+        BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
+        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
     },
     msgbus::{self, MessagingSwitchboard},
 };
@@ -243,6 +243,17 @@ impl ExecutionClient for BacktestExecutionClient {
         Ok(())
     }
 
+    fn batch_modify_orders(&self, cmd: BatchModifyOrders) -> anyhow::Result<()> {
+        if let Some(exchange) = self.exchange.upgrade() {
+            exchange
+                .borrow_mut()
+                .send(TradingCommand::ModifyOrders(cmd));
+        } else {
+            log::error!("batch_modify_orders: SimulatedExchange has been dropped");
+        }
+        Ok(())
+    }
+
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
         if let Some(exchange) = self.exchange.upgrade() {
             exchange.borrow_mut().send(TradingCommand::CancelOrder(cmd));
@@ -267,7 +278,7 @@ impl ExecutionClient for BacktestExecutionClient {
         if let Some(exchange) = self.exchange.upgrade() {
             exchange
                 .borrow_mut()
-                .send(TradingCommand::BatchCancelOrders(cmd));
+                .send(TradingCommand::CancelOrders(cmd));
         } else {
             log::error!("batch_cancel_orders: SimulatedExchange has been dropped");
         }

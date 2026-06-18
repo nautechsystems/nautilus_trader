@@ -27,8 +27,8 @@ use nautilus_common::{
     enums::ComponentState,
     logging::{CMD, EVT, RECV, SEND},
     messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
-        SubmitOrder, SubmitOrderList, TradingCommand,
+        BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
+        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
     },
     msgbus::{self, MessagingSwitchboard},
     timer::TimeEvent,
@@ -53,6 +53,14 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use ustr::Ustr;
+
+/// Describes one child update in a batch modify request.
+pub type BatchModifyOrderUpdate = (
+    ClientOrderId,
+    Option<Quantity>,
+    Option<Price>,
+    Option<Price>,
+);
 
 /// Core trait for implementing trading strategies in NautilusTrader.
 ///
@@ -432,6 +440,152 @@ pub trait Strategy: DataActor {
         Ok(())
     }
 
+    /// Batch modifies multiple orders for the same instrument.
+    ///
+    /// Each tuple is `(client_order_id, quantity, price, trigger_price)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the strategy is not registered, the orders span multiple instruments,
+    /// contain emulated/local orders, or a child modify is invalid.
+    fn batch_modify_orders(
+        &mut self,
+        updates: Vec<BatchModifyOrderUpdate>,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) -> anyhow::Result<()> {
+        if updates.is_empty() {
+            anyhow::bail!("Cannot batch modify empty order list");
+        }
+
+        let (trader_id, strategy_id, ts_init) = {
+            let core = self.core_mut();
+            (
+                registered_trader_id(core)?,
+                StrategyId::from(core.actor_id().inner().as_str()),
+                core.clock().timestamp_ns(),
+            )
+        };
+
+        let orders: Vec<OrderAny> = {
+            let cache_rc = self.core_mut().cache_rc();
+            let cache = cache_rc.borrow();
+            updates
+                .iter()
+                .map(|(client_order_id, _, _, _)| {
+                    cache.order_owned(client_order_id).ok_or_else(|| {
+                        anyhow::anyhow!("Cannot modify order: {client_order_id} not found in cache")
+                    })
+                })
+                .collect::<Result<_, _>>()?
+        };
+
+        let instrument_id = orders[0].instrument_id();
+
+        for (order, (_, quantity, price, trigger_price)) in orders.iter().zip(updates.iter()) {
+            if order.instrument_id() != instrument_id {
+                anyhow::bail!(
+                    "Cannot batch modify orders for different instruments: {} vs {}",
+                    instrument_id,
+                    order.instrument_id()
+                );
+            }
+
+            if order.is_emulated() || order.is_active_local() {
+                anyhow::bail!("Cannot include emulated or local orders in batch modify");
+            }
+
+            let mut updating = false;
+
+            if quantity.is_some_and(|q| q != order.quantity()) {
+                updating = true;
+            }
+
+            if let Some(price) = price {
+                if !LIMIT_ORDER_TYPES.contains(&order.order_type()) {
+                    anyhow::bail!("{} orders do not have a LIMIT price", order.order_type());
+                }
+
+                if Some(*price) != order.price() {
+                    updating = true;
+                }
+            }
+
+            if let Some(trigger_price) = trigger_price {
+                if !STOP_ORDER_TYPES.contains(&order.order_type()) {
+                    anyhow::bail!(
+                        "{} orders do not have a STOP trigger price",
+                        order.order_type()
+                    );
+                }
+
+                if Some(*trigger_price) != order.trigger_price() {
+                    updating = true;
+                }
+            }
+
+            if !updating {
+                anyhow::bail!(
+                    "Cannot create command BatchModifyOrders: quantity, price and trigger were \
+                    either None or the same as existing values for {}",
+                    order.client_order_id()
+                );
+            }
+
+            if order.is_closed() || order.is_pending_cancel() {
+                anyhow::bail!(
+                    "Cannot create command BatchModifyOrders: state is {:?}, {order:?}",
+                    order.status()
+                );
+            }
+        }
+
+        let params = params.filter(|params| !params.is_empty());
+        let mut modifies = Vec::with_capacity(orders.len());
+
+        for (order, (_, quantity, price, trigger_price)) in orders.into_iter().zip(updates) {
+            if !self.mark_order_pending_update(&order)? {
+                continue;
+            }
+
+            modifies.push(ModifyOrder::new(
+                trader_id,
+                client_id,
+                strategy_id,
+                instrument_id,
+                order.client_order_id(),
+                order.venue_order_id(),
+                quantity,
+                price,
+                trigger_price,
+                UUID4::new(),
+                ts_init,
+                params.clone(),
+                None, // correlation_id
+            ));
+        }
+
+        if modifies.is_empty() {
+            log::warn!("Cannot send `BatchModifyOrders`, no valid modify commands");
+            return Ok(());
+        }
+
+        let command = BatchModifyOrders::new(
+            trader_id,
+            client_id,
+            strategy_id,
+            instrument_id,
+            modifies,
+            UUID4::new(),
+            ts_init,
+            params,
+            None, // correlation_id
+        );
+
+        send_risk_command(TradingCommand::ModifyOrders(command));
+        Ok(())
+    }
+
     /// Cancels an order.
     ///
     /// # Errors
@@ -601,7 +755,7 @@ pub trait Strategy: DataActor {
             None, // correlation_id
         );
 
-        send_exec_command(TradingCommand::BatchCancelOrders(command));
+        send_exec_command(TradingCommand::CancelOrders(command));
         Ok(())
     }
 
@@ -2987,6 +3141,82 @@ mod tests {
     }
 
     #[rstest]
+    fn test_batch_modify_orders_marks_orders_pending_update_locally_before_send() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        let (event_handler, event_messages): (_, TypedMessageSavingHandler<OrderEventAny>) =
+            get_typed_message_saving_handler(Some(Ustr::from("events.order.batch_pending_update")));
+        let order1 = make_accepted_limit_order("O-20250208-BATCH-UPDATE-001");
+        let order2 = make_accepted_limit_order("O-20250208-BATCH-UPDATE-002");
+        let topic = format!("events.order.{}", order1.strategy_id());
+        msgbus::subscribe_order_events(topic.clone().into(), event_handler.clone(), None);
+        add_order_to_cache(&strategy, &order1);
+        add_order_to_cache(&strategy, &order2);
+
+        strategy
+            .batch_modify_orders(
+                vec![
+                    (
+                        order1.client_order_id(),
+                        None,
+                        Some(Price::from("51000.0")),
+                        None,
+                    ),
+                    (
+                        order2.client_order_id(),
+                        Some(Quantity::from("2.0")),
+                        None,
+                        None,
+                    ),
+                ],
+                None,
+                None,
+            )
+            .unwrap();
+
+        msgbus::unsubscribe_order_events(topic.into(), &event_handler);
+
+        {
+            let cache = strategy.core.cache();
+            let cached_order1 = cache.order(&order1.client_order_id()).unwrap();
+            let cached_order2 = cache.order(&order2.client_order_id()).unwrap();
+            assert_eq!(cached_order1.status(), OrderStatus::PendingUpdate);
+            assert_eq!(cached_order2.status(), OrderStatus::PendingUpdate);
+        }
+
+        let risk_messages = risk_messages.get_messages();
+        assert_eq!(risk_messages.len(), 1);
+        let Some(TradingCommand::ModifyOrders(command)) = risk_messages.first() else {
+            panic!("expected BatchModifyOrders command");
+        };
+        assert_eq!(command.modifies.len(), 2);
+        assert_eq!(
+            command
+                .modifies
+                .iter()
+                .map(|modify| modify.client_order_id)
+                .collect::<Vec<_>>(),
+            vec![order1.client_order_id(), order2.client_order_id()]
+        );
+
+        let event_messages = event_messages.get_messages();
+        assert_eq!(event_messages.len(), 2);
+        assert!(
+            event_messages
+                .iter()
+                .all(|event| matches!(event, OrderEventAny::PendingUpdate(_)))
+        );
+    }
+
+    #[rstest]
     fn test_cancel_order_marks_order_pending_cancel_locally_before_send() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
@@ -3076,7 +3306,7 @@ mod tests {
 
         let exec_messages = exec_messages.get_messages();
         assert_eq!(exec_messages.len(), 1);
-        let Some(TradingCommand::BatchCancelOrders(command)) = exec_messages.first() else {
+        let Some(TradingCommand::CancelOrders(command)) = exec_messages.first() else {
             panic!("expected BatchCancelOrders command");
         };
         assert_eq!(command.cancels.len(), 2);

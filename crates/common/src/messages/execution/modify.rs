@@ -103,5 +103,64 @@ impl Display for ModifyOrder {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
+#[serde(tag = "type")]
+pub struct BatchModifyOrders {
+    pub trader_id: TraderId,
+    pub client_id: Option<ClientId>,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub modifies: Vec<ModifyOrder>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub params: Option<Params>,
+    #[builder(default)]
+    pub correlation_id: Option<UUID4>,
+    #[builder(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<UUID4>,
+}
+
+impl BatchModifyOrders {
+    /// Creates a new [`BatchModifyOrders`] instance.
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
+    pub fn new(
+        trader_id: TraderId,
+        client_id: Option<ClientId>,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        modifies: Vec<ModifyOrder>,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        params: Option<Params>,
+        correlation_id: Option<UUID4>,
+    ) -> Self {
+        Self {
+            trader_id,
+            client_id,
+            strategy_id,
+            instrument_id,
+            modifies,
+            command_id,
+            ts_init,
+            params,
+            correlation_id,
+            causation_id: None,
+        }
+    }
+}
+
+impl Display for BatchModifyOrders {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "BatchModifyOrders(instrument_id={}, modifies={})",
+            self.instrument_id,
+            self.modifies.len(),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {}

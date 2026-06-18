@@ -24,8 +24,8 @@ use nautilus_common::{
     clients::ExecutionClient,
     clock::{Clock, TestClock},
     messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
-        SubmitOrder, SubmitOrderList,
+        BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
+        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
 use nautilus_core::UnixNanos;
@@ -57,6 +57,7 @@ pub struct StubExecutionClient {
     reset_count: Rc<Cell<usize>>,
     dispose_count: Rc<Cell<usize>>,
     submitted_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
+    modified_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     queried_account_ids: Rc<RefCell<Vec<AccountId>>>,
     handles_all_order_venues: bool,
     submit_order_error: Option<String>,
@@ -87,6 +88,7 @@ impl StubExecutionClient {
             reset_count: Rc::new(Cell::new(0)),
             dispose_count: Rc::new(Cell::new(0)),
             submitted_order_ids: Rc::new(RefCell::new(Vec::new())),
+            modified_order_ids: Rc::new(RefCell::new(Vec::new())),
             queried_account_ids: Rc::new(RefCell::new(Vec::new())),
             handles_all_order_venues: false,
             submit_order_error: None,
@@ -125,6 +127,12 @@ impl StubExecutionClient {
     #[must_use]
     pub fn submitted_order_ids(&self) -> Rc<RefCell<Vec<ClientOrderId>>> {
         self.submitted_order_ids.clone()
+    }
+
+    /// Returns a shared handle to the modified order IDs.
+    #[must_use]
+    pub fn modified_order_ids(&self) -> Rc<RefCell<Vec<ClientOrderId>>> {
+        self.modified_order_ids.clone()
     }
 
     /// Returns a shared handle to the queried account IDs.
@@ -244,7 +252,21 @@ impl ExecutionClient for StubExecutionClient {
         Ok(()) // Stub implementation always succeeds
     }
 
-    fn modify_order(&self, _cmd: ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
+        self.modified_order_ids
+            .borrow_mut()
+            .push(cmd.client_order_id);
+
+        Ok(()) // Stub implementation always succeeds
+    }
+
+    fn batch_modify_orders(&self, cmd: BatchModifyOrders) -> anyhow::Result<()> {
+        self.modified_order_ids.borrow_mut().extend(
+            cmd.modifies
+                .into_iter()
+                .map(|modify| modify.client_order_id),
+        );
+
         Ok(()) // Stub implementation always succeeds
     }
 

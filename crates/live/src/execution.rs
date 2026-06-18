@@ -28,7 +28,7 @@ use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
     messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+        BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
         ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
@@ -226,6 +226,10 @@ impl ExecutionClient for LiveExecutionClient {
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         self.client.borrow().modify_order(cmd)
+    }
+
+    fn batch_modify_orders(&self, cmd: BatchModifyOrders) -> anyhow::Result<()> {
+        self.client.borrow().batch_modify_orders(cmd)
     }
 
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {

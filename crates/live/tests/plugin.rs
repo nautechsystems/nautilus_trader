@@ -1176,7 +1176,7 @@ fn cdylib_strategy_cancel_orders_normalizes_identifiers_for_cache_lookup() {
 
     let captured = captured.lock().unwrap().take().expect("command captured");
     match captured {
-        TradingCommand::BatchCancelOrders(command) => {
+        TradingCommand::CancelOrders(command) => {
             assert_eq!(command.strategy_id, strategy_id);
             assert_eq!(command.client_id, Some(client_id));
             assert_eq!(command.instrument_id, plugin_test_instrument_id());

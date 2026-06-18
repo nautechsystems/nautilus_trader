@@ -44,8 +44,8 @@ use nautilus_common::{
     messages::{
         ExecutionReport,
         execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
-            SubmitOrder, SubmitOrderList, TradingCommand,
+            BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
+            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
         },
     },
     msgbus::{
@@ -1989,9 +1989,10 @@ impl ExecutionEngine {
             TradingCommand::SubmitOrder(cmd) => self.handle_submit_order(client, cmd),
             TradingCommand::SubmitOrderList(cmd) => self.handle_submit_order_list(client, cmd),
             TradingCommand::ModifyOrder(cmd) => self.handle_modify_order(client, cmd),
+            TradingCommand::ModifyOrders(cmd) => self.handle_batch_modify_orders(client, cmd),
             TradingCommand::CancelOrder(cmd) => self.handle_cancel_order(client, cmd),
+            TradingCommand::CancelOrders(cmd) => self.handle_batch_cancel_orders(client, cmd),
             TradingCommand::CancelAllOrders(cmd) => self.handle_cancel_all_orders(client, cmd),
-            TradingCommand::BatchCancelOrders(cmd) => self.handle_batch_cancel_orders(client, cmd),
             TradingCommand::QueryOrder(cmd) => self.handle_query_order(client, cmd),
             TradingCommand::QueryAccount(cmd) => self.handle_query_account(client, cmd),
         }
@@ -2002,9 +2003,10 @@ impl ExecutionEngine {
             TradingCommand::SubmitOrder(cmd) => format!("venue={}", cmd.instrument_id.venue),
             TradingCommand::SubmitOrderList(cmd) => format!("venue={}", cmd.instrument_id.venue),
             TradingCommand::ModifyOrder(cmd) => format!("venue={}", cmd.instrument_id.venue),
+            TradingCommand::ModifyOrders(cmd) => format!("venue={}", cmd.instrument_id.venue),
             TradingCommand::CancelOrder(cmd) => format!("venue={}", cmd.instrument_id.venue),
+            TradingCommand::CancelOrders(cmd) => format!("venue={}", cmd.instrument_id.venue),
             TradingCommand::CancelAllOrders(cmd) => format!("venue={}", cmd.instrument_id.venue),
-            TradingCommand::BatchCancelOrders(cmd) => format!("venue={}", cmd.instrument_id.venue),
             TradingCommand::QueryOrder(cmd) => format!("venue={}", cmd.instrument_id.venue),
             TradingCommand::QueryAccount(cmd) => {
                 let issuer = cmd.account_id.get_issuer();
@@ -2064,8 +2066,9 @@ impl ExecutionEngine {
                 .order(&cmd.client_order_id)
                 .and_then(|order| order.account_id()),
             TradingCommand::SubmitOrderList(_)
+            | TradingCommand::ModifyOrders(_)
+            | TradingCommand::CancelOrders(_)
             | TradingCommand::CancelAllOrders(_)
-            | TradingCommand::BatchCancelOrders(_)
             | TradingCommand::QueryOrder(_) => None,
         }
     }
@@ -2075,9 +2078,10 @@ impl ExecutionEngine {
             TradingCommand::SubmitOrder(cmd) => Some(cmd.instrument_id),
             TradingCommand::SubmitOrderList(cmd) => Some(cmd.instrument_id),
             TradingCommand::ModifyOrder(cmd) => Some(cmd.instrument_id),
+            TradingCommand::ModifyOrders(cmd) => Some(cmd.instrument_id),
             TradingCommand::CancelOrder(cmd) => Some(cmd.instrument_id),
+            TradingCommand::CancelOrders(cmd) => Some(cmd.instrument_id),
             TradingCommand::CancelAllOrders(cmd) => Some(cmd.instrument_id),
-            TradingCommand::BatchCancelOrders(cmd) => Some(cmd.instrument_id),
             TradingCommand::QueryOrder(cmd) => Some(cmd.instrument_id),
             TradingCommand::QueryAccount(_) => None,
         }
@@ -2341,6 +2345,12 @@ impl ExecutionEngine {
     fn handle_modify_order(&self, client: &dyn ExecutionClient, cmd: ModifyOrder) {
         if let Err(e) = client.modify_order(cmd) {
             log::error!("Error modifying order: {e}");
+        }
+    }
+
+    fn handle_batch_modify_orders(&self, client: &dyn ExecutionClient, cmd: BatchModifyOrders) {
+        if let Err(e) = client.batch_modify_orders(cmd) {
+            log::error!("Error batch modifying orders: {e}");
         }
     }
 
