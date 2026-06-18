@@ -2,6 +2,8 @@
 
 Released on TBD (UTC).
 
+This release includes many breaking changes across the user-facing Rust v2 APIs.
+
 ### Enhancements
 - Added Binance Futures `bnfcr_currency` config for Credits Trading Mode
 - Added Binance Futures funding-rate history support in Rust
@@ -11,6 +13,9 @@ Released on TBD (UTC).
 - Added `BitmexInstrumentState::Unknown` to tolerate unrecognized venue states without bootstrap failure
 - Added BitMEX legacy futures, spreads, and reference basket instrument parsing
 - Added cache order index crash-recovery restore for Redis and Postgres adapters (Rust)
+- Added `Cache::try_currency` with `CurrencyLookupError` for typed missing-currency lookups (Rust)
+- Added `Cache::try_instrument` with `InstrumentLookupError` for typed missing-instrument lookups (Rust)
+- Added `Cache::try_order` with `OrderLookupError` for typed missing-order lookups (Rust)
 - Added Hyperliquid builder attribution opt-out
 - Added Hyperliquid historical trade requests
 - Added Hyperliquid minimum notional handling
@@ -37,6 +42,7 @@ Released on TBD (UTC).
 - Changed `PoolProfiler.price_sqrt_ratio_x96` to return `int` instead of `str`
 - Changed PyO3 `DataActor`/`Strategy` historical request `start`/`end` to require UTC datetimes
 - Changed Redis cache account/order/position storage to event logs; clear old typed state (Rust)
+- Changed Rust actor `self.clock()` to return `ClockApi`; call methods directly instead of borrowing
 - Changed `SyntheticInstrument` fallible methods to return `SyntheticInstrumentError` instead of `anyhow::Error` (Rust)
 - Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)
 - Renamed `BitmexInstrumentType::StockPerpetual` to `TradFiPerpetual` (covers equities, FX, and commodities)

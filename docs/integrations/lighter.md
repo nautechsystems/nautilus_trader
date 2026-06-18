@@ -522,12 +522,12 @@ rate. `sendTx` is not counted against the WebSocket client-message bucket.
 
 Common REST endpoint weights from the official docs:
 
-| Endpoint group                       | Weight | Adapter behavior                                |
-|--------------------------------------|--------|-------------------------------------------------|
-| `sendTx`, `sendTxBatch`, `nextNonce` | 6      | Tx calls use tx limiter; `nextNonce` uses REST. |
-| `accountInactiveOrders`              | 100    | Adapter counts one REST token per HTTP call.    |
-| `trades`, `recentTrades`             | 600    | Adapter counts one REST token per HTTP call.    |
-| Other endpoints                      | 300    | Adapter counts one REST token per HTTP call.    |
+| Endpoint group                         | Weight | Adapter behavior                                |
+|----------------------------------------|--------|-------------------------------------------------|
+| `sendTx`, `sendTxBatch`, `nextNonce`   | 6      | Tx calls use tx limiter; `nextNonce` uses REST. |
+| `accountInactiveOrders`                | 100    | Adapter counts one REST token per HTTP call.    |
+| `trades`, `recentTrades`               | 600    | Adapter counts one REST token per HTTP call.    |
+| Other endpoints                        | 300    | Adapter counts one REST token per HTTP call.    |
 
 | Endpoint or transport                  | Limit      | Notes                                              |
 |----------------------------------------|------------|----------------------------------------------------|
@@ -548,7 +548,21 @@ Common REST endpoint weights from the official docs:
 
 Premium volume quota is a separate venue constraint for `L2CreateOrder`, `L2CancelAllOrders`,
 `L2ModifyOrder`, and `L2CreateGroupedOrders`. The adapter does not inspect remaining quota; use
-venue account tools if a strategy depends on premium or plus limits.
+venue account tools if a strategy depends on premium or plus limits. See Lighter's
+[Volume Quota](https://apidocs.lighter.xyz/docs/volume-quota-program) documentation for the current
+quota rules and replenishment figures.
+
+## Volume quota and no-fill quoting
+
+Lighter's volume quota affects quote-refresh strategies differently from transport rate limits.
+Create, modify, native cancel-all, and grouped-order transactions spend volume quota, while the
+venue replenishes quota from completed trading volume and any free allowance the program provides.
+A market-making smoke test that repeatedly quotes around mid without fills can therefore exhaust
+quota even when the WebSocket and `sendTx` rate limiters are working as intended.
+
+For live tests on Lighter, avoid treating indefinite no-fill quoting as a neutral connectivity
+check. Prefer slower one-sided quoting, wider refresh thresholds, testnet coverage, or a bounded
+strategy that deliberately earns enough small fills to replenish the quota it spends.
 
 ## Connection management
 
