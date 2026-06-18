@@ -100,7 +100,6 @@ impl DataActor for NewMarketMonitor {
             .iter()
             .map(|i| (i.id(), PolymarketLabel::from_instrument(i)))
             .collect();
-        drop(cache);
 
         log::info!(
             "Initial provider load: {} instruments in cache",

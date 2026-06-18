@@ -23,11 +23,13 @@ use std::{
     time::Duration,
 };
 
+use ahash::AHashSet;
 use bytes::Bytes;
 use indexmap::IndexMap;
 use log::LevelFilter;
 use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
+    accounts::AccountAny,
     data::{
         Bar, BarType, BookOrder, CustomData, DataType, FundingRateUpdate, HasTsInit,
         IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
@@ -38,10 +40,15 @@ use nautilus_model::{
         option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
         stubs::*,
     },
-    enums::{BookAction, BookType, GreeksConvention, OrderSide},
-    identifiers::{ActorId, ClientId, InstrumentId, OptionSeriesId, TraderId, Venue},
+    enums::{BookAction, BookType, GreeksConvention, OrderSide, OrderType, PositionSide},
+    identifiers::{
+        AccountId, ActorId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
+        OptionSeriesId, PositionId, StrategyId, TraderId, Venue, VenueOrderId,
+    },
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::*},
-    orderbook::OrderBook,
+    orderbook::{OrderBook, own::OwnOrderBook},
+    orders::{Order, OrderAny, OrderList, builder::OrderTestBuilder},
+    position::Position,
     stubs::TestDefault,
     types::{Price, Quantity},
 };
@@ -500,6 +507,249 @@ fn test_data_actor_clock_api(
 
     assert_eq!(actor.clock().timer_count(), 0);
     assert_eq!(actor.clock().timer_names(), Vec::<String>::new());
+}
+
+#[rstest]
+fn test_data_actor_cache_api_returns_owned_point_reads(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    actor.register(trader_id, clock, cache.clone()).unwrap();
+
+    let instrument_id = audusd_sim.id;
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+
+    {
+        let mut cache = cache.borrow_mut();
+        cache.add_instrument(instrument.clone()).unwrap();
+        cache.add_order(order, None, None, false).unwrap();
+    }
+
+    let cache_api = actor.cache();
+    let cached_instrument = cache_api.try_instrument(&instrument_id).unwrap();
+    let maybe_instrument = cache_api.instrument(&instrument_id);
+    let cached_order = cache_api.order(&client_order_id).unwrap();
+    let missing_instrument_id = InstrumentId::from("MISSING.SIM");
+    let missing_instrument = cache_api
+        .try_instrument(&missing_instrument_id)
+        .unwrap_err();
+
+    let _cache_write = cache.borrow_mut();
+
+    assert_eq!(cached_instrument, instrument);
+    assert_eq!(maybe_instrument, Some(instrument));
+    assert_eq!(cached_order.client_order_id(), client_order_id);
+    assert_eq!(
+        missing_instrument,
+        crate::cache::InstrumentLookupError::not_found(missing_instrument_id)
+    );
+}
+
+#[rstest]
+fn test_data_actor_cache_api_surface_returns_owned_values(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    actor.register(trader_id, clock, cache).unwrap();
+
+    let instrument_id = audusd_sim.id;
+    let venue = instrument_id.venue;
+    let account_id = AccountId::from("ACC-001");
+    let client_order_id = ClientOrderId::from("O-001");
+    let position_id = PositionId::from("P-001");
+    let strategy_id = StrategyId::from("S-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let cache_api = actor.cache();
+
+    let _: Option<InstrumentAny> = cache_api.instrument(&instrument_id);
+    let _: Result<InstrumentAny, crate::cache::InstrumentLookupError> =
+        cache_api.try_instrument(&instrument_id);
+    let _: Vec<InstrumentId> = cache_api.instrument_ids(Some(&venue));
+    let _: Vec<InstrumentAny> = cache_api.instruments(&venue, None);
+    let _: Vec<InstrumentId> = cache_api.synthetic_ids();
+    let _: Option<QuoteTick> = cache_api.quote(&instrument_id);
+    let _: Option<OwnOrderBook> = cache_api.own_order_book(&instrument_id);
+    let _: Option<AccountAny> = cache_api.account(&account_id);
+    let _: Option<AccountAny> = cache_api.account_for_venue(&venue);
+    let _: Option<AccountId> = cache_api.account_id(&venue);
+    let _: AHashSet<ComponentId> = cache_api.actor_ids();
+    let _: AHashSet<StrategyId> = cache_api.strategy_ids();
+    let _: AHashSet<ExecAlgorithmId> = cache_api.exec_algorithm_ids();
+    let _: Option<OrderAny> = cache_api.order(&client_order_id);
+    let _: bool = cache_api.order_exists(&client_order_id);
+    let _: bool = cache_api.is_order_open(&client_order_id);
+    let _: bool = cache_api.is_order_closed(&client_order_id);
+    let _: bool = cache_api.is_order_active_local(&client_order_id);
+    let _: bool = cache_api.is_order_emulated(&client_order_id);
+    let _: bool = cache_api.is_order_inflight(&client_order_id);
+    let _: Option<ClientOrderId> = cache_api.client_order_id(&venue_order_id);
+    let _: Option<VenueOrderId> = cache_api.venue_order_id(&client_order_id);
+    let _: Option<ClientId> = cache_api.client_id(&client_order_id);
+    let _: AHashSet<ClientOrderId> = cache_api.client_order_ids(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+    );
+    let _: AHashSet<ClientOrderId> = cache_api.client_order_ids_open(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+    );
+    let _: AHashSet<ClientOrderId> = cache_api.client_order_ids_closed(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+    );
+    let _: AHashSet<ClientOrderId> = cache_api.client_order_ids_active_local(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+    );
+    let _: AHashSet<ClientOrderId> = cache_api.client_order_ids_emulated(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+    );
+    let _: AHashSet<ClientOrderId> = cache_api.client_order_ids_inflight(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+    );
+    let _: Vec<OrderAny> = cache_api.orders_open(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+        Some(OrderSide::Buy),
+    );
+    let _: Vec<OrderAny> = cache_api.orders_active_local(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+        Some(OrderSide::Buy),
+    );
+    let _: Vec<OrderAny> = cache_api.orders_emulated(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+        Some(OrderSide::Buy),
+    );
+    let _: Vec<OrderAny> = cache_api.orders_inflight(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+        Some(OrderSide::Buy),
+    );
+    let _: usize = cache_api.orders_open_count(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+        Some(OrderSide::Buy),
+    );
+    let _: usize = cache_api.orders_inflight_count(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+        Some(OrderSide::Buy),
+    );
+    let _: bool = cache_api.has_orders_open(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+        Some(OrderSide::Buy),
+    );
+    let _: bool = cache_api.has_orders_active_local(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+        Some(OrderSide::Buy),
+    );
+    let _: bool = cache_api.has_orders_emulated(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+        Some(OrderSide::Buy),
+    );
+    let _: bool = cache_api.has_orders_inflight(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+        Some(OrderSide::Buy),
+    );
+    let _: Vec<OrderList> =
+        cache_api.order_lists(None, Some(&instrument_id), Some(&strategy_id), None);
+    let _: Option<Position> = cache_api.position(&position_id);
+    let _: Option<Position> = cache_api.position_for_order(&client_order_id);
+    let _: Option<PositionId> = cache_api.position_id(&client_order_id);
+    let _: bool = cache_api.position_exists(&position_id);
+    let _: bool = cache_api.is_position_open(&position_id);
+    let _: AHashSet<PositionId> = cache_api.position_ids(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+    );
+    let _: AHashSet<PositionId> = cache_api.position_open_ids(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+    );
+    let _: AHashSet<PositionId> = cache_api.position_closed_ids(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+    );
+    let _: Vec<Position> = cache_api.positions_open(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+        Some(PositionSide::Long),
+    );
+    let _: usize = cache_api.positions_open_count(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+        Some(PositionSide::Long),
+    );
+    let _: bool = cache_api.has_positions_open(
+        None,
+        Some(&instrument_id),
+        Some(&strategy_id),
+        Some(&account_id),
+        Some(PositionSide::Long),
+    );
 }
 
 /// Helper to register a dummy actor and return its Rc.

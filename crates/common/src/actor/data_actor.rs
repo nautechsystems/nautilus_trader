@@ -59,7 +59,7 @@ use crate::defi;
 #[allow(unused_imports)]
 use crate::defi::data_actor as _; // Brings DeFi impl blocks into scope
 use crate::{
-    cache::Cache,
+    cache::{Cache, CacheApi},
     clock::{Clock, ClockApi},
     component::Component,
     enums::{ComponentState, ComponentTrigger},
@@ -605,6 +605,11 @@ pub trait DataActor:
     /// Returns the user-facing clock API.
     fn clock(&self) -> ClockApi<'_> {
         self.deref().clock_api()
+    }
+
+    /// Returns the user-facing cache API.
+    fn cache(&self) -> CacheApi<'_> {
+        self.deref().cache_api()
     }
 
     /// Handles a received time event.
@@ -3146,6 +3151,16 @@ impl DataActorCore {
                 )
             })
             .borrow()
+    }
+
+    fn cache_api(&self) -> CacheApi<'_> {
+        let cache = self.cache.as_ref().unwrap_or_else(|| {
+            panic!(
+                "DataActor {} must be registered before calling `cache()` - trader_id: {:?}",
+                self.actor_id, self.trader_id
+            )
+        });
+        CacheApi::new(cache.as_ref())
     }
 
     /// Returns a read-only reference to the cache.

@@ -218,11 +218,9 @@ impl DataActor for CompositeMarketMaker {
         let (instrument, size_precision, min_quantity) = {
             let cache = self.cache();
             let instrument = cache.try_instrument(&instrument_id)?;
-            (
-                instrument.clone(),
-                instrument.size_precision(),
-                instrument.min_quantity(),
-            )
+            let size_precision = instrument.size_precision();
+            let min_quantity = instrument.min_quantity();
+            (instrument, size_precision, min_quantity)
         };
         self.price_precision = Some(instrument.price_precision());
         self.instrument = Some(instrument);
@@ -294,14 +292,10 @@ impl DataActor for CompositeMarketMaker {
             let strategy = Some(&strategy_id);
             let ids: Vec<ClientOrderId> = {
                 let cache = self.cache();
-                cache
-                    .orders_open(None, inst, strategy, None, None)
-                    .iter()
-                    .chain(
-                        cache
-                            .orders_inflight(None, inst, strategy, None, None)
-                            .iter(),
-                    )
+                let open = cache.orders_open(None, inst, strategy, None, None);
+                let inflight = cache.orders_inflight(None, inst, strategy, None, None);
+                open.iter()
+                    .chain(inflight.iter())
                     .map(|o| o.client_order_id())
                     .collect()
             };
@@ -332,15 +326,9 @@ impl DataActor for CompositeMarketMaker {
             let mut pending_sell_dec = Decimal::ZERO;
             let mut seen = AHashSet::new();
 
-            for order in cache
-                .orders_open(None, instrument_id, strategy, None, None)
-                .iter()
-                .chain(
-                    cache
-                        .orders_inflight(None, instrument_id, strategy, None, None)
-                        .iter(),
-                )
-            {
+            let open = cache.orders_open(None, instrument_id, strategy, None, None);
+            let inflight = cache.orders_inflight(None, instrument_id, strategy, None, None);
+            for order in open.iter().chain(inflight.iter()) {
                 if !seen.insert(order.client_order_id()) {
                     continue;
                 }

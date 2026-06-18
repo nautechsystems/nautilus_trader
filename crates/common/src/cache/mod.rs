@@ -88,6 +88,9 @@ pub use refs::{AccountRef, AccountRefMut, OrderRef, OrderRefMut, PositionRef, Po
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
+#[cfg(feature = "defi")]
+use nautilus_model::defi::PoolProfiler;
+
 use crate::xrate::get_exchange_rate;
 
 /// Cache-owned reference to a snapshot blob.
@@ -113,6 +116,8 @@ impl CacheSnapshotRef {
     }
 }
 
+// TODO: Reassess whether CacheView should consolidate with CacheApi once adapter and client
+// construction no longer need a cache-handle facade.
 /// Read-only view over the platform cache.
 ///
 /// Adapter-facing code receives this type instead of the mutable cache handle so cache writes stay
@@ -142,6 +147,776 @@ impl CacheView {
 impl From<Rc<RefCell<Cache>>> for CacheView {
     fn from(inner: Rc<RefCell<Cache>>) -> Self {
         Self::new(inner)
+    }
+}
+
+/// User-facing cache API.
+#[derive(Debug)]
+pub struct CacheApi<'a> {
+    cache: &'a RefCell<Cache>,
+}
+
+impl<'a> CacheApi<'a> {
+    pub(crate) fn new(cache: &'a RefCell<Cache>) -> Self {
+        Self { cache }
+    }
+
+    /// Returns an owned copy of the instrument for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn instrument(&self, instrument_id: &InstrumentId) -> Option<InstrumentAny> {
+        self.cache().instrument_ref(instrument_id).cloned()
+    }
+
+    // panics-doc-ok
+    /// Returns an owned copy of the instrument for the `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InstrumentLookupError::NotFound`] when the instrument is not present in the cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    pub fn try_instrument(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Result<InstrumentAny, InstrumentLookupError> {
+        self.cache().try_instrument_ref(instrument_id).cloned()
+    }
+
+    /// Returns the instrument IDs in the cache, optionally filtered by `venue`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn instrument_ids(&self, venue: Option<&Venue>) -> Vec<InstrumentId> {
+        self.cache()
+            .instrument_ids(venue)
+            .into_iter()
+            .copied()
+            .collect()
+    }
+
+    /// Returns owned copies of all instruments for the `venue`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn instruments(&self, venue: &Venue, underlying: Option<&Ustr>) -> Vec<InstrumentAny> {
+        self.cache()
+            .instruments_refs(venue, underlying)
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Returns the synthetic instrument IDs in the cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn synthetic_ids(&self) -> Vec<InstrumentId> {
+        self.cache().synthetic_ids().into_iter().copied().collect()
+    }
+
+    /// Returns the latest quote for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn quote(&self, instrument_id: &InstrumentId) -> Option<QuoteTick> {
+        self.cache().quote_ref(instrument_id).copied()
+    }
+
+    /// Returns an owned copy of the own order book for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn own_order_book(&self, instrument_id: &InstrumentId) -> Option<OwnOrderBook> {
+        self.cache().own_order_book_ref(instrument_id).cloned()
+    }
+
+    /// Returns the pool instrument IDs in the cache, optionally filtered by `venue`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn pool_ids(&self, venue: Option<&Venue>) -> Vec<InstrumentId> {
+        self.cache().pool_ids(venue)
+    }
+
+    /// Returns the pool profiler instrument IDs in the cache, optionally filtered by `venue`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn pool_profiler_ids(&self, venue: Option<&Venue>) -> Vec<InstrumentId> {
+        self.cache().pool_profiler_ids(venue)
+    }
+
+    /// Returns an owned copy of the pool profiler for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn pool_profiler(&self, instrument_id: &InstrumentId) -> Option<PoolProfiler> {
+        self.cache().pool_profiler_ref(instrument_id).cloned()
+    }
+
+    /// Returns an owned copy of the account for the `account_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn account(&self, account_id: &AccountId) -> Option<AccountAny> {
+        self.cache().account_owned(account_id)
+    }
+
+    /// Returns an owned copy of the account for the `venue` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn account_for_venue(&self, venue: &Venue) -> Option<AccountAny> {
+        self.cache().account_for_venue_owned(venue)
+    }
+
+    /// Returns the account ID for the `venue` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn account_id(&self, venue: &Venue) -> Option<AccountId> {
+        self.cache().account_id(venue).copied()
+    }
+
+    /// Returns the actor IDs in the cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn actor_ids(&self) -> AHashSet<ComponentId> {
+        self.cache().actor_ids()
+    }
+
+    /// Returns the strategy IDs in the cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn strategy_ids(&self) -> AHashSet<StrategyId> {
+        self.cache().strategy_ids()
+    }
+
+    /// Returns the execution algorithm IDs in the cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn exec_algorithm_ids(&self) -> AHashSet<ExecAlgorithmId> {
+        self.cache().exec_algorithm_ids()
+    }
+
+    /// Returns an owned copy of the order for the `client_order_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn order(&self, client_order_id: &ClientOrderId) -> Option<OrderAny> {
+        self.cache().order_owned(client_order_id)
+    }
+
+    /// Returns whether an order with the `client_order_id` exists.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn order_exists(&self, client_order_id: &ClientOrderId) -> bool {
+        self.cache().order_exists(client_order_id)
+    }
+
+    /// Returns whether an order with the `client_order_id` is open.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn is_order_open(&self, client_order_id: &ClientOrderId) -> bool {
+        self.cache().is_order_open(client_order_id)
+    }
+
+    /// Returns whether an order with the `client_order_id` is closed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn is_order_closed(&self, client_order_id: &ClientOrderId) -> bool {
+        self.cache().is_order_closed(client_order_id)
+    }
+
+    /// Returns whether an order with the `client_order_id` is locally active.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn is_order_active_local(&self, client_order_id: &ClientOrderId) -> bool {
+        self.cache().is_order_active_local(client_order_id)
+    }
+
+    /// Returns whether an order with the `client_order_id` is emulated.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn is_order_emulated(&self, client_order_id: &ClientOrderId) -> bool {
+        self.cache().is_order_emulated(client_order_id)
+    }
+
+    /// Returns whether an order with the `client_order_id` is in-flight.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn is_order_inflight(&self, client_order_id: &ClientOrderId) -> bool {
+        self.cache().is_order_inflight(client_order_id)
+    }
+
+    /// Returns the client order ID for the `venue_order_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn client_order_id(&self, venue_order_id: &VenueOrderId) -> Option<ClientOrderId> {
+        self.cache().client_order_id(venue_order_id).copied()
+    }
+
+    /// Returns the venue order ID for the `client_order_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn venue_order_id(&self, client_order_id: &ClientOrderId) -> Option<VenueOrderId> {
+        self.cache().venue_order_id(client_order_id).copied()
+    }
+
+    /// Returns the client ID indexed for the `client_order_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn client_id(&self, client_order_id: &ClientOrderId) -> Option<ClientId> {
+        self.cache().client_id(client_order_id).copied()
+    }
+
+    /// Returns the client order IDs of all orders matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn client_order_ids(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> AHashSet<ClientOrderId> {
+        self.cache()
+            .client_order_ids(venue, instrument_id, strategy_id, account_id)
+    }
+
+    /// Returns the client order IDs of all open orders matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn client_order_ids_open(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> AHashSet<ClientOrderId> {
+        self.cache()
+            .client_order_ids_open(venue, instrument_id, strategy_id, account_id)
+    }
+
+    /// Returns the client order IDs of all closed orders matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn client_order_ids_closed(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> AHashSet<ClientOrderId> {
+        self.cache()
+            .client_order_ids_closed(venue, instrument_id, strategy_id, account_id)
+    }
+
+    /// Returns the client order IDs of all locally active orders matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn client_order_ids_active_local(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> AHashSet<ClientOrderId> {
+        self.cache()
+            .client_order_ids_active_local(venue, instrument_id, strategy_id, account_id)
+    }
+
+    /// Returns the client order IDs of all emulated orders matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn client_order_ids_emulated(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> AHashSet<ClientOrderId> {
+        self.cache()
+            .client_order_ids_emulated(venue, instrument_id, strategy_id, account_id)
+    }
+
+    /// Returns the client order IDs of all in-flight orders matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn client_order_ids_inflight(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> AHashSet<ClientOrderId> {
+        self.cache()
+            .client_order_ids_inflight(venue, instrument_id, strategy_id, account_id)
+    }
+
+    /// Returns owned copies of all open orders matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn orders_open(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> Vec<OrderAny> {
+        self.cache()
+            .orders_open_refs(venue, instrument_id, strategy_id, account_id, side)
+            .into_iter()
+            .map(|order| order.cloned())
+            .collect()
+    }
+
+    /// Returns owned copies of all locally active orders matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn orders_active_local(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> Vec<OrderAny> {
+        self.cache()
+            .orders_active_local_refs(venue, instrument_id, strategy_id, account_id, side)
+            .into_iter()
+            .map(|order| order.cloned())
+            .collect()
+    }
+
+    /// Returns owned copies of all emulated orders matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn orders_emulated(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> Vec<OrderAny> {
+        self.cache()
+            .orders_emulated_refs(venue, instrument_id, strategy_id, account_id, side)
+            .into_iter()
+            .map(|order| order.cloned())
+            .collect()
+    }
+
+    /// Returns owned copies of all in-flight orders matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn orders_inflight(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> Vec<OrderAny> {
+        self.cache()
+            .orders_inflight_refs(venue, instrument_id, strategy_id, account_id, side)
+            .into_iter()
+            .map(|order| order.cloned())
+            .collect()
+    }
+
+    /// Returns the count of all open orders matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn orders_open_count(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> usize {
+        self.cache()
+            .orders_open_count(venue, instrument_id, strategy_id, account_id, side)
+    }
+
+    /// Returns the count of all in-flight orders matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn orders_inflight_count(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> usize {
+        self.cache()
+            .orders_inflight_count(venue, instrument_id, strategy_id, account_id, side)
+    }
+
+    /// Returns whether any open order matches the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_orders_open(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> bool {
+        self.cache()
+            .has_orders_open(venue, instrument_id, strategy_id, account_id, side)
+    }
+
+    /// Returns whether any locally active order matches the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_orders_active_local(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> bool {
+        self.cache()
+            .has_orders_active_local(venue, instrument_id, strategy_id, account_id, side)
+    }
+
+    /// Returns whether any emulated order matches the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_orders_emulated(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> bool {
+        self.cache()
+            .has_orders_emulated(venue, instrument_id, strategy_id, account_id, side)
+    }
+
+    /// Returns whether any in-flight order matches the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_orders_inflight(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> bool {
+        self.cache()
+            .has_orders_inflight(venue, instrument_id, strategy_id, account_id, side)
+    }
+
+    /// Returns owned copies of all order lists matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn order_lists(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Vec<OrderList> {
+        self.cache()
+            .order_lists_refs(venue, instrument_id, strategy_id, account_id)
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Returns an owned copy of the position for the `position_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn position(&self, position_id: &PositionId) -> Option<Position> {
+        self.cache()
+            .position_ref(position_id)
+            .map(|position| position.cloned())
+    }
+
+    /// Returns an owned copy of the position for the `client_order_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn position_for_order(&self, client_order_id: &ClientOrderId) -> Option<Position> {
+        self.cache()
+            .position_for_order_ref(client_order_id)
+            .map(|position| position.cloned())
+    }
+
+    /// Returns the position ID for the `client_order_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn position_id(&self, client_order_id: &ClientOrderId) -> Option<PositionId> {
+        self.cache().position_id(client_order_id).copied()
+    }
+
+    /// Returns whether a position with the `position_id` exists.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn position_exists(&self, position_id: &PositionId) -> bool {
+        self.cache().position_exists(position_id)
+    }
+
+    /// Returns whether a position with the `position_id` is open.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn is_position_open(&self, position_id: &PositionId) -> bool {
+        self.cache().is_position_open(position_id)
+    }
+
+    /// Returns the position IDs of all positions matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn position_ids(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> AHashSet<PositionId> {
+        self.cache()
+            .position_ids(venue, instrument_id, strategy_id, account_id)
+    }
+
+    /// Returns the position IDs of all open positions matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn position_open_ids(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> AHashSet<PositionId> {
+        self.cache()
+            .position_open_ids(venue, instrument_id, strategy_id, account_id)
+    }
+
+    /// Returns the position IDs of all closed positions matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn position_closed_ids(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> AHashSet<PositionId> {
+        self.cache()
+            .position_closed_ids(venue, instrument_id, strategy_id, account_id)
+    }
+
+    /// Returns owned copies of all open positions matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn positions_open(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<PositionSide>,
+    ) -> Vec<Position> {
+        self.cache()
+            .positions_open_refs(venue, instrument_id, strategy_id, account_id, side)
+            .into_iter()
+            .map(|position| position.cloned())
+            .collect()
+    }
+
+    /// Returns the count of all open positions matching the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn positions_open_count(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<PositionSide>,
+    ) -> usize {
+        self.cache()
+            .positions_open_count(venue, instrument_id, strategy_id, account_id, side)
+    }
+
+    /// Returns whether any open position matches the optional filter parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_positions_open(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<PositionSide>,
+    ) -> bool {
+        self.cache()
+            .has_positions_open(venue, instrument_id, strategy_id, account_id, side)
+    }
+
+    fn cache(&self) -> Ref<'_, Cache> {
+        self.cache.borrow()
     }
 }
 
@@ -3997,13 +4772,38 @@ impl Cache {
     /// post-event state is required, perform a fresh lookup. Use [`Self::order_owned`] when an
     /// owned snapshot is needed for a boundary handover.
     #[must_use]
-    pub fn order(&self, client_order_id: &ClientOrderId) -> Option<OrderRef<'_>> {
+    pub fn order_ref(&self, client_order_id: &ClientOrderId) -> Option<OrderRef<'_>> {
         self.orders
             .get(client_order_id)
             .map(|order_cell| OrderRef::new(order_cell.borrow()))
     }
 
+    /// Gets a borrow of the order with the `client_order_id` (if found).
+    ///
+    /// Prefer [`Self::order_ref`] in new native code.
+    #[must_use]
+    pub fn order(&self, client_order_id: &ClientOrderId) -> Option<OrderRef<'_>> {
+        self.order_ref(client_order_id)
+    }
+
     /// Gets a borrow of the order with the `client_order_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OrderLookupError::NotFound`] when the order is not present in the cache.
+    pub fn try_order_ref(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> Result<OrderRef<'_>, OrderLookupError> {
+        self.orders
+            .get(client_order_id)
+            .map(|order_cell| OrderRef::new(order_cell.borrow()))
+            .ok_or_else(|| OrderLookupError::not_found(*client_order_id))
+    }
+
+    /// Gets a borrow of the order with the `client_order_id`.
+    ///
+    /// Prefer [`Self::try_order_ref`] in new native code.
     ///
     /// # Errors
     ///
@@ -4012,10 +4812,7 @@ impl Cache {
         &self,
         client_order_id: &ClientOrderId,
     ) -> Result<OrderRef<'_>, OrderLookupError> {
-        self.orders
-            .get(client_order_id)
-            .map(|order_cell| OrderRef::new(order_cell.borrow()))
-            .ok_or_else(|| OrderLookupError::not_found(*client_order_id))
+        self.try_order_ref(client_order_id)
     }
 
     /// Gets an exclusive write borrow of the order with the `client_order_id` (if found).
@@ -4034,10 +4831,10 @@ impl Cache {
             .map(|order_cell| OrderRefMut::new(order_cell.borrow_mut()))
     }
 
-    /// Gets an owned snapshot of the order with the `client_order_id` (if found).
+    /// Gets an owned copy of the order with the `client_order_id` (if found).
     ///
     /// Use when downstream needs an owned [`OrderAny`] that crosses a boundary (for example, an
-    /// adapter `get_order` API). The snapshot will not reflect later cache mutations.
+    /// adapter `get_order` API). The copy will not reflect later cache mutations.
     #[must_use]
     pub fn order_owned(&self, client_order_id: &ClientOrderId) -> Option<OrderAny> {
         self.orders
@@ -4054,7 +4851,8 @@ impl Cache {
         &self,
         client_order_id: &ClientOrderId,
     ) -> Result<OrderAny, OrderLookupError> {
-        self.try_order(client_order_id).map(|order| order.cloned())
+        self.try_order_ref(client_order_id)
+            .map(|order| order.cloned())
     }
 
     /// Gets cloned orders for the given `client_order_ids`, logging an error for any missing.
@@ -4098,7 +4896,7 @@ impl Cache {
     /// those orders while the vector is alive will panic at runtime. Drop the vector
     /// before issuing writes.
     #[must_use]
-    pub fn orders(
+    pub fn orders_refs(
         &self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
@@ -4110,9 +4908,24 @@ impl Cache {
         self.get_orders_for_ids(&client_order_ids, side)
     }
 
+    /// Returns borrows of all orders matching the optional filter parameters.
+    ///
+    /// Prefer [`Self::orders_refs`] in new native code.
+    #[must_use]
+    pub fn orders(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> Vec<OrderRef<'_>> {
+        self.orders_refs(venue, instrument_id, strategy_id, account_id, side)
+    }
+
     /// Returns borrows of all open orders matching the optional filter parameters.
     #[must_use]
-    pub fn orders_open(
+    pub fn orders_open_refs(
         &self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
@@ -4125,9 +4938,24 @@ impl Cache {
         self.get_orders_for_ids(&client_order_ids, side)
     }
 
+    /// Returns borrows of all open orders matching the optional filter parameters.
+    ///
+    /// Prefer [`Self::orders_open_refs`] in new native code.
+    #[must_use]
+    pub fn orders_open(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> Vec<OrderRef<'_>> {
+        self.orders_open_refs(venue, instrument_id, strategy_id, account_id, side)
+    }
+
     /// Returns borrows of all closed orders matching the optional filter parameters.
     #[must_use]
-    pub fn orders_closed(
+    pub fn orders_closed_refs(
         &self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
@@ -4140,12 +4968,27 @@ impl Cache {
         self.get_orders_for_ids(&client_order_ids, side)
     }
 
+    /// Returns borrows of all closed orders matching the optional filter parameters.
+    ///
+    /// Prefer [`Self::orders_closed_refs`] in new native code.
+    #[must_use]
+    pub fn orders_closed(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> Vec<OrderRef<'_>> {
+        self.orders_closed_refs(venue, instrument_id, strategy_id, account_id, side)
+    }
+
     /// Returns borrows of all locally active orders matching the optional filter parameters.
     ///
     /// Locally active orders are in the `INITIALIZED`, `EMULATED`, or `RELEASED` state
     /// (a superset of emulated orders).
     #[must_use]
-    pub fn orders_active_local(
+    pub fn orders_active_local_refs(
         &self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
@@ -4158,9 +5001,24 @@ impl Cache {
         self.get_orders_for_ids(&client_order_ids, side)
     }
 
+    /// Returns borrows of all locally active orders matching the optional filter parameters.
+    ///
+    /// Prefer [`Self::orders_active_local_refs`] in new native code.
+    #[must_use]
+    pub fn orders_active_local(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> Vec<OrderRef<'_>> {
+        self.orders_active_local_refs(venue, instrument_id, strategy_id, account_id, side)
+    }
+
     /// Returns borrows of all emulated orders matching the optional filter parameters.
     #[must_use]
-    pub fn orders_emulated(
+    pub fn orders_emulated_refs(
         &self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
@@ -4173,9 +5031,24 @@ impl Cache {
         self.get_orders_for_ids(&client_order_ids, side)
     }
 
+    /// Returns borrows of all emulated orders matching the optional filter parameters.
+    ///
+    /// Prefer [`Self::orders_emulated_refs`] in new native code.
+    #[must_use]
+    pub fn orders_emulated(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> Vec<OrderRef<'_>> {
+        self.orders_emulated_refs(venue, instrument_id, strategy_id, account_id, side)
+    }
+
     /// Returns borrows of all in-flight orders matching the optional filter parameters.
     #[must_use]
-    pub fn orders_inflight(
+    pub fn orders_inflight_refs(
         &self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
@@ -4186,6 +5059,21 @@ impl Cache {
         let client_order_ids =
             self.client_order_ids_inflight(venue, instrument_id, strategy_id, account_id);
         self.get_orders_for_ids(&client_order_ids, side)
+    }
+
+    /// Returns borrows of all in-flight orders matching the optional filter parameters.
+    ///
+    /// Prefer [`Self::orders_inflight_refs`] in new native code.
+    #[must_use]
+    pub fn orders_inflight(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> Vec<OrderRef<'_>> {
+        self.orders_inflight_refs(venue, instrument_id, strategy_id, account_id, side)
     }
 
     /// Returns borrows of all orders for the `position_id`.
@@ -4513,7 +5401,7 @@ impl Cache {
 
     /// Returns all order lists matching the optional filter parameters.
     #[must_use]
-    pub fn order_lists(
+    pub fn order_lists_refs(
         &self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
@@ -4545,6 +5433,20 @@ impl Cache {
         }
 
         order_lists
+    }
+
+    /// Returns all order lists matching the optional filter parameters.
+    ///
+    /// Prefer [`Self::order_lists_refs`] in new native code.
+    #[must_use]
+    pub fn order_lists(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Vec<&OrderList> {
+        self.order_lists_refs(venue, instrument_id, strategy_id, account_id)
     }
 
     /// Returns whether an order list with the `order_list_id` exists.
@@ -4671,13 +5573,38 @@ impl Cache {
 
     /// Returns a borrow of the position with the `position_id` (if found).
     #[must_use]
-    pub fn position(&self, position_id: &PositionId) -> Option<PositionRef<'_>> {
+    pub fn position_ref(&self, position_id: &PositionId) -> Option<PositionRef<'_>> {
         self.positions
             .get(position_id)
             .map(|position_cell| PositionRef::new(position_cell.borrow()))
     }
 
+    /// Returns a borrow of the position with the `position_id` (if found).
+    ///
+    /// Prefer [`Self::position_ref`] in new native code.
+    #[must_use]
+    pub fn position(&self, position_id: &PositionId) -> Option<PositionRef<'_>> {
+        self.position_ref(position_id)
+    }
+
     /// Returns a borrow of the position with the `position_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PositionLookupError::NotFound`] when the position is not present in the cache.
+    pub fn try_position_ref(
+        &self,
+        position_id: &PositionId,
+    ) -> Result<PositionRef<'_>, PositionLookupError> {
+        self.positions
+            .get(position_id)
+            .map(|position_cell| PositionRef::new(position_cell.borrow()))
+            .ok_or_else(|| PositionLookupError::not_found(*position_id))
+    }
+
+    /// Returns a borrow of the position with the `position_id`.
+    ///
+    /// Prefer [`Self::try_position_ref`] in new native code.
     ///
     /// # Errors
     ///
@@ -4686,10 +5613,7 @@ impl Cache {
         &self,
         position_id: &PositionId,
     ) -> Result<PositionRef<'_>, PositionLookupError> {
-        self.positions
-            .get(position_id)
-            .map(|position_cell| PositionRef::new(position_cell.borrow()))
-            .ok_or_else(|| PositionLookupError::not_found(*position_id))
+        self.try_position_ref(position_id)
     }
 
     /// Gets an exclusive write borrow of the position with the `position_id` (if found).
@@ -4708,10 +5632,10 @@ impl Cache {
             .map(|position_cell| PositionRefMut::new(position_cell.borrow_mut()))
     }
 
-    /// Gets an owned snapshot of the position with the `position_id` (if found).
+    /// Gets an owned copy of the position with the `position_id` (if found).
     ///
-    /// Use when downstream needs an owned [`Position`] that crosses a boundary. The snapshot will
-    /// not reflect later cache mutations.
+    /// Use when downstream needs an owned [`Position`] that crosses a boundary. The copy will not
+    /// reflect later cache mutations.
     #[must_use]
     pub fn position_owned(&self, position_id: &PositionId) -> Option<Position> {
         self.positions
@@ -4721,12 +5645,23 @@ impl Cache {
 
     /// Returns a borrow of the position for the `client_order_id` (if found).
     #[must_use]
-    pub fn position_for_order(&self, client_order_id: &ClientOrderId) -> Option<PositionRef<'_>> {
+    pub fn position_for_order_ref(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> Option<PositionRef<'_>> {
         self.index
             .order_position
             .get(client_order_id)
             .and_then(|position_id| self.positions.get(position_id))
             .map(|position_cell| PositionRef::new(position_cell.borrow()))
+    }
+
+    /// Returns a borrow of the position for the `client_order_id` (if found).
+    ///
+    /// Prefer [`Self::position_for_order_ref`] in new native code.
+    #[must_use]
+    pub fn position_for_order(&self, client_order_id: &ClientOrderId) -> Option<PositionRef<'_>> {
+        self.position_for_order_ref(client_order_id)
     }
 
     /// Returns a reference to the position ID for the `client_order_id` (if found).
@@ -4741,7 +5676,7 @@ impl Cache {
     /// those positions while the vector is alive will panic at runtime. Drop the vector before
     /// issuing writes.
     #[must_use]
-    pub fn positions(
+    pub fn positions_refs(
         &self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
@@ -4753,9 +5688,24 @@ impl Cache {
         self.get_positions_for_ids(&position_ids, side)
     }
 
+    /// Returns borrows of all positions matching the optional filter parameters.
+    ///
+    /// Prefer [`Self::positions_refs`] in new native code.
+    #[must_use]
+    pub fn positions(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<PositionSide>,
+    ) -> Vec<PositionRef<'_>> {
+        self.positions_refs(venue, instrument_id, strategy_id, account_id, side)
+    }
+
     /// Returns borrows of all open positions matching the optional filter parameters.
     #[must_use]
-    pub fn positions_open(
+    pub fn positions_open_refs(
         &self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
@@ -4767,9 +5717,24 @@ impl Cache {
         self.get_positions_for_ids(&position_ids, side)
     }
 
+    /// Returns borrows of all open positions matching the optional filter parameters.
+    ///
+    /// Prefer [`Self::positions_open_refs`] in new native code.
+    #[must_use]
+    pub fn positions_open(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<PositionSide>,
+    ) -> Vec<PositionRef<'_>> {
+        self.positions_open_refs(venue, instrument_id, strategy_id, account_id, side)
+    }
+
     /// Returns borrows of all closed positions matching the optional filter parameters.
     #[must_use]
-    pub fn positions_closed(
+    pub fn positions_closed_refs(
         &self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
@@ -4779,6 +5744,21 @@ impl Cache {
     ) -> Vec<PositionRef<'_>> {
         let position_ids = self.position_closed_ids(venue, instrument_id, strategy_id, account_id);
         self.get_positions_for_ids(&position_ids, side)
+    }
+
+    /// Returns borrows of all closed positions matching the optional filter parameters.
+    ///
+    /// Prefer [`Self::positions_closed_refs`] in new native code.
+    #[must_use]
+    pub fn positions_closed(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<PositionSide>,
+    ) -> Vec<PositionRef<'_>> {
+        self.positions_closed_refs(venue, instrument_id, strategy_id, account_id, side)
     }
 
     /// Returns whether a position with the `position_id` exists.
@@ -5076,8 +6056,16 @@ impl Cache {
 
     /// Gets a reference to the own order book for the `instrument_id`.
     #[must_use]
-    pub fn own_order_book(&self, instrument_id: &InstrumentId) -> Option<&OwnOrderBook> {
+    pub fn own_order_book_ref(&self, instrument_id: &InstrumentId) -> Option<&OwnOrderBook> {
         self.own_books.get(instrument_id)
+    }
+
+    /// Gets a reference to the own order book for the `instrument_id`.
+    ///
+    /// Prefer [`Self::own_order_book_ref`] in new native code.
+    #[must_use]
+    pub fn own_order_book(&self, instrument_id: &InstrumentId) -> Option<&OwnOrderBook> {
+        self.own_order_book_ref(instrument_id)
     }
 
     /// Gets a reference to the own order book for the `instrument_id`.
@@ -5106,10 +6094,18 @@ impl Cache {
 
     /// Gets a reference to the latest quote for the `instrument_id`.
     #[must_use]
-    pub fn quote(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
+    pub fn quote_ref(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
         self.quotes
             .get(instrument_id)
             .and_then(|quotes| quotes.front())
+    }
+
+    /// Gets a reference to the latest quote for the `instrument_id`.
+    ///
+    /// Prefer [`Self::quote_ref`] in new native code.
+    #[must_use]
+    pub fn quote(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
+        self.quote_ref(instrument_id)
     }
 
     /// Gets a reference to the quote at `index` for the `instrument_id`.
@@ -5378,11 +6374,35 @@ impl Cache {
 
     /// Returns a reference to the instrument for the `instrument_id` (if found).
     #[must_use]
-    pub fn instrument(&self, instrument_id: &InstrumentId) -> Option<&InstrumentAny> {
+    pub fn instrument_ref(&self, instrument_id: &InstrumentId) -> Option<&InstrumentAny> {
         self.instruments.get(instrument_id)
     }
 
+    /// Returns a reference to the instrument for the `instrument_id` (if found).
+    ///
+    /// Prefer [`Self::instrument_ref`] in new native code.
+    #[must_use]
+    pub fn instrument(&self, instrument_id: &InstrumentId) -> Option<&InstrumentAny> {
+        self.instrument_ref(instrument_id)
+    }
+
     /// Returns a reference to the instrument for the `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InstrumentLookupError::NotFound`] when the instrument is not present in the cache.
+    pub fn try_instrument_ref(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Result<&InstrumentAny, InstrumentLookupError> {
+        self.instruments
+            .get(instrument_id)
+            .ok_or_else(|| InstrumentLookupError::not_found(*instrument_id))
+    }
+
+    /// Returns a reference to the instrument for the `instrument_id`.
+    ///
+    /// Prefer [`Self::try_instrument_ref`] in new native code.
     ///
     /// # Errors
     ///
@@ -5391,9 +6411,7 @@ impl Cache {
         &self,
         instrument_id: &InstrumentId,
     ) -> Result<&InstrumentAny, InstrumentLookupError> {
-        self.instruments
-            .get(instrument_id)
-            .ok_or_else(|| InstrumentLookupError::not_found(*instrument_id))
+        self.try_instrument_ref(instrument_id)
     }
 
     /// Returns references to all instrument IDs for the `venue`.
@@ -5407,12 +6425,24 @@ impl Cache {
 
     /// Returns references to all instruments for the `venue`.
     #[must_use]
-    pub fn instruments(&self, venue: &Venue, underlying: Option<&Ustr>) -> Vec<&InstrumentAny> {
+    pub fn instruments_refs(
+        &self,
+        venue: &Venue,
+        underlying: Option<&Ustr>,
+    ) -> Vec<&InstrumentAny> {
         self.instruments
             .values()
             .filter(|i| &i.id().venue == venue)
             .filter(|i| underlying.is_none_or(|u| i.underlying() == Some(*u)))
             .collect()
+    }
+
+    /// Returns references to all instruments for the `venue`.
+    ///
+    /// Prefer [`Self::instruments_refs`] in new native code.
+    #[must_use]
+    pub fn instruments(&self, venue: &Venue, underlying: Option<&Ustr>) -> Vec<&InstrumentAny> {
+        self.instruments_refs(venue, underlying)
     }
 
     /// Returns references to all instruments for the `venue` whose underlying

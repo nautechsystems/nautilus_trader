@@ -36,7 +36,7 @@ use std::{
 };
 
 use nautilus_common::{
-    actor::{DataActor, registry::try_get_actor_unchecked},
+    actor::{DataActor, DataActorCore, registry::try_get_actor_unchecked},
     cache::Cache,
     msgbus,
 };
@@ -1020,7 +1020,7 @@ unsafe extern "C" fn host_close_position(
     unsafe {
         dispatch_handle(ctx, command, "close_position", |adapter, cmd| {
             let position = {
-                let cache = adapter.cache();
+                let cache = Strategy::core(adapter).cache();
                 cache.position(&cmd.position_id).map(|p| p.cloned())
             };
             let position = position.ok_or_else(|| {
@@ -1080,7 +1080,7 @@ unsafe extern "C" fn host_query_order(
     unsafe {
         dispatch_handle(ctx, command, "query_order", |adapter, cmd| {
             let order = {
-                let cache = adapter.cache();
+                let cache = Strategy::core(adapter).cache();
                 cache.order(&cmd.client_order_id).map(|o| o.cloned())
             };
             let order = order.ok_or_else(|| {
@@ -1288,12 +1288,12 @@ fn dispatch_cache_query(
         if inner.is_strategy {
             let adapter_ref = try_get_actor_unchecked::<PluginStrategyAdapter>(&actor_id)
                 .ok_or_else(|| resolve_adapter_error(method, inner))?;
-            let cache = adapter_ref.cache();
+            let cache = Strategy::core(&*adapter_ref).cache();
             f(&cache, inner).into_result()
         } else {
             let adapter_ref = try_get_actor_unchecked::<PluginActorAdapter>(&actor_id)
                 .ok_or_else(|| resolve_adapter_error(method, inner))?;
-            let cache = adapter_ref.cache();
+            let cache = DataActorCore::cache(&adapter_ref);
             f(&cache, inner).into_result()
         }
     })

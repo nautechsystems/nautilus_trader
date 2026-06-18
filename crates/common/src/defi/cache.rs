@@ -101,8 +101,16 @@ impl Cache {
 
     /// Gets a reference to the pool profiler for the `instrument_id`.
     #[must_use]
-    pub fn pool_profiler(&self, instrument_id: &InstrumentId) -> Option<&PoolProfiler> {
+    pub fn pool_profiler_ref(&self, instrument_id: &InstrumentId) -> Option<&PoolProfiler> {
         self.defi.pool_profilers.get(instrument_id)
+    }
+
+    /// Gets a reference to the pool profiler for the `instrument_id`.
+    ///
+    /// Prefer [`Self::pool_profiler_ref`] in new native code.
+    #[must_use]
+    pub fn pool_profiler(&self, instrument_id: &InstrumentId) -> Option<&PoolProfiler> {
+        self.pool_profiler_ref(instrument_id)
     }
 
     /// Gets a mutable reference to the pool profiler for the `instrument_id`.

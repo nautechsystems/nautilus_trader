@@ -83,10 +83,7 @@ impl DataActor for ExecTester {
         let instrument_id = self.config.instrument_id;
         let client_id = self.config.client_id;
 
-        let instrument = {
-            let cache = self.cache();
-            cache.instrument(&instrument_id).cloned()
-        };
+        let instrument = self.cache().instrument(&instrument_id);
 
         if let Some(inst) = instrument {
             self.initialize_with_instrument(inst, true)?;
@@ -497,7 +494,7 @@ impl ExecTester {
         let Some(cid) = cid else {
             return;
         };
-        let latest = self.cache().order(&cid).map(|o| o.clone());
+        let latest = self.cache().order(&cid);
         if let Some(latest) = latest {
             match side {
                 OrderSide::Buy => self.buy_order = Some(latest),
@@ -516,7 +513,7 @@ impl ExecTester {
         let Some(cid) = cid else {
             return;
         };
-        let latest = self.cache().order(&cid).map(|o| o.clone());
+        let latest = self.cache().order(&cid);
         if let Some(latest) = latest {
             match side {
                 OrderSide::Buy => self.buy_stop_order = Some(latest),
@@ -1521,7 +1518,7 @@ impl ExecTester {
                 }
                 let cid = order.client_order_id();
                 if seen.insert(cid) {
-                    candidates.push(order.cloned());
+                    candidates.push(order);
                 }
             }
         }

@@ -466,13 +466,13 @@ fn test_on_quote_opens_start_position_when_configured(
 
     let first_count = tester
         .cache()
-        .orders(None, Some(&instrument_id), None, None, None)
+        .client_order_ids(None, Some(&instrument_id), None, None)
         .len();
 
     let result = tester.on_quote(&quote);
     let second_count = tester
         .cache()
-        .orders(None, Some(&instrument_id), None, None, None)
+        .client_order_ids(None, Some(&instrument_id), None, None)
         .len();
 
     assert!(result.is_ok());
@@ -508,7 +508,7 @@ fn test_on_quote_does_not_open_start_position_without_first_quote_flag(
     let result = tester.on_quote(&quote);
     let order_count = tester
         .cache()
-        .orders(None, Some(&instrument_id), None, None, None)
+        .client_order_ids(None, Some(&instrument_id), None, None)
         .len();
 
     assert!(result.is_ok());
@@ -557,7 +557,11 @@ fn test_on_instrument_opens_start_position_immediately_by_default(
     let result = tester.on_instrument(&instrument);
 
     let cache_ref = tester.cache();
-    let orders = cache_ref.orders(None, Some(&instrument_id), None, None, None);
+    let orders = cache_ref
+        .client_order_ids(None, Some(&instrument_id), None, None)
+        .into_iter()
+        .filter_map(|client_order_id| cache_ref.order(&client_order_id))
+        .collect::<Vec<_>>();
     assert!(result.is_ok());
     assert!(tester.open_position_submitted);
     assert_eq!(orders.len(), 1);
@@ -1368,7 +1372,11 @@ fn test_open_position_creates_market_order(config: ExecTesterConfig, instrument:
     let result = tester.open_position(Decimal::from(1));
 
     let cache_ref = tester.cache();
-    let orders = cache_ref.orders(None, Some(&instrument_id), None, None, None);
+    let orders = cache_ref
+        .client_order_ids(None, Some(&instrument_id), None, None)
+        .into_iter()
+        .filter_map(|client_order_id| cache_ref.order(&client_order_id))
+        .collect::<Vec<_>>();
     assert!(result.is_ok());
     assert_eq!(orders.len(), 1);
     assert_eq!(orders[0].order_type(), OrderType::Market);

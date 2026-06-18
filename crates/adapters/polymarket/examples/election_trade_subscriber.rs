@@ -101,7 +101,6 @@ impl DataActor for ElectionTradeSubscriber {
             .iter()
             .map(|i| (i.id(), PolymarketLabel::from_instrument(i)))
             .collect();
-        drop(cache); // Release borrow before calling subscribe methods
 
         log::info!(
             "Found {} instruments from filtered provider, subscribing to trades",
