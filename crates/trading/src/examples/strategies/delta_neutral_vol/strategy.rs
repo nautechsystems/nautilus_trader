@@ -346,7 +346,7 @@ impl DeltaNeutralVol {
 
             (strike, expiration_ns, is_call)
         };
-        let now_ns = self.timestamp_ns().as_u64();
+        let now_ns = self.clock().timestamp_ns().as_u64();
 
         if expiration_ns <= now_ns {
             anyhow::bail!("Cannot price premium entry for expired instrument {instrument_id}");
@@ -495,7 +495,7 @@ impl DataActor for DeltaNeutralVol {
     fn on_start(&mut self) -> anyhow::Result<()> {
         let venue = self.config.hedge_instrument_id.venue;
         let underlying = Ustr::from(&self.config.option_family);
-        let now_ns = self.timestamp_ns().as_u64();
+        let now_ns = self.clock().timestamp_ns().as_u64();
 
         let mut calls: Vec<(InstrumentId, f64, u64)> = Vec::new();
         let mut puts: Vec<(InstrumentId, f64, u64)> = Vec::new();

@@ -60,7 +60,7 @@ use crate::defi;
 use crate::defi::data_actor as _; // Brings DeFi impl blocks into scope
 use crate::{
     cache::Cache,
-    clock::Clock,
+    clock::{Clock, ClockApi},
     component::Component,
     enums::{ComponentState, ComponentTrigger},
     logging::{CMD, RECV, REQ, SEND},
@@ -600,6 +600,11 @@ pub trait DataActor:
         funding_rates: &[FundingRateUpdate],
     ) -> anyhow::Result<()> {
         Ok(())
+    }
+
+    /// Returns the user-facing clock API.
+    fn clock(&self) -> ClockApi<'_> {
+        self.deref().clock_api()
     }
 
     /// Handles a received time event.
@@ -3090,6 +3095,16 @@ impl DataActorCore {
     /// Returns a UNIX nanoseconds timestamp from the actor's internal clock.
     pub fn timestamp_ns(&self) -> UnixNanos {
         self.clock_ref().timestamp_ns()
+    }
+
+    fn clock_api(&self) -> ClockApi<'_> {
+        let clock = self.clock.as_ref().unwrap_or_else(|| {
+            panic!(
+                "DataActor {} must be registered before calling `clock()` - trader_id: {:?}",
+                self.actor_id, self.trader_id
+            )
+        });
+        ClockApi::new(clock.as_ref())
     }
 
     /// Returns the clock for the actor (if registered).

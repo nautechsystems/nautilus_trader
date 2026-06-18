@@ -102,7 +102,7 @@ impl DataActor for GreeksTester {
                 .collect()
         };
 
-        let now_ns = self.timestamp_ns().as_u64();
+        let now_ns = self.clock().timestamp_ns().as_u64();
         options.retain(|(_, _, exp)| *exp > now_ns);
 
         if options.is_empty() {

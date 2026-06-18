@@ -20,6 +20,7 @@ use std::{
     rc::Rc,
     str::FromStr,
     sync::Arc,
+    time::Duration,
 };
 
 use bytes::Bytes;
@@ -434,6 +435,71 @@ fn register_data_actor(
 
     register_actor(actor);
     actor_id.inner()
+}
+
+#[rstest]
+fn test_data_actor_clock_api(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    actor.register(trader_id, clock, cache).unwrap();
+
+    actor
+        .clock()
+        .set_timer(
+            "TEST-TIMER",
+            Duration::from_secs(1),
+            None,
+            None,
+            None,
+            Some(true),
+            Some(false),
+        )
+        .unwrap();
+
+    assert_eq!(actor.clock().timestamp_ns(), UnixNanos::default());
+    assert_eq!(actor.clock().timestamp_us(), 0);
+    assert_eq!(actor.clock().timestamp_ms(), 0);
+    assert_eq!(actor.clock().timestamp(), 0.0);
+    assert_eq!(actor.clock().timer_count(), 1);
+    assert_eq!(actor.clock().timer_names(), vec!["TEST-TIMER".to_string()]);
+    assert!(actor.clock().timer_exists("TEST-TIMER"));
+    assert!(!actor.clock().timer_exists("MISSING-TIMER"));
+    assert_eq!(
+        actor.clock().next_time_ns("TEST-TIMER"),
+        Some(UnixNanos::from(1_000_000_000_u64))
+    );
+
+    actor.clock().cancel_timer("TEST-TIMER");
+
+    assert_eq!(actor.clock().timer_count(), 0);
+    assert_eq!(actor.clock().timer_names(), Vec::<String>::new());
+    assert!(!actor.clock().timer_exists("TEST-TIMER"));
+
+    actor
+        .clock()
+        .set_timer_ns(
+            "TEST-TIMER-NS",
+            2_000_000_000,
+            None,
+            None,
+            None,
+            Some(true),
+            Some(false),
+        )
+        .unwrap();
+
+    assert_eq!(
+        actor.clock().next_time_ns("TEST-TIMER-NS"),
+        Some(UnixNanos::from(2_000_000_000_u64))
+    );
+
+    actor.clock().cancel_timers();
+
+    assert_eq!(actor.clock().timer_count(), 0);
+    assert_eq!(actor.clock().timer_names(), Vec::<String>::new());
 }
 
 /// Helper to register a dummy actor and return its Rc.

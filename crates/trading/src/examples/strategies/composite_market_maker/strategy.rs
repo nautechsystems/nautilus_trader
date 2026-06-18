@@ -376,7 +376,7 @@ impl DataActor for CompositeMarketMaker {
 
         let (tif, expire_time) = match self.config.expire_time_secs {
             Some(secs) => {
-                let now_ns = self.core.clock().timestamp_ns();
+                let now_ns = self.clock().timestamp_ns();
                 let expire_ns = now_ns + secs * 1_000_000_000;
                 (Some(TimeInForce::Gtd), Some(expire_ns))
             }

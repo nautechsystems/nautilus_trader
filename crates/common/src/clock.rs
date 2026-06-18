@@ -15,7 +15,14 @@
 
 //! Real-time and static `Clock` implementations.
 
-use std::{any::Any, collections::BTreeMap, fmt::Debug, ops::Deref, time::Duration};
+use std::{
+    any::Any,
+    cell::{Ref, RefCell, RefMut},
+    collections::BTreeMap,
+    fmt::Debug,
+    ops::Deref,
+    time::Duration,
+};
 
 use ahash::AHashMap;
 use chrono::{DateTime, Utc};
@@ -235,6 +242,244 @@ impl dyn Clock {
     /// Returns a mutable reference to this clock as `Any` for downcasting.
     pub fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+}
+
+/// User-facing clock API.
+#[derive(Debug)]
+pub struct ClockApi<'a> {
+    clock: &'a RefCell<dyn Clock>,
+}
+
+impl<'a> ClockApi<'a> {
+    pub(crate) fn new(clock: &'a RefCell<dyn Clock>) -> Self {
+        Self { clock }
+    }
+
+    /// Returns the current UNIX nanoseconds timestamp.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn timestamp_ns(&self) -> UnixNanos {
+        self.clock().timestamp_ns()
+    }
+
+    /// Returns the current UNIX timestamp in microseconds.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn timestamp_us(&self) -> u64 {
+        self.clock().timestamp_us()
+    }
+
+    /// Returns the current UNIX timestamp in milliseconds.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn timestamp_ms(&self) -> u64 {
+        self.clock().timestamp_ms()
+    }
+
+    /// Returns the current UNIX timestamp in seconds.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn timestamp(&self) -> f64 {
+        self.clock().timestamp()
+    }
+
+    /// Returns the current UTC time.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn utc_now(&self) -> DateTime<Utc> {
+        self.clock().utc_now()
+    }
+
+    // panics-doc-ok
+    /// Sets a time alert delivered through the actor's `on_time_event` callback.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the alert cannot be scheduled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already borrowed.
+    pub fn set_time_alert(
+        &self,
+        name: &str,
+        alert_time: DateTime<Utc>,
+        callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
+    ) -> anyhow::Result<()> {
+        self.clock_mut()
+            .set_time_alert(name, alert_time, callback, allow_past)
+    }
+
+    // panics-doc-ok
+    /// Sets a time alert in UNIX nanoseconds delivered through the actor's `on_time_event` callback.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the alert cannot be scheduled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already borrowed.
+    pub fn set_time_alert_ns(
+        &self,
+        name: &str,
+        alert_time_ns: UnixNanos,
+        callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
+    ) -> anyhow::Result<()> {
+        self.clock_mut()
+            .set_time_alert_ns(name, alert_time_ns, callback, allow_past)
+    }
+
+    // panics-doc-ok
+    /// Sets a timer delivered through the actor's `on_time_event` callback.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the timer cannot be scheduled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already borrowed.
+    #[expect(clippy::too_many_arguments, reason = "timer scheduling mirrors Clock")]
+    pub fn set_timer(
+        &self,
+        name: &str,
+        interval: Duration,
+        start_time: Option<DateTime<Utc>>,
+        stop_time: Option<DateTime<Utc>>,
+        callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
+    ) -> anyhow::Result<()> {
+        self.clock_mut().set_timer(
+            name,
+            interval,
+            start_time,
+            stop_time,
+            callback,
+            allow_past,
+            fire_immediately,
+        )
+    }
+
+    // panics-doc-ok
+    /// Sets a timer in UNIX nanoseconds delivered through the actor's `on_time_event` callback.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the timer cannot be scheduled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already borrowed.
+    #[expect(clippy::too_many_arguments, reason = "timer scheduling mirrors Clock")]
+    pub fn set_timer_ns(
+        &self,
+        name: &str,
+        interval_ns: u64,
+        start_time_ns: Option<UnixNanos>,
+        stop_time_ns: Option<UnixNanos>,
+        callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
+    ) -> anyhow::Result<()> {
+        self.clock_mut().set_timer_ns(
+            name,
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            callback,
+            allow_past,
+            fire_immediately,
+        )
+    }
+
+    /// Returns active timer names.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn timer_names(&self) -> Vec<String> {
+        self.clock()
+            .timer_names()
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// Returns the count of active timers.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn timer_count(&self) -> usize {
+        self.clock().timer_count()
+    }
+
+    /// Returns whether the timer `name` exists.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn timer_exists(&self, name: &str) -> bool {
+        self.clock().timer_exists(&Ustr::from(name))
+    }
+
+    /// Returns the next trigger timestamp for the timer `name`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn next_time_ns(&self, name: &str) -> Option<UnixNanos> {
+        self.clock().next_time_ns(name)
+    }
+
+    /// Cancels the timer `name`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already borrowed.
+    pub fn cancel_timer(&self, name: &str) {
+        self.clock_mut().cancel_timer(name);
+    }
+
+    /// Cancels all timers.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already borrowed.
+    pub fn cancel_timers(&self) {
+        self.clock_mut().cancel_timers();
+    }
+
+    fn clock(&self) -> Ref<'_, dyn Clock> {
+        self.clock.borrow()
+    }
+
+    fn clock_mut(&self) -> RefMut<'_, dyn Clock> {
+        self.clock.borrow_mut()
     }
 }
 
