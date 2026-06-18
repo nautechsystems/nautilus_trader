@@ -70,9 +70,9 @@ use ustr::Ustr;
 use crate::{
     cache::{
         ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, Cache, CacheConfig, CacheView,
-        CurrencyLookupError, INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_LIST_NOT_FOUND,
-        ORDER_NOT_FOUND, OrderListLookupError, OrderLookupError, OrderRef, POSITION_NOT_FOUND,
-        PositionLookupError,
+        CurrencyLookupError, INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_BOOK_NOT_FOUND,
+        ORDER_LIST_NOT_FOUND, ORDER_NOT_FOUND, OrderBookLookupError, OrderListLookupError,
+        OrderLookupError, OrderRef, POSITION_NOT_FOUND, PositionLookupError,
         database::{CacheDatabaseAdapter, CacheMap},
     },
     signal::Signal,
@@ -2166,6 +2166,27 @@ fn test_order_book_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
     cache.add_order_book(book.clone()).unwrap();
     let result = cache.order_book(&audusd_sim.id);
     assert_eq!(result, Some(&book));
+}
+
+#[rstest]
+fn test_try_order_book_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+    let err = cache.try_order_book(&audusd_sim.id).unwrap_err();
+
+    assert_eq!(err, OrderBookLookupError::not_found(audusd_sim.id));
+    assert_eq!(
+        err.to_string(),
+        format!("{ORDER_BOOK_NOT_FOUND}: {}", audusd_sim.id)
+    );
+}
+
+#[rstest]
+fn test_try_order_book_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let book = OrderBook::new(audusd_sim.id, BookType::L2_MBP);
+    cache.add_order_book(book.clone()).unwrap();
+
+    let result = cache.try_order_book(&audusd_sim.id).unwrap();
+
+    assert_eq!(result, &book);
 }
 
 #[rstest]

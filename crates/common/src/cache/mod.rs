@@ -46,8 +46,9 @@ pub use config::CacheConfig; // Re-export
 use database::{CacheDatabaseAdapter, CacheMap};
 pub use error::{
     ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, CurrencyLookupError,
-    INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_LIST_NOT_FOUND, ORDER_NOT_FOUND,
-    OrderListLookupError, OrderLookupError, POSITION_NOT_FOUND, PositionLookupError,
+    INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_BOOK_NOT_FOUND, ORDER_LIST_NOT_FOUND,
+    ORDER_NOT_FOUND, OrderBookLookupError, OrderListLookupError, OrderLookupError,
+    POSITION_NOT_FOUND, PositionLookupError,
 };
 use index::CacheIndex;
 use nautilus_core::{
@@ -5050,6 +5051,20 @@ impl Cache {
     #[must_use]
     pub fn order_book(&self, instrument_id: &InstrumentId) -> Option<&OrderBook> {
         self.books.get(instrument_id)
+    }
+
+    /// Gets a reference to the order book for the `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OrderBookLookupError::NotFound`] when the order book is not present in the cache.
+    pub fn try_order_book(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Result<&OrderBook, OrderBookLookupError> {
+        self.books
+            .get(instrument_id)
+            .ok_or_else(|| OrderBookLookupError::not_found(*instrument_id))
     }
 
     /// Gets a reference to the order book for the `instrument_id`.
