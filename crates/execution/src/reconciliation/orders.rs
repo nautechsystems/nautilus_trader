@@ -116,6 +116,14 @@ pub fn generate_reconciliation_order_events(
 /// Returns `None` for pending venue states (`PendingUpdate`, `PendingCancel`)
 /// regardless of local state, since an unconfirmed amend or cancel must not
 /// drive any local mutation until the venue surfaces a confirmed status.
+///
+/// Returns `None` for `Canceled` reports when:
+/// - the local order is mid-command (`PendingUpdate`, `PendingCancel`) — the
+///   adapter's primary lifecycle stream (WebSocket or HTTP) must confirm the
+///   outcome before a terminal event can be applied;
+/// - the report references a previously-promoted `venue_order_id` whose
+///   successor is still live in the cache (the cancel-half of a cancel-replace
+///   modify on venues like Hyperliquid).
 #[must_use]
 pub fn reconcile_order_report(
     order: &OrderAny,
@@ -174,7 +182,47 @@ pub fn reconcile_order_report(
                 None
             }
         }
-        OrderStatus::Canceled => Some(create_reconciliation_canceled(order, report, ts_now)),
+        OrderStatus::Canceled => {
+            // Defer when locally awaiting venue confirmation of an issued
+            // command. The adapter's primary lifecycle stream is the source of truth;
+            // a Canceled report arriving mid-command is more likely the cancel-half of
+            // a cancel-replace modify than an authoritative termination.
+            if matches!(
+                order.status(),
+                OrderStatus::PendingUpdate | OrderStatus::PendingCancel,
+            ) {
+                log::info!(
+                    "Deferring Canceled for {} during local {:?}: awaiting venue confirmation",
+                    order.client_order_id(),
+                    order.status(),
+                );
+                return None;
+            }
+
+            // Stale cancel-half of a cancel-replace modify: the cache has
+            // already been promoted to the new `venue_order_id` and the
+            // report references a previously-tracked leg whose successor
+            // is still live.
+            let report_venue_order_id = report.venue_order_id;
+            if let Some(cached_venue_order_id) = order.venue_order_id()
+                && cached_venue_order_id != report_venue_order_id
+                && order
+                    .venue_order_ids()
+                    .iter()
+                    .any(|v| **v == report_venue_order_id)
+            {
+                log::info!(
+                    "Suppressing Canceled for {} on previously-promoted venue_order_id {}: \
+                     current venue_order_id is {}",
+                    order.client_order_id(),
+                    report_venue_order_id,
+                    cached_venue_order_id,
+                );
+                return None;
+            }
+
+            Some(create_reconciliation_canceled(order, report, ts_now))
+        }
         OrderStatus::Expired => Some(create_reconciliation_expired(order, report, ts_now)),
 
         OrderStatus::PartiallyFilled | OrderStatus::Filled => {
