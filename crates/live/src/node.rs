@@ -1258,7 +1258,10 @@ impl LiveNode {
                                 | OrderEventAny::Rejected(_)
                                 | OrderEventAny::Canceled(_)
                                 | OrderEventAny::Expired(_)
-                                | OrderEventAny::Denied(_) => {
+                                | OrderEventAny::Denied(_)
+                                | OrderEventAny::Updated(_)
+                                | OrderEventAny::ModifyRejected(_)
+                                | OrderEventAny::CancelRejected(_) => {
                                     self.exec_manager.clear_recon_tracking(
                                         &order_evt.client_order_id(), true,
                                     );
