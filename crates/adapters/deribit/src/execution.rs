@@ -181,26 +181,34 @@ impl DeribitExecutionClient {
         }
         .to_string();
 
-        let time_in_force = Some(
-            match order.time_in_force() {
-                TimeInForce::Gtc => "good_til_cancelled",
-                TimeInForce::Ioc => "immediate_or_cancel",
-                TimeInForce::Fok => "fill_or_kill",
-                TimeInForce::Gtd => {
-                    if order.expire_time().is_some() {
-                        log::warn!(
-                            "Deribit GTD orders expire at 8:00 UTC only - custom expire_time is ignored. \
-                            For custom expiry times, use managed GTD with emulation_trigger"
-                        );
+        let time_in_force = if matches!(
+            order.order_type(),
+            OrderType::Market | OrderType::StopMarket | OrderType::MarketIfTouched
+        ) {
+            // Deribit rejects `time_in_force` on market-style order types
+            None
+        } else {
+            Some(
+                match order.time_in_force() {
+                    TimeInForce::Gtc => "good_til_cancelled",
+                    TimeInForce::Ioc => "immediate_or_cancel",
+                    TimeInForce::Fok => "fill_or_kill",
+                    TimeInForce::Gtd => {
+                        if order.expire_time().is_some() {
+                            log::warn!(
+                                "Deribit GTD orders expire at 8:00 UTC only - custom expire_time is ignored. \
+                                For custom expiry times, use managed GTD with emulation_trigger"
+                            );
+                        }
+                        "good_til_day"
                     }
-                    "good_til_day"
+                    other => {
+                        anyhow::bail!("Unsupported time_in_force {other:?} for Deribit");
+                    }
                 }
-                other => {
-                    anyhow::bail!("Unsupported time_in_force {other:?} for Deribit");
-                }
-            }
-            .to_string(),
-        );
+                .to_string(),
+            )
+        };
 
         // Deribit's `valid_until` is a REQUEST timeout, not order expiry.
         // Deribit's `good_til_day` expires at end of trading session (8 UTC).

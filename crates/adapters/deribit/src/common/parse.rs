@@ -265,8 +265,7 @@ fn parse_perpetual_instrument(
     let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
     let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
 
-    // Contract size represents the multiplier (e.g., 10 USD per contract for BTC-PERPETUAL)
-    let multiplier = Some(Quantity::from_decimal(instrument.contract_size)?);
+    let multiplier = Some(deribit_amount_quantity_multiplier());
     let lot_size = Some(size_increment);
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
@@ -336,8 +335,7 @@ fn parse_future_instrument(
     let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
     let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
 
-    // Contract size represents the multiplier
-    let multiplier = Some(Quantity::from_decimal(instrument.contract_size)?);
+    let multiplier = Some(deribit_amount_quantity_multiplier());
     let lot_size = Some(size_increment); // Use min_trade_amount as lot size
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
@@ -419,8 +417,7 @@ fn parse_option_instrument(
 
     let price_increment = Price::from_decimal(instrument.tick_size)?;
 
-    // Contract size is the multiplier (e.g., 1.0 for BTC options)
-    let multiplier = Quantity::from_decimal(instrument.contract_size)?;
+    let multiplier = deribit_amount_quantity_multiplier();
     let lot_size = Quantity::from_decimal(instrument.min_trade_amount)?;
     let min_trade_amount = Quantity::from_decimal(instrument.min_trade_amount)?;
 
@@ -598,7 +595,7 @@ fn build_spread_common(
 
     let price_increment = Price::from_decimal(instrument.tick_size)?;
     let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
-    let multiplier = Quantity::from_decimal(instrument.contract_size)?;
+    let multiplier = deribit_amount_quantity_multiplier();
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
         .context("Failed to parse maker_commission")?;
@@ -624,6 +621,11 @@ fn build_spread_common(
         maker_fee,
         taker_fee,
     })
+}
+
+fn deribit_amount_quantity_multiplier() -> Quantity {
+    // Deribit quantities use `amount`; `contract_size` converts amount to contract count
+    Quantity::from(1)
 }
 
 /// Parses Deribit account summaries into a Nautilus [`AccountState`].
@@ -1058,7 +1060,7 @@ pub fn bar_spec_to_resolution(bar_type: &BarType) -> String {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::instruments::Instrument;
+    use nautilus_model::{instruments::Instrument, types::Money};
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
@@ -1095,7 +1097,23 @@ mod tests {
         assert_eq!(perpetual.size_precision(), 0);
         assert_eq!(perpetual.price_increment(), Price::from("0.5"));
         assert_eq!(perpetual.size_increment(), Quantity::from("10"));
-        assert_eq!(perpetual.multiplier(), Quantity::from("10"));
+        assert_eq!(perpetual.multiplier(), Quantity::from("1"));
+        assert_eq!(
+            perpetual.calculate_notional_value(
+                Quantity::from("10"),
+                Price::from("50000"),
+                Some(false)
+            ),
+            Money::from("0.0002 BTC")
+        );
+        assert_eq!(
+            perpetual.calculate_notional_value(
+                Quantity::from("10"),
+                Price::from("50000"),
+                Some(true)
+            ),
+            Money::from("10 USD")
+        );
         assert_eq!(perpetual.lot_size(), Some(Quantity::from("10")));
         assert_eq!(perpetual.maker_fee(), dec!(0));
         assert_eq!(perpetual.taker_fee(), dec!(0.0005));
@@ -1142,7 +1160,7 @@ mod tests {
         assert_eq!(future.size_precision(), 0);
         assert_eq!(future.price_increment(), Price::from("0.5"));
         assert_eq!(future.size_increment(), Quantity::from("10"));
-        assert_eq!(future.multiplier(), Quantity::from("10"));
+        assert_eq!(future.multiplier(), Quantity::from("1"));
         assert_eq!(future.lot_size(), Some(Quantity::from("10")));
         assert_eq!(future.maker_fee, dec!(0));
         assert_eq!(future.taker_fee, dec!(0.0005));
@@ -1983,7 +2001,7 @@ mod tests {
         assert_eq!(spread.price_increment, Price::from("0.5"));
         assert_eq!(spread.size_precision, 0);
         assert_eq!(spread.size_increment, Quantity::from("10"));
-        assert_eq!(spread.multiplier, Quantity::from("10"));
+        assert_eq!(spread.multiplier, Quantity::from("1"));
         assert_eq!(spread.lot_size, Quantity::from("10"));
         assert_eq!(
             spread.expiration_ns,
