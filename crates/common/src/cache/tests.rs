@@ -70,8 +70,9 @@ use ustr::Ustr;
 use crate::{
     cache::{
         ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, Cache, CacheConfig, CacheView,
-        CurrencyLookupError, INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_NOT_FOUND,
-        OrderLookupError, OrderRef, POSITION_NOT_FOUND, PositionLookupError,
+        CurrencyLookupError, INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_LIST_NOT_FOUND,
+        ORDER_NOT_FOUND, OrderListLookupError, OrderLookupError, OrderRef, POSITION_NOT_FOUND,
+        PositionLookupError,
         database::{CacheDatabaseAdapter, CacheMap},
     },
     signal::Signal,
@@ -1661,6 +1662,47 @@ fn test_add_order_list() {
             .order_lists(None, None, None, None)
             .contains(&&order_list)
     );
+}
+
+#[rstest]
+fn test_try_order_list_when_empty(cache: Cache) {
+    let order_list_id = OrderListId::new("OL-MISSING");
+
+    let err = cache.try_order_list(&order_list_id).unwrap_err();
+
+    assert_eq!(err, OrderListLookupError::not_found(order_list_id));
+    assert_eq!(
+        err.to_string(),
+        format!("{ORDER_LIST_NOT_FOUND}: {order_list_id}")
+    );
+}
+
+#[rstest]
+fn test_try_order_list_when_added() {
+    let mut cache = Cache::default();
+    let audusd_sim = audusd_sim();
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    let order_list_id = OrderListId::new("OL-001");
+    let order_list = OrderList::new(
+        order_list_id,
+        instrument.id(),
+        order.strategy_id(),
+        vec![order.client_order_id()],
+        UnixNanos::default(),
+    );
+    cache.add_order_list(order_list.clone()).unwrap();
+
+    let result = cache.try_order_list(&order_list_id).unwrap();
+
+    assert_eq!(result, &order_list);
 }
 
 #[rstest]

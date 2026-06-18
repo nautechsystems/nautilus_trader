@@ -46,8 +46,8 @@ pub use config::CacheConfig; // Re-export
 use database::{CacheDatabaseAdapter, CacheMap};
 pub use error::{
     ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, CurrencyLookupError,
-    INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_NOT_FOUND, OrderLookupError,
-    POSITION_NOT_FOUND, PositionLookupError,
+    INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_LIST_NOT_FOUND, ORDER_NOT_FOUND,
+    OrderListLookupError, OrderLookupError, POSITION_NOT_FOUND, PositionLookupError,
 };
 use index::CacheIndex;
 use nautilus_core::{
@@ -4493,6 +4493,20 @@ impl Cache {
     #[must_use]
     pub fn order_list(&self, order_list_id: &OrderListId) -> Option<&OrderList> {
         self.order_lists.get(order_list_id)
+    }
+
+    /// Returns the order list for the `order_list_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OrderListLookupError::NotFound`] when the order list is not present in the cache.
+    pub fn try_order_list(
+        &self,
+        order_list_id: &OrderListId,
+    ) -> Result<&OrderList, OrderListLookupError> {
+        self.order_lists
+            .get(order_list_id)
+            .ok_or_else(|| OrderListLookupError::not_found(*order_list_id))
     }
 
     /// Returns all order lists matching the optional filter parameters.

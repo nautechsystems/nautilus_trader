@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId};
+use nautilus_model::identifiers::{
+    AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId,
+};
 use thiserror::Error;
 use ustr::Ustr;
 
@@ -28,6 +30,9 @@ pub const INSTRUMENT_NOT_FOUND: &str = "instrument not found in cache";
 
 /// Message used for a missing order lookup.
 pub const ORDER_NOT_FOUND: &str = "order not found in cache";
+
+/// Message used for a missing order list lookup.
+pub const ORDER_LIST_NOT_FOUND: &str = "order list not found in cache";
 
 /// Message used for a missing position lookup.
 pub const POSITION_NOT_FOUND: &str = "position not found in cache";
@@ -105,6 +110,25 @@ impl OrderLookupError {
     #[must_use]
     pub const fn not_found(client_order_id: ClientOrderId) -> Self {
         Self::NotFound { client_order_id }
+    }
+}
+
+/// Error returned when an order list cannot be resolved from a cache or store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum OrderListLookupError {
+    /// The requested order list is not present.
+    #[error("{message}: {order_list_id}", message = ORDER_LIST_NOT_FOUND)]
+    NotFound {
+        /// The order list identifier that was requested.
+        order_list_id: OrderListId,
+    },
+}
+
+impl OrderListLookupError {
+    /// Returns a not-found error for `order_list_id`.
+    #[must_use]
+    pub const fn not_found(order_list_id: OrderListId) -> Self {
+        Self::NotFound { order_list_id }
     }
 }
 
