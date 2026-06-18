@@ -44,7 +44,9 @@ use bounded::BoundedVecDeque;
 use bytes::Bytes;
 pub use config::CacheConfig; // Re-export
 use database::{CacheDatabaseAdapter, CacheMap};
-pub use error::{INSTRUMENT_NOT_FOUND, InstrumentLookupError};
+pub use error::{
+    CURRENCY_NOT_FOUND, CurrencyLookupError, INSTRUMENT_NOT_FOUND, InstrumentLookupError,
+};
 use index::CacheIndex;
 use nautilus_core::{
     SharedCell, UUID4, UnixNanos,
@@ -5264,6 +5266,23 @@ impl Cache {
     /// Clears all mark exchange rates.
     pub fn clear_mark_xrates(&mut self) {
         self.mark_xrates.clear();
+    }
+
+    /// Returns a reference to the currency for the `code` (if found).
+    #[must_use]
+    pub fn currency(&self, code: &Ustr) -> Option<&Currency> {
+        self.currencies.get(code)
+    }
+
+    /// Returns a reference to the currency for the `code`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CurrencyLookupError::NotFound`] when the currency is not present in the cache.
+    pub fn try_currency(&self, code: &Ustr) -> Result<&Currency, CurrencyLookupError> {
+        self.currencies
+            .get(code)
+            .ok_or_else(|| CurrencyLookupError::not_found(*code))
     }
 
     // -- INSTRUMENT QUERIES ----------------------------------------------------------------------

@@ -15,9 +15,32 @@
 
 use nautilus_model::identifiers::InstrumentId;
 use thiserror::Error;
+use ustr::Ustr;
+
+/// Message used for a missing currency lookup.
+pub const CURRENCY_NOT_FOUND: &str = "currency not found in cache";
 
 /// Message used for a missing instrument lookup.
 pub const INSTRUMENT_NOT_FOUND: &str = "instrument not found in cache";
+
+/// Error returned when a currency cannot be resolved from a cache or store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum CurrencyLookupError {
+    /// The requested currency is not present.
+    #[error("{message}: {code}", message = CURRENCY_NOT_FOUND)]
+    NotFound {
+        /// The currency code that was requested.
+        code: Ustr,
+    },
+}
+
+impl CurrencyLookupError {
+    /// Returns a not-found error for `code`.
+    #[must_use]
+    pub const fn not_found(code: Ustr) -> Self {
+        Self::NotFound { code }
+    }
+}
 
 /// Error returned when an instrument cannot be resolved from a cache or store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]

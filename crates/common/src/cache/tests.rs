@@ -69,7 +69,8 @@ use ustr::Ustr;
 
 use crate::{
     cache::{
-        Cache, CacheConfig, CacheView, INSTRUMENT_NOT_FOUND, InstrumentLookupError, OrderRef,
+        CURRENCY_NOT_FOUND, Cache, CacheConfig, CacheView, CurrencyLookupError,
+        INSTRUMENT_NOT_FOUND, InstrumentLookupError, OrderRef,
         database::{CacheDatabaseAdapter, CacheMap},
     },
     signal::Signal,
@@ -1817,6 +1818,41 @@ fn test_cache_currencies_when_no_database(mut cache: Cache) {
 #[rstest]
 fn test_cache_instruments_when_no_database(mut cache: Cache) {
     assert!(futures::executor::block_on(cache.cache_instruments()).is_ok());
+}
+
+#[rstest]
+fn test_currency_when_empty(cache: Cache) {
+    let code = Ustr::from("AUD");
+    let result = cache.currency(&code);
+
+    assert!(result.is_none());
+}
+
+#[rstest]
+fn test_try_currency_when_empty(cache: Cache) {
+    let code = Ustr::from("AUD");
+    let err = cache.try_currency(&code).unwrap_err();
+
+    assert_eq!(err, CurrencyLookupError::not_found(code));
+    assert_eq!(err.to_string(), format!("{CURRENCY_NOT_FOUND}: {code}"));
+}
+
+#[rstest]
+fn test_currency_when_some(mut cache: Cache) {
+    let currency = Currency::AUD();
+    cache.add_currency(currency).unwrap();
+
+    let result = cache.currency(&currency.code);
+    assert_eq!(result, Some(&currency));
+}
+
+#[rstest]
+fn test_try_currency_when_some(mut cache: Cache) {
+    let currency = Currency::AUD();
+    cache.add_currency(currency).unwrap();
+
+    let result = cache.try_currency(&currency.code).unwrap();
+    assert_eq!(result, &currency);
 }
 
 #[rstest]
