@@ -46,7 +46,7 @@ pub use config::CacheConfig; // Re-export
 use database::{CacheDatabaseAdapter, CacheMap};
 pub use error::{
     CURRENCY_NOT_FOUND, CurrencyLookupError, INSTRUMENT_NOT_FOUND, InstrumentLookupError,
-    ORDER_NOT_FOUND, OrderLookupError,
+    ORDER_NOT_FOUND, OrderLookupError, POSITION_NOT_FOUND, PositionLookupError,
 };
 use index::CacheIndex;
 use nautilus_core::{
@@ -4658,6 +4658,21 @@ impl Cache {
         self.positions
             .get(position_id)
             .map(|position_cell| PositionRef::new(position_cell.borrow()))
+    }
+
+    /// Returns a borrow of the position with the `position_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PositionLookupError::NotFound`] when the position is not present in the cache.
+    pub fn try_position(
+        &self,
+        position_id: &PositionId,
+    ) -> Result<PositionRef<'_>, PositionLookupError> {
+        self.positions
+            .get(position_id)
+            .map(|position_cell| PositionRef::new(position_cell.borrow()))
+            .ok_or_else(|| PositionLookupError::not_found(*position_id))
     }
 
     /// Gets an exclusive write borrow of the position with the `position_id` (if found).

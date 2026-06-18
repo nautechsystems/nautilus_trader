@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::identifiers::{ClientOrderId, InstrumentId};
+use nautilus_model::identifiers::{ClientOrderId, InstrumentId, PositionId};
 use thiserror::Error;
 use ustr::Ustr;
 
@@ -25,6 +25,9 @@ pub const INSTRUMENT_NOT_FOUND: &str = "instrument not found in cache";
 
 /// Message used for a missing order lookup.
 pub const ORDER_NOT_FOUND: &str = "order not found in cache";
+
+/// Message used for a missing position lookup.
+pub const POSITION_NOT_FOUND: &str = "position not found in cache";
 
 /// Error returned when a currency cannot be resolved from a cache or store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
@@ -80,5 +83,24 @@ impl OrderLookupError {
     #[must_use]
     pub const fn not_found(client_order_id: ClientOrderId) -> Self {
         Self::NotFound { client_order_id }
+    }
+}
+
+/// Error returned when a position cannot be resolved from a cache or store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum PositionLookupError {
+    /// The requested position is not present.
+    #[error("{message}: {position_id}", message = POSITION_NOT_FOUND)]
+    NotFound {
+        /// The position identifier that was requested.
+        position_id: PositionId,
+    },
+}
+
+impl PositionLookupError {
+    /// Returns a not-found error for `position_id`.
+    #[must_use]
+    pub const fn not_found(position_id: PositionId) -> Self {
+        Self::NotFound { position_id }
     }
 }

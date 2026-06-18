@@ -71,6 +71,7 @@ use crate::{
     cache::{
         CURRENCY_NOT_FOUND, Cache, CacheConfig, CacheView, CurrencyLookupError,
         INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_NOT_FOUND, OrderLookupError, OrderRef,
+        POSITION_NOT_FOUND, PositionLookupError,
         database::{CacheDatabaseAdapter, CacheMap},
     },
     signal::Signal,
@@ -1704,6 +1705,19 @@ fn test_position_when_empty(cache: Cache) {
 }
 
 #[rstest]
+fn test_try_position_when_empty(cache: Cache) {
+    let position_id = PositionId::from("P-MISSING");
+
+    let err = cache.try_position(&position_id).unwrap_err();
+
+    assert_eq!(err, PositionLookupError::not_found(position_id));
+    assert_eq!(
+        err.to_string(),
+        format!("{POSITION_NOT_FOUND}: {position_id}")
+    );
+}
+
+#[rstest]
 fn test_position_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
     let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -1746,6 +1760,34 @@ fn test_position_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
         cache.positions_closed_count(None, None, None, None, None),
         0
     );
+}
+
+#[rstest]
+fn test_try_position_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let filled = TestOrderEventStubs::filled(
+        &order,
+        &audusd_sim,
+        None,
+        Some(PositionId::new("P-123456")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&audusd_sim, filled.into());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    let result = cache.try_position(&position.id).unwrap();
+
+    assert_eq!(result, position);
 }
 
 #[rstest]
