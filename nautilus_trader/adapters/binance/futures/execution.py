@@ -25,6 +25,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
 from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
+from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.execution import BinanceCommonExecutionClient
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
@@ -167,6 +168,9 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             self._log.info("TRADE_LITE events will be used", LogColor.BLUE)
 
         self._leverages = config.futures_leverages
+        # Symbols already warned about a failed best-effort leverage set, so the
+        # warning is emitted at most once (this runs on every account query).
+        self._set_leverage_warned: set[str] = set()
         self._margin_types = config.futures_margin_types
 
         self._decoder_futures_user_msg = msgspec.json.Decoder(BinanceFuturesUserMsgData)
@@ -175,7 +179,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         self._decoder_futures_trade_lite = msgspec.json.Decoder(BinanceFuturesTradeLiteMsg)
         self._decoder_futures_algo_update = msgspec.json.Decoder(BinanceFuturesAlgoUpdateMsg)
 
-    async def _update_account_state(self) -> None:
+    async def _update_account_state(self) -> None:  # noqa: C901 (too complex)
         account_info: BinanceFuturesAccountInfo = (
             await self._futures_http_account.query_futures_account_info(recv_window=str(5000))
         )
@@ -206,14 +210,32 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         await self._await_account_registered(log_registered=False)
 
         if self._leverages:
+            # Leverage initialization is best-effort and must not block startup.
+            # A per-symbol `set_leverage` venue rejection (for example -4028
+            # leverage too large, when a symbol's venue cap is below the requested
+            # value) must not abort `_connect`, so catch per task: one rejected
+            # symbol cannot tear down the TaskGroup. Only `BinanceError` (a venue
+            # reject) is caught deliberately; a transport error means the
+            # connection itself is unhealthy and should still surface. This runs
+            # on every account query, so each symbol is warned at most once.
+            async def _set_default_leverage(symbol: BinanceSymbol, leverage: int) -> None:
+                try:
+                    res: BinanceFuturesLeverage = await self._futures_http_account.set_leverage(
+                        symbol,
+                        leverage,
+                    )
+                    self._log.info(f"Set default leverage {res.symbol} {res.leverage}X")
+                except BinanceError as e:
+                    if symbol not in self._set_leverage_warned:
+                        self._set_leverage_warned.add(symbol)
+                        self._log.warning(
+                            f"Unable to set leverage for {symbol} to {leverage}x: "
+                            f"{e.message}; skipping (leverage init is best-effort)",
+                        )
+
             async with TaskGroup() as tg:
-                leverage_tasks = [
-                    tg.create_task(self._futures_http_account.set_leverage(symbol, leverage))
-                    for symbol, leverage in self._leverages.items()
-                ]
-            for task in leverage_tasks:
-                res: BinanceFuturesLeverage = task.result()
-                self._log.info(f"Set default leverage {res.symbol} {res.leverage}X")
+                for sym, lev in self._leverages.items():
+                    tg.create_task(_set_default_leverage(sym, lev))
 
         if self._margin_types:
             async with TaskGroup() as tg:
@@ -234,8 +256,14 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         symbol_configs = await self._futures_http_account.query_futures_symbol_config()
         for config in symbol_configs:
             try:
-                instrument_id: InstrumentId = self._get_cached_instrument_id(config.symbol)
                 leverage = Decimal(config.leverage)
+                if leverage < 1:
+                    # Binance testnet/demo returns leverage=0 for symbols the
+                    # account has not configured; `MarginAccount.set_leverage`
+                    # requires leverage >= 1, so skip these (they are not a
+                    # tradable leverage config for this client anyway).
+                    continue
+                instrument_id: InstrumentId = self._get_cached_instrument_id(config.symbol)
                 account.set_leverage(instrument_id, leverage)
                 self._log.debug(f"Set leverage {config.symbol} {leverage}X")
             except KeyError:
