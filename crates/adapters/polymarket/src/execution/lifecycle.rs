@@ -342,6 +342,15 @@ impl PolymarketExecutionClient {
         log::info!("Polymarket execution client stopped");
     }
 
+    pub(super) fn reset_client(&mut self) {
+        log::debug!("Resetting Polymarket execution client");
+
+        self.clear_order_event_subscription();
+        self.clear_position_event_subscription();
+        self.shared_token_instruments.store(AHashMap::new());
+        self.neg_risk_index.store(AHashMap::new());
+    }
+
     pub(super) async fn connect_client(&mut self) -> anyhow::Result<()> {
         if self.core.is_connected() {
             return Ok(());
@@ -430,21 +439,10 @@ fn upsert_execution_lookup(
 fn remove_execution_lookup(
     shared_token_instruments: &AtomicMap<Ustr, InstrumentAny>,
     neg_risk_index: &AtomicMap<InstrumentId, bool>,
-    instrument_id: InstrumentId,
+    instrument: &InstrumentAny,
 ) {
-    let token_ids = shared_token_instruments
-        .load()
-        .iter()
-        .filter_map(|(token_id, instrument)| {
-            (instrument.id() == instrument_id).then_some(*token_id)
-        })
-        .collect::<Vec<_>>();
-
-    for token_id in token_ids {
-        shared_token_instruments.remove(&token_id);
-    }
-
-    neg_risk_index.remove(&instrument_id);
+    shared_token_instruments.remove(&Ustr::from(instrument.raw_symbol().as_str()));
+    neg_risk_index.remove(&instrument.id());
 }
 
 fn sync_execution_lookup_for_instrument(
@@ -458,35 +456,38 @@ fn sync_execution_lookup_for_instrument(
     let account_id = core.account_id;
     let cache = core.cache();
 
-    let retained = cache
-        .instrument(&instrument_id)
-        .cloned()
-        .filter(|instrument| {
-            if !crate::filters::is_expired(instrument, now_ns) {
-                return true;
-            }
+    let instrument = cache.instrument(&instrument_id).cloned();
+    let retain = instrument.as_ref().is_some_and(|instrument| {
+        if !crate::filters::is_expired(instrument, now_ns) {
+            return true;
+        }
 
-            cache.has_orders_open(
-                Some(&core.venue),
-                Some(&instrument_id),
-                None,
-                Some(&account_id),
-                None,
-            ) || cache.has_positions_open(
-                Some(&core.venue),
-                Some(&instrument_id),
-                None,
-                Some(&account_id),
-                None,
-            )
-        });
+        cache.has_orders_open(
+            Some(&core.venue),
+            Some(&instrument_id),
+            None,
+            Some(&account_id),
+            None,
+        ) || cache.has_positions_open(
+            Some(&core.venue),
+            Some(&instrument_id),
+            None,
+            Some(&account_id),
+            None,
+        )
+    });
 
     drop(cache);
 
-    if let Some(instrument) = retained {
-        upsert_execution_lookup(shared_token_instruments, neg_risk_index, &instrument);
-    } else {
-        remove_execution_lookup(shared_token_instruments, neg_risk_index, instrument_id);
+    match instrument {
+        Some(instrument) if retain => {
+            upsert_execution_lookup(shared_token_instruments, neg_risk_index, &instrument);
+        }
+        Some(instrument) => {
+            remove_execution_lookup(shared_token_instruments, neg_risk_index, &instrument);
+        }
+        // Instrument not in cache: token key cannot be derived, so drop only the neg-risk entry
+        None => neg_risk_index.remove(&instrument_id),
     }
 }
 
@@ -985,5 +986,25 @@ mod tests {
         client.ensure_position_event_subscription();
         assert!(client.order_event_handler.is_some());
         assert!(client.position_event_handler.is_some());
+    }
+
+    #[rstest]
+    fn reset_clears_subscriptions_and_lookup_state() {
+        let (mut client, _cache) = test_client();
+        let expired = test_binary_option("0xRESET", true, true);
+        client.upsert_execution_lookup(&expired);
+        client.ensure_order_event_subscription();
+        client.ensure_position_event_subscription();
+
+        client.reset_client();
+
+        assert!(client.order_event_handler.is_none());
+        assert!(client.position_event_handler.is_none());
+        assert!(
+            !client
+                .shared_token_instruments
+                .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
+        );
+        assert!(!client.neg_risk_index.contains_key(&expired.id()));
     }
 }
