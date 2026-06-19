@@ -840,12 +840,21 @@ impl BinanceFuturesExecutionClient {
                     leverage: *leverage,
                     recv_window: None,
                 };
-                let response = self
-                    .http_client
-                    .set_leverage(&params)
-                    .await
-                    .context(format!("failed to set leverage for {symbol}"))?;
-                log::info!("Set leverage {} {}X", response.symbol, response.leverage);
+                // Best-effort: a venue reject is non-fatal, but transport errors
+                // propagate so an unhealthy connection still surfaces.
+                match self.http_client.set_leverage(&params).await {
+                    Ok(response) => {
+                        log::info!("Set leverage {} {}X", response.symbol, response.leverage);
+                    }
+                    Err(BinanceFuturesHttpError::BinanceError { code, message }) => {
+                        log::warn!(
+                            "Unable to set leverage for {symbol} to {leverage}x: [{code}] {message}; skipping (leverage init is best-effort)"
+                        );
+                    }
+                    Err(e) => {
+                        return Err(e).context(format!("failed to set leverage for {symbol}"));
+                    }
+                }
             }
         }
 

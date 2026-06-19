@@ -168,8 +168,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             self._log.info("TRADE_LITE events will be used", LogColor.BLUE)
 
         self._leverages = config.futures_leverages
-        # Symbols already warned about a failed best-effort leverage set, so the
-        # warning is emitted at most once (this runs on every account query).
+        # Dedupe warnings: `_update_account_state` reruns on every account query
         self._set_leverage_warned: set[str] = set()
         self._margin_types = config.futures_margin_types
 
@@ -210,14 +209,9 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         await self._await_account_registered(log_registered=False)
 
         if self._leverages:
-            # Leverage initialization is best-effort and must not block startup.
-            # A per-symbol `set_leverage` venue rejection (for example -4028
-            # leverage too large, when a symbol's venue cap is below the requested
-            # value) must not abort `_connect`, so catch per task: one rejected
-            # symbol cannot tear down the TaskGroup. Only `BinanceError` (a venue
-            # reject) is caught deliberately; a transport error means the
-            # connection itself is unhealthy and should still surface. This runs
-            # on every account query, so each symbol is warned at most once.
+            # Best-effort: catch per task so one venue reject cannot tear down the
+            # TaskGroup and abort `_connect`. Transport errors propagate so an
+            # unhealthy connection still surfaces.
             async def _set_default_leverage(symbol: BinanceSymbol, leverage: int) -> None:
                 try:
                     res: BinanceFuturesLeverage = await self._futures_http_account.set_leverage(
@@ -258,10 +252,8 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             try:
                 leverage = Decimal(config.leverage)
                 if leverage < 1:
-                    # Binance testnet/demo returns leverage=0 for symbols the
-                    # account has not configured; `MarginAccount.set_leverage`
-                    # requires leverage >= 1, so skip these (they are not a
-                    # tradable leverage config for this client anyway).
+                    # Binance testnet/demo returns 0 for untraded symbols, which
+                    # `MarginAccount.set_leverage` rejects (requires >= 1).
                     continue
                 instrument_id: InstrumentId = self._get_cached_instrument_id(config.symbol)
                 account.set_leverage(instrument_id, leverage)

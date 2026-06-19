@@ -695,6 +695,47 @@ async fn start_exec_test_server() -> SocketAddr {
     addr
 }
 
+async fn start_exec_test_server_with_leverage_reject() -> SocketAddr {
+    // Only the leverage route rejects; the rest mirror the base server.
+    let router = create_exec_test_router().route(
+        "/fapi/v1/leverage",
+        post(|headers: HeaderMap| async move {
+            if !has_auth_headers(&headers) {
+                return unauthorized_response();
+            }
+            (
+                StatusCode::BAD_REQUEST,
+                [("content-type", "application/json")],
+                json!({"code": -4028, "msg": "Leverage 75 is not valid"}).to_string(),
+            )
+                .into_response()
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let health_url = format!("http://{addr}/fapi/v1/ping");
+    let http_client =
+        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    wait_until_async(
+        || {
+            let url = health_url.clone();
+            let client = http_client.clone();
+            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    addr
+}
+
 async fn start_exec_test_server_with_command_responses(
     responses: CommandResponses,
 ) -> (SocketAddr, Arc<AtomicUsize>) {
@@ -1025,6 +1066,18 @@ fn create_test_execution_client(
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     Rc<RefCell<Cache>>,
 ) {
+    create_test_execution_client_with_leverages(base_url_http, base_url_ws, None)
+}
+
+fn create_test_execution_client_with_leverages(
+    base_url_http: String,
+    base_url_ws: String,
+    futures_leverages: Option<HashMap<String, u32>>,
+) -> (
+    BinanceFuturesExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BINANCE-001");
     let client_id = *BINANCE_CLIENT_ID;
@@ -1051,6 +1104,7 @@ fn create_test_execution_client(
         use_ws_trading: false,
         api_key: Some("test_api_key".to_string()),
         api_secret: Some("test_api_secret".to_string()),
+        futures_leverages,
         ..Default::default()
     };
 
@@ -1171,6 +1225,23 @@ async fn test_disconnect_sets_state() {
 
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_connect_succeeds_when_set_leverage_rejected() {
+    let addr = start_exec_test_server_with_leverage_reject().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let leverages = HashMap::from([("BTCUSDT".to_string(), 75)]);
+    let (mut client, _rx, cache) =
+        create_test_execution_client_with_leverages(base_url_http, base_url_ws, Some(leverages));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.connect().await.unwrap();
+
+    assert!(client.is_connected());
 }
 
 #[rstest]
