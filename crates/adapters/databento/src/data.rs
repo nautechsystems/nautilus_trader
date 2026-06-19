@@ -21,6 +21,7 @@
 use std::{
     fmt::Debug,
     path::PathBuf,
+    str::FromStr,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -28,7 +29,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use databento::live::Subscription;
+use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
 use nautilus_common::{
     clients::DataClient,
@@ -36,11 +37,11 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            InstrumentResponse, InstrumentsResponse, RequestBars, RequestInstrument,
-            RequestInstruments, RequestQuotes, RequestTrades, SubscribeBookDeltas,
-            SubscribeInstrument, SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades,
-            UnsubscribeBookDeltas, UnsubscribeInstrumentStatus, UnsubscribeQuotes,
-            UnsubscribeTrades,
+            BarsResponse, InstrumentResponse, InstrumentsResponse, QuotesResponse, RequestBars,
+            RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
+            SubscribeBookDeltas, SubscribeInstrument, SubscribeInstrumentStatus, SubscribeQuotes,
+            SubscribeTrades, TradesResponse, UnsubscribeBookDeltas, UnsubscribeInstrumentStatus,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -50,6 +51,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
+    data::{CustomData, Data},
     enums::BarAggregation,
     identifiers::{ClientId, InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -67,6 +69,24 @@ use crate::{
 };
 
 const PRICE_PRECISION_PARAM: &str = "price_precision";
+const SCHEMA_PARAM: &str = "schema";
+const QUOTE_SCHEMAS: &[dbn::Schema] = &[
+    dbn::Schema::Mbp1,
+    dbn::Schema::Bbo1S,
+    dbn::Schema::Bbo1M,
+    dbn::Schema::Cmbp1,
+    dbn::Schema::Cbbo1S,
+    dbn::Schema::Cbbo1M,
+    dbn::Schema::Tbbo,
+    dbn::Schema::Tcbbo,
+];
+const TRADE_SCHEMAS: &[dbn::Schema] = &[
+    dbn::Schema::Trades,
+    dbn::Schema::Tbbo,
+    dbn::Schema::Tcbbo,
+    dbn::Schema::Mbp1,
+    dbn::Schema::Cmbp1,
+];
 
 /// Configuration for the Databento data client.
 #[derive(Clone)]
@@ -223,7 +243,7 @@ impl DatabentoDataClient {
     }
 
     /// Gets or creates a feed handler for the specified dataset.
-    fn get_or_create_feed_handler(&self, dataset: &str) {
+    fn get_or_create_feed_handler(&self, dataset: &str) -> bool {
         let mut channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
 
         if !channels.contains_key(dataset) {
@@ -232,23 +252,48 @@ impl DatabentoDataClient {
             channels.insert(dataset.to_string(), cmd_tx);
 
             log::debug!("Feed handler created for dataset: {dataset}, channel stored");
+            return true;
+        }
+
+        false
+    }
+
+    fn send_subscription_to_dataset(
+        &self,
+        dataset: &str,
+        price_precision: Option<(Symbol, u8)>,
+        subscription: Subscription,
+        start_after_subscribe: bool,
+    ) -> anyhow::Result<()> {
+        let tx = {
+            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+            channels
+                .get(dataset)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("No feed handler found for dataset: {dataset}"))?
+        };
+
+        send_subscription_commands(
+            &tx,
+            dataset,
+            price_precision,
+            subscription,
+            start_after_subscribe,
+        )
+    }
+
+    fn send_close_to_active_feeds(&self) {
+        let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+        for (dataset, tx) in channels.iter() {
+            if let Err(e) = tx.send(HandlerCommand::Close) {
+                log::warn!("Failed to send close command to dataset {dataset}: {e}");
+            }
         }
     }
 
-    /// Sends a command to a specific dataset's feed handler.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the command cannot be sent.
-    fn send_command_to_dataset(&self, dataset: &str, cmd: HandlerCommand) -> anyhow::Result<()> {
-        let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
-        if let Some(tx) = channels.get(dataset) {
-            tx.send(cmd)
-                .map_err(|e| anyhow::anyhow!("Failed to send command to dataset {dataset}: {e}"))?;
-        } else {
-            anyhow::bail!("No feed handler found for dataset: {dataset}");
-        }
-        Ok(())
+    fn clear_feed_channels(&self) {
+        let mut channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+        channels.clear();
     }
 
     /// Initializes the live feed handler for streaming data.
@@ -257,7 +302,7 @@ impl DatabentoDataClient {
         dataset: String,
     ) -> tokio::sync::mpsc::UnboundedSender<HandlerCommand> {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (msg_tx, msg_rx) = tokio::sync::mpsc::channel(1000);
+        let (msg_tx, msg_rx) = tokio::sync::mpsc::unbounded_channel();
 
         let mut feed_handler = DatabentoFeedHandler::new(
             self.config.credential.clone(),
@@ -271,19 +316,9 @@ impl DatabentoDataClient {
             self.config.reconnect_timeout_mins,
         );
 
-        let cancellation_token = self.cancellation_token.clone();
-
-        // Spawn the feed handler task with cancellation support
         let feed_handle = get_runtime().spawn(async move {
-            tokio::select! {
-                result = feed_handler.run() => {
-                    if let Err(e) = result {
-                        log::error!("Feed handler error: {e}");
-                    }
-                }
-                () = cancellation_token.cancelled() => {
-                    log::debug!("Feed handler cancelled");
-                }
+            if let Err(e) = feed_handler.run().await {
+                log::error!("Feed handler error: {e}");
             }
         });
 
@@ -312,22 +347,31 @@ impl DatabentoDataClient {
                             }
                             Some(DatabentoMessage::Status(status)) => {
                                 log::debug!("Received status: {status:?}");
-                                // TODO: Forward to appropriate handler
+                                if let Err(e) =
+                                    data_sender.send(DataEvent::Data(Data::InstrumentStatus(status)))
+                                {
+                                    log::error!("Failed to send status data event: {e}");
+                                }
                             }
                             Some(DatabentoMessage::Imbalance(imbalance)) => {
                                 log::debug!("Received imbalance: {imbalance:?}");
-                                // TODO: Forward to appropriate handler
+                                let data = Data::Custom(CustomData::from_arc(Arc::new(imbalance)));
+                                if let Err(e) = data_sender.send(DataEvent::Data(data)) {
+                                    log::error!("Failed to send imbalance data event: {e}");
+                                }
                             }
                             Some(DatabentoMessage::Statistics(statistics)) => {
                                 log::debug!("Received statistics: {statistics:?}");
-                                // TODO: Forward to appropriate handler
+                                let data = Data::Custom(CustomData::from_arc(Arc::new(statistics)));
+                                if let Err(e) = data_sender.send(DataEvent::Data(data)) {
+                                    log::error!("Failed to send statistics data event: {e}");
+                                }
                             }
                             Some(DatabentoMessage::SubscriptionAck(ack)) => {
                                 log::debug!("Received subscription ack: {}", ack.message);
                             }
                             Some(DatabentoMessage::Error(error)) => {
                                 log::error!("Feed handler error: {error}");
-                                // TODO: Handle error appropriately
                             }
                             Some(DatabentoMessage::Close) => {
                                 log::info!("Feed handler closed");
@@ -387,16 +431,10 @@ impl DataClient for DatabentoDataClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         log::debug!("Stopping");
 
-        // Signal cancellation to all running tasks
+        self.send_close_to_active_feeds();
+        self.clear_feed_channels();
         self.cancellation_token.cancel();
-
-        // Send close command to all active feed handlers
-        let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
-        for (dataset, tx) in channels.iter() {
-            if let Err(e) = tx.send(HandlerCommand::Close) {
-                log::warn!("Failed to send close command to dataset {dataset}: {e}");
-            }
-        }
+        self.cancellation_token = CancellationToken::new();
 
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
@@ -416,8 +454,10 @@ impl DataClient for DatabentoDataClient {
     async fn connect(&mut self) -> anyhow::Result<()> {
         log::debug!("Connecting...");
 
-        // Connection will happen lazily when subscriptions are made
-        // No need to create feed handlers upfront since we don't know which datasets will be needed
+        if self.cancellation_token.is_cancelled() {
+            self.cancellation_token = CancellationToken::new();
+        }
+
         self.is_connected.store(true, Ordering::Relaxed);
 
         log::info!("Connected");
@@ -427,20 +467,9 @@ impl DataClient for DatabentoDataClient {
     async fn disconnect(&mut self) -> anyhow::Result<()> {
         log::debug!("Disconnecting...");
 
-        // Signal cancellation to all running tasks
-        self.cancellation_token.cancel();
+        self.send_close_to_active_feeds();
+        self.clear_feed_channels();
 
-        // Send close command to all active feed handlers
-        {
-            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
-            for (dataset, tx) in channels.iter() {
-                if let Err(e) = tx.send(HandlerCommand::Close) {
-                    log::warn!("Failed to send close command to dataset {dataset}: {e}");
-                }
-            }
-        }
-
-        // Wait for all spawned tasks to complete
         let handles = {
             let mut task_handles = self.task_handles.lock().expect(MUTEX_POISONED);
             std::mem::take(&mut *task_handles)
@@ -455,11 +484,7 @@ impl DataClient for DatabentoDataClient {
         }
 
         self.is_connected.store(false, Ordering::Relaxed);
-
-        {
-            let mut channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
-            channels.clear();
-        }
+        self.cancellation_token = CancellationToken::new();
 
         log::info!("Disconnected");
         Ok(())
@@ -483,17 +508,7 @@ impl DataClient for DatabentoDataClient {
         log::debug!("Subscribe instrument: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
-        let was_new_handler = {
-            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
-            !channels.contains_key(&dataset)
-        };
-
-        self.get_or_create_feed_handler(&dataset);
-
-        // Start the feed handler if it was newly created
-        if was_new_handler {
-            self.send_command_to_dataset(&dataset, HandlerCommand::Start)?;
-        }
+        let start_after_subscribe = self.get_or_create_feed_handler(&dataset);
 
         self.symbol_venue_map
             .insert(cmd.instrument_id.symbol, cmd.instrument_id.venue);
@@ -504,7 +519,7 @@ impl DataClient for DatabentoDataClient {
             .symbols(symbol)
             .build();
 
-        self.send_command_to_dataset(&dataset, HandlerCommand::Subscribe(subscription))?;
+        self.send_subscription_to_dataset(&dataset, None, subscription, start_after_subscribe)?;
 
         Ok(())
     }
@@ -518,34 +533,26 @@ impl DataClient for DatabentoDataClient {
         log::debug!("Subscribe quotes: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
-        let was_new_handler = {
-            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
-            !channels.contains_key(&dataset)
-        };
-
-        self.get_or_create_feed_handler(&dataset);
-
-        // Start the feed handler if it was newly created
-        if was_new_handler {
-            self.send_command_to_dataset(&dataset, HandlerCommand::Start)?;
-        }
-
-        self.symbol_venue_map
-            .insert(cmd.instrument_id.symbol, cmd.instrument_id.venue);
         let symbol = cmd.instrument_id.symbol.to_string();
-        if let Some(price_precision) = price_precision_from_params(cmd.params.as_ref())? {
-            self.send_command_to_dataset(
-                &dataset,
-                HandlerCommand::SetPricePrecision(cmd.instrument_id.symbol, price_precision),
-            )?;
-        }
+        let price_precision = price_precision_from_params(cmd.params.as_ref())?
+            .map(|precision| (cmd.instrument_id.symbol, precision));
+        let schema = schema_from_params(cmd.params.as_ref(), dbn::Schema::Mbp1, QUOTE_SCHEMAS)?;
 
         let subscription = Subscription::builder()
-            .schema(databento::dbn::Schema::Mbp1) // Market by price level 1 for quotes
+            .schema(schema)
             .symbols(symbol)
             .build();
 
-        self.send_command_to_dataset(&dataset, HandlerCommand::Subscribe(subscription))?;
+        let start_after_subscribe = self.get_or_create_feed_handler(&dataset);
+        self.symbol_venue_map
+            .insert(cmd.instrument_id.symbol, cmd.instrument_id.venue);
+
+        self.send_subscription_to_dataset(
+            &dataset,
+            price_precision,
+            subscription,
+            start_after_subscribe,
+        )?;
 
         Ok(())
     }
@@ -559,34 +566,26 @@ impl DataClient for DatabentoDataClient {
         log::debug!("Subscribe trades: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
-        let was_new_handler = {
-            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
-            !channels.contains_key(&dataset)
-        };
-
-        self.get_or_create_feed_handler(&dataset);
-
-        // Start the feed handler if it was newly created
-        if was_new_handler {
-            self.send_command_to_dataset(&dataset, HandlerCommand::Start)?;
-        }
-
-        self.symbol_venue_map
-            .insert(cmd.instrument_id.symbol, cmd.instrument_id.venue);
         let symbol = cmd.instrument_id.symbol.to_string();
-        if let Some(price_precision) = price_precision_from_params(cmd.params.as_ref())? {
-            self.send_command_to_dataset(
-                &dataset,
-                HandlerCommand::SetPricePrecision(cmd.instrument_id.symbol, price_precision),
-            )?;
-        }
+        let price_precision = price_precision_from_params(cmd.params.as_ref())?
+            .map(|precision| (cmd.instrument_id.symbol, precision));
+        let schema = schema_from_params(cmd.params.as_ref(), dbn::Schema::Trades, TRADE_SCHEMAS)?;
 
         let subscription = Subscription::builder()
-            .schema(databento::dbn::Schema::Trades)
+            .schema(schema)
             .symbols(symbol)
             .build();
 
-        self.send_command_to_dataset(&dataset, HandlerCommand::Subscribe(subscription))?;
+        let start_after_subscribe = self.get_or_create_feed_handler(&dataset);
+        self.symbol_venue_map
+            .insert(cmd.instrument_id.symbol, cmd.instrument_id.venue);
+
+        self.send_subscription_to_dataset(
+            &dataset,
+            price_precision,
+            subscription,
+            start_after_subscribe,
+        )?;
 
         Ok(())
     }
@@ -600,17 +599,7 @@ impl DataClient for DatabentoDataClient {
         log::debug!("Subscribe book deltas: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
-        let was_new_handler = {
-            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
-            !channels.contains_key(&dataset)
-        };
-
-        self.get_or_create_feed_handler(&dataset);
-
-        // Start the feed handler if it was newly created
-        if was_new_handler {
-            self.send_command_to_dataset(&dataset, HandlerCommand::Start)?;
-        }
+        let start_after_subscribe = self.get_or_create_feed_handler(&dataset);
 
         self.symbol_venue_map
             .insert(cmd.instrument_id.symbol, cmd.instrument_id.venue);
@@ -621,7 +610,7 @@ impl DataClient for DatabentoDataClient {
             .symbols(symbol)
             .build();
 
-        self.send_command_to_dataset(&dataset, HandlerCommand::Subscribe(subscription))?;
+        self.send_subscription_to_dataset(&dataset, None, subscription, start_after_subscribe)?;
 
         Ok(())
     }
@@ -638,17 +627,7 @@ impl DataClient for DatabentoDataClient {
         log::debug!("Subscribe instrument status: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
-        let was_new_handler = {
-            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
-            !channels.contains_key(&dataset)
-        };
-
-        self.get_or_create_feed_handler(&dataset);
-
-        // Start the feed handler if it was newly created
-        if was_new_handler {
-            self.send_command_to_dataset(&dataset, HandlerCommand::Start)?;
-        }
+        let start_after_subscribe = self.get_or_create_feed_handler(&dataset);
 
         self.symbol_venue_map
             .insert(cmd.instrument_id.symbol, cmd.instrument_id.venue);
@@ -659,7 +638,7 @@ impl DataClient for DatabentoDataClient {
             .symbols(symbol)
             .build();
 
-        self.send_command_to_dataset(&dataset, HandlerCommand::Subscribe(subscription))?;
+        self.send_subscription_to_dataset(&dataset, None, subscription, start_after_subscribe)?;
 
         Ok(())
     }
@@ -834,32 +813,54 @@ impl DataClient for DatabentoDataClient {
         log::debug!("Request quotes: {request:?}");
 
         let historical_client = self.historical.clone();
+        let data_sender = self.data_sender.clone();
+        let dataset = self.get_dataset_for_venue(request.instrument_id.venue)?;
+        let instrument_id = request.instrument_id;
+        let symbols = historical_client.prepare_symbols_from_instrument_ids(&[instrument_id]);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let start_nanos = request
+            .start
+            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
+        let end_nanos = request
+            .end
+            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
+        let limit = request.limit.map(|limit| limit.get() as u64);
+        let request_params = request.params;
+        let price_precision = price_precision_from_params(request_params.as_ref())?;
+        let schema = schema_from_params(request_params.as_ref(), dbn::Schema::Mbp1, QUOTE_SCHEMAS)?
+            .to_string();
 
         get_runtime().spawn(async move {
-            let symbols = vec![instrument_id_to_symbol_string(
-                request.instrument_id,
-                &mut AHashMap::new(), // TODO: Use proper symbol map
-            )];
-
             let params = RangeQueryParams {
-                dataset: "GLBX.MDP3".to_string(), // TODO: Make configurable
+                dataset,
                 symbols,
-                start: request
-                    .start
-                    .map_or(0, |dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .into(),
-                end: request
-                    .end
-                    .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .map(Into::into),
-                limit: request.limit.map(|l| l.get() as u64),
-                price_precision: None,
+                start: start_nanos.unwrap_or_default(),
+                end: end_nanos,
+                limit,
+                price_precision,
             };
 
-            match historical_client.get_range_quotes(params, None).await {
+            match historical_client
+                .get_range_quotes(params, Some(schema))
+                .await
+            {
                 Ok(quotes) => {
                     log::info!("Retrieved {} quotes", quotes.len());
-                    // TODO: Send quotes to message bus
+                    let response = DataResponse::Quotes(QuotesResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        quotes,
+                        start_nanos,
+                        end_nanos,
+                        get_atomic_clock_realtime().get_time_ns(),
+                        request_params,
+                    ));
+
+                    if let Err(e) = data_sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send quotes response: {e}");
+                    }
                 }
                 Err(e) => {
                     log::error!("Failed to request quotes: {e}");
@@ -874,32 +875,55 @@ impl DataClient for DatabentoDataClient {
         log::debug!("Request trades: {request:?}");
 
         let historical_client = self.historical.clone();
+        let data_sender = self.data_sender.clone();
+        let dataset = self.get_dataset_for_venue(request.instrument_id.venue)?;
+        let instrument_id = request.instrument_id;
+        let symbols = historical_client.prepare_symbols_from_instrument_ids(&[instrument_id]);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let start_nanos = request
+            .start
+            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
+        let end_nanos = request
+            .end
+            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
+        let limit = request.limit.map(|limit| limit.get() as u64);
+        let request_params = request.params;
+        let price_precision = price_precision_from_params(request_params.as_ref())?;
+        let schema =
+            schema_from_params(request_params.as_ref(), dbn::Schema::Trades, TRADE_SCHEMAS)?
+                .to_string();
 
         get_runtime().spawn(async move {
-            let symbols = vec![instrument_id_to_symbol_string(
-                request.instrument_id,
-                &mut AHashMap::new(), // TODO: Use proper symbol map
-            )];
-
             let params = RangeQueryParams {
-                dataset: "GLBX.MDP3".to_string(), // TODO: Make configurable
+                dataset,
                 symbols,
-                start: request
-                    .start
-                    .map_or(0, |dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .into(),
-                end: request
-                    .end
-                    .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .map(Into::into),
-                limit: request.limit.map(|l| l.get() as u64),
-                price_precision: None,
+                start: start_nanos.unwrap_or_default(),
+                end: end_nanos,
+                limit,
+                price_precision,
             };
 
-            match historical_client.get_range_trades(params).await {
+            match historical_client
+                .get_range_trades(params, Some(schema))
+                .await
+            {
                 Ok(trades) => {
                     log::info!("Retrieved {} trades", trades.len());
-                    // TODO: Send trades to message bus
+                    let response = DataResponse::Trades(TradesResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        trades,
+                        start_nanos,
+                        end_nanos,
+                        get_atomic_clock_realtime().get_time_ns(),
+                        request_params,
+                    ));
+
+                    if let Err(e) = data_sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send trades response: {e}");
+                    }
                 }
                 Err(e) => {
                     log::error!("Failed to request trades: {e}");
@@ -914,30 +938,35 @@ impl DataClient for DatabentoDataClient {
         log::debug!("Request bars: {request:?}");
 
         let historical_client = self.historical.clone();
+        let data_sender = self.data_sender.clone();
+        let instrument_id = request.bar_type.instrument_id();
+        let dataset = self.get_dataset_for_venue(instrument_id.venue)?;
+        let symbols = historical_client.prepare_symbols_from_instrument_ids(&[instrument_id]);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let bar_type = request.bar_type;
+        let start_nanos = request
+            .start
+            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
+        let end_nanos = request
+            .end
+            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
+        let limit = request.limit.map(|limit| limit.get() as u64);
+        let request_params = request.params;
+        let price_precision = price_precision_from_params(request_params.as_ref())?;
+        let timestamp_on_close = self.config.bars_timestamp_on_close;
 
         get_runtime().spawn(async move {
-            let symbols = vec![instrument_id_to_symbol_string(
-                request.bar_type.instrument_id(),
-                &mut AHashMap::new(), // TODO: Use proper symbol map
-            )];
-
             let params = RangeQueryParams {
-                dataset: "GLBX.MDP3".to_string(), // TODO: Make configurable
+                dataset,
                 symbols,
-                start: request
-                    .start
-                    .map_or(0, |dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .into(),
-                end: request
-                    .end
-                    .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .map(Into::into),
-                limit: request.limit.map(|l| l.get() as u64),
-                price_precision: None,
+                start: start_nanos.unwrap_or_default(),
+                end: end_nanos,
+                limit,
+                price_precision,
             };
 
-            // Map bar aggregation from the request
-            let aggregation = match request.bar_type.spec().aggregation {
+            let aggregation = match bar_type.spec().aggregation {
                 BarAggregation::Second => BarAggregation::Second,
                 BarAggregation::Minute => BarAggregation::Minute,
                 BarAggregation::Hour => BarAggregation::Hour,
@@ -945,19 +974,32 @@ impl DataClient for DatabentoDataClient {
                 _ => {
                     log::error!(
                         "Unsupported bar aggregation: {:?}",
-                        request.bar_type.spec().aggregation
+                        bar_type.spec().aggregation
                     );
                     return;
                 }
             };
 
             match historical_client
-                .get_range_bars(params, aggregation, true)
+                .get_range_bars(params, aggregation, timestamp_on_close)
                 .await
             {
                 Ok(bars) => {
                     log::info!("Retrieved {} bars", bars.len());
-                    // TODO: Send bars to message bus
+                    let response = DataResponse::Bars(BarsResponse::new(
+                        request_id,
+                        client_id,
+                        bar_type,
+                        bars,
+                        start_nanos,
+                        end_nanos,
+                        get_atomic_clock_realtime().get_time_ns(),
+                        request_params,
+                    ));
+
+                    if let Err(e) = data_sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send bars response: {e}");
+                    }
                 }
                 Err(e) => {
                     log::error!("Failed to request bars: {e}");
@@ -994,7 +1036,7 @@ fn instrument_query_params(
         dataset,
         symbols: vec![instrument_id_to_symbol_string(
             instrument_id,
-            &mut AHashMap::new(), // TODO: Use proper symbol map
+            &mut AHashMap::new(),
         )],
         start: start_nanos.unwrap_or_default(),
         end: end_nanos,
@@ -1027,10 +1069,63 @@ fn price_precision_from_params(params: Option<&Params>) -> anyhow::Result<Option
     })?))
 }
 
+fn schema_from_params(
+    params: Option<&Params>,
+    default_schema: dbn::Schema,
+    allowed_schemas: &[dbn::Schema],
+) -> anyhow::Result<dbn::Schema> {
+    let schema = if let Some(schema) = params.and_then(|params| params.get_str(SCHEMA_PARAM)) {
+        dbn::Schema::from_str(schema)?
+    } else {
+        default_schema
+    };
+
+    if allowed_schemas.contains(&schema) {
+        return Ok(schema);
+    }
+
+    let allowed = allowed_schemas
+        .iter()
+        .map(dbn::Schema::as_str)
+        .collect::<Vec<_>>()
+        .join(", ");
+    anyhow::bail!(
+        "Invalid `{SCHEMA_PARAM}` '{}'. Must be one of: {allowed}",
+        schema.as_str()
+    );
+}
+
+fn send_subscription_commands(
+    tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+    dataset: &str,
+    price_precision: Option<(Symbol, u8)>,
+    subscription: Subscription,
+    start_after_subscribe: bool,
+) -> anyhow::Result<()> {
+    if let Some((symbol, precision)) = price_precision {
+        tx.send(HandlerCommand::SetPricePrecision(symbol, precision))
+            .map_err(|e| anyhow::anyhow!("Failed to send command to dataset {dataset}: {e}"))?;
+    }
+
+    tx.send(HandlerCommand::Subscribe(subscription))
+        .map_err(|e| anyhow::anyhow!("Failed to send command to dataset {dataset}: {e}"))?;
+
+    if start_after_subscribe {
+        tx.send(HandlerCommand::Start)
+            .map_err(|e| anyhow::anyhow!("Failed to send command to dataset {dataset}: {e}"))?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use nautilus_common::live::runner::replace_data_event_sender;
+    use nautilus_core::UUID4;
     use nautilus_model::{
-        identifiers::InstrumentId,
+        identifiers::{ClientId, InstrumentId},
         instruments::{CurrencyPair, InstrumentAny},
         types::{Currency, Price, Quantity},
     };
@@ -1039,8 +1134,56 @@ mod tests {
 
     use super::*;
 
+    #[derive(Clone, Copy)]
+    enum SubscribeKind {
+        Quotes,
+        Trades,
+    }
+
     fn currency_pair(instrument_id: &str) -> InstrumentAny {
         currency_pair_with_ts_init(instrument_id, UnixNanos::default())
+    }
+
+    fn test_data_client() -> DatabentoDataClient {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        replace_data_event_sender(sender);
+
+        let config = DatabentoDataClientConfig::new(
+            "32-character-with-lots-of-filler",
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json"),
+            true,
+            true,
+        );
+        DatabentoDataClient::new(
+            ClientId::from("DATABENTO-TEST"),
+            config,
+            get_atomic_clock_realtime(),
+        )
+        .expect("test client should initialize")
+    }
+
+    fn subscribe_quotes_cmd(params: Option<Params>) -> SubscribeQuotes {
+        SubscribeQuotes::new(
+            InstrumentId::from("ESM4.GLBX"),
+            Some(ClientId::from("DATABENTO-TEST")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            params,
+        )
+    }
+
+    fn subscribe_trades_cmd(params: Option<Params>) -> SubscribeTrades {
+        SubscribeTrades::new(
+            InstrumentId::from("ESM4.GLBX"),
+            Some(ClientId::from("DATABENTO-TEST")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            params,
+        )
     }
 
     fn currency_pair_with_ts_init(instrument_id: &str, ts_init: UnixNanos) -> InstrumentAny {
@@ -1158,5 +1301,97 @@ mod tests {
         let result = price_precision_from_params(Some(&params));
 
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_schema_from_params_returns_default() {
+        let schema = schema_from_params(None, dbn::Schema::Mbp1, QUOTE_SCHEMAS).unwrap();
+
+        assert_eq!(schema, dbn::Schema::Mbp1);
+    }
+
+    #[rstest]
+    fn test_schema_from_params_accepts_allowed_value() {
+        let mut params = Params::new();
+        params.insert(SCHEMA_PARAM.to_string(), json!("tbbo"));
+
+        let schema = schema_from_params(Some(&params), dbn::Schema::Mbp1, QUOTE_SCHEMAS).unwrap();
+
+        assert_eq!(schema, dbn::Schema::Tbbo);
+    }
+
+    #[rstest]
+    fn test_schema_from_params_rejects_disallowed_value() {
+        let mut params = Params::new();
+        params.insert(SCHEMA_PARAM.to_string(), json!("mbo"));
+
+        let result = schema_from_params(Some(&params), dbn::Schema::Mbp1, QUOTE_SCHEMAS);
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::quotes(SubscribeKind::Quotes)]
+    #[case::trades(SubscribeKind::Trades)]
+    fn test_invalid_subscribe_params_do_not_create_feed_handler(#[case] kind: SubscribeKind) {
+        let mut client = test_data_client();
+        let mut params = Params::new();
+        params.insert(SCHEMA_PARAM.to_string(), json!("definition"));
+
+        let result = match kind {
+            SubscribeKind::Quotes => client.subscribe_quotes(subscribe_quotes_cmd(Some(params))),
+            SubscribeKind::Trades => client.subscribe_trades(subscribe_trades_cmd(Some(params))),
+        };
+
+        assert!(result.is_err());
+        assert!(client.cmd_channels.lock().expect(MUTEX_POISONED).is_empty());
+    }
+
+    #[rstest]
+    fn test_send_subscription_commands_starts_after_subscribe() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscription = Subscription::builder()
+            .schema(dbn::Schema::Mbp1)
+            .symbols(vec!["ESM4"])
+            .build();
+
+        send_subscription_commands(
+            &tx,
+            "GLBX.MDP3",
+            Some((Symbol::from("ESM4"), 2)),
+            subscription,
+            true,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            HandlerCommand::SetPricePrecision(symbol, 2) if symbol == Symbol::from("ESM4")
+        ));
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            HandlerCommand::Subscribe(sub) if sub.schema == dbn::Schema::Mbp1
+        ));
+        assert!(matches!(rx.try_recv().unwrap(), HandlerCommand::Start));
+    }
+
+    #[rstest]
+    fn test_send_subscription_commands_without_precision_or_start() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscription = Subscription::builder()
+            .schema(dbn::Schema::Mbp1)
+            .symbols(vec!["ESM4"])
+            .build();
+
+        send_subscription_commands(&tx, "GLBX.MDP3", None, subscription, false).unwrap();
+
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            HandlerCommand::Subscribe(sub) if sub.schema == dbn::Schema::Mbp1
+        ));
+        assert!(matches!(
+            rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
     }
 }

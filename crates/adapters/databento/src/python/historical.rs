@@ -205,7 +205,7 @@ impl DatabentoHistoricalClient {
 
     /// Fetches trade ticks for the given parameters.
     #[pyo3(name = "get_range_trades")]
-    #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None, price_precision=None))]
+    #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None, price_precision=None, schema=None))]
     #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_get_range_trades<'py>(
         &self,
@@ -216,6 +216,7 @@ impl DatabentoHistoricalClient {
         end: Option<u64>,
         limit: Option<u64>,
         price_precision: Option<u8>,
+        schema: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let inner = self.inner.clone();
         let symbols = inner.prepare_symbols_from_instrument_ids(&instrument_ids);
@@ -231,7 +232,7 @@ impl DatabentoHistoricalClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let trades = inner
-                .get_range_trades(params)
+                .get_range_trades(params, schema)
                 .await
                 .map_err(to_pyvalue_err)?;
             Python::attach(|py| trades.into_py_any(py))

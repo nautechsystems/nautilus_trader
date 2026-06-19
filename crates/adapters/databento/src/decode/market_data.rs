@@ -522,47 +522,19 @@ pub fn decode_cbbo_msg(
 ///
 /// Returns an error if decoding the TCBBO message fails.
 pub fn decode_tcbbo_msg(
-    msg: &dbn::CbboMsg,
+    msg: &dbn::TcbboMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: Option<UnixNanos>,
 ) -> anyhow::Result<(Option<QuoteTick>, TradeTick)> {
-    let top_level = &msg.levels[0];
-    let ts_event = msg.ts_recv.into();
-    let ts_init = ts_init.unwrap_or(ts_event);
-
-    let maybe_quote = if has_valid_bid_ask(top_level.bid_px, top_level.ask_px) {
-        Some(QuoteTick::new(
-            instrument_id,
-            decode_price_or_undef(top_level.bid_px, price_precision),
-            decode_price_or_undef(top_level.ask_px, price_precision),
-            decode_quantity(top_level.bid_sz as u64),
-            decode_quantity(top_level.ask_sz as u64),
-            ts_event,
-            ts_init,
-        ))
-    } else {
-        None
-    };
-
-    // TCBBO does not publish a native trade ID; derive a deterministic one
-    let trade_id = derive_cmbp_trade_id(
-        instrument_id,
-        msg.hd.ts_event,
-        msg.ts_recv,
-        msg.price,
-        msg.size,
-        msg.side,
-    );
-    let trade = TradeTick::new(
-        instrument_id,
-        decode_price_or_undef(msg.price, price_precision),
-        decode_quantity(msg.size as u64),
-        parse_aggressor_side(msg.side),
-        trade_id,
-        ts_event,
-        ts_init,
-    );
+    let (maybe_quote, maybe_trade) =
+        decode_cmbp1_msg(msg, instrument_id, price_precision, ts_init, true)?;
+    let trade = maybe_trade.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Invalid `TcbboMsg`: expected trade action, was {}",
+            msg.action as u8 as char
+        )
+    })?;
 
     Ok((maybe_quote, trade))
 }
@@ -713,9 +685,6 @@ pub fn decode_record(
     include_trades: bool,
     bars_timestamp_on_close: bool,
 ) -> anyhow::Result<(Option<Data>, Option<Data>)> {
-    // Note: TBBO and TCBBO messages provide both quotes and trades.
-    // TBBO is handled explicitly below, while TCBBO is handled by
-    // the CbboMsg branch based on whether it has trade data.
     let result = if let Some(msg) = record.get::<dbn::MboMsg>() {
         let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
         let result = decode_mbo_msg(
@@ -771,14 +740,20 @@ pub fn decode_record(
         (Some(Data::Bar(bar)), None)
     } else if let Some(msg) = record.get::<dbn::Cmbp1Msg>() {
         let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
-        let (maybe_quote, maybe_trade) = decode_cmbp1_msg(
-            msg,
-            instrument_id,
-            price_precision,
-            Some(ts_init),
-            include_trades,
-        )?;
-        (maybe_quote.map(Data::Quote), maybe_trade.map(Data::Trade))
+        if msg.hd.rtype == dbn::enums::rtype::TCBBO {
+            let (maybe_quote, trade) =
+                decode_tcbbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
+            (maybe_quote.map(Data::Quote), Some(Data::Trade(trade)))
+        } else {
+            let (maybe_quote, maybe_trade) = decode_cmbp1_msg(
+                msg,
+                instrument_id,
+                price_precision,
+                Some(ts_init),
+                include_trades,
+            )?;
+            (maybe_quote.map(Data::Quote), maybe_trade.map(Data::Trade))
+        }
     } else if let Some(msg) = record.get::<dbn::TbboMsg>() {
         // TBBO always has a trade, quote may be skipped if prices undefined
         let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
@@ -786,19 +761,9 @@ pub fn decode_record(
             decode_tbbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
         (maybe_quote.map(Data::Quote), Some(Data::Trade(trade)))
     } else if let Some(msg) = record.get::<dbn::CbboMsg>() {
-        // Check if this is a TCBBO or regular CBBO based on whether it has trade data
-        if msg.price != i64::MAX && msg.size > 0 {
-            // TCBBO - has a trade, quote may be skipped if prices undefined
-            let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
-            let (maybe_quote, trade) =
-                decode_tcbbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
-            (maybe_quote.map(Data::Quote), Some(Data::Trade(trade)))
-        } else {
-            // Regular CBBO - quote only (may be None if prices undefined)
-            let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
-            let maybe_quote = decode_cbbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
-            (maybe_quote.map(Data::Quote), None)
-        }
+        let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
+        let maybe_quote = decode_cbbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
+        (maybe_quote.map(Data::Quote), None)
     } else {
         anyhow::bail!("DBN message type is not currently supported")
     };

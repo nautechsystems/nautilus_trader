@@ -49,7 +49,9 @@ const RAW_SYMBOL: &str = "ESM4";
 const CONTINUOUS_SYMBOL: &str = "ES.c.0";
 const RECV_TIMEOUT: Duration = Duration::from_secs(5);
 
-async fn recv_msg(rx: &mut tokio::sync::mpsc::Receiver<DatabentoMessage>) -> DatabentoMessage {
+async fn recv_msg(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DatabentoMessage>,
+) -> DatabentoMessage {
     tokio::time::timeout(RECV_TIMEOUT, rx.recv())
         .await
         .expect("timed out waiting for message")

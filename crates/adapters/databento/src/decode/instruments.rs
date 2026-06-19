@@ -17,10 +17,12 @@ use databento::dbn;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::AssetClass,
-    identifiers::InstrumentId,
+    identifiers::{InstrumentId, Symbol},
     instruments::{
-        Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionContract, OptionSpread,
+        CurrencyPair, Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionContract,
+        OptionSpread,
     },
+    types::Currency,
 };
 use ustr::Ustr;
 
@@ -35,7 +37,7 @@ use super::primitives::{
 /// Returns an error if decoding the `InstrumentDefMsg` fails.
 ///
 /// Returns `Ok(None)` for instrument classes with no Nautilus equivalent (`'I'` Index,
-/// `'B'` Bond, `'X'` FX spot, or any future class).
+/// `'B'` Bond, or any future class) and FX spots that cannot be mapped to known currencies.
 pub fn decode_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
@@ -47,6 +49,9 @@ pub fn decode_instrument_def_msg(
             instrument_id,
             ts_init,
         )?))),
+        'X' => {
+            Ok(decode_currency_pair(msg, instrument_id, ts_init)?.map(InstrumentAny::CurrencyPair))
+        }
         'F' => Ok(Some(InstrumentAny::FuturesContract(
             decode_futures_contract(msg, instrument_id, ts_init)?,
         ))),
@@ -69,13 +74,92 @@ pub fn decode_instrument_def_msg(
             let label = match other {
                 'I' => "'I' (Index)".to_string(),
                 'B' => "'B' (Bond)".to_string(),
-                'X' => "'X' (FX spot)".to_string(),
                 _ => format!("'{other}'"),
             };
             log::warn!("Skipping unsupported `instrument_class` {label} for {instrument_id}",);
             Ok(None)
         }
     }
+}
+
+fn decode_currency_pair(
+    msg: &dbn::InstrumentDefMsg,
+    instrument_id: InstrumentId,
+    ts_init: Option<UnixNanos>,
+) -> anyhow::Result<Option<CurrencyPair>> {
+    let raw_symbol_str = msg.raw_symbol()?;
+    let raw_symbol = Symbol::from(raw_symbol_str);
+    let Some((base_currency, quote_currency)) = parse_fx_pair(
+        raw_symbol_str,
+        msg.asset().unwrap_or_default(),
+        msg.currency().unwrap_or_default(),
+    ) else {
+        log::warn!(
+            "Skipping FX spot {instrument_id}: could not parse currencies from raw_symbol='{raw_symbol_str}'"
+        );
+        return Ok(None);
+    };
+    let price_increment = decode_price_increment(msg.min_price_increment, quote_currency.precision);
+    let size_increment = decode_lot_size(msg.min_lot_size_round_lot);
+    let multiplier = decode_multiplier(msg.unit_of_measure_qty)?;
+    let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
+    let ts_event = UnixNanos::from(msg.ts_recv);
+    let ts_init = ts_init.unwrap_or(ts_event);
+
+    Ok(Some(CurrencyPair::new_checked(
+        instrument_id,
+        raw_symbol,
+        base_currency,
+        quote_currency,
+        price_increment.precision,
+        size_increment.precision,
+        price_increment,
+        size_increment,
+        Some(multiplier),
+        Some(lot_size),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        ts_event,
+        ts_init,
+    )?))
+}
+
+fn parse_fx_pair(raw_symbol: &str, asset: &str, currency: &str) -> Option<(Currency, Currency)> {
+    parse_fx_pair_from_symbol(raw_symbol)
+        .or_else(|| parse_fx_pair_from_symbol(asset))
+        .or_else(|| parse_fx_pair_from_asset_currency(asset, currency))
+}
+
+fn parse_fx_pair_from_symbol(value: &str) -> Option<(Currency, Currency)> {
+    let normalized = value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphabetic())
+        .collect::<String>()
+        .to_ascii_uppercase();
+
+    if normalized.len() != 6 {
+        return None;
+    }
+
+    let base = Currency::try_from_str(&normalized[..3])?;
+    let quote = Currency::try_from_str(&normalized[3..])?;
+    Some((base, quote))
+}
+
+fn parse_fx_pair_from_asset_currency(asset: &str, currency: &str) -> Option<(Currency, Currency)> {
+    let base = Currency::try_from_str(asset.trim().to_ascii_uppercase().as_str())?;
+    let quote = Currency::try_from_str(currency.trim().to_ascii_uppercase().as_str())?;
+    Some((base, quote))
 }
 
 /// Decodes a Databento instrument definition message into an `Equity` instrument.

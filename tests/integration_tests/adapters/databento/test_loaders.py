@@ -70,7 +70,7 @@ def test_get_publishers() -> None:
     result = loader.get_publishers()
 
     # Assert
-    assert len(result) == 110  # From built-in map
+    assert len(result) == 135  # From built-in map
 
 
 def test_loader_definition_glbx_futures() -> None:
@@ -963,11 +963,9 @@ def test_loader_cbbo_1s() -> None:
     data = loader.from_dbn_file(path, instrument_id=instrument_id, as_legacy_cython=True)
 
     # Assert
-    assert len(data) == 4  # 2 quotes + 2 trades from CBBO
+    assert len(data) == 2
     assert isinstance(data[0], QuoteTick)
-    assert isinstance(data[1], TradeTick)
-    assert isinstance(data[2], QuoteTick)
-    assert isinstance(data[3], TradeTick)
+    assert isinstance(data[1], QuoteTick)
     quote = data[0]
     assert quote.instrument_id == InstrumentId.from_str("ESM4.GLBX")
     assert quote.bid_price == Price.from_str("3720.25")

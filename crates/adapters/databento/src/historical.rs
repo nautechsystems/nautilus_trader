@@ -51,7 +51,7 @@ use crate::{
 pub struct DatabentoHistoricalClient {
     credential: Credential,
     clock: &'static AtomicTime,
-    inner: Arc<tokio::sync::Mutex<databento::HistoricalClient>>,
+    inner: Arc<databento::HistoricalClient>,
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
     symbol_venue_map: Arc<AtomicMap<Symbol, Venue>>,
     price_precisions: Arc<AtomicMap<Symbol, u8>>,
@@ -119,7 +119,7 @@ impl DatabentoHistoricalClient {
 
         Ok(Self {
             clock,
-            inner: Arc::new(tokio::sync::Mutex::new(client)),
+            inner: Arc::new(client),
             publisher_venue_map: Arc::new(publisher_venue_map),
             symbol_venue_map: Arc::new(AtomicMap::new()),
             price_precisions: Arc::new(AtomicMap::new()),
@@ -174,7 +174,7 @@ impl DatabentoHistoricalClient {
     ///
     /// Returns an error if the API request fails.
     pub async fn get_dataset_range(&self, dataset: &str) -> anyhow::Result<DatasetRange> {
-        let mut client = self.inner.lock().await;
+        let mut client = (*self.inner).clone();
         let response = client
             .metadata()
             .get_dataset_range(dataset)
@@ -216,7 +216,7 @@ impl DatabentoHistoricalClient {
             .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
-        let mut client = self.inner.lock().await;
+        let mut client = (*self.inner).clone();
         let mut decoder = client
             .timeseries()
             .get_range(&range_params)
@@ -227,7 +227,7 @@ impl DatabentoHistoricalClient {
         let mut metadata_cache = MetadataCache::new(metadata);
         let mut instruments = Vec::new();
 
-        while let Ok(Some(msg)) = decoder.decode_record::<dbn::InstrumentDefMsg>().await {
+        while let Some(msg) = decoder.decode_record::<dbn::InstrumentDefMsg>().await? {
             let record = dbn::RecordRef::from(msg);
             let sym_map = self.symbol_venue_map.load();
             let mut instrument_id = decode_nautilus_instrument_id(
@@ -249,7 +249,7 @@ impl DatabentoHistoricalClient {
             match decode_instrument_def_msg(msg, instrument_id, None) {
                 Ok(Some(instrument)) => instruments.push(instrument),
                 Ok(None) => {} // Decoder logged a warning for the unsupported class
-                Err(e) => log::error!("Failed to decode instrument: {e:?}"),
+                Err(e) => anyhow::bail!("Failed to decode instrument {instrument_id}: {e}"),
             }
         }
 
@@ -286,13 +286,15 @@ impl DatabentoHistoricalClient {
 
         match dbn_schema {
             dbn::Schema::Mbp1
+            | dbn::Schema::Tbbo
             | dbn::Schema::Bbo1S
             | dbn::Schema::Bbo1M
             | dbn::Schema::Cmbp1
+            | dbn::Schema::Tcbbo
             | dbn::Schema::Cbbo1S
             | dbn::Schema::Cbbo1M => (),
             _ => anyhow::bail!(
-                "Invalid schema. Must be one of: mbp-1, bbo-1s, bbo-1m, cmbp-1, cbbo-1s, cbbo-1m"
+                "Invalid schema. Must be one of: mbp-1, tbbo, bbo-1s, bbo-1m, cmbp-1, tcbbo, cbbo-1s, cbbo-1m"
             ),
         }
 
@@ -307,7 +309,7 @@ impl DatabentoHistoricalClient {
 
         let price_precision_arg = params.price_precision;
 
-        let mut client = self.inner.lock().await;
+        let mut client = (*self.inner).clone();
         let mut decoder = client
             .timeseries()
             .get_range(&range_params)
@@ -348,27 +350,37 @@ impl DatabentoHistoricalClient {
 
         match dbn_schema {
             dbn::Schema::Mbp1 => {
-                while let Ok(Some(msg)) = decoder.decode_record::<dbn::Mbp1Msg>().await {
+                while let Some(msg) = decoder.decode_record::<dbn::Mbp1Msg>().await? {
+                    process_record(dbn::RecordRef::from(msg))?;
+                }
+            }
+            dbn::Schema::Tbbo => {
+                while let Some(msg) = decoder.decode_record::<dbn::TbboMsg>().await? {
                     process_record(dbn::RecordRef::from(msg))?;
                 }
             }
             dbn::Schema::Cmbp1 => {
-                while let Ok(Some(msg)) = decoder.decode_record::<dbn::Cmbp1Msg>().await {
+                while let Some(msg) = decoder.decode_record::<dbn::Cmbp1Msg>().await? {
+                    process_record(dbn::RecordRef::from(msg))?;
+                }
+            }
+            dbn::Schema::Tcbbo => {
+                while let Some(msg) = decoder.decode_record::<dbn::TcbboMsg>().await? {
                     process_record(dbn::RecordRef::from(msg))?;
                 }
             }
             dbn::Schema::Bbo1M => {
-                while let Ok(Some(msg)) = decoder.decode_record::<dbn::Bbo1MMsg>().await {
+                while let Some(msg) = decoder.decode_record::<dbn::Bbo1MMsg>().await? {
                     process_record(dbn::RecordRef::from(msg))?;
                 }
             }
             dbn::Schema::Bbo1S => {
-                while let Ok(Some(msg)) = decoder.decode_record::<dbn::Bbo1SMsg>().await {
+                while let Some(msg) = decoder.decode_record::<dbn::Bbo1SMsg>().await? {
                     process_record(dbn::RecordRef::from(msg))?;
                 }
             }
             dbn::Schema::Cbbo1S | dbn::Schema::Cbbo1M => {
-                while let Ok(Some(msg)) = decoder.decode_record::<dbn::CbboMsg>().await {
+                while let Some(msg) = decoder.decode_record::<dbn::CbboMsg>().await? {
                     process_record(dbn::RecordRef::from(msg))?;
                 }
             }
@@ -416,7 +428,7 @@ impl DatabentoHistoricalClient {
 
         let price_precision_arg = params.price_precision;
 
-        let mut client = self.inner.lock().await;
+        let mut client = (*self.inner).clone();
         let mut decoder = client
             .timeseries()
             .get_range(&range_params)
@@ -446,7 +458,7 @@ impl DatabentoHistoricalClient {
             Ok(())
         };
 
-        while let Ok(Some(msg)) = decoder.decode_record::<dbn::Mbp10Msg>().await {
+        while let Some(msg) = decoder.decode_record::<dbn::Mbp10Msg>().await? {
             process_record(dbn::RecordRef::from(msg))?;
         }
 
@@ -484,7 +496,7 @@ impl DatabentoHistoricalClient {
 
         let price_precision_arg = params.price_precision;
 
-        let mut client = self.inner.lock().await;
+        let mut client = (*self.inner).clone();
         let mut decoder = client
             .timeseries()
             .get_range(&range_params)
@@ -518,7 +530,7 @@ impl DatabentoHistoricalClient {
             Ok(())
         };
 
-        while let Ok(Some(msg)) = decoder.decode_record::<dbn::MboMsg>().await {
+        while let Some(msg) = decoder.decode_record::<dbn::MboMsg>().await? {
             process_record(dbn::RecordRef::from(msg))?;
         }
 
@@ -533,6 +545,7 @@ impl DatabentoHistoricalClient {
     pub async fn get_range_trades(
         &self,
         params: RangeQueryParams,
+        schema: Option<String>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         let symbols: Vec<&str> = params.symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(&symbols)?;
@@ -544,19 +557,32 @@ impl DatabentoHistoricalClient {
         let stype_in = infer_symbology_type(first_symbol);
         let end = params.end.unwrap_or_else(|| self.clock.get_time_ns());
         let time_range = get_date_time_range(params.start, end)?;
+        let schema = schema.unwrap_or_else(|| "trades".to_string());
+        let dbn_schema = dbn::Schema::from_str(&schema)?;
+
+        match dbn_schema {
+            dbn::Schema::Trades
+            | dbn::Schema::Tbbo
+            | dbn::Schema::Tcbbo
+            | dbn::Schema::Mbp1
+            | dbn::Schema::Cmbp1 => (),
+            _ => {
+                anyhow::bail!("Invalid schema. Must be one of: trades, tbbo, tcbbo, mbp-1, cmbp-1")
+            }
+        }
 
         let range_params = GetRangeParams::builder()
             .dataset(params.dataset)
             .date_time_range(time_range)
             .symbols(symbols)
             .stype_in(stype_in)
-            .schema(dbn::Schema::Trades)
+            .schema(dbn_schema)
             .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
         let price_precision_arg = params.price_precision;
 
-        let mut client = self.inner.lock().await;
+        let mut client = (*self.inner).clone();
         let mut decoder = client
             .timeseries()
             .get_range(&range_params)
@@ -567,8 +593,7 @@ impl DatabentoHistoricalClient {
         let mut metadata_cache = MetadataCache::new(metadata);
         let mut result: Vec<TradeTick> = Vec::new();
 
-        while let Ok(Some(msg)) = decoder.decode_record::<dbn::TradeMsg>().await {
-            let record = dbn::RecordRef::from(msg);
+        let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
             let sym_map = self.symbol_venue_map.load();
             let instrument_id = decode_nautilus_instrument_id(
                 &record,
@@ -579,21 +604,49 @@ impl DatabentoHistoricalClient {
             let price_precision =
                 self.resolve_price_precision(&instrument_id, price_precision_arg)?;
 
-            let (data, _) = decode_record(
-                &record,
-                instrument_id,
-                price_precision,
-                None,
-                false, // Not applicable (trade will be decoded regardless)
-                true,
-            )?;
+            let (data, data2) =
+                decode_record(&record, instrument_id, price_precision, None, true, true)?;
 
-            match data {
-                Some(Data::Trade(trade)) => {
-                    result.push(trade);
+            match (data, data2) {
+                (Some(Data::Trade(trade)), _) | (_, Some(Data::Trade(trade))) => result.push(trade),
+                (Some(_) | None, None) => {}
+                (None, Some(data)) => {
+                    anyhow::bail!("Invalid data element not `TradeTick`, was {data:?}")
                 }
-                _ => anyhow::bail!("Invalid data element not `TradeTick`, was {data:?}"),
+                (Some(data), Some(_)) => {
+                    anyhow::bail!("Invalid data element not `TradeTick`, was {data:?}")
+                }
             }
+            Ok(())
+        };
+
+        match dbn_schema {
+            dbn::Schema::Trades => {
+                while let Some(msg) = decoder.decode_record::<dbn::TradeMsg>().await? {
+                    process_record(dbn::RecordRef::from(msg))?;
+                }
+            }
+            dbn::Schema::Mbp1 => {
+                while let Some(msg) = decoder.decode_record::<dbn::Mbp1Msg>().await? {
+                    process_record(dbn::RecordRef::from(msg))?;
+                }
+            }
+            dbn::Schema::Tbbo => {
+                while let Some(msg) = decoder.decode_record::<dbn::TbboMsg>().await? {
+                    process_record(dbn::RecordRef::from(msg))?;
+                }
+            }
+            dbn::Schema::Cmbp1 => {
+                while let Some(msg) = decoder.decode_record::<dbn::Cmbp1Msg>().await? {
+                    process_record(dbn::RecordRef::from(msg))?;
+                }
+            }
+            dbn::Schema::Tcbbo => {
+                while let Some(msg) = decoder.decode_record::<dbn::TcbboMsg>().await? {
+                    process_record(dbn::RecordRef::from(msg))?;
+                }
+            }
+            _ => anyhow::bail!("Invalid schema {dbn_schema}"),
         }
 
         Ok(result)
@@ -640,7 +693,7 @@ impl DatabentoHistoricalClient {
 
         let price_precision_arg = params.price_precision;
 
-        let mut client = self.inner.lock().await;
+        let mut client = (*self.inner).clone();
         let mut decoder = client
             .timeseries()
             .get_range(&range_params)
@@ -651,7 +704,7 @@ impl DatabentoHistoricalClient {
         let mut metadata_cache = MetadataCache::new(metadata);
         let mut result: Vec<Bar> = Vec::new();
 
-        while let Ok(Some(msg)) = decoder.decode_record::<dbn::OhlcvMsg>().await {
+        while let Some(msg) = decoder.decode_record::<dbn::OhlcvMsg>().await? {
             let record = dbn::RecordRef::from(msg);
             let sym_map = self.symbol_venue_map.load();
             let instrument_id = decode_nautilus_instrument_id(
@@ -714,7 +767,7 @@ impl DatabentoHistoricalClient {
 
         let price_precision_arg = params.price_precision;
 
-        let mut client = self.inner.lock().await;
+        let mut client = (*self.inner).clone();
         let mut decoder = client
             .timeseries()
             .get_range(&range_params)
@@ -725,7 +778,7 @@ impl DatabentoHistoricalClient {
         let mut metadata_cache = MetadataCache::new(metadata);
         let mut result: Vec<DatabentoImbalance> = Vec::new();
 
-        while let Ok(Some(msg)) = decoder.decode_record::<dbn::ImbalanceMsg>().await {
+        while let Some(msg) = decoder.decode_record::<dbn::ImbalanceMsg>().await? {
             let record = dbn::RecordRef::from(msg);
             let sym_map = self.symbol_venue_map.load();
             let instrument_id = decode_nautilus_instrument_id(
@@ -775,7 +828,7 @@ impl DatabentoHistoricalClient {
 
         let price_precision_arg = params.price_precision;
 
-        let mut client = self.inner.lock().await;
+        let mut client = (*self.inner).clone();
         let mut decoder = client
             .timeseries()
             .get_range(&range_params)
@@ -786,7 +839,7 @@ impl DatabentoHistoricalClient {
         let mut metadata_cache = MetadataCache::new(metadata);
         let mut result: Vec<DatabentoStatistics> = Vec::new();
 
-        while let Ok(Some(msg)) = decoder.decode_record::<dbn::StatMsg>().await {
+        while let Some(msg) = decoder.decode_record::<dbn::StatMsg>().await? {
             // Precheck before precision resolution so unmodeled types skip cleanly
             if !is_supported_stat_type(msg.stat_type) {
                 log::warn!("Skipping unsupported `stat_type` {}", msg.stat_type);
@@ -843,7 +896,7 @@ impl DatabentoHistoricalClient {
             .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
-        let mut client = self.inner.lock().await;
+        let mut client = (*self.inner).clone();
         let mut decoder = client
             .timeseries()
             .get_range(&range_params)
@@ -854,7 +907,7 @@ impl DatabentoHistoricalClient {
         let mut metadata_cache = MetadataCache::new(metadata);
         let mut result: Vec<InstrumentStatus> = Vec::new();
 
-        while let Ok(Some(msg)) = decoder.decode_record::<dbn::StatusMsg>().await {
+        while let Some(msg) = decoder.decode_record::<dbn::StatusMsg>().await? {
             let record = dbn::RecordRef::from(msg);
             let sym_map = self.symbol_venue_map.load();
             let instrument_id = decode_nautilus_instrument_id(

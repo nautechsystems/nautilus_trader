@@ -424,7 +424,7 @@ impl DatabentoDataLoader {
         price_precision: Option<u8>,
     ) -> PyResult<Py<PyAny>> {
         let iter = self
-            .read_records::<dbn::CbboMsg>(&filepath, instrument_id, price_precision, false, None)
+            .read_records::<dbn::TcbboMsg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)

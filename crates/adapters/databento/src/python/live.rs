@@ -30,7 +30,7 @@ use crate::live::{DatabentoMessage, is_command_send_error};
 
 impl DatabentoLiveClient {
     async fn process_messages(
-        mut msg_rx: tokio::sync::mpsc::Receiver<DatabentoMessage>,
+        mut msg_rx: tokio::sync::mpsc::UnboundedReceiver<DatabentoMessage>,
         callback: Py<PyAny>,
         callback_pyo3: Py<PyAny>,
     ) -> PyResult<()> {
@@ -97,9 +97,7 @@ fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DatabentoLiveClient {
-    /// # Errors
-    ///
-    /// Returns a `PyErr` if reading or parsing the publishers file fails.
+    /// Creates a new `DatabentoLiveClient` instance.
     #[new]
     #[pyo3(signature = (key, dataset, publishers_filepath, use_exchange_as_venue, bars_timestamp_on_close=None, reconnect_timeout_mins=None))]
     pub fn py_new(
@@ -136,6 +134,7 @@ impl DatabentoLiveClient {
         self.is_closed()
     }
 
+    /// Subscribes to Databento live data for the requested instruments.
     #[pyo3(name = "subscribe")]
     #[pyo3(signature = (schema, instrument_ids, start=None, snapshot=None, price_precisions=None, stype_in=None))]
     fn py_subscribe(
@@ -165,6 +164,7 @@ impl DatabentoLiveClient {
         Ok(())
     }
 
+    /// Starts the live feed handler and returns its message receiver.
     #[pyo3(name = "start")]
     fn py_start<'py>(
         &mut self,
@@ -180,20 +180,27 @@ impl DatabentoLiveClient {
                 feed_handler.run(),
             );
 
-            match proc_handle {
-                Ok(()) => log::debug!("Message processor completed"),
-                Err(e) => log::error!("Message processor error: {e}"),
+            if let Err(e) = proc_handle {
+                log::error!("Message processor error: {e}");
+                return Err(e);
             }
 
-            match feed_handle {
-                Ok(()) => log::debug!("Feed handler completed"),
-                Err(e) => log::error!("Feed handler error: {e}"),
+            if let Err(e) = feed_handle {
+                log::error!("Feed handler error: {e}");
+                return Err(to_pyruntime_err(e));
             }
 
+            log::debug!("Live client completed");
             Ok(())
         })
     }
 
+    /// Closes the live client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client was never started, is already closed, or cannot send
+    /// the close command to the feed handler.
     #[pyo3(name = "close")]
     fn py_close(&mut self) -> PyResult<()> {
         self.close().map_err(to_pyruntime_err)

@@ -581,7 +581,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        self.read_records::<dbn::TbboMsg>(filepath, instrument_id, price_precision, false, None)?
+        self.read_records::<dbn::TbboMsg>(filepath, instrument_id, price_precision, true, None)?
             .filter_map(|result| match result {
                 Ok((_, maybe_item2)) => {
                     if let Some(Data::Trade(trade)) = maybe_item2 {
@@ -606,7 +606,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        self.read_records::<dbn::CbboMsg>(filepath, instrument_id, price_precision, false, None)?
+        self.read_records::<dbn::TcbboMsg>(filepath, instrument_id, price_precision, true, None)?
             .filter_map(|result| match result {
                 Ok((_, maybe_item2)) => {
                     if let Some(Data::Trade(trade)) = maybe_item2 {
@@ -1156,22 +1156,20 @@ mod tests {
             .load_tbbo_trades(&path, Some(instrument_id), None)
             .unwrap();
 
-        // TBBO test data doesn't contain valid trade data (size/price may be 0)
-        assert_eq!(trades.len(), 0);
+        assert_eq!(trades.len(), 2);
+        assert_eq!(trades[0].instrument_id, instrument_id);
+        assert_eq!(trades[0].price, Price::from("3720.25"));
+        assert_eq!(trades[0].size, Quantity::from("5"));
     }
 
     #[rstest]
-    fn test_load_tcbbo_trades(loader: DatabentoDataLoader) {
-        // Since we don't have dedicated TCBBO test data, we'll use CBBO data
-        // In practice, TCBBO would be CBBO messages with trade data
+    fn test_load_tcbbo_trades_rejects_cbbo_fixture(loader: DatabentoDataLoader) {
         let path = test_data_path().join("test_data.cbbo-1s.dbn.zst");
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
         let result = loader.load_tcbbo_trades(&path, Some(instrument_id), None);
 
-        assert!(result.is_ok());
-        let trades = result.unwrap();
-        assert_eq!(trades.len(), 2);
+        assert!(result.is_err());
     }
 
     #[rstest]

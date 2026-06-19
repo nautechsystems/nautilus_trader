@@ -31,7 +31,7 @@ use nautilus_model::{
         OrderSide,
     },
     identifiers::{InstrumentId, TradeId},
-    instruments::Instrument,
+    instruments::{Instrument, InstrumentAny},
     types::{
         Currency, Price, Quantity,
         price::{PRICE_UNDEF, decode_raw_price_i64},
@@ -52,6 +52,14 @@ use crate::enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction};
 
 fn test_data_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data")
+}
+
+fn cstr<const N: usize>(value: &str) -> [c_char; N] {
+    let mut result = [0 as c_char; N];
+    for (index, byte) in value.bytes().take(N - 1).enumerate() {
+        result[index] = byte as c_char;
+    }
+    result
 }
 
 #[rstest]
@@ -903,7 +911,6 @@ fn test_decode_imbalance_msg() {
 #[rstest]
 #[case::index('I' as c_char)]
 #[case::bond('B' as c_char)]
-#[case::fx_spot('X' as c_char)]
 #[case::unknown('Z' as c_char)]
 fn test_decode_instrument_def_msg_unsupported_class_returns_none(#[case] instrument_class: c_char) {
     // Regression: dbn 0.58 publishers (e.g. CGIF.TITANIUM = 110) emit class 'I'
@@ -922,6 +929,65 @@ fn test_decode_instrument_def_msg_unsupported_class_returns_none(#[case] instrum
     let instrument_id = InstrumentId::from("SPX.XCBO");
     let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()))
         .expect("decoder should not bail on unsupported class");
+    assert!(result.is_none());
+}
+
+#[rstest]
+fn test_decode_instrument_def_msg_fx_spot_returns_currency_pair() {
+    let msg = dbn::InstrumentDefMsg {
+        hd: dbn::RecordHeader::new::<dbn::InstrumentDefMsg>(
+            dbn::enums::rtype::INSTRUMENT_DEF,
+            1,
+            1,
+            1_000_000_000,
+        ),
+        ts_recv: 1_000_000_000,
+        instrument_class: 'X' as c_char,
+        raw_symbol: cstr::<{ dbn::SYMBOL_CSTR_LEN }>("EUR/USD"),
+        asset: cstr::<{ dbn::ASSET_CSTR_LEN }>("EURUSD"),
+        currency: cstr::<4>("USD"),
+        min_price_increment: 10_000,
+        unit_of_measure_qty: 1_000_000_000,
+        min_lot_size_round_lot: 1,
+        ..Default::default()
+    };
+
+    let instrument_id = InstrumentId::from("EURUSD.FX");
+    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()))
+        .expect("FX spot should decode")
+        .expect("FX spot should return an instrument");
+
+    let InstrumentAny::CurrencyPair(pair) = result else {
+        panic!("Expected CurrencyPair");
+    };
+    assert_eq!(pair.id, instrument_id);
+    assert_eq!(pair.raw_symbol.as_str(), "EUR/USD");
+    assert_eq!(pair.base_currency, Currency::from("EUR"));
+    assert_eq!(pair.quote_currency, Currency::from("USD"));
+    assert_eq!(pair.ts_init, 0);
+}
+
+#[rstest]
+fn test_decode_instrument_def_msg_unparsable_fx_spot_returns_none() {
+    let msg = dbn::InstrumentDefMsg {
+        hd: dbn::RecordHeader::new::<dbn::InstrumentDefMsg>(
+            dbn::enums::rtype::INSTRUMENT_DEF,
+            1,
+            1,
+            1_000_000_000,
+        ),
+        ts_recv: 1_000_000_000,
+        instrument_class: 'X' as c_char,
+        raw_symbol: cstr::<{ dbn::SYMBOL_CSTR_LEN }>("INVALID"),
+        asset: cstr::<{ dbn::ASSET_CSTR_LEN }>("INVALID"),
+        currency: cstr::<4>("ZZZ"),
+        ..Default::default()
+    };
+
+    let instrument_id = InstrumentId::from("INVALID.FX");
+    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()))
+        .expect("unparsable FX spot should not abort the batch");
+
     assert!(result.is_none());
 }
 
@@ -1176,17 +1242,18 @@ fn test_array_conversion_error_handling() {
 
 #[rstest]
 fn test_decode_tcbbo_msg() {
-    // Use cbbo-1s as base since cbbo.dbn.zst was invalid
-    let path = test_data_path().join("test_data.cbbo-1s.dbn.zst");
-    let mut dbn_stream = Decoder::from_zstd_file(path)
-        .unwrap()
-        .decode_stream::<dbn::CbboMsg>();
-    let msg = dbn_stream.next().unwrap().unwrap();
-
-    // Simulate TCBBO by adding trade data
-    let mut tcbbo_msg = msg.clone();
-    tcbbo_msg.price = 3702500000000;
+    let mut tcbbo_msg = dbn::TcbboMsg::default_for_schema(dbn::Schema::Tcbbo);
+    tcbbo_msg.hd.instrument_id = 1;
+    tcbbo_msg.hd.ts_event = 1_000_000_000;
+    tcbbo_msg.price = 3_702_500_000_000;
     tcbbo_msg.size = 10;
+    tcbbo_msg.action = 'T' as c_char;
+    tcbbo_msg.side = 'A' as c_char;
+    tcbbo_msg.ts_recv = 1_000_000_000;
+    tcbbo_msg.levels[0].bid_px = 3_702_000_000_000;
+    tcbbo_msg.levels[0].ask_px = 3_703_000_000_000;
+    tcbbo_msg.levels[0].bid_sz = 20;
+    tcbbo_msg.levels[0].ask_sz = 30;
 
     let instrument_id = InstrumentId::from("ESM4.GLBX");
     let (maybe_quote, trade) =
@@ -1206,6 +1273,56 @@ fn test_decode_tcbbo_msg() {
     assert_eq!(trade.size, Quantity::from(10));
     assert_eq!(trade.ts_event, tcbbo_msg.ts_recv);
     assert_eq!(trade.ts_init, 0);
+}
+
+#[rstest]
+fn test_decode_record_routes_tcbbo_rtype_to_trade_decode() {
+    let mut msg = dbn::TcbboMsg::default_for_schema(dbn::Schema::Tcbbo);
+    msg.hd.instrument_id = 1;
+    msg.hd.ts_event = 1_000_000_000;
+    msg.price = 3_702_500_000_000;
+    msg.size = 10;
+    msg.action = 'T' as c_char;
+    msg.side = 'A' as c_char;
+    msg.ts_recv = 1_000_000_000;
+    msg.levels[0].bid_px = 3_702_000_000_000;
+    msg.levels[0].ask_px = 3_703_000_000_000;
+    msg.levels[0].bid_sz = 20;
+    msg.levels[0].ask_sz = 30;
+
+    let instrument_id = InstrumentId::from("ESM4.GLBX");
+    let record_ref = dbn::RecordRef::from(&msg);
+    let (data1, data2) =
+        decode_record(&record_ref, instrument_id, 2, Some(0.into()), true, false).unwrap();
+
+    assert!(matches!(data1, Some(Data::Quote(_))));
+    let Some(Data::Trade(trade)) = data2 else {
+        panic!("Expected TCBBO record to emit a trade");
+    };
+    assert_eq!(trade.instrument_id, instrument_id);
+    assert_eq!(trade.price, Price::from("3702.50"));
+    assert_eq!(trade.size, Quantity::from(10));
+}
+
+#[rstest]
+fn test_decode_record_cbbo_does_not_emit_trade_from_last_trade_fields() {
+    let mut msg = dbn::CbboMsg::default_for_schema(dbn::Schema::Cbbo1S);
+    msg.hd.instrument_id = 1;
+    msg.price = 3_702_500_000_000;
+    msg.size = 10;
+    msg.ts_recv = 1_000_000_000;
+    msg.levels[0].bid_px = 3_702_000_000_000;
+    msg.levels[0].ask_px = 3_703_000_000_000;
+    msg.levels[0].bid_sz = 20;
+    msg.levels[0].ask_sz = 30;
+
+    let instrument_id = InstrumentId::from("ESM4.GLBX");
+    let record_ref = dbn::RecordRef::from(&msg);
+    let (data1, data2) =
+        decode_record(&record_ref, instrument_id, 2, Some(0.into()), true, false).unwrap();
+
+    assert!(matches!(data1, Some(Data::Quote(_))));
+    assert!(data2.is_none());
 }
 
 #[rstest]

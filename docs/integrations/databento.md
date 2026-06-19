@@ -104,9 +104,10 @@ while the public Databento schema docs list `ohlcv-1d` for daily OHLCV.
 
 :::info
 Instrument definitions for unsupported `instrument_class` values (`'I'` Index,
-`'B'` Bond, `'X'` FX spot) are skipped with a warning rather than aborting the
-batch. Index-emitting publishers include CGIF.TITANIUM (110), IEX Options (108),
-and MEMX MX2 (109). Open an issue if you need Nautilus modeling for these.
+`'B'` Bond) are skipped with a warning rather than aborting the batch.
+FX spot definitions with currencies that Nautilus cannot map are also skipped.
+Index-emitting publishers include CGIF.TITANIUM (110), IEX Options (108), and
+MEMX MX2 (109). Open an issue if you need Nautilus modeling for these.
 
 Statistics messages with `stat_type` values outside the modeled range (currently
 1-20) are also skipped with a warning. This includes venue-specific values

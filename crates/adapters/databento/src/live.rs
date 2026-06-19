@@ -17,7 +17,7 @@
 //!
 //! The feed handler runs a single async task per dataset. It receives
 //! [`HandlerCommand`] messages over an unbounded channel and streams decoded
-//! market data back as [`DatabentoMessage`]s on a bounded tokio channel.
+//! market data back as [`DatabentoMessage`]s on an unbounded tokio channel.
 //!
 //! The inner loop uses `tokio::select!` to concurrently await the next record
 //! from the Databento gateway and the next command from the engine, giving
@@ -103,7 +103,6 @@ pub struct DatabentoLiveClient {
     is_closed: bool,
     cmd_tx: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
     cmd_rx: Option<tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>>,
-    buffer_size: usize,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
     symbol_venue_map: Arc<AtomicMap<Symbol, Venue>>,
     use_exchange_as_venue: bool,
@@ -149,7 +148,6 @@ impl DatabentoLiveClient {
             dataset,
             cmd_tx,
             cmd_rx: Some(cmd_rx),
-            buffer_size: 100_000,
             is_running: false,
             is_closed: false,
             publisher_venue_map,
@@ -186,29 +184,14 @@ impl DatabentoLiveClient {
         price_precisions: Option<Vec<Option<u8>>>,
         stype_in: Option<String>,
     ) -> anyhow::Result<()> {
-        self.symbol_venue_map.rcu(|m| {
-            for id in &instrument_ids {
-                m.entry(id.symbol).or_insert(id.venue);
-            }
-        });
-
-        if let Some(precisions) = price_precisions {
-            if precisions.len() != instrument_ids.len() {
-                anyhow::bail!(
-                    "`price_precisions` length ({}) must match `instrument_ids` length ({})",
-                    precisions.len(),
-                    instrument_ids.len()
-                );
-            }
-
-            for (instrument_id, precision) in instrument_ids.iter().zip(precisions) {
-                if let Some(precision) = precision {
-                    self.send_command(HandlerCommand::SetPricePrecision(
-                        instrument_id.symbol,
-                        precision,
-                    ))?;
-                }
-            }
+        if let Some(precisions) = &price_precisions
+            && precisions.len() != instrument_ids.len()
+        {
+            anyhow::bail!(
+                "`price_precisions` length ({}) must match `instrument_ids` length ({})",
+                precisions.len(),
+                instrument_ids.len()
+            );
         }
 
         let symbols: Vec<String> = instrument_ids
@@ -237,6 +220,23 @@ impl DatabentoLiveClient {
         }
         sub.use_snapshot = snapshot.unwrap_or(false);
 
+        self.symbol_venue_map.rcu(|m| {
+            for id in &instrument_ids {
+                m.entry(id.symbol).or_insert(id.venue);
+            }
+        });
+
+        if let Some(precisions) = price_precisions {
+            for (instrument_id, precision) in instrument_ids.iter().zip(precisions) {
+                if let Some(precision) = precision {
+                    self.send_command(HandlerCommand::SetPricePrecision(
+                        instrument_id.symbol,
+                        precision,
+                    ))?;
+                }
+            }
+        }
+
         self.send_command(HandlerCommand::Subscribe(sub))
     }
 
@@ -249,7 +249,7 @@ impl DatabentoLiveClient {
         &mut self,
     ) -> anyhow::Result<(
         DatabentoFeedHandler,
-        tokio::sync::mpsc::Receiver<DatabentoMessage>,
+        tokio::sync::mpsc::UnboundedReceiver<DatabentoMessage>,
     )> {
         if self.is_closed {
             anyhow::bail!("Client already closed");
@@ -261,9 +261,7 @@ impl DatabentoLiveClient {
 
         log::debug!("Starting client");
 
-        self.is_running = true;
-
-        let (msg_tx, msg_rx) = tokio::sync::mpsc::channel::<DatabentoMessage>(self.buffer_size);
+        let (msg_tx, msg_rx) = tokio::sync::mpsc::unbounded_channel::<DatabentoMessage>();
         let cmd_rx = self
             .cmd_rx
             .take()
@@ -282,6 +280,7 @@ impl DatabentoLiveClient {
         );
 
         self.send_command(HandlerCommand::Start)?;
+        self.is_running = true;
 
         Ok((feed_handler, msg_rx))
     }
@@ -322,6 +321,7 @@ impl DatabentoLiveClient {
     }
 }
 
+#[cfg(any(test, feature = "python"))]
 pub(crate) fn is_command_send_error(error: &anyhow::Error) -> bool {
     error.is::<CommandSendError>()
 }
@@ -351,16 +351,14 @@ impl std::error::Error for CommandSendError {}
 ///
 /// # Crash Policy
 ///
-/// This handler intentionally crashes on catastrophic feed issues rather than
-/// attempting recovery. If excessive buffering occurs (indicating severe feed
-/// misbehavior), the process will run out of memory and terminate. This is by
-/// design - such scenarios indicate fundamental problems that require external
-/// intervention.
+/// This handler intentionally avoids applying downstream backpressure to the
+/// live feed. If decoded output cannot be drained, memory pressure is the hard
+/// failure mode instead of arbitrary queue limits or delayed market data.
 pub struct DatabentoFeedHandler {
     credential: Credential,
     dataset: String,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
-    msg_tx: tokio::sync::mpsc::Sender<DatabentoMessage>,
+    msg_tx: tokio::sync::mpsc::UnboundedSender<DatabentoMessage>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
     symbol_venue_map: Arc<AtomicMap<Symbol, Venue>>,
     replay: bool,
@@ -399,7 +397,7 @@ impl DatabentoFeedHandler {
         credential: Credential,
         dataset: String,
         rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
-        tx: tokio::sync::mpsc::Sender<DatabentoMessage>,
+        tx: tokio::sync::mpsc::UnboundedSender<DatabentoMessage>,
         publisher_venue_map: IndexMap<PublisherId, Venue>,
         symbol_venue_map: Arc<AtomicMap<Symbol, Venue>>,
         use_exchange_as_venue: bool,
@@ -699,7 +697,7 @@ impl DatabentoFeedHandler {
                         continue;
                     }
                     Some(HandlerCommand::Close) => {
-                        self.msg_tx.send(DatabentoMessage::Close).await?;
+                        self.send_close_msg();
                         return Ok(false);
                     }
                     None => {
@@ -740,7 +738,7 @@ impl DatabentoFeedHandler {
                         continue;
                     }
                     Some(HandlerCommand::Close) => {
-                        self.msg_tx.send(DatabentoMessage::Close).await?;
+                        self.send_close_msg();
                         client.close().await?;
                         log::debug!("Closed inner client");
                         return Ok(false);
@@ -939,9 +937,15 @@ impl DatabentoFeedHandler {
     /// Sends a message to the message processing task.
     async fn send_msg(&self, msg: DatabentoMessage) {
         log::trace!("Sending {msg:?}");
-        match self.msg_tx.send(msg).await {
+        match self.msg_tx.send(msg) {
             Ok(()) => {}
             Err(e) => log::error!("Error sending message: {e}"),
+        }
+    }
+
+    fn send_close_msg(&self) {
+        if let Err(e) = self.msg_tx.send(DatabentoMessage::Close) {
+            log::debug!("Could not send close message: {e}");
         }
     }
 }
@@ -1346,7 +1350,7 @@ mod tests {
 
     fn create_test_handler(reconnect_timeout_mins: Option<u64>) -> DatabentoFeedHandler {
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (msg_tx, _msg_rx) = tokio::sync::mpsc::channel(100);
+        let (msg_tx, _msg_rx) = tokio::sync::mpsc::unbounded_channel();
 
         DatabentoFeedHandler::new(
             Credential::new("test_key"),
@@ -1495,6 +1499,18 @@ mod tests {
             .unwrap_err();
 
         assert!(is_command_send_error(&err));
+    }
+
+    #[rstest]
+    fn test_close_after_handler_exit_marks_closed() {
+        let mut client = create_test_client();
+        let (handler, _msg_rx) = client.start().unwrap();
+        drop(handler);
+
+        client.close().unwrap();
+
+        assert!(!client.is_running());
+        assert!(client.is_closed());
     }
 
     fn test_delta(instrument_id: InstrumentId, ts_event: u64) -> OrderBookDelta {
