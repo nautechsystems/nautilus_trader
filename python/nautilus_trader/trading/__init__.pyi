@@ -127,6 +127,16 @@ class Strategy:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
+    def batch_modify_orders(
+        self,
+        updates: typing.Sequence[
+            tuple[
+                model.ClientOrderId, model.Quantity | None, model.Price | None, model.Price | None
+            ]
+        ] = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> None: ...
     def cancel_order(
         self,
         client_order_id: model.ClientOrderId,

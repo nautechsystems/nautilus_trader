@@ -1107,7 +1107,7 @@ class GreeksCalculator:
         vega_time_weight_base: int | None = None,
         vol_index_instrument_id: model.InstrumentId | None = None,
         vol_beta_weights: typing.Mapping[model.InstrumentId, float] | None = None,
-    ) -> model.GreeksData: ...
+    ) -> model.GreeksData | None: ...
     def modify_greeks(
         self,
         delta_input: float,

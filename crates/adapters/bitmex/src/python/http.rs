@@ -255,7 +255,7 @@ impl BitmexHttpClient {
         })
     }
 
-    /// Request a current order book snapshot for the given instrument.
+    /// Request a current L2 order book snapshot.
     #[pyo3(name = "request_book_snapshot")]
     #[pyo3(signature = (instrument_id, depth=None))]
     fn py_request_book_snapshot<'py>(
@@ -276,7 +276,7 @@ impl BitmexHttpClient {
         })
     }
 
-    /// Request funding rates for the given instrument.
+    /// Request historical funding rates for the given instrument.
     #[pyo3(name = "request_funding_rates")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_funding_rates<'py>(

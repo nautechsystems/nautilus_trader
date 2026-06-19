@@ -136,6 +136,16 @@ class BitmexHttpClient:
         limit: int | None = None,
         partial: bool = False,
     ) -> typing.Any: ...
+    def request_book_snapshot(
+        self, instrument_id: model.InstrumentId, depth: int | None = None
+    ) -> typing.Any: ...
+    def request_funding_rates(
+        self,
+        instrument_id: model.InstrumentId,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
+    ) -> typing.Any: ...
     def query_order(
         self,
         instrument_id: model.InstrumentId,
