@@ -28,7 +28,7 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   release publication and attestation verification. Uses Depot 8-core runners for Linux and Windows
   builds. Includes a plan step that skips builds on docs-only changes and skips Rust tests on
   Python-only changes.
-- **build-v2.yml**: CI pipeline for the v2 Rust-native system. Uses Depot 8-core runners for Linux builds.
+- **build-v2.yml**: CI pipeline for the v2 Rust-native system. Runs Linux builds on the self-hosted `build-v2` pool.
 - **build-docs.yml**: dispatches documentation build on `master` and `nightly` pushes.
 - **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
 - **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs to `master`, pushes to
