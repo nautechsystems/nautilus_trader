@@ -41,7 +41,7 @@ use nautilus_bybit::{
         },
     },
 };
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderType, PositionSideSpecified, TimeInForce, TriggerType},
@@ -54,6 +54,14 @@ use rstest::rstest;
 use serde_json::{Value, json};
 
 type SettleCoinQueries = Arc<tokio::sync::Mutex<Vec<(String, Option<String>)>>>;
+
+#[derive(Debug, Clone, Copy)]
+enum RequiredInstrumentCachePath {
+    Trades,
+    FundingRates,
+    OrderbookSnapshot,
+    Bars,
+}
 
 /// Captured order submission for validation in tests.
 #[allow(dead_code)]
@@ -934,6 +942,55 @@ async fn start_test_server()
     // Give server time to start
     wait_for_server(addr, "/v5/market/time").await;
     Ok((addr, state))
+}
+
+#[rstest]
+#[case::trades(RequiredInstrumentCachePath::Trades)]
+#[case::funding_rates(RequiredInstrumentCachePath::FundingRates)]
+#[case::orderbook_snapshot(RequiredInstrumentCachePath::OrderbookSnapshot)]
+#[case::bars(RequiredInstrumentCachePath::Bars)]
+#[tokio::test]
+async fn test_public_market_data_request_missing_cached_instrument_returns_lookup_error(
+    #[case] path: RequiredInstrumentCachePath,
+) {
+    let client = BybitHttpClient::new(
+        Some("http://127.0.0.1:9".to_string()),
+        1,
+        0,
+        1,
+        1,
+        5_000,
+        None,
+    )
+    .unwrap();
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), *BYBIT_VENUE);
+
+    let result = match path {
+        RequiredInstrumentCachePath::Trades => client
+            .request_trades(BybitProductType::Linear, instrument_id, None)
+            .await
+            .map(|_| ()),
+        RequiredInstrumentCachePath::FundingRates => client
+            .request_funding_rates(BybitProductType::Linear, instrument_id, None, None, None)
+            .await
+            .map(|_| ()),
+        RequiredInstrumentCachePath::OrderbookSnapshot => client
+            .request_orderbook_snapshot(BybitProductType::Linear, instrument_id, None)
+            .await
+            .map(|_| ()),
+        RequiredInstrumentCachePath::Bars => {
+            let bar_type = BarType::from("BTCUSDT-LINEAR.BYBIT-1-MINUTE-LAST-EXTERNAL");
+            client
+                .request_bars(BybitProductType::Linear, bar_type, None, None, None, true)
+                .await
+                .map(|_| ())
+        }
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        InstrumentLookupError::not_found(instrument_id).to_string()
+    );
 }
 
 #[rstest]

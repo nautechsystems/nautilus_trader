@@ -30,6 +30,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
+use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, nanos::UnixNanos,
     time::get_atomic_clock_realtime,
@@ -3548,7 +3549,7 @@ impl BybitHttpClient {
         instrument_id: InstrumentId,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        let instrument = self.instrument_from_cache_by_id(instrument_id)?;
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
 
         let mut params_builder = BybitTradesParamsBuilder::default();
@@ -3593,7 +3594,7 @@ impl BybitHttpClient {
         end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FundingRateUpdate>> {
-        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        let instrument = self.instrument_from_cache_by_id(instrument_id)?;
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
 
         let start_ms = start.map(|dt| dt.timestamp_millis());
@@ -3719,7 +3720,7 @@ impl BybitHttpClient {
         instrument_id: InstrumentId,
         limit: Option<u32>,
     ) -> anyhow::Result<OrderBookDeltas> {
-        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        let instrument = self.instrument_from_cache_by_id(instrument_id)?;
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
 
         let mut params_builder = BybitOrderbookParamsBuilder::default();
@@ -3770,8 +3771,9 @@ impl BybitHttpClient {
         limit: Option<u32>,
         timestamp_on_close: bool,
     ) -> anyhow::Result<Vec<Bar>> {
-        let instrument = self.instrument_from_cache(&bar_type.instrument_id().symbol)?;
-        let bybit_symbol = BybitSymbol::new(bar_type.instrument_id().symbol.as_str())?;
+        let instrument_id = bar_type.instrument_id();
+        let instrument = self.instrument_from_cache_by_id(instrument_id)?;
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
 
         // Convert Nautilus BarSpec to Bybit interval
         let interval = bar_spec_to_bybit_interval(
@@ -3911,6 +3913,14 @@ impl BybitHttpClient {
         }
 
         Ok(all_bars)
+    }
+
+    fn instrument_from_cache_by_id(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<InstrumentAny> {
+        self.get_instrument(&instrument_id.symbol.inner())
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id).into())
     }
 
     /// Requests trading fee rates for the specified product type and optional filters.
