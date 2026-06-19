@@ -1444,9 +1444,9 @@ impl KrakenSpotHttpClient {
         let instrument = self
             .get_cached_instrument(&instrument_id.symbol.inner())
             .ok_or_else(|| {
-                KrakenHttpError::ParseError(format!(
-                    "Instrument not found in cache: {instrument_id}",
-                ))
+                KrakenHttpError::ParseError(
+                    InstrumentLookupError::not_found(instrument_id).to_string(),
+                )
             })?;
 
         let raw_symbol = instrument.raw_symbol().to_string();
@@ -1499,9 +1499,9 @@ impl KrakenSpotHttpClient {
         let instrument = self
             .get_cached_instrument(&instrument_id.symbol.inner())
             .ok_or_else(|| {
-                KrakenHttpError::ParseError(format!(
-                    "Instrument not found in cache: {instrument_id}"
-                ))
+                KrakenHttpError::ParseError(
+                    InstrumentLookupError::not_found(instrument_id).to_string(),
+                )
             })?;
 
         let raw_symbol = instrument.raw_symbol().to_string();
@@ -1574,9 +1574,9 @@ impl KrakenSpotHttpClient {
         let instrument = self
             .get_cached_instrument(&instrument_id.symbol.inner())
             .ok_or_else(|| {
-                KrakenHttpError::ParseError(format!(
-                    "Instrument not found in cache: {instrument_id}"
-                ))
+                KrakenHttpError::ParseError(
+                    InstrumentLookupError::not_found(instrument_id).to_string(),
+                )
             })?;
 
         let raw_symbol = instrument.raw_symbol().to_string();

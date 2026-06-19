@@ -25,6 +25,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use nautilus_common::{
+    cache::InstrumentLookupError,
     clients::ExecutionClient,
     live::{get_runtime, runner::get_exec_event_sender},
     messages::execution::{
@@ -1123,7 +1124,7 @@ async fn cancel_order_for_futures(
 ) -> Result<(), CancelCommandFailure> {
     http.get_cached_instrument(&instrument_id.symbol.inner())
         .ok_or_else(|| {
-            CancelCommandFailure::local(format!("Instrument not found in cache: {instrument_id}"))
+            CancelCommandFailure::local(InstrumentLookupError::not_found(instrument_id).to_string())
         })?;
 
     let order_id = venue_order_id.as_ref().map(ToString::to_string);
@@ -1264,10 +1265,9 @@ fn batch_cancel_item_for_futures(
 ) -> Result<(CancelRequestContext, KrakenFuturesBatchCancelItem), CancelCommandFailure> {
     http.get_cached_instrument(&cancel.instrument_id.symbol.inner())
         .ok_or_else(|| {
-            CancelCommandFailure::local(format!(
-                "Instrument not found in cache: {}",
-                cancel.instrument_id
-            ))
+            CancelCommandFailure::local(
+                InstrumentLookupError::not_found(cancel.instrument_id).to_string(),
+            )
         })?;
 
     let truncated_client_order_id = truncate_cl_ord_id(&cancel.client_order_id);
@@ -1470,7 +1470,9 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderType, TimeInForce},
-        identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
+        identifiers::{
+            AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
+        },
         orders::OrderTestBuilder,
         reports::FillReport,
         types::{Currency, Money, Price, Quantity},
@@ -1480,6 +1482,63 @@ mod tests {
     use super::*;
 
     const TEST_INSTRUMENT_ID: &str = "PF_XBTUSD.KRAKEN";
+
+    #[tokio::test]
+    async fn test_cancel_order_for_futures_missing_cached_instrument_returns_canonical_error() {
+        let http = KrakenFuturesHttpClient::default();
+        let instrument_id = InstrumentId::from(TEST_INSTRUMENT_ID);
+        let client_order_id = ClientOrderId::from("C-001");
+        let venue_order_id = VenueOrderId::from("V-001");
+
+        let result = cancel_order_for_futures(
+            &http,
+            AccountId::from("KRAKEN-001"),
+            instrument_id,
+            Some(client_order_id),
+            Some(venue_order_id),
+        )
+        .await;
+
+        match result {
+            Err(CancelCommandFailure::LocalValidation(reason)) => {
+                assert_eq!(
+                    reason,
+                    InstrumentLookupError::not_found(instrument_id).to_string()
+                );
+            }
+            _ => panic!("Expected local validation failure"),
+        }
+    }
+
+    #[rstest]
+    fn test_batch_cancel_item_for_futures_missing_cached_instrument_returns_canonical_error() {
+        let http = KrakenFuturesHttpClient::default();
+        let instrument_id = InstrumentId::from(TEST_INSTRUMENT_ID);
+        let cancel = CancelOrder::new(
+            TraderId::from("TESTER-001"),
+            None,
+            StrategyId::from("S-001"),
+            instrument_id,
+            ClientOrderId::from("C-001"),
+            Some(VenueOrderId::from("V-001")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        let result = batch_cancel_item_for_futures(&http, &cancel);
+
+        match result {
+            Err(CancelCommandFailure::LocalValidation(reason)) => {
+                assert_eq!(
+                    reason,
+                    InstrumentLookupError::not_found(instrument_id).to_string()
+                );
+            }
+            _ => panic!("Expected local validation failure"),
+        }
+    }
 
     fn make_fill(
         venue_order_id: &str,

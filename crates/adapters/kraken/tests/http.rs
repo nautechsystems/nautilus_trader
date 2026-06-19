@@ -35,6 +35,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use nautilus_common::{
+    cache::INSTRUMENT_NOT_FOUND,
     clients::DataClient,
     live::runner::replace_data_event_sender,
     messages::{
@@ -55,8 +56,9 @@ use nautilus_kraken::{
     config::KrakenDataClientConfig,
     data::{KrakenFuturesDataClient, KrakenSpotDataClient},
     http::{
-        KrakenFuturesHttpClient, KrakenFuturesRawHttpClient, KrakenSpotAddOrderParamsBuilder,
-        KrakenSpotCancelOrderParamsBuilder, KrakenSpotHttpClient, KrakenSpotRawHttpClient,
+        KrakenFuturesHttpClient, KrakenFuturesRawHttpClient, KrakenHttpError,
+        KrakenSpotAddOrderParamsBuilder, KrakenSpotCancelOrderParamsBuilder, KrakenSpotHttpClient,
+        KrakenSpotRawHttpClient,
     },
 };
 use nautilus_model::{
@@ -1425,6 +1427,24 @@ async fn test_spot_raw_get_websockets_token_with_credentials() {
 
 #[rstest]
 #[tokio::test]
+async fn test_spot_domain_request_trades_missing_cached_instrument_returns_parse_error() {
+    let client =
+        KrakenSpotHttpClient::new(KrakenEnvironment::Live, None, 10, None, None, None, None, 5)
+            .unwrap();
+
+    let instrument_id = InstrumentId::from("UNKNOWN.KRAKEN");
+    let result = client.request_trades(instrument_id, None, None, None).await;
+
+    match result {
+        Err(KrakenHttpError::ParseError(message)) => {
+            assert_eq!(message, format!("{INSTRUMENT_NOT_FOUND}: {instrument_id}"));
+        }
+        other => panic!("Expected parse error, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_spot_domain_request_trades() {
     let state = Arc::new(TestServerState::default());
     let app = create_router(state);
@@ -2375,6 +2395,24 @@ async fn test_spot_raw_api_error_response() {
         error.to_string().contains("credentials") || error.to_string().contains("Missing"),
         "Expected credentials error, was: {error}"
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_trades_missing_cached_instrument_returns_parse_error() {
+    let client =
+        KrakenFuturesHttpClient::new(KrakenEnvironment::Live, None, 10, None, None, None, None, 5)
+            .unwrap();
+
+    let instrument_id = InstrumentId::from("UNKNOWN.KRAKEN");
+    let result = client.request_trades(instrument_id, None, None, None).await;
+
+    match result {
+        Err(KrakenHttpError::ParseError(message)) => {
+            assert_eq!(message, format!("{INSTRUMENT_NOT_FOUND}: {instrument_id}"));
+        }
+        other => panic!("Expected parse error, was {other:?}"),
+    }
 }
 
 #[rstest]
