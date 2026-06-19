@@ -746,6 +746,20 @@ impl<'a> CacheApi<'a> {
         self.cache().order_owned(client_order_id)
     }
 
+    // panics-doc-ok
+    /// Returns an owned copy of the order for the `client_order_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OrderLookupError::NotFound`] when the order is not present in the cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    pub fn try_order(&self, client_order_id: &ClientOrderId) -> Result<OrderAny, OrderLookupError> {
+        self.cache().try_order_owned(client_order_id)
+    }
+
     /// Returns whether an order with the `client_order_id` exists.
     ///
     /// # Panics

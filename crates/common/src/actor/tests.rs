@@ -541,20 +541,28 @@ fn test_data_actor_cache_api_returns_owned_point_reads(
     let cache_api = actor.cache();
     let cached_instrument = cache_api.try_instrument(&instrument_id).unwrap();
     let maybe_instrument = cache_api.instrument(&instrument_id);
-    let cached_order = cache_api.order(&client_order_id).unwrap();
+    let cached_order = cache_api.try_order(&client_order_id).unwrap();
+    let maybe_order = cache_api.order(&client_order_id).unwrap();
     let missing_instrument_id = InstrumentId::from("MISSING.SIM");
     let missing_instrument = cache_api
         .try_instrument(&missing_instrument_id)
         .unwrap_err();
+    let missing_order_id = ClientOrderId::from("O-MISSING");
+    let missing_order = cache_api.try_order(&missing_order_id).unwrap_err();
 
     let _cache_write = cache.borrow_mut();
 
     assert_eq!(cached_instrument, instrument);
     assert_eq!(maybe_instrument, Some(instrument));
     assert_eq!(cached_order.client_order_id(), client_order_id);
+    assert_eq!(maybe_order.client_order_id(), client_order_id);
     assert_eq!(
         missing_instrument,
         crate::cache::InstrumentLookupError::not_found(missing_instrument_id)
+    );
+    assert_eq!(
+        missing_order,
+        crate::cache::OrderLookupError::not_found(missing_order_id)
     );
 }
 
@@ -1142,6 +1150,7 @@ fn test_data_actor_cache_api_surface_returns_owned_values(
     let _: AHashSet<StrategyId> = cache_api.strategy_ids();
     let _: AHashSet<ExecAlgorithmId> = cache_api.exec_algorithm_ids();
     let _: Option<OrderAny> = cache_api.order(&client_order_id);
+    let _: Result<OrderAny, crate::cache::OrderLookupError> = cache_api.try_order(&client_order_id);
     let _: bool = cache_api.order_exists(&client_order_id);
     let _: bool = cache_api.is_order_open(&client_order_id);
     let _: bool = cache_api.is_order_closed(&client_order_id);
