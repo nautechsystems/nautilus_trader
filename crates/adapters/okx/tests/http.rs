@@ -34,9 +34,10 @@ use axum::{
     routing::{get, post},
 };
 use chrono::{Duration as ChronoDuration, TimeZone, Utc};
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
+    data::BarType,
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
@@ -96,6 +97,14 @@ struct TestServerState {
     last_cancel_spread_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_cancel_all_spread_orders_body: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_algo_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RequiredInstrumentCachePath {
+    BookSnapshot,
+    OrderbookSnapshot,
+    Trades,
+    Bars,
 }
 
 /// Wait for the test server to be ready by polling a health endpoint.
@@ -1063,6 +1072,55 @@ async fn start_test_server(state: Arc<TestServerState>) -> SocketAddr {
 
     wait_for_server(addr, "/api/v5/public/instruments").await;
     addr
+}
+
+#[rstest]
+#[case::book_snapshot(RequiredInstrumentCachePath::BookSnapshot)]
+#[case::orderbook_snapshot(RequiredInstrumentCachePath::OrderbookSnapshot)]
+#[case::trades(RequiredInstrumentCachePath::Trades)]
+#[case::bars(RequiredInstrumentCachePath::Bars)]
+#[tokio::test]
+async fn test_public_market_data_request_missing_cached_instrument_returns_lookup_error(
+    #[case] path: RequiredInstrumentCachePath,
+) {
+    let client = OKXHttpClient::new(
+        Some("http://127.0.0.1:9".to_string()),
+        1,
+        0,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+
+    let result = match path {
+        RequiredInstrumentCachePath::BookSnapshot => client
+            .request_book_snapshot(instrument_id, None)
+            .await
+            .map(|_| ()),
+        RequiredInstrumentCachePath::OrderbookSnapshot => client
+            .request_orderbook_snapshot(instrument_id, None)
+            .await
+            .map(|_| ()),
+        RequiredInstrumentCachePath::Trades => client
+            .request_trades(instrument_id, None, None, None)
+            .await
+            .map(|_| ()),
+        RequiredInstrumentCachePath::Bars => {
+            let bar_type = BarType::from("BTC-USDT-SWAP.OKX-1-MINUTE-LAST-EXTERNAL");
+            client
+                .request_bars(bar_type, None, None, None)
+                .await
+                .map(|_| ())
+        }
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        InstrumentLookupError::not_found(instrument_id).to_string()
+    );
 }
 
 #[rstest]
