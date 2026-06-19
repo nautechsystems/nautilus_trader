@@ -235,6 +235,16 @@ impl<'a> CacheApi<'a> {
         self.cache().synthetic(instrument_id).cloned()
     }
 
+    /// Returns owned copies of all synthetic instruments in the cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn synthetics(&self) -> Vec<SyntheticInstrument> {
+        self.cache().synthetics().into_iter().cloned().collect()
+    }
+
     /// Returns the price for the `instrument_id` and `price_type` (if found).
     ///
     /// # Panics
@@ -350,6 +360,89 @@ impl<'a> CacheApi<'a> {
     #[must_use]
     pub fn instrument_status(&self, instrument_id: &InstrumentId) -> Option<InstrumentStatus> {
         self.cache().instrument_status(instrument_id).copied()
+    }
+
+    /// Returns all quotes for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn quotes(&self, instrument_id: &InstrumentId) -> Option<Vec<QuoteTick>> {
+        self.cache().quotes(instrument_id)
+    }
+
+    /// Returns all trades for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn trades(&self, instrument_id: &InstrumentId) -> Option<Vec<TradeTick>> {
+        self.cache().trades(instrument_id)
+    }
+
+    /// Returns all bars for the `bar_type` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn bars(&self, bar_type: &BarType) -> Option<Vec<Bar>> {
+        self.cache().bars(bar_type)
+    }
+
+    /// Returns all mark price updates for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn mark_prices(&self, instrument_id: &InstrumentId) -> Option<Vec<MarkPriceUpdate>> {
+        self.cache().mark_prices(instrument_id)
+    }
+
+    /// Returns all index price updates for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn index_prices(&self, instrument_id: &InstrumentId) -> Option<Vec<IndexPriceUpdate>> {
+        self.cache().index_prices(instrument_id)
+    }
+
+    /// Returns all funding rate updates for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn funding_rates(&self, instrument_id: &InstrumentId) -> Option<Vec<FundingRateUpdate>> {
+        self.cache().funding_rates(instrument_id)
+    }
+
+    /// Returns all instrument status updates for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn instrument_statuses(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Option<Vec<InstrumentStatus>> {
+        self.cache().instrument_statuses(instrument_id)
+    }
+
+    /// Returns an owned copy of the order book for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn order_book(&self, instrument_id: &InstrumentId) -> Option<OrderBook> {
+        self.cache().order_book(instrument_id).cloned()
     }
 
     /// Returns the order book update count for the `instrument_id`.
@@ -535,6 +628,17 @@ impl<'a> CacheApi<'a> {
         self.cache().pool_ids(venue)
     }
 
+    /// Returns owned copies of all pools in the cache, optionally filtered by `venue`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn pools(&self, venue: Option<&Venue>) -> Vec<Pool> {
+        self.cache().pools(venue).into_iter().cloned().collect()
+    }
+
     /// Returns the pool profiler instrument IDs in the cache, optionally filtered by `venue`.
     ///
     /// # Panics
@@ -555,6 +659,21 @@ impl<'a> CacheApi<'a> {
     #[must_use]
     pub fn pool_profiler(&self, instrument_id: &InstrumentId) -> Option<PoolProfiler> {
         self.cache().pool_profiler(instrument_id).cloned()
+    }
+
+    /// Returns owned copies of all pool profilers in the cache, optionally filtered by `venue`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn pool_profilers(&self, venue: Option<&Venue>) -> Vec<PoolProfiler> {
+        self.cache()
+            .pool_profilers(venue)
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     /// Returns an owned copy of the account for the `account_id` (if found).
