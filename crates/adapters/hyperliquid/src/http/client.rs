@@ -29,6 +29,7 @@ use std::{
 
 use ahash::AHashMap;
 use anyhow::Context;
+use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, MUTEX_POISONED, UUID4, UnixNanos,
     consts::NAUTILUS_USER_AGENT,
@@ -2704,7 +2705,7 @@ impl HyperliquidHttpClient {
         let instrument = self
             .get_or_create_instrument(&alias, product_type)
             .ok_or_else(|| {
-                Error::bad_request(format!("Instrument not found in cache: {instrument_id}"))
+                Error::bad_request(InstrumentLookupError::not_found(instrument_id).to_string())
             })?;
 
         // Use raw_symbol which has the correct Hyperliquid API format:

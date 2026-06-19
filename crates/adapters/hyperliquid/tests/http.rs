@@ -33,11 +33,12 @@ use axum::{
     response::{IntoResponse, Json, Response},
     routing::post,
 };
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_hyperliquid::{
     HyperliquidHttpClient,
     common::enums::{HyperliquidEnvironment, HyperliquidInfoRequestType},
     http::{
+        error::Error,
         models::{
             Cloid, HyperliquidFills, HyperliquidL2Book, OutcomeMeta, PerpMeta, PerpMetaAndCtxs,
             SpotMeta, SpotMetaAndCtxs,
@@ -46,8 +47,9 @@ use nautilus_hyperliquid::{
     },
 };
 use nautilus_model::{
+    data::BarType,
     enums::{OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
-    identifiers::{AccountId, ClientOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId},
 };
 use nautilus_network::http::{HttpClient, Method};
 use rstest::rstest;
@@ -551,6 +553,26 @@ async fn test_request_spot_balances_emits_one_per_non_zero_token() {
     assert_eq!(purr.total.as_f64(), 2000.0);
     assert_eq!(purr.locked.as_f64(), 100.0);
     assert_eq!(purr.free.as_f64(), 1900.0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_bars_missing_cached_instrument_returns_bad_request_lookup_error() {
+    let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None)
+        .expect("failed to create Hyperliquid HTTP client");
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let bar_type = BarType::from("BTC-USD-PERP.HYPERLIQUID-1-MINUTE-LAST-EXTERNAL");
+
+    let err = client
+        .request_bars(bar_type, None, None, None)
+        .await
+        .expect_err("empty instrument cache must error before making a request");
+
+    assert!(matches!(
+        err,
+        Error::BadRequest(ref message)
+            if message == &InstrumentLookupError::not_found(instrument_id).to_string()
+    ));
 }
 
 #[rstest]
