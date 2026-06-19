@@ -47,9 +47,9 @@ use database::{CacheDatabaseAdapter, CacheMap};
 pub use error::{
     ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, CurrencyLookupError,
     INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_BOOK_NOT_FOUND, ORDER_LIST_NOT_FOUND,
-    ORDER_NOT_FOUND, OrderBookLookupError, OrderListLookupError, OrderLookupError,
-    POSITION_NOT_FOUND, PositionLookupError, SYNTHETIC_INSTRUMENT_NOT_FOUND,
-    SyntheticInstrumentLookupError,
+    ORDER_NOT_FOUND, OWN_ORDER_BOOK_NOT_FOUND, OrderBookLookupError, OrderListLookupError,
+    OrderLookupError, OwnOrderBookLookupError, POSITION_NOT_FOUND, PositionLookupError,
+    SYNTHETIC_INSTRUMENT_NOT_FOUND, SyntheticInstrumentLookupError,
 };
 use index::CacheIndex;
 use nautilus_core::{
@@ -5078,6 +5078,21 @@ impl Cache {
     #[must_use]
     pub fn own_order_book(&self, instrument_id: &InstrumentId) -> Option<&OwnOrderBook> {
         self.own_books.get(instrument_id)
+    }
+
+    /// Gets a reference to the own order book for the `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OwnOrderBookLookupError::NotFound`] when the own order book is not present in the
+    /// cache.
+    pub fn try_own_order_book(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Result<&OwnOrderBook, OwnOrderBookLookupError> {
+        self.own_books
+            .get(instrument_id)
+            .ok_or_else(|| OwnOrderBookLookupError::not_found(*instrument_id))
     }
 
     /// Gets a reference to the own order book for the `instrument_id`.

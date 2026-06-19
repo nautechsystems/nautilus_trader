@@ -1122,10 +1122,10 @@ fn test_submit_order_list_mixed_instruments_routes_per_order_own_book(
 
     let cache = execution_engine.cache().borrow();
     let book_a = cache
-        .own_order_book(&instrument_a.id())
+        .try_own_order_book(&instrument_a.id())
         .expect("own book for instrument A should exist");
     let book_b = cache
-        .own_order_book(&instrument_b.id())
+        .try_own_order_book(&instrument_b.id())
         .expect("own book for instrument B should exist");
 
     assert_eq!(book_a.update_count, 1, "book A should have one update");
@@ -7643,7 +7643,7 @@ fn test_submit_order_adds_to_own_book_bid() {
 
     let cache = execution_engine.cache().borrow();
     let own_book = cache
-        .own_order_book(&order.instrument_id())
+        .try_own_order_book(&order.instrument_id())
         .expect("Own order book should exist");
 
     assert_eq!(
@@ -7792,7 +7792,7 @@ fn test_submit_order_adds_to_own_book_ask() {
 
     let cache = execution_engine.cache().borrow();
     let own_book = cache
-        .own_order_book(&order.instrument_id())
+        .try_own_order_book(&order.instrument_id())
         .expect("Own order book should exist");
 
     assert_eq!(
@@ -8024,7 +8024,7 @@ fn test_cancel_order_removes_from_own_book() {
 
     let cache = execution_engine.cache().borrow();
     let own_book = cache
-        .own_order_book(&instrument.id)
+        .try_own_order_book(&instrument.id)
         .expect("Own order book should exist");
 
     assert_eq!(own_book.update_count, 8, "Expected update count to be 8");
@@ -8216,7 +8216,7 @@ fn test_own_book_status_filtering() {
     );
 
     let own_book = cache
-        .own_order_book(&instrument.id)
+        .try_own_order_book(&instrument.id)
         .expect("Own order book should exist");
 
     assert_eq!(own_book.update_count, 8, "Expected update count to be 8");
@@ -8423,7 +8423,7 @@ fn test_filled_order_removes_from_own_book() {
     );
 
     let own_book = cache
-        .own_order_book(&instrument.id)
+        .try_own_order_book(&instrument.id)
         .expect("Own order book should exist");
 
     assert_eq!(own_book.update_count, 8, "Expected update count to be 8");
@@ -8598,7 +8598,7 @@ fn test_order_updates_in_own_book() {
 
     let cache = execution_engine.cache().borrow();
     let own_book = cache
-        .own_order_book(&instrument.id)
+        .try_own_order_book(&instrument.id)
         .expect("Own order book should exist");
 
     assert_eq!(own_book.update_count, 8, "Expected update count to be 8");
@@ -8902,7 +8902,7 @@ fn test_position_flip_with_own_order_book() {
     );
 
     let own_book = cache
-        .own_order_book(&instrument.id)
+        .try_own_order_book(&instrument.id)
         .expect("Own order book should exist");
     assert!(
         own_book.update_count > 0,
@@ -9037,7 +9037,7 @@ fn test_own_book_with_crossed_orders() {
 
     let cache = execution_engine.cache().borrow();
     let own_book = cache
-        .own_order_book(&instrument.id)
+        .try_own_order_book(&instrument.id)
         .expect("Own order book should exist");
 
     assert!(
@@ -9238,7 +9238,7 @@ fn test_own_book_with_contingent_orders() {
 
     let cache = execution_engine.cache().borrow();
     let own_book = cache
-        .own_order_book(&instrument.id)
+        .try_own_order_book(&instrument.id)
         .expect("Own order book should exist");
     assert!(
         own_book.update_count > 1,
@@ -9304,7 +9304,7 @@ fn test_own_book_with_contingent_orders() {
 
     let cache = execution_engine.cache().borrow();
     let own_book = cache
-        .own_order_book(&instrument.id)
+        .try_own_order_book(&instrument.id)
         .expect("Own order book should exist");
 
     // Entry order should be removed from the book as it's filled
@@ -9502,7 +9502,7 @@ fn test_own_book_order_status_filtering_parameterized(
 
     let cache = execution_engine.cache().borrow();
     let own_book = cache
-        .own_order_book(&instrument.id)
+        .try_own_order_book(&instrument.id)
         .expect("Own order book should exist");
     let price_decimal = Decimal::from_str(price_str).unwrap();
 
@@ -9767,7 +9767,7 @@ fn test_own_book_combined_status_filtering() {
 
     let cache = execution_engine.cache().borrow();
     let own_book = cache
-        .own_order_book(&instrument.id)
+        .try_own_order_book(&instrument.id)
         .expect("Own order book should exist");
 
     // INITIALIZED + SUBMITTED
@@ -9928,7 +9928,7 @@ fn test_own_book_status_integrity_during_transitions() {
     {
         let cache = execution_engine.cache().borrow();
         let own_book = cache
-            .own_order_book(&instrument.id)
+            .try_own_order_book(&instrument.id)
             .expect("Own order book should exist");
 
         let accepted_statuses: AHashSet<OrderStatus> = AHashSet::from_iter([OrderStatus::Accepted]);
@@ -9980,7 +9980,7 @@ fn test_own_book_status_integrity_during_transitions() {
     {
         let cache = execution_engine.cache().borrow();
         let own_book = cache
-            .own_order_book(&instrument.id)
+            .try_own_order_book(&instrument.id)
             .expect("Own order book should exist");
 
         let partially_filled_statuses: AHashSet<OrderStatus> =
@@ -10020,7 +10020,7 @@ fn test_own_book_status_integrity_during_transitions() {
     {
         let cache = execution_engine.cache().borrow();
         let own_book = cache
-            .own_order_book(&instrument.id)
+            .try_own_order_book(&instrument.id)
             .expect("Own order book should exist");
 
         let canceled_statuses: AHashSet<OrderStatus> = AHashSet::from_iter([OrderStatus::Canceled]);
@@ -10073,7 +10073,7 @@ fn test_own_book_status_integrity_during_transitions() {
     {
         let cache = execution_engine.cache().borrow();
         let own_book = cache
-            .own_order_book(&instrument.id)
+            .try_own_order_book(&instrument.id)
             .expect("Own order book should exist");
 
         let partially_filled_statuses: AHashSet<OrderStatus> =
@@ -10120,7 +10120,7 @@ fn test_own_book_status_integrity_during_transitions() {
     {
         let cache = execution_engine.cache().borrow();
         let own_book = cache
-            .own_order_book(&instrument.id)
+            .try_own_order_book(&instrument.id)
             .expect("Own order book should exist");
 
         let partially_filled_statuses: AHashSet<OrderStatus> =
@@ -13653,7 +13653,7 @@ fn test_reconcile_order_status_report_external_order_bootstraps_own_book() {
         .order(&ClientOrderId::from("external-open-001"))
         .expect("external order should be in cache");
     let own_book = cache
-        .own_order_book(&instrument.id())
+        .try_own_order_book(&instrument.id())
         .expect("own book should be initialized for external open order");
 
     assert_eq!(order.status(), OrderStatus::Accepted);

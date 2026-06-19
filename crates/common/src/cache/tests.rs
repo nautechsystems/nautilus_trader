@@ -53,7 +53,7 @@ use nautilus_model::{
     instruments::{
         CurrencyPair, Instrument, InstrumentAny, OptionContract, SyntheticInstrument, stubs::*,
     },
-    orderbook::OrderBook,
+    orderbook::{OrderBook, own::OwnOrderBook},
     orders::{
         Order, OrderAny, OrderError, OrderList,
         builder::OrderTestBuilder,
@@ -71,9 +71,10 @@ use crate::{
     cache::{
         ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, Cache, CacheConfig, CacheView,
         CurrencyLookupError, INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_BOOK_NOT_FOUND,
-        ORDER_LIST_NOT_FOUND, ORDER_NOT_FOUND, OrderBookLookupError, OrderListLookupError,
-        OrderLookupError, OrderRef, POSITION_NOT_FOUND, PositionLookupError,
-        SYNTHETIC_INSTRUMENT_NOT_FOUND, SyntheticInstrumentLookupError,
+        ORDER_LIST_NOT_FOUND, ORDER_NOT_FOUND, OWN_ORDER_BOOK_NOT_FOUND, OrderBookLookupError,
+        OrderListLookupError, OrderLookupError, OrderRef, OwnOrderBookLookupError,
+        POSITION_NOT_FOUND, PositionLookupError, SYNTHETIC_INSTRUMENT_NOT_FOUND,
+        SyntheticInstrumentLookupError,
         database::{CacheDatabaseAdapter, CacheMap},
     },
     signal::Signal,
@@ -2208,6 +2209,56 @@ fn test_try_order_book_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
     cache.add_order_book(book.clone()).unwrap();
 
     let result = cache.try_order_book(&audusd_sim.id).unwrap();
+
+    assert_eq!(result, &book);
+}
+
+#[rstest]
+fn test_own_order_book_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+    let result = cache.own_order_book(&audusd_sim.id);
+    assert!(result.is_none());
+}
+
+#[rstest]
+fn test_own_order_book_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let book = OwnOrderBook::new(audusd_sim.id);
+    cache.add_own_order_book(book.clone()).unwrap();
+    let result = cache.own_order_book(&audusd_sim.id);
+    assert_eq!(result, Some(&book));
+}
+
+#[rstest]
+fn test_try_own_order_book_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+    let err = cache.try_own_order_book(&audusd_sim.id).unwrap_err();
+
+    assert_eq!(err, OwnOrderBookLookupError::not_found(audusd_sim.id));
+    assert_eq!(
+        err.to_string(),
+        format!("{OWN_ORDER_BOOK_NOT_FOUND}: {}", audusd_sim.id)
+    );
+}
+
+#[rstest]
+fn test_try_own_order_book_when_missing(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+) {
+    cache
+        .add_own_order_book(OwnOrderBook::new(gbpusd_sim.id))
+        .unwrap();
+
+    let err = cache.try_own_order_book(&audusd_sim.id).unwrap_err();
+
+    assert_eq!(err, OwnOrderBookLookupError::not_found(audusd_sim.id));
+}
+
+#[rstest]
+fn test_try_own_order_book_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let book = OwnOrderBook::new(audusd_sim.id);
+    cache.add_own_order_book(book.clone()).unwrap();
+
+    let result = cache.try_own_order_book(&audusd_sim.id).unwrap();
 
     assert_eq!(result, &book);
 }

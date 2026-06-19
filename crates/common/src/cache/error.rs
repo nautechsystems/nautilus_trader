@@ -31,6 +31,9 @@ pub const INSTRUMENT_NOT_FOUND: &str = "instrument not found in cache";
 /// Message used for a missing order book lookup.
 pub const ORDER_BOOK_NOT_FOUND: &str = "order book not found in cache";
 
+/// Message used for a missing own order book lookup.
+pub const OWN_ORDER_BOOK_NOT_FOUND: &str = "own order book not found in cache";
+
 /// Message used for a missing synthetic instrument lookup.
 pub const SYNTHETIC_INSTRUMENT_NOT_FOUND: &str = "synthetic instrument not found in cache";
 
@@ -131,6 +134,25 @@ pub enum OrderBookLookupError {
 }
 
 impl OrderBookLookupError {
+    /// Returns a not-found error for `instrument_id`.
+    #[must_use]
+    pub const fn not_found(instrument_id: InstrumentId) -> Self {
+        Self::NotFound { instrument_id }
+    }
+}
+
+/// Error returned when an own order book cannot be resolved from a cache or store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum OwnOrderBookLookupError {
+    /// The requested own order book is not present.
+    #[error("{message}: {instrument_id}", message = OWN_ORDER_BOOK_NOT_FOUND)]
+    NotFound {
+        /// The instrument identifier that was requested.
+        instrument_id: InstrumentId,
+    },
+}
+
+impl OwnOrderBookLookupError {
     /// Returns a not-found error for `instrument_id`.
     #[must_use]
     pub const fn not_found(instrument_id: InstrumentId) -> Self {
