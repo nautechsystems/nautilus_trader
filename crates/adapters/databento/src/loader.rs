@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    env, fs,
+    env,
     path::{Path, PathBuf},
 };
 
@@ -41,7 +41,11 @@ use super::{
     symbology::decode_nautilus_instrument_id,
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
 };
-use crate::{decode::decode_instrument_def_msg, symbology::MetadataCache};
+use crate::{
+    common::{build_publisher_venue_map, load_publishers},
+    decode::decode_instrument_def_msg,
+    symbology::MetadataCache,
+};
 
 /// A Nautilus data loader for Databento Binary Encoding (DBN) format data.
 ///
@@ -126,12 +130,11 @@ impl DatabentoDataLoader {
     ///
     /// Returns an error if the file cannot be read or parsed as JSON.
     pub fn load_publishers(&mut self, filepath: PathBuf) -> anyhow::Result<()> {
-        let file_content = fs::read_to_string(filepath)?;
-        let publishers: Vec<DatabentoPublisher> = serde_json::from_str(&file_content)?;
+        let publishers = load_publishers(filepath)?;
 
         self.publishers_map = publishers
-            .clone()
-            .into_iter()
+            .iter()
+            .cloned()
             .map(|p| (p.publisher_id, p))
             .collect();
 
@@ -147,10 +150,7 @@ impl DatabentoDataLoader {
         self.venue_dataset_map = venue_dataset_map;
         apply_default_venue_dataset_mappings(&mut self.venue_dataset_map);
 
-        self.publisher_venue_map = publishers
-            .into_iter()
-            .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
-            .collect();
+        self.publisher_venue_map = build_publisher_venue_map(&publishers);
 
         Ok(())
     }

@@ -15,14 +15,17 @@
 
 //! Common functions to support Databento adapter operations.
 
-use std::{fmt::Debug, sync::LazyLock};
+use std::{fmt::Debug, fs, path::Path, sync::LazyLock};
 
 use databento::historical::DateTimeRange;
+use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, string::secret::REDACTED};
 use nautilus_model::identifiers::{ClientId, Venue};
 use time::OffsetDateTime;
 use ustr::Ustr;
 use zeroize::ZeroizeOnDrop;
+
+use crate::types::{DatabentoPublisher, PublisherId};
 
 /// Venue identifier string.
 pub const DATABENTO: &str = "DATABENTO";
@@ -35,6 +38,27 @@ pub static DATABENTO_CLIENT_ID: LazyLock<ClientId> =
     LazyLock::new(|| ClientId::new(Ustr::from(DATABENTO)));
 
 pub const ALL_SYMBOLS: &str = "ALL_SYMBOLS";
+
+/// Loads Databento publishers from a JSON file.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read or parsed as JSON.
+pub fn load_publishers(filepath: impl AsRef<Path>) -> anyhow::Result<Vec<DatabentoPublisher>> {
+    let file_content = fs::read_to_string(filepath)?;
+    Ok(serde_json::from_str(&file_content)?)
+}
+
+/// Builds the publisher-to-venue map used by Databento decoders.
+#[must_use]
+pub fn build_publisher_venue_map(
+    publishers: &[DatabentoPublisher],
+) -> IndexMap<PublisherId, Venue> {
+    publishers
+        .iter()
+        .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
+        .collect()
+}
 
 /// API credentials required for Databento API requests.
 #[derive(Clone, ZeroizeOnDrop)]

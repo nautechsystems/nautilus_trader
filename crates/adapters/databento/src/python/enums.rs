@@ -59,11 +59,6 @@ impl DatabentoStatisticType {
         *self as u8
     }
 
-    // #[classmethod]
-    // fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
-    //     EnumIterator::new::<Self>(py)
-    // }
-
     #[classmethod]
     #[pyo3(name = "from_str")]
     fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -111,11 +106,6 @@ impl DatabentoStatisticUpdateAction {
     pub const fn value(&self) -> u8 {
         *self as u8
     }
-
-    // #[classmethod]
-    // fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
-    //     EnumIterator::new::<Self>(py)
-    // }
 
     #[classmethod]
     #[pyo3(name = "from_str")]

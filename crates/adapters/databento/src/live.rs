@@ -28,7 +28,13 @@
 //! `heartbeat_interval + 5 s` (default 35 s). The handler treats this as a
 //! connection error and enters the reconnection backoff loop.
 
-use std::{fmt::Debug, sync::Arc, time::Duration};
+use std::{
+    fmt::{Debug, Display},
+    path::PathBuf,
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
 
 use ahash::{AHashMap, HashSet, HashSetExt};
 use databento::{
@@ -47,6 +53,7 @@ use nautilus_model::{
     types::Currency,
 };
 use nautilus_network::backoff::ExponentialBackoff;
+use time::OffsetDateTime;
 
 use super::{
     decode::{
@@ -55,8 +62,9 @@ use super::{
     types::{DatabentoImbalance, DatabentoStatistics, SubscriptionAckEvent},
 };
 use crate::{
-    common::Credential,
+    common::{Credential, build_publisher_venue_map, load_publishers},
     decode::{decode_instrument_def_msg, decode_record},
+    symbology::{check_consistent_symbology, infer_symbology_type},
     types::PublisherId,
 };
 
@@ -79,6 +87,261 @@ pub enum DatabentoMessage {
     Error(anyhow::Error),
     Close,
 }
+
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.databento")
+)]
+pub struct DatabentoLiveClient {
+    credential: Credential,
+    pub dataset: String,
+    is_running: bool,
+    is_closed: bool,
+    cmd_tx: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+    cmd_rx: Option<tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>>,
+    buffer_size: usize,
+    publisher_venue_map: IndexMap<PublisherId, Venue>,
+    symbol_venue_map: Arc<AtomicMap<Symbol, Venue>>,
+    use_exchange_as_venue: bool,
+    bars_timestamp_on_close: bool,
+    reconnect_timeout_mins: Option<u64>,
+}
+
+impl Debug for DatabentoLiveClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(DatabentoLiveClient))
+            .field("credential", &self.credential)
+            .field("dataset", &self.dataset)
+            .field("is_running", &self.is_running)
+            .field("is_closed", &self.is_closed)
+            .finish()
+    }
+}
+
+impl DatabentoLiveClient {
+    /// Creates a new [`DatabentoLiveClient`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading or parsing the publishers file fails.
+    pub fn new(
+        key: String,
+        dataset: String,
+        publishers_filepath: PathBuf,
+        use_exchange_as_venue: bool,
+        bars_timestamp_on_close: Option<bool>,
+        reconnect_timeout_mins: Option<i64>,
+    ) -> anyhow::Result<Self> {
+        let publishers = load_publishers(publishers_filepath)?;
+        let publisher_venue_map = build_publisher_venue_map(&publishers);
+
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+
+        let reconnect_timeout_mins = reconnect_timeout_mins
+            .and_then(|mins| if mins >= 0 { Some(mins as u64) } else { None });
+
+        Ok(Self {
+            credential: Credential::new(key),
+            dataset,
+            cmd_tx,
+            cmd_rx: Some(cmd_rx),
+            buffer_size: 100_000,
+            is_running: false,
+            is_closed: false,
+            publisher_venue_map,
+            symbol_venue_map: Arc::new(AtomicMap::new()),
+            use_exchange_as_venue,
+            bars_timestamp_on_close: bars_timestamp_on_close.unwrap_or(true),
+            reconnect_timeout_mins,
+        })
+    }
+
+    #[must_use]
+    pub const fn is_running(&self) -> bool {
+        self.is_running
+    }
+
+    #[must_use]
+    pub const fn is_closed(&self) -> bool {
+        self.is_closed
+    }
+
+    /// Subscribes to Databento live data for the requested instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if symbology, schema, timestamp, or precision inputs are invalid,
+    /// or if the command cannot be sent to the feed handler.
+    #[expect(clippy::needless_pass_by_value)]
+    pub fn subscribe(
+        &mut self,
+        schema: String,
+        instrument_ids: Vec<InstrumentId>,
+        start: Option<u64>,
+        snapshot: Option<bool>,
+        price_precisions: Option<Vec<Option<u8>>>,
+        stype_in: Option<String>,
+    ) -> anyhow::Result<()> {
+        self.symbol_venue_map.rcu(|m| {
+            for id in &instrument_ids {
+                m.entry(id.symbol).or_insert(id.venue);
+            }
+        });
+
+        if let Some(precisions) = price_precisions {
+            if precisions.len() != instrument_ids.len() {
+                anyhow::bail!(
+                    "`price_precisions` length ({}) must match `instrument_ids` length ({})",
+                    precisions.len(),
+                    instrument_ids.len()
+                );
+            }
+
+            for (instrument_id, precision) in instrument_ids.iter().zip(precisions) {
+                if let Some(precision) = precision {
+                    self.send_command(HandlerCommand::SetPricePrecision(
+                        instrument_id.symbol,
+                        precision,
+                    ))?;
+                }
+            }
+        }
+
+        let symbols: Vec<String> = instrument_ids
+            .iter()
+            .map(|id| id.symbol.to_string())
+            .collect();
+        let first_symbol = symbols
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("No symbols provided"))?;
+        let stype_in = match stype_in {
+            Some(stype_in) => dbn::SType::from_str(&stype_in)?,
+            None => infer_symbology_type(first_symbol),
+        };
+        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
+        check_consistent_symbology(symbols.as_slice())?;
+        let mut sub = Subscription::builder()
+            .symbols(symbols)
+            .schema(dbn::Schema::from_str(&schema)?)
+            .stype_in(stype_in)
+            .build();
+
+        if let Some(start) = start {
+            sub.start = Some(OffsetDateTime::from_unix_timestamp_nanos(i128::from(
+                start,
+            ))?);
+        }
+        sub.use_snapshot = snapshot.unwrap_or(false);
+
+        self.send_command(HandlerCommand::Subscribe(sub))
+    }
+
+    /// Starts the live feed handler and returns its message receiver.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client is already closed, already running, or cannot start.
+    pub fn start(
+        &mut self,
+    ) -> anyhow::Result<(
+        DatabentoFeedHandler,
+        tokio::sync::mpsc::Receiver<DatabentoMessage>,
+    )> {
+        if self.is_closed {
+            anyhow::bail!("Client already closed");
+        }
+
+        if self.is_running {
+            anyhow::bail!("Client already running");
+        }
+
+        log::debug!("Starting client");
+
+        self.is_running = true;
+
+        let (msg_tx, msg_rx) = tokio::sync::mpsc::channel::<DatabentoMessage>(self.buffer_size);
+        let cmd_rx = self
+            .cmd_rx
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Command receiver already taken"))?;
+
+        let feed_handler = DatabentoFeedHandler::new(
+            self.credential.clone(),
+            self.dataset.clone(),
+            cmd_rx,
+            msg_tx,
+            self.publisher_venue_map.clone(),
+            self.symbol_venue_map.clone(),
+            self.use_exchange_as_venue,
+            self.bars_timestamp_on_close,
+            self.reconnect_timeout_mins,
+        );
+
+        self.send_command(HandlerCommand::Start)?;
+
+        Ok((feed_handler, msg_rx))
+    }
+
+    /// Closes the live client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client was never started, is already closed, or cannot send
+    /// the close command to the feed handler.
+    pub fn close(&mut self) -> anyhow::Result<()> {
+        if !self.is_running {
+            anyhow::bail!("Client never started");
+        }
+
+        if self.is_closed {
+            anyhow::bail!("Client already closed");
+        }
+
+        log::debug!("Closing client");
+
+        if !self.cmd_tx.is_closed() {
+            self.send_command(HandlerCommand::Close)?;
+        }
+
+        self.is_running = false;
+        self.is_closed = true;
+
+        Ok(())
+    }
+
+    fn send_command(&self, cmd: HandlerCommand) -> anyhow::Result<()> {
+        self.cmd_tx.send(cmd).map_err(|e| {
+            anyhow::Error::new(CommandSendError {
+                details: e.to_string(),
+            })
+        })
+    }
+}
+
+pub(crate) fn is_command_send_error(error: &anyhow::Error) -> bool {
+    error.is::<CommandSendError>()
+}
+
+#[derive(Debug)]
+struct CommandSendError {
+    details: String,
+}
+
+impl Display for CommandSendError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Failed to send command to Databento feed handler: {}",
+            self.details
+        )
+    }
+}
+
+impl std::error::Error for CommandSendError {}
 
 /// Handles a raw TCP data feed from the Databento LSG for a single dataset.
 ///
@@ -1072,6 +1335,8 @@ fn process_mbo_delta(
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use databento::live::Subscription;
     use indexmap::IndexMap;
     use rstest::*;
@@ -1094,6 +1359,18 @@ mod tests {
             false,
             reconnect_timeout_mins,
         )
+    }
+
+    fn create_test_client() -> DatabentoLiveClient {
+        DatabentoLiveClient::new(
+            "test-api-key".to_string(),
+            "GLBX.MDP3".to_string(),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json"),
+            true,
+            None,
+            None,
+        )
+        .unwrap()
     }
 
     #[rstest]
@@ -1150,6 +1427,74 @@ mod tests {
 
         assert_eq!(handler.reconnect_timeout_mins, Some(0));
         assert!(!handler.replay);
+    }
+
+    #[rstest]
+    fn test_subscribe_uses_explicit_parent_stype() {
+        let mut client = create_test_client();
+
+        client
+            .subscribe(
+                "definition".to_string(),
+                vec![InstrumentId::from("ES.FUT.GLBX")],
+                None,
+                None,
+                None,
+                Some("parent".to_string()),
+            )
+            .unwrap();
+
+        let command = client.cmd_rx.as_mut().unwrap().try_recv().unwrap();
+        match command {
+            HandlerCommand::Subscribe(sub) => {
+                assert_eq!(sub.schema, dbn::Schema::Definition);
+                assert_eq!(sub.stype_in, dbn::SType::Parent);
+                assert_eq!(sub.symbols.to_api_string(), "ES.FUT");
+            }
+            other => panic!("expected HandlerCommand::Subscribe, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_subscribe_rejects_invalid_stype() {
+        let mut client = create_test_client();
+
+        let err = client
+            .subscribe(
+                "definition".to_string(),
+                vec![InstrumentId::from("ES.FUT.GLBX")],
+                None,
+                None,
+                None,
+                Some("not-a-stype".to_string()),
+            )
+            .unwrap_err();
+
+        assert!(err.to_string().contains("not-a-stype"));
+        assert!(!is_command_send_error(&err));
+        assert!(matches!(
+            client.cmd_rx.as_mut().unwrap().try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[rstest]
+    fn test_subscribe_classifies_command_send_errors() {
+        let mut client = create_test_client();
+        client.cmd_rx = None;
+
+        let err = client
+            .subscribe(
+                "definition".to_string(),
+                vec![InstrumentId::from("ES.FUT.GLBX")],
+                None,
+                None,
+                None,
+                Some("parent".to_string()),
+            )
+            .unwrap_err();
+
+        assert!(is_command_send_error(&err));
     }
 
     fn test_delta(instrument_id: InstrumentId, ts_event: u64) -> OrderBookDelta {

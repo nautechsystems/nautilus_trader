@@ -15,70 +15,20 @@
 
 //! Python bindings for the Databento live client.
 
-use std::{fmt::Debug, fs, path::PathBuf, str::FromStr, sync::Arc};
+use std::path::PathBuf;
 
-use databento::{dbn, live::Subscription};
-use indexmap::IndexMap;
-use nautilus_core::{
-    AtomicMap,
-    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
-};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::InstrumentId,
     python::{data::data_to_pycapsule, instruments::instrument_any_to_pyobject},
 };
 use pyo3::prelude::*;
-use time::OffsetDateTime;
 
 use super::types::DatabentoSubscriptionAck;
-use crate::{
-    common::Credential,
-    live::{DatabentoFeedHandler, DatabentoMessage, HandlerCommand},
-    symbology::{check_consistent_symbology, infer_symbology_type},
-    types::DatabentoPublisher,
-};
-
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.databento")
-)]
-pub struct DatabentoLiveClient {
-    credential: Credential,
-    #[pyo3(get)]
-    pub dataset: String,
-    is_running: bool,
-    is_closed: bool,
-    cmd_tx: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
-    cmd_rx: Option<tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>>,
-    buffer_size: usize,
-    publisher_venue_map: IndexMap<u16, Venue>,
-    symbol_venue_map: Arc<AtomicMap<Symbol, Venue>>,
-    use_exchange_as_venue: bool,
-    bars_timestamp_on_close: bool,
-    reconnect_timeout_mins: Option<u64>,
-}
-
-impl Debug for DatabentoLiveClient {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(DatabentoLiveClient))
-            .field("credential", &self.credential)
-            .field("dataset", &self.dataset)
-            .field("is_running", &self.is_running)
-            .field("is_closed", &self.is_closed)
-            .finish()
-    }
-}
+pub use crate::live::DatabentoLiveClient;
+use crate::live::{DatabentoMessage, is_command_send_error};
 
 impl DatabentoLiveClient {
-    #[must_use]
-    pub fn is_closed(&self) -> bool {
-        self.cmd_tx.is_closed()
-    }
-
     async fn process_messages(
         mut msg_rx: tokio::sync::mpsc::Receiver<DatabentoMessage>,
         callback: Py<PyAny>,
@@ -133,10 +83,6 @@ impl DatabentoLiveClient {
 
         Ok(())
     }
-
-    fn send_command(&self, cmd: HandlerCommand) -> PyResult<()> {
-        self.cmd_tx.send(cmd).map_err(to_pyruntime_err)
-    }
 }
 
 fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
@@ -164,52 +110,34 @@ impl DatabentoLiveClient {
         bars_timestamp_on_close: Option<bool>,
         reconnect_timeout_mins: Option<i64>,
     ) -> PyResult<Self> {
-        let publishers_json = fs::read_to_string(publishers_filepath).map_err(to_pyvalue_err)?;
-        let publishers_vec: Vec<DatabentoPublisher> =
-            serde_json::from_str(&publishers_json).map_err(to_pyvalue_err)?;
-        let publisher_venue_map = publishers_vec
-            .into_iter()
-            .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
-            .collect::<IndexMap<u16, Venue>>();
-
-        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-
-        // Hardcoded to a reasonable size for now
-        let buffer_size = 100_000;
-
-        // Convert i64 to u64: None/negative = infinite retries, 0 = no retries, positive = timeout in minutes
-        let reconnect_timeout_mins = reconnect_timeout_mins
-            .and_then(|mins| if mins >= 0 { Some(mins as u64) } else { None });
-
-        Ok(Self {
-            credential: Credential::new(key),
+        Self::new(
+            key,
             dataset,
-            cmd_tx,
-            cmd_rx: Some(cmd_rx),
-            buffer_size,
-            is_running: false,
-            is_closed: false,
-            publisher_venue_map,
-            symbol_venue_map: Arc::new(AtomicMap::new()),
+            publishers_filepath,
             use_exchange_as_venue,
-            bars_timestamp_on_close: bars_timestamp_on_close.unwrap_or(true),
+            bars_timestamp_on_close,
             reconnect_timeout_mins,
-        })
+        )
+        .map_err(to_pyvalue_err)
+    }
+
+    #[getter]
+    fn dataset(&self) -> &str {
+        self.dataset.as_str()
     }
 
     #[pyo3(name = "is_running")]
     const fn py_is_running(&self) -> bool {
-        self.is_running
+        self.is_running()
     }
 
     #[pyo3(name = "is_closed")]
     const fn py_is_closed(&self) -> bool {
-        self.is_closed
+        self.is_closed()
     }
 
     #[pyo3(name = "subscribe")]
     #[pyo3(signature = (schema, instrument_ids, start=None, snapshot=None, price_precisions=None, stype_in=None))]
-    #[expect(clippy::needless_pass_by_value)]
     fn py_subscribe(
         &mut self,
         schema: String,
@@ -219,57 +147,22 @@ impl DatabentoLiveClient {
         price_precisions: Option<Vec<Option<u8>>>,
         stype_in: Option<String>,
     ) -> PyResult<()> {
-        self.symbol_venue_map.rcu(|m| {
-            for id in &instrument_ids {
-                m.entry(id.symbol).or_insert(id.venue);
-            }
-        });
-
-        if let Some(precisions) = price_precisions {
-            if precisions.len() != instrument_ids.len() {
-                return Err(to_pyvalue_err(format!(
-                    "`price_precisions` length ({}) must match `instrument_ids` length ({})",
-                    precisions.len(),
-                    instrument_ids.len()
-                )));
-            }
-
-            for (instrument_id, precision) in instrument_ids.iter().zip(precisions) {
-                if let Some(precision) = precision {
-                    self.send_command(HandlerCommand::SetPricePrecision(
-                        instrument_id.symbol,
-                        precision,
-                    ))?;
-                }
-            }
+        if let Err(e) = self.subscribe(
+            schema,
+            instrument_ids,
+            start,
+            snapshot,
+            price_precisions,
+            stype_in,
+        ) {
+            return if is_command_send_error(&e) {
+                Err(to_pyruntime_err(e))
+            } else {
+                Err(to_pyvalue_err(e))
+            };
         }
-        let symbols: Vec<String> = instrument_ids
-            .iter()
-            .map(|id| id.symbol.to_string())
-            .collect();
-        let first_symbol = symbols
-            .first()
-            .ok_or_else(|| to_pyvalue_err("No symbols provided"))?;
-        let stype_in = match stype_in {
-            Some(stype_in) => dbn::SType::from_str(&stype_in).map_err(to_pyvalue_err)?,
-            None => infer_symbology_type(first_symbol),
-        };
-        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
-        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
-        let mut sub = Subscription::builder()
-            .symbols(symbols)
-            .schema(dbn::Schema::from_str(&schema).map_err(to_pyvalue_err)?)
-            .stype_in(stype_in)
-            .build();
 
-        if let Some(start) = start {
-            let start = OffsetDateTime::from_unix_timestamp_nanos(i128::from(start))
-                .map_err(to_pyvalue_err)?;
-            sub.start = Some(start);
-        }
-        sub.use_snapshot = snapshot.unwrap_or(false);
-
-        self.send_command(HandlerCommand::Subscribe(sub))
+        Ok(())
     }
 
     #[pyo3(name = "start")]
@@ -279,41 +172,7 @@ impl DatabentoLiveClient {
         callback: Py<PyAny>,
         callback_pyo3: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        if self.is_closed {
-            return Err(to_pyruntime_err("Client already closed"));
-        }
-
-        if self.is_running {
-            return Err(to_pyruntime_err("Client already running"));
-        }
-
-        log::debug!("Starting client");
-
-        self.is_running = true;
-
-        let (msg_tx, msg_rx) = tokio::sync::mpsc::channel::<DatabentoMessage>(self.buffer_size);
-
-        // Consume the receiver
-        // We guard the client from being started more than once with the
-        // `is_running` flag, so here it is safe to unwrap the command receiver.
-        let cmd_rx = self
-            .cmd_rx
-            .take()
-            .ok_or_else(|| to_pyruntime_err("Command receiver already taken"))?;
-
-        let mut feed_handler = DatabentoFeedHandler::new(
-            self.credential.clone(),
-            self.dataset.clone(),
-            cmd_rx,
-            msg_tx,
-            self.publisher_venue_map.clone(),
-            self.symbol_venue_map.clone(),
-            self.use_exchange_as_venue,
-            self.bars_timestamp_on_close,
-            self.reconnect_timeout_mins,
-        );
-
-        self.send_command(HandlerCommand::Start)?;
+        let (mut feed_handler, msg_rx) = self.start().map_err(to_pyruntime_err)?;
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let (proc_handle, feed_handle) = tokio::join!(
@@ -337,24 +196,7 @@ impl DatabentoLiveClient {
 
     #[pyo3(name = "close")]
     fn py_close(&mut self) -> PyResult<()> {
-        if !self.is_running {
-            return Err(to_pyruntime_err("Client never started"));
-        }
-
-        if self.is_closed {
-            return Err(to_pyruntime_err("Client already closed"));
-        }
-
-        log::debug!("Closing client");
-
-        if !self.is_closed() {
-            self.send_command(HandlerCommand::Close)?;
-        }
-
-        self.is_running = false;
-        self.is_closed = true;
-
-        Ok(())
+        self.close().map_err(to_pyruntime_err)
     }
 }
 
@@ -362,12 +204,13 @@ impl DatabentoLiveClient {
 mod tests {
     use std::path::PathBuf;
 
+    use pyo3::exceptions::{PyRuntimeError, PyValueError};
     use rstest::rstest;
 
     use super::*;
 
-    fn client() -> DatabentoLiveClient {
-        DatabentoLiveClient::py_new(
+    fn create_test_client() -> DatabentoLiveClient {
+        DatabentoLiveClient::new(
             "test-api-key".to_string(),
             "GLBX.MDP3".to_string(),
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json"),
@@ -379,35 +222,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_py_subscribe_uses_explicit_parent_stype() {
-        let mut client = client();
-
-        client
-            .py_subscribe(
-                "definition".to_string(),
-                vec![InstrumentId::from("ES.FUT.GLBX")],
-                None,
-                None,
-                None,
-                Some("parent".to_string()),
-            )
-            .unwrap();
-
-        let command = client.cmd_rx.as_mut().unwrap().try_recv().unwrap();
-        match command {
-            HandlerCommand::Subscribe(sub) => {
-                assert_eq!(sub.schema, dbn::Schema::Definition);
-                assert_eq!(sub.stype_in, dbn::SType::Parent);
-                assert_eq!(sub.symbols.to_api_string(), "ES.FUT");
-            }
-            other => panic!("expected HandlerCommand::Subscribe, was {other:?}"),
-        }
-    }
-
-    #[rstest]
-    fn test_py_subscribe_rejects_invalid_stype() {
+    fn test_py_subscribe_maps_invalid_input_to_value_error() {
         Python::initialize();
-        let mut client = client();
+        let mut client = create_test_client();
 
         let err = client
             .py_subscribe(
@@ -420,10 +237,32 @@ mod tests {
             )
             .unwrap_err();
 
-        assert!(err.to_string().contains("not-a-stype"));
-        assert!(matches!(
-            client.cmd_rx.as_mut().unwrap().try_recv(),
-            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
-        ));
+        Python::attach(|py| {
+            assert!(err.is_instance_of::<PyValueError>(py));
+        });
+    }
+
+    #[rstest]
+    fn test_py_subscribe_maps_command_send_error_to_runtime_error() {
+        Python::initialize();
+        let mut client = create_test_client();
+        let (feed_handler, msg_rx) = client.start().unwrap();
+        drop(feed_handler);
+        drop(msg_rx);
+
+        let err = client
+            .py_subscribe(
+                "definition".to_string(),
+                vec![InstrumentId::from("ES.FUT.GLBX")],
+                None,
+                None,
+                None,
+                Some("parent".to_string()),
+            )
+            .unwrap_err();
+
+        Python::attach(|py| {
+            assert!(err.is_instance_of::<PyRuntimeError>(py));
+        });
     }
 }
