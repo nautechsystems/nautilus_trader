@@ -24,9 +24,9 @@ use axum::{
     routing::{get, post},
 };
 use dashmap::DashMap;
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_deribit::{
-    common::enums::DeribitEnvironment,
+    common::{consts::DERIBIT_VENUE, enums::DeribitEnvironment},
     http::{
         client::{DeribitHttpClient, DeribitRawHttpClient},
         error::DeribitHttpError,
@@ -38,9 +38,21 @@ use nautilus_deribit::{
         },
     },
 };
+use nautilus_model::{
+    data::BarType,
+    identifiers::{InstrumentId, Symbol},
+};
 use nautilus_network::http::HttpClient;
+use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
+
+#[derive(Debug, Clone, Copy)]
+enum RequiredInstrumentCachePath {
+    Trades,
+    Bars,
+    BookSnapshot,
+}
 
 #[derive(Clone, Default)]
 struct TestServerState {
@@ -443,6 +455,50 @@ fn create_router(state: TestServerState) -> Router {
         .route("/api/v2", post(handle_jsonrpc_request))
         .route("/health", get(|| async { "OK" }))
         .with_state(state)
+}
+
+#[rstest]
+#[case::trades(RequiredInstrumentCachePath::Trades)]
+#[case::bars(RequiredInstrumentCachePath::Bars)]
+#[case::book_snapshot(RequiredInstrumentCachePath::BookSnapshot)]
+#[tokio::test]
+async fn test_public_market_data_request_missing_cached_instrument_returns_lookup_error(
+    #[case] path: RequiredInstrumentCachePath,
+) {
+    let client = DeribitHttpClient::new(
+        Some("http://127.0.0.1:9/api/v2".to_string()),
+        DeribitEnvironment::Mainnet,
+        1,
+        0,
+        1,
+        1,
+        None,
+    )
+    .unwrap();
+    let instrument_id = InstrumentId::new(Symbol::from("BTC-PERPETUAL"), *DERIBIT_VENUE);
+
+    let result = match path {
+        RequiredInstrumentCachePath::Trades => client
+            .request_trades(instrument_id, None, None, None)
+            .await
+            .map(|_| ()),
+        RequiredInstrumentCachePath::Bars => {
+            let bar_type = BarType::from("BTC-PERPETUAL.DERIBIT-1-MINUTE-LAST-EXTERNAL");
+            client
+                .request_bars(bar_type, None, None, None)
+                .await
+                .map(|_| ())
+        }
+        RequiredInstrumentCachePath::BookSnapshot => client
+            .request_book_snapshot(instrument_id, None)
+            .await
+            .map(|_| ()),
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        InstrumentLookupError::not_found(instrument_id).to_string()
+    );
 }
 
 #[tokio::test]

@@ -26,6 +26,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
+use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, Params, datetime::nanos_to_millis, nanos::UnixNanos,
     time::get_atomic_clock_realtime,
@@ -1240,6 +1241,7 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - The instrument is not found in cache
     /// - The request fails
     /// - Trade parsing fails
     ///
@@ -1261,7 +1263,7 @@ impl DeribitHttpClient {
                 (instrument.price_precision(), instrument.size_precision())
             } else {
                 log::warn!("Instrument {instrument_id} not in cache, skipping trades request");
-                anyhow::bail!("Instrument {instrument_id} not in cache");
+                return Err(InstrumentLookupError::not_found(instrument_id).into());
             };
 
         // Convert timestamps to milliseconds
@@ -1365,6 +1367,7 @@ impl DeribitHttpClient {
     /// Returns an error if:
     /// - Aggregation source is not EXTERNAL
     /// - Bar aggregation type is not supported by Deribit
+    /// - The instrument is not found in cache
     /// - The request fails or response cannot be parsed
     ///
     /// # Supported Resolutions
@@ -1413,7 +1416,20 @@ impl DeribitHttpClient {
             );
         }
 
-        let instrument_name = bar_type.instrument_id().symbol.to_string();
+        let instrument_id = bar_type.instrument_id();
+        let (price_precision, size_precision, use_cost_for_volume) =
+            if let Some(instrument) = self.get_instrument(&instrument_id.symbol.inner()) {
+                (
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                    use_cost_for_bar_volume(&instrument),
+                )
+            } else {
+                log::warn!("Instrument {instrument_id} not in cache, skipping bars request");
+                return Err(InstrumentLookupError::not_found(instrument_id).into());
+            };
+
+        let instrument_name = instrument_id.symbol.to_string();
         let start_timestamp = start_dt.timestamp_millis();
         let end_timestamp = end_dt.timestamp_millis();
 
@@ -1433,20 +1449,6 @@ impl DeribitHttpClient {
             log::debug!("No bar data returned for {bar_type}");
             return Ok(Vec::new());
         }
-
-        // Get instrument from cache to determine precisions and volume-field selection.
-        let instrument_id = bar_type.instrument_id();
-        let (price_precision, size_precision, use_cost_for_volume) =
-            if let Some(instrument) = self.get_instrument(&instrument_id.symbol.inner()) {
-                (
-                    instrument.price_precision(),
-                    instrument.size_precision(),
-                    use_cost_for_bar_volume(&instrument),
-                )
-            } else {
-                log::warn!("Instrument {instrument_id} not in cache, skipping bars request");
-                anyhow::bail!("Instrument {instrument_id} not in cache");
-            };
 
         let ts_init = self.generate_ts_init();
         let mut bars = parse_bars(
@@ -1482,6 +1484,7 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - The instrument is not found in cache
     /// - The request fails
     /// - Order book parsing fails
     pub async fn request_book_snapshot(
@@ -1493,7 +1496,7 @@ impl DeribitHttpClient {
             if let Some(instrument) = self.get_instrument(&instrument_id.symbol.inner()) {
                 (instrument.price_precision(), instrument.size_precision())
             } else {
-                anyhow::bail!("Instrument {instrument_id} not in cache");
+                return Err(InstrumentLookupError::not_found(instrument_id).into());
             };
 
         let params = GetOrderBookParams::new(instrument_id.symbol.to_string(), depth);
