@@ -31,7 +31,7 @@ use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     data::{
-        Bar, BarType, BookOrder, CustomData, DataType, FundingRateUpdate, HasTsInit,
+        Bar, BarType, BookOrder, CustomData, DataType, FundingRateUpdate, GreeksData, HasTsInit,
         IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
         OrderBookDepth10, QuoteTick, TradeTick,
         close::InstrumentClose,
@@ -40,19 +40,22 @@ use nautilus_model::{
         option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
         stubs::*,
     },
-    enums::{BookAction, BookType, GreeksConvention, OrderSide, OrderType, PositionSide},
+    enums::{
+        BookAction, BookType, GreeksConvention, OrderSide, OrderType, PositionSide, PriceType,
+    },
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
-        OptionSeriesId, PositionId, StrategyId, TraderId, Venue, VenueOrderId,
+        OptionSeriesId, PositionId, StrategyId, Symbol, TraderId, Venue, VenueOrderId,
     },
-    instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::*},
+    instruments::{CurrencyPair, Instrument, InstrumentAny, SyntheticInstrument, stubs::*},
     orderbook::{OrderBook, own::OwnOrderBook},
     orders::{Order, OrderAny, OrderList, builder::OrderTestBuilder},
     position::Position,
     stubs::TestDefault,
-    types::{Price, Quantity},
+    types::{Currency, Price, Quantity},
 };
 use rstest::*;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
 use ustr::Ustr;
@@ -556,6 +559,271 @@ fn test_data_actor_cache_api_returns_owned_point_reads(
 }
 
 #[rstest]
+fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+    quote_audusd: QuoteTick,
+    stub_bar: Bar,
+    stub_instrument_status: InstrumentStatus,
+) {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    actor.register(trader_id, clock, cache.clone()).unwrap();
+
+    let instrument_id = audusd_sim.id;
+    let venue = instrument_id.venue;
+    let quote = QuoteTick {
+        instrument_id,
+        ..quote_audusd
+    };
+    let trade = TradeTick {
+        instrument_id,
+        price: Price::from("1.00020"),
+        ..TradeTick::default()
+    };
+    let bar = stub_bar;
+    let bar_type = bar.bar_type;
+    let mark_price = MarkPriceUpdate::new(
+        instrument_id,
+        Price::from("1.00030"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let index_price = IndexPriceUpdate::new(
+        instrument_id,
+        Price::from("1.00040"),
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+    let funding_rate = FundingRateUpdate::new(
+        instrument_id,
+        dec!(0.0001),
+        None,
+        None,
+        UnixNanos::from(5),
+        UnixNanos::from(6),
+    );
+    let status = InstrumentStatus {
+        instrument_id,
+        ..stub_instrument_status
+    };
+    let greeks = GreeksData::new(
+        UnixNanos::from(7),
+        UnixNanos::from(8),
+        instrument_id,
+        true,
+        1.0,
+        20_260_101,
+        30,
+        30.0 / 365.0,
+        100_000.0,
+        1.0,
+        1.00020,
+        0.05,
+        0.0,
+        0.2,
+        12.5,
+        0.01,
+        OptionGreekValues {
+            delta: 0.5,
+            gamma: 0.1,
+            vega: 0.2,
+            theta: -0.01,
+            rho: 0.03,
+        },
+        0.6,
+    );
+    let option_greeks = OptionGreeks {
+        instrument_id,
+        convention: GreeksConvention::BlackScholes,
+        greeks: OptionGreekValues {
+            delta: 0.55,
+            gamma: 0.03,
+            vega: 0.12,
+            theta: -0.05,
+            rho: 0.01,
+        },
+        mark_iv: Some(0.25),
+        bid_iv: Some(0.24),
+        ask_iv: Some(0.26),
+        underlying_price: Some(1.00020),
+        open_interest: Some(1000.0),
+        ts_event: UnixNanos::from(9),
+        ts_init: UnixNanos::from(10),
+    };
+    let synthetic_formula = format!("{instrument_id} * 1.0");
+    let synthetic = SyntheticInstrument::new(
+        Symbol::from("SYN"),
+        5,
+        vec![instrument_id],
+        &synthetic_formula,
+        UnixNanos::from(11),
+        UnixNanos::from(12),
+    );
+    let synthetic_id = synthetic.id;
+    let usd = Currency::USD();
+    let usdt = Currency::USDT();
+
+    {
+        let mut cache = cache.borrow_mut();
+        let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
+        book.update_quote_tick(&quote).unwrap();
+
+        cache
+            .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+            .unwrap();
+        cache.add_order_book(book).unwrap();
+        cache.add_quote(quote).unwrap();
+        cache.add_trade(trade).unwrap();
+        cache.add_bar(bar).unwrap();
+        cache.add_mark_price(mark_price).unwrap();
+        cache.add_index_price(index_price).unwrap();
+        cache.add_funding_rate(funding_rate).unwrap();
+        cache.add_instrument_status(status).unwrap();
+        cache.add_greeks(greeks.clone()).unwrap();
+        cache.add_option_greeks(option_greeks);
+        cache.add_synthetic(synthetic).unwrap();
+        cache.add_currency(usd).unwrap();
+        cache.set_mark_xrate(usd, usdt, 1.1);
+    }
+
+    let cache_api = actor.cache();
+    let cached_synthetic = cache_api.synthetic(&synthetic_id).unwrap();
+    let bid_price = cache_api.price(&instrument_id, PriceType::Bid);
+    let latest_quote = cache_api.quote(&instrument_id);
+    let indexed_quote = cache_api.quote_at_index(&instrument_id, 0);
+    let latest_trade = cache_api.trade(&instrument_id);
+    let indexed_trade = cache_api.trade_at_index(&instrument_id, 0);
+    let latest_bar = cache_api.bar(&bar_type);
+    let indexed_bar = cache_api.bar_at_index(&bar_type, 0);
+    let latest_mark_price = cache_api.mark_price(&instrument_id);
+    let latest_index_price = cache_api.index_price(&instrument_id);
+    let latest_funding_rate = cache_api.funding_rate(&instrument_id);
+    let latest_status = cache_api.instrument_status(&instrument_id);
+    let book_update_count = cache_api.book_update_count(&instrument_id);
+    let quote_count = cache_api.quote_count(&instrument_id);
+    let trade_count = cache_api.trade_count(&instrument_id);
+    let bar_count = cache_api.bar_count(&bar_type);
+    let has_order_book = cache_api.has_order_book(&instrument_id);
+    let has_quote_ticks = cache_api.has_quote_ticks(&instrument_id);
+    let has_trade_ticks = cache_api.has_trade_ticks(&instrument_id);
+    let has_bars = cache_api.has_bars(&bar_type);
+    let cached_currency = cache_api.currency(&usd.code);
+    let required_currency = cache_api.try_currency(&usd.code).unwrap();
+    let same_currency_xrate = cache_api.get_xrate(venue, usd, usd, PriceType::Mid);
+    let mark_xrate = cache_api.get_mark_xrate(usd, usdt);
+    let cached_greeks = cache_api.greeks(&instrument_id).unwrap();
+    let cached_option_greeks = cache_api.option_greeks(&instrument_id);
+    let quote_out_of_range = cache_api.quote_at_index(&instrument_id, 1);
+    let trade_out_of_range = cache_api.trade_at_index(&instrument_id, 1);
+    let bar_out_of_range = cache_api.bar_at_index(&bar_type, 1);
+    let missing_currency_code = Ustr::from("ZZZ");
+    let missing_currency = cache_api.currency(&missing_currency_code);
+    let missing_currency_error = cache_api.try_currency(&missing_currency_code).unwrap_err();
+
+    let _cache_write = cache.borrow_mut();
+
+    assert_eq!(cached_synthetic.id, synthetic_id);
+    assert_eq!(bid_price, Some(quote.bid_price));
+    assert_eq!(latest_quote, Some(quote));
+    assert_eq!(indexed_quote, Some(quote));
+    assert_eq!(latest_trade, Some(trade));
+    assert_eq!(indexed_trade, Some(trade));
+    assert_eq!(latest_bar, Some(bar));
+    assert_eq!(indexed_bar, Some(bar));
+    assert_eq!(latest_mark_price, Some(mark_price));
+    assert_eq!(latest_index_price, Some(index_price));
+    assert_eq!(latest_funding_rate, Some(funding_rate));
+    assert_eq!(latest_status, Some(status));
+    assert_eq!(book_update_count, 1);
+    assert_eq!(quote_count, 1);
+    assert_eq!(trade_count, 1);
+    assert_eq!(bar_count, 1);
+    assert!(has_order_book);
+    assert!(has_quote_ticks);
+    assert!(has_trade_ticks);
+    assert!(has_bars);
+    assert_eq!(cached_currency, Some(usd));
+    assert_eq!(required_currency, usd);
+    assert_eq!(same_currency_xrate, Some(Decimal::ONE));
+    assert_eq!(mark_xrate, Some(1.1));
+    assert_eq!(cached_greeks.instrument_id, instrument_id);
+    assert_eq!(cached_greeks.price, greeks.price);
+    assert_eq!(cached_option_greeks, Some(option_greeks));
+    assert_eq!(quote_out_of_range, None);
+    assert_eq!(trade_out_of_range, None);
+    assert_eq!(bar_out_of_range, None);
+    assert_eq!(missing_currency, None);
+    assert_eq!(
+        missing_currency_error,
+        crate::cache::CurrencyLookupError::not_found(missing_currency_code)
+    );
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_data_actor_cache_api_returns_owned_pool(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    actor.register(trader_id, clock, cache.clone()).unwrap();
+
+    let chain = Arc::new(chains::ETHEREUM.clone());
+    let dex = Dex::new(
+        chains::ETHEREUM.clone(),
+        DexType::UniswapV3,
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+        "Collect",
+    );
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x12; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let pool_address = Address::from([0x12; 20]);
+    let pool = Pool::new(
+        chain,
+        Arc::new(dex),
+        pool_address,
+        PoolIdentifier::from_address(pool_address),
+        1000000,
+        token0,
+        token1,
+        Some(3000),
+        Some(60),
+        UnixNanos::from(1),
+    );
+    let instrument_id = pool.instrument_id;
+
+    cache.borrow_mut().add_pool(pool.clone()).unwrap();
+
+    let cache_api = actor.cache();
+    let cached_pool = cache_api.pool(&instrument_id);
+
+    let _cache_write = cache.borrow_mut();
+
+    assert_eq!(cached_pool, Some(pool));
+}
+
+#[rstest]
 fn test_data_actor_cache_api_surface_returns_owned_values(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -567,6 +835,9 @@ fn test_data_actor_cache_api_surface_returns_owned_values(
 
     let instrument_id = audusd_sim.id;
     let venue = instrument_id.venue;
+    let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-BID-EXTERNAL");
+    let currency = Currency::USD();
+    let currency_code = currency.code;
     let account_id = AccountId::from("ACC-001");
     let client_order_id = ClientOrderId::from("O-001");
     let position_id = PositionId::from("P-001");
@@ -580,8 +851,36 @@ fn test_data_actor_cache_api_surface_returns_owned_values(
     let _: Vec<InstrumentId> = cache_api.instrument_ids(Some(&venue));
     let _: Vec<InstrumentAny> = cache_api.instruments(&venue, None);
     let _: Vec<InstrumentId> = cache_api.synthetic_ids();
+    let _: Option<SyntheticInstrument> = cache_api.synthetic(&instrument_id);
+    let _: Option<Price> = cache_api.price(&instrument_id, PriceType::Bid);
     let _: Option<QuoteTick> = cache_api.quote(&instrument_id);
+    let _: Option<QuoteTick> = cache_api.quote_at_index(&instrument_id, 0);
+    let _: Option<TradeTick> = cache_api.trade(&instrument_id);
+    let _: Option<TradeTick> = cache_api.trade_at_index(&instrument_id, 0);
+    let _: Option<Bar> = cache_api.bar(&bar_type);
+    let _: Option<Bar> = cache_api.bar_at_index(&bar_type, 0);
+    let _: Option<MarkPriceUpdate> = cache_api.mark_price(&instrument_id);
+    let _: Option<IndexPriceUpdate> = cache_api.index_price(&instrument_id);
+    let _: Option<FundingRateUpdate> = cache_api.funding_rate(&instrument_id);
+    let _: Option<InstrumentStatus> = cache_api.instrument_status(&instrument_id);
+    let _: usize = cache_api.book_update_count(&instrument_id);
+    let _: usize = cache_api.quote_count(&instrument_id);
+    let _: usize = cache_api.trade_count(&instrument_id);
+    let _: usize = cache_api.bar_count(&bar_type);
+    let _: bool = cache_api.has_order_book(&instrument_id);
+    let _: bool = cache_api.has_quote_ticks(&instrument_id);
+    let _: bool = cache_api.has_trade_ticks(&instrument_id);
+    let _: bool = cache_api.has_bars(&bar_type);
+    let _: Option<Currency> = cache_api.currency(&currency_code);
+    let _: Result<Currency, crate::cache::CurrencyLookupError> =
+        cache_api.try_currency(&currency_code);
+    let _: Option<Decimal> = cache_api.get_xrate(venue, currency, currency, PriceType::Mid);
+    let _: Option<f64> = cache_api.get_mark_xrate(currency, currency);
+    let _: Option<GreeksData> = cache_api.greeks(&instrument_id);
+    let _: Option<OptionGreeks> = cache_api.option_greeks(&instrument_id);
     let _: Option<OwnOrderBook> = cache_api.own_order_book(&instrument_id);
+    #[cfg(feature = "defi")]
+    let _: Option<Pool> = cache_api.pool(&instrument_id);
     let _: Option<AccountAny> = cache_api.account(&account_id);
     let _: Option<AccountAny> = cache_api.account_for_venue(&venue);
     let _: Option<AccountId> = cache_api.account_id(&venue);

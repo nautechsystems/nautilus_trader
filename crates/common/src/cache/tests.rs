@@ -3041,6 +3041,17 @@ fn test_cache_add_account(mut cache: Cache) {
 }
 
 #[rstest]
+fn test_cache_account_ref_when_some(mut cache: Cache) {
+    let account = AccountAny::default();
+    let account_id = account.id();
+    cache.add_account(account.clone()).unwrap();
+
+    let result = cache.account_ref(&account_id).unwrap();
+
+    assert_eq!(*result, account);
+}
+
+#[rstest]
 fn test_try_account_when_empty(cache: Cache) {
     let account_id = AccountId::test_default();
 
@@ -3060,6 +3071,26 @@ fn test_try_account_when_some(mut cache: Cache) {
     cache.add_account(account.clone()).unwrap();
 
     let result = cache.try_account(&account_id).unwrap();
+
+    assert_eq!(*result, account);
+}
+
+#[rstest]
+fn test_try_account_ref_when_empty(cache: Cache) {
+    let account_id = AccountId::test_default();
+
+    let err = cache.try_account_ref(&account_id).unwrap_err();
+
+    assert_eq!(err, AccountLookupError::not_found(account_id));
+}
+
+#[rstest]
+fn test_try_account_ref_when_some(mut cache: Cache) {
+    let account = AccountAny::default();
+    let account_id = account.id();
+    cache.add_account(account.clone()).unwrap();
+
+    let result = cache.try_account_ref(&account_id).unwrap();
 
     assert_eq!(*result, account);
 }

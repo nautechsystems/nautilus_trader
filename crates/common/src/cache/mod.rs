@@ -60,6 +60,8 @@ use nautilus_core::{
     },
     datetime::secs_to_nanos_unchecked,
 };
+#[cfg(feature = "defi")]
+use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
@@ -87,9 +89,6 @@ use nautilus_model::{
 pub use refs::{AccountRef, AccountRefMut, OrderRef, OrderRefMut, PositionRef, PositionRefMut};
 use rust_decimal::Decimal;
 use ustr::Ustr;
-
-#[cfg(feature = "defi")]
-use nautilus_model::defi::PoolProfiler;
 
 use crate::xrate::get_exchange_rate;
 
@@ -168,7 +167,7 @@ impl<'a> CacheApi<'a> {
     /// Panics if the cache is already mutably borrowed.
     #[must_use]
     pub fn instrument(&self, instrument_id: &InstrumentId) -> Option<InstrumentAny> {
-        self.cache().instrument_ref(instrument_id).cloned()
+        self.cache().instrument(instrument_id).cloned()
     }
 
     // panics-doc-ok
@@ -185,7 +184,7 @@ impl<'a> CacheApi<'a> {
         &self,
         instrument_id: &InstrumentId,
     ) -> Result<InstrumentAny, InstrumentLookupError> {
-        self.cache().try_instrument_ref(instrument_id).cloned()
+        self.cache().try_instrument(instrument_id).cloned()
     }
 
     /// Returns the instrument IDs in the cache, optionally filtered by `venue`.
@@ -210,7 +209,7 @@ impl<'a> CacheApi<'a> {
     #[must_use]
     pub fn instruments(&self, venue: &Venue, underlying: Option<&Ustr>) -> Vec<InstrumentAny> {
         self.cache()
-            .instruments_refs(venue, underlying)
+            .instruments(venue, underlying)
             .into_iter()
             .cloned()
             .collect()
@@ -226,6 +225,27 @@ impl<'a> CacheApi<'a> {
         self.cache().synthetic_ids().into_iter().copied().collect()
     }
 
+    /// Returns an owned copy of the synthetic instrument for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn synthetic(&self, instrument_id: &InstrumentId) -> Option<SyntheticInstrument> {
+        self.cache().synthetic(instrument_id).cloned()
+    }
+
+    /// Returns the price for the `instrument_id` and `price_type` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed, or if `price_type` is [`PriceType::Mid`]
+    /// and the quote price precision is already at the maximum fixed precision.
+    #[must_use]
+    pub fn price(&self, instrument_id: &InstrumentId, price_type: PriceType) -> Option<Price> {
+        self.cache().price(instrument_id, price_type)
+    }
+
     /// Returns the latest quote for the `instrument_id` (if found).
     ///
     /// # Panics
@@ -233,7 +253,254 @@ impl<'a> CacheApi<'a> {
     /// Panics if the cache is already mutably borrowed.
     #[must_use]
     pub fn quote(&self, instrument_id: &InstrumentId) -> Option<QuoteTick> {
-        self.cache().quote_ref(instrument_id).copied()
+        self.cache().quote(instrument_id).copied()
+    }
+
+    /// Returns the quote at `index` for the `instrument_id` (if found).
+    ///
+    /// Index 0 is the most recent.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn quote_at_index(&self, instrument_id: &InstrumentId, index: usize) -> Option<QuoteTick> {
+        self.cache().quote_at_index(instrument_id, index).copied()
+    }
+
+    /// Returns the latest trade for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn trade(&self, instrument_id: &InstrumentId) -> Option<TradeTick> {
+        self.cache().trade(instrument_id).copied()
+    }
+
+    /// Returns the trade at `index` for the `instrument_id` (if found).
+    ///
+    /// Index 0 is the most recent.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn trade_at_index(&self, instrument_id: &InstrumentId, index: usize) -> Option<TradeTick> {
+        self.cache().trade_at_index(instrument_id, index).copied()
+    }
+
+    /// Returns the latest bar for the `bar_type` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn bar(&self, bar_type: &BarType) -> Option<Bar> {
+        self.cache().bar(bar_type).copied()
+    }
+
+    /// Returns the bar at `index` for the `bar_type` (if found).
+    ///
+    /// Index 0 is the most recent.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn bar_at_index(&self, bar_type: &BarType, index: usize) -> Option<Bar> {
+        self.cache().bar_at_index(bar_type, index).copied()
+    }
+
+    /// Returns the latest mark price update for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn mark_price(&self, instrument_id: &InstrumentId) -> Option<MarkPriceUpdate> {
+        self.cache().mark_price(instrument_id).copied()
+    }
+
+    /// Returns the latest index price update for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn index_price(&self, instrument_id: &InstrumentId) -> Option<IndexPriceUpdate> {
+        self.cache().index_price(instrument_id).copied()
+    }
+
+    /// Returns the latest funding rate update for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn funding_rate(&self, instrument_id: &InstrumentId) -> Option<FundingRateUpdate> {
+        self.cache().funding_rate(instrument_id).copied()
+    }
+
+    /// Returns the latest instrument status update for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn instrument_status(&self, instrument_id: &InstrumentId) -> Option<InstrumentStatus> {
+        self.cache().instrument_status(instrument_id).copied()
+    }
+
+    /// Returns the order book update count for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn book_update_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.cache().book_update_count(instrument_id)
+    }
+
+    /// Returns the quote tick count for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn quote_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.cache().quote_count(instrument_id)
+    }
+
+    /// Returns the trade tick count for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn trade_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.cache().trade_count(instrument_id)
+    }
+
+    /// Returns the bar count for the `bar_type`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn bar_count(&self, bar_type: &BarType) -> usize {
+        self.cache().bar_count(bar_type)
+    }
+
+    /// Returns whether the cache contains an order book for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_order_book(&self, instrument_id: &InstrumentId) -> bool {
+        self.cache().has_order_book(instrument_id)
+    }
+
+    /// Returns whether the cache contains quotes for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_quote_ticks(&self, instrument_id: &InstrumentId) -> bool {
+        self.cache().has_quote_ticks(instrument_id)
+    }
+
+    /// Returns whether the cache contains trades for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_trade_ticks(&self, instrument_id: &InstrumentId) -> bool {
+        self.cache().has_trade_ticks(instrument_id)
+    }
+
+    /// Returns whether the cache contains bars for the `bar_type`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_bars(&self, bar_type: &BarType) -> bool {
+        self.cache().has_bars(bar_type)
+    }
+
+    /// Returns the currency for the `code` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn currency(&self, code: &Ustr) -> Option<Currency> {
+        self.cache().currency(code).copied()
+    }
+
+    // panics-doc-ok
+    /// Returns the currency for the `code`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CurrencyLookupError::NotFound`] when the currency is not present in the cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    pub fn try_currency(&self, code: &Ustr) -> Result<Currency, CurrencyLookupError> {
+        self.cache().try_currency(code).copied()
+    }
+
+    /// Returns the exchange rate for the given currencies and price type (if available).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn get_xrate(
+        &self,
+        venue: Venue,
+        from_currency: Currency,
+        to_currency: Currency,
+        price_type: PriceType,
+    ) -> Option<Decimal> {
+        self.cache()
+            .get_xrate(venue, from_currency, to_currency, price_type)
+    }
+
+    /// Returns the mark exchange rate for the currency pair (if set).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn get_mark_xrate(&self, from_currency: Currency, to_currency: Currency) -> Option<f64> {
+        self.cache().get_mark_xrate(from_currency, to_currency)
+    }
+
+    /// Returns an owned copy of the greeks data for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn greeks(&self, instrument_id: &InstrumentId) -> Option<GreeksData> {
+        self.cache().greeks(instrument_id)
+    }
+
+    /// Returns exchange-provided option greeks for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn option_greeks(&self, instrument_id: &InstrumentId) -> Option<OptionGreeks> {
+        self.cache().option_greeks(instrument_id).copied()
     }
 
     /// Returns an owned copy of the own order book for the `instrument_id` (if found).
@@ -243,7 +510,18 @@ impl<'a> CacheApi<'a> {
     /// Panics if the cache is already mutably borrowed.
     #[must_use]
     pub fn own_order_book(&self, instrument_id: &InstrumentId) -> Option<OwnOrderBook> {
-        self.cache().own_order_book_ref(instrument_id).cloned()
+        self.cache().own_order_book(instrument_id).cloned()
+    }
+
+    /// Returns an owned copy of the pool for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn pool(&self, instrument_id: &InstrumentId) -> Option<Pool> {
+        self.cache().pool(instrument_id).cloned()
     }
 
     /// Returns the pool instrument IDs in the cache, optionally filtered by `venue`.
@@ -276,7 +554,7 @@ impl<'a> CacheApi<'a> {
     #[cfg(feature = "defi")]
     #[must_use]
     pub fn pool_profiler(&self, instrument_id: &InstrumentId) -> Option<PoolProfiler> {
-        self.cache().pool_profiler_ref(instrument_id).cloned()
+        self.cache().pool_profiler(instrument_id).cloned()
     }
 
     /// Returns an owned copy of the account for the `account_id` (if found).
@@ -747,7 +1025,7 @@ impl<'a> CacheApi<'a> {
         account_id: Option<&AccountId>,
     ) -> Vec<OrderList> {
         self.cache()
-            .order_lists_refs(venue, instrument_id, strategy_id, account_id)
+            .order_lists(venue, instrument_id, strategy_id, account_id)
             .into_iter()
             .cloned()
             .collect()
@@ -5401,7 +5679,7 @@ impl Cache {
 
     /// Returns all order lists matching the optional filter parameters.
     #[must_use]
-    pub fn order_lists_refs(
+    pub fn order_lists(
         &self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
@@ -5433,20 +5711,6 @@ impl Cache {
         }
 
         order_lists
-    }
-
-    /// Returns all order lists matching the optional filter parameters.
-    ///
-    /// Prefer [`Self::order_lists_refs`] in new native code.
-    #[must_use]
-    pub fn order_lists(
-        &self,
-        venue: Option<&Venue>,
-        instrument_id: Option<&InstrumentId>,
-        strategy_id: Option<&StrategyId>,
-        account_id: Option<&AccountId>,
-    ) -> Vec<&OrderList> {
-        self.order_lists_refs(venue, instrument_id, strategy_id, account_id)
     }
 
     /// Returns whether an order list with the `order_list_id` exists.
@@ -6056,16 +6320,8 @@ impl Cache {
 
     /// Gets a reference to the own order book for the `instrument_id`.
     #[must_use]
-    pub fn own_order_book_ref(&self, instrument_id: &InstrumentId) -> Option<&OwnOrderBook> {
-        self.own_books.get(instrument_id)
-    }
-
-    /// Gets a reference to the own order book for the `instrument_id`.
-    ///
-    /// Prefer [`Self::own_order_book_ref`] in new native code.
-    #[must_use]
     pub fn own_order_book(&self, instrument_id: &InstrumentId) -> Option<&OwnOrderBook> {
-        self.own_order_book_ref(instrument_id)
+        self.own_books.get(instrument_id)
     }
 
     /// Gets a reference to the own order book for the `instrument_id`.
@@ -6094,18 +6350,10 @@ impl Cache {
 
     /// Gets a reference to the latest quote for the `instrument_id`.
     #[must_use]
-    pub fn quote_ref(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
+    pub fn quote(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
         self.quotes
             .get(instrument_id)
             .and_then(|quotes| quotes.front())
-    }
-
-    /// Gets a reference to the latest quote for the `instrument_id`.
-    ///
-    /// Prefer [`Self::quote_ref`] in new native code.
-    #[must_use]
-    pub fn quote(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
-        self.quote_ref(instrument_id)
     }
 
     /// Gets a reference to the quote at `index` for the `instrument_id`.
@@ -6374,35 +6622,11 @@ impl Cache {
 
     /// Returns a reference to the instrument for the `instrument_id` (if found).
     #[must_use]
-    pub fn instrument_ref(&self, instrument_id: &InstrumentId) -> Option<&InstrumentAny> {
+    pub fn instrument(&self, instrument_id: &InstrumentId) -> Option<&InstrumentAny> {
         self.instruments.get(instrument_id)
     }
 
-    /// Returns a reference to the instrument for the `instrument_id` (if found).
-    ///
-    /// Prefer [`Self::instrument_ref`] in new native code.
-    #[must_use]
-    pub fn instrument(&self, instrument_id: &InstrumentId) -> Option<&InstrumentAny> {
-        self.instrument_ref(instrument_id)
-    }
-
     /// Returns a reference to the instrument for the `instrument_id`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`InstrumentLookupError::NotFound`] when the instrument is not present in the cache.
-    pub fn try_instrument_ref(
-        &self,
-        instrument_id: &InstrumentId,
-    ) -> Result<&InstrumentAny, InstrumentLookupError> {
-        self.instruments
-            .get(instrument_id)
-            .ok_or_else(|| InstrumentLookupError::not_found(*instrument_id))
-    }
-
-    /// Returns a reference to the instrument for the `instrument_id`.
-    ///
-    /// Prefer [`Self::try_instrument_ref`] in new native code.
     ///
     /// # Errors
     ///
@@ -6411,7 +6635,9 @@ impl Cache {
         &self,
         instrument_id: &InstrumentId,
     ) -> Result<&InstrumentAny, InstrumentLookupError> {
-        self.try_instrument_ref(instrument_id)
+        self.instruments
+            .get(instrument_id)
+            .ok_or_else(|| InstrumentLookupError::not_found(*instrument_id))
     }
 
     /// Returns references to all instrument IDs for the `venue`.
@@ -6425,24 +6651,12 @@ impl Cache {
 
     /// Returns references to all instruments for the `venue`.
     #[must_use]
-    pub fn instruments_refs(
-        &self,
-        venue: &Venue,
-        underlying: Option<&Ustr>,
-    ) -> Vec<&InstrumentAny> {
+    pub fn instruments(&self, venue: &Venue, underlying: Option<&Ustr>) -> Vec<&InstrumentAny> {
         self.instruments
             .values()
             .filter(|i| &i.id().venue == venue)
             .filter(|i| underlying.is_none_or(|u| i.underlying() == Some(*u)))
             .collect()
-    }
-
-    /// Returns references to all instruments for the `venue`.
-    ///
-    /// Prefer [`Self::instruments_refs`] in new native code.
-    #[must_use]
-    pub fn instruments(&self, venue: &Venue, underlying: Option<&Ustr>) -> Vec<&InstrumentAny> {
-        self.instruments_refs(venue, underlying)
     }
 
     /// Returns references to all instruments for the `venue` whose underlying
@@ -6530,13 +6744,38 @@ impl Cache {
 
     /// Returns a borrow of the account for the `account_id` (if found).
     #[must_use]
-    pub fn account(&self, account_id: &AccountId) -> Option<AccountRef<'_>> {
+    pub fn account_ref(&self, account_id: &AccountId) -> Option<AccountRef<'_>> {
         self.accounts
             .get(account_id)
             .map(|account_cell| AccountRef::new(account_cell.borrow()))
     }
 
+    /// Returns a borrow of the account for the `account_id` (if found).
+    ///
+    /// Prefer [`Self::account_ref`] in new native code.
+    #[must_use]
+    pub fn account(&self, account_id: &AccountId) -> Option<AccountRef<'_>> {
+        self.account_ref(account_id)
+    }
+
     /// Returns a borrow of the account for the `account_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AccountLookupError::NotFound`] when the account is not present in the cache.
+    pub fn try_account_ref(
+        &self,
+        account_id: &AccountId,
+    ) -> Result<AccountRef<'_>, AccountLookupError> {
+        self.accounts
+            .get(account_id)
+            .map(|account_cell| AccountRef::new(account_cell.borrow()))
+            .ok_or_else(|| AccountLookupError::not_found(*account_id))
+    }
+
+    /// Returns a borrow of the account for the `account_id`.
+    ///
+    /// Prefer [`Self::try_account_ref`] in new native code.
     ///
     /// # Errors
     ///
@@ -6545,10 +6784,7 @@ impl Cache {
         &self,
         account_id: &AccountId,
     ) -> Result<AccountRef<'_>, AccountLookupError> {
-        self.accounts
-            .get(account_id)
-            .map(|account_cell| AccountRef::new(account_cell.borrow()))
-            .ok_or_else(|| AccountLookupError::not_found(*account_id))
+        self.try_account_ref(account_id)
     }
 
     /// Gets an exclusive write borrow of the account with the `account_id` (if found).
