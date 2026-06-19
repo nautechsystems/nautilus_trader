@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod api;
 pub mod config;
 pub mod core;
 
@@ -20,6 +21,7 @@ pub use core::StrategyCore;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use ahash::AHashSet;
+pub use api::{OrderApi, PortfolioApi};
 pub use config::{ImportableStrategyConfig, StrategyConfig};
 use nautilus_common::{
     actor::DataActor,
@@ -110,6 +112,16 @@ pub trait Strategy: DataActor {
     /// during reconciliation.
     fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
         None
+    }
+
+    /// Returns the user-facing order creation API.
+    fn order(&self) -> OrderApi<'_> {
+        self.core().order()
+    }
+
+    /// Returns the user-facing portfolio read API.
+    fn portfolio(&self) -> PortfolioApi<'_> {
+        self.core().portfolio_api()
     }
 
     /// Submits an order.

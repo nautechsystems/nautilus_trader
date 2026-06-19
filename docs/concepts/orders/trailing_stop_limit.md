@@ -28,7 +28,7 @@ use nautilus_model::{
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
-let order = self.core.order_factory().trailing_stop_limit(
+let order = self.order().trailing_stop_limit(
     InstrumentId::from("AUD/USD.CURRENEX"),
     OrderSide::Buy,
     Quantity::from(1_250_000),

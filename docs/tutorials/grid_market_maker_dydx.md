@@ -449,7 +449,7 @@ fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
 
     let (tif, expire_time) = match self.config.expire_time_secs {
         Some(secs) => {
-            let now_ns = self.core.clock().timestamp_ns();
+            let now_ns = self.clock().timestamp_ns();
             let expire_ns = now_ns + secs * 1_000_000_000;
             (Some(TimeInForce::Gtd), Some(expire_ns))
         }
@@ -457,7 +457,7 @@ fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
     };
 
     for (side, price) in grid {
-        let order = self.core.order_factory().limit(
+        let order = self.order().limit(
             instrument_id,
             side,
             trade_size,

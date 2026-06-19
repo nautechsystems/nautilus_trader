@@ -80,6 +80,9 @@ const PLUGIN_STRATEGY_HOST_OWNED_METHODS: &[&str] = &[
     "core_mut",
     // External order claims are reconciliation policy, not a v1 plug-in command
     "external_order_claims",
+    // Facade accessors wrap host-owned order factory and portfolio state
+    "order",
+    "portfolio",
     // The host owns event routing into plug-in callback slots
     "handle_order_event",
     "handle_position_event",
@@ -204,6 +207,7 @@ const PLUGIN_STRATEGY_CORE_HOST_OWNED_METHODS: &[&str] = &[
     "order_id_tag",
     "register",
     // Direct access to host-owned runtime state does not cross the boundary
+    "order",
     "order_manager",
     "order_factory_rc",
     "portfolio",

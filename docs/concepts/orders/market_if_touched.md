@@ -28,7 +28,7 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-let order = self.core.order_factory().market_if_touched(
+let order = self.order().market_if_touched(
     InstrumentId::from("ETHUSDT-PERP.BINANCE"),
     OrderSide::Sell,
     Quantity::from(10),

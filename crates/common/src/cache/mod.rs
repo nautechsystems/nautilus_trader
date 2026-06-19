@@ -686,6 +686,22 @@ impl<'a> CacheApi<'a> {
         self.cache().account_owned(account_id)
     }
 
+    // panics-doc-ok
+    /// Returns an owned copy of the account for the `account_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AccountLookupError::NotFound`] when the account is not present in the cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    pub fn try_account(&self, account_id: &AccountId) -> Result<AccountAny, AccountLookupError> {
+        self.cache()
+            .try_account(account_id)
+            .map(|account| account.cloned())
+    }
+
     /// Returns an owned copy of the account for the `venue` (if found).
     ///
     /// # Panics

@@ -25,7 +25,7 @@ use nautilus_model::{
     types::Quantity,
 };
 
-let order = self.core.order_factory().market_to_limit(
+let order = self.order().market_to_limit(
     InstrumentId::from("USD/JPY.IDEALPRO"),
     OrderSide::Buy,
     Quantity::from(200_000),

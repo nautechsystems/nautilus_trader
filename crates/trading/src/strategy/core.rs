@@ -34,7 +34,10 @@ use nautilus_model::identifiers::{
 use nautilus_portfolio::portfolio::Portfolio;
 use ustr::Ustr;
 
-use super::config::StrategyConfig;
+use super::{
+    api::{OrderApi, PortfolioApi},
+    config::StrategyConfig,
+};
 
 /// The core component of a [`Strategy`](super::Strategy), managing data, orders, and state.
 ///
@@ -196,6 +199,20 @@ impl StrategyCore {
         Ok(())
     }
 
+    /// Returns the user-facing order creation API.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the strategy has not been registered.
+    #[must_use]
+    pub fn order(&self) -> OrderApi<'_> {
+        let order_factory = self
+            .order_factory
+            .as_ref()
+            .expect("Strategy not registered: OrderFactory not initialized");
+        OrderApi::new(order_factory.as_ref())
+    }
+
     /// Returns a mutable reference to the [`OrderFactory`].
     ///
     /// # Panics
@@ -244,6 +261,20 @@ impl StrategyCore {
             .expect("Strategy not registered: Portfolio not initialized")
     }
 
+    /// Returns the user-facing portfolio read API.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the strategy has not been registered.
+    #[must_use]
+    pub(crate) fn portfolio_api(&self) -> PortfolioApi<'_> {
+        let portfolio = self
+            .portfolio
+            .as_ref()
+            .expect("Strategy not registered: Portfolio not initialized");
+        PortfolioApi::new(portfolio.as_ref())
+    }
+
     /// Resets the market exit state.
     pub fn reset_market_exit_state(&mut self) {
         self.is_exiting = false;
@@ -285,9 +316,16 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{cache::Cache, clock::TestClock};
-    use nautilus_model::identifiers::{StrategyId, TraderId};
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        enums::{OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
+        identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
+        orders::Order,
+        types::{Price, Quantity},
+    };
     use nautilus_portfolio::portfolio::Portfolio;
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use super::*;
 
@@ -466,6 +504,385 @@ mod tests {
     }
 
     #[rstest]
+    fn test_strategy_core_order_api_creates_orders() {
+        let core = registered_test_core();
+        let orders = core.order();
+
+        let market = orders.market(
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let limit = orders.limit(
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            OrderSide::Sell,
+            Quantity::from("2.0"),
+            Price::from("100.00"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(market.order_type(), OrderType::Market);
+        assert_eq!(
+            market.client_order_id().as_str(),
+            "O-19700101-000000-001-001-1"
+        );
+        assert_eq!(limit.order_type(), OrderType::Limit);
+        assert_eq!(
+            limit.client_order_id().as_str(),
+            "O-19700101-000000-001-001-2"
+        );
+    }
+
+    #[rstest]
+    fn test_strategy_core_order_api_creates_remaining_order_types() {
+        let core = registered_test_core();
+        let orders = core.order();
+        let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+        let trigger_instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
+        let expire_time = UnixNanos::from(1_000);
+        let display_qty = Quantity::from("0.5");
+
+        let stop_market = orders.stop_market(
+            instrument_id,
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            Price::from("99.00"),
+            Some(TriggerType::LastPrice),
+            Some(TimeInForce::Gtd),
+            Some(expire_time),
+            Some(true),
+            Some(false),
+            Some(display_qty),
+            Some(TriggerType::BidAsk),
+            Some(trigger_instrument_id),
+            None,
+            None,
+            None,
+            None,
+        );
+        let stop_limit = orders.stop_limit(
+            instrument_id,
+            OrderSide::Sell,
+            Quantity::from("1.1"),
+            Price::from("101.00"),
+            Price::from("100.50"),
+            Some(TriggerType::LastPrice),
+            Some(TimeInForce::Gtd),
+            Some(expire_time),
+            Some(true),
+            Some(false),
+            Some(false),
+            Some(display_qty),
+            Some(TriggerType::BidAsk),
+            Some(trigger_instrument_id),
+            None,
+            None,
+            None,
+            None,
+        );
+        let market_to_limit = orders.market_to_limit(
+            instrument_id,
+            OrderSide::Buy,
+            Quantity::from("1.2"),
+            Some(TimeInForce::Gtd),
+            Some(expire_time),
+            Some(true),
+            Some(false),
+            Some(display_qty),
+            None,
+            None,
+            None,
+            None,
+        );
+        let market_if_touched = orders.market_if_touched(
+            instrument_id,
+            OrderSide::Sell,
+            Quantity::from("1.3"),
+            Price::from("98.50"),
+            Some(TriggerType::LastPrice),
+            Some(TimeInForce::Gtd),
+            Some(expire_time),
+            Some(false),
+            Some(false),
+            Some(TriggerType::BidAsk),
+            Some(trigger_instrument_id),
+            None,
+            None,
+            None,
+            None,
+        );
+        let limit_if_touched = orders.limit_if_touched(
+            instrument_id,
+            OrderSide::Buy,
+            Quantity::from("1.4"),
+            Price::from("97.50"),
+            Price::from("97.00"),
+            Some(TriggerType::LastPrice),
+            Some(TimeInForce::Gtd),
+            Some(expire_time),
+            Some(true),
+            Some(false),
+            Some(false),
+            Some(display_qty),
+            Some(TriggerType::BidAsk),
+            Some(trigger_instrument_id),
+            None,
+            None,
+            None,
+            None,
+        );
+        let trailing_stop_market = orders.trailing_stop_market(
+            instrument_id,
+            OrderSide::Sell,
+            Quantity::from("1.5"),
+            Decimal::new(25, 2),
+            Some(TrailingOffsetType::Price),
+            Some(Price::from("105.00")),
+            Some(Price::from("104.50")),
+            Some(TriggerType::LastPrice),
+            Some(TimeInForce::Gtd),
+            Some(expire_time),
+            Some(false),
+            Some(false),
+            Some(display_qty),
+            Some(TriggerType::BidAsk),
+            Some(trigger_instrument_id),
+            None,
+            None,
+            None,
+            None,
+        );
+        let trailing_stop_limit = orders.trailing_stop_limit(
+            instrument_id,
+            OrderSide::Buy,
+            Quantity::from("1.6"),
+            Price::from("96.00"),
+            Decimal::new(10, 2),
+            Decimal::new(50, 2),
+            Some(TrailingOffsetType::Price),
+            Some(Price::from("97.00")),
+            Some(Price::from("96.50")),
+            Some(TriggerType::LastPrice),
+            Some(TimeInForce::Gtd),
+            Some(expire_time),
+            Some(true),
+            Some(false),
+            Some(false),
+            Some(display_qty),
+            Some(TriggerType::BidAsk),
+            Some(trigger_instrument_id),
+            None,
+            None,
+            None,
+            None,
+        );
+        let mut list_orders = vec![market_to_limit.clone(), stop_limit.clone()];
+        let order_list = orders.create_list(&mut list_orders, expire_time);
+
+        assert_eq!(stop_market.order_type(), OrderType::StopMarket);
+        assert_eq!(stop_market.trigger_price(), Some(Price::from("99.00")));
+        assert_eq!(stop_market.trigger_type(), Some(TriggerType::LastPrice));
+        assert_eq!(stop_market.time_in_force(), TimeInForce::Gtd);
+        assert_eq!(stop_market.expire_time(), Some(expire_time));
+        assert!(stop_market.is_reduce_only());
+        assert_eq!(stop_market.display_qty(), Some(display_qty));
+        assert_eq!(stop_market.emulation_trigger(), Some(TriggerType::BidAsk));
+        assert_eq!(
+            stop_market.trigger_instrument_id(),
+            Some(trigger_instrument_id)
+        );
+
+        assert_eq!(stop_limit.order_type(), OrderType::StopLimit);
+        assert_eq!(stop_limit.price(), Some(Price::from("101.00")));
+        assert_eq!(stop_limit.trigger_price(), Some(Price::from("100.50")));
+        assert!(stop_limit.is_post_only());
+
+        assert_eq!(market_to_limit.order_type(), OrderType::MarketToLimit);
+        assert_eq!(market_to_limit.time_in_force(), TimeInForce::Gtd);
+        assert_eq!(market_to_limit.expire_time(), Some(expire_time));
+        assert!(market_to_limit.is_reduce_only());
+        assert_eq!(market_to_limit.display_qty(), Some(display_qty));
+
+        assert_eq!(market_if_touched.order_type(), OrderType::MarketIfTouched);
+        assert_eq!(
+            market_if_touched.trigger_price(),
+            Some(Price::from("98.50"))
+        );
+        assert_eq!(
+            market_if_touched.trigger_type(),
+            Some(TriggerType::LastPrice)
+        );
+
+        assert_eq!(limit_if_touched.order_type(), OrderType::LimitIfTouched);
+        assert_eq!(limit_if_touched.price(), Some(Price::from("97.50")));
+        assert_eq!(limit_if_touched.trigger_price(), Some(Price::from("97.00")));
+        assert!(limit_if_touched.is_post_only());
+
+        assert_eq!(
+            trailing_stop_market.order_type(),
+            OrderType::TrailingStopMarket
+        );
+        assert_eq!(
+            trailing_stop_market.trailing_offset(),
+            Some(Decimal::new(25, 2))
+        );
+        assert_eq!(
+            trailing_stop_market.trailing_offset_type(),
+            Some(TrailingOffsetType::Price)
+        );
+        assert_eq!(
+            trailing_stop_market.activation_price(),
+            Some(Price::from("105.00"))
+        );
+        assert_eq!(
+            trailing_stop_market.trigger_price(),
+            Some(Price::from("104.50"))
+        );
+
+        assert_eq!(
+            trailing_stop_limit.order_type(),
+            OrderType::TrailingStopLimit
+        );
+        assert_eq!(trailing_stop_limit.price(), Some(Price::from("96.00")));
+        assert_eq!(
+            trailing_stop_limit.limit_offset(),
+            Some(Decimal::new(10, 2))
+        );
+        assert_eq!(
+            trailing_stop_limit.trailing_offset(),
+            Some(Decimal::new(50, 2))
+        );
+        assert_eq!(
+            trailing_stop_limit.activation_price(),
+            Some(Price::from("97.00"))
+        );
+        assert!(trailing_stop_limit.is_post_only());
+
+        assert_eq!(order_list.id, list_orders[0].order_list_id().unwrap());
+        assert_eq!(order_list.id, list_orders[1].order_list_id().unwrap());
+        assert_eq!(order_list.instrument_id, instrument_id);
+        assert_eq!(
+            order_list.client_order_ids,
+            list_orders
+                .iter()
+                .map(Order::client_order_id)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[rstest]
+    fn test_strategy_core_order_api_generates_ids() {
+        let mut core = registered_test_core();
+        let (client_order_id, order_list_id) = {
+            let orders = core.order();
+            (
+                orders.generate_client_order_id(),
+                orders.generate_order_list_id(),
+            )
+        };
+
+        let _native_order_factory = core.order_factory().generate_client_order_id();
+
+        assert_eq!(client_order_id.as_str(), "O-19700101-000000-001-001-1");
+        assert_eq!(order_list_id.as_str(), "OL-19700101-000000-001-001-1");
+    }
+
+    #[rstest]
+    fn test_strategy_core_order_api_creates_bracket_orders() {
+        let core = registered_test_core();
+
+        let orders = core
+            .order()
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .tp_price(Price::from("110.00"))
+            .sl_trigger_price(Price::from("90.00"))
+            .call();
+        let order_list_id = orders[0].order_list_id();
+
+        assert_eq!(orders.len(), 3);
+        assert_eq!(orders[0].order_type(), OrderType::Market);
+        assert_eq!(orders[1].order_type(), OrderType::StopMarket);
+        assert_eq!(orders[2].order_type(), OrderType::Limit);
+        assert!(order_list_id.is_some());
+        assert!(
+            orders
+                .iter()
+                .all(|order| order.order_list_id() == order_list_id)
+        );
+    }
+
+    #[rstest]
+    fn test_strategy_core_portfolio_api_returns_owned_reads() {
+        let core = registered_test_core();
+        let portfolio = core.portfolio_api();
+        let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+        let venue = instrument_id.venue;
+
+        let is_initialized = portfolio.is_initialized();
+        let balances_locked = portfolio.balances_locked(&venue);
+        let margins_init = portfolio.margins_init(&venue);
+        let margins_maint = portfolio.margins_maint(&venue);
+        let unrealized_pnls = portfolio.unrealized_pnls(&venue, None);
+        let realized_pnls = portfolio.realized_pnls(&venue, None);
+        let net_exposures = portfolio.net_exposures(&venue, None);
+        let unrealized_pnl = portfolio.unrealized_pnl(&instrument_id);
+        let realized_pnl = portfolio.realized_pnl(&instrument_id);
+        let total_pnl = portfolio.total_pnl(&instrument_id);
+        let total_pnls = portfolio.total_pnls(&venue, None);
+        let mark_values = portfolio.mark_values(&venue, None);
+        let equity = portfolio.equity(&venue, None);
+        let net_exposure = portfolio.net_exposure(&instrument_id, None);
+        let is_flat = portfolio.is_flat(&instrument_id);
+        let net_position = portfolio.net_position(&instrument_id);
+        let missing_prices = portfolio.missing_price_instruments(&venue);
+        let snapshots = portfolio.snapshots(&AccountId::from("SIM-001"));
+        let recorded_realized_pnls = portfolio.recorded_realized_pnls();
+
+        let _native_portfolio = core.portfolio().borrow_mut();
+
+        assert!(!is_initialized);
+        assert!(balances_locked.is_empty());
+        assert!(margins_init.is_empty());
+        assert!(margins_maint.is_empty());
+        assert!(unrealized_pnls.is_empty());
+        assert!(realized_pnls.is_empty());
+        assert_eq!(net_exposures, None);
+        assert_eq!(unrealized_pnl, None);
+        assert_eq!(realized_pnl, None);
+        assert_eq!(total_pnl, None);
+        assert!(total_pnls.is_empty());
+        assert!(mark_values.is_empty());
+        assert!(equity.is_empty());
+        assert_eq!(net_exposure, None);
+        assert!(is_flat);
+        assert_eq!(net_position, Decimal::ZERO);
+        assert!(missing_prices.is_empty());
+        assert!(snapshots.is_empty());
+        assert!(recorded_realized_pnls.is_empty());
+    }
+
+    #[rstest]
     fn test_strategy_core_deref() {
         let config = create_test_config();
         let core = StrategyCore::new(config);
@@ -480,5 +897,22 @@ mod tests {
 
         let debug_str = format!("{core:?}");
         assert!(debug_str.contains("StrategyCore"));
+    }
+
+    fn registered_test_core() -> StrategyCore {
+        let config = create_test_config();
+        let mut core = StrategyCore::new(config);
+
+        let trader_id = TraderId::from("TRADER-001");
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let portfolio = Rc::new(RefCell::new(Portfolio::new(
+            cache.clone(),
+            clock.clone(),
+            None,
+        )));
+
+        core.register(trader_id, clock, cache, portfolio).unwrap();
+        core
     }
 }

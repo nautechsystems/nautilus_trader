@@ -195,9 +195,11 @@ The `Strategy` trait provides order methods through `StrategyCore`:
 | `close_position`      | Close a position with a market order.     |
 | `close_all_positions` | Close all open positions.                 |
 
-The `OrderFactory` (accessed via `self.core.order_factory()`) builds order
-objects: `market`, `limit`, `stop_market`, `stop_limit`,
-`market_if_touched`, `limit_if_touched`, and `trailing_stop_market`.
+The `OrderApi` (accessed via `self.order()`) builds orders and order lists:
+`generate_client_order_id`, `generate_order_list_id`, `market`, `limit`,
+`stop_market`, `stop_limit`, `market_to_limit`, `market_if_touched`,
+`limit_if_touched`, `trailing_stop_market`, `trailing_stop_limit`, `bracket`,
+and `create_list`.
 
 For a step-by-step walkthrough, see the
 [Write a Strategy (Rust)](../how_to/write_rust_strategy.md) how-to guide.

@@ -26,7 +26,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 
-let order = self.core.order_factory().stop_market(
+let order = self.order().stop_market(
     InstrumentId::from("BTCUSDT.BINANCE"),
     OrderSide::Sell,
     Quantity::from(1),

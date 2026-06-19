@@ -26,7 +26,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 
-let order = self.core.order_factory().stop_limit(
+let order = self.order().stop_limit(
     InstrumentId::from("GBP/USD.CURRENEX"),
     OrderSide::Buy,
     Quantity::from(50_000),

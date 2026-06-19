@@ -28,7 +28,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-let order = self.core.order_factory().trailing_stop_market(
+let order = self.order().trailing_stop_market(
     InstrumentId::from("ETHUSD-PERP.BINANCE"),
     OrderSide::Sell,
     Quantity::from(10),

@@ -27,7 +27,7 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-let order = self.core.order_factory().limit_if_touched(
+let order = self.order().limit_if_touched(
     InstrumentId::from("BTCUSDT-PERP.BINANCE"),
     OrderSide::Buy,
     Quantity::from(5),

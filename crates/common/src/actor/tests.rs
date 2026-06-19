@@ -541,10 +541,14 @@ fn test_data_actor_cache_api_returns_owned_point_reads(
         vec![client_order_id],
         order_list_ts_init,
     );
+    let account = AccountAny::default();
+    let account_id = account.id();
+    let account_venue = account_id.get_issuer();
 
     {
         let mut cache = cache.borrow_mut();
         cache.add_instrument(instrument.clone()).unwrap();
+        cache.add_account(account.clone()).unwrap();
         cache.add_order_list(order_list).unwrap();
         cache.add_order(order, None, None, false).unwrap();
     }
@@ -555,6 +559,9 @@ fn test_data_actor_cache_api_returns_owned_point_reads(
     let cached_order = cache_api.try_order(&client_order_id).unwrap();
     let maybe_order = cache_api.order(&client_order_id).unwrap();
     let maybe_order_list = cache_api.order_list(&order_list_id).unwrap();
+    let cached_account = cache_api.try_account(&account_id).unwrap();
+    let maybe_account = cache_api.account(&account_id).unwrap();
+    let venue_account = cache_api.account_for_venue(&account_venue).unwrap();
     let missing_instrument_id = InstrumentId::from("MISSING.SIM");
     let missing_instrument = cache_api
         .try_instrument(&missing_instrument_id)
@@ -562,6 +569,8 @@ fn test_data_actor_cache_api_returns_owned_point_reads(
     let missing_order_id = ClientOrderId::from("O-MISSING");
     let missing_order = cache_api.try_order(&missing_order_id).unwrap_err();
     let missing_order_list = cache_api.order_list(&OrderListId::from("OL-MISSING"));
+    let missing_account_id = AccountId::from("MISSING-001");
+    let missing_account = cache_api.try_account(&missing_account_id).unwrap_err();
 
     let _cache_write = cache.borrow_mut();
 
@@ -574,6 +583,10 @@ fn test_data_actor_cache_api_returns_owned_point_reads(
     assert_eq!(maybe_order_list.strategy_id, order_strategy_id);
     assert_eq!(maybe_order_list.client_order_ids, vec![client_order_id]);
     assert_eq!(maybe_order_list.ts_init, order_list_ts_init);
+    assert_eq!(cached_account.id(), account_id);
+    assert_eq!(cached_account.balances(), account.balances());
+    assert_eq!(maybe_account.id(), account_id);
+    assert_eq!(venue_account.id(), account_id);
     assert_eq!(
         missing_instrument,
         crate::cache::InstrumentLookupError::not_found(missing_instrument_id)
@@ -581,6 +594,10 @@ fn test_data_actor_cache_api_returns_owned_point_reads(
     assert_eq!(
         missing_order,
         crate::cache::OrderLookupError::not_found(missing_order_id)
+    );
+    assert_eq!(
+        missing_account,
+        crate::cache::AccountLookupError::not_found(missing_account_id)
     );
     assert_eq!(missing_order_list, None);
 }
@@ -1163,6 +1180,8 @@ fn test_data_actor_cache_api_surface_returns_owned_values(
     #[cfg(feature = "defi")]
     let _: Vec<PoolProfiler> = cache_api.pool_profilers(Some(&venue));
     let _: Option<AccountAny> = cache_api.account(&account_id);
+    let _: Result<AccountAny, crate::cache::AccountLookupError> =
+        cache_api.try_account(&account_id);
     let _: Option<AccountAny> = cache_api.account_for_venue(&venue);
     let _: Option<AccountId> = cache_api.account_id(&venue);
     let _: AHashSet<ComponentId> = cache_api.actor_ids();

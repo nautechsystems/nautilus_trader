@@ -159,8 +159,7 @@ use nautilus_model::{
 // `bracket()` returns a `bon` builder; finalize with `.call()`.
 // The result is a `Vec<OrderAny>` ordered as [entry, stop-loss, take-profit].
 let orders = self
-    .core
-    .order_factory()
+    .order()
     .bracket()
     .instrument_id(InstrumentId::from("ETHUSDT-PERP.BINANCE"))
     .order_side(OrderSide::Buy)
