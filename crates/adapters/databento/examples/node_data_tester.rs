@@ -73,7 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_factory = DatabentoDataClientFactory::new();
 
     // ESM6.XCME
-    let instrument_id = InstrumentId::from("ESM6.XCME");
+    let instrument_id = InstrumentId::from("ESZ6.XCME");
     let price_precision = None; // Default
 
     // 6EM6.XCME

@@ -6927,6 +6927,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-tutorials"
+version = "0.59.0"
+dependencies = [
+ "dotenvy",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-databento",
+ "nautilus-lighter",
+ "nautilus-live",
+ "nautilus-model",
+ "nautilus-trading",
+ "tokio",
+]
+
+[[package]]
 name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
