@@ -53,7 +53,7 @@ use std::{
 use aws_lc_rs::digest;
 use nautilus_common::{
     actor::{DataActor, registry::register_actor},
-    cache::Cache,
+    cache::{Cache, ORDER_NOT_FOUND},
     clock::{Clock, TestClock},
     component::Component,
     messages::execution::TradingCommand,
@@ -1247,7 +1247,9 @@ fn cdylib_strategy_cancel_orders_normalizes_identifiers_and_surfaces_missing_cac
     let message = err.to_string();
 
     assert!(
-        message.contains("Cannot cancel order: O-CDYLIB-CANCEL-MISSING-001 not found in cache"),
+        message.contains(&format!(
+            "Cannot cancel order: {ORDER_NOT_FOUND}: {client_order_id}"
+        )),
         "unexpected error: {message}"
     );
 }

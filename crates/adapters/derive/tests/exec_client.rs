@@ -45,7 +45,7 @@ use axum::{
 };
 use futures_util::StreamExt;
 use nautilus_common::{
-    cache::Cache,
+    cache::{Cache, ORDER_NOT_FOUND},
     clients::ExecutionClient,
     live::runner::replace_exec_event_sender,
     messages::{
@@ -2491,6 +2491,53 @@ async fn test_modify_order_posts_replace_and_emits_order_updated() {
     assert!(ws_state.cancelled_orders.lock().await.is_empty());
 
     tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_order_rejects_missing_cached_order_with_canonical_reason() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut tc = build_client(rest_state, ws_state).await;
+
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let client_order_id = ClientOrderId::from("STRAT-MOD-MISSING");
+    let cmd = ModifyOrder::new(
+        TraderId::from("TRADER-001"),
+        Some(ClientId::from("DERIVE")),
+        StrategyId::from("S-1"),
+        instrument_id,
+        client_order_id,
+        Some(VenueOrderId::from("ord-missing-cache")),
+        Some(Quantity::from("2.000")),
+        Some(Price::from("3505.00")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    tc.client.modify_order(cmd).expect("modify_order Ok");
+
+    let event = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyRejected(_))),
+        "OrderModifyRejected event",
+    )
+    .await;
+
+    if let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event {
+        assert_eq!(rejected.client_order_id, client_order_id);
+        assert_eq!(rejected.reason.as_str(), ORDER_NOT_FOUND);
+        assert_eq!(
+            rejected.venue_order_id.map(|v| v.as_str().to_string()),
+            Some("ord-missing-cache".to_string()),
+        );
+    } else {
+        unreachable!();
+    }
+
+    tc.client.stop().expect("stop");
 }
 
 #[rstest]

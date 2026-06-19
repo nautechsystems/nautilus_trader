@@ -20,7 +20,6 @@ pub use core::StrategyCore;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use ahash::AHashSet;
-use anyhow::Context;
 pub use config::{ImportableStrategyConfig, StrategyConfig};
 use nautilus_common::{
     actor::DataActor,
@@ -358,15 +357,12 @@ pub trait Strategy: DataActor {
         let params = params.filter(|params| !params.is_empty());
 
         // TODO: Snapshot the order from the cache. See `cancel_order` for the rationale.
-        let order = match self
+        let order = self
             .core_mut()
             .cache_rc()
             .borrow()
-            .order_owned(&client_order_id)
-        {
-            Some(order) => order,
-            None => anyhow::bail!("Cannot modify order: {client_order_id} not found in cache"),
-        };
+            .try_order_owned(&client_order_id)
+            .map_err(|e| anyhow::anyhow!("Cannot modify order: {e}"))?;
 
         let mut updating = false;
 
@@ -474,9 +470,9 @@ pub trait Strategy: DataActor {
             updates
                 .iter()
                 .map(|(client_order_id, _, _, _)| {
-                    cache.try_order_owned(client_order_id).with_context(|| {
-                        format!("Cannot modify order: {client_order_id} not found in cache")
-                    })
+                    cache
+                        .try_order_owned(client_order_id)
+                        .map_err(|e| anyhow::anyhow!("Cannot modify order: {e}"))
                 })
                 .collect::<Result<_, _>>()?
         };
@@ -612,15 +608,12 @@ pub trait Strategy: DataActor {
         // TODO: Snapshot the order from the cache. Callers identify it by ID; we own the
         // snapshot so later calls (which take `&OrderAny` and may re-enter the cache)
         // run without holding a live cache borrow.
-        let order = match self
+        let order = self
             .core_mut()
             .cache_rc()
             .borrow()
-            .order_owned(&client_order_id)
-        {
-            Some(order) => order,
-            None => anyhow::bail!("Cannot cancel order: {client_order_id} not found in cache"),
-        };
+            .try_order_owned(&client_order_id)
+            .map_err(|e| anyhow::anyhow!("Cannot cancel order: {e}"))?;
 
         if !self.mark_order_pending_cancel(&order)? {
             return Ok(());
@@ -697,7 +690,7 @@ pub trait Strategy: DataActor {
                 .map(|id| {
                     cache
                         .try_order_owned(id)
-                        .with_context(|| format!("Cannot cancel order: {id} not found in cache"))
+                        .map_err(|e| anyhow::anyhow!("Cannot cancel order: {e}"))
                 })
                 .collect::<Result<_, _>>()?
         };
@@ -2093,7 +2086,7 @@ mod tests {
 
     use nautilus_common::{
         actor::DataActor,
-        cache::Cache,
+        cache::{Cache, ORDER_NOT_FOUND},
         clock::{Clock, TestClock},
         component::Component,
         msgbus::{
@@ -3369,9 +3362,9 @@ mod tests {
             .cancel_order(missing_id, None, None)
             .expect_err("expected cancel_order to fail when order is not in cache");
 
-        assert!(
-            err.to_string().contains("not found in cache"),
-            "unexpected error: {err}"
+        assert_eq!(
+            err.to_string(),
+            format!("Cannot cancel order: {ORDER_NOT_FOUND}: {missing_id}")
         );
         assert!(exec_messages.get_messages().is_empty());
     }
@@ -3393,9 +3386,48 @@ mod tests {
             .modify_order(missing_id, Some(Quantity::from(1)), None, None, None, None)
             .expect_err("expected modify_order to fail when order is not in cache");
 
-        assert!(
-            err.to_string().contains("not found in cache"),
-            "unexpected error: {err}"
+        assert_eq!(
+            err.to_string(),
+            format!("Cannot modify order: {ORDER_NOT_FOUND}: {missing_id}")
+        );
+        assert!(risk_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_batch_modify_orders_returns_error_when_any_id_missing() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        let order = make_accepted_limit_order("O-PRESENT");
+        add_order_to_cache(&strategy, &order);
+
+        let missing_id = ClientOrderId::from("O-MISSING");
+        let err = strategy
+            .batch_modify_orders(
+                vec![
+                    (
+                        order.client_order_id(),
+                        None,
+                        Some(Price::from("51000.0")),
+                        None,
+                    ),
+                    (missing_id, Some(Quantity::from("2.0")), None, None),
+                ],
+                None,
+                None,
+            )
+            .expect_err("expected batch_modify_orders to fail when any id is missing");
+
+        assert_eq!(
+            err.to_string(),
+            format!("Cannot modify order: {ORDER_NOT_FOUND}: {missing_id}")
         );
         assert!(risk_messages.get_messages().is_empty());
     }
@@ -3415,17 +3447,14 @@ mod tests {
         let order = make_accepted_limit_order("O-PRESENT");
         add_order_to_cache(&strategy, &order);
 
+        let missing_id = ClientOrderId::from("O-MISSING");
         let err = strategy
-            .cancel_orders(
-                vec![order.client_order_id(), ClientOrderId::from("O-MISSING")],
-                None,
-                None,
-            )
+            .cancel_orders(vec![order.client_order_id(), missing_id], None, None)
             .expect_err("expected cancel_orders to fail when any id is missing");
 
-        assert!(
-            err.to_string().contains("not found in cache"),
-            "unexpected error: {err}"
+        assert_eq!(
+            err.to_string(),
+            format!("Cannot cancel order: {ORDER_NOT_FOUND}: {missing_id}")
         );
         assert!(exec_messages.get_messages().is_empty());
     }
