@@ -1,12 +1,12 @@
 # Composite Market Making on Lighter RWA with Databento DBEQ NVDA
 
-This tutorial runs the shipped `CompositeMarketMaker` strategy on Lighter's
+This tutorial runs the shipped [`CompositeMarketMaker`][composite-market-maker] strategy on Lighter's
 `NVDA-PERP.LIGHTER` RWA market using Databento `NVDA.DBEQ` quotes as an external
 signal. The strategy quotes one post-only bid and one post-only ask around the
 Lighter mid, then shifts both sides from a normalized Databento residual and the
 current Lighter inventory.
 
-The setup uses a Rust `LiveNode`, while the strategy itself runs as the native
+The setup uses a Rust [`LiveNode`][live-node], while the strategy itself runs as the native
 Rust `CompositeMarketMaker` strategy.
 
 ## Introduction
@@ -68,12 +68,14 @@ inside the same event-driven runtime.
 
 ## Prerequisites
 
-- A Rust toolchain.
-- A NautilusTrader checkout.
+- A Rust toolchain (MSRV 1.96.0 or newer).
+- A Cargo project with the Nautilus, Lighter, and Databento crates as
+  dependencies (see [Project setup](#project-setup)).
 - Python 3.12+ to regenerate the rendered panels.
 - A Databento API key with live access to `DBEQ.BASIC`.
-- A funded Lighter account, numeric account index, API key index, and API secret
-  for the hard-coded Lighter environment.
+- Lighter API credentials (numeric account index, API key index, and API secret)
+  for the configured environment (testnet by default), required only to connect
+  and submit orders.
 - The Lighter integration guide: [Lighter](../integrations/lighter.md).
 - The Databento integration guide: [Databento](../integrations/databento.md).
 
@@ -93,22 +95,54 @@ For mainnet, change `LIGHTER_ENVIRONMENT` in the source to
 variables described in the integration guide. Set `DATABENTO_API_KEY` before
 running the example.
 
+## Project setup
+
+The strategy, node, and adapters ship as crates, so you can depend on them from
+your own Cargo project rather than working inside a NautilusTrader checkout. Add
+the following to your `Cargo.toml`, pointing every Nautilus dependency at the
+same `develop` git source so the crates resolve to one consistent version:
+
+```toml
+[dependencies]
+nautilus-common = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop", features = ["live"] }
+nautilus-core = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop" }
+nautilus-databento = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop", features = ["high-precision", "live"] }
+nautilus-lighter = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop", features = ["examples", "high-precision"] }
+nautilus-live = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop", features = ["node"] }
+nautilus-model = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop", features = ["high-precision"] }
+nautilus-trading = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop", features = ["examples", "high-precision"] }
+
+tokio = { version = "1", features = ["full"] }
+```
+
+The `examples` feature on `nautilus-trading` exposes the `CompositeMarketMaker`
+strategy, and `high-precision` is required for Lighter's crypto-native pricing.
+For the general crate layout, feature flags, and the crates.io alternative to
+the git source, see the Rust [project setup guide][project-setup].
+
+The Databento client also needs a publishers file that maps venues to datasets.
+Download [`publishers.json`][databento-publishers] from the Databento adapter
+crate and point `publishers_filepath` at your local copy. The shipped example
+resolves the same file relative to the checkout, so this step only applies to
+your own project.
+
 ## Why NVDA
 
-`NVDA` works well as a first RWA tutorial instrument because it is a liquid
-Nasdaq-listed single-name equity and Lighter maps its RWA perpetual to
-`NVDA-PERP.LIGHTER`. That gives a licensed signal/traded-market pair:
+`NVDA` is a liquid Nasdaq-listed single-name equity, and Lighter maps its RWA
+perpetual to `NVDA-PERP.LIGHTER`. This pairs a licensed Databento signal with a
+Lighter traded market:
 
 | Role              | Instrument ID       | Source    | Notes                                      |
 | ----------------- | ------------------- | --------- | ------------------------------------------ |
 | Signal instrument | `NVDA.DBEQ`         | Databento | DBEQ.BASIC top‑of‑book quote updates.      |
 | Target instrument | `NVDA-PERP.LIGHTER` | Lighter   | RWA perpetual traded through Lighter.      |
 
-The Databento publisher file maps the `DBEQ` venue to `DBEQ.BASIC`. When the
-strategy subscribes to `NVDA.DBEQ`, the adapter sends a Databento `mbp-1`
-subscription for raw symbol `NVDA` on `DBEQ.BASIC`. The live decoder uses the
-requested `NVDA.DBEQ` instrument ID for the emitted `QuoteTick`s, so the strategy
-receives one signal stream even though DBEQ.BASIC contains several publishers.
+Subscribing to `NVDA.DBEQ` requests top-of-book (`mbp-1`) quotes for `NVDA` from
+Databento's `DBEQ.BASIC` dataset, delivered as a single `QuoteTick` stream. The
+adapter resolves the `DBEQ` venue from a publishers file: the example points
+`DatabentoLiveClientConfig` at the `publishers.json` bundled with the Databento
+adapter. See [Instrument IDs and symbology][databento-symbology] for the mapping
+rules.
 
 DBEQ.BASIC provides L1 coverage from basic equity venues, so it has less venue
 coverage than Nasdaq TotalView. Treat it as a licensed signal proxy for the
@@ -121,9 +155,9 @@ minimum base amount observed during tutorial validation. Check the
 ## Session constraint
 
 Lighter RWA markets trade continuously. `NVDA.DBEQ` follows the US equity market
-data session. The first live test should run during the regular cash session,
-13:30 to 20:00 UTC during US daylight time, with special handling for holidays
-and half-days.
+data session. The first live test should run during the regular cash session
+(13:30-20:00 UTC, US daylight time), with special handling for holidays and
+half-days.
 
 `CompositeMarketMaker` does not include a built-in session gate or signal-age
 guard. For production use, add an actor or strategy variant that cancels quotes
@@ -132,11 +166,14 @@ instead of hiding it in a custom strategy.
 
 ## Example node
 
-The runnable example lives in the
-[Lighter NVDA composite market maker example][example-script].
+There are two ways to run this: from a NautilusTrader checkout via the shipped
+[Lighter NVDA composite market maker example][example-script] binary, or by
+copying the node wiring below into a `main` in your own project that depends on
+the crates from [Project setup](#project-setup).
 
-With the credential variables set, the default source builds the node, registers
-both clients, adds the native strategy, and exits without connecting:
+From a checkout, with the credential variables set, the shipped binary builds
+the node, registers both clients, adds the native strategy, and exits without
+connecting:
 
 ```bash
 cargo run --bin lighter-nvda-composite-mm --package nautilus-tutorials --features examples
@@ -269,21 +306,21 @@ breaches `max_position`, and submits the remaining sides as post-only limits.
 The panels below use deterministic replay data. They show the quoting mechanics
 and the cash-session constraint. They are not a captured live Lighter fill trace.
 
-![NVDA composite quote center against Databento and Lighter mids][panel-a]
+![NVDA composite quote center against Databento and Lighter mids](./assets/lighter_rwa_composite_mm/panel_a_reference_overlay.png)
 
 **Figure 1.** *Databento `NVDA.DBEQ` mid, Lighter `NVDA-PERP.LIGHTER` mid,
 composite bid, composite ask, and quote center.*
 
-![Databento residual, Lighter basis, and quote-center shift][panel-b]
+![Databento residual, Lighter basis, and quote-center shift](./assets/lighter_rwa_composite_mm/panel_b_signal_basis.png)
 
 **Figure 2.** *Databento residual, Lighter basis, and quote-center shift in bps.*
 
-![Inventory skew terms for the composite market maker][panel-c]
+![Inventory skew terms for the composite market maker](./assets/lighter_rwa_composite_mm/panel_c_inventory_skew.png)
 
 **Figure 3.** *Net position, signal shift, inventory adjustment, and total shift
 for a `0.05` NVDA trade size and `0.20` NVDA position cap.*
 
-![Lighter continuous trading and Databento session clock][panel-d]
+![Lighter continuous trading and Databento session clock](./assets/lighter_rwa_composite_mm/panel_d_session_clock.png)
 
 **Figure 4.** *Lighter's continuous RWA market clock against the Databento
 `DBEQ.BASIC` cash-session signal, with signal age after the regular session.*
@@ -311,12 +348,13 @@ For a pure fair-value strategy, use this tutorial as the client wiring and write
 a small variant that anchors bid/ask directly on the Databento mid, then checks
 the Lighter BBO only for post-only and basis limits.
 
+[composite-market-maker]: https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/trading/src/examples/strategies/composite_market_maker/strategy.rs
+[live-node]: ../how_to/run_rust_live_trading.md
+[project-setup]: ../concepts/rust.md#project-setup
+[databento-symbology]: ../integrations/databento.md#instrument-ids-and-symbology
+[databento-publishers]: https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/databento/publishers.json
 [RWA docs]: https://docs.lighter.xyz/trading/real-world-assets-rwas
 [market specifications]: https://docs.lighter.xyz/trading/real-world-assets-rwas/market-specifications
 [market details endpoint]: https://mainnet.zklighter.elliot.ai/api/v1/orderBookDetails
 [DBEQ.BASIC]: https://databento.com/blog/dbeq-basic
 [example-script]: https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/tutorials/src/bin/lighter_nvda_composite_mm.rs
-[panel-a]: ./assets/lighter_rwa_composite_mm/panel_a_reference_overlay.png
-[panel-b]: ./assets/lighter_rwa_composite_mm/panel_b_signal_basis.png
-[panel-c]: ./assets/lighter_rwa_composite_mm/panel_c_inventory_skew.png
-[panel-d]: ./assets/lighter_rwa_composite_mm/panel_d_session_clock.png
