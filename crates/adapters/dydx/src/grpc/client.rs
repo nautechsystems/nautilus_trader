@@ -455,9 +455,11 @@ impl DydxGrpcClient {
     /// # Errors
     ///
     /// Returns an error if simulation fails.
-    #[allow(deprecated)]
     pub async fn simulate_tx(&mut self, tx_bytes: Vec<u8>) -> Result<u64, anyhow::Error> {
-        let req = SimulateRequest { tx_bytes, tx: None };
+        let req = SimulateRequest {
+            tx_bytes,
+            ..Default::default()
+        };
         let gas_used = self
             .tx
             .simulate(req)
