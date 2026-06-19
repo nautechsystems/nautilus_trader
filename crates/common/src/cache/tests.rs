@@ -73,6 +73,7 @@ use crate::{
         CurrencyLookupError, INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_BOOK_NOT_FOUND,
         ORDER_LIST_NOT_FOUND, ORDER_NOT_FOUND, OrderBookLookupError, OrderListLookupError,
         OrderLookupError, OrderRef, POSITION_NOT_FOUND, PositionLookupError,
+        SYNTHETIC_INSTRUMENT_NOT_FOUND, SyntheticInstrumentLookupError,
         database::{CacheDatabaseAdapter, CacheMap},
     },
     signal::Signal,
@@ -2147,11 +2148,33 @@ fn test_synthetic_when_empty(cache: Cache) {
 }
 
 #[rstest]
+fn test_try_synthetic_when_empty(cache: Cache) {
+    let synth = SyntheticInstrument::default();
+    let err = cache.try_synthetic(&synth.id).unwrap_err();
+
+    assert_eq!(err, SyntheticInstrumentLookupError::not_found(synth.id));
+    assert_eq!(
+        err.to_string(),
+        format!("{SYNTHETIC_INSTRUMENT_NOT_FOUND}: {}", synth.id)
+    );
+}
+
+#[rstest]
 fn test_synthetic_when_some(mut cache: Cache) {
     let synth = SyntheticInstrument::default();
     cache.add_synthetic(synth.clone()).unwrap();
     let result = cache.synthetic(&synth.id);
     assert_eq!(result, Some(&synth));
+}
+
+#[rstest]
+fn test_try_synthetic_when_some(mut cache: Cache) {
+    let synth = SyntheticInstrument::default();
+    cache.add_synthetic(synth.clone()).unwrap();
+
+    let result = cache.try_synthetic(&synth.id).unwrap();
+
+    assert_eq!(result, &synth);
 }
 
 #[rstest]

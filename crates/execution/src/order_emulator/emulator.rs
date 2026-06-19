@@ -559,18 +559,17 @@ impl OrderEmulator {
                 let synthetic = self
                     .cache
                     .borrow()
-                    .synthetic(&trigger_instrument_id)
+                    .try_synthetic(&trigger_instrument_id)
                     .cloned();
 
-                if let Some(synthetic) = synthetic {
-                    (synthetic.id, synthetic.price_increment)
-                } else {
-                    log::error!(
-                        "Cannot emulate order: no synthetic instrument {trigger_instrument_id} for trigger"
-                    );
-                    let actions = self.manager.cancel_order(&order);
-                    self.dispatch_manager_actions(actions);
-                    return;
+                match synthetic {
+                    Ok(synthetic) => (synthetic.id, synthetic.price_increment),
+                    Err(e) => {
+                        log::error!("Cannot emulate order: {e}");
+                        let actions = self.manager.cancel_order(&order);
+                        self.dispatch_manager_actions(actions);
+                        return;
+                    }
                 }
             } else {
                 let instrument = self
@@ -2401,6 +2400,43 @@ mod tests {
         assert!(matches!(risk_events[0], OrderEventAny::Emulated(_)));
         assert_eq!(order_events.len(), 1);
         assert!(matches!(order_events[0], OrderEventAny::Emulated(_)));
+    }
+
+    #[rstest]
+    fn test_submit_order_missing_synthetic_trigger_cancels_order(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        add_instrument_to_cache(&cache, &instrument);
+        let synthetic_id = InstrumentId::from("BTC-ETH-INDEX.SYNTH");
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("5100.00"))
+            .quantity(Quantity::from(1))
+            .emulation_trigger(TriggerType::BidAsk)
+            .trigger_instrument_id(synthetic_id)
+            .build();
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator
+            .borrow_mut()
+            .cache_submit_order_command(command.clone());
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        let cache = cache.borrow();
+        let cached_order = cache.order(&client_order_id).unwrap();
+        let emulator = emulator.borrow();
+        let commands = emulator.get_submit_order_commands();
+
+        assert_eq!(cached_order.status(), OrderStatus::Canceled);
+        assert!(emulator.get_matching_core(&synthetic_id).is_none());
+        assert!(emulator.subscribed_quotes().is_empty());
+        assert!(emulator.subscribed_trades().is_empty());
+        assert!(!commands.contains_key(&client_order_id));
     }
 
     #[rstest]

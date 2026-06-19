@@ -48,7 +48,8 @@ pub use error::{
     ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, CurrencyLookupError,
     INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_BOOK_NOT_FOUND, ORDER_LIST_NOT_FOUND,
     ORDER_NOT_FOUND, OrderBookLookupError, OrderListLookupError, OrderLookupError,
-    POSITION_NOT_FOUND, PositionLookupError,
+    POSITION_NOT_FOUND, PositionLookupError, SYNTHETIC_INSTRUMENT_NOT_FOUND,
+    SyntheticInstrumentLookupError,
 };
 use index::CacheIndex;
 use nautilus_core::{
@@ -5451,6 +5452,21 @@ impl Cache {
     #[must_use]
     pub fn synthetic(&self, instrument_id: &InstrumentId) -> Option<&SyntheticInstrument> {
         self.synthetics.get(instrument_id)
+    }
+
+    /// Returns a reference to the synthetic instrument for the `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SyntheticInstrumentLookupError::NotFound`] when the synthetic instrument is not
+    /// present in the cache.
+    pub fn try_synthetic(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Result<&SyntheticInstrument, SyntheticInstrumentLookupError> {
+        self.synthetics
+            .get(instrument_id)
+            .ok_or_else(|| SyntheticInstrumentLookupError::not_found(*instrument_id))
     }
 
     /// Returns references to instrument IDs for all synthetic instruments contained in the cache.

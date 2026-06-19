@@ -3034,11 +3034,12 @@ impl DataEngine {
     }
 
     fn subscribe_synthetic_quotes(&mut self, instrument_id: InstrumentId) {
-        let Some(synthetic) = self.cache.borrow().synthetic(&instrument_id).cloned() else {
-            log::error!(
-                "Cannot subscribe to `QuoteTick` data for synthetic instrument {instrument_id}, not found",
-            );
-            return;
+        let synthetic = match self.cache.borrow().try_synthetic(&instrument_id).cloned() {
+            Ok(synthetic) => synthetic,
+            Err(e) => {
+                log::error!("Cannot subscribe to `QuoteTick` data for synthetic instrument: {e}");
+                return;
+            }
         };
 
         if !self.subscribed_synthetic_quotes.insert(instrument_id) {
@@ -3057,11 +3058,12 @@ impl DataEngine {
     }
 
     fn subscribe_synthetic_trades(&mut self, instrument_id: InstrumentId) {
-        let Some(synthetic) = self.cache.borrow().synthetic(&instrument_id).cloned() else {
-            log::error!(
-                "Cannot subscribe to `TradeTick` data for synthetic instrument {instrument_id}, not found",
-            );
-            return;
+        let synthetic = match self.cache.borrow().try_synthetic(&instrument_id).cloned() {
+            Ok(synthetic) => synthetic,
+            Err(e) => {
+                log::error!("Cannot subscribe to `TradeTick` data for synthetic instrument: {e}");
+                return;
+            }
         };
 
         if !self.subscribed_synthetic_trades.insert(instrument_id) {
