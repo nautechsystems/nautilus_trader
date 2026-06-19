@@ -15,10 +15,15 @@
 
 //! Example demonstrating live execution testing with the Derive adapter.
 //!
+//! Edit the constants below to change the environment, target instrument, and order size.
+//!
 //! Run with: `cargo run --example derive-exec-tester --package nautilus-derive --features examples`
 //!
-//! Pinned to Derive testnet for safe iteration. Edit `DeriveEnvironment::Testnet`
-//! below to flip to mainnet when running against real funds.
+//! Required credential environment variables (testnet variants used when
+//! `DERIVE_ENVIRONMENT` is `DeriveEnvironment::Testnet`):
+//! - `DERIVE_WALLET_ADDRESS` / `DERIVE_TESTNET_WALLET_ADDRESS`.
+//! - `DERIVE_SESSION_PRIVATE_KEY` / `DERIVE_TESTNET_SESSION_PRIVATE_KEY`.
+//! - `DERIVE_SUBACCOUNT_ID` / `DERIVE_TESTNET_SUBACCOUNT_ID`.
 
 use nautilus_common::enums::Environment;
 use nautilus_derive::{
@@ -36,17 +41,27 @@ use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 use rust_decimal::Decimal;
 
+const DERIVE_ENVIRONMENT: DeriveEnvironment = DeriveEnvironment::Testnet;
+const TRADER_ID: &str = "TESTER-001";
+const ACCOUNT_ID: &str = "DERIVE-001";
+const NODE_NAME: &str = "DERIVE-EXEC-TESTER-001";
+const STRATEGY_ID: &str = "EXEC_TESTER-001";
+const INSTRUMENT_ID: &str = "ETH-PERP.DERIVE";
+const ORDER_QTY: &str = "0.1";
+
+const MAX_FEE_PER_CONTRACT: &str = "1000";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let derive_environment = DeriveEnvironment::Testnet;
-    let trader_id = TraderId::from("TESTER-001");
-    let account_id = AccountId::from("DERIVE-001");
-    let node_name = "DERIVE-EXEC-TESTER-001".to_string();
+    let derive_environment = DERIVE_ENVIRONMENT;
+    let trader_id = TraderId::from(TRADER_ID);
+    let account_id = AccountId::from(ACCOUNT_ID);
+    let node_name = NODE_NAME.to_string();
     let client_id = *DERIVE_CLIENT_ID;
-    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
 
     let data_config = DeriveDataClientConfig {
         environment: derive_environment,
@@ -56,22 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let exec_config = DeriveExecClientConfig {
         environment: derive_environment,
-        max_fee_per_contract: Some(Decimal::from_str_exact("1000")?),
-        domain_separator: env_override(
-            derive_environment,
-            "DERIVE_DOMAIN_SEPARATOR",
-            "DERIVE_TESTNET_DOMAIN_SEPARATOR",
-        ),
-        action_typehash: env_override(
-            derive_environment,
-            "DERIVE_ACTION_TYPEHASH",
-            "DERIVE_TESTNET_ACTION_TYPEHASH",
-        ),
-        trade_module_address: env_override(
-            derive_environment,
-            "DERIVE_TRADE_MODULE_ADDRESS",
-            "DERIVE_TESTNET_TRADE_MODULE_ADDRESS",
-        ),
+        max_fee_per_contract: Some(Decimal::from_str_exact(MAX_FEE_PER_CONTRACT)?),
         ..Default::default()
     };
     let exec_factory_config = DeriveExecFactoryConfig {
@@ -97,10 +97,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let order_qty = Quantity::from("0.1");
+    let order_qty = Quantity::from(ORDER_QTY);
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
-            strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
+            strategy_id: Some(StrategyId::from(STRATEGY_ID)),
             external_order_claims: Some(vec![instrument_id]),
             ..Default::default()
         })
@@ -120,14 +120,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     node.run().await?;
 
     Ok(())
-}
-
-fn env_override(environment: DeriveEnvironment, mainnet: &str, testnet: &str) -> Option<String> {
-    let var_name = if environment.is_testnet() {
-        testnet
-    } else {
-        mainnet
-    };
-
-    std::env::var(var_name).ok()
 }

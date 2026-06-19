@@ -15,10 +15,15 @@
 
 //! Example demonstrating live execution testing with the Lighter adapter.
 //!
+//! Edit the constants below to change the environment, target instrument, and order size.
+//!
 //! Run with: `cargo run --example lighter-exec-tester --package nautilus-lighter --features examples`
 //!
-//! Required environment variables:
-//! - `LIGHTER_ACCOUNT_INDEX`, `LIGHTER_API_KEY_INDEX`, and `LIGHTER_API_SECRET`
+//! Required credential environment variables:
+//! - `LIGHTER_ACCOUNT_INDEX`, `LIGHTER_API_KEY_INDEX`, and `LIGHTER_API_SECRET` when
+//!   `LIGHTER_ENVIRONMENT` is `LighterEnvironment::Mainnet`.
+//! - `LIGHTER_TESTNET_ACCOUNT_INDEX`, `LIGHTER_TESTNET_API_KEY_INDEX`, and
+//!   `LIGHTER_TESTNET_API_SECRET` when `LIGHTER_ENVIRONMENT` is `LighterEnvironment::Testnet`.
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
@@ -35,17 +40,26 @@ use nautilus_model::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
+const LIGHTER_ENVIRONMENT: LighterEnvironment = LighterEnvironment::Mainnet;
+const TRADER_ID: &str = "TESTER-001";
+const ACCOUNT_ID: &str = "LIGHTER-001";
+const NODE_NAME: &str = "LIGHTER-EXEC-TESTER-001";
+const CLIENT_ID: &str = "LIGHTER";
+const STRATEGY_ID: &str = "EXEC_TESTER-001";
+const INSTRUMENT_ID: &str = "ETH-PERP.LIGHTER";
+const ORDER_QTY: &str = "0.01";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let lighter_environment = LighterEnvironment::Mainnet;
-    let trader_id = TraderId::from("TESTER-001");
-    let account_id = AccountId::from("LIGHTER-001");
-    let node_name = "LIGHTER-EXEC-TESTER-001".to_string();
-    let client_id = ClientId::new("LIGHTER");
-    let instrument_id = InstrumentId::from("ETH-PERP.LIGHTER");
+    let lighter_environment = LIGHTER_ENVIRONMENT;
+    let trader_id = TraderId::from(TRADER_ID);
+    let account_id = AccountId::from(ACCOUNT_ID);
+    let node_name = NODE_NAME.to_string();
+    let client_id = ClientId::new(CLIENT_ID);
+    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
 
     let data_config = LighterDataClientConfig {
         environment: lighter_environment,
@@ -85,10 +99,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let order_qty = Quantity::from("0.01");
+    let order_qty = Quantity::from(ORDER_QTY);
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
-            strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
+            strategy_id: Some(StrategyId::from(STRATEGY_ID)),
             external_order_claims: Some(vec![instrument_id]),
             ..Default::default()
         })

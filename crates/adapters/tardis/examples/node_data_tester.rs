@@ -15,6 +15,8 @@
 
 //! Sandbox example replaying Tardis Machine data through a LiveNode.
 //!
+//! Edit the constants below to change the replay request and subscribed instrument.
+//!
 //! Run with: `cargo run --example tardis-data-tester -p nautilus-tardis --features examples`
 //!
 //! Prerequisites:
@@ -35,16 +37,26 @@ use nautilus_tardis::{
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
+const TRADER_ID: &str = "TESTER-001";
+const NODE_NAME: &str = "TARDIS-SANDBOX";
+const INSTRUMENT_ID: &str = "BTCUSDT-PERP.BINANCE";
+
+const REPLAY_EXCHANGE: TardisExchange = TardisExchange::BinanceFutures;
+const REPLAY_SYMBOL: &str = "BTCUSDT";
+const REPLAY_FROM: (i32, u32, u32) = (2024, 1, 1);
+const REPLAY_TO: (i32, u32, u32) = (2024, 1, 2);
+const REPLAY_DATA_TYPES: [&str; 2] = ["trade", "book_change"];
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let options = vec![ReplayNormalizedRequestOptions {
-        exchange: TardisExchange::BinanceFutures,
-        symbols: Some(vec!["BTCUSDT".to_string()]),
-        from: NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-        to: NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-        data_types: vec!["trade".to_string(), "book_change".to_string()],
+        exchange: REPLAY_EXCHANGE,
+        symbols: Some(vec![REPLAY_SYMBOL.to_string()]),
+        from: NaiveDate::from_ymd_opt(REPLAY_FROM.0, REPLAY_FROM.1, REPLAY_FROM.2).unwrap(),
+        to: NaiveDate::from_ymd_opt(REPLAY_TO.0, REPLAY_TO.1, REPLAY_TO.2).unwrap(),
+        data_types: REPLAY_DATA_TYPES.iter().map(|s| s.to_string()).collect(),
         with_disconnect_messages: Some(false),
     }];
 
@@ -54,10 +66,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let client_id = *TARDIS_CLIENT_ID;
-    let instrument_ids = vec![InstrumentId::from("BTCUSDT-PERP.BINANCE")];
+    let instrument_ids = vec![InstrumentId::from(INSTRUMENT_ID)];
 
-    let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)?
-        .with_name("TARDIS-SANDBOX")
+    let mut node = LiveNode::builder(TraderId::from(TRADER_ID), Environment::Sandbox)?
+        .with_name(NODE_NAME)
         .with_delay_post_stop_secs(2)
         .add_data_client(
             None,

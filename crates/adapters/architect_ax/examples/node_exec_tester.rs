@@ -15,12 +15,9 @@
 
 //! Example demonstrating live execution testing with the AX Exchange adapter.
 //!
-//! Run with: `cargo run --example ax-exec-tester --package nautilus-architect-ax --features examples`
+//! Edit the constants below to change the environment, target symbol, and order size.
 //!
-//! Environment variables:
-//! - `AX_API_KEY`: Your API key
-//! - `AX_API_SECRET`: Your API secret
-//! - `AX_SYMBOL`: Instrument symbol (default: XAU-PERP)
+//! Run with: `cargo run --example ax-exec-tester --package nautilus-architect-ax --features examples`
 //!
 //! Example instruments across asset classes:
 //! - `XAU-PERP` (metals, qty=1, ~$4600)
@@ -29,6 +26,10 @@
 //! - `UNG-PERP` (energy ETFs, qty=1, ~$12)
 //! - `OCPI-H100-PERP` (compute, qty=100, ~$1.60)
 //! - `EURUSD-PERP` (fx, qty=100, ~$1.15)
+//!
+//! Required credential environment variables:
+//! - `AX_API_KEY`.
+//! - `AX_API_SECRET`.
 
 use nautilus_architect_ax::{
     common::{consts::AX_CLIENT_ID, enums::AxEnvironment},
@@ -44,37 +45,33 @@ use nautilus_model::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
+const AX_ENVIRONMENT: AxEnvironment = AxEnvironment::Sandbox;
+const TRADER_ID: &str = "TESTER-001";
+const ACCOUNT_ID: &str = "AX-001";
+const NODE_NAME: &str = "AX-EXEC-TESTER-001";
+const STRATEGY_ID: &str = "EXEC_TESTER-001";
+const SYMBOL: &str = "XAU-PERP";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::from("TESTER-001");
-    let account_id = AccountId::from("AX-001");
-    let node_name = "AX-EXEC-TESTER-001".to_string();
+    let trader_id = TraderId::from(TRADER_ID);
+    let account_id = AccountId::from(ACCOUNT_ID);
+    let node_name = NODE_NAME.to_string();
     let client_id = *AX_CLIENT_ID;
-    let symbol = std::env::var("AX_SYMBOL").unwrap_or_else(|_| "XAU-PERP".to_string());
-    let instrument_id = InstrumentId::from(format!("{symbol}.AX"));
-
-    let ax_environment = if std::env::var("AX_IS_SANDBOX")
-        .ok()
-        .and_then(|v| v.parse::<bool>().ok())
-        .unwrap_or(true)
-    {
-        AxEnvironment::Sandbox
-    } else {
-        AxEnvironment::Production
-    };
+    let instrument_id = InstrumentId::from(format!("{SYMBOL}.AX"));
 
     let data_config = AxDataClientConfig {
-        environment: ax_environment,
+        environment: AX_ENVIRONMENT,
         ..Default::default()
     };
 
     let exec_config = AxExecClientConfig {
         trader_id,
         account_id,
-        environment: ax_environment,
+        environment: AX_ENVIRONMENT,
         ..Default::default()
     };
 
@@ -96,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     // Use minimum order size per instrument category
-    let order_qty = match symbol.as_str() {
+    let order_qty = match SYMBOL {
         s if s.starts_with("OCPI") => Quantity::from(100),
         "EURUSD-PERP" | "GBPUSD-PERP" | "BRLUSD-PERP" => Quantity::from(100),
         "MXNUSD-PERP" => Quantity::from(1000),
@@ -106,7 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
-            strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
+            strategy_id: Some(StrategyId::from(STRATEGY_ID)),
             external_order_claims: Some(vec![instrument_id]),
             ..Default::default()
         })

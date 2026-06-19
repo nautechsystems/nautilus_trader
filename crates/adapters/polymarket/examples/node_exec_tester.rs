@@ -19,16 +19,14 @@
 //! loading all 71K+ instruments) and `SignatureType::PolyGnosisSafe` for Gnosis
 //! Safe proxy wallet authentication.
 //!
-//! Prerequisites:
-//! - Set `POLYMARKET_PK` (EOA signer private key)
-//! - Set `POLYMARKET_API_KEY`, `POLYMARKET_API_SECRET`, `POLYMARKET_PASSPHRASE`
-//! - Set `POLYMARKET_FUNDER` (Gnosis Safe proxy address)
+//! Edit the constants below to change the target event, market token, and order size.
 //!
-//! # Usage
+//! Run with: `cargo run --example polymarket-exec-tester --package nautilus-polymarket --features examples`
 //!
-//! ```sh
-//! cargo run --example polymarket-exec-tester --package nautilus-polymarket --features examples
-//! ```
+//! Required credential environment variables:
+//! - `POLYMARKET_PK` (EOA signer private key).
+//! - `POLYMARKET_API_KEY`, `POLYMARKET_API_SECRET`, `POLYMARKET_PASSPHRASE`.
+//! - `POLYMARKET_FUNDER` (Gnosis Safe proxy address).
 
 use std::sync::Arc;
 
@@ -48,24 +46,30 @@ use nautilus_polymarket::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
+const TRADER_ID: &str = "TESTER-001";
+const ACCOUNT_ID: &str = "POLYMARKET-001";
+const NODE_NAME: &str = "POLYMARKET-EXEC-TESTER-001";
+const STRATEGY_ID: &str = "EXEC_TESTER-001";
+const EVENT_SLUG: &str = "gta-vi-released-before-june-2026";
+
+// GTA VI Released Before June 2026 (Yes)
+// https://polymarket.com/event/gta-vi-released-before-june-2026
+const INSTRUMENT_ID: &str = "0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902-8441400852834915183759801017793514978104486628517653995211751018945988243154.POLYMARKET";
+const ORDER_QTY: &str = "5"; // Polymarket min_qty = 5 shares
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::from("TESTER-001");
-    let account_id = AccountId::from("POLYMARKET-001");
-    let node_name = "POLYMARKET-EXEC-TESTER-001".to_string();
+    let trader_id = TraderId::from(TRADER_ID);
+    let account_id = AccountId::from(ACCOUNT_ID);
+    let node_name = NODE_NAME.to_string();
     let client_id = *POLYMARKET_CLIENT_ID;
-
-    // GTA VI Released Before June 2026 (Yes)
-    // https://polymarket.com/event/gta-vi-released-before-june-2026
-    let instrument_id = InstrumentId::from(
-        "0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902-8441400852834915183759801017793514978104486628517653995211751018945988243154.POLYMARKET",
-    );
+    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
 
     // Use EventSlugFilter to load only instruments for this event
-    let event_slugs = vec!["gta-vi-released-before-june-2026".to_string()];
+    let event_slugs = vec![EVENT_SLUG.to_string()];
     let data_filter = EventSlugFilter::from_slugs(event_slugs);
 
     let data_config = PolymarketDataClientConfig {
@@ -105,16 +109,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let order_qty = Quantity::from("5");
+    let order_qty = Quantity::from(ORDER_QTY);
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
-            strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
+            strategy_id: Some(StrategyId::from(STRATEGY_ID)),
             external_order_claims: Some(vec![instrument_id]),
             ..Default::default()
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
-        .order_qty(order_qty) // Polymarket min_qty = 5 shares
+        .order_qty(order_qty)
         // .open_position_on_start_qty(order_qty.as_decimal())
         // .use_quote_quantity(true)
         .use_post_only(true)

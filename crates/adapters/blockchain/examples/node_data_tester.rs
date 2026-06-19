@@ -15,7 +15,13 @@
 
 //! Example demonstrating live data testing with the Blockchain adapter.
 //!
+//! Edit the constants below to change the chain, DEX, and target pool.
+//!
 //! Run with: `cargo run --example blockchain-data-tester --package nautilus-blockchain --features hypersync`
+//!
+//! Required credential environment variables (RPC node endpoints the user must supply):
+//! - `RPC_WSS_URL`.
+//! - `RPC_HTTP_URL`.
 
 use std::{sync::Arc, time::Duration};
 
@@ -35,9 +41,8 @@ use nautilus_core::env::get_env_var;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    defi::{Block, Blockchain, DexType, Pool, PoolLiquidityUpdate, PoolSwap, chain::chains},
+    defi::{Block, Blockchain, Chain, DexType, Pool, PoolLiquidityUpdate, PoolSwap},
     identifiers::{ClientId, InstrumentId, TraderId},
-    stubs::TestDefault,
 };
 
 // Requires capnp installed on the machine
@@ -48,14 +53,22 @@ use nautilus_model::{
 // They should NOT be moved to the main library as they are specific to this test scenario.
 // If you need production-ready actors, create them in a separate production module.
 
+const TRADER_ID: &str = "TESTER-001";
+const NODE_NAME: &str = "TESTER-001";
+const CHAIN: Blockchain = Blockchain::Arbitrum;
+const DEX_TYPE: DexType = DexType::UniswapV3;
+const POOL_INSTRUMENT_ID: &str = "0x4CEf551255EC96d89feC975446301b5C4e164C59.Arbitrum:UniswapV3";
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::test_default();
-    let node_name = "TESTER-001".to_string();
+    let trader_id = TraderId::from(TRADER_ID);
+    let node_name = NODE_NAME.to_string();
 
-    let chain = chains::ARBITRUM.clone();
+    let chain: Chain = Chain::from_chain_name(&CHAIN.to_string())
+        .ok_or_else(|| format!("unknown chain: {CHAIN}"))?
+        .clone();
     let wss_rpc_url = get_env_var("RPC_WSS_URL")?;
     let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
 
@@ -66,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_factory = BlockchainDataClientFactory::new();
     let client_config = BlockchainDataClientConfig::builder()
         .chain(Arc::new(chain.clone()))
-        .dex_ids(vec![DexType::UniswapV3])
+        .dex_ids(vec![DEX_TYPE])
         .http_rpc_url(http_rpc_url)
         .wss_rpc_url(wss_rpc_url)
         .use_hypersync_for_live_data(true)
@@ -87,9 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?
         .build()?;
 
-    let pools = vec![InstrumentId::from(
-        "0x4CEf551255EC96d89feC975446301b5C4e164C59.Arbitrum:UniswapV3",
-    )];
+    let pools = vec![InstrumentId::from(POOL_INSTRUMENT_ID)];
 
     let actor_config = BlockchainSubscriberActorConfig::new(client_id, chain.name, pools);
     let actor = BlockchainSubscriberActor::new(actor_config);

@@ -15,7 +15,13 @@
 
 //! Example demonstrating live execution testing with the Bybit adapter.
 //!
+//! Edit the constants below to change the environment, target instrument, and order size.
+//!
 //! Run with: `cargo run --example bybit-exec-tester --package nautilus-bybit --features examples`
+//!
+//! Required credential environment variables:
+//! - `BYBIT_API_KEY`.
+//! - `BYBIT_API_SECRET`.
 
 use nautilus_bybit::{
     common::{
@@ -34,19 +40,25 @@ use nautilus_model::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
+const BYBIT_ENVIRONMENT: BybitEnvironment = BybitEnvironment::Mainnet;
+const TRADER_ID: &str = "TESTER-001";
+const ACCOUNT_ID: &str = "BYBIT-001";
+const NODE_NAME: &str = "BYBIT-EXEC-TESTER-001";
+const STRATEGY_ID: &str = "EXEC_TESTER-001";
+const INSTRUMENT_ID: &str = "ETHUSDT-LINEAR.BYBIT";
+const ORDER_QTY: &str = "0.01";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    // Mainnet/Demo/Testnet
-    let bybit_environment = BybitEnvironment::Mainnet;
-
+    let bybit_environment = BYBIT_ENVIRONMENT;
     let environment = Environment::Live;
-    let trader_id = TraderId::from("TESTER-001");
-    let account_id = AccountId::from("BYBIT-001");
-    let node_name = "BYBIT-EXEC-TESTER-001".to_string();
+    let trader_id = TraderId::from(TRADER_ID);
+    let account_id = AccountId::from(ACCOUNT_ID);
+    let node_name = NODE_NAME.to_string();
     let client_id = *BYBIT_CLIENT_ID;
-    let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
+    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
 
     let data_config = BybitDataClientConfig {
         environment: bybit_environment,
@@ -82,10 +94,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let order_qty = Quantity::from("0.01");
+    let order_qty = Quantity::from(ORDER_QTY);
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
-            strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
+            strategy_id: Some(StrategyId::from(STRATEGY_ID)),
             external_order_claims: Some(vec![instrument_id]),
             ..Default::default()
         })

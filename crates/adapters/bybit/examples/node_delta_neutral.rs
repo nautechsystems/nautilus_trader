@@ -25,14 +25,14 @@
 //! The strategy uses `order_iv` to price option orders by implied volatility,
 //! which the Bybit adapter translates to the `orderIv` API field.
 //!
-//! Configuration defaults:
-//! - Target deltas: +0.20 (call), -0.20 (put)
-//! - 1 contract per leg
-//! - Rehedge when portfolio delta exceeds 0.5
-//! - Rehedge check every 30 seconds
-//! - Entry disabled by default (set `enter_strangle` to enable live orders)
+//! Edit the constants below to change the option family, hedge instrument, target
+//! deltas, and hedging behavior. Entry is disabled by default (`ENTER_STRANGLE`).
 //!
 //! Run with: `cargo run --example bybit-delta-neutral --package nautilus-bybit --features examples`
+//!
+//! Credentials are read from the environment when set:
+//! - `BYBIT_API_KEY`.
+//! - `BYBIT_API_SECRET`.
 
 use nautilus_bybit::{
     common::{consts::BYBIT_CLIENT_ID, enums::BybitProductType},
@@ -46,13 +46,26 @@ use nautilus_trading::examples::strategies::delta_neutral_vol::{
     DeltaNeutralVol, DeltaNeutralVolConfig,
 };
 
+const TRADER_ID: &str = "TESTER-001";
+const ACCOUNT_ID: &str = "BYBIT-001";
+const NODE_NAME: &str = "BYBIT-DELTA-NEUTRAL-001";
+
+const OPTION_FAMILY: &str = "BTC";
+const HEDGE_INSTRUMENT_ID: &str = "BTCUSDT-LINEAR.BYBIT";
+
+const CONTRACTS: u64 = 1;
+const REHEDGE_DELTA_THRESHOLD: f64 = 0.5;
+const REHEDGE_INTERVAL_SECS: u64 = 30;
+const ENTER_STRANGLE: bool = false;
+const IV_PARAM_KEY: &str = "order_iv";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::from("TESTER-001");
-    let account_id = AccountId::from("BYBIT-001");
+    let trader_id = TraderId::from(TRADER_ID);
+    let account_id = AccountId::from(ACCOUNT_ID);
     let client_id = *BYBIT_CLIENT_ID;
 
     let data_config = BybitDataClientConfig {
@@ -73,20 +86,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_factory = BybitDataClientFactory::new();
     let exec_factory = BybitExecutionClientFactory::new(trader_id, account_id);
 
-    let hedge_instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+    let hedge_instrument_id = InstrumentId::from(HEDGE_INSTRUMENT_ID);
 
     let strategy_config =
-        DeltaNeutralVolConfig::new("BTC".to_string(), hedge_instrument_id, client_id)
-            .with_contracts(1)
-            .with_rehedge_delta_threshold(0.5)
-            .with_rehedge_interval_secs(30)
-            .with_enter_strangle(false)
-            .with_iv_param_key("order_iv".to_string());
+        DeltaNeutralVolConfig::new(OPTION_FAMILY.to_string(), hedge_instrument_id, client_id)
+            .with_contracts(CONTRACTS)
+            .with_rehedge_delta_threshold(REHEDGE_DELTA_THRESHOLD)
+            .with_rehedge_interval_secs(REHEDGE_INTERVAL_SECS)
+            .with_enter_strangle(ENTER_STRANGLE)
+            .with_iv_param_key(IV_PARAM_KEY.to_string());
 
     let strategy = DeltaNeutralVol::new(strategy_config);
 
     let mut node = LiveNode::builder(trader_id, environment)?
-        .with_name("BYBIT-DELTA-NEUTRAL-001".to_string())
+        .with_name(NODE_NAME.to_string())
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
         .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .with_reconciliation(true)

@@ -15,14 +15,14 @@
 
 //! Example demonstrating live execution testing with the Betfair adapter.
 //!
+//! Edit the constants below to change the target market, execution instrument, and order size.
+//!
 //! Run with: `cargo run -p nautilus-betfair --example betfair-exec-tester --features examples`
 //!
-//! Environment variables:
-//! - `BETFAIR_USERNAME`: Your Betfair username
-//! - `BETFAIR_PASSWORD`: Your Betfair password
-//! - `BETFAIR_APP_KEY`: Your Betfair application key
-//! - `BETFAIR_MARKET_ID`: Required active market ID to load and test
-//! - `BETFAIR_INSTRUMENT_ID`: Optional instrument ID override after market preload
+//! Required credential environment variables:
+//! - `BETFAIR_USERNAME`: Your Betfair username.
+//! - `BETFAIR_PASSWORD`: Your Betfair password.
+//! - `BETFAIR_APP_KEY`: Your Betfair application key.
 //!
 //! Market IDs can be found from `https://www.betfair.com.au/exchange/plus/`
 
@@ -48,11 +48,19 @@ use nautilus_trading::strategy::StrategyConfig;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+const TRADER_ID: &str = "TESTER-001";
+const ACCOUNT_ID: &str = "BETFAIR-001";
+const NODE_NAME: &str = "BETFAIR-EXEC-TESTER-001";
+const STRATEGY_ID: &str = "EXEC_TESTER-001";
+const MARKET_ID: &str = "1.123456789";
+const INSTRUMENT_ID: Option<&str> = None;
+const ORDER_QTY: &str = "2.00";
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
-    let market_id = std::env::var("BETFAIR_MARKET_ID").expect("BETFAIR_MARKET_ID must be set");
+    let market_id = MARKET_ID.to_string();
     let (account_currency, instruments, http_client) = load_market_context(&market_id).await?;
     let instrument_id = select_exec_instrument(&http_client, &market_id, &instruments).await?;
     http_client.disconnect().await;
@@ -65,9 +73,9 @@ async fn main() -> anyhow::Result<()> {
     println!("Using execution instrument: {instrument_id}");
 
     let environment = Environment::Live;
-    let trader_id = TraderId::from("TESTER-001");
-    let account_id = AccountId::from("BETFAIR-001");
-    let node_name = "BETFAIR-EXEC-TESTER-001".to_string();
+    let trader_id = TraderId::from(TRADER_ID);
+    let account_id = AccountId::from(ACCOUNT_ID);
+    let node_name = NODE_NAME.to_string();
     let client_id = *BETFAIR_CLIENT_ID;
 
     let data_config = BetfairDataConfig {
@@ -105,13 +113,13 @@ async fn main() -> anyhow::Result<()> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let order_qty = Quantity::from("2.00");
+    let order_qty = Quantity::from(ORDER_QTY);
 
     // Betfair does not expose quote subscriptions or normal market orders.
     // Use a BSP market-on-close order so ExecTester can still submit one order on start.
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
-            strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
+            strategy_id: Some(StrategyId::from(STRATEGY_ID)),
             external_order_claims: Some(vec![instrument_id]),
             ..Default::default()
         })
@@ -195,8 +203,8 @@ async fn select_exec_instrument(
     market_id: &str,
     instruments: &[InstrumentAny],
 ) -> anyhow::Result<InstrumentId> {
-    if let Ok(instrument_id) = std::env::var("BETFAIR_INSTRUMENT_ID") {
-        let instrument_id = InstrumentId::from(instrument_id.as_str());
+    if let Some(instrument_id) = INSTRUMENT_ID {
+        let instrument_id = InstrumentId::from(instrument_id);
 
         if instruments
             .iter()
@@ -205,7 +213,7 @@ async fn select_exec_instrument(
             return Ok(instrument_id);
         }
 
-        anyhow::bail!("BETFAIR_INSTRUMENT_ID={instrument_id} was not found in the loaded market");
+        anyhow::bail!("INSTRUMENT_ID={instrument_id} was not found in the loaded market");
     }
 
     match instruments {
@@ -217,7 +225,7 @@ async fn select_exec_instrument(
                 let available = instrument_choices(instruments).join("\n  ");
                 anyhow::bail!(
                     "Could not auto-select an active Betfair runner for market {market_id}.\n\n  \
-                     Set BETFAIR_INSTRUMENT_ID to one of:\n  {available}"
+                     Set INSTRUMENT_ID to one of:\n  {available}"
                 );
             }
         },

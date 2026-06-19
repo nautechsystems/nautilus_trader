@@ -15,6 +15,8 @@
 
 //! Example demonstrating live execution testing with the Binance Futures USD-M adapter.
 //!
+//! Edit the constants below to change the environment, target instrument, and order size.
+//!
 //! Run with: `cargo run --example binance-futures-exec-tester --package nautilus-binance --features examples`
 //!
 //! Requires environment variables (Ed25519 keys are auto-detected):
@@ -39,20 +41,28 @@ use nautilus_model::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
+const BINANCE_ENVIRONMENT: BinanceEnvironment = BinanceEnvironment::Testnet;
+const TRADER_ID: &str = "TESTER-001";
+const ACCOUNT_ID: &str = "BINANCE-FUTURES-001";
+const NODE_NAME: &str = "BINANCE-FUTURES-EXEC-TESTER-001";
+const STRATEGY_ID: &str = "EXEC_TESTER-001";
+const INSTRUMENT_ID: &str = "BTCUSDT-PERP.BINANCE";
+const ORDER_QTY: &str = "0.01";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::from("TESTER-001");
-    let account_id = AccountId::from("BINANCE-FUTURES-001");
-    let node_name = "BINANCE-FUTURES-EXEC-TESTER-001".to_string();
+    let trader_id = TraderId::from(TRADER_ID);
+    let account_id = AccountId::from(ACCOUNT_ID);
+    let node_name = NODE_NAME.to_string();
     let client_id = *BINANCE_CLIENT_ID;
-    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
 
     let data_config = BinanceDataClientConfig {
         product_type: BinanceProductType::UsdM,
-        environment: BinanceEnvironment::Testnet,
+        environment: BINANCE_ENVIRONMENT,
         api_key: None,
         api_secret: None,
         ..Default::default()
@@ -62,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         account_id,
         product_type: BinanceProductType::UsdM,
-        environment: BinanceEnvironment::Testnet,
+        environment: BINANCE_ENVIRONMENT,
         ..Default::default()
     };
 
@@ -84,11 +94,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let order_qty = Quantity::from("0.01"); // Small quantity for testing
+    let order_qty = Quantity::from(ORDER_QTY);
 
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
-            strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
+            strategy_id: Some(StrategyId::from(STRATEGY_ID)),
             external_order_claims: Some(vec![instrument_id]),
             ..Default::default()
         })

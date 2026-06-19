@@ -15,11 +15,17 @@
 
 //! Example demonstrating live execution testing with the Kraken adapter.
 //!
+//! Edit the constants below to change the product type, target symbol, and order size.
+//!
 //! Run with: `cargo run -p nautilus-kraken --example kraken-exec-tester --features examples`
 //!
-//! Environment variables (for Spot):
-//! - KRAKEN_SPOT_API_KEY: Your Kraken Spot API key
-//! - KRAKEN_SPOT_API_SECRET: Your Kraken Spot API secret
+//! Required credential environment variables (Spot):
+//! - `KRAKEN_SPOT_API_KEY`.
+//! - `KRAKEN_SPOT_API_SECRET`.
+//!
+//! Required credential environment variables (Futures):
+//! - `KRAKEN_FUTURES_API_KEY`.
+//! - `KRAKEN_FUTURES_API_SECRET`.
 
 use nautilus_common::enums::Environment;
 use nautilus_kraken::{
@@ -38,35 +44,36 @@ use nautilus_trading::strategy::StrategyConfig;
 // *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 // *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
+const PRODUCT_TYPE: KrakenProductType = KrakenProductType::Futures;
+const TRADER_ID: &str = "TESTER-001";
+const ACCOUNT_ID: &str = "KRAKEN-001";
+const NODE_NAME: &str = "KRAKEN-EXEC-TESTER-001";
+const STRATEGY_ID: &str = "EXEC_TESTER-001";
+
+// Spot symbols are normalized to BTC (from Kraken's XBT).
+const SPOT_SYMBOL: &str = "BTC/USD";
+const SPOT_ORDER_QTY: &str = "0.0001"; // Minimum BTC quantity
+// Futures perpetual symbols use the PF_ prefix (e.g. PF_XBTUSD, PF_ETHUSD).
+const FUTURES_SYMBOL: &str = "PF_XBTUSD";
+const FUTURES_ORDER_QTY: &str = "0.001";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    // Configuration - Change product_type to switch between trading modes
-    let product_type = KrakenProductType::Futures; // Spot or Futures
+    let product_type = PRODUCT_TYPE;
 
-    // Symbol and settings based on product type
     let (symbol, order_qty) = match product_type {
-        KrakenProductType::Spot => {
-            // Spot symbols are normalized to BTC (from Kraken's XBT)
-            let symbol = "BTC/USD";
-            let order_qty = Quantity::from("0.0001"); // Minimum BTC quantity
-            (symbol, order_qty)
-        }
-        KrakenProductType::Futures => {
-            // Futures perpetual symbols use PF_ prefix (e.g., PF_XBTUSD, PF_ETHUSD)
-            let symbol = "PF_XBTUSD";
-            let order_qty = Quantity::from("0.001");
-            (symbol, order_qty)
-        }
+        KrakenProductType::Spot => (SPOT_SYMBOL, Quantity::from(SPOT_ORDER_QTY)),
+        KrakenProductType::Futures => (FUTURES_SYMBOL, Quantity::from(FUTURES_ORDER_QTY)),
     };
 
     let instrument_id = InstrumentId::from(format!("{symbol}.KRAKEN").as_str());
 
     let environment = Environment::Live;
-    let trader_id = TraderId::from("TESTER-001");
-    let account_id = AccountId::from("KRAKEN-001");
-    let node_name = "KRAKEN-EXEC-TESTER-001".to_string();
+    let trader_id = TraderId::from(TRADER_ID);
+    let account_id = AccountId::from(ACCOUNT_ID);
+    let node_name = NODE_NAME.to_string();
     let client_id = *KRAKEN_CLIENT_ID;
 
     let credential = match product_type {
@@ -114,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
-            strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
+            strategy_id: Some(StrategyId::from(STRATEGY_ID)),
             external_order_claims: Some(vec![instrument_id]),
             // Kraken truncates non-UUID client order IDs to 18 chars,
             // which can cause collisions across sessions at the same time of day.

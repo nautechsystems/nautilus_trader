@@ -13,6 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Example demonstrating live trailing-stop execution testing with the Binance Futures USD-M adapter.
+//!
+//! Edit the constants below to change the environment, target instrument, order size, and
+//! trailing-stop tuning parameters.
+//!
+//! Run with: `cargo run --example binance-futures-exec-trailing-stop-tester --package nautilus-binance --features examples`
+//!
+//! Requires environment variables (Ed25519 keys are auto-detected):
+//! - Testnet: `BINANCE_FUTURES_TESTNET_API_KEY` / `BINANCE_FUTURES_TESTNET_API_SECRET`
+//!
+//! Create testnet credentials from the Binance Futures testnet platform.
+
 use std::{
     str::FromStr,
     time::{Duration, Instant},
@@ -45,18 +57,29 @@ use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 use rust_decimal::Decimal;
 
+const BINANCE_ENVIRONMENT: BinanceEnvironment = BinanceEnvironment::Testnet;
+const TRADER_ID: &str = "TESTER-001";
+const ACCOUNT_ID: &str = "BINANCE-FUTURES-001";
+const NODE_NAME: &str = "BINANCE-FUTURES-TRAILING-STOP-TESTER-001";
+const STRATEGY_ID: &str = "EXEC_TESTER-TRAILING-001";
+const INSTRUMENT_ID: &str = "BTCUSDT-PERP.BINANCE";
+const ORDER_QTY: &str = "0.001";
+
+const STOP_OFFSET_TICKS: u64 = 5_000;
+const TRAILING_OFFSET_BPS: i64 = 25;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    let environment = BinanceEnvironment::Testnet;
-    let trader_id = TraderId::from("TESTER-001");
-    let account_id = AccountId::from("BINANCE-FUTURES-001");
-    let node_name = "BINANCE-FUTURES-TRAILING-STOP-TESTER-001".to_string();
+    let environment = BINANCE_ENVIRONMENT;
+    let trader_id = TraderId::from(TRADER_ID);
+    let account_id = AccountId::from(ACCOUNT_ID);
+    let node_name = NODE_NAME.to_string();
     let client_id = *BINANCE_CLIENT_ID;
-    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
     let product_type = BinanceProductType::UsdM;
-    let order_qty = Quantity::from("0.001");
+    let order_qty = Quantity::from(ORDER_QTY);
 
     let (api_key, api_secret) = resolve_credentials(None, None, environment, product_type)?;
     let clock = get_atomic_clock_realtime();
@@ -107,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
-            strategy_id: Some(StrategyId::from("EXEC_TESTER-TRAILING-001")),
+            strategy_id: Some(StrategyId::from(STRATEGY_ID)),
             external_order_claims: Some(vec![instrument_id]),
             ..Default::default()
         })
@@ -120,9 +143,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enable_stop_buys(false)
         .enable_stop_sells(true)
         .stop_order_type(OrderType::TrailingStopMarket)
-        .stop_offset_ticks(5_000)
+        .stop_offset_ticks(STOP_OFFSET_TICKS)
         .stop_trigger_type(TriggerType::MarkPrice)
-        .trailing_offset(Decimal::from(25))
+        .trailing_offset(Decimal::from(TRAILING_OFFSET_BPS))
         .trailing_offset_type(TrailingOffsetType::BasisPoints)
         .build();
 

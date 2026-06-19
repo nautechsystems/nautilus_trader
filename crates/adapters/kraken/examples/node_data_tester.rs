@@ -15,11 +15,13 @@
 
 //! Example demonstrating live data testing with the Kraken adapter.
 //!
+//! Edit the constants below to change the product type and target symbols.
+//!
 //! Run with: `cargo run -p nautilus-kraken --example kraken-data-tester --features examples`
 //!
-//! Environment variables (optional for public data):
-//! - KRAKEN_API_KEY: Your Kraken API key
-//! - KRAKEN_API_SECRET: Your Kraken API secret
+//! Credentials are read from the environment when set (optional for public data):
+//! - `KRAKEN_API_KEY`.
+//! - `KRAKEN_API_SECRET`.
 
 use std::num::NonZeroUsize;
 
@@ -33,36 +35,33 @@ use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::bar::BarType,
     identifiers::{InstrumentId, TraderId},
-    stubs::TestDefault,
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 // *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 // *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
+const PRODUCT_TYPE: KrakenProductType = KrakenProductType::Futures;
+const TRADER_ID: &str = "TESTER-001";
+const NODE_NAME: &str = "KRAKEN-TESTER-001";
+
+// Spot symbols are normalized to BTC (from Kraken's XBT).
+const SPOT_SYMBOLS: &[&str] = &["BTC/USD"];
+// Futures perpetual symbols use the PF_ prefix (e.g. PF_XBTUSD, PF_ETHUSD).
+const FUTURES_SYMBOLS: &[&str] = &["PF_XBTUSD"];
+
+const BOOK_INTERVAL_MS: usize = 10;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    // Configuration - Change product_type to switch between trading modes
-    let product_type = KrakenProductType::Futures; // Spot or Futures
+    let product_type = PRODUCT_TYPE;
 
-    // Symbol and settings based on product type
-    let (symbols, subscribe_bars, _subscribe_mark_prices, _subscribe_index_prices) =
-        match product_type {
-            KrakenProductType::Spot => {
-                // Spot symbols are normalized to BTC (from Kraken's XBT)
-                let symbols = vec!["BTC/USD"];
-                // let symbols = vec!["BTC/USD", "ETH/USD"];
-                (symbols, true, false, false)
-            }
-            KrakenProductType::Futures => {
-                // Futures perpetual symbols use PF_ prefix (e.g., PF_XBTUSD, PF_ETHUSD)
-                let symbols = vec!["PF_XBTUSD"];
-                // let symbols = vec!["PF_XBTUSD", "PF_ETHUSD"];
-                (symbols, false, true, true)
-            }
-        };
+    let (symbols, subscribe_bars): (&[&str], bool) = match product_type {
+        KrakenProductType::Spot => (SPOT_SYMBOLS, true),
+        KrakenProductType::Futures => (FUTURES_SYMBOLS, false),
+    };
 
     let instrument_ids: Vec<InstrumentId> = symbols
         .iter()
@@ -79,8 +78,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let environment = Environment::Live;
-    let trader_id = TraderId::test_default();
-    let node_name = "KRAKEN-TESTER-001".to_string();
+    let trader_id = TraderId::from(TRADER_ID);
+    let node_name = NODE_NAME.to_string();
     let client_id = *KRAKEN_CLIENT_ID;
 
     let kraken_config = KrakenDataClientConfig {
@@ -109,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // .subscribe_index_prices(subscribe_index_prices)
         // .request_trades(true)
         // .request_bars(subscribe_bars)
-        .book_interval_ms(NonZeroUsize::new(10).unwrap())
+        .book_interval_ms(NonZeroUsize::new(BOOK_INTERVAL_MS).unwrap())
         .subscribe_book_at_interval(true)
         .manage_book(true)
         .build();

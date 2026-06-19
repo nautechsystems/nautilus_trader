@@ -14,6 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Example showing how to use the `GreeksCalculator` with a `DataActor`.
+//!
+//! Edit the constants below to change the trader, target instrument, and greeks underlying.
+//!
+//! Run with: `cargo run --example greeks_actor_example --package nautilus-common --features live`
+//!
+//! No credentials are required.
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -33,6 +39,10 @@ use nautilus_model::{
     enums::PositionSide,
     identifiers::{InstrumentId, TraderId},
 };
+
+const TRADER_ID: &str = "TRADER-001";
+const INSTRUMENT_ID: &str = "SPY.AMEX";
+const GREEKS_UNDERLYING: &str = "SPY";
 
 /// A custom actor that uses the `GreeksCalculator`.
 #[derive(Debug)]
@@ -98,7 +108,7 @@ nautilus_actor!(GreeksActor);
 
 impl DataActor for GreeksActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        self.subscribe_to_greeks("SPY");
+        self.subscribe_to_greeks(GREEKS_UNDERLYING);
         Ok(())
     }
 
@@ -120,7 +130,7 @@ fn main() -> anyhow::Result<()> {
     // Create actor config
     let config = DataActorConfig::default();
 
-    let trader_id = TraderId::from("TRADER-001");
+    let trader_id = TraderId::from(TRADER_ID);
 
     // Create the GreeksActor
     let mut actor = GreeksActor::new(config, cache.clone(), clock.clone()); // TODO: Change to registration pattern
@@ -130,7 +140,7 @@ fn main() -> anyhow::Result<()> {
     actor.start()?;
 
     // Example: Calculate greeks for an instrument
-    let instrument_id = InstrumentId::from("SPY.AMEX");
+    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
     match actor.calculate_instrument_greeks(instrument_id) {
         Ok(greeks) => println!("Calculated greeks for {instrument_id}: {greeks:?}"),
         Err(e) => println!("Error calculating greeks: {e}"),

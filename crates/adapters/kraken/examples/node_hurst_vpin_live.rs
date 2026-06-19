@@ -16,11 +16,14 @@
 //! Example running the Hurst/VPIN directional strategy live against Kraken
 //! Futures (`PF_XBTUSD`).
 //!
+//! Edit the constants below to change the target instrument, bar type, and
+//! strategy tuning parameters.
+//!
 //! Run with: `cargo run -p nautilus-kraken --features examples --example kraken-hurst-vpin-live`
 //!
-//! Environment variables:
-//! - KRAKEN_FUTURES_API_KEY: Your Kraken Futures API key
-//! - KRAKEN_FUTURES_API_SECRET: Your Kraken Futures API secret
+//! Required credential environment variables:
+//! - `KRAKEN_FUTURES_API_KEY`.
+//! - `KRAKEN_FUTURES_API_SECRET`.
 //!
 //! Point at [demo-futures.kraken.com](https://demo-futures.kraken.com) for
 //! paper trading by setting `demo=true` on `resolve_futures` or by using a
@@ -43,18 +46,28 @@ use nautilus_trading::examples::strategies::{HurstVpinDirectional, HurstVpinDire
 // *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 // *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
+const PRODUCT_TYPE: KrakenProductType = KrakenProductType::Futures;
+const TRADER_ID: &str = "TESTER-001";
+const ACCOUNT_ID: &str = "KRAKEN-001";
+const NODE_NAME: &str = "KRAKEN-HURST-VPIN-001";
+const INSTRUMENT_ID: &str = "PF_XBTUSD.KRAKEN";
+const BAR_TYPE: &str = "PF_XBTUSD.KRAKEN-2000000-VALUE-LAST-INTERNAL";
+
+const TRADE_SIZE: &str = "0.0100";
+const MAX_HOLDING_SECS: u64 = 1800;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    let product_type = KrakenProductType::Futures;
-    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
-    let bar_type = BarType::from("PF_XBTUSD.KRAKEN-2000000-VALUE-LAST-INTERNAL");
+    let product_type = PRODUCT_TYPE;
+    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
+    let bar_type = BarType::from(BAR_TYPE);
 
     let environment = Environment::Live;
-    let trader_id = TraderId::from("TESTER-001");
-    let account_id = AccountId::from("KRAKEN-001");
-    let node_name = "KRAKEN-HURST-VPIN-001".to_string();
+    let trader_id = TraderId::from(TRADER_ID);
+    let account_id = AccountId::from(ACCOUNT_ID);
+    let node_name = NODE_NAME.to_string();
     let client_id = *KRAKEN_CLIENT_ID;
 
     let credential = KrakenCredential::resolve_futures(None, None, false)
@@ -87,8 +100,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let config = HurstVpinDirectionalConfig::new(instrument_id, bar_type, Quantity::from("0.0100"))
-        .with_max_holding_secs(1800);
+    let config =
+        HurstVpinDirectionalConfig::new(instrument_id, bar_type, Quantity::from(TRADE_SIZE))
+            .with_max_holding_secs(MAX_HOLDING_SECS);
     let strategy = HurstVpinDirectional::new(config);
 
     node.add_strategy(strategy)?;

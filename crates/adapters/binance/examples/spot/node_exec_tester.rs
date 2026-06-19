@@ -15,6 +15,8 @@
 
 //! Example demonstrating live execution testing with the Binance Spot adapter.
 //!
+//! Edit the constants below to change the environment, target instrument, and order size.
+//!
 //! Run with: `cargo run --example binance-spot-exec-tester --package nautilus-binance --features examples`
 //!
 //! Requires environment variables based on the configured environment
@@ -40,20 +42,28 @@ use nautilus_model::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
+const BINANCE_ENVIRONMENT: BinanceEnvironment = BinanceEnvironment::Live;
+const TRADER_ID: &str = "TESTER-001";
+const ACCOUNT_ID: &str = "BINANCE-001";
+const NODE_NAME: &str = "BINANCE-EXEC-TESTER-001";
+const STRATEGY_ID: &str = "EXEC_TESTER-001";
+const INSTRUMENT_ID: &str = "BTCUSDT.BINANCE";
+const ORDER_QTY: &str = "0.0001";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::from("TESTER-001");
-    let account_id = AccountId::from("BINANCE-001");
-    let node_name = "BINANCE-EXEC-TESTER-001".to_string();
+    let trader_id = TraderId::from(TRADER_ID);
+    let account_id = AccountId::from(ACCOUNT_ID);
+    let node_name = NODE_NAME.to_string();
     let client_id = *BINANCE_CLIENT_ID;
-    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
 
     let data_config = BinanceDataClientConfig {
         product_type: BinanceProductType::Spot,
-        environment: BinanceEnvironment::Live,
+        environment: BINANCE_ENVIRONMENT,
         api_key: None,
         api_secret: None,
         ..Default::default()
@@ -63,7 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         account_id,
         product_type: BinanceProductType::Spot,
-        environment: BinanceEnvironment::Live,
+        environment: BINANCE_ENVIRONMENT,
         ..Default::default()
     };
 
@@ -85,10 +95,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let order_qty = Quantity::from("0.0001"); // Small quantity for testing
+    let order_qty = Quantity::from(ORDER_QTY);
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
-            strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
+            strategy_id: Some(StrategyId::from(STRATEGY_ID)),
             external_order_claims: Some(vec![instrument_id]),
             ..Default::default()
         })
