@@ -141,7 +141,7 @@ def panel_a_reference_overlay(df: pd.DataFrame) -> go.Figure:
             x=df["ts"],
             y=df["databento_mid"],
             mode="lines",
-            name=f"Databento {SYMBOL}.DBEQ mid",
+            name=f"Databento {SYMBOL}.EQUS mid",
             line={"color": PRIMARY, "width": 1.7},
         ),
     )
@@ -236,7 +236,7 @@ def panel_b_signal_basis(df: pd.DataFrame) -> go.Figure:
     fig.add_hline(y=0, line={"color": GRID, "width": 1}, row=2, col=1)
     apply_layout(
         fig,
-        "Databento residual, Lighter basis, and composite quote skew",
+        "Databento residual, Lighter basis, and composite quote-center shift",
         height=620,
     )
     fig.update_yaxes(title_text="bps", row=1, col=1)
@@ -337,7 +337,7 @@ def panel_d_session_clock(df: pd.DataFrame) -> go.Figure:
             x=df["ts"],
             y=df["databento_active"],
             mode="lines",
-            name="Databento DBEQ.BASIC feed",
+            name="Databento EQUS.PLUS feed",
             line={"color": POSITIVE, "width": 1.5, "shape": "hv"},
         ),
         secondary_y=False,

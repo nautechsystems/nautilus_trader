@@ -1,7 +1,7 @@
-# Composite Market Making on Lighter RWA with Databento DBEQ NVDA
+# Composite Market Making on Lighter RWA with Databento US Equities NVDA
 
 This tutorial runs the shipped [`CompositeMarketMaker`][composite-market-maker] strategy on Lighter's
-`NVDA-PERP.LIGHTER` RWA market using Databento `NVDA.DBEQ` quotes as an external
+`NVDA-PERP.LIGHTER` RWA market using Databento `NVDA.EQUS` quotes as an external
 signal. The strategy quotes one post-only bid and one post-only ask around the
 Lighter mid, then shifts both sides from a normalized Databento residual and the
 current Lighter inventory.
@@ -13,19 +13,19 @@ Rust `CompositeMarketMaker` strategy.
 
 Lighter lists real-world asset (RWA) perpetuals that trade continuously, including
 single-name equity markets. See Lighter's [RWA docs] and [market specifications]
-for current venue details. Databento's [DBEQ.BASIC] feed provides basic US equity
-top-of-book data for `NVDA`, with `mbp-1` available through the Nautilus
-Databento adapter.
+for current venue details. Databento's [US Equities][Databento US Equities]
+datasets provide US equity top-of-book data for `NVDA`, with `mbp-1` available
+through the Nautilus Databento adapter.
 
 `CompositeMarketMaker` is a small two-input market maker:
 
 - The **target instrument** is the Lighter market to quote: `NVDA-PERP.LIGHTER`.
-- The **signal instrument** is the Databento reference feed: `NVDA.DBEQ`.
+- The **signal instrument** is the Databento reference feed: `NVDA.EQUS`.
 - The **anchor** is the Lighter mid.
 - The **signal residual** is `(databento_mid / baseline) - 1.0`.
 - The **quote shift** is `signal_skew_factor * residual - inventory_skew_factor * net_position`.
 
-With no configured baseline, the strategy captures the first observed `NVDA.DBEQ`
+With no configured baseline, the strategy captures the first observed `NVDA.EQUS`
 mid as the reference price. The residual starts at zero and measures NVDA's move
 from that first signal mid, not the Lighter/Databento basis. Set the
 `SIGNAL_BASELINE` constant in the example source to pin the reference price for
@@ -37,7 +37,7 @@ quote center up or down through the normalized residual.
 ```mermaid
 flowchart LR
     subgraph Databento ["Databento data client"]
-        DQ["NVDA.DBEQ QuoteTick<br/>dataset = DBEQ.BASIC<br/>schema = mbp-1"]
+        DQ["NVDA.EQUS QuoteTick<br/>dataset = EQUS.PLUS<br/>schema = mbp-1"]
         DS["signal_mid = (bid + ask) / 2"]
         DR["residual = signal_mid / baseline - 1"]
     end
@@ -72,7 +72,8 @@ inside the same event-driven runtime.
 - A Cargo project with the Nautilus, Lighter, and Databento crates as
   dependencies (see [Project setup](#project-setup)).
 - Python 3.12+ to regenerate the rendered panels.
-- A Databento API key with live access to `DBEQ.BASIC`.
+- A Databento API key with live access to Databento US Equities Plus
+  (`EQUS.PLUS`) for the bundled `NVDA.EQUS` route.
 - Lighter API credentials (numeric account index, API key index, and API secret)
   for the configured environment (testnet by default), required only to connect
   and submit orders.
@@ -134,19 +135,21 @@ Lighter traded market:
 
 | Role              | Instrument ID       | Source    | Notes                                      |
 | ----------------- | ------------------- | --------- | ------------------------------------------ |
-| Signal instrument | `NVDA.DBEQ`         | Databento | DBEQ.BASIC top‑of‑book quote updates.      |
+| Signal instrument | `NVDA.EQUS`         | Databento | EQUS.PLUS top‑of‑book quote updates.       |
 | Target instrument | `NVDA-PERP.LIGHTER` | Lighter   | RWA perpetual traded through Lighter.      |
 
-Subscribing to `NVDA.DBEQ` requests top-of-book (`mbp-1`) quotes for `NVDA` from
-Databento's `DBEQ.BASIC` dataset, delivered as a single `QuoteTick` stream. The
-adapter resolves the `DBEQ` venue from a publishers file: the example points
-`DatabentoLiveClientConfig` at the `publishers.json` bundled with the Databento
-adapter. See [Instrument IDs and symbology][databento-symbology] for the mapping
-rules.
+Subscribing to `NVDA.EQUS` requests top-of-book (`mbp-1`) quotes for `NVDA` from
+Databento's `EQUS.PLUS` dataset by default, delivered as a single `QuoteTick`
+stream. The adapter resolves the `EQUS` venue from a publishers file: the
+example points `DatabentoLiveClientConfig` at the `publishers.json` bundled with
+the Databento adapter. See [Instrument IDs and symbology][databento-symbology]
+for the mapping rules.
 
-DBEQ.BASIC provides L1 coverage from basic equity venues, so it has less venue
-coverage than Nasdaq TotalView. Treat it as a licensed signal proxy for the
-tutorial wiring, not as a full primary Nasdaq book.
+The older Databento Equities Basic (`DBEQ.BASIC`) dataset name appears in some
+grandfathered accounts and historical examples. New Databento subscriptions use
+the Databento US Equities product line, so this tutorial uses the consolidated
+`EQUS` venue. Treat the top-of-book feed as a licensed signal proxy for the
+tutorial wiring, not as a full depth Nasdaq TotalView book.
 
 The example starts at `trade_size=0.05`, which aligns with the Lighter NVDA
 minimum base amount observed during tutorial validation. Check the
@@ -154,7 +157,7 @@ minimum base amount observed during tutorial validation. Check the
 
 ## Session constraint
 
-Lighter RWA markets trade continuously. `NVDA.DBEQ` follows the US equity market
+Lighter RWA markets trade continuously. `NVDA.EQUS` follows the US equity market
 data session. The first live test should run during the regular cash session
 (13:30-20:00 UTC, US daylight time), with special handling for holidays and
 half-days.
@@ -172,7 +175,7 @@ copying the node wiring below into a `main` in your own project that depends on
 the crates from [Project setup](#project-setup).
 
 From a checkout, with the credential variables set, the shipped binary builds
-the node, registers both clients, adds the native strategy, and exits without
+the node, registers all three clients, adds the native strategy, and exits without
 connecting:
 
 ```bash
@@ -180,7 +183,7 @@ cargo run --bin lighter-nvda-composite-mm --package nautilus-tutorials --feature
 ```
 
 Databento is a multi-venue data client without a fixed venue route, so the engine
-uses it as the default route for `NVDA.DBEQ`. Lighter registers with the `LIGHTER`
+uses it as the default route for `NVDA.EQUS`. Lighter registers with the `LIGHTER`
 venue route and receives `NVDA-PERP.LIGHTER` subscriptions.
 
 The core of the setup is the three-client node plus `CompositeMarketMaker`:
@@ -262,16 +265,16 @@ setting `RUN_LIVE` and `ALLOW_LIVE_ORDERS` to `true`.
 
 For a testnet smoke run, keep `LIGHTER_ENVIRONMENT` as
 `LighterEnvironment::Testnet` and use the `LIGHTER_TESTNET_*` credential
-variables. If the run is outside the DBEQ.BASIC cash session, it can still
-validate node startup, routing, Lighter data, and the order lifecycle. The
-Databento residual remains zero until the first `NVDA.DBEQ` quote arrives.
+variables. If the run is outside the Databento US Equities cash session, it can
+still validate node startup, routing, Lighter data, and the order lifecycle. The
+Databento residual remains zero until the first `NVDA.EQUS` quote arrives.
 
 ## Strategy parameters
 
 | Parameter               | Value               | Description                                                    |
 | ----------------------- | ------------------- | -------------------------------------------------------------- |
 | `instrument_id`         | `NVDA-PERP.LIGHTER` | Lighter RWA perpetual to quote.                                |
-| `signal_instrument_id`  | `NVDA.DBEQ`         | Databento DBEQ.BASIC signal feed.                              |
+| `signal_instrument_id`  | `NVDA.EQUS`         | Databento US Equities Plus signal feed.                        |
 | `trade_size`            | `0.05`              | Size per bid or ask.                                           |
 | `max_position`          | `0.20`              | Hard cap on net Lighter exposure.                              |
 | `half_spread_bps`       | `25`                | Half‑spread around the Lighter anchor.                         |
@@ -308,7 +311,7 @@ and the cash-session constraint. They are not a captured live Lighter fill trace
 
 ![NVDA composite quote center against Databento and Lighter mids](./assets/lighter_rwa_composite_mm/panel_a_reference_overlay.png)
 
-**Figure 1.** *Databento `NVDA.DBEQ` mid, Lighter `NVDA-PERP.LIGHTER` mid,
+**Figure 1.** *Databento `NVDA.EQUS` mid, Lighter `NVDA-PERP.LIGHTER` mid,
 composite bid, composite ask, and quote center.*
 
 ![Databento residual, Lighter basis, and quote-center shift](./assets/lighter_rwa_composite_mm/panel_b_signal_basis.png)
@@ -322,8 +325,8 @@ for a `0.05` NVDA trade size and `0.20` NVDA position cap.*
 
 ![Lighter continuous trading and Databento session clock](./assets/lighter_rwa_composite_mm/panel_d_session_clock.png)
 
-**Figure 4.** *Lighter's continuous RWA market clock against the Databento
-`DBEQ.BASIC` cash-session signal, with signal age after the regular session.*
+**Figure 4.** *Lighter's continuous RWA market clock against the Databento US
+Equities cash-session signal, with signal age after the regular session.*
 
 ## Regenerate the panels
 
@@ -340,7 +343,7 @@ depend on vendor data licenses or live exchange access.
 ## Extensions
 
 The next useful improvement is a signal-age gate. For example, cancel all
-Lighter orders when the latest `NVDA.DBEQ` quote is older than 30 seconds during
+Lighter orders when the latest `NVDA.EQUS` quote is older than 30 seconds during
 the cash session, or immediately after the cash session closes. That makes the
 Databento signal an explicit operating dependency instead of an implicit one.
 
@@ -356,5 +359,5 @@ the Lighter BBO only for post-only and basis limits.
 [RWA docs]: https://docs.lighter.xyz/trading/real-world-assets-rwas
 [market specifications]: https://docs.lighter.xyz/trading/real-world-assets-rwas/market-specifications
 [market details endpoint]: https://mainnet.zklighter.elliot.ai/api/v1/orderBookDetails
-[DBEQ.BASIC]: https://databento.com/blog/dbeq-basic
+[Databento US Equities]: https://databento.com/blog/introducing-databento-us-equities
 [example-script]: https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/tutorials/src/bin/lighter_nvda_composite_mm.rs

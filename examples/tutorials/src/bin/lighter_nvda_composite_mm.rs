@@ -16,7 +16,7 @@
 //! Example demonstrating Lighter NVDA RWA market making with a Databento signal.
 //!
 //! This builds a live node with:
-//! - Databento `NVDA.DBEQ` quotes as the signal instrument.
+//! - Databento `NVDA.EQUS` quotes as the signal instrument.
 //! - Lighter `NVDA-PERP.LIGHTER` data and execution as the target instrument.
 //! - The native Rust `CompositeMarketMaker` strategy.
 //!
@@ -62,7 +62,7 @@ const LIGHTER_ENVIRONMENT: LighterEnvironment = LighterEnvironment::Testnet;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "LIGHTER-001";
 const INSTRUMENT_ID: &str = "NVDA-PERP.LIGHTER";
-const SIGNAL_INSTRUMENT_ID: &str = "NVDA.DBEQ";
+const SIGNAL_INSTRUMENT_ID: &str = "NVDA.EQUS";
 
 const MAX_POSITION: &str = "0.20";
 const TRADE_SIZE: &str = "0.05";
