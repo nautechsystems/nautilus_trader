@@ -24,7 +24,7 @@ use nautilus_model::{
         OrderSubmitted,
         order::spec::{
             OrderAcceptedSpec, OrderFilledSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
-            OrderSubmittedSpec,
+            OrderSubmittedSpec, OrderUpdatedSpec,
         },
     },
     identifiers::{
@@ -229,6 +229,55 @@ fn apply_fill(
         None,
     );
     order.apply(fill).unwrap();
+}
+
+// Builds an accepted order whose cache has been promoted from old_venue_order_id
+// to new_venue_order_id through a confirmed cancel-replace modify, so its
+// venue_order_ids history holds both legs and the current leg is the new one.
+fn build_order_promoted_to_new_leg(
+    instrument: &InstrumentAny,
+    client_order_id: ClientOrderId,
+    old_venue_order_id: VenueOrderId,
+    new_venue_order_id: VenueOrderId,
+    account_id: AccountId,
+) -> OrderAny {
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, old_venue_order_id);
+
+    let pending_update = build_order_pending_update(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account_id,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(old_venue_order_id),
+    );
+    order
+        .apply(OrderEventAny::PendingUpdate(pending_update))
+        .unwrap();
+
+    let updated = OrderUpdatedSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(order.client_order_id())
+        .quantity(Quantity::from(100))
+        .maybe_venue_order_id(Some(new_venue_order_id))
+        .maybe_account_id(Some(account_id))
+        .build();
+    order.apply(OrderEventAny::Updated(updated)).unwrap();
+
+    order
 }
 
 #[rstest]
@@ -2115,6 +2164,182 @@ fn test_reconcile_order_report_generates_canceled(instrument: InstrumentAny) {
     let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
     assert!(result.is_some());
     assert!(matches!(result.unwrap(), OrderEventAny::Canceled(_)));
+}
+
+#[rstest]
+#[case(OrderStatus::PendingUpdate)]
+#[case(OrderStatus::PendingCancel)]
+fn test_reconcile_canceled_deferred_while_mid_command(
+    instrument: InstrumentAny,
+    #[case] pending_status: OrderStatus,
+) {
+    // A Canceled report arriving while the local order awaits venue confirmation
+    // of an issued command is more likely the cancel-half of a cancel-replace
+    // modify than a termination, so it is deferred to the lifecycle stream.
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let account_id = AccountId::from("SIM-001");
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    match pending_status {
+        OrderStatus::PendingUpdate => {
+            let pending_update = build_order_pending_update(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                account_id,
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                false,
+                Some(venue_order_id),
+            );
+            order
+                .apply(OrderEventAny::PendingUpdate(pending_update))
+                .unwrap();
+        }
+        OrderStatus::PendingCancel => {
+            let pending_cancel = build_order_pending_cancel(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                account_id,
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                false,
+                Some(venue_order_id),
+            );
+            order
+                .apply(OrderEventAny::PendingCancel(pending_cancel))
+                .unwrap();
+        }
+        other => panic!("unexpected pending status {other:?}"),
+    }
+    assert_eq!(order.status(), pending_status);
+
+    let report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Canceled,
+        Quantity::from(100),
+        Quantity::from(0),
+    );
+
+    let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
+    assert!(result.is_none());
+}
+
+#[rstest]
+fn test_reconcile_canceled_suppressed_for_previously_promoted_venue_order_id(
+    instrument: InstrumentAny,
+) {
+    // Cancel-replace modify promoted the cache from V-001 to V-002. A late
+    // Canceled report on the old V-001 leg must be suppressed, since the
+    // successor V-002 is still live.
+    let client_order_id = ClientOrderId::from("O-001");
+    let old_venue_order_id = VenueOrderId::from("V-001");
+    let new_venue_order_id = VenueOrderId::from("V-002");
+    let account_id = AccountId::from("SIM-001");
+
+    let order = build_order_promoted_to_new_leg(
+        &instrument,
+        client_order_id,
+        old_venue_order_id,
+        new_venue_order_id,
+        account_id,
+    );
+    assert_eq!(order.venue_order_id(), Some(new_venue_order_id));
+    assert_eq!(order.status(), OrderStatus::Accepted);
+
+    let report = create_test_order_status_report(
+        client_order_id,
+        old_venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Canceled,
+        Quantity::from(100),
+        Quantity::from(0),
+    );
+
+    let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
+    assert!(result.is_none());
+}
+
+#[rstest]
+fn test_reconcile_canceled_forwarded_for_current_venue_order_id(instrument: InstrumentAny) {
+    // After the same V-001 -> V-002 promotion, a genuine cancel of the live
+    // successor (V-002, the current cached leg) must still be forwarded.
+    let client_order_id = ClientOrderId::from("O-001");
+    let old_venue_order_id = VenueOrderId::from("V-001");
+    let new_venue_order_id = VenueOrderId::from("V-002");
+    let account_id = AccountId::from("SIM-001");
+
+    let order = build_order_promoted_to_new_leg(
+        &instrument,
+        client_order_id,
+        old_venue_order_id,
+        new_venue_order_id,
+        account_id,
+    );
+
+    let report = create_test_order_status_report(
+        client_order_id,
+        new_venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Canceled,
+        Quantity::from(100),
+        Quantity::from(0),
+    );
+
+    let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
+    assert!(matches!(result, Some(OrderEventAny::Canceled(_))));
+}
+
+#[rstest]
+fn test_reconcile_canceled_forwarded_for_untracked_venue_order_id(instrument: InstrumentAny) {
+    // A Canceled report on a venue_order_id the order never tracked is a real
+    // external cancel, not a stale cancel-replace leg, so it is forwarded. This
+    // pins the history check that keeps the suppression from over-firing.
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let untracked_venue_order_id = VenueOrderId::from("V-999");
+    let account_id = AccountId::from("SIM-001");
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    let report = create_test_order_status_report(
+        client_order_id,
+        untracked_venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Canceled,
+        Quantity::from(100),
+        Quantity::from(0),
+    );
+
+    let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
+    assert!(matches!(result, Some(OrderEventAny::Canceled(_))));
 }
 
 #[rstest]

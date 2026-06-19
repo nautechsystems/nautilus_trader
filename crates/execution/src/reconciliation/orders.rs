@@ -118,7 +118,7 @@ pub fn generate_reconciliation_order_events(
 /// drive any local mutation until the venue surfaces a confirmed status.
 ///
 /// Returns `None` for `Canceled` reports when:
-/// - the local order is mid-command (`PendingUpdate`, `PendingCancel`) — the
+/// - the local order is mid-command (`PendingUpdate`, `PendingCancel`): the
 ///   adapter's primary lifecycle stream (WebSocket or HTTP) must confirm the
 ///   outcome before a terminal event can be applied;
 /// - the report references a previously-promoted `venue_order_id` whose
@@ -183,10 +183,8 @@ pub fn reconcile_order_report(
             }
         }
         OrderStatus::Canceled => {
-            // Defer when locally awaiting venue confirmation of an issued
-            // command. The adapter's primary lifecycle stream is the source of truth;
-            // a Canceled report arriving mid-command is more likely the cancel-half of
-            // a cancel-replace modify than an authoritative termination.
+            // A mid-command Canceled is more likely a cancel-replace cancel-half
+            // than a termination; wait for the lifecycle stream to confirm.
             if matches!(
                 order.status(),
                 OrderStatus::PendingUpdate | OrderStatus::PendingCancel,
@@ -199,10 +197,7 @@ pub fn reconcile_order_report(
                 return None;
             }
 
-            // Stale cancel-half of a cancel-replace modify: the cache has
-            // already been promoted to the new `venue_order_id` and the
-            // report references a previously-tracked leg whose successor
-            // is still live.
+            // Stale old leg: the cache already advanced to the live successor
             let report_venue_order_id = report.venue_order_id;
             if let Some(cached_venue_order_id) = order.venue_order_id()
                 && cached_venue_order_id != report_venue_order_id
