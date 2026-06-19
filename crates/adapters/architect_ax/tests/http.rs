@@ -18,18 +18,31 @@
 use std::{collections::HashMap, net::SocketAddr, path::PathBuf, time::Duration};
 
 use axum::{Router, http::StatusCode, response::Json, routing::get};
-use nautilus_architect_ax::http::{
-    client::{AxHttpClient, AxRawHttpClient},
-    error::AxHttpError,
+use nautilus_architect_ax::{
+    common::{consts::AX_VENUE, enums::AxCandleWidth},
+    http::{
+        client::{AxHttpClient, AxRawHttpClient},
+        error::AxHttpError,
+    },
 };
-use nautilus_common::testing::wait_until_async;
-use nautilus_model::instruments::InstrumentAny;
+use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
+use nautilus_model::{
+    identifiers::{InstrumentId, Symbol},
+    instruments::InstrumentAny,
+};
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use ustr::Ustr;
+
+#[derive(Debug, Clone, Copy)]
+enum RequiredInstrumentCachePath {
+    BookSnapshot,
+    Trades,
+    Bars,
+}
 
 /// Wait for the test server to be ready by polling a health endpoint.
 async fn wait_for_server(addr: SocketAddr, path: &str) {
@@ -374,6 +387,47 @@ async fn test_domain_http_get_cached_instrument() {
 }
 
 // Error handling tests
+
+#[rstest]
+#[case::book_snapshot(RequiredInstrumentCachePath::BookSnapshot)]
+#[case::trades(RequiredInstrumentCachePath::Trades)]
+#[case::bars(RequiredInstrumentCachePath::Bars)]
+#[tokio::test]
+async fn test_public_market_data_request_missing_cached_instrument_returns_lookup_error(
+    #[case] path: RequiredInstrumentCachePath,
+) {
+    let client = AxHttpClient::new(
+        Some("http://127.0.0.1:9".to_string()),
+        None,
+        1,
+        0,
+        1,
+        1,
+        None,
+    )
+    .unwrap();
+    let symbol = Ustr::from("BTC-PERP");
+    let instrument_id = InstrumentId::new(Symbol::new(symbol.as_str()), *AX_VENUE);
+
+    let result = match path {
+        RequiredInstrumentCachePath::BookSnapshot => {
+            client.request_book_snapshot(symbol, None).await.map(|_| ())
+        }
+        RequiredInstrumentCachePath::Trades => client
+            .request_trade_ticks(symbol, None, None, None)
+            .await
+            .map(|_| ()),
+        RequiredInstrumentCachePath::Bars => client
+            .request_bars(symbol, None, None, AxCandleWidth::Minutes1)
+            .await
+            .map(|_| ()),
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        InstrumentLookupError::not_found(instrument_id).to_string()
+    );
+}
 
 #[rstest]
 #[tokio::test]
