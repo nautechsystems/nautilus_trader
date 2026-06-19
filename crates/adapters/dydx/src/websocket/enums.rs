@@ -236,6 +236,6 @@ pub enum DydxWsOutputMessage {
     BlockHeight { height: u64, time: DateTime<Utc> },
     /// Error from the venue or handler.
     Error(DydxWebSocketError),
-    /// Reconnection notification.
-    Reconnected,
+    /// Reconnection notification carrying the reconnected connection's subscription topics.
+    Reconnected { topics: Vec<String> },
 }

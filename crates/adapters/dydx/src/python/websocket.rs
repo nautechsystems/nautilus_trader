@@ -60,7 +60,7 @@ use crate::{
     python::encoder::PyDydxClientOrderIdEncoder,
     websocket::{
         DydxWsDispatchState, OrderIdentity,
-        client::DydxWebSocketClient,
+        client::{DydxWebSocketClient, candle_ids_from_topics},
         enums::DydxWsOutputMessage,
         fill_report_to_order_filled, parse as ws_parse,
         parse::{parse_ws_fill_report, parse_ws_order_report, parse_ws_position_report},
@@ -784,9 +784,10 @@ impl DydxWebSocketClient {
                             DydxWsOutputMessage::Error(err) => {
                                 log::warn!("dYdX WebSocket error: {err}");
                             }
-                            DydxWsOutputMessage::Reconnected => {
+                            DydxWsOutputMessage::Reconnected { topics } => {
                                 log::info!("dYdX WebSocket reconnected");
-                                pending_bars.clear();
+                                let reconnected_candles = candle_ids_from_topics(&topics);
+                                pending_bars.retain(|id, _| !reconnected_candles.contains(id));
                             }
                         }
                     }

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides an ergonomic wrapper around the **dYdX v4 Indexer REST API** –
+//! Provides an ergonomic wrapper around the **dYdX v4 Indexer REST API**:
 //! <https://docs.dydx.xyz/api_integration-indexer/indexer_api>.
 //!
 //! This module exports two complementary HTTP clients following the standardized

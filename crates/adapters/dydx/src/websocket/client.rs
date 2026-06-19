@@ -32,7 +32,7 @@
 //! limit the client maintains a small pool of connection slots and routes each
 //! new subscription to the first slot with capacity, lazily spawning additional
 //! connections up to `max_ws_connections`. The shape mirrors
-//! `BinanceFuturesWebSocketClient` — including its `connect_lock` race fix —
+//! `BinanceFuturesWebSocketClient` (including its `connect_lock` race fix),
 //! adapted so capacity is tracked per channel kind rather than as a single flat
 //! stream count.
 //!
@@ -70,7 +70,7 @@ use std::{
     time::Duration,
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
@@ -986,7 +986,7 @@ impl DydxWebSocketClient {
     ///
     /// This requires authentication and will only work for private WebSocket clients
     /// created with [`Self::new_private`]. Subaccount streams stay pinned to the
-    /// primary slot — the Indexer caps them at 256 per connection, which is well
+    /// primary slot: the Indexer caps them at 256 per connection, which is well
     /// above realistic per-process usage and keeps related fill/position events
     /// on a single in-order stream.
     ///
@@ -1148,5 +1148,44 @@ impl DydxWebSocketClient {
         });
         slot.topics.remove(&topic);
         Ok(())
+    }
+}
+
+// Scopes per-slot reconnect cleanup of in-progress bars to the candle topics
+// owned by the reconnecting connection, so one slot's reconnect does not
+// discard bars still aggregating on other healthy connections.
+pub(crate) fn candle_ids_from_topics(topics: &[String]) -> AHashSet<String> {
+    let prefix = format!(
+        "{}{}",
+        DydxWsChannel::Candles.as_ref(),
+        DYDX_WS_TOPIC_DELIMITER
+    );
+    topics
+        .iter()
+        .filter_map(|topic| topic.strip_prefix(&prefix).map(ToString::to_string))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_candle_ids_from_topics_extracts_only_candle_ids() {
+        let topics = vec![
+            "v4_candles:BTC-USD/1MIN".to_string(),
+            "v4_trades:BTC-USD".to_string(),
+            "v4_orderbook:ETH-USD".to_string(),
+            "v4_candles:ETH-USD/5MINS".to_string(),
+        ];
+
+        let ids = candle_ids_from_topics(&topics);
+
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains("BTC-USD/1MIN"));
+        assert!(ids.contains("ETH-USD/5MINS"));
+        assert!(!ids.contains("BTC-USD"));
     }
 }

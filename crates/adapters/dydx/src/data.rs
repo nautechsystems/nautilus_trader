@@ -75,7 +75,11 @@ use crate::{
     },
     config::DydxDataClientConfig,
     http::client::DydxHttpClient,
-    websocket::{client::DydxWebSocketClient, enums::DydxWsOutputMessage, parse as ws_parse},
+    websocket::{
+        client::{DydxWebSocketClient, candle_ids_from_topics},
+        enums::DydxWsOutputMessage,
+        parse as ws_parse,
+    },
 };
 
 struct WsMessageContext {
@@ -1289,8 +1293,10 @@ impl DydxDataClient {
             DydxWsOutputMessage::Error(err) => {
                 log::warn!("dYdX WS error: {err}");
             }
-            DydxWsOutputMessage::Reconnected => {
-                ctx.pending_bars.clear();
+            DydxWsOutputMessage::Reconnected { topics } => {
+                let reconnected_candles = candle_ids_from_topics(&topics);
+                ctx.pending_bars
+                    .retain(|id, _| !reconnected_candles.contains(id));
 
                 let total_subs = ctx.active_quote_subs.len()
                     + ctx.active_delta_subs.len()
