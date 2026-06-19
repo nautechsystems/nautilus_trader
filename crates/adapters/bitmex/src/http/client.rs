@@ -33,6 +33,7 @@ use std::{
 
 use chrono::{DateTime, Timelike, Utc};
 use dashmap::DashMap;
+use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, UUID4, UnixNanos,
     consts::{NAUTILUS_TRADER, NAUTILUS_USER_AGENT},
@@ -2338,7 +2339,7 @@ impl BitmexHttpClient {
         };
 
         let instrument_id = bar_type.instrument_id();
-        let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
+        let instrument = self.instrument_from_cache_by_id(instrument_id)?;
 
         let mut params = GetTradeBucketedParamsBuilder::default();
         params.symbol(instrument_id.symbol.as_str());
@@ -2414,7 +2415,7 @@ impl BitmexHttpClient {
         instrument_id: InstrumentId,
         depth: Option<u32>,
     ) -> anyhow::Result<OrderBook> {
-        let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
+        let instrument = self.instrument_from_cache_by_id(instrument_id)?;
         let mut params = GetOrderBookL2ParamsBuilder::default();
         params.symbol(instrument_id.symbol.as_str());
 
@@ -2430,6 +2431,14 @@ impl BitmexHttpClient {
         let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
         book.apply_deltas(&deltas)?;
         Ok(book)
+    }
+
+    fn instrument_from_cache_by_id(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<InstrumentAny> {
+        self.get_instrument(&instrument_id.symbol.inner())
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id).into())
     }
 
     /// Request historical funding rates for the given instrument.

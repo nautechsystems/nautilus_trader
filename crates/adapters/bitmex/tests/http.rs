@@ -51,6 +51,7 @@ use nautilus_bitmex::{
     },
 };
 use nautilus_common::{
+    cache::InstrumentLookupError,
     clients::DataClient,
     live::runner::replace_data_event_sender,
     messages::{
@@ -61,6 +62,7 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
+    data::BarType,
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId},
     instruments::Instrument,
@@ -69,6 +71,12 @@ use nautilus_model::{
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use serde_json::{Value, json};
+
+#[derive(Debug, Clone, Copy)]
+enum RequiredInstrumentCachePath {
+    Bars,
+    BookSnapshot,
+}
 
 #[derive(Clone)]
 struct TestServerState {
@@ -494,6 +502,50 @@ fn create_data_client(addr: SocketAddr) -> BitmexDataClient {
     };
 
     BitmexDataClient::new(*BITMEX_CLIENT_ID, config).expect("BitMEX data client")
+}
+
+#[rstest]
+#[case::bars(RequiredInstrumentCachePath::Bars)]
+#[case::book_snapshot(RequiredInstrumentCachePath::BookSnapshot)]
+#[tokio::test]
+async fn test_public_market_data_request_missing_cached_instrument_returns_lookup_error(
+    #[case] path: RequiredInstrumentCachePath,
+) {
+    let client = BitmexHttpClient::new(
+        Some("http://127.0.0.1:9".to_string()),
+        None,
+        None,
+        BitmexEnvironment::Mainnet,
+        1,
+        0,
+        1,
+        1,
+        1,
+        10,
+        30,
+        None,
+    )
+    .unwrap();
+    let instrument_id = InstrumentId::from_str("XBTUSD.BITMEX").unwrap();
+
+    let result = match path {
+        RequiredInstrumentCachePath::Bars => {
+            let bar_type = BarType::from("XBTUSD.BITMEX-1-MINUTE-LAST-EXTERNAL");
+            client
+                .request_bars(bar_type, None, None, None, false)
+                .await
+                .map(|_| ())
+        }
+        RequiredInstrumentCachePath::BookSnapshot => client
+            .request_book_snapshot(instrument_id, None)
+            .await
+            .map(|_| ()),
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        InstrumentLookupError::not_found(instrument_id).to_string()
+    );
 }
 
 #[rstest]
