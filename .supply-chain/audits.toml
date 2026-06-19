@@ -151,6 +151,12 @@ criteria = "safe-to-deploy"
 delta = "1.6.0 -> 1.6.1"
 notes = "Version bump only. Single line change in Cargo.toml."
 
+[[audits.bytes]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.11.1 -> 1.12.0"
+notes = "Reviewed upstream delta: adds BytesMut::extend_from_within and public try_unsplit, fixes zero-length get_int panic, passes Bytes vtable data by value when consuming handles, adds safety comments, docs, and tests, and narrows published package files with an explicit include list. No new dependencies, build script, filesystem, network, process, or crypto behavior."
+
 [[audits.c-kzg]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
