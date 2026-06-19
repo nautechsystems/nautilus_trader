@@ -4010,7 +4010,7 @@ class IndicatorEventStrategy:
                 .py_submit_order_list(py, order_list, None, None, Some(params.unbind()))
                 .unwrap();
 
-            let cache = rust_strategy.inner().core.cache();
+            let cache = DataActor::cache(rust_strategy.inner());
             let cached_order1 = cache.order(&client_order_id1).unwrap();
             let cached_order2 = cache.order(&client_order_id2).unwrap();
             let order_list_id = cached_order1.order_list_id().unwrap();

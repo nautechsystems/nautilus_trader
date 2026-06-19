@@ -1144,6 +1144,16 @@ impl<'a> CacheApi<'a> {
             .has_orders_inflight(venue, instrument_id, strategy_id, account_id, side)
     }
 
+    /// Returns an owned copy of the order list for the `order_list_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn order_list(&self, order_list_id: &OrderListId) -> Option<OrderList> {
+        self.cache().order_list(order_list_id).cloned()
+    }
+
     /// Returns owned copies of all order lists matching the optional filter parameters.
     ///
     /// # Panics

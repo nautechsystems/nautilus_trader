@@ -45,7 +45,7 @@ use nautilus_model::{
     },
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
-        OptionSeriesId, PositionId, StrategyId, Symbol, TraderId, Venue, VenueOrderId,
+        OptionSeriesId, OrderListId, PositionId, StrategyId, Symbol, TraderId, Venue, VenueOrderId,
     },
     instruments::{CurrencyPair, Instrument, InstrumentAny, SyntheticInstrument, stubs::*},
     orderbook::{OrderBook, own::OwnOrderBook},
@@ -531,10 +531,21 @@ fn test_data_actor_cache_api_returns_owned_point_reads(
         .quantity(Quantity::from(100_000))
         .build();
     let client_order_id = order.client_order_id();
+    let order_strategy_id = order.strategy_id();
+    let order_list_id = OrderListId::from("OL-001");
+    let order_list_ts_init = UnixNanos::default();
+    let order_list = OrderList::new(
+        order_list_id,
+        instrument_id,
+        order_strategy_id,
+        vec![client_order_id],
+        order_list_ts_init,
+    );
 
     {
         let mut cache = cache.borrow_mut();
         cache.add_instrument(instrument.clone()).unwrap();
+        cache.add_order_list(order_list).unwrap();
         cache.add_order(order, None, None, false).unwrap();
     }
 
@@ -543,12 +554,14 @@ fn test_data_actor_cache_api_returns_owned_point_reads(
     let maybe_instrument = cache_api.instrument(&instrument_id);
     let cached_order = cache_api.try_order(&client_order_id).unwrap();
     let maybe_order = cache_api.order(&client_order_id).unwrap();
+    let maybe_order_list = cache_api.order_list(&order_list_id).unwrap();
     let missing_instrument_id = InstrumentId::from("MISSING.SIM");
     let missing_instrument = cache_api
         .try_instrument(&missing_instrument_id)
         .unwrap_err();
     let missing_order_id = ClientOrderId::from("O-MISSING");
     let missing_order = cache_api.try_order(&missing_order_id).unwrap_err();
+    let missing_order_list = cache_api.order_list(&OrderListId::from("OL-MISSING"));
 
     let _cache_write = cache.borrow_mut();
 
@@ -556,6 +569,11 @@ fn test_data_actor_cache_api_returns_owned_point_reads(
     assert_eq!(maybe_instrument, Some(instrument));
     assert_eq!(cached_order.client_order_id(), client_order_id);
     assert_eq!(maybe_order.client_order_id(), client_order_id);
+    assert_eq!(maybe_order_list.id, order_list_id);
+    assert_eq!(maybe_order_list.instrument_id, instrument_id);
+    assert_eq!(maybe_order_list.strategy_id, order_strategy_id);
+    assert_eq!(maybe_order_list.client_order_ids, vec![client_order_id]);
+    assert_eq!(maybe_order_list.ts_init, order_list_ts_init);
     assert_eq!(
         missing_instrument,
         crate::cache::InstrumentLookupError::not_found(missing_instrument_id)
@@ -564,6 +582,7 @@ fn test_data_actor_cache_api_returns_owned_point_reads(
         missing_order,
         crate::cache::OrderLookupError::not_found(missing_order_id)
     );
+    assert_eq!(missing_order_list, None);
 }
 
 #[rstest]
@@ -1266,6 +1285,7 @@ fn test_data_actor_cache_api_surface_returns_owned_values(
         Some(&account_id),
         Some(OrderSide::Buy),
     );
+    let _: Option<OrderList> = cache_api.order_list(&OrderListId::from("OL-001"));
     let _: Vec<OrderList> =
         cache_api.order_lists(None, Some(&instrument_id), Some(&strategy_id), None);
     let _: Option<Position> = cache_api.position(&position_id);
