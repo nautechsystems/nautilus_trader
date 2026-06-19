@@ -52,7 +52,7 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType},
-    events::PositionEvent,
+    events::{OrderEventAny, PositionEvent},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
@@ -97,6 +97,7 @@ pub struct PolymarketExecutionClient {
     pending_tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
     stopping: Arc<AtomicBool>,
     ws_stream_handle: Mutex<Option<JoinHandle<()>>>,
+    order_event_handler: Option<TypedHandler<OrderEventAny>>,
     position_event_handler: Option<TypedHandler<PositionEvent>>,
     shared_token_instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
     neg_risk_index: Arc<AtomicMap<InstrumentId, bool>>,
@@ -230,6 +231,7 @@ impl PolymarketExecutionClient {
             pending_tasks: Arc::new(Mutex::new(Vec::new())),
             stopping: Arc::new(AtomicBool::new(false)),
             ws_stream_handle: Mutex::new(None),
+            order_event_handler: None,
             position_event_handler: None,
             shared_token_instruments: Arc::new(AtomicMap::new()),
             neg_risk_index: Arc::new(AtomicMap::new()),

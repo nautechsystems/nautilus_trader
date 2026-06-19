@@ -18,17 +18,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use anyhow::Context;
 use nautilus_common::{
-    cache::Cache,
     live::{runner::get_exec_event_sender, runtime::get_runtime},
     msgbus::{self, TypedHandler},
 };
-use nautilus_core::{MUTEX_POISONED, UnixNanos, collections::AtomicMap, time::AtomicTime};
+use nautilus_core::{MUTEX_POISONED, collections::AtomicMap, time::AtomicTime};
 use nautilus_model::{
-    events::PositionEvent,
-    identifiers::{AccountId, InstrumentId},
+    events::{OrderEventAny, PositionEvent},
+    identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
 };
 use ustr::Ustr;
@@ -43,6 +42,39 @@ use crate::{
 };
 
 impl PolymarketExecutionClient {
+    fn ensure_order_event_subscription(&mut self) {
+        if self.order_event_handler.is_some() {
+            return;
+        }
+
+        let core = self.core.clone();
+        let clock = self.clock;
+        let shared_token_instruments = self.shared_token_instruments.clone();
+        let neg_risk_index = self.neg_risk_index.clone();
+        let handler = TypedHandler::from(move |event: &OrderEventAny| {
+            if !is_terminal_order_event(event) || event.instrument_id().venue != core.venue {
+                return;
+            }
+
+            sync_execution_lookup_for_instrument(
+                &core,
+                clock,
+                &shared_token_instruments,
+                &neg_risk_index,
+                event.instrument_id(),
+            );
+        });
+
+        msgbus::subscribe_order_events("events.order.*".into(), handler.clone(), Some(10));
+        self.order_event_handler = Some(handler);
+    }
+
+    fn clear_order_event_subscription(&mut self) {
+        if let Some(handler) = self.order_event_handler.take() {
+            msgbus::unsubscribe_order_events("events.order.*".into(), &handler);
+        }
+    }
+
     fn ensure_position_event_subscription(&mut self) {
         if self.position_event_handler.is_some() {
             return;
@@ -246,26 +278,6 @@ impl PolymarketExecutionClient {
         neg_risk_index.get(instrument_id).copied().unwrap_or(false)
     }
 
-    fn should_retain_execution_lookup(
-        &self,
-        cache: &Cache,
-        instrument: &InstrumentAny,
-        now_ns: UnixNanos,
-        account_id: AccountId,
-    ) -> bool {
-        if !crate::filters::is_expired(instrument, now_ns) {
-            return true;
-        }
-
-        cache.has_positions_open(
-            Some(&self.core.venue),
-            Some(&instrument.id()),
-            None,
-            Some(&account_id),
-            None,
-        )
-    }
-
     fn upsert_execution_lookup(&self, instrument: &InstrumentAny) {
         upsert_execution_lookup(
             &self.shared_token_instruments,
@@ -274,41 +286,19 @@ impl PolymarketExecutionClient {
         );
     }
 
-    fn remove_execution_lookup(&self, instrument_id: InstrumentId) {
-        remove_execution_lookup(
-            &self.shared_token_instruments,
-            &self.neg_risk_index,
-            instrument_id,
-        );
-    }
-
     pub(super) fn load_instruments_from_cache(&self) {
         let cache = self.core.cache();
-        let now_ns = self.clock.get_time_ns();
-        let account_id = self.core.account_id;
         let instruments: Vec<InstrumentAny> = cache
             .instruments(&self.core.venue, None)
             .into_iter()
             .cloned()
             .collect();
-        let mut retained_instrument_ids = AHashSet::new();
 
-        for inst in instruments
-            .iter()
-            .filter(|inst| self.should_retain_execution_lookup(&cache, inst, now_ns, account_id))
-        {
-            retained_instrument_ids.insert(inst.id());
+        for inst in &instruments {
             self.upsert_execution_lookup(inst);
         }
 
-        drop(cache);
-
-        self.prune_execution_lookup_not_in_retained(&retained_instrument_ids);
-
-        log::info!(
-            "Loaded {} retained instruments from cache",
-            retained_instrument_ids.len()
-        );
+        log::info!("Loaded {} instruments from cache", instruments.len());
     }
 
     pub(super) fn start_client(&mut self) {
@@ -336,6 +326,7 @@ impl PolymarketExecutionClient {
         log::info!("Stopping Polymarket execution client");
 
         self.stopping.store(true, Ordering::Release);
+        self.clear_order_event_subscription();
         self.clear_position_event_subscription();
 
         if let Some(handle) = self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() {
@@ -364,6 +355,7 @@ impl PolymarketExecutionClient {
         self.core.set_instruments_initialized();
 
         self.start_ws_stream().await?;
+        self.ensure_order_event_subscription();
         self.ensure_position_event_subscription();
 
         let post_ws = async {
@@ -375,6 +367,7 @@ impl PolymarketExecutionClient {
         if let Err(e) = post_ws.await {
             log::warn!("Connect failed after WS started, tearing down: {e}");
             self.stopping.store(true, Ordering::Release);
+            self.clear_order_event_subscription();
             self.clear_position_event_subscription();
             let _ = self.ws_client.disconnect().await;
             self.abort_pending_tasks();
@@ -395,6 +388,7 @@ impl PolymarketExecutionClient {
         log::info!("Disconnecting Polymarket execution client");
 
         self.stopping.store(true, Ordering::Release);
+        self.clear_order_event_subscription();
         self.clear_position_event_subscription();
 
         self.ws_client.disconnect().await?;
@@ -411,45 +405,7 @@ impl PolymarketExecutionClient {
     }
 
     pub(super) fn on_instrument_update(&self, instrument: &InstrumentAny) {
-        let cache = self.core.cache();
-        let now_ns = self.clock.get_time_ns();
-        let account_id = self.core.account_id;
-        let instrument_id = instrument.id();
-
-        if self.should_retain_execution_lookup(&cache, instrument, now_ns, account_id) {
-            self.upsert_execution_lookup(instrument);
-        } else {
-            self.remove_execution_lookup(instrument_id);
-        }
-    }
-
-    fn prune_execution_lookup_not_in_retained(
-        &self,
-        retained_instrument_ids: &AHashSet<InstrumentId>,
-    ) {
-        let token_ids: Vec<Ustr> = self
-            .shared_token_instruments
-            .load()
-            .keys()
-            .copied()
-            .collect();
-
-        for token_id in token_ids {
-            if let Some(instrument) = self.shared_token_instruments.get_cloned(&token_id)
-                && !retained_instrument_ids.contains(&instrument.id())
-            {
-                self.remove_execution_lookup(instrument.id());
-            }
-        }
-
-        let instrument_ids: Vec<InstrumentId> =
-            self.neg_risk_index.load().keys().copied().collect();
-
-        for instrument_id in instrument_ids {
-            if !retained_instrument_ids.contains(&instrument_id) {
-                self.neg_risk_index.remove(&instrument_id);
-            }
-        }
+        self.upsert_execution_lookup(instrument);
     }
 }
 
@@ -510,7 +466,13 @@ fn sync_execution_lookup_for_instrument(
                 return true;
             }
 
-            cache.has_positions_open(
+            cache.has_orders_open(
+                Some(&core.venue),
+                Some(&instrument_id),
+                None,
+                Some(&account_id),
+                None,
+            ) || cache.has_positions_open(
                 Some(&core.venue),
                 Some(&instrument_id),
                 None,
@@ -528,21 +490,36 @@ fn sync_execution_lookup_for_instrument(
     }
 }
 
+fn is_terminal_order_event(event: &OrderEventAny) -> bool {
+    matches!(
+        event,
+        OrderEventAny::Canceled(_)
+            | OrderEventAny::Expired(_)
+            | OrderEventAny::Rejected(_)
+            | OrderEventAny::Filled(_)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{cache::Cache, live::runner::set_exec_event_sender};
-    use nautilus_core::{UUID4, nanos::DurationNanos};
+    use nautilus_common::{
+        cache::Cache,
+        live::runner::set_exec_event_sender,
+        msgbus::{publish_order_event, publish_position_event},
+    };
+    use nautilus_core::{UUID4, UnixNanos, nanos::DurationNanos};
     use nautilus_live::ExecutionClientCore;
     use nautilus_model::{
         enums::{AccountType, OmsType, OrderSide, PositionSide, TimeInForce},
         events::{OrderEventAny, PositionClosed, PositionEvent},
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId,
+            VenueOrderId,
         },
         instruments::stubs::binary_option,
-        orders::{LimitOrder, OrderAny, stubs::TestOrderEventStubs},
+        orders::{LimitOrder, Order, OrderAny, stubs::TestOrderEventStubs},
         position::Position,
         types::{Currency, Money, Price, Price as ModelPrice, Quantity, Quantity as ModelQuantity},
     };
@@ -642,6 +619,21 @@ mod tests {
         ))
     }
 
+    fn cache_accepted_open_order(cache: &mut Cache, instrument_id: InstrumentId) -> OrderAny {
+        let mut order = open_limit_order(instrument_id);
+        cache.add_order(order.clone(), None, None, false).unwrap();
+
+        let submitted = TestOrderEventStubs::submitted(&order, AccountId::from("POLYMARKET-001"));
+        order = cache.update_order(&submitted).unwrap();
+
+        let accepted = TestOrderEventStubs::accepted(
+            &order,
+            AccountId::from("POLYMARKET-001"),
+            VenueOrderId::from("V-001"),
+        );
+        cache.update_order(&accepted).unwrap()
+    }
+
     fn open_position(instrument: &InstrumentAny) -> Position {
         let order = open_limit_order(instrument.id());
         let filled = match TestOrderEventStubs::filled(
@@ -705,7 +697,7 @@ mod tests {
     }
 
     #[rstest]
-    fn load_instruments_from_cache_prunes_expired_execution_lookup_state() {
+    fn load_instruments_from_cache_preloads_expired_execution_lookup_state() {
         let (client, cache) = test_client();
         let active = test_binary_option("0xACTIVE", false, true);
         let expired = test_binary_option("0xEXPIRED", true, true);
@@ -716,11 +708,6 @@ mod tests {
             cache.add_instrument(expired.clone()).unwrap();
         }
 
-        client
-            .shared_token_instruments
-            .insert(Ustr::from(expired.raw_symbol().as_str()), expired.clone());
-        client.neg_risk_index.insert(expired.id(), true);
-
         client.load_instruments_from_cache();
 
         assert!(
@@ -730,41 +717,19 @@ mod tests {
         );
         assert!(client.neg_risk_index.contains_key(&active.id()));
         assert!(
-            !client
+            client
                 .shared_token_instruments
                 .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
         );
-        assert!(!client.neg_risk_index.contains_key(&expired.id()));
+        assert!(client.neg_risk_index.contains_key(&expired.id()));
     }
 
     #[rstest]
-    fn on_instrument_update_skips_expired_execution_lookup_state() {
+    fn on_instrument_update_upserts_expired_execution_lookup_state() {
         let (client, _cache) = test_client();
         let expired = test_binary_option("0xEXPIRED_ONLY", true, true);
 
         client.on_instrument_update(&expired);
-
-        assert!(
-            !client
-                .shared_token_instruments
-                .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
-        );
-        assert!(!client.neg_risk_index.contains_key(&expired.id()));
-    }
-
-    #[rstest]
-    fn load_instruments_from_cache_keeps_expired_lookup_state_with_open_position() {
-        let (client, cache) = test_client();
-        let expired = test_binary_option("0xEXPIRED_POSITION", true, true);
-        let position = open_position(&expired);
-
-        {
-            let mut cache = cache.borrow_mut();
-            cache.add_instrument(expired.clone()).unwrap();
-            cache.add_position(&position, OmsType::Netting).unwrap();
-        }
-
-        client.load_instruments_from_cache();
 
         assert!(
             client
@@ -775,7 +740,62 @@ mod tests {
     }
 
     #[rstest]
-    fn sync_execution_lookup_prunes_expired_lookup_after_position_closes() {
+    fn sync_execution_lookup_keeps_expired_lookup_state_with_open_position() {
+        let (client, cache) = test_client();
+        let expired = test_binary_option("0xEXPIRED_POSITION", true, true);
+        let position = open_position(&expired);
+
+        {
+            let mut cache = cache.borrow_mut();
+            cache.add_instrument(expired.clone()).unwrap();
+            cache.add_position(&position, OmsType::Netting).unwrap();
+        }
+
+        sync_execution_lookup_for_instrument(
+            &client.core,
+            client.clock,
+            &client.shared_token_instruments,
+            &client.neg_risk_index,
+            expired.id(),
+        );
+
+        assert!(
+            client
+                .shared_token_instruments
+                .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
+        );
+        assert!(client.neg_risk_index.contains_key(&expired.id()));
+    }
+
+    #[rstest]
+    fn sync_execution_lookup_keeps_expired_lookup_state_with_open_order() {
+        let (client, cache) = test_client();
+        let expired = test_binary_option("0xEXPIRED_ORDER", true, true);
+
+        {
+            let mut cache = cache.borrow_mut();
+            cache.add_instrument(expired.clone()).unwrap();
+            let _order = cache_accepted_open_order(&mut cache, expired.id());
+        }
+
+        sync_execution_lookup_for_instrument(
+            &client.core,
+            client.clock,
+            &client.shared_token_instruments,
+            &client.neg_risk_index,
+            expired.id(),
+        );
+
+        assert!(
+            client
+                .shared_token_instruments
+                .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
+        );
+        assert!(client.neg_risk_index.contains_key(&expired.id()));
+    }
+
+    #[rstest]
+    fn position_event_subscription_prunes_expired_lookup_after_position_closes() {
         let (client, cache) = test_client();
         let expired = test_binary_option("0xEXPIRED_CLOSED", true, true);
         let position = open_position(&expired);
@@ -787,7 +807,13 @@ mod tests {
             cache.add_position(&position, OmsType::Netting).unwrap();
         }
 
-        client.load_instruments_from_cache();
+        sync_execution_lookup_for_instrument(
+            &client.core,
+            client.clock,
+            &client.shared_token_instruments,
+            &client.neg_risk_index,
+            expired.id(),
+        );
         assert!(
             client
                 .shared_token_instruments
@@ -800,15 +826,11 @@ mod tests {
             cache.update_position(&closed).unwrap();
         }
 
+        let mut client = client;
+        client.ensure_position_event_subscription();
         let event = position_closed_event(&closed);
         assert!(matches!(event, PositionEvent::PositionClosed(_)));
-        sync_execution_lookup_for_instrument(
-            &client.core,
-            client.clock,
-            &client.shared_token_instruments,
-            &client.neg_risk_index,
-            event.instrument_id(),
-        );
+        publish_position_event("events.position.TEST".into(), &event);
 
         assert!(
             !client
@@ -819,19 +841,149 @@ mod tests {
     }
 
     #[rstest]
-    fn position_event_subscription_can_be_reinstalled_after_disconnect_cleanup() {
+    fn order_event_subscription_prunes_expired_lookup_after_terminal_order() {
+        let (client, cache) = test_client();
+        let expired = test_binary_option("0xEXPIRED_ORDER_CLOSED", true, true);
+        let mut order;
+
+        {
+            let mut cache = cache.borrow_mut();
+            cache.add_instrument(expired.clone()).unwrap();
+            order = cache_accepted_open_order(&mut cache, expired.id());
+        }
+
+        sync_execution_lookup_for_instrument(
+            &client.core,
+            client.clock,
+            &client.shared_token_instruments,
+            &client.neg_risk_index,
+            expired.id(),
+        );
+
+        let canceled = TestOrderEventStubs::canceled(
+            &order,
+            AccountId::from("POLYMARKET-001"),
+            order.venue_order_id(),
+        );
+        order.apply(canceled.clone()).unwrap();
+
+        {
+            let mut cache = cache.borrow_mut();
+            cache.update_order(&canceled).unwrap();
+        }
+
+        let mut client = client;
+        client.ensure_order_event_subscription();
+        publish_order_event("events.order.TEST".into(), &canceled);
+
+        assert!(
+            !client
+                .shared_token_instruments
+                .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
+        );
+        assert!(!client.neg_risk_index.contains_key(&expired.id()));
+    }
+
+    #[rstest]
+    fn order_event_subscription_keeps_expired_lookup_after_filled_when_position_remains_open() {
+        let (client, cache) = test_client();
+        let expired = test_binary_option("0xEXPIRED_FILLED_OPEN", true, true);
+        let order;
+        let position;
+
+        {
+            let mut cache = cache.borrow_mut();
+            cache.add_instrument(expired.clone()).unwrap();
+            order = cache_accepted_open_order(&mut cache, expired.id());
+        }
+
+        sync_execution_lookup_for_instrument(
+            &client.core,
+            client.clock,
+            &client.shared_token_instruments,
+            &client.neg_risk_index,
+            expired.id(),
+        );
+
+        let filled = TestOrderEventStubs::filled(
+            &order,
+            &expired,
+            None,
+            None,
+            Some(ModelPrice::from("0.5000")),
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("POLYMARKET-001")),
+        );
+
+        position = match filled.clone() {
+            OrderEventAny::Filled(filled) => Position::new(&expired, filled),
+            other => panic!("expected filled event, was {other:?}"),
+        };
+
+        {
+            let mut cache = cache.borrow_mut();
+            cache.update_order(&filled).unwrap();
+            cache.add_position(&position, OmsType::Netting).unwrap();
+        }
+
+        let mut client = client;
+        client.ensure_order_event_subscription();
+        publish_order_event("events.order.TEST".into(), &filled);
+
+        assert!(
+            client
+                .shared_token_instruments
+                .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
+        );
+        assert!(client.neg_risk_index.contains_key(&expired.id()));
+    }
+
+    #[rstest]
+    fn position_event_subscription_ignores_other_venue_events() {
+        let (mut client, _cache) = test_client();
+        let expired = test_binary_option("0xOTHER_VENUE", true, true);
+        client.upsert_execution_lookup(&expired);
+        client.ensure_position_event_subscription();
+
+        let mut event = position_closed_event(&closed_position(&open_position(&expired)));
+        if let PositionEvent::PositionClosed(ref mut closed) = event {
+            closed.instrument_id = InstrumentId::from("0xOTHER.OTHER");
+        }
+
+        publish_position_event("events.position.TEST".into(), &event);
+
+        assert!(
+            client
+                .shared_token_instruments
+                .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
+        );
+        assert!(client.neg_risk_index.contains_key(&expired.id()));
+    }
+
+    #[rstest]
+    fn event_subscriptions_can_be_reinstalled_after_disconnect_cleanup() {
         let (mut client, _cache) = test_client();
 
         client.start_client();
+        assert!(client.order_event_handler.is_none());
         assert!(client.position_event_handler.is_none());
 
+        client.ensure_order_event_subscription();
         client.ensure_position_event_subscription();
+        assert!(client.order_event_handler.is_some());
         assert!(client.position_event_handler.is_some());
 
+        client.clear_order_event_subscription();
         client.clear_position_event_subscription();
+        assert!(client.order_event_handler.is_none());
         assert!(client.position_event_handler.is_none());
 
+        client.ensure_order_event_subscription();
         client.ensure_position_event_subscription();
+        assert!(client.order_event_handler.is_some());
         assert!(client.position_event_handler.is_some());
     }
 }
