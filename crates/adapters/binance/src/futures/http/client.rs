@@ -20,6 +20,7 @@ use std::{collections::HashMap, num::NonZeroU32, sync::Arc, time::Duration};
 use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
+use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT, datetime::SECONDS_IN_DAY, nanos::UnixNanos, time::AtomicTime,
 };
@@ -2394,9 +2395,8 @@ impl BinanceFuturesHttpClient {
         instrument_id: InstrumentId,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        let symbol = format_binance_symbol(&instrument_id);
-        let size_precision = self.get_size_precision(&symbol)?;
-        let price_precision = self.get_price_precision(&symbol)?;
+        let (symbol, price_precision, size_precision) =
+            self.cached_precisions_by_id(instrument_id)?;
 
         let params = BinanceTradesParams { symbol, limit };
 
@@ -2450,9 +2450,9 @@ impl BinanceFuturesHttpClient {
             a => anyhow::bail!("Binance Futures does not support {a:?} aggregation"),
         };
 
-        let symbol = format_binance_symbol(&bar_type.instrument_id());
-        let price_precision = self.get_price_precision(&symbol)?;
-        let size_precision = self.get_size_precision(&symbol)?;
+        let instrument_id = bar_type.instrument_id();
+        let (symbol, price_precision, size_precision) =
+            self.cached_precisions_by_id(instrument_id)?;
 
         let params = BinanceKlinesParams {
             symbol,
@@ -2478,6 +2478,24 @@ impl BinanceFuturesHttpClient {
         }
 
         Ok(result)
+    }
+
+    fn cached_precisions_by_id(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<(String, u8, u8)> {
+        let symbol = format_binance_symbol(&instrument_id);
+        let instrument = self
+            .instruments
+            .get(&Ustr::from(symbol.as_str()))
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
+
+        let (price_precision, size_precision) = match instrument.value() {
+            BinanceFuturesInstrument::UsdM(s) => (s.price_precision, s.quantity_precision),
+            BinanceFuturesInstrument::CoinM(s) => (s.price_precision, s.quantity_precision),
+        };
+
+        Ok((symbol, price_precision as u8, size_precision as u8))
     }
 
     /// Requests historical funding rates for an instrument.
@@ -2790,6 +2808,23 @@ mod tests {
             time_in_force: Vec::new(),
             filters: Vec::new(),
         }
+    }
+
+    #[rstest]
+    fn test_cached_precisions_by_id_returns_symbol_and_precisions() {
+        let client = create_test_client();
+        client.instruments_cache().insert(
+            Ustr::from("BTCUSDT"),
+            BinanceFuturesInstrument::UsdM(test_usdm_symbol()),
+        );
+
+        let (symbol, price_precision, size_precision) = client
+            .cached_precisions_by_id(InstrumentId::from("BTCUSDT-PERP.BINANCE"))
+            .unwrap();
+
+        assert_eq!(symbol, "BTCUSDT");
+        assert_eq!(price_precision, 2);
+        assert_eq!(size_precision, 3);
     }
 
     #[rstest]
