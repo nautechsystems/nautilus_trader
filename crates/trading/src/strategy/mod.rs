@@ -55,7 +55,7 @@ use nautilus_model::{
 use ustr::Ustr;
 
 /// Describes one child update in a batch modify request.
-pub type BatchModifyOrderUpdate = (
+pub type BatchModifyOrder = (
     ClientOrderId,
     Option<Quantity>,
     Option<Price>,
@@ -445,9 +445,9 @@ pub trait Strategy: DataActor {
     ///
     /// Returns an error if the strategy is not registered, the orders span multiple instruments,
     /// contain emulated/local orders, or a child modify is invalid.
-    fn batch_modify_orders(
+    fn modify_orders(
         &mut self,
-        updates: Vec<BatchModifyOrderUpdate>,
+        updates: Vec<BatchModifyOrder>,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) -> anyhow::Result<()> {
@@ -3135,7 +3135,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_batch_modify_orders_marks_orders_pending_update_locally_before_send() {
+    fn test_modify_orders_marks_orders_pending_update_locally_before_send() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
 
@@ -3156,7 +3156,7 @@ mod tests {
         add_order_to_cache(&strategy, &order2);
 
         strategy
-            .batch_modify_orders(
+            .modify_orders(
                 vec![
                     (
                         order1.client_order_id(),
@@ -3394,7 +3394,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_batch_modify_orders_returns_error_when_any_id_missing() {
+    fn test_modify_orders_returns_error_when_any_id_missing() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
 
@@ -3410,7 +3410,7 @@ mod tests {
 
         let missing_id = ClientOrderId::from("O-MISSING");
         let err = strategy
-            .batch_modify_orders(
+            .modify_orders(
                 vec![
                     (
                         order.client_order_id(),
@@ -3423,7 +3423,7 @@ mod tests {
                 None,
                 None,
             )
-            .expect_err("expected batch_modify_orders to fail when any id is missing");
+            .expect_err("expected modify_orders to fail when any id is missing");
 
         assert_eq!(
             err.to_string(),

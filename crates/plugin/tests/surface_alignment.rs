@@ -64,7 +64,7 @@ const PLUGIN_STRATEGY_DEFERRED_CALLBACKS: &[&str] = &[
 const PLUGIN_STRATEGY_DEFERRED_EXECUTION_METHODS: &[&str] = &[
     // Core strategy/execution paths support this command; the v1 plug-in ABI
     // slot stays deferred while the plug-in surface is in flux.
-    "batch_modify_orders",
+    "modify_orders",
     // Local state methods mutate host cache state before commands leave the
     // strategy; the host adapter, not the plug-in, is the authority for
     // staging these transitions in v1.

@@ -127,7 +127,7 @@ class Strategy:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
-    def batch_modify_orders(
+    def modify_orders(
         self,
         updates: typing.Sequence[
             tuple[

@@ -88,7 +88,7 @@ use pyo3::{
 use ustr::Ustr;
 
 use crate::strategy::{
-    BatchModifyOrderUpdate, ImportableStrategyConfig, Strategy, StrategyConfig, StrategyCore,
+    BatchModifyOrder, ImportableStrategyConfig, Strategy, StrategyConfig, StrategyCore,
 };
 
 #[pyo3::pymethods]
@@ -1654,11 +1654,11 @@ impl PyStrategy {
         .map_err(to_pyruntime_err)
     }
 
-    #[pyo3(name = "batch_modify_orders")]
+    #[pyo3(name = "modify_orders")]
     #[pyo3(signature = (updates, client_id=None, params=None))]
-    fn py_batch_modify_orders(
+    fn py_modify_orders(
         &mut self,
-        updates: Vec<BatchModifyOrderUpdate>,
+        updates: Vec<BatchModifyOrder>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
@@ -1669,7 +1669,7 @@ impl PyStrategy {
             }
         })?;
 
-        Strategy::batch_modify_orders(self.inner_mut(), updates, client_id, params_map)
+        Strategy::modify_orders(self.inner_mut(), updates, client_id, params_map)
             .map_err(to_pyruntime_err)
     }
 

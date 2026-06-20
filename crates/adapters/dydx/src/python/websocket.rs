@@ -103,7 +103,7 @@ impl DydxWebSocketClient {
         ))
     }
 
-    /// Returns `true` when the client is connected.
+    /// Returns `true` when any connection in the pool is connected.
     #[pyo3(name = "is_connected")]
     fn py_is_connected(&self) -> bool {
         self.is_connected()
@@ -176,10 +176,10 @@ impl DydxWebSocketClient {
         self.url().to_string()
     }
 
-    /// Connects the websocket client in handler mode with automatic reconnection.
+    /// Connects the websocket client and opens the primary pool slot.
     ///
-    /// Spawns a background handler task that owns the WebSocketClient and processes
-    /// raw messages into venue-specific `DydxWsOutputMessage` values.
+    /// Additional slots are spawned lazily by `subscribe_*` methods once the
+    /// per-channel limit is reached on every existing slot.
     #[pyo3(name = "connect")]
     #[pyo3(signature = (loop_, instruments, callback, trader_id=None))]
     #[expect(clippy::needless_pass_by_value)]
@@ -798,14 +798,11 @@ impl DydxWebSocketClient {
         })
     }
 
-    /// Disconnects the websocket client gracefully.
-    ///
-    /// Sends a disconnect command to the handler, sets the stop signal, then
-    /// awaits the handler task with a timeout before aborting.
+    /// Disconnects all websocket connections in the pool.
     ///
     /// # Errors
     ///
-    /// Returns an error if the underlying client cannot be accessed.
+    /// Returns an error if the underlying clients cannot be accessed.
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let mut client = self.clone();
@@ -1052,7 +1049,10 @@ impl DydxWebSocketClient {
     /// Subscribes to subaccount updates (orders, fills, positions, balances).
     ///
     /// This requires authentication and will only work for private WebSocket clients
-    /// created with `Self.new_private`.
+    /// created with `Self.new_private`. Subaccount streams stay pinned to the
+    /// primary slot: the Indexer caps them at 256 per connection, which is well
+    /// above realistic per-process usage and keeps related fill/position events
+    /// on a single in-order stream.
     ///
     /// # References
     ///
