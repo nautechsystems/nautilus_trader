@@ -693,6 +693,16 @@ fn is_connection_drop_transport_error(err: &TransportError) -> bool {
     err.is_closed() || matches!(err, TransportError::Io(e) if is_connection_drop_io_error(e))
 }
 
+// Debug when we asked to disconnect (Disconnect/Closed), else Warn for a peer close
+fn read_termination_log_level(connection_state: &AtomicU8) -> log::Level {
+    let mode = ConnectionMode::from_atomic(connection_state);
+    if mode.is_disconnect() || mode.is_closed() {
+        log::Level::Debug
+    } else {
+        log::Level::Warn
+    }
+}
+
 #[cfg(test)]
 mod connection_error_tests {
     use std::io;
@@ -1059,7 +1069,8 @@ impl WebSocketClientInner {
                         }
                     }
                     Ok(Some(Ok(Message::Close(Some(frame))))) => {
-                        log::warn!(
+                        log::log!(
+                            read_termination_log_level(&connection_state),
                             "Received close frame, terminating: code={}, reason='{}'",
                             frame.code,
                             frame.reason
@@ -1067,7 +1078,10 @@ impl WebSocketClientInner {
                         break;
                     }
                     Ok(Some(Ok(Message::Close(None)))) => {
-                        log::warn!("Received close frame with no code or reason, terminating");
+                        log::log!(
+                            read_termination_log_level(&connection_state),
+                            "Received close frame with no code or reason, terminating"
+                        );
                         break;
                     }
                     Ok(Some(Err(e))) => {
@@ -1079,7 +1093,10 @@ impl WebSocketClientInner {
                         break;
                     }
                     Ok(None) => {
-                        log::warn!("Connection closed by peer (no close frame), terminating");
+                        log::log!(
+                            read_termination_log_level(&connection_state),
+                            "Connection closed by peer (no close frame), terminating"
+                        );
                         break;
                     }
                     Err(_) => {
