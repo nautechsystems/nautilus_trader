@@ -766,34 +766,38 @@ impl BlockchainDataClient {
                             .bootstrap_latest_pool_profiler(&pool, None)
                             .await
                         {
-                            Ok((profiler, already_valid)) => {
-                                let snapshot = profiler.extract_snapshot();
+                            Ok((profiler, already_valid)) => match profiler.extract_snapshot() {
+                                Ok(snapshot) => {
+                                    log::info!(
+                                        "Saving pool snapshot with {} positions and {} ticks to database...",
+                                        snapshot.positions.len(),
+                                        snapshot.ticks.len()
+                                    );
+                                    core_client
+                                        .cache
+                                        .add_pool_snapshot(
+                                            &pool.dex.name,
+                                            &pool.pool_identifier,
+                                            &snapshot,
+                                        )
+                                        .await?;
 
-                                log::info!(
-                                    "Saving pool snapshot with {} positions and {} ticks to database...",
-                                    snapshot.positions.len(),
-                                    snapshot.ticks.len()
-                                );
-                                core_client
-                                    .cache
-                                    .add_pool_snapshot(
-                                        &pool.dex.name,
-                                        &pool.pool_identifier,
-                                        &snapshot,
-                                    )
-                                    .await?;
-
-                                // If the snapshot is usable, send it back to the data engine.
-                                if core_client
-                                    .check_snapshot_validity(&profiler, already_valid)
-                                    .await?
-                                    .is_usable()
-                                {
-                                    let snapshot_data =
-                                        DataEvent::DeFi(DefiData::PoolSnapshot(snapshot));
-                                    core_client.send_data(snapshot_data);
+                                    // If the snapshot is usable, send it back to the data engine.
+                                    if core_client
+                                        .check_snapshot_validity(&profiler, already_valid)
+                                        .await?
+                                        .is_usable()
+                                    {
+                                        let snapshot_data =
+                                            DataEvent::DeFi(DefiData::PoolSnapshot(snapshot));
+                                        core_client.send_data(snapshot_data);
+                                    }
                                 }
-                            }
+                                Err(e) => log::error!(
+                                    "Failed to extract snapshot for {}: {e}",
+                                    cmd.instrument_id
+                                ),
+                            },
                             Err(e) => log::error!(
                                 "Failed to bootstrap pool profiler for {} and extract snapshot with error {e}",
                                 cmd.instrument_id
@@ -1116,6 +1120,7 @@ mod tests {
             "USDT".to_string(),
             6,
         );
+
         Arc::new(Pool::new(
             chain,
             dex,

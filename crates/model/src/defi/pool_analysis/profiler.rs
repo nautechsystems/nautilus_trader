@@ -1664,29 +1664,32 @@ impl PoolProfiler {
     /// [`PoolSnapshot`] structure. This snapshot can be serialized, persisted
     /// to database, or used to restore pool state later.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if no events have been processed yet.
-    #[must_use]
-    pub fn extract_snapshot(&self) -> PoolSnapshot {
+    /// Returns an error if no events have been processed yet, since there is no event watermark to
+    /// anchor the snapshot to.
+    pub fn extract_snapshot(&self) -> anyhow::Result<PoolSnapshot> {
         let positions: Vec<_> = self.positions.values().cloned().collect();
         let ticks: Vec<_> = self.tick_map.get_all_ticks().values().copied().collect();
 
         let mut state = self.state.clone();
         state.liquidity = self.tick_map.liquidity;
 
-        PoolSnapshot::new(
+        let last_processed_event = self
+            .last_processed_event
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("Cannot extract snapshot: no events processed yet"))?;
+
+        Ok(PoolSnapshot::new(
             self.pool.instrument_id,
             state,
             positions,
             ticks,
             self.analytics.clone(),
-            self.last_processed_event
-                .clone()
-                .expect("No events processed yet"),
+            last_processed_event,
             self.last_processed_ts.unwrap_or(self.pool.ts_init), // ts_event (last processed event)
             self.last_processed_ts.unwrap_or(self.pool.ts_init), // ts_init
-        )
+        ))
     }
 
     /// Gets the count of positions that are currently active.

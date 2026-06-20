@@ -112,6 +112,19 @@ impl SnapshotValidation {
             Self::Invalid => "invalid",
         }
     }
+
+    /// Parses the database/JSON token into a [`SnapshotValidation`].
+    ///
+    /// Returns `None` for an unrecognized token.
+    #[must_use]
+    pub fn from_db_token(token: &str) -> Option<Self> {
+        match token {
+            "on_chain" => Some(Self::OnChain),
+            "replay" => Some(Self::Replay),
+            "invalid" => Some(Self::Invalid),
+            _ => None,
+        }
+    }
 }
 
 impl BlockchainDataClientCore {
@@ -1029,24 +1042,47 @@ impl BlockchainDataClientCore {
     ///
     /// Returns an error if DEX registration, cache operations, or pool loading fails.
     pub async fn register_dex_exchange(&mut self, dex_id: DexType) -> anyhow::Result<()> {
-        if let Some(dex_extended) = get_dex_extended(self.chain.name, &dex_id) {
-            log::info!("Registering DEX {dex_id} on chain {}", self.chain.name);
+        self.register_dex(dex_id).await?;
+        let _ = self.cache.load_pools(&dex_id).await?;
+        Ok(())
+    }
 
-            self.cache.add_dex(dex_extended.dex.clone()).await?;
-            let _ = self.cache.load_pools(&dex_id).await?;
+    /// Registers a decentralized exchange but loads only a single pool into the cache.
+    ///
+    /// Like [`Self::register_dex_exchange`], but loads just `pool_identifier` instead of the whole
+    /// DEX pool set, so per-pool tools (e.g. `analyze-pool`) avoid the full pool-set load. A pool
+    /// absent from the cache database is left for the caller's later lookup to report.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if DEX registration or the pool load fails.
+    pub async fn register_dex_exchange_for_pool(
+        &mut self,
+        dex_id: DexType,
+        pool_identifier: &PoolIdentifier,
+    ) -> anyhow::Result<()> {
+        self.register_dex(dex_id).await?;
+        let _ = self.cache.load_pool(&dex_id, pool_identifier).await?;
+        Ok(())
+    }
 
-            self.subscription_manager.register_dex_for_subscriptions(
-                dex_id,
-                dex_extended.swap_created_event.as_ref(),
-                dex_extended.mint_created_event.as_ref(),
-                dex_extended.burn_created_event.as_ref(),
-                dex_extended.collect_created_event.as_ref(),
-                dex_extended.flash_created_event.as_deref(),
-            );
-            Ok(())
-        } else {
-            anyhow::bail!("Unknown DEX {dex_id} on chain {}", self.chain.name)
-        }
+    /// Registers a DEX in the cache and its event signatures for subscriptions, without loading pools.
+    async fn register_dex(&mut self, dex_id: DexType) -> anyhow::Result<()> {
+        let Some(dex_extended) = get_dex_extended(self.chain.name, &dex_id) else {
+            anyhow::bail!("Unknown DEX {dex_id} on chain {}", self.chain.name);
+        };
+
+        log::info!("Registering DEX {dex_id} on chain {}", self.chain.name);
+        self.cache.add_dex(dex_extended.dex.clone()).await?;
+        self.subscription_manager.register_dex_for_subscriptions(
+            dex_id,
+            dex_extended.swap_created_event.as_ref(),
+            dex_extended.mint_created_event.as_ref(),
+            dex_extended.burn_created_event.as_ref(),
+            dex_extended.collect_created_event.as_ref(),
+            dex_extended.flash_created_event.as_deref(),
+        );
+        Ok(())
     }
 
     /// Bootstraps a [`PoolProfiler`] with the latest state for a given pool.
@@ -1439,7 +1475,14 @@ impl BlockchainDataClientCore {
                     log::warn!(
                         "Could not validate snapshot against on-chain state, keeping replay-derived snapshot: {e}"
                     );
-                    (SnapshotValidation::Replay, None)
+                    // RPC could not reach the block. Report any stored verdict so stdout agrees with
+                    // a pre-existing on_chain/invalid row; the None block position below skips the
+                    // persist step, so a transient failure cannot clobber that verdict.
+                    let reported = self
+                        .stored_snapshot_validation(profiler)
+                        .await?
+                        .unwrap_or(SnapshotValidation::Replay);
+                    (reported, None)
                 }
             }
         };
@@ -1463,6 +1506,33 @@ impl BlockchainDataClientCore {
         }
 
         Ok(validation)
+    }
+
+    /// Reads the persisted [`SnapshotValidation`] for the profiler's current snapshot watermark.
+    ///
+    /// Returns `None` when no database is configured, the profiler has no processed event, or no
+    /// snapshot row exists at that watermark.
+    async fn stored_snapshot_validation(
+        &self,
+        profiler: &PoolProfiler,
+    ) -> anyhow::Result<Option<SnapshotValidation>> {
+        let (Some(block_position), Some(cache_database)) =
+            (profiler.last_processed_event.as_ref(), &self.cache.database)
+        else {
+            return Ok(None);
+        };
+
+        let stored = cache_database
+            .get_pool_snapshot_validation_state(
+                profiler.pool.chain.chain_id,
+                &profiler.pool.pool_identifier,
+                block_position.number,
+                block_position.transaction_index,
+                block_position.log_index,
+            )
+            .await?;
+
+        Ok(stored.and_then(|token| SnapshotValidation::from_db_token(&token)))
     }
 
     /// Fetches current on-chain pool state at the last processed block.
@@ -1668,6 +1738,17 @@ mod tests {
         // is_usable must match the load filter `validation_state <> 'invalid'`.
         assert_eq!(validation.as_str(), expected_str);
         assert_eq!(validation.is_usable(), expected_usable);
+        // from_db_token round-trips a stored token back to the enum, so a read-back verdict
+        // reports the same state that was persisted.
+        assert_eq!(
+            SnapshotValidation::from_db_token(expected_str),
+            Some(validation)
+        );
+    }
+
+    #[rstest]
+    fn snapshot_validation_from_db_token_rejects_unknown() {
+        assert_eq!(SnapshotValidation::from_db_token("bogus"), None);
     }
 
     #[rstest]

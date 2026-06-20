@@ -54,6 +54,27 @@ pub struct BlockchainCacheDatabase {
     pool: PgPool,
 }
 
+// Shared SELECT column list for `pool` row queries (load_pools, load_pool).
+const POOL_ROW_COLUMNS: &str = "
+    address,
+    pool_identifier,
+    dex_name,
+    creation_block,
+    COALESCE(
+        (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool.chain_id AND block.number = pool.creation_block),
+        (SELECT timestamp::TEXT FROM pool_event_block WHERE pool_event_block.chain_id = pool.chain_id AND pool_event_block.number = pool.creation_block)
+    ) as creation_block_timestamp,
+    token0_chain,
+    token0_address,
+    token1_chain,
+    token1_address,
+    fee,
+    tick_spacing,
+    initial_tick,
+    initial_sqrt_price_x96,
+    hook_address
+";
+
 impl BlockchainCacheDatabase {
     /// Initializes a new database instance by establishing a connection to PostgreSQL.
     ///
@@ -1067,36 +1088,41 @@ impl BlockchainCacheDatabase {
         chain: SharedChain,
         dex_id: &str,
     ) -> anyhow::Result<Vec<PoolRow>> {
-        sqlx::query_as::<_, PoolRow>(
-            "
-            SELECT
-                address,
-                pool_identifier,
-                dex_name,
-                creation_block,
-                COALESCE(
-                    (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool.chain_id AND block.number = pool.creation_block),
-                    (SELECT timestamp::TEXT FROM pool_event_block WHERE pool_event_block.chain_id = pool.chain_id AND pool_event_block.number = pool.creation_block)
-                ) as creation_block_timestamp,
-                token0_chain,
-                token0_address,
-                token1_chain,
-                token1_address,
-                fee,
-                tick_spacing,
-                initial_tick,
-                initial_sqrt_price_x96,
-                hook_address
-            FROM pool
-            WHERE chain_id = $1 AND dex_name = $2
-            ORDER BY creation_block ASC
-        ",
-        )
+        sqlx::query_as::<_, PoolRow>(AssertSqlSafe(format!(
+            "SELECT {POOL_ROW_COLUMNS} FROM pool WHERE chain_id = $1 AND dex_name = $2 ORDER BY creation_block ASC"
+        )))
         .bind(chain.chain_id as i32)
         .bind(dex_id)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to load pools: {e}"))
+    }
+
+    /// Loads a single pool row by its identifier.
+    ///
+    /// Returns `None` when the pool is not present in the database. Lets per-pool tools load only
+    /// the pool they analyze instead of the whole DEX pool set (see [`load_pools`]).
+    ///
+    /// [`load_pools`]: Self::load_pools
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    pub async fn load_pool(
+        &self,
+        chain: SharedChain,
+        dex_id: &str,
+        pool_identifier: &PoolIdentifier,
+    ) -> anyhow::Result<Option<PoolRow>> {
+        sqlx::query_as::<_, PoolRow>(AssertSqlSafe(format!(
+            "SELECT {POOL_ROW_COLUMNS} FROM pool WHERE chain_id = $1 AND dex_name = $2 AND pool_identifier = $3"
+        )))
+        .bind(chain.chain_id as i32)
+        .bind(dex_id)
+        .bind(pool_identifier.as_ref())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load pool {pool_identifier}: {e}"))
     }
 
     /// Toggles performance optimization settings for sync operations.
@@ -1943,6 +1969,45 @@ impl BlockchainCacheDatabase {
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to set pool snapshot validation state: {e}"))
+    }
+
+    /// Reads the stored `validation_state` for the snapshot at the given watermark.
+    ///
+    /// Returns `None` when no snapshot row exists at that position. Used to report the persisted
+    /// verdict (rather than re-deriving `replay`) when on-chain validation cannot reach the block.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    pub async fn get_pool_snapshot_validation_state(
+        &self,
+        chain_id: u32,
+        pool_identifier: &PoolIdentifier,
+        block: u64,
+        transaction_index: u32,
+        log_index: u32,
+    ) -> anyhow::Result<Option<String>> {
+        let row = sqlx::query(
+            "
+            SELECT validation_state
+            FROM pool_snapshot
+            WHERE chain_id = $1
+            AND pool_identifier = $2
+            AND block = $3
+            AND transaction_index = $4
+            AND log_index = $5
+            ",
+        )
+        .bind(chain_id as i32)
+        .bind(pool_identifier.as_ref())
+        .bind(block as i64)
+        .bind(transaction_index as i32)
+        .bind(log_index as i32)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to get pool snapshot validation state: {e}"))?;
+
+        Ok(row.map(|row| row.get::<String, _>("validation_state")))
     }
 
     /// Loads all positions for a specific snapshot.

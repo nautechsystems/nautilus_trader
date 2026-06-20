@@ -88,6 +88,7 @@ pub fn pool_definition(
         18,
     );
     let pool_address = address!("0xBBf3209130dF7d19356d72Eb8a193e2D9Ec5c234");
+
     let mut pool = Pool::new(
         Arc::new(Chain::from_chain_id(42161).unwrap().clone()), // Arbitrum,
         dex,
@@ -100,6 +101,7 @@ pub fn pool_definition(
         Some(tick_spacing.unwrap_or(TICK_SPACING) as u32),
         UnixNanos::default(),
     );
+
     let initial_sqrt_price = initial_sqrt_price_x96.unwrap_or(sqrt_price_x98());
     pool.initialize(
         initial_sqrt_price,
@@ -769,7 +771,7 @@ fn test_compare_pool_profiler_reports_exact_match(mut profiler: PoolProfiler) {
         .process(&DexPoolData::LiquidityUpdate(mint_event))
         .unwrap();
 
-    let snapshot = profiler.extract_snapshot();
+    let snapshot = profiler.extract_snapshot().unwrap();
 
     assert_eq!(
         compare_pool_profiler_detailed(&profiler, &snapshot),
@@ -788,7 +790,7 @@ fn test_compare_pool_profiler_reports_sqrt_only_mismatch(mut profiler: PoolProfi
         .process(&DexPoolData::LiquidityUpdate(mint_event))
         .unwrap();
 
-    let mut snapshot = profiler.extract_snapshot();
+    let mut snapshot = profiler.extract_snapshot().unwrap();
     snapshot.state.price_sqrt_ratio_x96 += U160::from(1u8);
     assert_eq!(
         get_tick_at_sqrt_ratio(snapshot.state.price_sqrt_ratio_x96),
@@ -813,7 +815,7 @@ fn test_compare_pool_profiler_reports_fee_protocol_only_mismatch(mut profiler: P
         .unwrap();
 
     // Profiler fee protocol lags on-chain until SetFeeProtocol events are indexed and replayed
-    let mut snapshot = profiler.extract_snapshot();
+    let mut snapshot = profiler.extract_snapshot().unwrap();
     snapshot.state.fee_protocol = 68;
 
     assert_eq!(
@@ -834,7 +836,7 @@ fn test_compare_pool_profiler_reports_structural_mismatch(mut profiler: PoolProf
         .process(&DexPoolData::LiquidityUpdate(mint_event))
         .unwrap();
 
-    let mut snapshot = profiler.extract_snapshot();
+    let mut snapshot = profiler.extract_snapshot().unwrap();
     snapshot.state.liquidity += 1;
 
     assert_eq!(
@@ -855,11 +857,26 @@ fn test_extract_snapshot_uses_last_processed_event_timestamp(mut profiler: PoolP
         .process(&DexPoolData::LiquidityUpdate(mint_event))
         .unwrap();
 
-    let snapshot = profiler.extract_snapshot();
+    let snapshot = profiler.extract_snapshot().unwrap();
 
     assert_eq!(snapshot.ts_event, event_ts);
     assert_eq!(snapshot.ts_init, event_ts);
     assert_ne!(snapshot.ts_event, profiler.pool.ts_init);
+}
+
+#[rstest]
+fn test_extract_snapshot_without_events_returns_error(profiler: PoolProfiler) {
+    // A pool that was initialized but processed no Mint/Burn/Swap events has no watermark, so the
+    // snapshot cannot be anchored. This must surface as a recoverable error, not a panic.
+    let result = profiler.extract_snapshot();
+
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("no events processed yet")
+    );
 }
 
 // Follow Uniswapv3 official tests

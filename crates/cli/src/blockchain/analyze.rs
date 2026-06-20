@@ -67,7 +67,8 @@ pub(crate) async fn run_analyze_pool(
     .await?;
     let to_block = resolve_to_block(&data_client, to_block).await;
 
-    let outcomes = analyze_pool_with_client(
+    // Boxed to keep this function's async future small (large_futures lint).
+    let outcomes = Box::pin(analyze_pool_with_client(
         &mut data_client,
         dex_type,
         pool_address,
@@ -77,7 +78,7 @@ pub(crate) async fn run_analyze_pool(
         require_existing_snapshot,
         &checkpoint_blocks,
         skip_validation,
-    )
+    ))
     .await?;
 
     for outcome in &outcomes {
@@ -210,14 +211,13 @@ pub(crate) async fn run_analyze_pools(
                 failures += 1;
                 println!(
                     "{}",
-                    json!({
-                        "chain": chain_name.as_str(),
-                        "dex": dex_name.as_str(),
-                        "pool_address": pool_address,
-                        "target_block": to_block,
-                        "status": "failure",
-                        "error": e.to_string(),
-                    })
+                    pool_failure_json(
+                        &chain_name,
+                        &dex_name,
+                        &pool_address,
+                        to_block,
+                        &e.to_string()
+                    )
                 );
             }
         }
@@ -247,6 +247,13 @@ async fn analyze_pool_with_client(
 ) -> anyhow::Result<Vec<PoolAnalysisOutcome>> {
     let pool_address = validate_address(&pool_address)?;
     let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
+
+    // Load only this pool into the cache rather than the whole DEX pool set (tens of thousands of
+    // pools on large DEXes); sync and profiling below operate on this single pool.
+    data_client
+        .register_dex_exchange_for_pool(dex_type, &pool_identifier)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to register DEX exchange: {e}"))?;
 
     let checkpoints = if checkpoint_blocks.is_empty() {
         vec![to_block]
@@ -298,7 +305,7 @@ async fn analyze_pool_with_client(
         let (profiler, already_valid) = data_client
             .bootstrap_latest_pool_profiler(&pool, Some(checkpoint))
             .await?;
-        let snapshot = profiler.extract_snapshot();
+        let snapshot = profiler.extract_snapshot()?;
         let snapshot_block_position = snapshot.block_position.clone();
         let positions = snapshot.positions.len();
         let ticks = snapshot.ticks.len();
@@ -418,10 +425,6 @@ async fn create_data_client(
     let mut data_client = BlockchainDataClientCore::new(config, None, None, cancellation_token);
     data_client.initialize_cache_database().await;
     data_client.cache.initialize_chain().await;
-    data_client
-        .register_dex_exchange(dex_type)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to register DEX exchange: {e}"))?;
 
     Ok(data_client)
 }
@@ -545,6 +548,23 @@ impl PoolAnalysisOutcome {
             }),
         }
     }
+}
+
+fn pool_failure_json(
+    chain: &str,
+    dex: &str,
+    pool_address: &str,
+    target_block: u64,
+    error: &str,
+) -> serde_json::Value {
+    json!({
+        "chain": chain,
+        "dex": dex,
+        "pool_address": pool_address,
+        "target_block": target_block,
+        "status": "failure",
+        "error": error,
+    })
 }
 
 #[cfg(test)]
@@ -750,6 +770,27 @@ mod tests {
                 "validation_state": "on_chain",
                 "already_valid": false,
                 "liquidity_utilization_rate": 0.25,
+            })
+        );
+    }
+
+    #[rstest]
+    fn pool_failure_json_matches_contract() {
+        assert_eq!(
+            pool_failure_json(
+                "Ethereum",
+                "UniswapV3",
+                "0x1111111111111111111111111111111111111111",
+                25_218_807,
+                "Cannot extract snapshot: no events processed yet",
+            ),
+            json!({
+                "chain": "Ethereum",
+                "dex": "UniswapV3",
+                "pool_address": "0x1111111111111111111111111111111111111111",
+                "target_block": 25_218_807,
+                "status": "failure",
+                "error": "Cannot extract snapshot: no events processed yet",
             })
         );
     }

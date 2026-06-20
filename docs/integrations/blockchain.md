@@ -458,18 +458,19 @@ from that one budget at once, so high concurrency on a free token spends most of
 raise the limit with a paid plan. A full first-time sync of a large, long-lived pool needs many
 thousands of requests, so it is impractical on a free token regardless of concurrency.
 
-#### Pools with no liquidity events panic in extraction
+#### Pools with no liquidity events fail cleanly
 
-A pool with no processed Mint/Burn events up to the target block currently panics in snapshot
-extraction with `No events processed yet`. Under `analyze-pools` the panic is contained as a single
-per-pool failure and the other pools still complete; under single-pool `analyze-pool` it aborts the
-command. Choose pools with liquidity activity, or expect that one as a per-pool failure.
+A pool with no processed Mint/Burn events up to the target block has no state to snapshot, so
+snapshot extraction returns an error instead of a snapshot. Under `analyze-pools` the pool is
+reported as a JSON line with `"status": "failure"` while the other pools still complete; under
+single-pool `analyze-pool` the command returns the error. Choose pools with liquidity activity to
+avoid the per-pool failure.
 
-#### Exit code does not reflect per-pool failures
+#### Exit code reflects per-pool failures
 
-A failed pool is reported as a JSON line with `"status": "failure"`, but the process can still exit
-`0`, so a partial failure is not visible in the exit code. Parse each result line's `status` rather
-than relying on the exit status.
+`analyze-pool(s)` exits non-zero when any pool fails, and each failed pool is also reported as a JSON
+line with `"status": "failure"`. Rely on the exit code for an overall pass/fail signal, and parse
+each result line's `status` for per-pool detail.
 
 ## Current limitations
 
