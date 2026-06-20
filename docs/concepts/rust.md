@@ -209,8 +209,8 @@ macros tell the traits where that field lives.
 
 | Macro                      | Core field      | Generates                              |
 |----------------------------|-----------------|----------------------------------------|
-| `nautilus_actor!(Type)`    | `DataActorCore` | Data actor core access.                |
-| `nautilus_strategy!(Type)` | `StrategyCore`  | Data actor core access and `Strategy`. |
+| `nautilus_actor!(Type)`    | `DataActorCore` | Native runtime wiring.                 |
+| `nautilus_strategy!(Type)` | `StrategyCore`  | Native runtime wiring and `Strategy`.  |
 
 Both macros expect a field named `core`; pass a field name as the second
 argument when needed. They do not make the actor or strategy deref to its core.
@@ -221,7 +221,7 @@ Normal code uses facade methods such as `clock()`, `cache()`, `order()`, and
 
 Use facade methods by default: `clock()`, `cache()`, `order()`, and
 `portfolio()`. `DataActorNative` and `StrategyNative` are for native-only access
-below that facade.
+below that facade. Treat them as explicit escape hatches.
 
 | Authoring path            | Use native traits? | Use this API                |
 |---------------------------|--------------------|-----------------------------|
@@ -231,9 +231,9 @@ below that facade.
 | Plug‑in‑compatible code   | No                 | Facades only                |
 
 Native traits expose borrowed core state, `Rc<RefCell<_>>`, and runtime
-references. Use them for performance-sensitive native paths or host integration
-internals. Do not use them in Python-authored or plug-in-compatible strategies
-and actors, because those types do not cross those boundaries.
+references. Use them only for performance-sensitive native paths or host
+integration internals. Do not use them in Python-authored or plug-in-compatible
+strategies and actors, because those types do not cross those boundaries.
 
 For a step-by-step walkthrough, see the
 [Write a Strategy (Rust)](../how_to/write_rust_strategy.md) how-to guide.

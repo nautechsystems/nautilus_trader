@@ -154,16 +154,17 @@ pub struct ImportableActorConfig {
 
 type RequestCallback = Arc<dyn Fn(UUID4) + Send + Sync>;
 
-/// Native-only access to the data actor runtime state.
+/// Explicit native-only escape hatch for data actor runtime state.
 ///
-/// Use this trait from Rust actor or strategy code compiled into the same native
-/// binary as the engine, when direct runtime borrows matter for a performance
-/// sensitive path or host integration code needs access below the facade API.
+/// Normal actor and strategy code should use facade methods such as
+/// [`DataActor::clock`] and [`DataActor::cache`]. Import this trait only from
+/// Rust code compiled into the same native binary as the engine, when a
+/// performance-sensitive path or host integration needs access below the facade
+/// API.
 ///
 /// Do not import this trait in strategy code intended to run through Python or
-/// the plug-in authoring surface. Those surfaces should use facade methods such
-/// as [`DataActor::clock`] and [`DataActor::cache`], because native borrows,
-/// `Rc<RefCell<_>>`, and core references do not cross those boundaries.
+/// the plug-in authoring surface. Native borrows, `Rc<RefCell<_>>`, and core
+/// references do not cross those boundaries.
 pub trait DataActorNative {
     /// Returns the actor core.
     fn core(&self) -> &DataActorCore;

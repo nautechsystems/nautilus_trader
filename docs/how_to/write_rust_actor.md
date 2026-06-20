@@ -47,9 +47,10 @@ impl SpreadMonitor {
 
 ## Wire up the core and implement Debug
 
-The `nautilus_actor!` macro generates the core access required by `DataActor`.
-By default it delegates to a field named `core`; pass a second argument for a
-different field name.
+The `nautilus_actor!` macro connects the actor's `DataActorCore` field to the
+runtime contract. By default it delegates to a field named `core`; pass a second
+argument for a different field name. Normal callbacks do not call the generated
+native accessors; use the `DataActor` facade methods on `self`.
 
 `Debug` is a trait bound on `DataActor` (required by the blanket `Component`
 impl), so implement it manually or derive it.
@@ -91,14 +92,15 @@ available handlers.
 
 ## Native runtime access
 
-Use the public `DataActor` facade by default.
+Use the public `DataActor` facade by default. Add `DataActorNative` only for an
+explicit native escape hatch that the facade methods cannot serve.
 
-| Actor path                  | Use native traits? | Use this API                        |
-|-----------------------------|--------------------|-------------------------------------|
-| Native Rust binary          | Only when needed   | `DataActor`, plus `DataActorNative` |
-| Rust configured from Python | Only when needed   | Same as native Rust                 |
-| Python‑authored actor       | No                 | `DataActor` facade                  |
-| Plug‑in‑compatible actor    | No                 | `DataActor` facade                  |
+| Actor path                  | Native escape hatch? | Normal API         |
+|-----------------------------|----------------------|--------------------|
+| Native Rust binary          | Only when needed     | `DataActor` facade |
+| Rust configured from Python | Only when needed     | `DataActor` facade |
+| Python‑authored actor       | No                   | `DataActor` facade |
+| Plug‑in‑compatible actor    | No                   | `DataActor` facade |
 
 Import `DataActorNative` only for performance-sensitive native code or host
 integration internals. It exposes borrowed core state such as `cache_ref()`,

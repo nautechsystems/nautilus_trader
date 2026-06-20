@@ -15,13 +15,17 @@
 
 //! Convenience macros for implementing actor boilerplate.
 
-/// Implements `DataActorNative` for an actor type.
+/// Wires an actor type's core field into the native runtime contract.
 ///
 /// The struct must contain a field that provides a
 /// [`DataActorCore`](crate::actor::DataActorCore) reference, either directly or
 /// by deref coercion through an intermediate core type (e.g. `ExecutionAlgorithmCore`).
 /// By default the macro expects the field to be named `core`; pass a second argument
 /// to use a different name.
+///
+/// The generated native access implementation is runtime wiring. Normal actor code
+/// should use [`DataActor`](crate::actor::DataActor) facade methods such as
+/// `clock()`, `cache()`, and the subscription methods.
 ///
 /// # Examples
 ///
