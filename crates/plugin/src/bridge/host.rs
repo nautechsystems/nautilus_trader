@@ -318,11 +318,11 @@ unsafe extern "C" fn host_trader_id(ctx: *const HostContext) -> PluginResult<Own
         let trader_id = if inner.is_strategy {
             let adapter_ref = try_get_actor_unchecked::<PluginStrategyAdapter>(&actor_id)
                 .ok_or_else(|| resolve_adapter_error("trader_id", inner))?;
-            DataActorNative::core(&*adapter_ref).trader_id()
+            adapter_ref.trader_id()
         } else {
             let adapter_ref = try_get_actor_unchecked::<PluginActorAdapter>(&actor_id)
                 .ok_or_else(|| resolve_adapter_error("trader_id", inner))?;
-            DataActorNative::core(&*adapter_ref).trader_id()
+            adapter_ref.trader_id()
         }
         .ok_or_else(|| {
             PluginError::new(
@@ -1175,7 +1175,7 @@ fn validate_order_identity(
     adapter: &PluginStrategyAdapter,
     order: &OrderAny,
 ) -> Result<(), PluginError> {
-    let expected_trader_id = DataActorNative::core(adapter).trader_id().ok_or_else(|| {
+    let expected_trader_id = adapter.trader_id().ok_or_else(|| {
         PluginError::new(
             PluginErrorCode::InvalidArgument,
             "trader_id is unavailable before strategy registration",
@@ -1219,7 +1219,7 @@ fn require_registered_strategy(
     adapter: &PluginStrategyAdapter,
     method: &'static str,
 ) -> Result<(), PluginError> {
-    if DataActorNative::core(adapter).is_registered() {
+    if adapter.is_registered() {
         Ok(())
     } else {
         Err(PluginError::new(

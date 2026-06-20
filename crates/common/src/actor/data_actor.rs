@@ -231,6 +231,26 @@ pub trait DataActorNative {
 }
 
 pub trait DataActor: Component + DataActorNative {
+    /// Returns the actor ID.
+    fn actor_id(&self) -> ActorId {
+        self.core().actor_id()
+    }
+
+    /// Returns the trader ID this actor is registered to.
+    fn trader_id(&self) -> Option<TraderId> {
+        self.core().trader_id()
+    }
+
+    /// Returns whether the actor is registered with a trader.
+    fn is_registered(&self) -> bool {
+        self.core().is_registered()
+    }
+
+    /// Returns the actor configuration.
+    fn config(&self) -> &DataActorConfig {
+        &self.core().config
+    }
+
     /// Actions to be performed when the actor state is saved.
     ///
     /// # Errors

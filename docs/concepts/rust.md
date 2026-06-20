@@ -214,14 +214,16 @@ macros tell the traits where that field lives.
 
 Both macros expect a field named `core`; pass a field name as the second
 argument when needed. They do not make the actor or strategy deref to its core.
-Normal code uses facade methods such as `clock()`, `cache()`, `order()`, and
+Normal code uses facade methods such as `actor_id()`, `trader_id()`,
+`is_registered()`, `config()`, `clock()`, `cache()`, `order()`, and
 `portfolio()`.
 
 ### Native traits
 
-Use facade methods by default: `clock()`, `cache()`, `order()`, and
-`portfolio()`. `DataActorNative` and `StrategyNative` are for native-only access
-below that facade. Treat them as explicit escape hatches.
+Use facade methods by default: `actor_id()`, `trader_id()`, `is_registered()`,
+`config()`, `clock()`, `cache()`, `order()`, and `portfolio()`.
+`DataActorNative` and `StrategyNative` are for native-only access below that
+facade. Treat them as explicit escape hatches.
 
 | Authoring path            | Use native traits? | Use this API                |
 |---------------------------|--------------------|-----------------------------|

@@ -25,7 +25,8 @@
 ///
 /// The generated native access implementation is runtime wiring. Normal actor code
 /// should use [`DataActor`](crate::actor::DataActor) facade methods such as
-/// `clock()`, `cache()`, and the subscription methods.
+/// `actor_id()`, `trader_id()`, `config()`, `clock()`, `cache()`, and the
+/// subscription methods.
 ///
 /// # Examples
 ///

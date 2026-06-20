@@ -11,8 +11,8 @@ For background on actors, traits, and handler dispatch, see the
 
 An actor owns a `DataActorCore` and any state it needs. The core stores runtime
 state for the actor. User code normally reaches that state through the
-`DataActor` facade methods such as `clock()`, `cache()`, and the subscription
-methods.
+`DataActor` facade methods such as `actor_id()`, `trader_id()`, `config()`,
+`clock()`, `cache()`, and the subscription methods.
 
 ```rust
 use nautilus_common::{nautilus_actor, actor::{DataActor, DataActorConfig, DataActorCore}};
@@ -94,6 +94,8 @@ available handlers.
 
 Use the public `DataActor` facade by default. Add `DataActorNative` only for an
 explicit native escape hatch that the facade methods cannot serve.
+Read-only properties such as `actor_id()`, `trader_id()`, `is_registered()`,
+and `config()` are available on the facade.
 
 | Actor path                  | Native escape hatch? | Normal API         |
 |-----------------------------|----------------------|--------------------|

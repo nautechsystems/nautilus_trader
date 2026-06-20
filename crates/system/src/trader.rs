@@ -23,7 +23,7 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::AHashMap;
 use nautilus_common::{
-    actor::{DataActor, DataActorNative, registry::try_get_actor_unchecked},
+    actor::{DataActor, registry::try_get_actor_unchecked},
     cache::Cache,
     clock::{Clock, TestClock},
     component::{
@@ -278,7 +278,7 @@ impl Trader {
     {
         self.validate_actor_or_strategy_registration()?;
 
-        let actor_id = DataActorNative::core(&actor).actor_id();
+        let actor_id = actor.actor_id();
 
         // Check for duplicate registration
         if self.actor_ids.contains(&actor_id) {
@@ -324,7 +324,7 @@ impl Trader {
     where
         T: DataActor + Component + Debug + 'static,
     {
-        let actor_id = DataActorNative::core(&actor).actor_id();
+        let actor_id = actor.actor_id();
 
         // Register in both component and actor registries (this consumes the actor)
         register_component_actor(actor);
@@ -561,7 +561,7 @@ impl Trader {
         )?;
 
         // Register default time event handler for this strategy
-        let actor_id = DataActorNative::core(&strategy).actor_id().inner();
+        let actor_id = strategy.actor_id().inner();
         let callback = TimeEventCallback::from(move |event: TimeEvent| {
             if let Some(mut actor) = try_get_actor_unchecked::<T>(&actor_id) {
                 actor.handle_time_event(&event);

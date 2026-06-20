@@ -17,8 +17,7 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use nautilus_common::{
     actor::{
-        DataActor, DataActorCore, DataActorNative, data_actor::DataActorConfig,
-        registry::try_get_actor_unchecked,
+        DataActor, DataActorCore, data_actor::DataActorConfig, registry::try_get_actor_unchecked,
     },
     component::Component,
     msgbus::{Endpoint, MStr, TypedHandler, get_message_bus},
@@ -107,7 +106,7 @@ impl Controller {
     where
         T: DataActor + Component + Debug + 'static,
     {
-        let actor_id = DataActorNative::core(&actor).actor_id();
+        let actor_id = actor.actor_id();
         self.trader.borrow_mut().add_actor(actor)?;
 
         self.start_created_actor(actor_id, start)?;
