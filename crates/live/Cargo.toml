@@ -111,6 +111,7 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+bytes = { workspace = true }
 criterion = { workspace = true }
 madsim = { workspace = true }
 rstest = { workspace = true }

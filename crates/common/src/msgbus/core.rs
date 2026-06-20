@@ -87,6 +87,7 @@ use std::{
     any::{Any, TypeId},
     cell::RefCell,
     collections::HashMap,
+    fmt::Debug,
     hash::{Hash, Hasher},
     rc::Rc,
 };
@@ -111,7 +112,8 @@ use smallvec::SmallVec;
 use ustr::Ustr;
 
 use super::{
-    ShareableMessageHandler,
+    HAS_PUBLISHER, ShareableMessageHandler,
+    database::MessageBusPublisher,
     matching::is_matching_backtracking,
     mstr::{Endpoint, MStr, Pattern, Topic},
     set_message_bus,
@@ -119,9 +121,12 @@ use super::{
     typed_endpoints::{EndpointMap, IntoEndpointMap},
     typed_router::TopicRouter,
 };
-use crate::messages::{
-    data::{DataCommand, DataResponse},
-    execution::{ExecutionReport, TradingCommand},
+use crate::{
+    enums::SerializationEncoding,
+    messages::{
+        data::{DataCommand, DataResponse},
+        execution::{ExecutionReport, TradingCommand},
+    },
 };
 
 /// Represents a subscription to a particular topic.
@@ -211,7 +216,6 @@ impl Hash for Subscription {
 /// A question mark matches a single character once. For example, `c?mp` matches
 /// `camp` and `comp`. The question mark can also be used more than once.
 /// For example, `c??p` would match both of the above examples and `coop`.
-#[derive(Debug)]
 pub struct MessageBus {
     /// The trader ID associated with the message bus.
     pub trader_id: TraderId,
@@ -275,6 +279,21 @@ pub struct MessageBus {
     req_count: u64,
     res_count: u64,
     pub_count: u64,
+    publisher: Option<Box<dyn MessageBusPublisher>>,
+    encoding: SerializationEncoding,
+    types_filter: AHashSet<String>,
+}
+
+impl Debug for MessageBus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(MessageBus))
+            .field("trader_id", &self.trader_id)
+            .field("instance_id", &self.instance_id)
+            .field("name", &self.name)
+            .field("has_backing", &self.has_backing)
+            .field("publisher", &self.publisher.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for MessageBus {
@@ -352,6 +371,9 @@ impl MessageBus {
             req_count: 0,
             res_count: 0,
             pub_count: 0,
+            publisher: None,
+            encoding: SerializationEncoding::Json,
+            types_filter: AHashSet::new(),
         }
     }
 
@@ -386,6 +408,40 @@ impl MessageBus {
             .or_insert_with(|| Box::new(EndpointMap::<T>::new()))
             .downcast_mut::<EndpointMap<T>>()
             .expect("EndpointMap type mismatch - this is a bug")
+    }
+
+    /// Sets an external publisher for serialized published messages.
+    pub fn set_publisher(
+        &mut self,
+        publisher: Box<dyn MessageBusPublisher>,
+        encoding: SerializationEncoding,
+    ) {
+        self.publisher = Some(publisher);
+        self.encoding = encoding;
+        self.has_backing = true;
+        HAS_PUBLISHER.with(|flag| flag.set(true));
+    }
+
+    /// Sets the type names excluded from external publishing.
+    pub fn set_types_filter(&mut self, filter: Vec<String>) {
+        self.types_filter = filter.into_iter().collect();
+    }
+
+    #[must_use]
+    pub(crate) fn has_publisher(&self) -> bool {
+        self.publisher.is_some()
+    }
+
+    pub(crate) fn publisher(&self) -> Option<&dyn MessageBusPublisher> {
+        self.publisher.as_deref()
+    }
+
+    pub(crate) fn encoding(&self) -> SerializationEncoding {
+        self.encoding
+    }
+
+    pub(crate) fn types_filter(&self) -> &AHashSet<String> {
+        &self.types_filter
     }
 
     /// Disposes of the message bus, clearing all subscriptions, endpoints,
@@ -444,6 +500,12 @@ impl MessageBus {
         self.req_count = 0;
         self.res_count = 0;
         self.pub_count = 0;
+
+        if let Some(mut publisher) = self.publisher.take() {
+            publisher.close();
+        }
+        self.has_backing = false;
+        HAS_PUBLISHER.with(|flag| flag.set(false));
     }
 
     /// Returns the memory address of this instance as a hexadecimal string.
@@ -574,8 +636,12 @@ impl MessageBus {
     /// # Errors
     ///
     /// This function never returns an error (TBD once backing database added).
-    pub const fn close(&self) -> anyhow::Result<()> {
-        // TODO: Integrate the backing database
+    pub fn close(&mut self) -> anyhow::Result<()> {
+        if let Some(mut publisher) = self.publisher.take() {
+            publisher.close();
+        }
+        self.has_backing = false;
+        HAS_PUBLISHER.with(|flag| flag.set(false));
         Ok(())
     }
 

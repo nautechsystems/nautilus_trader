@@ -121,7 +121,7 @@ pub struct MessageBusConfig {
     /// The configuration for the message bus backing database.
     pub database: Option<DatabaseConfig>,
     /// The encoding for database operations, controls the type of serializer used.
-    #[builder(default = SerializationEncoding::MsgPack)]
+    #[builder(default = SerializationEncoding::Json)]
     pub encoding: SerializationEncoding,
     /// If timestamps should be persisted as ISO 8601 strings.
     /// If `false`, then timestamps will be persisted as UNIX nanoseconds.
@@ -163,6 +163,17 @@ impl Default for MessageBusConfig {
     fn default() -> Self {
         Self::builder().build()
     }
+}
+
+/// External publisher for serialized message bus publications.
+///
+/// The core bus passes each outbound [`BusMessage`](super::BusMessage) as a `topic` and serialized
+/// `payload`. Implementations must not block the publishing thread. If the underlying publisher is
+/// full, drop the message in the implementation rather than applying back-pressure to the node.
+pub trait MessageBusPublisher {
+    fn is_closed(&self) -> bool;
+    fn publish(&self, topic: Ustr, payload: Bytes);
+    fn close(&mut self);
 }
 
 /// A generic message bus database facade.
@@ -256,7 +267,7 @@ mod tests {
     #[rstest]
     fn test_default_message_bus_config() {
         let config = MessageBusConfig::default();
-        assert_eq!(config.encoding, SerializationEncoding::MsgPack);
+        assert_eq!(config.encoding, SerializationEncoding::Json);
         assert!(!config.timestamps_as_iso8601);
         assert_eq!(config.buffer_interval_ms, None);
         assert_eq!(config.autotrim_mins, None);
@@ -316,5 +327,20 @@ mod tests {
             config.types_filter,
             Some(vec!["type1".to_string(), "type2".to_string()])
         );
+    }
+
+    #[rstest]
+    #[case("sbe", SerializationEncoding::Sbe)]
+    #[case("capnp", SerializationEncoding::Capnp)]
+    fn test_deserialize_message_bus_config_with_schema_encoding(
+        #[case] encoding_name: &str,
+        #[case] expected: SerializationEncoding,
+    ) {
+        let config_json = json!({
+            "encoding": encoding_name,
+        });
+
+        let config: MessageBusConfig = serde_json::from_value(config_json).unwrap();
+        assert_eq!(config.encoding, expected);
     }
 }

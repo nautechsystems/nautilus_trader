@@ -77,13 +77,25 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
         payload: &T,
     ) -> anyhow::Result<Vec<u8>> {
-        let mut value = serde_json::to_value(payload)?;
-        convert_timestamps(&mut value);
         match encoding {
-            SerializationEncoding::MsgPack => rmp_serde::to_vec(&value)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize msgpack `payload`: {e}")),
-            SerializationEncoding::Json => serde_json::to_vec(&value)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize json `payload`: {e}")),
+            SerializationEncoding::MsgPack => {
+                let mut value = serde_json::to_value(payload)?;
+                convert_timestamps(&mut value);
+                rmp_serde::to_vec(&value)
+                    .map_err(|e| anyhow::anyhow!("Failed to serialize msgpack `payload`: {e}"))
+            }
+            SerializationEncoding::Json => {
+                let mut value = serde_json::to_value(payload)?;
+                convert_timestamps(&mut value);
+                serde_json::to_vec(&value)
+                    .map_err(|e| anyhow::anyhow!("Failed to serialize json `payload`: {e}"))
+            }
+            SerializationEncoding::Sbe => {
+                anyhow::bail!("SBE encoding is not supported for Redis cache payloads")
+            }
+            SerializationEncoding::Capnp => {
+                anyhow::bail!("Cap'n Proto encoding is not supported for Redis cache payloads")
+            }
         }
     }
 
@@ -101,6 +113,12 @@ impl DatabaseQueries {
                 .map_err(|e| anyhow::anyhow!("Failed to deserialize msgpack `payload`: {e}"))?,
             SerializationEncoding::Json => serde_json::from_slice(payload)
                 .map_err(|e| anyhow::anyhow!("Failed to deserialize json `payload`: {e}"))?,
+            SerializationEncoding::Sbe => {
+                anyhow::bail!("SBE encoding is not supported for Redis cache payloads")
+            }
+            SerializationEncoding::Capnp => {
+                anyhow::bail!("Cap'n Proto encoding is not supported for Redis cache payloads")
+            }
         };
 
         convert_timestamp_strings(&mut value);

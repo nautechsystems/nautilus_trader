@@ -2667,6 +2667,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "regex",
+ "rmp-serde",
  "rust_decimal",
  "serde",
  "serde_json",

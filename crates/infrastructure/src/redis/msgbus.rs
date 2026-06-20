@@ -44,7 +44,7 @@ use nautilus_common::{
     live::get_runtime,
     logging::{log_task_error, log_task_started, log_task_stopped},
     msgbus::{
-        BusMessage,
+        BusMessage, MessageBusPublisher,
         database::{DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
         switchboard::CLOSE_TOPIC,
     },
@@ -213,6 +213,23 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         });
 
         log::debug!("Closed");
+    }
+}
+
+impl MessageBusPublisher for RedisMessageBusDatabase {
+    fn is_closed(&self) -> bool {
+        self.pub_tx.is_closed()
+    }
+
+    fn publish(&self, topic: Ustr, payload: Bytes) {
+        let msg = BusMessage::new(topic, payload);
+        if let Err(e) = self.pub_tx.send(msg) {
+            log::error!("Failed to send Redis message bus publication: {e}");
+        }
+    }
+
+    fn close(&mut self) {
+        MessageBusDatabaseAdapter::close(self);
     }
 }
 
@@ -1067,7 +1084,7 @@ mod serial_tests {
         let mut db = RedisMessageBusDatabase::new(trader_id, instance_id, config).unwrap();
 
         // Close the message bus database (test should not hang)
-        db.close();
+        MessageBusDatabaseAdapter::close(&mut db);
     }
 
     #[rstest]

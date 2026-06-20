@@ -18,8 +18,9 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc, time::Duration};
 use nautilus_common::{
     cache::{CacheConfig, database::CacheDatabaseAdapter},
     clock::Clock,
-    enums::Environment,
+    enums::{Environment, SerializationEncoding},
     logging::logger::LoggerConfig,
+    msgbus::MessageBusPublisher,
 };
 use nautilus_core::UUID4;
 use nautilus_data::engine::config::DataEngineConfig;
@@ -60,6 +61,7 @@ pub struct NautilusKernelBuilder {
     exec_engine: Option<ExecutionEngineConfig>,
     portfolio: Option<PortfolioConfig>,
     event_store_factory: Option<EventStoreFactory>,
+    msgbus_publisher: Option<Box<dyn MessageBusPublisher>>,
 }
 
 impl Debug for NautilusKernelBuilder {
@@ -86,6 +88,7 @@ impl Debug for NautilusKernelBuilder {
             .field("exec_engine", &self.exec_engine)
             .field("portfolio", &self.portfolio)
             .field("event_store_factory", &self.event_store_factory.is_some())
+            .field("msgbus_publisher", &self.msgbus_publisher.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -116,6 +119,7 @@ impl NautilusKernelBuilder {
             exec_engine: None,
             portfolio: None,
             event_store_factory: None,
+            msgbus_publisher: None,
         }
     }
 
@@ -263,6 +267,13 @@ impl NautilusKernelBuilder {
         self
     }
 
+    /// Inject an external publisher for serialized message bus publications.
+    #[must_use]
+    pub fn with_msgbus_publisher(mut self, publisher: Box<dyn MessageBusPublisher>) -> Self {
+        self.msgbus_publisher = Some(publisher);
+        self
+    }
+
     /// Build the [`NautilusKernel`] with the configured settings.
     ///
     /// # Errors
@@ -292,12 +303,24 @@ impl NautilusKernelBuilder {
             streaming: None,
         };
 
-        NautilusKernel::new_with(
+        let kernel = NautilusKernel::new_with(
             self.name,
             config,
             self.cache_database,
             self.event_store_factory,
-        )
+        )?;
+
+        if let Some(publisher) = self.msgbus_publisher {
+            let encoding = kernel
+                .config
+                .msgbus()
+                .map_or(SerializationEncoding::Json, |config| config.encoding);
+            nautilus_common::msgbus::get_message_bus()
+                .borrow_mut()
+                .set_publisher(publisher, encoding);
+        }
+
+        Ok(kernel)
     }
 }
 
@@ -314,6 +337,8 @@ impl Default for NautilusKernelBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use ahash::AHashMap;
     use bytes::Bytes;
     use nautilus_common::{
@@ -411,6 +436,34 @@ mod tests {
     }
 
     #[rstest]
+    fn test_builder_with_msgbus_publisher_forwards_published_quote() {
+        let (publisher, publications, closed) = CapturingPublisher::new();
+        let kernel = NautilusKernelBuilder::default()
+            .with_msgbus_publisher(Box::new(publisher))
+            .build()
+            .expect("kernel builds with msgbus publisher");
+        let quote = QuoteTick::default();
+
+        nautilus_common::msgbus::publish_quote("data.quotes.TEST".into(), &quote);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.quotes.TEST");
+        assert_eq!(
+            serde_json::from_slice::<QuoteTick>(&publications[0].payload)
+                .expect("JSON payload must decode as QuoteTick"),
+            quote
+        );
+        drop(publications);
+
+        nautilus_common::msgbus::get_message_bus()
+            .borrow_mut()
+            .dispose();
+        assert!(closed.get());
+        drop(kernel);
+    }
+
+    #[rstest]
     fn test_builder_default_has_no_event_store() {
         let kernel = NautilusKernelBuilder::default()
             .build()
@@ -505,6 +558,52 @@ mod tests {
         assert_eq!(builder.timeout_disconnection, Duration::from_secs(10));
         assert_eq!(builder.delay_post_stop, Duration::from_secs(10));
         assert_eq!(builder.timeout_shutdown, Duration::from_secs(5));
+    }
+
+    #[derive(Debug)]
+    struct CapturedPublication {
+        topic: String,
+        payload: Bytes,
+    }
+
+    type CapturedPublications = Rc<RefCell<Vec<CapturedPublication>>>;
+    type SharedClosed = Rc<Cell<bool>>;
+
+    struct CapturingPublisher {
+        publications: CapturedPublications,
+        closed: SharedClosed,
+    }
+
+    impl CapturingPublisher {
+        fn new() -> (Self, CapturedPublications, SharedClosed) {
+            let publications = Rc::new(RefCell::new(Vec::new()));
+            let closed = Rc::new(Cell::new(false));
+            (
+                Self {
+                    publications: publications.clone(),
+                    closed: closed.clone(),
+                },
+                publications,
+                closed,
+            )
+        }
+    }
+
+    impl MessageBusPublisher for CapturingPublisher {
+        fn is_closed(&self) -> bool {
+            self.closed.get()
+        }
+
+        fn publish(&self, topic: Ustr, payload: Bytes) {
+            self.publications.borrow_mut().push(CapturedPublication {
+                topic: topic.to_string(),
+                payload,
+            });
+        }
+
+        fn close(&mut self) {
+            self.closed.set(true);
+        }
     }
 
     struct NoopAdapter;

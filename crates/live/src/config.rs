@@ -750,11 +750,18 @@ impl LiveNodeConfig {
     pub(crate) fn validate_runtime_support(&self) -> ConfigResult<()> {
         let mut collector = ConfigErrorCollector::new();
 
-        collector.collect(check_supported_field(
-            "LiveNodeConfig.msgbus",
-            self.msgbus.is_none(),
-            RUST_RUNTIME_UNSUPPORTED,
-        ));
+        if let Some(config) = &self.msgbus {
+            collector.collect(check_supported_field(
+                "LiveNodeConfig.msgbus.database",
+                config.database.is_none(),
+                RUST_RUNTIME_UNSUPPORTED,
+            ));
+            collector.collect(check_supported_field(
+                "LiveNodeConfig.msgbus.external_streams",
+                config.external_streams.is_none(),
+                RUST_RUNTIME_UNSUPPORTED,
+            ));
+        }
         collector.collect(check_supported_field(
             "LiveNodeConfig.streaming",
             self.streaming.is_none(),
@@ -1010,6 +1017,7 @@ impl NautilusKernelConfig for LiveNodeConfig {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::msgbus::database::DatabaseConfig;
     use nautilus_system::config::RotationConfig;
     use rstest::rstest;
 
@@ -1053,9 +1061,22 @@ mod tests {
     }
 
     #[rstest]
-    fn test_validate_runtime_support_rejects_msgbus_config() {
+    fn test_validate_runtime_support_accepts_msgbus_config() {
         let config = LiveNodeConfig {
             msgbus: Some(MessageBusConfig::default()),
+            ..Default::default()
+        };
+
+        assert!(config.validate_runtime_support().is_ok());
+    }
+
+    #[rstest]
+    fn test_validate_runtime_support_rejects_msgbus_database() {
+        let config = LiveNodeConfig {
+            msgbus: Some(MessageBusConfig {
+                database: Some(DatabaseConfig::default()),
+                ..Default::default()
+            }),
             ..Default::default()
         };
 
@@ -1063,13 +1084,37 @@ mod tests {
         assert_eq!(
             error,
             ConfigError::UnsupportedField {
-                field: "LiveNodeConfig.msgbus".to_string(),
+                field: "LiveNodeConfig.msgbus.database".to_string(),
                 reason: RUST_RUNTIME_UNSUPPORTED.to_string(),
             },
         );
         assert_eq!(
             error.to_string(),
-            "LiveNodeConfig.msgbus is not supported by the Rust live runtime yet"
+            "LiveNodeConfig.msgbus.database is not supported by the Rust live runtime yet"
+        );
+    }
+
+    #[rstest]
+    fn test_validate_runtime_support_rejects_msgbus_external_streams() {
+        let config = LiveNodeConfig {
+            msgbus: Some(MessageBusConfig {
+                external_streams: Some(vec!["stream".to_string()]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let error = config.validate_runtime_support().unwrap_err();
+        assert_eq!(
+            error,
+            ConfigError::UnsupportedField {
+                field: "LiveNodeConfig.msgbus.external_streams".to_string(),
+                reason: RUST_RUNTIME_UNSUPPORTED.to_string(),
+            },
+        );
+        assert_eq!(
+            error.to_string(),
+            "LiveNodeConfig.msgbus.external_streams is not supported by the Rust live runtime yet"
         );
     }
 
@@ -1096,7 +1141,10 @@ mod tests {
     #[rstest]
     fn test_validate_runtime_support_collects_multiple_errors() {
         let config = LiveNodeConfig {
-            msgbus: Some(MessageBusConfig::default()),
+            msgbus: Some(MessageBusConfig {
+                external_streams: Some(vec!["stream".to_string()]),
+                ..Default::default()
+            }),
             loop_debug: true,
             ..Default::default()
         };
@@ -1109,7 +1157,7 @@ mod tests {
                 assert_eq!(
                     errors[0],
                     ConfigError::UnsupportedField {
-                        field: "LiveNodeConfig.msgbus".to_string(),
+                        field: "LiveNodeConfig.msgbus.external_streams".to_string(),
                         reason: RUST_RUNTIME_UNSUPPORTED.to_string(),
                     },
                 );

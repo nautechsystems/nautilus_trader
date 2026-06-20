@@ -1235,7 +1235,7 @@ impl CacheConfig {
     ) -> Self {
         Self::new(
             None, // database is None since we can't expose it to Python yet
-            encoding.unwrap_or(SerializationEncoding::MsgPack),
+            encoding.unwrap_or_default(),
             timestamps_as_iso8601.unwrap_or(false),
             buffer_interval_ms,
             bulk_read_batch_size,

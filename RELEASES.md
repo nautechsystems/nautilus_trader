@@ -16,6 +16,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added `Cache::try_currency` with `CurrencyLookupError` for typed missing-currency lookups (Rust)
 - Added `Cache::try_instrument` with `InstrumentLookupError` for typed missing-instrument lookups (Rust)
 - Added `Cache::try_order` with `OrderLookupError` for typed missing-order lookups (Rust)
+- Added external publish forwarding for Rust message bus publishers
 - Added Hyperliquid builder attribution opt-out
 - Added Hyperliquid historical trade requests
 - Added Hyperliquid minimum notional handling
@@ -26,6 +27,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added PyO3 instrument `tick_scheme` fields with Arrow persistence
 - Added Redis cache adapter order, position, and order-index write persistence (Rust)
 - Added SEC1 EC private key support to socket TLS configuration (Rust)
+- Added SBE and Cap'n Proto encodings for Rust-native message bus publishers
 - Added Tardis Lighter venue mapping
 - Added Tardis `options_chain` CSV loading, streaming, and catalog conversion
 - Added `order_position_index` Postgres table for the order-position index; run `make init-db` to migrate
@@ -33,17 +35,20 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added `add_native_exec_algorithm` and `ExecutionAlgorithmConfig` bindings to the Python v2 backtest engine
 - Added Python v2 `Strategy.order_factory` accessor and validating `OrderFactory` bindings
 - Added `Order::to_order_status_report` conversion in Rust
+- Added `with_msgbus_publisher` for Rust live-node and kernel builders
 - Added benchmark-relative portfolio stats (#4251), thanks @mahimn01
 
 ### Breaking Changes
 - Changed plug-in loader to reject build mismatches by default; opt out with `set_allow_build_mismatch` (Rust)
 - Changed Bybit `BybitHttpClient::submit_order` to take a trailing native TP/SL params argument; the PyO3 binding defaults it to `None` (Rust)
 - Changed `CacheDatabaseAdapter::load_index_order_position` to return position IDs instead of positions (Rust)
+- Changed default message bus/cache encoding to JSON; set `encoding="msgpack"` for MessagePack
 - Changed `PoolProfiler.price_sqrt_ratio_x96` to return `int` instead of `str`
 - Changed PyO3 `DataActor`/`Strategy` historical request `start`/`end` to require UTC datetimes
 - Changed Redis cache account/order/position storage to event logs; clear old typed state (Rust)
 - Changed Rust actor `self.clock()` to return `ClockApi`; call methods directly instead of borrowing
 - Changed Rust actor/strategy core access; use macros or native traits instead of `Deref`
+- Changed `SerializationEncoding` repr order to `Json=0`, `MsgPack=1`, `Capnp=2`, `Sbe=3`
 - Changed `SyntheticInstrument` fallible methods to return `SyntheticInstrumentError` instead of `anyhow::Error` (Rust)
 - Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)
 - Renamed `BitmexInstrumentType::StockPerpetual` to `TradFiPerpetual` (covers equities, FX, and commodities)
@@ -170,6 +175,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added developer-guide rate-limiting policy distinguishing data and execution paths
 - Updated plugins concept guide for panic recovery, build pinning, and UTF-8 validation semantics
 - Updated event sourcing guide for capture dedup, recovery resilience, and snapshot-anchor verification
+- Updated message bus docs for publisher forwarding, payload encoding, and JSON defaults
 - Updated commodity instrument and execution concept guides for negative price support
 - Updated OKX integration docs with EEA endpoint override guidance (#4250), thanks for reporting @msnatm-code
 

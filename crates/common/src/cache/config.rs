@@ -33,7 +33,7 @@ pub struct CacheConfig {
     /// The configuration for the cache backing database.
     pub database: Option<DatabaseConfig>,
     /// The encoding for database operations, controls the type of serializer used.
-    #[builder(default = SerializationEncoding::MsgPack)]
+    #[builder(default = SerializationEncoding::Json)]
     pub encoding: SerializationEncoding,
     /// If timestamps should be persisted as ISO 8601 strings.
     #[builder(default)]
@@ -156,6 +156,13 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_default_uses_json_encoding() {
+        let config = CacheConfig::default();
+
+        assert_eq!(config.encoding, SerializationEncoding::Json);
+    }
 
     #[rstest]
     #[case(0, 1)]

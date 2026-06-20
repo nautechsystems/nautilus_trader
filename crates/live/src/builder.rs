@@ -20,12 +20,12 @@ use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc, time::Duratio
 use nautilus_common::{
     cache::CacheConfig,
     clock::Clock,
-    enums::Environment,
+    enums::{Environment, SerializationEncoding},
     factories::{
         ClientConfig, DataClientFactory, ExecutionClientFactory, SimulatedExecutionClientFactory,
     },
     logging::logger::LoggerConfig,
-    msgbus::database::MessageBusConfig,
+    msgbus::{MessageBusPublisher, database::MessageBusConfig},
 };
 use nautilus_core::UUID4;
 use nautilus_data::client::DataClientAdapter;
@@ -69,6 +69,7 @@ pub struct LiveNodeBuilder {
     data_client_configs: HashMap<String, Box<dyn ClientConfig>>,
     exec_client_configs: HashMap<String, Box<dyn ClientConfig>>,
     event_store_factory: Option<EventStoreFactory>,
+    msgbus_publisher: Option<Box<dyn MessageBusPublisher>>,
 }
 
 impl Debug for LiveNodeBuilder {
@@ -81,6 +82,7 @@ impl Debug for LiveNodeBuilder {
             .field("data_client_configs", &self.data_client_configs.keys())
             .field("exec_client_configs", &self.exec_client_configs.keys())
             .field("event_store_factory", &self.event_store_factory.is_some())
+            .field("msgbus_publisher", &self.msgbus_publisher.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -113,6 +115,7 @@ impl LiveNodeBuilder {
             data_client_configs: HashMap::new(),
             exec_client_configs: HashMap::new(),
             event_store_factory: None,
+            msgbus_publisher: None,
         })
     }
 
@@ -137,6 +140,7 @@ impl LiveNodeBuilder {
             data_client_configs: HashMap::new(),
             exec_client_configs: HashMap::new(),
             event_store_factory: None,
+            msgbus_publisher: None,
         })
     }
 
@@ -312,6 +316,13 @@ impl LiveNodeBuilder {
         self
     }
 
+    /// Inject an external publisher for serialized message bus publications.
+    #[must_use]
+    pub fn with_msgbus_publisher(mut self, publisher: Box<dyn MessageBusPublisher>) -> Self {
+        self.msgbus_publisher = Some(publisher);
+        self
+    }
+
     /// Set the logging configuration.
     #[must_use]
     pub fn with_logging(mut self, logging: LoggerConfig) -> Self {
@@ -427,6 +438,17 @@ impl LiveNodeBuilder {
             None,
             self.event_store_factory.take(),
         )?;
+
+        if let Some(publisher) = self.msgbus_publisher {
+            let encoding = self
+                .config
+                .msgbus
+                .as_ref()
+                .map_or(SerializationEncoding::Json, |c| c.encoding);
+            nautilus_common::msgbus::get_message_bus()
+                .borrow_mut()
+                .set_publisher(publisher, encoding);
+        }
 
         for (name, factory) in self.data_client_factories {
             if let Some(config) = self.data_client_configs.remove(&name) {

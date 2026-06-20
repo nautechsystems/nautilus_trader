@@ -2187,8 +2187,12 @@ impl PendingEvents {
 mod tests {
     #[cfg(feature = "python")]
     use std::sync::Arc;
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+    };
 
+    use bytes::Bytes;
     #[cfg(feature = "python")]
     use nautilus_common::runner::{
         SyncDataCommandSender, SyncTradingCommandSender, replace_data_cmd_sender,
@@ -2197,11 +2201,16 @@ mod tests {
     use nautilus_common::{
         cache::Cache,
         clock::Clock,
-        msgbus::{self, MessagingSwitchboard, TypedIntoHandler},
+        enums::SerializationEncoding,
+        msgbus::{
+            self, MessageBusPublisher, MessagingSwitchboard, TypedIntoHandler,
+            database::MessageBusConfig,
+        },
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_execution::engine::{ExecutionEngine, SnapshotAnchorer};
     use nautilus_model::{
+        data::QuoteTick,
         enums::OrderType,
         identifiers::{AccountId, ClientId, InstrumentId, TraderId, VenueOrderId},
         instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
@@ -2210,6 +2219,7 @@ mod tests {
     };
     use nautilus_system::{KernelEventStore, RegisteredComponents, event_store::EventStoreConfig};
     use rstest::*;
+    use ustr::Ustr;
 
     use super::*;
 
@@ -2712,6 +2722,38 @@ mod tests {
             .with_delay_shutdown_secs(10);
 
         assert_eq!(builder.name(), "TestNode");
+    }
+
+    #[rstest]
+    fn test_builder_with_msgbus_publisher_uses_configured_encoding() {
+        let (publisher, publications, closed) = CapturingPublisher::new();
+        let msgbus_config = MessageBusConfig {
+            encoding: SerializationEncoding::Json,
+            ..Default::default()
+        };
+        let node = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_msgbus_config(msgbus_config)
+            .with_msgbus_publisher(Box::new(publisher))
+            .build()
+            .expect("node builds with msgbus publisher");
+        let quote = QuoteTick::default();
+
+        msgbus::publish_quote("data.quotes.TEST".into(), &quote);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.quotes.TEST");
+        assert_eq!(
+            serde_json::from_slice::<QuoteTick>(&publications[0].payload)
+                .expect("JSON payload must decode as QuoteTick"),
+            quote
+        );
+        drop(publications);
+
+        msgbus::get_message_bus().borrow_mut().dispose();
+        assert!(closed.get());
+        drop(node);
     }
 
     #[cfg(feature = "python")]
@@ -3243,5 +3285,51 @@ mod tests {
         assert!(
             matches!(&pending.order_evts[1], OrderEventAny::Canceled(c) if c.client_order_id == ClientOrderId::from("O-002"))
         );
+    }
+
+    #[derive(Debug)]
+    struct CapturedPublication {
+        topic: String,
+        payload: Bytes,
+    }
+
+    type CapturedPublications = Rc<RefCell<Vec<CapturedPublication>>>;
+    type SharedClosed = Rc<Cell<bool>>;
+
+    struct CapturingPublisher {
+        publications: CapturedPublications,
+        closed: SharedClosed,
+    }
+
+    impl CapturingPublisher {
+        fn new() -> (Self, CapturedPublications, SharedClosed) {
+            let publications = Rc::new(RefCell::new(Vec::new()));
+            let closed = Rc::new(Cell::new(false));
+            (
+                Self {
+                    publications: publications.clone(),
+                    closed: closed.clone(),
+                },
+                publications,
+                closed,
+            )
+        }
+    }
+
+    impl MessageBusPublisher for CapturingPublisher {
+        fn is_closed(&self) -> bool {
+            self.closed.get()
+        }
+
+        fn publish(&self, topic: Ustr, payload: Bytes) {
+            self.publications.borrow_mut().push(CapturedPublication {
+                topic: topic.to_string(),
+                payload,
+            });
+        }
+
+        fn close(&mut self) {
+            self.closed.set(true);
+        }
     }
 }

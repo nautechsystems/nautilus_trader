@@ -286,19 +286,48 @@ Here's a quick reference to help you decide which messaging style to use:
 
 ## External publishing
 
-The `MessageBus` can be *backed* with any database or message broker technology which has an
-integration written for it, this then enables external publishing of messages.
+The `MessageBus` can publish serialized messages to an external publisher. This section describes
+the outbound side of the external bus. Rust-native live nodes use an injected
+`MessageBusPublisher`, so the core node does not depend on a specific database, broker,
+shared-memory implementation, or socket protocol.
 
 :::info
-Redis is currently supported for all serializable messages which are published externally.
-The minimum supported Redis version is 6.2 (required for [streams](https://redis.io/docs/latest/develop/data-types/streams/) functionality).
+Redis is currently supported as one external publisher for serializable messages.
+The minimum supported Redis version is 6.2, required for
+[streams](https://redis.io/docs/latest/develop/data-types/streams/) functionality.
 :::
 
-Under the hood, when a backing database (or any other compatible technology) is configured,
-all outgoing messages are first serialized, then transmitted via a Multiple-Producer Single-Consumer (MPSC) channel to a separate thread (implemented in Rust).
-In this separate thread, the message is written to its final destination, which is presently Redis streams.
+When a publisher is configured, outgoing publish messages are first dispatched to in-process
+subscribers, then serialized into the existing `BusMessage` wire record:
+
+- `topic`: the exact message bus topic used by the internal publish call, for example
+  `data.quotes.BINANCE.BTCUSDT` or `events.order.S-001`.
+- `payload`: bytes encoded with `MessageBusConfig.encoding`, using JSON by default.
+
+The publisher receives that record as `publish(topic, payload)`. This outbound call must not block
+the node's bus thread. Bounded publishers drop on a full queue instead of applying back-pressure to
+the trading loop. Closing the message bus closes the configured publisher.
+
+Inbound external streams follow the same `BusMessage { topic, payload }` shape, but they are a
+separate live-node bridge: an external source yields `BusMessage`s, the node decodes the payload,
+checks the registered streaming type, and republishes internally without forwarding the message
+back out.
+
+For Redis, messages are transmitted via a Multiple-Producer Single-Consumer (MPSC) channel to a
+separate Rust task. That task writes the message to Redis streams.
 
 Offloading I/O to a separate thread keeps the main thread unblocked.
+
+With MessagePack or JSON, the Rust-native publisher forwards serializable typed publications. This
+includes instruments, quotes, trades, bars, book deltas, depth-10 snapshots, mark/index/funding
+updates, option greeks, account state, portfolio snapshots, order events, position events, and
+custom data. Full order book snapshots, greeks data, option chain slices, and DeFi pool swaps are
+not forwarded because those types do not implement Serde serialization.
+
+With SBE or Cap'n Proto, the Rust-native publisher forwards the built-in market data payloads with
+schema codecs: quotes, trades, bars, book deltas, depth-10 snapshots, mark price updates, index
+price updates, and funding rate updates. Other payload types are dropped with a debug log when
+those schema encodings are selected.
 
 ### Serialization
 
@@ -346,21 +375,35 @@ message_bus=MessageBusConfig(
 
 ### Database config
 
-A `DatabaseConfig` must be provided, for a default Redis setup on the local
-loopback you can pass a `DatabaseConfig()`, which will use defaults to match.
+A `DatabaseConfig` is required when using the built-in Redis publisher. For a default Redis setup
+on the local loopback you can pass a `DatabaseConfig()`, which uses matching defaults.
+
+Rust-native callers that inject a `MessageBusPublisher` pass concrete connection details when they
+construct that publisher. The core message bus does not require a `DatabaseConfig` for injected
+publishers.
+
+The Rust live runtime rejects `external_streams`, so inbound stream configuration is not silently
+ignored. The missing runtime piece is the Rust live bridge from inbound `BusMessage` sources to
+internal publish.
 
 ### Encoding
 
-Two encodings are currently supported by the built-in `Serializer` used by the `MessageBus`:
+The Rust-native message bus publisher supports these encoding names:
 
 - JSON (`json`)
 - MessagePack (`msgpack`)
+- Cap'n Proto (`capnp`, with the Rust `capnp` feature)
+- SBE (`sbe`, with the Rust `sbe` feature)
 
 Use the `encoding` config option to control the message writing encoding.
 
+The legacy Python/Cython Redis serializer and the Redis cache payload path support MessagePack and
+JSON. SBE and Cap'n Proto are schema payload encodings for Rust-native message bus publishers, not
+Redis cache encodings.
+
 :::tip
-The `msgpack` encoding is used by default as it offers the most optimal serialization and memory performance.
-We recommend using `json` encoding for human readability when performance is not a primary concern.
+The `json` encoding is used by default for human readability and interoperability.
+Use `msgpack` when payload size and serialization performance are a primary concern.
 :::
 
 ### Timestamp formatting
@@ -376,6 +419,11 @@ They can be tailored to meet your specific requirements and use cases. In the co
 ```
 trader:{trader_id}:{instance_id}:{streams_prefix}
 ```
+
+These options control Redis stream keys. They do not rewrite the `topic` passed to an injected
+`MessageBusPublisher`; that topic remains the internal message bus publish topic. When
+`stream_per_topic` is `True`, the Redis publisher appends the topic to the stream key. When it is
+`False`, Redis stores all messages on the base stream key and keeps the topic as a message field.
 
 The following options are available for configuring message stream keys:
 

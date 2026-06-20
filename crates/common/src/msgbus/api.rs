@@ -23,8 +23,13 @@
 //! - Publishing messages to subscribers.
 //! - Sending messages to endpoints.
 
-use std::{any::Any, cell::RefCell, thread::LocalKey};
+use std::{
+    any::Any,
+    cell::{Cell, RefCell},
+    thread::LocalKey,
+};
 
+use bytes::Bytes;
 use nautilus_core::UUID4;
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{
@@ -32,7 +37,7 @@ use nautilus_model::defi::{
 };
 use nautilus_model::{
     data::{
-        Bar, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
+        Bar, CustomData, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
         OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
@@ -42,15 +47,19 @@ use nautilus_model::{
     orders::OrderAny,
     position::Position,
 };
+#[cfg(feature = "sbe")]
+use nautilus_serialization::sbe::ToSbe;
+#[cfg(feature = "capnp")]
+use nautilus_serialization::{capnp::ToCapnp, market_capnp};
 use smallvec::SmallVec;
 use ustr::Ustr;
 
 use super::{
     ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BOOK_HANDLERS, DELTAS_HANDLERS,
-    DEPTH10_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP,
+    DEPTH10_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP, HAS_PUBLISHER,
     INDEX_PRICE_HANDLERS, INSTRUMENT_HANDLERS, MARK_PRICE_HANDLERS, OPTION_CHAIN_HANDLERS,
     OPTION_GREEKS_HANDLERS, ORDER_EVENT_HANDLERS, PORTFOLIO_SNAPSHOT_HANDLERS,
-    POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, TRADE_HANDLERS,
+    POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, SUPPRESS_EXTERNAL_DEPTH, TRADE_HANDLERS,
     core::{MessageBus, Subscription},
     dispatch_tap_publish, dispatch_tap_response, dispatch_tap_send, get_message_bus,
     matching::is_matching_backtracking,
@@ -63,9 +72,12 @@ use super::{
     DEFI_BLOCK_HANDLERS, DEFI_COLLECT_HANDLERS, DEFI_FLASH_HANDLERS, DEFI_LIQUIDITY_HANDLERS,
     DEFI_POOL_HANDLERS, DEFI_SWAP_HANDLERS,
 };
-use crate::messages::{
-    data::{DataCommand, DataResponse},
-    execution::{ExecutionReport, TradingCommand},
+use crate::{
+    enums::SerializationEncoding,
+    messages::{
+        data::{DataCommand, DataResponse},
+        execution::{ExecutionReport, TradingCommand},
+    },
 };
 
 /// Registers a handler for an endpoint using runtime type dispatch (Any).
@@ -952,6 +964,16 @@ pub fn publish_any(topic: MStr<Topic>, message: &dyn Any) {
 
     handlers.clear(); // Release refs before restore
     ANY_HANDLERS.with_borrow_mut(|buf| *buf = handlers);
+
+    let Some(custom) = message.downcast_ref::<CustomData>() else {
+        return;
+    };
+
+    forward_to_publisher(
+        topic,
+        BusPayloadType::Custom(custom.data.type_name()),
+        custom,
+    );
 }
 
 /// Tries to publish a message to the current thread's registered message bus.
@@ -996,6 +1018,8 @@ pub fn publish_instrument(topic: MStr<Topic>, instrument: &InstrumentAny) {
         |bus, h| bus.router_instruments.fill_matching_handlers(topic, h),
         instrument,
     );
+
+    forward_to_publisher(topic, BusPayloadType::Instrument, instrument);
 }
 
 /// Publishes order book deltas to subscribers on a topic.
@@ -1006,6 +1030,8 @@ pub fn publish_deltas(topic: MStr<Topic>, deltas: &OrderBookDeltas) {
         |bus, h| bus.router_deltas.fill_matching_handlers(topic, h),
         deltas,
     );
+
+    forward_to_publisher(topic, BusPayloadType::OrderBookDeltas, deltas);
 }
 
 /// Publishes order book depth10 to subscribers on a topic.
@@ -1016,6 +1042,8 @@ pub fn publish_depth10(topic: MStr<Topic>, depth: &OrderBookDepth10) {
         |bus, h| bus.router_depth10.fill_matching_handlers(topic, h),
         depth,
     );
+
+    forward_to_publisher(topic, BusPayloadType::OrderBookDepth10, depth);
 }
 
 /// Publishes an order book snapshot to subscribers on a topic.
@@ -1036,6 +1064,8 @@ pub fn publish_quote(topic: MStr<Topic>, quote: &QuoteTick) {
         |bus, h| bus.router_quotes.fill_matching_handlers(topic, h),
         quote,
     );
+
+    forward_to_publisher(topic, BusPayloadType::QuoteTick, quote);
 }
 
 /// Publishes a trade tick to subscribers on a topic.
@@ -1046,6 +1076,8 @@ pub fn publish_trade(topic: MStr<Topic>, trade: &TradeTick) {
         |bus, h| bus.router_trades.fill_matching_handlers(topic, h),
         trade,
     );
+
+    forward_to_publisher(topic, BusPayloadType::TradeTick, trade);
 }
 
 /// Publishes a bar to subscribers on a topic.
@@ -1056,6 +1088,8 @@ pub fn publish_bar(topic: MStr<Topic>, bar: &Bar) {
         |bus, h| bus.router_bars.fill_matching_handlers(topic, h),
         bar,
     );
+
+    forward_to_publisher(topic, BusPayloadType::Bar, bar);
 }
 
 /// Publishes a mark price update to subscribers on a topic.
@@ -1066,6 +1100,8 @@ pub fn publish_mark_price(topic: MStr<Topic>, mark_price: &MarkPriceUpdate) {
         |bus, h| bus.router_mark_prices.fill_matching_handlers(topic, h),
         mark_price,
     );
+
+    forward_to_publisher(topic, BusPayloadType::MarkPriceUpdate, mark_price);
 }
 
 /// Publishes an index price update to subscribers on a topic.
@@ -1076,6 +1112,8 @@ pub fn publish_index_price(topic: MStr<Topic>, index_price: &IndexPriceUpdate) {
         |bus, h| bus.router_index_prices.fill_matching_handlers(topic, h),
         index_price,
     );
+
+    forward_to_publisher(topic, BusPayloadType::IndexPriceUpdate, index_price);
 }
 
 /// Publishes a funding rate update to subscribers on a topic.
@@ -1086,6 +1124,8 @@ pub fn publish_funding_rate(topic: MStr<Topic>, funding_rate: &FundingRateUpdate
         |bus, h| bus.router_funding_rates.fill_matching_handlers(topic, h),
         funding_rate,
     );
+
+    forward_to_publisher(topic, BusPayloadType::FundingRateUpdate, funding_rate);
 }
 
 /// Publishes greeks data to subscribers on a topic.
@@ -1106,6 +1146,8 @@ pub fn publish_option_greeks(topic: MStr<Topic>, option_greeks: &OptionGreeks) {
         |bus, h| bus.router_option_greeks.fill_matching_handlers(topic, h),
         option_greeks,
     );
+
+    forward_to_publisher(topic, BusPayloadType::OptionGreeks, option_greeks);
 }
 
 /// Publishes an option chain slice to subscribers on a topic.
@@ -1126,6 +1168,8 @@ pub fn publish_account_state(topic: MStr<Topic>, state: &AccountState) {
         |bus, h| bus.router_account_state.fill_matching_handlers(topic, h),
         state,
     );
+
+    forward_to_publisher(topic, BusPayloadType::AccountState, state);
 }
 
 /// Publishes a portfolio snapshot to subscribers on a topic.
@@ -1138,6 +1182,8 @@ pub fn publish_portfolio_snapshot(topic: MStr<Topic>, snapshot: &PortfolioSnapsh
         },
         snapshot,
     );
+
+    forward_to_publisher(topic, BusPayloadType::PortfolioSnapshot, snapshot);
 }
 
 /// Publishes an order event to subscribers on a topic.
@@ -1148,6 +1194,8 @@ pub fn publish_order_event(topic: MStr<Topic>, event: &OrderEventAny) {
         |bus, h| bus.router_order_events.fill_matching_handlers(topic, h),
         event,
     );
+
+    forward_to_publisher(topic, BusPayloadType::OrderEvent, event);
 }
 
 /// Publishes a position event to subscribers on a topic.
@@ -1158,6 +1206,8 @@ pub fn publish_position_event(topic: MStr<Topic>, event: &PositionEvent) {
         |bus, h| bus.router_position_events.fill_matching_handlers(topic, h),
         event,
     );
+
+    forward_to_publisher(topic, BusPayloadType::PositionEvent, event);
 }
 
 /// Publishes a DeFi block to subscribers on a topic.
@@ -1169,6 +1219,8 @@ pub fn publish_defi_block(topic: MStr<Topic>, block: &Block) {
         |bus, h| bus.router_defi_blocks.fill_matching_handlers(topic, h),
         block,
     );
+
+    forward_to_publisher(topic, BusPayloadType::Block, block);
 }
 
 /// Publishes a DeFi pool to subscribers on a topic.
@@ -1180,6 +1232,8 @@ pub fn publish_defi_pool(topic: MStr<Topic>, pool: &Pool) {
         |bus, h| bus.router_defi_pools.fill_matching_handlers(topic, h),
         pool,
     );
+
+    forward_to_publisher(topic, BusPayloadType::Pool, pool);
 }
 
 /// Publishes a DeFi pool swap to subscribers on a topic.
@@ -1202,6 +1256,8 @@ pub fn publish_defi_liquidity(topic: MStr<Topic>, update: &PoolLiquidityUpdate) 
         |bus, h| bus.router_defi_liquidity.fill_matching_handlers(topic, h),
         update,
     );
+
+    forward_to_publisher(topic, BusPayloadType::PoolLiquidityUpdate, update);
 }
 
 /// Publishes a DeFi fee collect to subscribers on a topic.
@@ -1213,6 +1269,8 @@ pub fn publish_defi_collect(topic: MStr<Topic>, collect: &PoolFeeCollect) {
         |bus, h| bus.router_defi_collects.fill_matching_handlers(topic, h),
         collect,
     );
+
+    forward_to_publisher(topic, BusPayloadType::PoolFeeCollect, collect);
 }
 
 /// Publishes a DeFi flash loan to subscribers on a topic.
@@ -1224,6 +1282,307 @@ pub fn publish_defi_flash(topic: MStr<Topic>, flash: &PoolFlash) {
         |bus, h| bus.router_defi_flash.fill_matching_handlers(topic, h),
         flash,
     );
+
+    forward_to_publisher(topic, BusPayloadType::PoolFlash, flash);
+}
+
+#[inline(always)]
+fn forward_to_publisher<T>(topic: MStr<Topic>, payload_type: BusPayloadType<'_>, message: &T)
+where
+    T: serde::Serialize + Any,
+{
+    if !HAS_PUBLISHER.with(Cell::get) {
+        return;
+    }
+
+    forward_to_publisher_enabled(topic, payload_type, message);
+}
+
+#[cold]
+#[inline(never)]
+fn forward_to_publisher_enabled<T>(
+    topic: MStr<Topic>,
+    payload_type: BusPayloadType<'_>,
+    message: &T,
+) where
+    T: serde::Serialize + Any,
+{
+    if SUPPRESS_EXTERNAL_DEPTH.with(Cell::get) > 0 {
+        return;
+    }
+
+    let bus_rc = get_message_bus();
+    let bus = bus_rc.borrow();
+    let Some(publisher) = bus.publisher().filter(|publisher| !publisher.is_closed()) else {
+        return;
+    };
+
+    let type_name = payload_type.as_str();
+    if bus.types_filter().contains(type_name) {
+        return;
+    }
+
+    let payload = match encode_publisher_payload(bus.encoding(), payload_type, message) {
+        Ok(payload) => payload,
+        Err(PublisherPayloadError::Dropped(e)) => {
+            log::debug!("{e}");
+            return;
+        }
+        Err(PublisherPayloadError::Failed(e)) => {
+            log::error!("{e}");
+            return;
+        }
+    };
+
+    publisher.publish(*topic, payload);
+}
+
+#[derive(Debug)]
+enum PublisherPayloadError {
+    Dropped(String),
+    Failed(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum BusPayloadType<'a> {
+    Custom(&'a str),
+    Instrument,
+    OrderBookDeltas,
+    OrderBookDepth10,
+    QuoteTick,
+    TradeTick,
+    Bar,
+    MarkPriceUpdate,
+    IndexPriceUpdate,
+    FundingRateUpdate,
+    OptionGreeks,
+    AccountState,
+    PortfolioSnapshot,
+    OrderEvent,
+    PositionEvent,
+    #[cfg(feature = "defi")]
+    Block,
+    #[cfg(feature = "defi")]
+    Pool,
+    #[cfg(feature = "defi")]
+    PoolLiquidityUpdate,
+    #[cfg(feature = "defi")]
+    PoolFeeCollect,
+    #[cfg(feature = "defi")]
+    PoolFlash,
+}
+
+impl<'a> BusPayloadType<'a> {
+    const fn as_str(self) -> &'a str {
+        match self {
+            Self::Custom(type_name) => type_name,
+            Self::Instrument => "InstrumentAny",
+            Self::OrderBookDeltas => "OrderBookDeltas",
+            Self::OrderBookDepth10 => "OrderBookDepth10",
+            Self::QuoteTick => "QuoteTick",
+            Self::TradeTick => "TradeTick",
+            Self::Bar => "Bar",
+            Self::MarkPriceUpdate => "MarkPriceUpdate",
+            Self::IndexPriceUpdate => "IndexPriceUpdate",
+            Self::FundingRateUpdate => "FundingRateUpdate",
+            Self::OptionGreeks => "OptionGreeks",
+            Self::AccountState => "AccountState",
+            Self::PortfolioSnapshot => "PortfolioSnapshot",
+            Self::OrderEvent => "OrderEventAny",
+            Self::PositionEvent => "PositionEvent",
+            #[cfg(feature = "defi")]
+            Self::Block => "Block",
+            #[cfg(feature = "defi")]
+            Self::Pool => "Pool",
+            #[cfg(feature = "defi")]
+            Self::PoolLiquidityUpdate => "PoolLiquidityUpdate",
+            #[cfg(feature = "defi")]
+            Self::PoolFeeCollect => "PoolFeeCollect",
+            #[cfg(feature = "defi")]
+            Self::PoolFlash => "PoolFlash",
+        }
+    }
+}
+
+fn encode_publisher_payload<T>(
+    encoding: SerializationEncoding,
+    payload_type: BusPayloadType<'_>,
+    message: &T,
+) -> Result<Bytes, PublisherPayloadError>
+where
+    T: serde::Serialize + Any,
+{
+    let type_name = payload_type.as_str();
+
+    match encoding {
+        SerializationEncoding::Json => serde_json::to_vec(message).map(Bytes::from).map_err(|e| {
+            PublisherPayloadError::Failed(format!("JSON serialization failed for {type_name}: {e}"))
+        }),
+        SerializationEncoding::MsgPack => rmp_serde::to_vec_named(message)
+            .map(Bytes::from)
+            .map_err(|e| {
+                PublisherPayloadError::Failed(format!(
+                    "MsgPack serialization failed for {type_name}: {e}"
+                ))
+            }),
+        SerializationEncoding::Capnp => encode_capnp_payload(payload_type, message),
+        SerializationEncoding::Sbe => encode_sbe_payload(payload_type, message),
+    }
+}
+
+#[cfg(feature = "capnp")]
+macro_rules! encode_capnp_payload_as {
+    ($message:expr, $type_name:expr, $ty:ty, $root:ty) => {{
+        let Some(value) = $message.downcast_ref::<$ty>() else {
+            return Err(PublisherPayloadError::Failed(format!(
+                "Cap'n Proto payload type mismatch for {}",
+                $type_name
+            )));
+        };
+
+        let mut capnp_message = capnp::message::Builder::new_default();
+        let builder = capnp_message.init_root::<$root>();
+        value.to_capnp(builder);
+
+        let mut bytes = Vec::new();
+        capnp::serialize::write_message(&mut bytes, &capnp_message).map_err(|e| {
+            PublisherPayloadError::Failed(format!(
+                "Cap'n Proto serialization failed for {}: {}",
+                $type_name, e
+            ))
+        })?;
+        Ok(Bytes::from(bytes))
+    }};
+}
+
+#[cfg(feature = "capnp")]
+fn encode_capnp_payload(
+    payload_type: BusPayloadType<'_>,
+    message: &dyn Any,
+) -> Result<Bytes, PublisherPayloadError> {
+    let type_name = payload_type.as_str();
+    match payload_type {
+        BusPayloadType::OrderBookDeltas => encode_capnp_payload_as!(
+            message,
+            type_name,
+            OrderBookDeltas,
+            market_capnp::order_book_deltas::Builder
+        ),
+        BusPayloadType::OrderBookDepth10 => encode_capnp_payload_as!(
+            message,
+            type_name,
+            OrderBookDepth10,
+            market_capnp::order_book_depth10::Builder
+        ),
+        BusPayloadType::QuoteTick => encode_capnp_payload_as!(
+            message,
+            type_name,
+            QuoteTick,
+            market_capnp::quote_tick::Builder
+        ),
+        BusPayloadType::TradeTick => encode_capnp_payload_as!(
+            message,
+            type_name,
+            TradeTick,
+            market_capnp::trade_tick::Builder
+        ),
+        BusPayloadType::Bar => {
+            encode_capnp_payload_as!(message, type_name, Bar, market_capnp::bar::Builder)
+        }
+        BusPayloadType::MarkPriceUpdate => encode_capnp_payload_as!(
+            message,
+            type_name,
+            MarkPriceUpdate,
+            market_capnp::mark_price_update::Builder
+        ),
+        BusPayloadType::IndexPriceUpdate => encode_capnp_payload_as!(
+            message,
+            type_name,
+            IndexPriceUpdate,
+            market_capnp::index_price_update::Builder
+        ),
+        BusPayloadType::FundingRateUpdate => encode_capnp_payload_as!(
+            message,
+            type_name,
+            FundingRateUpdate,
+            market_capnp::funding_rate_update::Builder
+        ),
+        _ => Err(PublisherPayloadError::Dropped(format!(
+            "Cap'n Proto serialization is not supported for {type_name}"
+        ))),
+    }
+}
+
+#[cfg(not(feature = "capnp"))]
+fn encode_capnp_payload(
+    payload_type: BusPayloadType<'_>,
+    _message: &dyn Any,
+) -> Result<Bytes, PublisherPayloadError> {
+    let type_name = payload_type.as_str();
+    Err(PublisherPayloadError::Dropped(format!(
+        "Cap'n Proto serialization for {type_name} requires the `capnp` feature"
+    )))
+}
+
+#[cfg(feature = "sbe")]
+fn encode_sbe_payload(
+    payload_type: BusPayloadType<'_>,
+    message: &dyn Any,
+) -> Result<Bytes, PublisherPayloadError> {
+    let type_name = payload_type.as_str();
+    match payload_type {
+        BusPayloadType::OrderBookDeltas => {
+            encode_sbe_payload_as::<OrderBookDeltas>(type_name, message)
+        }
+        BusPayloadType::OrderBookDepth10 => {
+            encode_sbe_payload_as::<OrderBookDepth10>(type_name, message)
+        }
+        BusPayloadType::QuoteTick => encode_sbe_payload_as::<QuoteTick>(type_name, message),
+        BusPayloadType::TradeTick => encode_sbe_payload_as::<TradeTick>(type_name, message),
+        BusPayloadType::Bar => encode_sbe_payload_as::<Bar>(type_name, message),
+        BusPayloadType::MarkPriceUpdate => {
+            encode_sbe_payload_as::<MarkPriceUpdate>(type_name, message)
+        }
+        BusPayloadType::IndexPriceUpdate => {
+            encode_sbe_payload_as::<IndexPriceUpdate>(type_name, message)
+        }
+        BusPayloadType::FundingRateUpdate => {
+            encode_sbe_payload_as::<FundingRateUpdate>(type_name, message)
+        }
+        _ => Err(PublisherPayloadError::Dropped(format!(
+            "SBE serialization is not supported for {type_name}"
+        ))),
+    }
+}
+
+#[cfg(feature = "sbe")]
+fn encode_sbe_payload_as<T>(
+    type_name: &str,
+    message: &dyn Any,
+) -> Result<Bytes, PublisherPayloadError>
+where
+    T: Any + ToSbe,
+{
+    let Some(value) = message.downcast_ref::<T>() else {
+        return Err(PublisherPayloadError::Failed(format!(
+            "SBE payload type mismatch for {type_name}"
+        )));
+    };
+
+    value.to_sbe().map(Bytes::from).map_err(|e| {
+        PublisherPayloadError::Failed(format!("SBE serialization failed for {type_name}: {e}"))
+    })
+}
+
+#[cfg(not(feature = "sbe"))]
+fn encode_sbe_payload(
+    payload_type: BusPayloadType<'_>,
+    _message: &dyn Any,
+) -> Result<Bytes, PublisherPayloadError> {
+    let type_name = payload_type.as_str();
+    Err(PublisherPayloadError::Dropped(format!(
+        "SBE serialization for {type_name} requires the `sbe` feature"
+    )))
 }
 
 /// Publishes a message to typed handlers using thread-local buffer reuse.
@@ -1545,19 +1904,32 @@ mod tests {
     //! where `send_*` holds a borrow, calls the handler, and the handler needs to
     //! call `borrow_mut()` for topic getters or other operations.
 
-    use std::{cell::RefCell, rc::Rc, thread};
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+        thread,
+    };
 
+    use bytes::Bytes;
     use nautilus_core::UUID4;
     use nautilus_model::{
-        data::{Bar, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
+        data::{
+            Bar, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, stubs::stub_custom_data,
+        },
         enums::OrderSide,
         events::order::spec::OrderDeniedSpec,
         identifiers::{ClientId, InstrumentId, StrategyId, TraderId},
     };
+    #[cfg(feature = "sbe")]
+    use nautilus_serialization::sbe::FromSbe;
+    #[cfg(feature = "capnp")]
+    use nautilus_serialization::{capnp::FromCapnp, market_capnp};
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
     use crate::{
+        enums::SerializationEncoding,
         messages::{
             data::{
                 DataCommand, DataResponse, QuotesResponse, RequestCommand, RequestQuotes,
@@ -1566,9 +1938,308 @@ mod tests {
             execution::{CancelAllOrders, TradingCommand},
         },
         msgbus::{
-            BusTap, clear_bus_tap, set_bus_tap, set_message_bus, stubs::get_call_check_handler,
+            BusTap, MessageBusPublisher, SuppressExternalGuard, clear_bus_tap, set_bus_tap,
+            set_message_bus, stubs::get_call_check_handler,
         },
     };
+
+    #[derive(Debug)]
+    struct CapturedPublication {
+        topic: String,
+        payload: Bytes,
+    }
+
+    struct CapturingPublisher {
+        publications: Rc<RefCell<Vec<CapturedPublication>>>,
+        closed: Cell<bool>,
+    }
+
+    impl CapturingPublisher {
+        fn new() -> (Self, Rc<RefCell<Vec<CapturedPublication>>>) {
+            let publications = Rc::new(RefCell::new(Vec::new()));
+            (
+                Self {
+                    publications: publications.clone(),
+                    closed: Cell::new(false),
+                },
+                publications,
+            )
+        }
+    }
+
+    impl MessageBusPublisher for CapturingPublisher {
+        fn is_closed(&self) -> bool {
+            self.closed.get()
+        }
+
+        fn publish(&self, topic: Ustr, payload: Bytes) {
+            self.publications.borrow_mut().push(CapturedPublication {
+                topic: topic.to_string(),
+                payload,
+            });
+        }
+
+        fn close(&mut self) {
+            self.closed.set(true);
+        }
+    }
+
+    fn install_capturing_publisher(
+        encoding: SerializationEncoding,
+    ) -> Rc<RefCell<Vec<CapturedPublication>>> {
+        let msgbus = Rc::new(RefCell::new(MessageBus::default()));
+        set_message_bus(msgbus.clone());
+        let (publisher, publications) = CapturingPublisher::new();
+        msgbus
+            .borrow_mut()
+            .set_publisher(Box::new(publisher), encoding);
+        publications
+    }
+
+    fn reset_message_bus() {
+        get_message_bus().borrow_mut().dispose();
+        set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::MsgPack)]
+    #[case(SerializationEncoding::Json)]
+    fn publish_quote_forwards_decodable_payload_to_publisher(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let publications = install_capturing_publisher(encoding);
+        let quote = QuoteTick::default();
+
+        publish_quote("data.quotes.TEST".into(), &quote);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.quotes.TEST");
+
+        let decoded: QuoteTick = match encoding {
+            SerializationEncoding::MsgPack => rmp_serde::from_slice(&publications[0].payload)
+                .expect("MsgPack payload must decode as QuoteTick"),
+            SerializationEncoding::Json => serde_json::from_slice(&publications[0].payload)
+                .expect("JSON payload must decode as QuoteTick"),
+            SerializationEncoding::Sbe | SerializationEncoding::Capnp => {
+                unreachable!("schema encodings are tested separately")
+            }
+        };
+        let payload_value: serde_json::Value = match encoding {
+            SerializationEncoding::MsgPack => rmp_serde::from_slice(&publications[0].payload)
+                .expect("MsgPack payload must decode as a value"),
+            SerializationEncoding::Json => serde_json::from_slice(&publications[0].payload)
+                .expect("JSON payload must decode as a value"),
+            SerializationEncoding::Sbe | SerializationEncoding::Capnp => {
+                unreachable!("schema encodings are tested separately")
+            }
+        };
+        assert_eq!(
+            payload_value.get("type").and_then(|value| value.as_str()),
+            Some("QuoteTick")
+        );
+        assert_eq!(decoded, quote);
+        drop(publications);
+        reset_message_bus();
+    }
+
+    #[cfg(feature = "sbe")]
+    #[rstest]
+    fn publish_quote_sbe_forwards_decodable_payload_to_publisher() {
+        let publications = install_capturing_publisher(SerializationEncoding::Sbe);
+        let quote = QuoteTick::default();
+
+        publish_quote("data.quotes.TEST".into(), &quote);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.quotes.TEST");
+        assert_eq!(
+            QuoteTick::from_sbe(&publications[0].payload)
+                .expect("SBE payload must decode as QuoteTick"),
+            quote
+        );
+        drop(publications);
+        reset_message_bus();
+    }
+
+    #[cfg(not(feature = "sbe"))]
+    #[rstest]
+    fn publish_quote_sbe_without_feature_drops_payload() {
+        let publications = install_capturing_publisher(SerializationEncoding::Sbe);
+        let quote = QuoteTick::default();
+
+        publish_quote("data.quotes.TEST".into(), &quote);
+
+        assert!(publications.borrow().is_empty());
+        reset_message_bus();
+    }
+
+    #[cfg(feature = "capnp")]
+    #[rstest]
+    fn publish_quote_capnp_forwards_decodable_payload_to_publisher() {
+        let publications = install_capturing_publisher(SerializationEncoding::Capnp);
+        let quote = QuoteTick::default();
+
+        publish_quote("data.quotes.TEST".into(), &quote);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.quotes.TEST");
+        let reader = capnp::serialize::read_message(
+            &mut &publications[0].payload[..],
+            capnp::message::ReaderOptions::new(),
+        )
+        .expect("Cap'n Proto payload must be readable");
+        let root = reader
+            .get_root::<market_capnp::quote_tick::Reader>()
+            .expect("Cap'n Proto payload must have a QuoteTick root");
+        let decoded =
+            QuoteTick::from_capnp(root).expect("Cap'n Proto payload must decode as QuoteTick");
+        assert_eq!(decoded, quote);
+        drop(publications);
+        reset_message_bus();
+    }
+
+    #[cfg(not(feature = "capnp"))]
+    #[rstest]
+    fn publish_quote_capnp_without_feature_drops_payload() {
+        let publications = install_capturing_publisher(SerializationEncoding::Capnp);
+        let quote = QuoteTick::default();
+
+        publish_quote("data.quotes.TEST".into(), &quote);
+
+        assert!(publications.borrow().is_empty());
+        reset_message_bus();
+    }
+
+    #[cfg(feature = "sbe")]
+    #[rstest]
+    fn unsupported_payload_under_sbe_is_classified_as_dropped() {
+        let custom = stub_custom_data(100, 42, None, Some("stub-id".to_string()));
+
+        let error = encode_publisher_payload(
+            SerializationEncoding::Sbe,
+            BusPayloadType::Custom("StubCustomData"),
+            &custom,
+        )
+        .expect_err("unsupported SBE payload must be dropped");
+
+        assert!(matches!(error, PublisherPayloadError::Dropped(_)));
+    }
+
+    #[cfg(not(feature = "sbe"))]
+    #[rstest]
+    fn sbe_without_feature_is_classified_as_dropped() {
+        let quote = QuoteTick::default();
+
+        let error = encode_publisher_payload(
+            SerializationEncoding::Sbe,
+            BusPayloadType::QuoteTick,
+            &quote,
+        )
+        .expect_err("SBE without feature must be dropped");
+
+        assert!(matches!(error, PublisherPayloadError::Dropped(_)));
+    }
+
+    #[cfg(feature = "capnp")]
+    #[rstest]
+    fn unsupported_payload_under_capnp_is_classified_as_dropped() {
+        let custom = stub_custom_data(100, 42, None, Some("stub-id".to_string()));
+
+        let error = encode_publisher_payload(
+            SerializationEncoding::Capnp,
+            BusPayloadType::Custom("StubCustomData"),
+            &custom,
+        )
+        .expect_err("unsupported Cap'n Proto payload must be dropped");
+
+        assert!(matches!(error, PublisherPayloadError::Dropped(_)));
+    }
+
+    #[cfg(not(feature = "capnp"))]
+    #[rstest]
+    fn capnp_without_feature_is_classified_as_dropped() {
+        let quote = QuoteTick::default();
+
+        let error = encode_publisher_payload(
+            SerializationEncoding::Capnp,
+            BusPayloadType::QuoteTick,
+            &quote,
+        )
+        .expect_err("Cap'n Proto without feature must be dropped");
+
+        assert!(matches!(error, PublisherPayloadError::Dropped(_)));
+    }
+
+    #[rstest]
+    fn publish_quote_publisher_respects_filter_and_suppress_guard() {
+        let publications = install_capturing_publisher(SerializationEncoding::MsgPack);
+        let quote = QuoteTick::default();
+
+        get_message_bus()
+            .borrow_mut()
+            .set_types_filter(vec!["QuoteTick".to_string()]);
+        publish_quote("data.quotes.FILTERED".into(), &quote);
+
+        get_message_bus().borrow_mut().set_types_filter(Vec::new());
+        {
+            let _guard = SuppressExternalGuard::new();
+            publish_quote("data.quotes.SUPPRESSED".into(), &quote);
+        }
+        publish_quote("data.quotes.PUBLISHED".into(), &quote);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.quotes.PUBLISHED");
+        drop(publications);
+        reset_message_bus();
+    }
+
+    #[rstest]
+    fn publish_custom_data_forwards_envelope_to_publisher_and_respects_filter() {
+        let publications = install_capturing_publisher(SerializationEncoding::Json);
+        let custom = stub_custom_data(100, 42, None, Some("stub-id".to_string()));
+
+        publish_any("data.custom.StubCustomData".into(), &custom);
+
+        get_message_bus()
+            .borrow_mut()
+            .set_types_filter(vec!["StubCustomData".to_string()]);
+        publish_any("data.custom.FILTERED".into(), &custom);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.custom.StubCustomData");
+
+        let payload_value: serde_json::Value = serde_json::from_slice(&publications[0].payload)
+            .expect("JSON payload must decode as a CustomData envelope");
+        assert_eq!(
+            payload_value.get("type").and_then(|value| value.as_str()),
+            Some("StubCustomData")
+        );
+        assert_eq!(
+            payload_value
+                .pointer("/data_type/type_name")
+                .and_then(|value| value.as_str()),
+            Some("StubCustomData")
+        );
+        assert_eq!(
+            payload_value
+                .pointer("/data_type/identifier")
+                .and_then(|value| value.as_str()),
+            Some("stub-id")
+        );
+        assert_eq!(
+            payload_value
+                .pointer("/payload/value")
+                .and_then(serde_json::Value::as_i64),
+            Some(42)
+        );
+        drop(publications);
+        reset_message_bus();
+    }
 
     #[rstest]
     fn test_typed_quote_publish_subscribe_integration() {

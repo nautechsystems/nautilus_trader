@@ -385,7 +385,7 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     ----------
     database : DatabaseConfig, optional
         The configuration for the message bus backing database.
-    encoding : str, {'msgpack', 'json'}, default 'msgpack'
+    encoding : str, {'json', 'msgpack'}, default 'json'
         The encoding for database operations, controls the type of serializer used.
     timestamps_as_iso8601, default False
         If timestamps should be persisted as ISO 8601 strings.
@@ -424,7 +424,7 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     """
 
     database: DatabaseConfig | None = None
-    encoding: str = "msgpack"
+    encoding: str = "json"
     timestamps_as_iso8601: bool = False
     buffer_interval_ms: PositiveInt | None = None
     autotrim_mins: int | None = None
