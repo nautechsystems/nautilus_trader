@@ -11,7 +11,6 @@ mod either;
 #[cfg(feature = "rust_decimal")]
 mod rust_decimal;
 
-use maplit::hashset;
 use std::cmp::Ordering;
 use std::{
     collections::{HashMap, HashSet},
@@ -177,7 +176,7 @@ impl TypeInfo {
         Self {
             name: "typing.Any".to_string(),
             source_module: None,
-            import: hashset! { "typing".into() },
+            import: HashSet::from(["typing".into()]),
             type_refs: HashMap::new(),
         }
     }
@@ -303,7 +302,7 @@ impl TypeInfo {
         Self {
             name: format!("builtins.{name}"),
             source_module: None,
-            import: hashset! { "builtins".into() },
+            import: HashSet::from(["builtins".into()]),
             type_refs: HashMap::new(),
         }
     }
@@ -313,7 +312,7 @@ impl TypeInfo {
         Self {
             name: name.to_string(),
             source_module: None,
-            import: hashset! {},
+            import: HashSet::new(),
             type_refs: HashMap::new(),
         }
     }
@@ -600,23 +599,22 @@ pub trait PyStubType {
 #[cfg(test)]
 mod test {
     use super::*;
-    use maplit::hashset;
     use std::collections::HashMap;
     use test_case::test_case;
 
-    #[test_case(bool::type_input(), "builtins.bool", hashset! { "builtins".into() } ; "bool_input")]
-    #[test_case(<&str>::type_input(), "builtins.str", hashset! { "builtins".into() } ; "str_input")]
-    #[test_case(Vec::<u32>::type_input(), "typing.Sequence[builtins.int]", hashset! { "typing".into(), "builtins".into() } ; "Vec_u32_input")]
-    #[test_case(Vec::<u32>::type_output(), "builtins.list[builtins.int]", hashset! {  "builtins".into() } ; "Vec_u32_output")]
-    #[test_case(HashMap::<u32, String>::type_input(), "typing.Mapping[builtins.int, builtins.str]", hashset! { "typing".into(), "builtins".into() } ; "HashMap_u32_String_input")]
-    #[test_case(HashMap::<u32, String>::type_output(), "builtins.dict[builtins.int, builtins.str]", hashset! { "builtins".into() } ; "HashMap_u32_String_output")]
-    #[test_case(indexmap::IndexMap::<u32, String>::type_input(), "typing.Mapping[builtins.int, builtins.str]", hashset! { "typing".into(), "builtins".into() } ; "IndexMap_u32_String_input")]
-    #[test_case(indexmap::IndexMap::<u32, String>::type_output(), "builtins.dict[builtins.int, builtins.str]", hashset! { "builtins".into() } ; "IndexMap_u32_String_output")]
-    #[test_case(HashMap::<u32, Vec<u32>>::type_input(), "typing.Mapping[builtins.int, typing.Sequence[builtins.int]]", hashset! { "builtins".into(), "typing".into() } ; "HashMap_u32_Vec_u32_input")]
-    #[test_case(HashMap::<u32, Vec<u32>>::type_output(), "builtins.dict[builtins.int, builtins.list[builtins.int]]", hashset! { "builtins".into() } ; "HashMap_u32_Vec_u32_output")]
-    #[test_case(HashSet::<u32>::type_input(), "builtins.set[builtins.int]", hashset! { "builtins".into() } ; "HashSet_u32_input")]
-    #[test_case(indexmap::IndexSet::<u32>::type_input(), "builtins.set[builtins.int]", hashset! { "builtins".into() } ; "IndexSet_u32_input")]
-    #[test_case(TypeInfo::dict_of::<u32, String>(), "builtins.dict[builtins.int, builtins.str]", hashset! { "builtins".into() } ; "dict_of_u32_String")]
+    #[test_case(bool::type_input(), "builtins.bool", HashSet::from(["builtins".into()]) ; "bool_input")]
+    #[test_case(<&str>::type_input(), "builtins.str", HashSet::from(["builtins".into()]) ; "str_input")]
+    #[test_case(Vec::<u32>::type_input(), "typing.Sequence[builtins.int]", HashSet::from(["typing".into(), "builtins".into()]) ; "Vec_u32_input")]
+    #[test_case(Vec::<u32>::type_output(), "builtins.list[builtins.int]", HashSet::from(["builtins".into()]) ; "Vec_u32_output")]
+    #[test_case(HashMap::<u32, String>::type_input(), "typing.Mapping[builtins.int, builtins.str]", HashSet::from(["typing".into(), "builtins".into()]) ; "HashMap_u32_String_input")]
+    #[test_case(HashMap::<u32, String>::type_output(), "builtins.dict[builtins.int, builtins.str]", HashSet::from(["builtins".into()]) ; "HashMap_u32_String_output")]
+    #[test_case(indexmap::IndexMap::<u32, String>::type_input(), "typing.Mapping[builtins.int, builtins.str]", HashSet::from(["typing".into(), "builtins".into()]) ; "IndexMap_u32_String_input")]
+    #[test_case(indexmap::IndexMap::<u32, String>::type_output(), "builtins.dict[builtins.int, builtins.str]", HashSet::from(["builtins".into()]) ; "IndexMap_u32_String_output")]
+    #[test_case(HashMap::<u32, Vec<u32>>::type_input(), "typing.Mapping[builtins.int, typing.Sequence[builtins.int]]", HashSet::from(["builtins".into(), "typing".into()]) ; "HashMap_u32_Vec_u32_input")]
+    #[test_case(HashMap::<u32, Vec<u32>>::type_output(), "builtins.dict[builtins.int, builtins.list[builtins.int]]", HashSet::from(["builtins".into()]) ; "HashMap_u32_Vec_u32_output")]
+    #[test_case(HashSet::<u32>::type_input(), "builtins.set[builtins.int]", HashSet::from(["builtins".into()]) ; "HashSet_u32_input")]
+    #[test_case(indexmap::IndexSet::<u32>::type_input(), "builtins.set[builtins.int]", HashSet::from(["builtins".into()]) ; "IndexSet_u32_input")]
+    #[test_case(TypeInfo::dict_of::<u32, String>(), "builtins.dict[builtins.int, builtins.str]", HashSet::from(["builtins".into()]) ; "dict_of_u32_String")]
     fn test(tinfo: TypeInfo, name: &str, import: HashSet<ImportRef>) {
         assert_eq!(tinfo.name, name);
         if import.is_empty() {

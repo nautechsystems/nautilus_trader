@@ -346,7 +346,7 @@ fn register_quote_catalog(
     let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
     catalog
         .write_to_parquet(
-            vec![QuoteTick::new(
+            &[QuoteTick::new(
                 instrument_id,
                 Price::from("1.0000"),
                 Price::from("1.0001"),
@@ -374,7 +374,7 @@ fn register_trade_catalog(
     let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
     catalog
         .write_to_parquet(
-            vec![TradeTick::new(
+            &[TradeTick::new(
                 instrument_id,
                 Price::from("1.0000"),
                 Quantity::from(1),
@@ -402,7 +402,7 @@ fn register_bar_catalog(
     let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
     catalog
         .write_to_parquet(
-            vec![Bar::new(
+            &[Bar::new(
                 bar_type,
                 Price::from("1.0000"),
                 Price::from("1.0001"),
@@ -16375,7 +16375,7 @@ fn test_time_range_pipeline_child_uses_catalog_client_fanin(
     let _catalog_dir = register_quote_catalog_with_quotes(
         &mut data_engine,
         "time-range-split-quotes",
-        vec![split_quote(instrument_id, 1_500_000_000)],
+        &[split_quote(instrument_id, 1_500_000_000)],
         Some((1_000_000_000, 1_500_000_000)),
     );
     let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
@@ -18020,7 +18020,7 @@ fn test_request_join_all_empty_legs_emits_empty_parent(
 fn register_quote_catalog_with_quotes(
     data_engine: &mut DataEngine,
     label: &str,
-    quotes: Vec<QuoteTick>,
+    quotes: &[QuoteTick],
     interval: Option<(u64, u64)>,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
@@ -18038,7 +18038,7 @@ fn register_quote_catalog_with_quotes(
 fn register_trade_catalog_with_trades(
     data_engine: &mut DataEngine,
     label: &str,
-    trades: Vec<TradeTick>,
+    trades: &[TradeTick],
     interval: Option<(u64, u64)>,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
@@ -18056,7 +18056,7 @@ fn register_trade_catalog_with_trades(
 fn register_bar_catalog_with_bars(
     data_engine: &mut DataEngine,
     label: &str,
-    bars: Vec<Bar>,
+    bars: &[Bar],
     interval: Option<(u64, u64)>,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
@@ -18187,7 +18187,7 @@ fn split_funding_rate(instrument_id: InstrumentId, ts: u64, rate: &str) -> Fundi
 fn register_funding_catalog_with_rates(
     data_engine: &mut DataEngine,
     label: &str,
-    rates: Vec<FundingRateUpdate>,
+    rates: &[FundingRateUpdate],
     interval: Option<(u64, u64)>,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
@@ -18311,7 +18311,7 @@ fn test_request_quotes_catalog_only_serves_from_disk(
     let _catalog_dir = register_quote_catalog_with_quotes(
         &mut data_engine,
         "catalog-only",
-        vec![
+        &[
             split_quote(instrument_id, 1_000),
             split_quote(instrument_id, 2_000),
         ],
@@ -18423,7 +18423,7 @@ fn test_request_quotes_catalog_plus_client_split(
     let _catalog_dir = register_quote_catalog_with_quotes(
         &mut data_engine,
         "split-quotes",
-        vec![split_quote(instrument_id, 1_500)],
+        &[split_quote(instrument_id, 1_500)],
         Some((1_000, 1_500)),
     );
 
@@ -18532,7 +18532,7 @@ fn test_request_quotes_skip_catalog_data_param_honored(
     let _catalog_dir = register_quote_catalog_with_quotes(
         &mut data_engine,
         "skip-catalog",
-        vec![split_quote(instrument_id, 1_500)],
+        &[split_quote(instrument_id, 1_500)],
         Some((1_000, 1_500)),
     );
 
@@ -18635,7 +18635,7 @@ fn test_request_bars_catalog_lookup_uses_bar_type_identifier(
     let _catalog_dir = register_bar_catalog_with_bars(
         &mut data_engine,
         "bars-by-bar-type",
-        vec![split_bar(bar_type, 2_000)],
+        &[split_bar(bar_type, 2_000)],
         Some((1_000, 3_000)),
     );
 
@@ -18687,7 +18687,7 @@ fn test_request_trades_catalog_plus_client_split(
     let _catalog_dir = register_trade_catalog_with_trades(
         &mut data_engine,
         "split-trades",
-        vec![split_trade(instrument_id, 1_500, "T-1")],
+        &[split_trade(instrument_id, 1_500, "T-1")],
         Some((1_000, 1_500)),
     );
 
@@ -18827,7 +18827,7 @@ fn test_request_pipeline_count_resets_after_catalog_split_fanin(
     let _catalog_dir = register_quote_catalog_with_quotes(
         &mut data_engine,
         "pipeline-reset",
-        vec![split_quote(instrument_id, 1_500)],
+        &[split_quote(instrument_id, 1_500)],
         Some((1_000, 1_500)),
     );
 
@@ -18893,7 +18893,7 @@ fn test_request_quotes_dispatch_failure_aborts_pipeline(
     let _catalog_dir = register_quote_catalog_with_quotes(
         &mut data_engine,
         "abort-pipeline",
-        vec![split_quote(instrument_id, 1_500)],
+        &[split_quote(instrument_id, 1_500)],
         Some((1_000, 1_500)),
     );
 
@@ -18956,7 +18956,7 @@ fn test_request_trades_with_bar_types_param_sets_up_aggregation_through_streamin
     let _catalog_dir = register_trade_catalog_with_trades(
         &mut data_engine,
         "agg-trades",
-        vec![split_trade(instrument_id, 2_000, "agg-1")],
+        &[split_trade(instrument_id, 2_000, "agg-1")],
         Some((1_000, 2_000)),
     );
 
@@ -19006,7 +19006,7 @@ fn test_request_bars_catalog_plus_client_split(
     let _catalog_dir = register_bar_catalog_with_bars(
         &mut data_engine,
         "bars-split",
-        vec![split_bar(bar_type, 1_500)],
+        &[split_bar(bar_type, 1_500)],
         Some((1_000, 1_500)),
     );
 
@@ -19097,7 +19097,7 @@ fn test_request_funding_rates_catalog_only_serves_from_disk(
     let _catalog_dir = register_funding_catalog_with_rates(
         &mut data_engine,
         "funding-catalog-only",
-        vec![
+        &[
             split_funding_rate(instrument_id, 1_000, "0.0001"),
             split_funding_rate(instrument_id, 2_000, "0.0002"),
         ],
@@ -19152,7 +19152,7 @@ fn test_request_funding_rates_catalog_plus_client_split(
     let _catalog_dir = register_funding_catalog_with_rates(
         &mut data_engine,
         "funding-split",
-        vec![split_funding_rate(instrument_id, 1_500, "0.0001")],
+        &[split_funding_rate(instrument_id, 1_500, "0.0001")],
         Some((1_000, 1_500)),
     );
 
@@ -20192,7 +20192,7 @@ fn split_delta(instrument_id: InstrumentId, ts: u64) -> OrderBookDelta {
 fn register_deltas_catalog_with_deltas(
     data_engine: &mut DataEngine,
     label: &str,
-    deltas: Vec<OrderBookDelta>,
+    deltas: &[OrderBookDelta],
     interval: Option<(u64, u64)>,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
@@ -20224,7 +20224,7 @@ fn recorded_request_book_deltas(
 fn register_depth_catalog_with_depths(
     data_engine: &mut DataEngine,
     label: &str,
-    depths: Vec<OrderBookDepth10>,
+    depths: &[OrderBookDepth10],
     interval: Option<(u64, u64)>,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
@@ -20267,7 +20267,7 @@ fn test_request_book_deltas_catalog_only_serves_from_disk(
     let _catalog_dir = register_deltas_catalog_with_deltas(
         &mut data_engine,
         "deltas-catalog-only",
-        vec![
+        &[
             split_delta(instrument_id, 1_000),
             split_delta(instrument_id, 2_000),
         ],
@@ -20321,7 +20321,7 @@ fn test_request_book_deltas_catalog_plus_client_split(
     let _catalog_dir = register_deltas_catalog_with_deltas(
         &mut data_engine,
         "deltas-split",
-        vec![split_delta(instrument_id, 1_500)],
+        &[split_delta(instrument_id, 1_500)],
         Some((1_000, 1_500)),
     );
 
@@ -20515,7 +20515,7 @@ fn test_request_book_depth_catalog_only_serves_from_disk(
     let _catalog_dir = register_depth_catalog_with_depths(
         &mut data_engine,
         "depth-catalog-only",
-        vec![
+        &[
             book_depth_at(instrument_id, 1_000),
             book_depth_at(instrument_id, 2_000),
         ],
@@ -20570,7 +20570,7 @@ fn test_request_book_depth_catalog_plus_client_split(
     let _catalog_dir = register_depth_catalog_with_depths(
         &mut data_engine,
         "depth-split",
-        vec![book_depth_at(instrument_id, 1_500)],
+        &[book_depth_at(instrument_id, 1_500)],
         Some((1_000, 1_500)),
     );
 
@@ -20881,7 +20881,7 @@ fn test_book_deltas_request_replays_day_start_snapshot(
     let _catalog_dir = register_deltas_catalog_with_deltas(
         &mut data_engine,
         "deltas-replay-assemble",
-        vec![
+        &[
             book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
             book_replay_delta(instrument_id, 500, 0, "1.00010", 2),
             book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 3),
@@ -20957,7 +20957,7 @@ fn test_book_deltas_request_skips_replay_without_snapshot_flag(
     let _catalog_dir = register_deltas_catalog_with_deltas(
         &mut data_engine,
         "deltas-replay-noflag",
-        vec![
+        &[
             book_replay_delta(instrument_id, 0, 0, "1.00000", 1),
             book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
             book_replay_delta(instrument_id, 2_000, f_last, "1.00030", 3),
@@ -21021,7 +21021,7 @@ fn test_book_deltas_request_skips_replay_when_snapshot_not_on_day_boundary(
     let _catalog_dir = register_deltas_catalog_with_deltas(
         &mut data_engine,
         "deltas-replay-offboundary",
-        vec![
+        &[
             book_replay_delta(instrument_id, 500, f_snapshot | f_last, "1.00000", 1),
             book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
             book_replay_delta(instrument_id, 2_000, f_last, "1.00030", 3),
@@ -21083,7 +21083,7 @@ fn test_book_deltas_request_skips_replay_when_start_at_day_boundary(
     let _catalog_dir = register_deltas_catalog_with_deltas(
         &mut data_engine,
         "deltas-replay-atboundary",
-        vec![
+        &[
             book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
             book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
         ],
@@ -21145,7 +21145,7 @@ fn test_book_deltas_request_replays_end_snapshot_when_exhausted(
     let _catalog_dir = register_deltas_catalog_with_deltas(
         &mut data_engine,
         "deltas-replay-exhausted",
-        vec![
+        &[
             book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
             book_replay_delta(instrument_id, 500, f_last, "1.00010", 2),
         ],
@@ -21206,7 +21206,7 @@ fn test_book_deltas_request_from_day_start_false_skips_floor(
     let _catalog_dir = register_deltas_catalog_with_deltas(
         &mut data_engine,
         "deltas-replay-nofloor",
-        vec![
+        &[
             book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
             book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
             book_replay_delta(instrument_id, 2_000, f_last, "1.00030", 3),
@@ -21271,7 +21271,7 @@ fn test_book_deltas_replay_writes_assembled_snapshot_to_cache(
     let _catalog_dir = register_deltas_catalog_with_deltas(
         &mut data_engine,
         "deltas-replay-cache",
-        vec![
+        &[
             book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
             book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
         ],
@@ -21361,7 +21361,7 @@ fn test_book_deltas_replay_respects_cache_ownership(
     let _catalog_dir = register_deltas_catalog_with_deltas(
         &mut data_engine,
         "deltas-replay-owned",
-        vec![
+        &[
             book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
             book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
         ],

@@ -1,6 +1,5 @@
 use crate::generate::*;
 use crate::stub_type::ImportRef;
-use itertools::Itertools;
 use std::{
     any::TypeId,
     collections::{BTreeMap, BTreeSet},
@@ -79,7 +78,9 @@ impl Module {
 
                 // Generate imports (same logic as Display impl)
                 let mut type_ref_grouped: BTreeMap<String, Vec<String>> = BTreeMap::new();
-                for import_ref in imports.into_iter().sorted() {
+                let mut sorted_imports = imports.into_iter().collect::<Vec<_>>();
+                sorted_imports.sort();
+                for import_ref in sorted_imports {
                     match import_ref {
                         ImportRef::Module(module_ref) => {
                             let name = module_ref.get().unwrap_or(&self.module.default_module_name);
@@ -173,12 +174,16 @@ impl Module {
                 }
 
                 // Generate classes
-                for class in self.module.class.values().sorted_by_key(|class| class.name) {
+                let mut classes = self.module.class.values().collect::<Vec<_>>();
+                classes.sort_by_key(|class| class.name);
+                for class in classes {
                     class.fmt_for_module(&self.module.name, f)?;
                 }
 
                 // Generate enums
-                for enum_ in self.module.enum_.values().sorted_by_key(|enum_| enum_.name) {
+                let mut enums = self.module.enum_.values().collect::<Vec<_>>();
+                enums.sort_by_key(|enum_| enum_.name);
+                for enum_ in enums {
                     enum_.fmt_for_module(&self.module.name, f)?;
                 }
 
@@ -322,7 +327,9 @@ impl fmt::Display for Module {
 
         // To gather `from submod import A, B, C` style imports
         let mut type_ref_grouped: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for import_ref in imports.into_iter().sorted() {
+        let mut sorted_imports = imports.into_iter().collect::<Vec<_>>();
+        sorted_imports.sort();
+        for import_ref in sorted_imports {
             match import_ref {
                 ImportRef::Module(module_ref) => {
                     let name = module_ref.get().unwrap_or(&self.default_module_name);
@@ -411,10 +418,14 @@ impl fmt::Display for Module {
             var.fmt_for_module(&self.name, f)?;
             writeln!(f)?;
         }
-        for class in self.class.values().sorted_by_key(|class| class.name) {
+        let mut classes = self.class.values().collect::<Vec<_>>();
+        classes.sort_by_key(|class| class.name);
+        for class in classes {
             class.fmt_for_module(&self.name, f)?;
         }
-        for enum_ in self.enum_.values().sorted_by_key(|class| class.name) {
+        let mut enums = self.enum_.values().collect::<Vec<_>>();
+        enums.sort_by_key(|enum_| enum_.name);
+        for enum_ in enums {
             enum_.fmt_for_module(&self.name, f)?;
         }
         for functions in self.function.values() {

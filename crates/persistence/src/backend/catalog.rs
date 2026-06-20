@@ -59,7 +59,7 @@
 //! );
 //!
 //! // Write data to the catalog
-//! // catalog.write_to_parquet(data, None, None)?;
+//! // catalog.write_to_parquet(&data, None, None)?;
 //! ```
 
 use std::{
@@ -80,7 +80,6 @@ use datafusion::arrow::{
 };
 use futures::StreamExt;
 use indexmap::IndexSet;
-use itertools::Itertools;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{
     UnixNanos,
@@ -459,17 +458,17 @@ impl ParquetDataCatalog {
 
         // Instruments are handled separately via write_instruments method
 
-        self.write_to_parquet(deltas, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(depth10s, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(quotes, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(trades, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(bars, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(mark_prices, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(index_prices, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(funding_rates, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(statuses, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(option_greeks, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(closes, start, end, skip_disjoint_check)?;
+        self.write_to_parquet(&deltas, start, end, skip_disjoint_check)?;
+        self.write_to_parquet(&depth10s, start, end, skip_disjoint_check)?;
+        self.write_to_parquet(&quotes, start, end, skip_disjoint_check)?;
+        self.write_to_parquet(&trades, start, end, skip_disjoint_check)?;
+        self.write_to_parquet(&bars, start, end, skip_disjoint_check)?;
+        self.write_to_parquet(&mark_prices, start, end, skip_disjoint_check)?;
+        self.write_to_parquet(&index_prices, start, end, skip_disjoint_check)?;
+        self.write_to_parquet(&funding_rates, start, end, skip_disjoint_check)?;
+        self.write_to_parquet(&statuses, start, end, skip_disjoint_check)?;
+        self.write_to_parquet(&option_greeks, start, end, skip_disjoint_check)?;
+        self.write_to_parquet(&closes, start, end, skip_disjoint_check)?;
 
         for (_, items) in custom_data {
             self.write_custom_data_batch(items, start, end, skip_disjoint_check)?;
@@ -490,7 +489,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data`: Vector of data records to write (must be in ascending timestamp order).
+    /// - `data`: Data records to write (must be in ascending timestamp order).
     /// - `start`: Optional start timestamp to override the natural data range.
     /// - `end`: Optional end timestamp to override the natural data range.
     ///
@@ -523,13 +522,13 @@ impl ParquetDataCatalog {
     /// let catalog = ParquetDataCatalog::new(/* ... */);
     /// let quotes: Vec<QuoteTick> = vec![/* quote data */];
     ///
-    /// let path = catalog.write_to_parquet(quotes, None, None)?;
+    /// let path = catalog.write_to_parquet(&quotes, None, None)?;
     /// println!("Data written to: {:?}", path);
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn write_to_parquet<T>(
         &self,
-        data: Vec<T>,
+        data: &[T],
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         skip_disjoint_check: Option<bool>,
@@ -542,7 +541,7 @@ impl ParquetDataCatalog {
         }
 
         let type_name = to_snake_case(std::any::type_name::<T>());
-        Self::check_ascending_timestamps(&data, &type_name)?;
+        Self::check_ascending_timestamps(data, &type_name)?;
 
         let start_ts = start.unwrap_or(data.first().unwrap().ts_init());
         let end_ts = end.unwrap_or(data.last().unwrap().ts_init());
@@ -759,7 +758,7 @@ impl ParquetDataCatalog {
             };
             let start_ts = HasTsInit::ts_init(first_instrument);
             let end_ts = HasTsInit::ts_init(last_instrument);
-            let batches = self.data_to_record_batches(instrument_group)?;
+            let batches = self.data_to_record_batches(&instrument_group)?;
             if batches.is_empty() {
                 continue;
             }
@@ -1126,7 +1125,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data`: Vector of data records to convert.
+    /// - `data`: Data records to convert.
     ///
     /// # Returns
     ///
@@ -1135,16 +1134,15 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// Returns an error if record batch encoding fails for any chunk.
-    pub fn data_to_record_batches<T>(&self, data: Vec<T>) -> anyhow::Result<Vec<RecordBatch>>
+    pub fn data_to_record_batches<T>(&self, data: &[T]) -> anyhow::Result<Vec<RecordBatch>>
     where
         T: HasTsInit + EncodeToRecordBatch,
     {
         let mut batches = Vec::new();
 
-        for chunk in &data.into_iter().chunks(self.batch_size) {
-            let data = chunk.collect_vec();
-            let metadata = EncodeToRecordBatch::chunk_metadata(&data);
-            let record_batch = T::encode_batch(&metadata, &data)?;
+        for chunk in data.chunks(self.batch_size) {
+            let metadata = EncodeToRecordBatch::chunk_metadata(chunk);
+            let record_batch = T::encode_batch(&metadata, chunk)?;
             batches.push(record_batch);
         }
 

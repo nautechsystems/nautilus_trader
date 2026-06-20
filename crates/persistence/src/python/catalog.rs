@@ -150,9 +150,15 @@ impl PyParquetDataCatalog {
     ) -> PyResult<String> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
+        let data = data.into_boxed_slice();
 
         self.inner
-            .write_to_parquet(data, start_nanos, end_nanos, Some(skip_disjoint_check))
+            .write_to_parquet(
+                data.as_ref(),
+                start_nanos,
+                end_nanos,
+                Some(skip_disjoint_check),
+            )
             .map(|path| path.to_string_lossy().to_string())
             .map_err(|e| PyIOError::new_err(format!("Failed to write quote ticks: {e}")))
     }
@@ -178,9 +184,15 @@ impl PyParquetDataCatalog {
     ) -> PyResult<String> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
+        let data = data.into_boxed_slice();
 
         self.inner
-            .write_to_parquet(data, start_nanos, end_nanos, Some(skip_disjoint_check))
+            .write_to_parquet(
+                data.as_ref(),
+                start_nanos,
+                end_nanos,
+                Some(skip_disjoint_check),
+            )
             .map(|path| path.to_string_lossy().to_string())
             .map_err(|e| PyIOError::new_err(format!("Failed to write trade ticks: {e}")))
     }
@@ -206,9 +218,15 @@ impl PyParquetDataCatalog {
     ) -> PyResult<String> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
+        let data = data.into_boxed_slice();
 
         self.inner
-            .write_to_parquet(data, start_nanos, end_nanos, Some(skip_disjoint_check))
+            .write_to_parquet(
+                data.as_ref(),
+                start_nanos,
+                end_nanos,
+                Some(skip_disjoint_check),
+            )
             .map(|path| path.to_string_lossy().to_string())
             .map_err(|e| PyIOError::new_err(format!("Failed to write order book deltas: {e}")))
     }
@@ -234,9 +252,15 @@ impl PyParquetDataCatalog {
     ) -> PyResult<String> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
+        let data = data.into_boxed_slice();
 
         self.inner
-            .write_to_parquet(data, start_nanos, end_nanos, Some(skip_disjoint_check))
+            .write_to_parquet(
+                data.as_ref(),
+                start_nanos,
+                end_nanos,
+                Some(skip_disjoint_check),
+            )
             .map(|path| path.to_string_lossy().to_string())
             .map_err(|e| PyIOError::new_err(format!("Failed to write bars: {e}")))
     }
@@ -262,9 +286,15 @@ impl PyParquetDataCatalog {
     ) -> PyResult<String> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
+        let data = data.into_boxed_slice();
 
         self.inner
-            .write_to_parquet(data, start_nanos, end_nanos, Some(skip_disjoint_check))
+            .write_to_parquet(
+                data.as_ref(),
+                start_nanos,
+                end_nanos,
+                Some(skip_disjoint_check),
+            )
             .map(|path| path.to_string_lossy().to_string())
             .map_err(|e| PyIOError::new_err(format!("Failed to write order book depths: {e}")))
     }
@@ -290,9 +320,15 @@ impl PyParquetDataCatalog {
     ) -> PyResult<String> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
+        let data = data.into_boxed_slice();
 
         self.inner
-            .write_to_parquet(data, start_nanos, end_nanos, Some(skip_disjoint_check))
+            .write_to_parquet(
+                data.as_ref(),
+                start_nanos,
+                end_nanos,
+                Some(skip_disjoint_check),
+            )
             .map(|path| path.to_string_lossy().to_string())
             .map_err(|e| PyIOError::new_err(format!("Failed to write mark price updates: {e}")))
     }
@@ -318,9 +354,15 @@ impl PyParquetDataCatalog {
     ) -> PyResult<String> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
+        let data = data.into_boxed_slice();
 
         self.inner
-            .write_to_parquet(data, start_nanos, end_nanos, Some(skip_disjoint_check))
+            .write_to_parquet(
+                data.as_ref(),
+                start_nanos,
+                end_nanos,
+                Some(skip_disjoint_check),
+            )
             .map(|path| path.to_string_lossy().to_string())
             .map_err(|e| PyIOError::new_err(format!("Failed to write index price updates: {e}")))
     }
@@ -346,9 +388,15 @@ impl PyParquetDataCatalog {
     ) -> PyResult<String> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
+        let data = data.into_boxed_slice();
 
         self.inner
-            .write_to_parquet(data, start_nanos, end_nanos, Some(skip_disjoint_check))
+            .write_to_parquet(
+                data.as_ref(),
+                start_nanos,
+                end_nanos,
+                Some(skip_disjoint_check),
+            )
             .map(|path| path.to_string_lossy().to_string())
             .map_err(|e| PyIOError::new_err(format!("Failed to write option greeks: {e}")))
     }

@@ -1,10 +1,9 @@
 use super::{PyStubType, TypeInfo};
-use maplit::hashset;
 use numpy::{
     ndarray::Dimension, Element, PyArray, PyArrayDescr, PyReadonlyArray, PyReadwriteArray,
     PyUntypedArray,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 trait NumPyScalar {
     fn type_() -> TypeInfo;
@@ -17,7 +16,7 @@ macro_rules! impl_numpy_scalar {
                 TypeInfo {
                     name: format!("numpy.{}", $name),
                     source_module: None,
-                    import: hashset!["numpy".into()],
+                    import: HashSet::from(["numpy".into()]),
                     type_refs: HashMap::new(),
                 }
             }
@@ -58,7 +57,7 @@ impl PyStubType for PyUntypedArray {
         TypeInfo {
             name: "numpy.typing.NDArray[typing.Any]".into(),
             source_module: None,
-            import: hashset!["numpy.typing".into(), "typing".into()],
+            import: HashSet::from(["numpy.typing".into(), "typing".into()]),
             type_refs: HashMap::new(),
         }
     }
@@ -89,7 +88,7 @@ impl PyStubType for PyArrayDescr {
         TypeInfo {
             name: "numpy.dtype".into(),
             source_module: None,
-            import: hashset!["numpy".into()],
+            import: HashSet::from(["numpy".into()]),
             type_refs: HashMap::new(),
         }
     }

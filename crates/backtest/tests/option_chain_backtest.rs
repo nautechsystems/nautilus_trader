@@ -227,29 +227,22 @@ fn build_catalog() -> (
     // metadata), so each instrument must be written separately or the put rows would be relabelled
     // as calls. Per-instrument batches stay ascending in `ts_init` and land in disjoint directories.
     for id in [call_id, put_id] {
+        let quotes_for_instrument = quotes
+            .iter()
+            .filter(|q| q.instrument_id == id)
+            .copied()
+            .collect::<Vec<_>>();
         catalog
-            .write_to_parquet(
-                quotes
-                    .iter()
-                    .filter(|q| q.instrument_id == id)
-                    .copied()
-                    .collect(),
-                None,
-                None,
-                None,
-            )
+            .write_to_parquet(&quotes_for_instrument, None, None, None)
             .unwrap();
+
+        let greeks_for_instrument = greeks
+            .iter()
+            .filter(|g| g.instrument_id == id)
+            .copied()
+            .collect::<Vec<_>>();
         catalog
-            .write_to_parquet(
-                greeks
-                    .iter()
-                    .filter(|g| g.instrument_id == id)
-                    .copied()
-                    .collect(),
-                None,
-                None,
-                None,
-            )
+            .write_to_parquet(&greeks_for_instrument, None, None, None)
             .unwrap();
     }
 
