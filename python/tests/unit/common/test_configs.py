@@ -41,7 +41,7 @@ def test_cache_config_defaults():
         True,
     )
 
-    assert str(config.encoding) == "SerializationEncoding.MSG_PACK"
+    assert str(config.encoding) == "SerializationEncoding.JSON"
     assert config.timestamps_as_iso8601 is False
     assert config.buffer_interval_ms is None
     assert config.bulk_read_batch_size is None
