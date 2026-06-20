@@ -43,9 +43,9 @@ use nautilus_model::{
     data::{Bar, BarType, Data, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick},
     enums::{
         AccountType, AggressorSide, BookType, InstrumentCloseType, MarketStatusAction, OmsType,
-        OrderSide, OrderType,
+        OrderSide, OrderType, PositionSide,
     },
-    events::{AccountState, OrderEventAny, OrderFilled},
+    events::{AccountState, OrderEventAny, OrderFilled, PositionClosed, PositionEvent},
     identifiers::{AccountId, ClientId, InstrumentId, PositionId, TradeId, TraderId, Venue},
     instruments::{
         CryptoPerpetual, Instrument, InstrumentAny,
@@ -244,6 +244,128 @@ fn make_binary_option_instrument(
     binary.expiration_ns = UnixNanos::from(expiration_ns);
     binary.outcome = Some(Ustr::from(outcome));
     InstrumentAny::BinaryOption(binary)
+}
+
+fn create_binary_option_quote(instrument_id: InstrumentId) -> QuoteTick {
+    QuoteTick::new(
+        instrument_id,
+        Price::new(0.40, 3),
+        Price::new(0.41, 3),
+        Quantity::new(100.0, 2),
+        Quantity::new(100.0, 2),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+fn submit_open_position_and_seed_cache(
+    client: &SandboxExecutionClient,
+    cache: &Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    instrument: &InstrumentAny,
+    client_order_id: &str,
+    position_id: &str,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) -> Position {
+    submit_market_open_order(client, cache, trader_id, instrument, client_order_id, 10);
+
+    let mut filled = None;
+
+    for event in std::iter::from_fn(|| rx.try_recv().ok()) {
+        let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = event else {
+            continue;
+        };
+
+        if fill.client_order_id.as_str() == client_order_id {
+            filled = Some(fill);
+            break;
+        }
+    }
+
+    let fill_event =
+        OrderEventAny::Filled(filled.expect("expected opening fill from sandbox market order"));
+    cache.borrow_mut().update_order(&fill_event).unwrap();
+
+    let OrderEventAny::Filled(mut filled) = fill_event else {
+        unreachable!("constructed filled order event");
+    };
+    filled.position_id = Some(PositionId::new(position_id));
+    Position::new(instrument, filled)
+}
+
+fn position_closed_event(position: &Position, account_id: AccountId) -> PositionEvent {
+    PositionEvent::PositionClosed(PositionClosed {
+        trader_id: position.trader_id,
+        strategy_id: position.strategy_id,
+        instrument_id: position.instrument_id,
+        position_id: position.id,
+        account_id,
+        opening_order_id: position.opening_order_id,
+        closing_order_id: position.closing_order_id,
+        entry: position.entry,
+        side: PositionSide::Flat,
+        signed_qty: 0.0,
+        quantity: Quantity::zero(position.size_precision),
+        peak_quantity: position.peak_qty,
+        last_qty: Quantity::zero(position.size_precision),
+        last_px: Price::zero(position.price_precision),
+        currency: position.quote_currency,
+        avg_px_open: position.avg_px_open,
+        avg_px_close: position.avg_px_close,
+        realized_return: position.realized_return,
+        realized_pnl: position.realized_pnl,
+        unrealized_pnl: Money::zero(position.quote_currency),
+        duration: 1,
+        event_id: UUID4::new(),
+        ts_opened: position.ts_opened,
+        ts_closed: position.ts_closed.or(Some(position.ts_last)),
+        ts_event: position.ts_last,
+        ts_init: position.ts_last,
+    })
+}
+
+fn settle_position_from_expiration_fill(
+    cache: &Rc<RefCell<Cache>>,
+    position: &Position,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) -> Position {
+    let mut expiration_fill = None;
+
+    for event in std::iter::from_fn(|| rx.try_recv().ok()) {
+        let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = event else {
+            continue;
+        };
+
+        if fill.client_order_id.as_str().starts_with("EXPIRATION-") {
+            expiration_fill = Some(fill);
+            break;
+        }
+    }
+
+    let expiration_fill = expiration_fill.expect("expected expiration fill after InstrumentClose");
+
+    let mut closed = position.clone();
+    closed.apply(&expiration_fill);
+    cache.borrow_mut().update_position(&closed).unwrap();
+    closed
+}
+
+fn apply_order_events_from_channel(
+    cache: &Rc<RefCell<Cache>>,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) -> Vec<OrderEventAny> {
+    let mut order_events = Vec::new();
+
+    for event in std::iter::from_fn(|| rx.try_recv().ok()) {
+        let ExecutionEvent::Order(order_event) = event else {
+            continue;
+        };
+
+        let _ = cache.borrow_mut().update_order(&order_event);
+        order_events.push(order_event);
+    }
+
+    order_events
 }
 
 fn seed_binary_option_position_from_fill(
@@ -972,6 +1094,360 @@ fn test_instrument_status_lazy_creates_but_close_requires_existing_engine(
         1,
         "InstrumentClose should not lazy-create a matching engine from cache",
     );
+}
+
+#[rstest]
+fn test_instrument_close_finalizes_expired_engine_without_open_state(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let instrument = make_binary_option_instrument("0xFINALIZE", "0xYES", "Yes", 100);
+    let venue = instrument.id().venue;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    let config = create_config(trader_id, account_id, venue);
+    let core = ExecutionClientCore::new(
+        config.trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    client.start().unwrap();
+    client
+        .process_quote_tick(&create_binary_option_quote(instrument.id()))
+        .unwrap();
+    assert_eq!(client.matching_engine_count(), 1);
+
+    let _ = test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(200), true);
+
+    let close = InstrumentClose::new(
+        instrument.id(),
+        Price::from("1.000"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(200),
+        UnixNanos::from(200),
+    );
+    msgbus::publish_any(
+        nautilus_common::msgbus::switchboard::get_instrument_close_topic(instrument.id()),
+        &close,
+    );
+
+    assert_eq!(client.matching_engine_count(), 0);
+    assert!(cache.borrow().instrument(&instrument.id()).is_none());
+
+    client.stop().unwrap();
+}
+
+#[rstest]
+fn test_instrument_close_keeps_engine_until_position_closed(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let instrument = make_binary_option_instrument("0xSETTLE", "0xYES", "Yes", 100);
+    let venue = instrument.id().venue;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    let config = create_config(trader_id, account_id, venue);
+    let core = ExecutionClientCore::new(
+        config.trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+
+    set_exec_event_sender(tx);
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    client.start().unwrap();
+    client
+        .process_quote_tick(&create_binary_option_quote(instrument.id()))
+        .unwrap();
+    assert_eq!(client.matching_engine_count(), 1);
+
+    let position = submit_open_position_and_seed_cache(
+        &client,
+        &cache,
+        trader_id,
+        &instrument,
+        "OPEN-POSITION",
+        "P-OPEN-POSITION",
+        &mut rx,
+    );
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    let _ = test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(200), true);
+
+    let close = InstrumentClose::new(
+        instrument.id(),
+        Price::from("1.000"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(200),
+        UnixNanos::from(200),
+    );
+    msgbus::publish_any(
+        nautilus_common::msgbus::switchboard::get_instrument_close_topic(instrument.id()),
+        &close,
+    );
+
+    assert_eq!(client.matching_engine_count(), 1);
+    assert!(cache.borrow().instrument(&instrument.id()).is_some());
+
+    let closed = settle_position_from_expiration_fill(&cache, &position, &mut rx);
+    assert!(!cache.borrow().has_orders_open(
+        Some(&venue),
+        Some(&instrument.id()),
+        None,
+        None,
+        None,
+    ));
+    assert!(!cache.borrow().has_positions_open(
+        Some(&venue),
+        Some(&instrument.id()),
+        None,
+        None,
+        None,
+    ));
+    msgbus::publish_position_event(
+        "events.position.TEST".into(),
+        &position_closed_event(&closed, account_id),
+    );
+
+    assert_eq!(client.matching_engine_count(), 0);
+
+    client.stop().unwrap();
+}
+
+#[rstest]
+fn test_position_closed_finalize_ignores_other_account(trader_id: TraderId, account_id: AccountId) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let instrument = make_binary_option_instrument("0xACCOUNT", "0xYES", "Yes", 100);
+    let venue = instrument.id().venue;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    let config = create_config(trader_id, account_id, venue);
+    let core = ExecutionClientCore::new(
+        config.trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+
+    set_exec_event_sender(tx);
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    client.start().unwrap();
+    client
+        .process_quote_tick(&create_binary_option_quote(instrument.id()))
+        .unwrap();
+
+    let position = submit_open_position_and_seed_cache(
+        &client,
+        &cache,
+        trader_id,
+        &instrument,
+        "OPEN-ACCOUNT",
+        "P-OPEN-ACCOUNT",
+        &mut rx,
+    );
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    let _ = test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(200), true);
+
+    let close = InstrumentClose::new(
+        instrument.id(),
+        Price::from("1.000"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(200),
+        UnixNanos::from(200),
+    );
+    msgbus::publish_any(
+        nautilus_common::msgbus::switchboard::get_instrument_close_topic(instrument.id()),
+        &close,
+    );
+
+    let closed = settle_position_from_expiration_fill(&cache, &position, &mut rx);
+    msgbus::publish_position_event(
+        "events.position.TEST".into(),
+        &position_closed_event(&closed, AccountId::from("OTHER-001")),
+    );
+
+    assert_eq!(client.matching_engine_count(), 1);
+    assert!(cache.borrow().instrument(&instrument.id()).is_some());
+
+    client.stop().unwrap();
+}
+
+#[rstest]
+fn test_instrument_close_removes_resting_order_only_engine_before_cancel_event_applies(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let instrument = make_binary_option_instrument("0xRESTING", "0xYES", "Yes", 100);
+    let venue = instrument.id().venue;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    let config = create_config(trader_id, account_id, venue);
+    let core = ExecutionClientCore::new(
+        config.trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+
+    set_exec_event_sender(tx);
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    client.start().unwrap();
+    client
+        .process_quote_tick(&create_binary_option_quote(instrument.id()))
+        .unwrap();
+    assert_eq!(client.matching_engine_count(), 1);
+
+    let resting_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("0.050"))
+        .quantity(Quantity::from("1.00"))
+        .client_order_id("REST-CLOSE-ONLY".into())
+        .ts_init(UnixNanos::from(20))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(resting_order.clone(), None, None, false)
+        .unwrap();
+    client
+        .submit_order(SubmitOrder::from_order(
+            &resting_order,
+            trader_id,
+            Some(client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::from(20),
+        ))
+        .unwrap();
+
+    let order_events = apply_order_events_from_channel(&cache, &mut rx);
+    assert!(
+        order_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Accepted(accepted)
+                if accepted.client_order_id.as_str() == "REST-CLOSE-ONLY")),
+        "expected resting order acceptance before expiration",
+    );
+    assert!(
+        cache
+            .borrow()
+            .has_orders_open(Some(&venue), Some(&instrument.id()), None, None, None,)
+    );
+
+    let _ = test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(200), true);
+
+    let close = InstrumentClose::new(
+        instrument.id(),
+        Price::from("1.000"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(200),
+        UnixNanos::from(200),
+    );
+    msgbus::publish_any(
+        nautilus_common::msgbus::switchboard::get_instrument_close_topic(instrument.id()),
+        &close,
+    );
+
+    assert_eq!(
+        client.matching_engine_count(),
+        0,
+        "order-only expired instruments should release their matching engine immediately",
+    );
+    assert!(cache.borrow().instrument(&instrument.id()).is_some());
+
+    let order_events = apply_order_events_from_channel(&cache, &mut rx);
+    assert!(
+        order_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Canceled(canceled)
+                if canceled.client_order_id.as_str() == "REST-CLOSE-ONLY")),
+        "expected expiration to cancel the resting order",
+    );
+    assert!(!cache.borrow().has_orders_open(
+        Some(&venue),
+        Some(&instrument.id()),
+        None,
+        None,
+        None,
+    ));
+    assert_eq!(
+        client.matching_engine_count(),
+        0,
+        "cancellation replay should not recreate engine retention after close",
+    );
+    assert!(cache.borrow().instrument(&instrument.id()).is_some());
+
+    client.stop().unwrap();
 }
 
 #[rstest]
