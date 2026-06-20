@@ -149,27 +149,31 @@ See [Community-contributed integrations](/ROADMAP.md#community-contributed-integ
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/nautechsystems/nautilus_trader/badge)](https://scorecard.dev/viewer/?uri=github.com/nautechsystems/nautilus_trader)
 
-The OpenSSF Scorecard badge tracks automated repository-health signals. It complements manual
-review, CI hardening, and security audits rather than replacing them.
+Security is a priority for the NautilusTrader project, and we value the work of those who help
+identify and resolve vulnerabilities. We apply layered controls across the development and release
+lifecycle, with signed releases, continuous vulnerability management, and transparent development
+practices:
 
-NautilusTrader ships with signed releases, continuous vulnerability management, and transparent
-development practices, applying layered controls across the development and release lifecycle:
-
-- **Supply chain**: dependencies are pinned in lock files with checksums, third-party Python
-  packages install from wheels only (never built from source) and observe a publication cooldown
-  before entering the lock file, cargo-vet audits Rust dependency provenance, production Rust
-  dependencies come only from crates.io, and cargo-deny enforces Rust license compatibility.
-- **Code and dependency scanning**: CodeQL static analysis, cargo-audit, cargo-deny, pip-audit, and
-  OSV Scanner run on pull requests and nightly, alongside Gitleaks secret screening. cargo-fuzz
-  targets cover selected adapter and signing surfaces.
+- **Source and review controls**: CODEOWNERS gate critical infrastructure, dependency manifests, and
+  lock files; protected branches require signed commits and passing CI; release tags are immutable;
+  and Rust dependencies are sourced only from crates.io.
+- **Dependency intake**: lock files pin every dependency with cryptographic checksums, third-party
+  Python packages install from wheels only, new dependency and tooling versions observe a
+  publication cooldown before adoption, cargo-vet audits Rust provenance, and license checks enforce
+  LGPL-3.0-or-later compatibility.
+- **Scanning and fuzzing**: Gitleaks secret screening and Zizmor Actions auditing run pre-commit;
+  CodeQL, cargo-audit, cargo-deny, OSV Scanner, and pip-audit run on pull requests and nightly; and
+  cargo-fuzz targets cover selected adapter and signing surfaces.
 - **Build and release integrity**: GitHub Actions are pinned to commit SHAs, CI runners are hardened
-  with egress allow-listing, Python wheels and sdists carry SLSA build provenance, container images
-  are Sigstore-signed with attested SPDX SBOMs, and PyPI and crates.io publishing uses Trusted
-  Publishing (OIDC, no long-lived tokens), gated to the protected `release` environment that never runs
-  code from pull requests or forks.
+  with egress allow-listing, Python artifacts carry SLSA build provenance, container images are
+  Sigstore-signed with attested SPDX SBOMs, and PyPI and crates.io publishing uses OIDC Trusted
+  Publishing gated to a protected `release` environment that never runs pull request or fork code.
 - **Runtime cryptography**: TLS and most runtime cryptography use
   [aws-lc-rs](https://github.com/aws/aws-lc-rs), the Rust binding for AWS-LC, with Ed25519 signing
   via [ed25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek).
+
+The OpenSSF Scorecard badge above is one automated repository-health signal; it complements manual
+review, CI hardening, and security audits rather than replacing them.
 
 ### Reporting a vulnerability
 

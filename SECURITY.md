@@ -1,8 +1,10 @@
 # Security Policy
 
 Security is a priority for the NautilusTrader project, and we value the work of
-those who help identify and resolve vulnerabilities. If you have found a
-security issue, please follow the guidelines below.
+those who help identify and resolve vulnerabilities. We apply layered controls across the
+development and release lifecycle, with signed releases, continuous vulnerability management, and
+transparent development practices. If you have found a security issue, please follow the guidelines
+below.
 
 For our full security policies, see <https://nautilustrader.io/security/>.
 
@@ -65,8 +67,7 @@ do our best to properly recognize and credit your contributions.
 
 ## Security Infrastructure
 
-NautilusTrader employs multiple layers of security across the development and
-release lifecycle:
+The sections below detail the controls at each layer of that lifecycle.
 
 ### Public posture
 
@@ -92,8 +93,9 @@ release lifecycle:
   within the last 3 days via `exclude-newer` in `pyproject.toml`. Development tools are pinned to
   explicit versions across `tools.toml`, `Cargo.toml`, and related manifests, and version bumps are
   reviewed during security audits. Rust crate updates are reviewed through our cargo-vet audit
-  process and policy. The cooldown gives the community time to detect and quarantine compromised
-  releases.
+  process and policy, and in practice are not adopted within roughly 3 days of publication unless
+  they carry a security fix or are needed for development after extensive review. The cooldown gives
+  the community time to detect and quarantine compromised releases.
 - **Wheel-only Python installs**: The `no-build-package` list in `[tool.uv]` enumerates every
   third-party package locked in `uv.lock` and forbids `uv` from building any of them from source.
   In normal operation uv prefers wheels, so the setting is a no-op; it kicks in only if a listed
