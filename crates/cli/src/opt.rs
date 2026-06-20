@@ -160,6 +160,12 @@ pub enum BlockchainCommand {
         )]
         #[arg(long)]
         require_existing_snapshot: bool,
+        /// Checkpoint block numbers to snapshot in one pass (comma-separated, each at or below to-block)
+        #[arg(long, value_delimiter = ',')]
+        checkpoint_blocks: Vec<u64>,
+        /// Skip on-chain validation and persist replay-derived snapshots without the multicall compare
+        #[arg(long)]
+        skip_validation: bool,
         /// Maximum number of Multicall calls per RPC request (optional, defaults to 200)
         #[arg(long)]
         multicall_calls_per_rpc_request: Option<u32>,
@@ -208,6 +214,15 @@ pub enum BlockchainCommand {
         )]
         #[arg(long)]
         require_existing_snapshot: bool,
+        /// Checkpoint block numbers to snapshot in one pass (comma-separated, each at or below to-block)
+        #[arg(long, value_delimiter = ',')]
+        checkpoint_blocks: Vec<u64>,
+        /// Skip on-chain validation and persist replay-derived snapshots without the multicall compare
+        #[arg(long)]
+        skip_validation: bool,
+        /// Maximum number of pools to analyze concurrently (optional, defaults to 4)
+        #[arg(long)]
+        concurrency: Option<usize>,
         /// Maximum number of Multicall calls per RPC request (optional, defaults to 200)
         #[arg(long)]
         multicall_calls_per_rpc_request: Option<u32>,
@@ -276,6 +291,9 @@ mod tests {
                         rpc_url,
                         reset,
                         require_existing_snapshot,
+                        checkpoint_blocks,
+                        skip_validation,
+                        concurrency,
                         multicall_calls_per_rpc_request,
                         database,
                     },
@@ -295,6 +313,9 @@ mod tests {
                 assert_eq!(rpc_url.as_deref(), Some("http://localhost:8545"));
                 assert!(reset);
                 assert!(require_existing_snapshot);
+                assert!(checkpoint_blocks.is_empty());
+                assert!(!skip_validation);
+                assert_eq!(concurrency, None);
                 assert_eq!(multicall_calls_per_rpc_request, Some(25));
                 assert_eq!(database.host.as_deref(), Some("localhost"));
                 assert_eq!(database.port, Some(5433));

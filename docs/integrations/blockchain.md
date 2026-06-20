@@ -97,6 +97,37 @@ RPC_WSS_URL=wss://your-rpc.example
 `ENVIO_API_TOKEN` is required by the Rust HyperSync client. Missing or malformed tokens fail client
 construction before any query is sent.
 
+### RPC endpoints
+
+`RPC_HTTP_URL` (or `--rpc-url`) must point at an EVM JSON-RPC endpoint for the target chain. It is
+required, not optional: the data client resolves it at construction, and a first-time pool sync reads
+on-chain state through it. The HyperSync endpoint is derived per chain (`https://{chain_id}.hypersync.xyz`)
+and needs no separate URL.
+
+Verified free public HTTP endpoints (June 2026, no API key):
+
+| Chain        | HTTP endpoint                          | Archive |
+| ------------ | -------------------------------------- | ------- |
+| Arbitrum One | `https://arb1.arbitrum.io/rpc`         | No      |
+| Arbitrum One | `https://arbitrum.gateway.tenderly.co` | Yes     |
+| Ethereum     | `https://ethereum-rpc.publicnode.com`  | No      |
+
+Free archive endpoints exist (for example Tenderly above, Blast `https://arbitrum-one.public.blastapi.io`,
+and dRPC `https://arbitrum.drpc.org`). They are rate-limited, but snapshot validation hydrates only a
+handful of `eth_call`s per pool, so a free archive endpoint is enough to get `validation_state = on_chain`.
+
+Archive vs non-archive controls snapshot validation, not whether the sync runs:
+
+- On an archive node a historical-block snapshot validates against on-chain state and is stored with
+  `validation_state = on_chain`.
+- On a non-archive node the historical read fails and the snapshot is kept `validation_state = replay`,
+  which is still usable as a replay start point.
+- A first-time sync on a non-archive node must run to a recent `--to-block`, because the bootstrap
+  reads on-chain state at the target block; only recent state is served.
+
+For other chains or archive access, use a directory such as [chainlist.org](https://chainlist.org) or
+[comparenodes.com](https://www.comparenodes.com), or a keyed provider (Infura, Alchemy, dRPC).
+
 ## Local services
 
 The development compose file starts Postgres, Redis, and pgAdmin.
@@ -121,6 +152,56 @@ and snapshot tests can write many rows to `token`, `pool`, `pool_*_event`, `pool
 `pool_position`, and `pool_tick`.
 
 ## Data flow
+
+### Architecture
+
+The adapter draws on three backends: HyperSync (Envio) for high-throughput logs and events, HTTP RPC
+with Multicall3 for on-chain reads, and Postgres for the durable cache. `sync-dex` discovers and
+registers pools once; `analyze-pool(s)` then generates `pool_snapshot` rows, each carrying a
+`validation_state`.
+
+```mermaid
+flowchart TD
+    HS["HyperSync (Envio): logs and events"]
+    RPC["HTTP RPC + Multicall3: on-chain reads"]
+    PG[("Postgres cache")]
+
+    subgraph discovery["sync-dex (one-time discovery)"]
+        direction TB
+        D1["Stream factory PoolCreated logs"]
+        D2["Fetch ERC-20 token metadata"]
+        D3["Write pool and token rows"]
+        D1 --> D2 --> D3
+    end
+
+    subgraph analyze["analyze-pool(s) (snapshot generation, one task per pool)"]
+        direction TB
+        A1["sync_pool_events: Mint / Burn"]
+        A2["Bootstrap profiler: seed from latest usable snapshot, replay events forward"]
+        A3["extract_snapshot per --checkpoint-blocks"]
+        A4["Persist snapshot + ticks + positions"]
+        A5{"check_snapshot_validity"}
+        A1 --> A2 --> A3 --> A4 --> A5
+        A5 -->|"matches chain"| V1["validation_state = on_chain"]
+        A5 -->|"RPC cannot reach block, or --skip-validation"| V2["validation_state = replay"]
+        A5 -->|"structural mismatch"| V3["validation_state = invalid"]
+    end
+
+    R["Backtest replay: load latest usable snapshot (not invalid), replay forward"]
+
+    HS --> D1
+    RPC --> D2
+    D3 --> PG
+    HS --> A1
+    PG --> A2
+    A4 --> PG
+    RPC --> A5
+    PG --> R
+```
+
+`analyze-pools` runs each pool through the analyze pipeline concurrently, bounded by `--concurrency`;
+each pool uses its own data client and shares no state. A snapshot is usable as a replay start point
+unless its `validation_state` is `invalid`.
 
 ### Pool discovery
 
@@ -182,8 +263,9 @@ nautilus blockchain analyze-pools \
     --rpc-url "$RPC_HTTP_URL"
 ```
 
-`analyze-pools` prints one JSON result per pool. A pool that needs a first-time bootstrap has this
-shape:
+Both `analyze-pool` and `analyze-pools` print one JSON result per requested `--checkpoint-blocks`
+entry, or a single result at `--to-block` when none are given. A pool that needs a first-time
+bootstrap (under `--require-existing-snapshot`) has this shape:
 
 ```json
 {
@@ -195,8 +277,36 @@ shape:
 }
 ```
 
-The single-pool `analyze-pool` command preserves its existing success behavior and prints this JSON
-only for the `needs_bootstrap` result.
+A successful analysis reports `validation_state`, one of `on_chain` (hydrated and matched against
+chain), `replay` (replay-derived, not checked, still usable as a replay start point), or `invalid`
+(hydrated and mismatched, not usable):
+
+```json
+{
+  "chain": "Ethereum",
+  "dex": "UniswapV3",
+  "pool_address": "0x1111111111111111111111111111111111111111",
+  "target_block": 25218797,
+  "status": "success",
+  "snapshot_block": 25218790,
+  "positions": 2,
+  "ticks": 7,
+  "validation_state": "replay",
+  "already_valid": false,
+  "liquidity_utilization_rate": 0.25
+}
+```
+
+### Checkpoints and concurrency
+
+`--checkpoint-blocks b1,b2,...` produces a `pool_snapshot` at each block in a single bootstrap pass
+(sorted, deduped, clamped to `--to-block`), instead of one run per block. `analyze-pools` analyzes
+pools concurrently up to `--concurrency` (default 4), each with its own data client. `--skip-validation`
+skips the on-chain compare and keeps snapshots `replay`.
+
+Each snapshot is keyed to the last liquidity event at or before its checkpoint, so checkpoints with no
+events between them resolve to the same snapshot: every requested checkpoint still prints a result
+line, but they share one stored row (deduped on insert).
 
 ### Backtest replay
 
@@ -312,6 +422,54 @@ Expected result: one ignored test passes. On a live network this can take severa
 - Keep `ENVIO_API_TOKEN`, RPC keys, and Postgres credentials outside version control.
 - Use a separate Postgres database for repeatable DeFi test runs that write pool snapshots.
 - Treat failed final-state hydration as a hard failure for emitted snapshots.
+
+### Pool analysis prerequisites and gotchas
+
+These surface as `analyze-pool(s)` failures with a clear cause and fix.
+
+#### Discover pools before analysis
+
+`analyze-pool(s)` reads pool metadata from the cache and fails with `Pool <address> is not registered`
+if the pool was never discovered. Run `sync-dex` for the chain/DEX once to populate the `pool` table
+first.
+
+#### Use checksummed pool addresses
+
+Addresses must be EIP-55 checksummed; a lowercase address fails with
+`Blockchain address '<address>' has incorrect checksum`. Resolving a pool from
+`UniswapV3Factory.getPool` returns lowercase, so checksum it before passing `--address`.
+
+#### Lower the multicall batch on capped RPCs
+
+Public nodes enforce a per-call gas limit, so a large multicall returns `out of gas` and the adapter
+falls back to slow per-item fetches. Pass a smaller `--multicall-calls-per-rpc-request` (for example
+`50` on `https://arb1.arbitrum.io/rpc`) to keep batches under the cap.
+
+#### Use a recent target block on non-archive RPCs
+
+A first-time sync reads on-chain state at `--to-block`, and a non-archive node only serves recent
+state, so historical targets fail the on-chain read. See [RPC endpoints](#rpc-endpoints).
+
+#### HyperSync rate limits are shared per token
+
+A free Envio token caps requests per window (for example 40), and `--concurrency` makes all pools draw
+from that one budget at once, so high concurrency on a free token spends most of its time backing off
+(`rate limited by server (remaining=0/40 ...)`). Keep `--concurrency` low (or `1`) on a free token, or
+raise the limit with a paid plan. A full first-time sync of a large, long-lived pool needs many
+thousands of requests, so it is impractical on a free token regardless of concurrency.
+
+#### Pools with no liquidity events panic in extraction
+
+A pool with no processed Mint/Burn events up to the target block currently panics in snapshot
+extraction with `No events processed yet`. Under `analyze-pools` the panic is contained as a single
+per-pool failure and the other pools still complete; under single-pool `analyze-pool` it aborts the
+command. Choose pools with liquidity activity, or expect that one as a per-pool failure.
+
+#### Exit code does not reflect per-pool failures
+
+A failed pool is reported as a JSON line with `"status": "failure"`, but the process can still exit
+`0`, so a partial failure is not visible in the exit code. Parse each result line's `status` rather
+than relying on the exit status.
 
 ## Current limitations
 

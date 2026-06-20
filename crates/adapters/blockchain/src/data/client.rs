@@ -783,10 +783,11 @@ impl BlockchainDataClient {
                                     )
                                     .await?;
 
-                                // If snapshot is valid, send it back to the data engine.
+                                // If the snapshot is usable, send it back to the data engine.
                                 if core_client
                                     .check_snapshot_validity(&profiler, already_valid)
                                     .await?
+                                    .is_usable()
                                 {
                                     let snapshot_data =
                                         DataEvent::DeFi(DefiData::PoolSnapshot(snapshot));

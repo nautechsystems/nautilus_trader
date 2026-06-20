@@ -17,7 +17,7 @@ use std::{fs, sync::Arc};
 
 use nautilus_blockchain::{
     config::BlockchainDataClientConfig,
-    data::core::BlockchainDataClientCore,
+    data::core::{BlockchainDataClientCore, SnapshotValidation},
     exchanges::{find_dex_type_case_insensitive, get_supported_dexes_for_chain},
     rpc::providers::check_infura_rpc_provider,
 };
@@ -50,6 +50,8 @@ pub(crate) async fn run_analyze_pool(
     database: DatabaseConfig,
     reset: bool,
     require_existing_snapshot: bool,
+    checkpoint_blocks: Vec<u64>,
+    skip_validation: bool,
     multicall_calls_per_rpc_request: Option<u32>,
 ) -> anyhow::Result<()> {
     let (chain, dex_type) = parse_chain_dex(&chain, &dex)?;
@@ -65,7 +67,7 @@ pub(crate) async fn run_analyze_pool(
     .await?;
     let to_block = resolve_to_block(&data_client, to_block).await;
 
-    let outcome = analyze_pool_with_client(
+    let outcomes = analyze_pool_with_client(
         &mut data_client,
         dex_type,
         pool_address,
@@ -73,17 +75,25 @@ pub(crate) async fn run_analyze_pool(
         to_block,
         reset,
         require_existing_snapshot,
+        &checkpoint_blocks,
+        skip_validation,
     )
     .await?;
 
-    if matches!(outcome, PoolAnalysisOutcome::NeedsBootstrap(_)) {
+    for outcome in &outcomes {
         println!("{}", outcome.to_json(&chain_name, &dex_name));
     }
 
     Ok(())
 }
 
+/// Default number of pools analyzed concurrently when `--concurrency` is omitted.
+const DEFAULT_ANALYZE_CONCURRENCY: usize = 4;
+
 /// Runs pool analysis for several pool addresses in one initialized runtime.
+///
+/// Pools are analyzed concurrently up to `concurrency` at a time. Each pool runs with its own data
+/// client, so they share no state.
 ///
 /// # Errors
 ///
@@ -104,39 +114,97 @@ pub(crate) async fn run_analyze_pools(
     database: DatabaseConfig,
     reset: bool,
     require_existing_snapshot: bool,
+    checkpoint_blocks: Vec<u64>,
+    skip_validation: bool,
+    concurrency: Option<usize>,
     multicall_calls_per_rpc_request: Option<u32>,
 ) -> anyhow::Result<()> {
     let pool_addresses = load_pool_addresses(addresses, addresses_file)?;
     let (chain, dex_type) = parse_chain_dex(&chain, &dex)?;
-    let mut data_client = create_data_client(
-        chain.clone(),
-        dex_type,
-        rpc_url,
-        database,
-        multicall_calls_per_rpc_request,
-    )
-    .await?;
-    let to_block = resolve_to_block(&data_client, to_block).await;
     let chain_name = chain.name.to_string();
     let dex_name = dex_type.to_string();
 
-    let mut failures = 0usize;
+    // Resolve the target block once so every pool snapshots at the same tip when --to-block is omitted.
+    let to_block = if let Some(block) = to_block {
+        block
+    } else {
+        let data_client = create_data_client(
+            chain.clone(),
+            dex_type,
+            rpc_url.clone(),
+            database.clone(),
+            multicall_calls_per_rpc_request,
+        )
+        .await?;
+        resolve_to_block(&data_client, None).await
+    };
+
+    // Pools are independent (own RPC client, profiler state, and snapshot rows), so analyze them
+    // concurrently. The semaphore bounds parallelism against RPC rate limits and the Postgres
+    // connection count; tune with --concurrency.
+    // ponytail: one DB pool per worker; share a single sqlx pool if connection count bites.
+    let concurrency = concurrency.unwrap_or(DEFAULT_ANALYZE_CONCURRENCY).max(1);
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
+    // Pair each pool address with its task handle so a task that panics (e.g. the no-liquidity
+    // extract_snapshot panic) still maps to a structured per-pool failure line, not a bare log.
+    let mut tasks: Vec<(
+        String,
+        tokio::task::JoinHandle<anyhow::Result<Vec<PoolAnalysisOutcome>>>,
+    )> = Vec::with_capacity(pool_addresses.len());
 
     for pool_address in pool_addresses {
-        let result = analyze_pool_with_client(
-            &mut data_client,
-            dex_type,
-            pool_address.clone(),
-            from_block,
-            to_block,
-            reset,
-            require_existing_snapshot,
-        )
-        .await;
+        let permit = semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("semaphore is never closed");
+        let chain = chain.clone();
+        let rpc_url = rpc_url.clone();
+        let database = database.clone();
+        let checkpoint_blocks = checkpoint_blocks.clone();
+        let task_address = pool_address.clone();
+
+        let handle = tokio::spawn(async move {
+            let _permit = permit;
+            let mut data_client = create_data_client(
+                chain,
+                dex_type,
+                rpc_url,
+                database,
+                multicall_calls_per_rpc_request,
+            )
+            .await?;
+            analyze_pool_with_client(
+                &mut data_client,
+                dex_type,
+                pool_address,
+                from_block,
+                to_block,
+                reset,
+                require_existing_snapshot,
+                &checkpoint_blocks,
+                skip_validation,
+            )
+            .await
+        });
+        tasks.push((task_address, handle));
+    }
+
+    let mut failures = 0usize;
+
+    for (pool_address, handle) in tasks {
+        let result = match handle.await {
+            Ok(result) => result,
+            Err(join_error) => Err(anyhow::anyhow!(
+                "analysis task did not complete: {join_error}"
+            )),
+        };
 
         match result {
-            Ok(outcome) => {
-                println!("{}", outcome.to_json(&chain_name, &dex_name));
+            Ok(outcomes) => {
+                for outcome in &outcomes {
+                    println!("{}", outcome.to_json(&chain_name, &dex_name));
+                }
             }
             Err(e) => {
                 failures += 1;
@@ -162,6 +230,10 @@ pub(crate) async fn run_analyze_pools(
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "CLI command options map directly to clap fields"
+)]
 async fn analyze_pool_with_client(
     data_client: &mut BlockchainDataClientCore,
     dex_type: DexType,
@@ -170,74 +242,116 @@ async fn analyze_pool_with_client(
     to_block: u64,
     reset: bool,
     require_existing_snapshot: bool,
-) -> anyhow::Result<PoolAnalysisOutcome> {
+    checkpoint_blocks: &[u64],
+    skip_validation: bool,
+) -> anyhow::Result<Vec<PoolAnalysisOutcome>> {
     let pool_address = validate_address(&pool_address)?;
     let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
+
+    let checkpoints = if checkpoint_blocks.is_empty() {
+        vec![to_block]
+    } else {
+        let checkpoints = normalize_checkpoints(checkpoint_blocks, to_block);
+        if checkpoints.is_empty() {
+            anyhow::bail!("All --checkpoint-blocks exceed --to-block {to_block}");
+        }
+        checkpoints
+    };
+
+    // Bounded-replay mode: a usable snapshot must already exist at or before the first checkpoint,
+    // otherwise the caller wants needs_bootstrap rather than a full creation-to-target bootstrap.
+    let first_checkpoint = checkpoints[0];
     if require_existing_snapshot
-        && needs_bootstrap_before_target(data_client, &pool_identifier, to_block).await?
+        && needs_bootstrap_before_target(data_client, &pool_identifier, first_checkpoint).await?
     {
-        return Ok(PoolAnalysisOutcome::NeedsBootstrap(
+        return Ok(vec![PoolAnalysisOutcome::NeedsBootstrap(
             PoolNeedsBootstrapOutcome {
                 pool_address: pool_address.to_string(),
-                target_block: to_block,
+                target_block: first_checkpoint,
             },
-        ));
+        )]);
     }
 
+    // Sync once up to the final checkpoint, honoring reset/from_block. Each checkpoint then bootstraps
+    // incrementally from the previous checkpoint's snapshot, so one pass produces every snapshot.
+    let last_checkpoint = *checkpoints.last().expect("checkpoints is non-empty");
     data_client
         .sync_pool_events(
             &dex_type,
             pool_identifier,
             from_block,
-            Some(to_block),
+            Some(last_checkpoint),
             reset,
         )
         .await
         .map_err(|e| anyhow::anyhow!("Failed to sync pool events: {e}"))?;
 
-    log::info!("Profiling pool events from database...");
     let pool = data_client
         .cache
         .get_pool(&pool_identifier)
         .ok_or_else(|| anyhow::anyhow!("Pool {pool_identifier} not found in cache"))?
         .clone();
-    let (profiler, already_valid) = data_client
-        .bootstrap_latest_pool_profiler(&pool, Some(to_block))
-        .await?;
-    let snapshot = profiler.extract_snapshot();
-    let snapshot_block_position = snapshot.block_position.clone();
-    let positions = snapshot.positions.len();
-    let ticks = snapshot.ticks.len();
 
-    log::info!(
-        "Saving pool snapshot with {} positions and {} ticks to database...",
-        snapshot.positions.len(),
-        snapshot.ticks.len()
-    );
-    data_client
-        .cache
-        .add_pool_snapshot(&pool.dex.name, &pool.pool_identifier, &snapshot)
-        .await?;
-    log::info!("Saved complete pool snapshot to database");
-    let valid = data_client
-        .check_snapshot_validity(&profiler, already_valid)
-        .await?;
-    let liquidity_utilization_rate = profiler.liquidity_utilization_rate();
-    log::info!(
-        "Pool liquidity utilization rate is {:.4}%",
-        liquidity_utilization_rate * 100.0
-    );
+    let mut outcomes = Vec::with_capacity(checkpoints.len());
+    for checkpoint in checkpoints {
+        log::info!("Profiling pool {pool_identifier} to checkpoint block {checkpoint}");
+        let (profiler, already_valid) = data_client
+            .bootstrap_latest_pool_profiler(&pool, Some(checkpoint))
+            .await?;
+        let snapshot = profiler.extract_snapshot();
+        let snapshot_block_position = snapshot.block_position.clone();
+        let positions = snapshot.positions.len();
+        let ticks = snapshot.ticks.len();
 
-    Ok(PoolAnalysisOutcome::Success(PoolAnalysisSuccessOutcome {
-        pool_address: pool_address.to_string(),
-        target_block: to_block,
-        snapshot_block_position,
-        positions,
-        ticks,
-        valid,
-        already_valid,
-        liquidity_utilization_rate,
-    }))
+        log::info!(
+            "Saving pool snapshot with {positions} positions and {ticks} ticks to database..."
+        );
+        data_client
+            .cache
+            .add_pool_snapshot(&pool.dex.name, &pool.pool_identifier, &snapshot)
+            .await?;
+
+        let validation = if skip_validation {
+            SnapshotValidation::Replay
+        } else {
+            data_client
+                .check_snapshot_validity(&profiler, already_valid)
+                .await?
+        };
+
+        let liquidity_utilization_rate = profiler.liquidity_utilization_rate();
+        log::info!(
+            "Pool liquidity utilization rate is {:.4}%",
+            liquidity_utilization_rate * 100.0
+        );
+
+        outcomes.push(PoolAnalysisOutcome::Success(PoolAnalysisSuccessOutcome {
+            pool_address: pool_address.to_string(),
+            target_block: checkpoint,
+            snapshot_block_position,
+            positions,
+            ticks,
+            validation,
+            already_valid,
+            liquidity_utilization_rate,
+        }));
+    }
+
+    Ok(outcomes)
+}
+
+/// Sorts, dedups, and clamps requested checkpoint blocks to `to_block`.
+///
+/// Checkpoints above `to_block` are dropped; they cannot be snapshotted in this pass.
+fn normalize_checkpoints(checkpoint_blocks: &[u64], to_block: u64) -> Vec<u64> {
+    let mut checkpoints: Vec<u64> = checkpoint_blocks
+        .iter()
+        .copied()
+        .filter(|&block| block <= to_block)
+        .collect();
+    checkpoints.sort_unstable();
+    checkpoints.dedup();
+    checkpoints
 }
 
 async fn needs_bootstrap_before_target(
@@ -393,7 +507,7 @@ struct PoolAnalysisSuccessOutcome {
     snapshot_block_position: BlockPosition,
     positions: usize,
     ticks: usize,
-    valid: bool,
+    validation: SnapshotValidation,
     already_valid: bool,
     liquidity_utilization_rate: f64,
 }
@@ -418,7 +532,7 @@ impl PoolAnalysisOutcome {
                 "snapshot_log_index": outcome.snapshot_block_position.log_index,
                 "positions": outcome.positions,
                 "ticks": outcome.ticks,
-                "valid": outcome.valid,
+                "validation_state": outcome.validation.as_str(),
                 "already_valid": outcome.already_valid,
                 "liquidity_utilization_rate": outcome.liquidity_utilization_rate,
             }),
@@ -498,6 +612,58 @@ mod tests {
     }
 
     #[rstest]
+    fn analyze_pools_cli_parses_checkpoint_blocks_and_concurrency() {
+        let cli = NautilusCli::try_parse_from([
+            "nautilus",
+            "blockchain",
+            "analyze-pools",
+            "--chain",
+            "ethereum",
+            "--dex",
+            "UniswapV3",
+            "--address",
+            "0x1111111111111111111111111111111111111111",
+            "--to-block",
+            "500",
+            "--checkpoint-blocks",
+            "100,200,300",
+            "--skip-validation",
+            "--concurrency",
+            "8",
+            "--rpc-url",
+            "http://localhost:8545",
+            "--host",
+            "localhost",
+            "--port",
+            "5433",
+            "--username",
+            "postgres",
+            "--database",
+            "nautilus",
+            "--password",
+            "secret",
+        ])
+        .unwrap();
+
+        match cli.command {
+            crate::opt::Commands::Blockchain(crate::opt::BlockchainOpt {
+                command:
+                    crate::opt::BlockchainCommand::AnalyzePools {
+                        checkpoint_blocks,
+                        skip_validation,
+                        concurrency,
+                        ..
+                    },
+            }) => {
+                assert_eq!(checkpoint_blocks, vec![100, 200, 300]);
+                assert!(skip_validation);
+                assert_eq!(concurrency, Some(8));
+            }
+            _ => panic!("Expected analyze-pools blockchain command"),
+        }
+    }
+
+    #[rstest]
     fn load_pool_addresses_merges_cli_and_file_entries_in_order() {
         let addresses_file = write_addresses_file(
             "
@@ -563,7 +729,7 @@ mod tests {
             snapshot_block_position: BlockPosition::new(25_218_797, "0xabc".to_string(), 3, 4),
             positions: 2,
             ticks: 7,
-            valid: true,
+            validation: SnapshotValidation::OnChain,
             already_valid: false,
             liquidity_utilization_rate: 0.25,
         });
@@ -581,7 +747,7 @@ mod tests {
                 "snapshot_log_index": 4,
                 "positions": 2,
                 "ticks": 7,
-                "valid": true,
+                "validation_state": "on_chain",
                 "already_valid": false,
                 "liquidity_utilization_rate": 0.25,
             })
@@ -611,6 +777,19 @@ mod tests {
             is_empty_creation_snapshot(&snapshot, creation_block),
             expected
         );
+    }
+
+    #[rstest]
+    #[case(vec![300, 100, 200], 500, vec![100, 200, 300])]
+    #[case(vec![100, 100, 200], 500, vec![100, 200])]
+    #[case(vec![100, 600, 200], 500, vec![100, 200])]
+    #[case(vec![600, 700], 500, Vec::<u64>::new())]
+    fn normalize_checkpoints_sorts_dedups_and_clamps(
+        #[case] input: Vec<u64>,
+        #[case] to_block: u64,
+        #[case] expected: Vec<u64>,
+    ) {
+        assert_eq!(normalize_checkpoints(&input, to_block), expected);
     }
 
     fn write_addresses_file(contents: &str) -> PathBuf {

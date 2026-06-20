@@ -1734,9 +1734,10 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to update pool initial price and tick: {e}"))
     }
 
-    /// Loads the latest valid pool snapshot from the database.
+    /// Loads the latest usable pool snapshot from the database.
     ///
-    /// Returns the most recent snapshot that has been validated against on-chain state.
+    /// Returns the most recent snapshot usable as a replay start point: on-chain validated or
+    /// replay-derived. Snapshots that failed on-chain validation are excluded.
     ///
     /// # Errors
     ///
@@ -1753,8 +1754,9 @@ impl BlockchainCacheDatabase {
     /// Loads the latest pool snapshot from the database, optionally bounded by block.
     ///
     /// When `max_block` is `Some`, only snapshots at or before that block are considered, so a
-    /// backtest can restore pool state as of a replay start. When `require_valid` is `true`, only
-    /// snapshots validated against on-chain state are considered.
+    /// backtest can restore pool state as of a replay start. When `require_valid` is `true`,
+    /// snapshots that failed on-chain validation are excluded (both on-chain validated and
+    /// replay-derived snapshots are returned).
     ///
     /// # Errors
     ///
@@ -1786,7 +1788,7 @@ impl BlockchainCacheDatabase {
             FROM pool_snapshot
             WHERE chain_id = $1 AND pool_identifier = $2
                 AND ($3::BIGINT IS NULL OR block <= $3)
-                AND ($4 OR is_valid = TRUE)
+                AND ($4 OR validation_state <> 'invalid')
             ORDER BY block DESC, transaction_index DESC, log_index DESC
             LIMIT 1
             ",
@@ -1903,23 +1905,27 @@ impl BlockchainCacheDatabase {
         }
     }
 
-    /// Marks a pool snapshot as valid after successful on-chain verification.
+    /// Sets the validation state of a pool snapshot after a validation attempt.
+    ///
+    /// `state` is one of `on_chain` (hydrated and matched), `replay` (replay-derived, not checked),
+    /// or `invalid` (hydrated and mismatched).
     ///
     /// # Errors
     ///
     /// Returns an error if the database operation fails.
-    pub async fn mark_pool_snapshot_valid(
+    pub async fn set_pool_snapshot_validation_state(
         &self,
         chain_id: u32,
         pool_identifier: &PoolIdentifier,
         block: u64,
         transaction_index: u32,
         log_index: u32,
+        state: &str,
     ) -> anyhow::Result<()> {
         sqlx::query(
             "
             UPDATE pool_snapshot
-            SET is_valid = TRUE
+            SET validation_state = $6
             WHERE chain_id = $1
             AND pool_identifier = $2
             AND block = $3
@@ -1932,10 +1938,11 @@ impl BlockchainCacheDatabase {
         .bind(block as i64)
         .bind(transaction_index as i32)
         .bind(log_index as i32)
+        .bind(state)
         .execute(&self.pool)
         .await
         .map(|_| ())
-        .map_err(|e| anyhow::anyhow!("Failed to mark pool snapshot as valid: {e}"))
+        .map_err(|e| anyhow::anyhow!("Failed to set pool snapshot validation state: {e}"))
     }
 
     /// Loads all positions for a specific snapshot.

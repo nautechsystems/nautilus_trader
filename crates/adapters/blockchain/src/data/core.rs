@@ -84,6 +84,36 @@ pub struct BlockchainDataClientCore {
     cancellation_token: tokio_util::sync::CancellationToken,
 }
 
+/// Outcome of validating a pool snapshot against on-chain state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnapshotValidation {
+    /// Hydrated from chain and matched the profiler state.
+    OnChain,
+    /// Emitted from deterministic replay and not checked against chain (the RPC could not serve the
+    /// block, or validation was skipped). Usable as a replay start point.
+    Replay,
+    /// Hydrated from chain and did not match the profiler state. Not usable as a replay start point.
+    Invalid,
+}
+
+impl SnapshotValidation {
+    /// Returns `true` if the snapshot is usable as a replay start point.
+    #[must_use]
+    pub const fn is_usable(self) -> bool {
+        !matches!(self, Self::Invalid)
+    }
+
+    /// Returns the database/JSON token for this state.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OnChain => "on_chain",
+            Self::Replay => "replay",
+            Self::Invalid => "invalid",
+        }
+    }
+}
+
 impl BlockchainDataClientCore {
     /// Creates a new instance of [`BlockchainDataClientCore`].
     ///
@@ -1357,11 +1387,16 @@ impl BlockchainDataClientCore {
     /// This method performs integrity checking by comparing the profiler's internal state
     /// (positions, ticks, liquidity) with the actual on-chain smart contract state. For UniswapV3
     /// pools, it fetches current on-chain data and verifies that the profiler's tracked state matches.
-    /// If validation succeeds or is bypassed, the snapshot is marked as valid in the database.
+    /// Returns [`SnapshotValidation::OnChain`] when the profiler matches on-chain state,
+    /// [`SnapshotValidation::Invalid`] when it does not, and [`SnapshotValidation::Replay`] when the
+    /// on-chain state could not be fetched (e.g. a non-archive RPC for a historical block); in the
+    /// last case the replay-derived snapshot is kept. The resolved state is persisted for the
+    /// `OnChain` and `Invalid` outcomes; `Replay` leaves the snapshot at its inserted default so a
+    /// transient RPC failure cannot clobber a prior definitive verdict.
     ///
     /// # Errors
     ///
-    /// Returns an error if database operations fail when marking the snapshot as valid.
+    /// Returns an error if database operations fail when persisting the validation state.
     ///
     /// # Panics
     ///
@@ -1370,56 +1405,64 @@ impl BlockchainDataClientCore {
         &self,
         profiler: &PoolProfiler,
         already_validated: bool,
-    ) -> anyhow::Result<bool> {
-        // Determine validity and get block position for marking
-        let (is_valid, block_position) = if already_validated {
+    ) -> anyhow::Result<SnapshotValidation> {
+        let (validation, block_position) = if already_validated {
             // Skip RPC call - profiler was validated during construction from RPC
             log::info!("Snapshot already validated from RPC, skipping on-chain comparison");
             let last_event = profiler
                 .last_processed_event
                 .clone()
                 .expect("Profiler should have last_processed_event");
-            (true, last_event)
+            (SnapshotValidation::OnChain, Some(last_event))
         } else {
             // Fetch on-chain state and compare
             match self.get_on_chain_snapshot(profiler).await {
                 Ok(on_chain_snapshot) => {
                     log::info!("Comparing profiler state with on-chain state...");
                     let comparison = compare_pool_profiler_detailed(profiler, &on_chain_snapshot);
-                    let valid = comparison.is_valid_for_snapshot();
-                    if !valid {
+                    let validation = if comparison.is_valid_for_snapshot() {
+                        if !comparison.is_exact_match() {
+                            log::warn!(
+                                "Pool profiler snapshot has a non-structural mismatch (sqrt ratio or fee protocol); accepting snapshot"
+                            );
+                        }
+                        SnapshotValidation::OnChain
+                    } else {
                         log::error!(
                             "Pool profiler state does NOT match on-chain smart contract state"
                         );
-                    } else if !comparison.is_exact_match() {
-                        log::warn!(
-                            "Pool profiler snapshot has a non-structural mismatch (sqrt ratio or fee protocol); accepting snapshot"
-                        );
-                    }
-                    (valid, on_chain_snapshot.block_position)
+                        SnapshotValidation::Invalid
+                    };
+                    (validation, Some(on_chain_snapshot.block_position))
                 }
                 Err(e) => {
-                    log::error!("Failed to check snapshot validity: {e}");
-                    return Ok(false);
+                    log::warn!(
+                        "Could not validate snapshot against on-chain state, keeping replay-derived snapshot: {e}"
+                    );
+                    (SnapshotValidation::Replay, None)
                 }
             }
         };
 
-        // Mark snapshot as valid in database if validation passed
-        if is_valid && let Some(cache_database) = &self.cache.database {
+        if let (Some(block_position), Some(cache_database)) = (block_position, &self.cache.database)
+        {
             cache_database
-                .mark_pool_snapshot_valid(
+                .set_pool_snapshot_validation_state(
                     profiler.pool.chain.chain_id,
                     &profiler.pool.pool_identifier,
                     block_position.number,
                     block_position.transaction_index,
                     block_position.log_index,
+                    validation.as_str(),
                 )
                 .await?;
-            log::info!("Marked pool profiler snapshot as valid");
+            log::info!(
+                "Set pool snapshot validation state to {}",
+                validation.as_str()
+            );
         }
 
-        Ok(is_valid)
+        Ok(validation)
     }
 
     /// Fetches current on-chain pool state at the last processed block.
@@ -1611,6 +1654,21 @@ mod tests {
 
     const WETH_USDT_POOL: &str = "0x4e68ccd3e89f51c3074ca5072bbac773960dfa36";
     const WETH_USDT_CREATION_BLOCK: u64 = 12_375_326;
+
+    #[rstest]
+    #[case(SnapshotValidation::OnChain, "on_chain", true)]
+    #[case(SnapshotValidation::Replay, "replay", true)]
+    #[case(SnapshotValidation::Invalid, "invalid", false)]
+    fn snapshot_validation_db_token_and_usability(
+        #[case] validation: SnapshotValidation,
+        #[case] expected_str: &str,
+        #[case] expected_usable: bool,
+    ) {
+        // as_str must match the pool_snapshot.validation_state CHECK values and the JSON contract;
+        // is_usable must match the load filter `validation_state <> 'invalid'`.
+        assert_eq!(validation.as_str(), expected_str);
+        assert_eq!(validation.is_usable(), expected_usable);
+    }
 
     #[rstest]
     fn last_processed_event_for_on_chain_snapshot_rejects_unprocessed_profiler() {

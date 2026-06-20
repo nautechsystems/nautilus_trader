@@ -512,11 +512,14 @@ CREATE TABLE IF NOT EXISTS "pool_snapshot" (
     total_flashes INTEGER NOT NULL DEFAULT 0,
     total_fee_collects INTEGER NOT NULL,
     liquidity_utilization_rate  DOUBLE PRECISION DEFAULT 0,
-    is_valid BOOLEAN DEFAULT FALSE,
+    validation_state TEXT NOT NULL DEFAULT 'replay' CHECK (validation_state IN ('on_chain', 'replay', 'invalid')),
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (chain_id, pool_identifier, block, transaction_index, log_index),
     FOREIGN KEY (chain_id, dex_name, pool_identifier) REFERENCES pool(chain_id, dex_name, pool_identifier)
 );
+-- Bring databases created before snapshot validation states forward. Existing rows become 'replay'
+-- (usable as replay start points); a later analyze-pool run re-validates them to 'on_chain' or 'invalid'.
+ALTER TABLE "pool_snapshot" ADD COLUMN IF NOT EXISTS validation_state TEXT NOT NULL DEFAULT 'replay';
 
 CREATE TABLE IF NOT EXISTS "pool_position" (
     chain_id INTEGER NOT NULL,
