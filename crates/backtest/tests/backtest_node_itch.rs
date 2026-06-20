@@ -62,9 +62,7 @@ fn create_itch_catalog(quotes: &[QuoteTick], instrument: &InstrumentAny) -> (Tem
     let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
-    catalog
-        .write_to_parquet(quotes.to_vec(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     (temp_dir, catalog_path)
 }

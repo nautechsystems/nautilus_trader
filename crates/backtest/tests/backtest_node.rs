@@ -72,7 +72,7 @@ fn create_catalog_with_quotes(
         })
         .collect();
 
-    catalog.write_to_parquet(quotes, None, None, None).unwrap();
+    catalog.write_to_parquet(&quotes, None, None, None).unwrap();
 
     (temp_dir, catalog_path)
 }
@@ -121,8 +121,8 @@ fn create_catalog_with_quotes_and_trades(
         })
         .collect();
 
-    catalog.write_to_parquet(quotes, None, None, None).unwrap();
-    catalog.write_to_parquet(trades, None, None, None).unwrap();
+    catalog.write_to_parquet(&quotes, None, None, None).unwrap();
+    catalog.write_to_parquet(&trades, None, None, None).unwrap();
 
     (temp_dir, catalog_path)
 }
@@ -158,7 +158,7 @@ fn create_catalog_with_funding_rates(
     ];
 
     catalog
-        .write_to_parquet(funding_rates.clone(), None, None, None)
+        .write_to_parquet(&funding_rates, None, None, None)
         .unwrap();
 
     (temp_dir, catalog_path, funding_rates)
@@ -1213,7 +1213,7 @@ fn test_streaming_same_timestamp_events(crypto_perpetual_ethusdt: CryptoPerpetua
         })
         .collect();
 
-    catalog.write_to_parquet(quotes, None, None, None).unwrap();
+    catalog.write_to_parquet(&quotes, None, None, None).unwrap();
 
     let data = data_config(&catalog_path, instrument_id);
     let config = BacktestRunConfig::builder()

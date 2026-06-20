@@ -106,7 +106,7 @@ fn main() -> anyhow::Result<()> {
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
     let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
     catalog.write_instruments(vec![instrument])?;
-    catalog.write_to_parquet(quotes, None, None, None)?;
+    catalog.write_to_parquet(&quotes, None, None, None)?;
 
     println!("Wrote {num_quotes} quotes to catalog: {catalog_path}");
 

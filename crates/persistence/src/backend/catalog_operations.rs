@@ -907,7 +907,7 @@ impl ParquetDataCatalog {
             // Use skip_disjoint_check since we're managing file removal carefully
             let start_ts = UnixNanos::from(final_start_ns);
             let end_ts = UnixNanos::from(final_end_ns);
-            self.write_to_parquet(period_data, Some(start_ts), Some(end_ts), Some(true))?;
+            self.write_to_parquet(&period_data, Some(start_ts), Some(end_ts), Some(true))?;
 
             // Delete files fully consumed by this period; keep straddlers so no data is lost
             for file in existing_files.clone() {
@@ -1999,7 +1999,7 @@ impl ParquetDataCatalog {
                         let start_ts = UnixNanos::from(operation.file_start_ns);
                         let end_ts = UnixNanos::from(operation.file_end_ns);
                         self.write_to_parquet(
-                            before_data,
+                            &before_data,
                             Some(start_ts),
                             Some(end_ts),
                             Some(true),
@@ -2023,7 +2023,7 @@ impl ParquetDataCatalog {
                         let start_ts = UnixNanos::from(operation.file_start_ns);
                         let end_ts = UnixNanos::from(operation.file_end_ns);
                         self.write_to_parquet(
-                            after_data,
+                            &after_data,
                             Some(start_ts),
                             Some(end_ts),
                             Some(true),

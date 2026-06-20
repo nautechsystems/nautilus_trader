@@ -4901,15 +4901,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5269,12 +5260,6 @@ dependencies = [
  "quote",
  "syn 1.0.109",
 ]
-
-[[package]]
-name = "maplit"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
 name = "matchers"
@@ -6529,7 +6514,6 @@ dependencies = [
  "datafusion",
  "futures",
  "indexmap 2.14.0",
- "itertools 0.15.0",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -7818,14 +7802,11 @@ dependencies = [
  "chrono",
  "indexmap 2.14.0",
  "inventory",
- "itertools 0.14.0",
  "log",
- "maplit",
  "num-complex",
  "pyo3",
  "pyo3-stub-gen-derive",
  "rust_decimal",
- "rustpython-parser",
  "serde",
  "serde_json",
  "time",

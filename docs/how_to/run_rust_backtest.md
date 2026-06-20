@@ -141,7 +141,7 @@ let catalog = ParquetDataCatalog::new(
 );
 
 catalog.write_instruments(vec![instrument])?;
-catalog.write_to_parquet(quotes, None, None, None)?;
+catalog.write_to_parquet(&quotes, None, None, None)?;
 ```
 
 ### 2. Configure the run

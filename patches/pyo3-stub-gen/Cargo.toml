@@ -58,14 +58,8 @@ version = ">= 2.7.0"
 [dependencies.inventory]
 version = "0.3.22"
 
-[dependencies.itertools]
-version = "0.14.0"
-
 [dependencies.log]
 version = "0.4.29"
-
-[dependencies.maplit]
-version = "1.0.2"
 
 [dependencies.num-complex]
 version = "0.4.6"
@@ -88,14 +82,6 @@ version = "0.20.0"
 [dependencies.rust_decimal]
 version = "1.40"
 optional = true
-default-features = false
-
-[dependencies.rustpython-parser]
-version = "0.4"
-features = [
-    "location",
-    "num-bigint",
-]
 default-features = false
 
 [dependencies.serde]

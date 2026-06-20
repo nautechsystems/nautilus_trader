@@ -1,7 +1,6 @@
 use crate::generate::docstring::normalize_docstring;
 use crate::stub_type::ImportRef;
 use crate::{generate::*, rule_name::RuleName, type_info::*, TypeInfo};
-use itertools::Itertools;
 use std::{collections::HashSet, fmt};
 
 pub use crate::type_info::MethodType;
@@ -101,8 +100,9 @@ impl fmt::Display for MethodDef {
                             if let RuleName::Custom(custom) = &result {
                                 log::warn!("Unknown custom rule name '{custom}' used in type ignore. Ensure this is intended.");
                             }
-                            result
+                            result.to_string()
                         })
+                        .collect::<Vec<_>>()
                         .join(",");
                     Some(format!("  # type: ignore[{rules_str}]"))
                 }
@@ -197,8 +197,9 @@ impl MethodDef {
                             if let RuleName::Custom(custom) = &result {
                                 log::warn!("Unknown custom rule name '{custom}' used in type ignore. Ensure this is intended.");
                             }
-                            result
+                            result.to_string()
                         })
+                        .collect::<Vec<_>>()
                         .join(",");
                     Some(format!("  # type: ignore[{rules_str}]"))
                 }

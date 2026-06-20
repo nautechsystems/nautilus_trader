@@ -1,7 +1,6 @@
 use crate::generate::docstring::normalize_docstring;
 use crate::stub_type::ImportRef;
 use crate::{generate::*, rule_name::RuleName, type_info::*, TypeInfo};
-use itertools::Itertools;
 use std::fmt;
 
 /// Definition of a Python function.
@@ -86,8 +85,9 @@ impl fmt::Display for FunctionDef {
                             if let RuleName::Custom(custom) = &result {
                                 log::warn!("Unknown custom rule name '{custom}' used in type ignore. Ensure this is intended.");
                             }
-                            result
+                            result.to_string()
                         })
+                        .collect::<Vec<_>>()
                         .join(",");
                     Some(format!("  # type: ignore[{rules_str}]"))
                 }
@@ -176,8 +176,9 @@ impl FunctionDef {
                             if let RuleName::Custom(custom) = &result {
                                 log::warn!("Unknown custom rule name '{custom}' used in type ignore. Ensure this is intended.");
                             }
-                            result
+                            result.to_string()
                         })
+                        .collect::<Vec<_>>()
                         .join(",");
                     Some(format!("  # type: ignore[{rules_str}]"))
                 }
