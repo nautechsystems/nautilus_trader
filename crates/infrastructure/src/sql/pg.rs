@@ -285,11 +285,7 @@ pub async fn init_postgres(
                 }
                 statements
             }
-            _ => sql_content
-                .split(';')
-                .filter(|s| !s.trim().is_empty())
-                .map(|s| format!("{s};"))
-                .collect(),
+            _ => split_sql_statements(&sql_content),
         };
 
         for sql_statement in sql_statements {
@@ -363,6 +359,51 @@ pub async fn init_postgres(
     }
 
     Ok(())
+}
+
+// Splits semicolon-delimited SQL into individual statements.
+//
+// Skips `--` line comments and respects single-quoted string literals, so a semicolon inside a
+// comment or string literal does not split a statement. Used for the plain DDL schema files; the
+// PL/pgSQL files are split separately on their function terminators.
+fn split_sql_statements(sql: &str) -> Vec<String> {
+    let mut statements = Vec::new();
+    let mut current = String::new();
+    let mut chars = sql.chars().peekable();
+    let mut in_string = false;
+
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' => {
+                // A `''` escape toggles twice, leaving the state unchanged, which is correct
+                in_string = !in_string;
+                current.push(c);
+            }
+            '-' if !in_string && chars.peek() == Some(&'-') => {
+                for next in chars.by_ref() {
+                    if next == '\n' {
+                        current.push('\n');
+                        break;
+                    }
+                }
+            }
+            ';' if !in_string => {
+                let trimmed = current.trim();
+                if !trimmed.is_empty() {
+                    statements.push(format!("{trimmed};"));
+                }
+                current.clear();
+            }
+            _ => current.push(c),
+        }
+    }
+
+    let trimmed = current.trim();
+    if !trimmed.is_empty() {
+        statements.push(format!("{trimmed};"));
+    }
+
+    statements
 }
 
 /// Drops the Postgres database with the given name using the provided connection pool.
@@ -461,5 +502,54 @@ database = "nautilus"
         assert_eq!(config.port, 5432);
         assert_eq!(config.username, "nautilus");
         assert_eq!(config.database, "nautilus");
+    }
+
+    #[rstest]
+    fn test_split_sql_statements_basic() {
+        let sql = "CREATE TABLE a (id INT); CREATE TABLE b (id INT);";
+        assert_eq!(
+            split_sql_statements(sql),
+            vec!["CREATE TABLE a (id INT);", "CREATE TABLE b (id INT);"]
+        );
+    }
+
+    #[rstest]
+    fn test_split_sql_statements_ignores_semicolon_in_line_comment() {
+        // Regression: a `;` inside a `--` comment must not split the following statement
+        let sql = "\
+-- start points; a later run re-validates them.
+ALTER TABLE pool_snapshot ADD COLUMN IF NOT EXISTS validation_state TEXT;";
+        assert_eq!(
+            split_sql_statements(sql),
+            vec!["ALTER TABLE pool_snapshot ADD COLUMN IF NOT EXISTS validation_state TEXT;"]
+        );
+    }
+
+    #[rstest]
+    fn test_split_sql_statements_keeps_code_before_trailing_comment() {
+        let sql = "CREATE TABLE a (\n  id INT,  -- REFERENCES x;\n  name TEXT\n);";
+        assert_eq!(
+            split_sql_statements(sql),
+            vec!["CREATE TABLE a (\n  id INT,  \n  name TEXT\n);"]
+        );
+    }
+
+    #[rstest]
+    fn test_split_sql_statements_ignores_semicolon_in_string_literal() {
+        let sql = "INSERT INTO t VALUES ('a;b'); SELECT 1;";
+        assert_eq!(
+            split_sql_statements(sql),
+            vec!["INSERT INTO t VALUES ('a;b');", "SELECT 1;"]
+        );
+    }
+
+    #[rstest]
+    fn test_split_sql_statements_drops_comment_only_lines() {
+        let sql =
+            "------------------- ENUMS -------------------\nCREATE TYPE x AS ENUM ('A', 'B');";
+        assert_eq!(
+            split_sql_statements(sql),
+            vec!["CREATE TYPE x AS ENUM ('A', 'B');"]
+        );
     }
 }

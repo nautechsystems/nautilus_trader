@@ -518,7 +518,7 @@ CREATE TABLE IF NOT EXISTS "pool_snapshot" (
     FOREIGN KEY (chain_id, dex_name, pool_identifier) REFERENCES pool(chain_id, dex_name, pool_identifier)
 );
 -- Bring databases created before snapshot validation states forward. Existing rows become 'replay'
--- (usable as replay start points); a later analyze-pool run re-validates them to 'on_chain' or 'invalid'.
+-- (usable as replay start points) until a later analyze-pool run re-validates them to 'on_chain' or 'invalid'.
 ALTER TABLE "pool_snapshot" ADD COLUMN IF NOT EXISTS validation_state TEXT NOT NULL DEFAULT 'replay';
 
 CREATE TABLE IF NOT EXISTS "pool_position" (
