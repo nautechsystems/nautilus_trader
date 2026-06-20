@@ -2169,13 +2169,13 @@ fn test_reconcile_order_report_generates_canceled(instrument: InstrumentAny) {
 #[rstest]
 #[case(OrderStatus::PendingUpdate)]
 #[case(OrderStatus::PendingCancel)]
-fn test_reconcile_canceled_deferred_while_mid_command(
+fn test_reconcile_canceled_forwarded_while_mid_command(
     instrument: InstrumentAny,
     #[case] pending_status: OrderStatus,
 ) {
-    // A Canceled report arriving while the local order awaits venue confirmation
-    // of an issued command is more likely the cancel-half of a cancel-replace
-    // modify than a termination, so it is deferred to the lifecycle stream.
+    // A Canceled for the order's current venue_order_id is authoritative and applies even
+    // while locally PendingUpdate/PendingCancel. The cancel-half of a cancel-replace is
+    // caught by venue_order_id provenance, not by deferring on local pending state.
     let client_order_id = ClientOrderId::from("O-001");
     let venue_order_id = VenueOrderId::from("V-001");
     let account_id = AccountId::from("SIM-001");
@@ -2239,7 +2239,7 @@ fn test_reconcile_canceled_deferred_while_mid_command(
     );
 
     let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
-    assert!(result.is_none());
+    assert!(matches!(result, Some(OrderEventAny::Canceled(_))));
 }
 
 #[rstest]
