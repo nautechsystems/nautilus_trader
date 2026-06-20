@@ -32,7 +32,7 @@ use nautilus_model::{
 use super::config::EmaCrossConfig;
 use crate::{
     nautilus_strategy,
-    strategy::{Strategy, StrategyCore, StrategyNative},
+    strategy::{Strategy, StrategyCore},
 };
 
 /// Dual-EMA crossover strategy.
@@ -81,17 +81,17 @@ impl EmaCross {
     fn enter(&mut self, side: OrderSide) -> anyhow::Result<()> {
         let instrument_id = self.instrument_id;
         let trade_size = self.trade_size;
-        let order = self.order_factory().market(
+        let order = self.order().market(
             instrument_id,
             side,
             trade_size,
             None, // time_in_force
             None, // reduce_only
             None, // quote_quantity
-            None, // display_qty
-            None, // expire_time
-            None, // emulation_trigger
+            None, // exec_algorithm_id
+            None, // exec_algorithm_params
             None, // tags
+            None, // client_order_id
         );
         self.submit_order(order, None, None, None)
     }

@@ -36,7 +36,7 @@ use ustr::Ustr;
 use super::config::DeltaNeutralVolConfig;
 use crate::{
     nautilus_strategy,
-    strategy::{Strategy, StrategyCore, StrategyNative},
+    strategy::{Strategy, StrategyCore},
 };
 
 const REHEDGE_TIMER: &str = "delta_rehedge";
@@ -398,7 +398,7 @@ impl DeltaNeutralVol {
         client_id: ClientId,
         params: Option<Params>,
     ) -> anyhow::Result<()> {
-        let order = self.order_factory().limit(
+        let order = self.order().limit(
             instrument_id,
             OrderSide::Sell,
             Quantity::new(contracts as f64, 0),
@@ -452,7 +452,7 @@ impl DeltaNeutralVol {
                 .map_or(2, |i| i.size_precision())
         };
 
-        let order = self.order_factory().market(
+        let order = self.order().market(
             hedge_id,
             side,
             Quantity::new(hedge_qty, size_precision),

@@ -47,7 +47,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
-use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, StrategyNative, nautilus_strategy};
+use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
@@ -180,7 +180,7 @@ impl OptionChainBacktest {
         );
 
         let trade_size = self.trade_size;
-        let maker_order = self.order_factory().limit(
+        let maker_order = self.order().limit(
             selected.instrument_id,
             OrderSide::Buy,
             trade_size,
@@ -200,7 +200,7 @@ impl OptionChainBacktest {
         );
         self.submit_order(maker_order, None, None, None)?;
 
-        let taker_order = self.order_factory().market(
+        let taker_order = self.order().market(
             selected.instrument_id,
             OrderSide::Buy,
             trade_size,

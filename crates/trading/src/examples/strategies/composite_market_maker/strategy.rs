@@ -33,7 +33,7 @@ use rust_decimal::Decimal;
 use super::config::CompositeMarketMakerConfig;
 use crate::{
     nautilus_strategy,
-    strategy::{Strategy, StrategyCore, StrategyNative},
+    strategy::{Strategy, StrategyCore},
 };
 
 /// Composite market making strategy with book-mid quoting and signal-driven skew.
@@ -374,7 +374,7 @@ impl DataActor for CompositeMarketMaker {
         };
 
         for (side, price) in quotes {
-            let order = self.order_factory().limit(
+            let order = self.order().limit(
                 instrument_id,
                 side,
                 trade_size,

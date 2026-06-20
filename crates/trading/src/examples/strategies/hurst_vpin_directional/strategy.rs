@@ -34,7 +34,7 @@ use nautilus_model::{
 use super::config::HurstVpinDirectionalConfig;
 use crate::{
     nautilus_strategy,
-    strategy::{Strategy, StrategyCore, StrategyNative},
+    strategy::{Strategy, StrategyCore},
 };
 
 /// Directional strategy combining a Hurst-exponent regime filter on dollar bars
@@ -244,7 +244,7 @@ impl HurstVpinDirectional {
     fn submit_entry(&mut self, side: OrderSide) -> anyhow::Result<()> {
         let instrument_id = self.config.instrument_id;
         let trade_size = self.config.trade_size;
-        let order = self.order_factory().market(
+        let order = self.order().market(
             instrument_id,
             side,
             trade_size,
@@ -281,7 +281,7 @@ impl HurstVpinDirectional {
 
         for (position_id, quantity, side) in positions {
             let closing_side = OrderCore::closing_side(side);
-            let close_order = self.order_factory().market(
+            let close_order = self.order().market(
                 instrument_id,
                 closing_side,
                 quantity,

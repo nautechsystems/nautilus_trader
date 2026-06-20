@@ -33,7 +33,7 @@ use rust_decimal::Decimal;
 use super::config::GridMarketMakerConfig;
 use crate::{
     nautilus_strategy,
-    strategy::{Strategy, StrategyCore, StrategyNative},
+    strategy::{Strategy, StrategyCore},
 };
 
 /// Grid market making strategy with inventory-based skewing.
@@ -299,7 +299,7 @@ impl DataActor for GridMarketMaker {
         };
 
         for (side, price) in grid {
-            let order = self.order_factory().limit(
+            let order = self.order().limit(
                 instrument_id,
                 side,
                 trade_size,

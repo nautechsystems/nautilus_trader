@@ -93,7 +93,7 @@ impl DataActor for MyStrategy {
             self.trade_size,
             None, None, None, None, None, None, None,
         );
-        self.submit_order(order, None, None)?;
+        self.submit_order(order, None, None, None)?;
         Ok(())
     }
 }
