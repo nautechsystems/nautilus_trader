@@ -26,7 +26,7 @@ use nautilus_common::{
     },
     enums::Environment,
     logging::logger::LoggerConfig,
-    msgbus::database::MessageBusConfig,
+    msgbus::backing::MessageBusConfig,
     throttler::RateLimit,
 };
 use nautilus_core::{UUID4, datetime::NANOSECONDS_IN_SECOND};
@@ -752,8 +752,8 @@ impl LiveNodeConfig {
 
         if let Some(config) = &self.msgbus {
             collector.collect(check_supported_field(
-                "LiveNodeConfig.msgbus.database",
-                config.database.is_none(),
+                "LiveNodeConfig.msgbus.backing",
+                config.backing.is_none(),
                 RUST_RUNTIME_UNSUPPORTED,
             ));
             collector.collect(check_supported_field(
@@ -1017,7 +1017,7 @@ impl NautilusKernelConfig for LiveNodeConfig {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::msgbus::database::DatabaseConfig;
+    use nautilus_common::msgbus::backing::MessageBusBackingConfig;
     use nautilus_system::config::RotationConfig;
     use rstest::rstest;
 
@@ -1071,10 +1071,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_validate_runtime_support_rejects_msgbus_database() {
+    fn test_validate_runtime_support_rejects_msgbus_backing() {
         let config = LiveNodeConfig {
             msgbus: Some(MessageBusConfig {
-                database: Some(DatabaseConfig::default()),
+                backing: Some(MessageBusBackingConfig::default()),
                 ..Default::default()
             }),
             ..Default::default()
@@ -1084,13 +1084,13 @@ mod tests {
         assert_eq!(
             error,
             ConfigError::UnsupportedField {
-                field: "LiveNodeConfig.msgbus.database".to_string(),
+                field: "LiveNodeConfig.msgbus.backing".to_string(),
                 reason: RUST_RUNTIME_UNSUPPORTED.to_string(),
             },
         );
         assert_eq!(
             error.to_string(),
-            "LiveNodeConfig.msgbus.database is not supported by the Rust live runtime yet"
+            "LiveNodeConfig.msgbus.backing is not supported by the Rust live runtime yet"
         );
     }
 

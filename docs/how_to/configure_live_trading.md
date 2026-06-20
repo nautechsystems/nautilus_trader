@@ -105,10 +105,10 @@ cache_config = CacheConfig(
 
 ```python
 from nautilus_trader.config import MessageBusConfig
-from nautilus_trader.config import DatabaseConfig
+from nautilus_trader.config import MessageBusBackingConfig
 
 message_bus_config = MessageBusConfig(
-    database=DatabaseConfig(
+    backing=MessageBusBackingConfig(
         connection_timeout=2,
         response_timeout=2,
     ),

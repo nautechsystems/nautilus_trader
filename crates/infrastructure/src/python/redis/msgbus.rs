@@ -15,7 +15,7 @@
 
 use bytes::Bytes;
 use futures::{pin_mut, stream::StreamExt};
-use nautilus_common::msgbus::database::MessageBusBacking;
+use nautilus_common::msgbus::backing::MessageBusBacking;
 use nautilus_core::{
     UUID4,
     python::{IntoPyObjectNautilusExt, call_python, to_pyruntime_err, to_pyvalue_err},
@@ -24,10 +24,10 @@ use nautilus_model::identifiers::TraderId;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
-use crate::redis::msgbus::RedisMessageBusDatabase;
+use crate::redis::msgbus::RedisMessageBusBacking;
 
 #[pymethods]
-impl RedisMessageBusDatabase {
+impl RedisMessageBusBacking {
     #[new]
     fn py_new(trader_id: TraderId, instance_id: UUID4, config_json: &[u8]) -> PyResult<Self> {
         let config = serde_json::from_slice(config_json).map_err(to_pyvalue_err)?;

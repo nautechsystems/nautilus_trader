@@ -16,7 +16,7 @@
 use nautilus_core::correctness::{CorrectnessResultExt, FAILED, check_positive_usize};
 use serde::{Deserialize, Deserializer, Serialize, de::Error};
 
-use crate::{enums::SerializationEncoding, msgbus::database::DatabaseConfig};
+use crate::{database::DatabaseConfig, enums::SerializationEncoding};
 
 /// Configuration for `Cache` instances.
 #[cfg_attr(

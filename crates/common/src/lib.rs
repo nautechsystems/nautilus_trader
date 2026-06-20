@@ -124,6 +124,7 @@ pub mod clock;
 pub mod component;
 pub mod config;
 pub mod custom;
+pub mod database;
 pub mod enums;
 pub mod factories;
 pub mod generators;

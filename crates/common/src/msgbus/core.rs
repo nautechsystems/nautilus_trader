@@ -113,7 +113,7 @@ use ustr::Ustr;
 
 use super::{
     HAS_PUBLISHER, ShareableMessageHandler,
-    database::MessageBusPublisher,
+    backing::MessageBusPublisher,
     matching::is_matching_backtracking,
     mstr::{Endpoint, MStr, Pattern, Topic},
     set_message_bus,

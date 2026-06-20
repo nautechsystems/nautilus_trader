@@ -23,7 +23,7 @@ mod serial_tests {
     use bytes::Bytes;
     use nautilus_common::{
         cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
-        msgbus::database::DatabaseConfig,
+        database::DatabaseConfig,
         testing::wait_until_async,
     };
     use nautilus_core::{UUID4, UnixNanos};

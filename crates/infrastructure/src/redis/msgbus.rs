@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Redis-backed message bus database for the system.
+//! Redis-backed message bus backing for the system.
 //!
 //! # Architecture
 //!
@@ -45,7 +45,7 @@ use nautilus_common::{
     logging::{log_task_error, log_task_started, log_task_stopped},
     msgbus::{
         BusMessage, MessageBusPublisher, MessageBusSubscriber,
-        database::{DatabaseConfig, MessageBusBacking, MessageBusConfig},
+        backing::{MessageBusBacking, MessageBusBackingConfig, MessageBusConfig},
         switchboard::CLOSE_TOPIC,
     },
 };
@@ -74,10 +74,10 @@ type RedisStreamBulk = Vec<HashMap<String, Vec<HashMap<String, redis::Value>>>>;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
 )]
-pub struct RedisMessageBusDatabase {
-    /// The trader ID for this message bus database.
+pub struct RedisMessageBusBacking {
+    /// The trader ID for this message bus backing.
     pub trader_id: TraderId,
-    /// The instance ID for this message bus database.
+    /// The instance ID for this message bus backing.
     pub instance_id: UUID4,
     pub_tx: tokio::sync::mpsc::UnboundedSender<BusMessage>,
     pub_handle: Option<tokio::task::JoinHandle<()>>,
@@ -88,24 +88,24 @@ pub struct RedisMessageBusDatabase {
     heartbeat_signal: Arc<AtomicBool>,
 }
 
-impl Debug for RedisMessageBusDatabase {
+impl Debug for RedisMessageBusBacking {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(RedisMessageBusDatabase))
+        f.debug_struct(stringify!(RedisMessageBusBacking))
             .field("trader_id", &self.trader_id)
             .field("instance_id", &self.instance_id)
             .finish_non_exhaustive()
     }
 }
 
-impl MessageBusBacking for RedisMessageBusDatabase {
+impl MessageBusBacking for RedisMessageBusBacking {
     type BackingType = Self;
 
-    /// Creates a new [`RedisMessageBusDatabase`] instance for the given `trader_id`, `instance_id`, and `config`.
+    /// Creates a new [`RedisMessageBusBacking`] instance for the given `trader_id`, `instance_id`, and `config`.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The database configuration is missing in `config`.
+    /// - The backing configuration is missing in `config`.
     /// - Establishing the Redis connection for publishing fails.
     fn new(
         trader_id: TraderId,
@@ -115,10 +115,10 @@ impl MessageBusBacking for RedisMessageBusDatabase {
         install_cryptographic_provider();
 
         let config_clone = config.clone();
-        let db_config = config
-            .database
+        let backing_config = config
+            .backing
             .clone()
-            .ok_or_else(|| anyhow::anyhow!("No database config"))?;
+            .ok_or_else(|| anyhow::anyhow!("No message bus backing config"))?;
 
         let (pub_tx, pub_rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
 
@@ -140,9 +140,13 @@ impl MessageBusBacking for RedisMessageBusDatabase {
             (
                 Some(stream_rx),
                 Some(get_runtime().spawn(async move {
-                    if let Err(e) =
-                        stream_messages(stream_tx, db_config, external_streams, stream_signal_clone)
-                            .await
+                    if let Err(e) = stream_messages(
+                        stream_tx,
+                        backing_config,
+                        external_streams,
+                        stream_signal_clone,
+                    )
+                    .await
                     {
                         log_task_error(MSGBUS_STREAM, &e);
                     }
@@ -216,7 +220,7 @@ impl MessageBusBacking for RedisMessageBusDatabase {
     }
 }
 
-impl MessageBusPublisher for RedisMessageBusDatabase {
+impl MessageBusPublisher for RedisMessageBusBacking {
     fn is_closed(&self) -> bool {
         self.pub_tx.is_closed()
     }
@@ -233,7 +237,7 @@ impl MessageBusPublisher for RedisMessageBusDatabase {
     }
 }
 
-impl MessageBusSubscriber for RedisMessageBusDatabase {
+impl MessageBusSubscriber for RedisMessageBusBacking {
     fn is_closed(&self) -> bool {
         self.stream_handle
             .as_ref()
@@ -249,7 +253,7 @@ impl MessageBusSubscriber for RedisMessageBusDatabase {
     }
 }
 
-impl RedisMessageBusDatabase {
+impl RedisMessageBusBacking {
     /// Retrieves the Redis stream receiver for this message bus instance.
     ///
     /// # Errors
@@ -286,7 +290,7 @@ impl RedisMessageBusDatabase {
 /// # Errors
 ///
 /// Returns an error if:
-/// - The database configuration is missing in `config`.
+/// - The backing configuration is missing in `config`.
 /// - Establishing the Redis connection fails.
 /// - Any Redis command fails during publishing.
 pub async fn publish_messages(
@@ -297,11 +301,11 @@ pub async fn publish_messages(
 ) -> anyhow::Result<()> {
     log_task_started(MSGBUS_PUBLISH);
 
-    let db_config = config
-        .database
+    let backing_config = config
+        .backing
         .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("No database config"))?;
-    let mut con = create_redis_connection(MSGBUS_PUBLISH, db_config.clone()).await?;
+        .ok_or_else(|| anyhow::anyhow!("No message bus backing config"))?;
+    let mut con = create_redis_connection(MSGBUS_PUBLISH, backing_config.clone().into()).await?;
     let stream_key = get_stream_key(trader_id, instance_id, &config);
 
     // Auto-trimming
@@ -460,13 +464,13 @@ async fn drain_buffer(
 /// - Any Redis read operation fails.
 pub async fn stream_messages(
     tx: tokio::sync::mpsc::Sender<BusMessage>,
-    config: DatabaseConfig,
+    config: MessageBusBackingConfig,
     stream_keys: Vec<String>,
     stream_signal: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     log_task_started(MSGBUS_STREAM);
 
-    let mut con = create_redis_connection(MSGBUS_STREAM, config).await?;
+    let mut con = create_redis_connection(MSGBUS_STREAM, config.into()).await?;
 
     let stream_keys = &stream_keys
         .iter()
@@ -708,7 +712,7 @@ mod tests {
     #[rstest]
     fn test_subscriber_take_receiver_delegates_to_stream_receiver() {
         let (stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
-        let mut db = database_with_stream_receiver(stream_rx);
+        let mut db = backing_with_stream_receiver(stream_rx);
         let message = BusMessage::with_str_topic("events/data", Bytes::from_static(b"payload"));
 
         stream_tx.try_send(message.clone()).unwrap();
@@ -723,7 +727,7 @@ mod tests {
     #[rstest]
     fn test_subscriber_is_closed_without_stream_handle() {
         let (_stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
-        let db = database_with_stream_receiver(stream_rx);
+        let db = backing_with_stream_receiver(stream_rx);
 
         assert!(MessageBusSubscriber::is_closed(&db));
     }
@@ -731,7 +735,7 @@ mod tests {
     #[tokio::test]
     async fn test_subscriber_is_open_with_running_stream_handle() {
         let (_stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
-        let mut db = database_with_stream_receiver(stream_rx);
+        let mut db = backing_with_stream_receiver(stream_rx);
         db.stream_handle = Some(tokio::spawn(async {
             std::future::pending::<()>().await;
         }));
@@ -743,11 +747,11 @@ mod tests {
         let _ = handle.await;
     }
 
-    fn database_with_stream_receiver(
+    fn backing_with_stream_receiver(
         stream_rx: tokio::sync::mpsc::Receiver<BusMessage>,
-    ) -> RedisMessageBusDatabase {
+    ) -> RedisMessageBusBacking {
         let (pub_tx, _pub_rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
-        RedisMessageBusDatabase {
+        RedisMessageBusBacking {
             trader_id: TraderId::from("tester-001"),
             instance_id: UUID4::new(),
             pub_tx,
@@ -764,7 +768,7 @@ mod tests {
 #[cfg(target_os = "linux")] // Run Redis tests on Linux platforms only
 #[cfg(test)]
 mod serial_tests {
-    use nautilus_common::testing::wait_until_async;
+    use nautilus_common::{database::DatabaseConfig, testing::wait_until_async};
     use redis::aio::ConnectionManager;
     use rstest::*;
 
@@ -787,7 +791,7 @@ mod serial_tests {
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
-            database: Some(DatabaseConfig::default()),
+            backing: Some(MessageBusBackingConfig::default()),
             use_instance_id: true,
             ..Default::default()
         };
@@ -801,7 +805,7 @@ mod serial_tests {
         let handle = tokio::spawn(async move {
             stream_messages(
                 tx,
-                DatabaseConfig::default(),
+                MessageBusBackingConfig::default(),
                 external_streams,
                 stream_signal_clone,
             )
@@ -828,7 +832,7 @@ mod serial_tests {
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
-            database: Some(DatabaseConfig::default()),
+            backing: Some(MessageBusBackingConfig::default()),
             use_instance_id: true,
             ..Default::default()
         };
@@ -860,7 +864,7 @@ mod serial_tests {
         let handle = tokio::spawn(async move {
             stream_messages(
                 tx,
-                DatabaseConfig::default(),
+                MessageBusBackingConfig::default(),
                 external_streams,
                 stream_signal_clone,
             )
@@ -881,7 +885,7 @@ mod serial_tests {
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
-            database: Some(DatabaseConfig::default()),
+            backing: Some(MessageBusBackingConfig::default()),
             use_instance_id: true,
             ..Default::default()
         };
@@ -910,7 +914,7 @@ mod serial_tests {
         let handle = tokio::spawn(async move {
             stream_messages(
                 tx,
-                DatabaseConfig::default(),
+                MessageBusBackingConfig::default(),
                 external_streams,
                 stream_signal_clone,
             )
@@ -938,7 +942,7 @@ mod serial_tests {
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
-            database: Some(DatabaseConfig::default()),
+            backing: Some(MessageBusBackingConfig::default()),
             use_instance_id: true,
             stream_per_topic: false,
             ..Default::default()
@@ -1009,7 +1013,7 @@ mod serial_tests {
         let handle = tokio::spawn(async move {
             stream_messages(
                 tx,
-                DatabaseConfig::default(),
+                MessageBusBackingConfig::default(),
                 external_streams,
                 stream_signal_clone,
             )
@@ -1082,7 +1086,7 @@ mod serial_tests {
         let handle = tokio::spawn(async move {
             stream_messages(
                 tx,
-                DatabaseConfig::default(),
+                MessageBusBackingConfig::default(),
                 external_streams,
                 stream_signal_clone,
             )
@@ -1147,12 +1151,12 @@ mod serial_tests {
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
-            database: Some(DatabaseConfig::default()),
+            backing: Some(MessageBusBackingConfig::default()),
             use_instance_id: true,
             ..Default::default()
         };
 
-        let mut db = RedisMessageBusDatabase::new(trader_id, instance_id, config).unwrap();
+        let mut db = RedisMessageBusBacking::new(trader_id, instance_id, config).unwrap();
 
         // Close the message bus backing (test should not hang)
         MessageBusBacking::close(&mut db);

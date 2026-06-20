@@ -1511,10 +1511,7 @@ impl Cache {
 
     /// Gets a borrow of the order with the `client_order_id` (if found).
     ///
-    /// The returned `OrderRef` is tied to the cache borrow's scope and panics at runtime if
-    /// held across a mutation of the same order. Drop the borrow before dispatching events; if
-    /// post-event state is required, perform a fresh lookup. Use `Self.order_owned` when an
-    /// owned snapshot is needed for a boundary handover.
+    /// Prefer `Self.order_ref` in new native code.
     #[pyo3(name = "order")]
     fn py_order(&self, py: Python, client_order_id: ClientOrderId) -> PyResult<Option<Py<PyAny>>> {
         match self.order(&client_order_id) {
@@ -1552,8 +1549,7 @@ impl Cache {
 
     /// Returns borrows of all locally active orders matching the optional filter parameters.
     ///
-    /// Locally active orders are in the `INITIALIZED`, `EMULATED`, or `RELEASED` state
-    /// (a superset of emulated orders).
+    /// Prefer `Self.orders_active_local_refs` in new native code.
     #[pyo3(name = "orders_active_local")]
     fn py_orders_active_local(
         &self,
@@ -1685,6 +1681,8 @@ impl Cache {
     }
 
     /// Returns a borrow of the position with the `position_id` (if found).
+    ///
+    /// Prefer `Self.position_ref` in new native code.
     #[pyo3(name = "position")]
     fn py_position(&self, py: Python, position_id: PositionId) -> PyResult<Option<Py<PyAny>>> {
         match self.position(&position_id) {
@@ -2132,9 +2130,7 @@ impl Cache {
 
     /// Returns borrows of all orders matching the optional filter parameters.
     ///
-    /// Each `Ref` in the returned vector borrows its underlying cell; mutating any of
-    /// those orders while the vector is alive will panic at runtime. Drop the vector
-    /// before issuing writes.
+    /// Prefer `Self.orders_refs` in new native code.
     #[pyo3(name = "orders")]
     fn py_orders(
         &self,
@@ -2158,6 +2154,8 @@ impl Cache {
     }
 
     /// Returns borrows of all open orders matching the optional filter parameters.
+    ///
+    /// Prefer `Self.orders_open_refs` in new native code.
     #[pyo3(name = "orders_open")]
     fn py_orders_open(
         &self,
@@ -2181,6 +2179,8 @@ impl Cache {
     }
 
     /// Returns borrows of all closed orders matching the optional filter parameters.
+    ///
+    /// Prefer `Self.orders_closed_refs` in new native code.
     #[pyo3(name = "orders_closed")]
     fn py_orders_closed(
         &self,
@@ -2204,6 +2204,8 @@ impl Cache {
     }
 
     /// Returns borrows of all emulated orders matching the optional filter parameters.
+    ///
+    /// Prefer `Self.orders_emulated_refs` in new native code.
     #[pyo3(name = "orders_emulated")]
     fn py_orders_emulated(
         &self,
@@ -2227,6 +2229,8 @@ impl Cache {
     }
 
     /// Returns borrows of all in-flight orders matching the optional filter parameters.
+    ///
+    /// Prefer `Self.orders_inflight_refs` in new native code.
     #[pyo3(name = "orders_inflight")]
     fn py_orders_inflight(
         &self,
@@ -2421,6 +2425,8 @@ impl Cache {
     }
 
     /// Returns a borrow of the position for the `client_order_id` (if found).
+    ///
+    /// Prefer `Self.position_for_order_ref` in new native code.
     #[pyo3(name = "position_for_order")]
     fn py_position_for_order(
         &self,
@@ -2441,9 +2447,7 @@ impl Cache {
 
     /// Returns borrows of all positions matching the optional filter parameters.
     ///
-    /// Each `PositionRef` in the returned vector borrows its underlying cell; mutating any of
-    /// those positions while the vector is alive will panic at runtime. Drop the vector before
-    /// issuing writes.
+    /// Prefer `Self.positions_refs` in new native code.
     #[pyo3(name = "positions")]
     fn py_positions(
         &self,
@@ -2467,6 +2471,8 @@ impl Cache {
     }
 
     /// Returns borrows of all open positions matching the optional filter parameters.
+    ///
+    /// Prefer `Self.positions_open_refs` in new native code.
     #[pyo3(name = "positions_open")]
     fn py_positions_open(
         &self,
@@ -2490,6 +2496,8 @@ impl Cache {
     }
 
     /// Returns borrows of all closed positions matching the optional filter parameters.
+    ///
+    /// Prefer `Self.positions_closed_refs` in new native code.
     #[pyo3(name = "positions_closed")]
     fn py_positions_closed(
         &self,
@@ -2552,6 +2560,8 @@ impl Cache {
     }
 
     /// Returns a borrow of the account for the `account_id` (if found).
+    ///
+    /// Prefer `Self.account_ref` in new native code.
     #[pyo3(name = "account")]
     fn py_account(&self, py: Python, account_id: AccountId) -> PyResult<Option<Py<PyAny>>> {
         match self.account(&account_id) {

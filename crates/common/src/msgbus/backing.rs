@@ -23,11 +23,11 @@ use ustr::Ustr;
 
 use crate::enums::SerializationEncoding;
 
-/// Configuration for database connections.
+/// Configuration for message bus backing connections.
 ///
 /// # Notes
 ///
-/// If `database_type` is `"redis"`, it requires Redis version 6.2 or higher for correct operation.
+/// If `backing_type` is `"redis"`, it requires Redis version 6.2 or higher for correct operation.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
@@ -38,19 +38,19 @@ use crate::enums::SerializationEncoding;
 )]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct DatabaseConfig {
-    /// The database type.
+pub struct MessageBusBackingConfig {
+    /// The message bus backing type.
     #[serde(alias = "type")]
-    pub database_type: String,
-    /// The database host address. If `None`, the typical default should be used.
+    pub backing_type: String,
+    /// The backing host address. If `None`, the typical default should be used.
     pub host: Option<String>,
-    /// The database port. If `None`, the typical default should be used.
+    /// The backing port. If `None`, the typical default should be used.
     pub port: Option<u16>,
-    /// The account username for the database connection.
+    /// The account username for the backing connection.
     pub username: Option<String>,
-    /// The account password for the database connection.
+    /// The account password for the backing connection.
     pub password: Option<String>,
-    /// If the database should use an SSL-enabled connection.
+    /// If the backing should use an SSL-enabled connection.
     pub ssl: bool,
     /// The timeout (in seconds) to wait for a new connection.
     pub connection_timeout: u16,
@@ -66,11 +66,11 @@ pub struct DatabaseConfig {
     pub factor: u64,
 }
 
-impl Debug for DatabaseConfig {
+impl Debug for MessageBusBackingConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let redacted = self.password.as_ref().map(|_| "***");
-        f.debug_struct(stringify!(DatabaseConfig))
-            .field("database_type", &self.database_type)
+        f.debug_struct(stringify!(MessageBusBackingConfig))
+            .field("backing_type", &self.backing_type)
             .field("host", &self.host)
             .field("port", &self.port)
             .field("username", &self.username)
@@ -86,11 +86,11 @@ impl Debug for DatabaseConfig {
     }
 }
 
-impl Default for DatabaseConfig {
-    /// Creates a new default [`DatabaseConfig`] instance.
+impl Default for MessageBusBackingConfig {
+    /// Creates a new default [`MessageBusBackingConfig`] instance.
     fn default() -> Self {
         Self {
-            database_type: "redis".to_string(),
+            backing_type: "redis".to_string(),
             host: None,
             port: None,
             username: None,
@@ -102,6 +102,25 @@ impl Default for DatabaseConfig {
             exponent_base: 2,
             max_delay: 1000,
             factor: 2,
+        }
+    }
+}
+
+impl From<MessageBusBackingConfig> for crate::database::DatabaseConfig {
+    fn from(config: MessageBusBackingConfig) -> Self {
+        Self {
+            database_type: config.backing_type,
+            host: config.host,
+            port: config.port,
+            username: config.username,
+            password: config.password,
+            ssl: config.ssl,
+            connection_timeout: config.connection_timeout,
+            response_timeout: config.response_timeout,
+            number_of_retries: config.number_of_retries,
+            exponent_base: config.exponent_base,
+            max_delay: config.max_delay,
+            factor: config.factor,
         }
     }
 }
@@ -118,9 +137,9 @@ impl Default for DatabaseConfig {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 pub struct MessageBusConfig {
-    /// The configuration for the message bus backing database.
-    pub database: Option<DatabaseConfig>,
-    /// The encoding for database operations, controls the type of serializer used.
+    /// The configuration for the external message bus backing technology.
+    pub backing: Option<MessageBusBackingConfig>,
+    /// The encoding for backing operations, controls the type of serializer used.
     #[builder(default = SerializationEncoding::Json)]
     pub encoding: SerializationEncoding,
     /// If timestamps should be persisted as ISO 8601 strings.
@@ -144,7 +163,7 @@ pub struct MessageBusConfig {
     /// If the trader's instance ID is used for stream names. Default is `false`.
     #[builder(default)]
     pub use_instance_id: bool,
-    /// The prefix for externally published stream names. Must have a `database` config.
+    /// The prefix for externally published stream names. Must have a `backing` config.
     #[builder(default = "stream".to_string())]
     pub streams_prefix: String,
     /// If `true`, messages will be written to separate streams per topic.
@@ -195,16 +214,14 @@ pub trait MessageBusSubscriber {
 
 /// A generic message bus backing facade.
 ///
-/// The main operations take a consistent `key` and `payload` which should provide enough
-/// information to implement the message bus backing in many different technologies.
-///
-/// Delete operations may need a `payload` to target specific values.
+/// Implementations own the concrete backing technology and expose transport-neutral publisher and
+/// subscriber surfaces through separate traits.
 pub trait MessageBusBacking {
     type BackingType;
 
     /// # Errors
     ///
-    /// Returns an error if initializing the database connection fails.
+    /// Returns an error if initializing the backing connection fails.
     fn new(
         trader_id: TraderId,
         instance_id: UUID4,
@@ -248,9 +265,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_default_database_config() {
-        let config = DatabaseConfig::default();
-        assert_eq!(config.database_type, "redis");
+    fn test_default_message_bus_backing_config() {
+        let config = MessageBusBackingConfig::default();
+        assert_eq!(config.backing_type, "redis");
         assert_eq!(config.host, None);
         assert_eq!(config.port, None);
         assert_eq!(config.username, None);
@@ -265,7 +282,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_deserialize_database_config() {
+    fn test_deserialize_message_bus_backing_config() {
         let config_json = json!({
             "type": "redis",
             "host": "localhost",
@@ -280,8 +297,8 @@ mod tests {
             "max_delay": 10,
             "factor": 2
         });
-        let config: DatabaseConfig = serde_json::from_value(config_json).unwrap();
-        assert_eq!(config.database_type, "redis");
+        let config: MessageBusBackingConfig = serde_json::from_value(config_json).unwrap();
+        assert_eq!(config.backing_type, "redis");
         assert_eq!(config.host, Some("localhost".to_string()));
         assert_eq!(config.port, Some(6379));
         assert_eq!(config.username, Some("user".to_string()));
@@ -296,13 +313,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_deserialize_database_config_rejects_unknown_field() {
+    fn test_deserialize_message_bus_backing_config_rejects_unknown_field() {
         let config_json = json!({
             "type": "redis",
             "unexpected": true,
         });
 
-        let error = serde_json::from_value::<DatabaseConfig>(config_json).unwrap_err();
+        let error = serde_json::from_value::<MessageBusBackingConfig>(config_json).unwrap_err();
         assert!(error.to_string().contains("unknown field `unexpected`"));
     }
 
@@ -347,7 +364,7 @@ mod tests {
     #[rstest]
     fn test_deserialize_message_bus_config() {
         let config_json = json!({
-            "database": {
+            "backing": {
                 "type": "redis",
                 "host": "localhost",
                 "port": 6379,

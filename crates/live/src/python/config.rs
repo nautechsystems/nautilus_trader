@@ -17,7 +17,7 @@ use std::{collections::HashMap, time::Duration};
 
 use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
-    msgbus::database::MessageBusConfig,
+    msgbus::backing::MessageBusConfig,
 };
 use nautilus_core::{UUID4, python::to_pyvalue_err};
 use nautilus_model::{

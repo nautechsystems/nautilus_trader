@@ -37,8 +37,8 @@
 //! See [`core`] module documentation for design decisions and performance details.
 
 mod api;
+pub mod backing;
 pub mod core;
-pub mod database;
 pub mod matching;
 pub mod message;
 pub mod mstr;
@@ -70,11 +70,11 @@ use nautilus_model::{
 use smallvec::SmallVec;
 
 #[cfg(feature = "live")]
-pub use self::database::MessageBusSubscriber;
+pub use self::backing::MessageBusSubscriber;
 pub use self::{
     api::*,
+    backing::MessageBusPublisher,
     core::{MessageBus, Subscription},
-    database::MessageBusPublisher,
     message::BusMessage,
     mstr::{Endpoint, MStr, Pattern, Topic},
     switchboard::MessagingSwitchboard,

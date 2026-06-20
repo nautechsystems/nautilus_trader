@@ -288,8 +288,8 @@ Here's a quick reference to help you decide which messaging style to use:
 
 The `MessageBus` can publish serialized messages to an external publisher. This section describes
 the outbound side of the external bus. Rust-native live nodes use an injected
-`MessageBusPublisher`, so the core node does not depend on a specific database, broker,
-shared-memory implementation, or socket protocol.
+`MessageBusPublisher`, so the core node does not depend on Redis, a broker, shared-memory
+implementation, or socket protocol.
 
 :::info
 Redis is currently supported as one external publisher for serializable messages.
@@ -353,13 +353,17 @@ def register_serializable_type(
 
 ## Configuration
 
-The message bus external backing technology can be configured by importing the `MessageBusConfig` object and passing this to
-your `TradingNodeConfig`. Each of these config options will be described below.
+The message bus external backing technology can be configured by importing `MessageBusConfig` and
+`MessageBusBackingConfig`, then passing the message bus config to your `TradingNodeConfig`. Each of
+these config options will be described below.
 
 ```python
+from nautilus_trader.config import MessageBusBackingConfig
+from nautilus_trader.config import MessageBusConfig
+
 ...  # Other config omitted
 message_bus=MessageBusConfig(
-    database=DatabaseConfig(),
+    backing=MessageBusBackingConfig(),
     encoding="json",
     timestamps_as_iso8601=True,
     buffer_interval_ms=100,
@@ -373,14 +377,15 @@ message_bus=MessageBusConfig(
 ...
 ```
 
-### Database config
+### Backing config
 
-A `DatabaseConfig` is required when using the built-in Redis publisher. For a default Redis setup
-on the local loopback you can pass a `DatabaseConfig()`, which uses matching defaults.
+A `MessageBusBackingConfig` is required when using the built-in Redis publisher. For a default Redis
+setup on the local loopback you can pass a `MessageBusBackingConfig()`, which uses matching
+defaults.
 
 Rust-native callers that inject a `MessageBusPublisher` pass concrete connection details when they
-construct that publisher. The core message bus does not require a `DatabaseConfig` for injected
-publishers.
+construct that publisher. The core message bus does not require a `MessageBusBackingConfig` for
+injected publishers.
 
 The Rust live runtime still rejects `external_streams`, so inbound stream configuration is not
 silently ignored. The subscriber trait exists, but the missing runtime piece is the Rust live bridge
@@ -522,8 +527,11 @@ The settings `use_trader_id`, `use_trader_prefix`, and `use_instance_id` are all
 to ensure a simple and predictable stream key that the consumer nodes can register for.
 
 ```python
+from nautilus_trader.config import MessageBusBackingConfig
+from nautilus_trader.config import MessageBusConfig
+
 message_bus=MessageBusConfig(
-    database=DatabaseConfig(
+    backing=MessageBusBackingConfig(
         connection_timeout=2,
         response_timeout=2,
     ),
@@ -545,11 +553,14 @@ Additionally, we declare the client ID `"BINANCE_EXT"` as an external client. Th
 published onto the internal message bus from the external stream, to which the node has subscribed to the relevant topics.
 
 ```python
+from nautilus_trader.config import MessageBusBackingConfig
+from nautilus_trader.config import MessageBusConfig
+
 data_engine=LiveDataEngineConfig(
     external_clients=[ClientId("BINANCE_EXT")],
 ),
 message_bus=MessageBusConfig(
-    database=DatabaseConfig(
+    backing=MessageBusBackingConfig(
         connection_timeout=2,
         response_timeout=2,
     ),

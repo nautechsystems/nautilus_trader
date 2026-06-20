@@ -29,8 +29,8 @@ use crate::{
     enums::SerializationEncoding,
     msgbus::{
         self as msgbus_api, BusMessage, MessageBus,
+        backing::{MessageBusBackingConfig, MessageBusConfig},
         core::Subscription,
-        database::{DatabaseConfig, MessageBusConfig},
         get_message_bus,
         matching::is_matching,
         mstr::{Endpoint, MStr, Pattern, Topic},
@@ -64,17 +64,17 @@ impl BusMessage {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl DatabaseConfig {
-    /// Configuration for database connections.
+impl MessageBusBackingConfig {
+    /// Configuration for message bus backing connections.
     ///
     /// # Notes
     ///
-    /// If `database_type` is `"redis"`, it requires Redis version 6.2 or higher for correct operation.
+    /// If `backing_type` is `"redis"`, it requires Redis version 6.2 or higher for correct operation.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (database_type=None, host=None, port=None, username=None, password=None, ssl=None, connection_timeout=None, response_timeout=None, number_of_retries=None, exponent_base=None, max_delay=None, factor=None))]
+    #[pyo3(signature = (backing_type=None, host=None, port=None, username=None, password=None, ssl=None, connection_timeout=None, response_timeout=None, number_of_retries=None, exponent_base=None, max_delay=None, factor=None))]
     fn py_new(
-        database_type: Option<String>,
+        backing_type: Option<String>,
         host: Option<String>,
         port: Option<u16>,
         username: Option<String>,
@@ -89,7 +89,7 @@ impl DatabaseConfig {
     ) -> Self {
         let default = Self::default();
         Self {
-            database_type: database_type.unwrap_or(default.database_type),
+            backing_type: backing_type.unwrap_or(default.backing_type),
             host,
             port,
             username,
@@ -113,8 +113,8 @@ impl DatabaseConfig {
     }
 
     #[getter]
-    fn database_type(&self) -> &str {
-        &self.database_type
+    fn backing_type(&self) -> &str {
+        &self.backing_type
     }
 
     #[getter]
@@ -179,9 +179,9 @@ impl MessageBusConfig {
     /// Configuration for `MessageBus` instances.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (database=None, encoding=None, timestamps_as_iso8601=None, buffer_interval_ms=None, autotrim_mins=None, use_trader_prefix=None, use_trader_id=None, use_instance_id=None, streams_prefix=None, stream_per_topic=None, external_streams=None, types_filter=None, heartbeat_interval_secs=None))]
+    #[pyo3(signature = (backing=None, encoding=None, timestamps_as_iso8601=None, buffer_interval_ms=None, autotrim_mins=None, use_trader_prefix=None, use_trader_id=None, use_instance_id=None, streams_prefix=None, stream_per_topic=None, external_streams=None, types_filter=None, heartbeat_interval_secs=None))]
     fn py_new(
-        database: Option<DatabaseConfig>,
+        backing: Option<MessageBusBackingConfig>,
         encoding: Option<SerializationEncoding>,
         timestamps_as_iso8601: Option<bool>,
         buffer_interval_ms: Option<u32>,
@@ -197,7 +197,7 @@ impl MessageBusConfig {
     ) -> Self {
         let default = Self::default();
         Self {
-            database,
+            backing,
             encoding: encoding.unwrap_or(default.encoding),
             timestamps_as_iso8601: timestamps_as_iso8601.unwrap_or(default.timestamps_as_iso8601),
             buffer_interval_ms,
@@ -222,8 +222,8 @@ impl MessageBusConfig {
     }
 
     #[getter]
-    fn database(&self) -> Option<DatabaseConfig> {
-        self.database.clone()
+    fn backing(&self) -> Option<MessageBusBackingConfig> {
+        self.backing.clone()
     }
 
     #[getter]
@@ -370,7 +370,7 @@ pub struct PyMessageBus {
     name: String,
     has_backing: bool,
     serializer: Option<Py<PyAny>>,
-    database: Option<Py<PyAny>>,
+    backing: Option<Py<PyAny>>,
     listeners: Vec<Py<PyAny>>,
     types_filter: Option<Py<PyAny>>,
     streaming_types: Vec<Py<PyAny>>,
@@ -398,7 +398,7 @@ impl PyMessageBus {
     /// This creates and registers the underlying Rust `MessageBus` as the
     /// thread-local bus, then wraps it for Python access.
     #[new]
-    #[pyo3(signature = (trader_id, clock=None, instance_id=None, name=None, serializer=None, database=None, config=None))]
+    #[pyo3(signature = (trader_id, clock=None, instance_id=None, name=None, serializer=None, backing=None, config=None))]
     #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         py: Python<'_>,
@@ -407,13 +407,13 @@ impl PyMessageBus {
         instance_id: Option<UUID4>,
         name: Option<String>,
         serializer: Option<Py<PyAny>>,
-        database: Option<Py<PyAny>>,
+        backing: Option<Py<PyAny>>,
         config: Option<Py<PyAny>>,
     ) -> PyResult<Self> {
         let _ = clock;
         let instance_id = instance_id.unwrap_or_default();
         let bus_name = name.clone();
-        let has_backing = database.is_some();
+        let has_backing = backing.is_some();
 
         let msgbus = MessageBus::new(trader_id, instance_id, bus_name, None);
         msgbus.register_message_bus();
@@ -440,7 +440,7 @@ impl PyMessageBus {
             name: name.unwrap_or_else(|| "MessageBus".to_owned()),
             has_backing,
             serializer,
-            database,
+            backing,
             listeners: Vec::new(),
             types_filter,
             streaming_types: Vec::new(),
@@ -473,7 +473,7 @@ impl PyMessageBus {
         &self.name
     }
 
-    /// Returns whether the message bus is backed by a database.
+    /// Returns whether the message bus has an external backing.
     #[getter]
     #[pyo3(name = "has_backing")]
     fn py_has_backing(&self) -> bool {
@@ -742,8 +742,8 @@ impl PyMessageBus {
         self.listeners.clear();
         self.streaming_types.clear();
 
-        if let Some(ref database) = self.database {
-            let db = database.bind(py);
+        if let Some(ref backing) = self.backing {
+            let db = backing.bind(py);
             if !db.call_method0("is_closed")?.extract::<bool>()? {
                 db.call_method0("close")?;
             }
@@ -789,8 +789,8 @@ impl PyMessageBus {
             return Ok(());
         };
 
-        if let Some(ref database) = self.database {
-            let db = database.bind(py);
+        if let Some(ref backing) = self.backing {
+            let db = backing.bind(py);
             if !db.call_method0("is_closed")?.extract::<bool>()? {
                 db.call_method1("publish", (topic, &payload))?;
             }

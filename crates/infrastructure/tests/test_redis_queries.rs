@@ -21,7 +21,7 @@ mod serial_tests {
 
     use bytes::Bytes;
     use nautilus_common::{
-        cache::CacheConfig, enums::SerializationEncoding, msgbus::database::DatabaseConfig,
+        cache::CacheConfig, database::DatabaseConfig, enums::SerializationEncoding,
         testing::wait_until_async,
     };
     use nautilus_core::{Params, UUID4};

@@ -25,7 +25,7 @@ use nautilus_common::{
         ClientConfig, DataClientFactory, ExecutionClientFactory, SimulatedExecutionClientFactory,
     },
     logging::logger::LoggerConfig,
-    msgbus::{MessageBusPublisher, database::MessageBusConfig},
+    msgbus::{MessageBusPublisher, backing::MessageBusConfig},
 };
 use nautilus_core::UUID4;
 use nautilus_data::client::DataClientAdapter;

@@ -21,6 +21,7 @@ from nautilus_trader.common import DatabaseConfig
 from nautilus_trader.common import FileWriterConfig
 from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.common import LoggerConfig
+from nautilus_trader.common import MessageBusBackingConfig
 from nautilus_trader.common import MessageBusConfig
 from nautilus_trader.model import ActorId
 
@@ -164,6 +165,23 @@ def test_database_config_accepts_explicit_kwargs():
     assert config.factor == 6
 
 
+def test_message_bus_backing_config_defaults():
+    config = MessageBusBackingConfig()
+
+    assert config.backing_type == "redis"
+    assert config.host is None
+    assert config.port is None
+    assert config.username is None
+    assert config.password is None
+    assert config.ssl is False
+    assert config.connection_timeout == 20
+    assert config.response_timeout == 20
+    assert config.number_of_retries == 100
+    assert config.exponent_base == 2
+    assert config.max_delay == 1000
+    assert config.factor == 2
+
+
 def test_file_writer_config_construction(tmp_path):
     config = FileWriterConfig(
         directory=str(tmp_path),
@@ -196,7 +214,7 @@ def test_logger_config_from_spec():
 def test_message_bus_config_defaults():
     config = MessageBusConfig()
 
-    assert config.database is None
+    assert config.backing is None
     assert config.timestamps_as_iso8601 is False
     assert config.buffer_interval_ms is None
     assert config.autotrim_mins is None
@@ -211,8 +229,8 @@ def test_message_bus_config_defaults():
 
 
 def test_message_bus_config_accepts_explicit_kwargs():
-    database = DatabaseConfig(
-        database_type="redis",
+    backing = MessageBusBackingConfig(
+        backing_type="redis",
         host="localhost",
         port=6379,
         username="user",
@@ -226,7 +244,7 @@ def test_message_bus_config_accepts_explicit_kwargs():
         factor=6,
     )
     config = MessageBusConfig(
-        database=database,
+        backing=backing,
         timestamps_as_iso8601=True,
         buffer_interval_ms=7,
         autotrim_mins=8,
@@ -240,7 +258,7 @@ def test_message_bus_config_accepts_explicit_kwargs():
         heartbeat_interval_secs=9,
     )
 
-    assert config.database.host == "localhost"
+    assert config.backing.host == "localhost"
     assert config.timestamps_as_iso8601 is True
     assert config.buffer_interval_ms == 7
     assert config.autotrim_mins == 8

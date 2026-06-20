@@ -2204,7 +2204,7 @@ mod tests {
         enums::SerializationEncoding,
         msgbus::{
             self, MessageBusPublisher, MessagingSwitchboard, TypedIntoHandler,
-            database::MessageBusConfig,
+            backing::MessageBusConfig,
         },
     };
     use nautilus_core::{UUID4, UnixNanos};
