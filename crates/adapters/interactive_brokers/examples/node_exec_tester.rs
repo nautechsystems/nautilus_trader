@@ -46,7 +46,6 @@ use nautilus_model::{
 };
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
-use rust_decimal::Decimal;
 
 // Each variant is exercised by the tests and selected by editing EXEC_SPEC_PROFILE,
 // but only the default is constructed in a non-test build
@@ -199,7 +198,7 @@ fn exec_tester_config_for_profile(
 
     match profile {
         IbExecSpecProfile::Lifecycle => builder
-            .open_position_on_start_qty(Decimal::ONE)
+            .open_position_on_start_qty(order_qty.as_decimal())
             .enable_limit_buys(false)
             .enable_limit_sells(false)
             .close_positions_on_stop(true)
@@ -217,13 +216,13 @@ fn exec_tester_config_for_profile(
             .test_reject_post_only(true)
             .build(),
         IbExecSpecProfile::Options => builder
-            .open_position_on_start_qty(Decimal::ONE)
+            .open_position_on_start_qty(order_qty.as_decimal())
             .enable_limit_buys(false)
             .enable_limit_sells(false)
             .close_positions_on_stop(true)
             .build(),
         IbExecSpecProfile::UnsupportedFlags => builder
-            .open_position_on_start_qty(Decimal::ONE)
+            .open_position_on_start_qty(order_qty.as_decimal())
             .enable_limit_buys(true)
             .enable_limit_sells(false)
             .limit_time_in_force(TimeInForce::Ioc)
@@ -238,6 +237,8 @@ fn exec_tester_config_for_profile(
 
 #[cfg(test)]
 mod tests {
+    use rust_decimal::Decimal;
+
     use super::*;
 
     fn instrument_id() -> InstrumentId {

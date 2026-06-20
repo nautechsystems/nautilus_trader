@@ -131,6 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let instrument_id = InstrumentId::from(INSTRUMENT_ID);
     let client_id = ClientId::new(CLIENT_ID);
+    let order_qty = Quantity::from(ORDER_QTY);
 
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
@@ -140,7 +141,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
-        .order_qty(Quantity::from(ORDER_QTY))
+        .order_qty(order_qty)
         .build();
 
     let tester = ExecTester::new(tester_config);
