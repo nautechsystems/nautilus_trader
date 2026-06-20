@@ -415,6 +415,83 @@ fn submit_market_open_order(
         .unwrap();
 }
 
+struct BinaryOptionLifecycleHarness {
+    client: SandboxExecutionClient,
+    cache: Rc<RefCell<Cache>>,
+    test_clock: Rc<RefCell<TestClock>>,
+    instrument: InstrumentAny,
+    rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+}
+
+fn setup_binary_option_lifecycle_harness(
+    trader_id: TraderId,
+    account_id: AccountId,
+    condition_id: &str,
+    token_id: &str,
+    outcome: &str,
+    expiration_ns: u64,
+) -> BinaryOptionLifecycleHarness {
+    let instrument = make_binary_option_instrument(condition_id, token_id, outcome, expiration_ns);
+    let venue = instrument.id().venue;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    let config = create_config(trader_id, account_id, venue);
+    let core = ExecutionClientCore::new(
+        config.trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+
+    set_exec_event_sender(tx);
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    client.start().unwrap();
+    client
+        .process_quote_tick(&create_binary_option_quote(instrument.id()))
+        .unwrap();
+
+    BinaryOptionLifecycleHarness {
+        client,
+        cache,
+        test_clock,
+        instrument,
+        rx,
+    }
+}
+
+fn publish_expired_close(
+    test_clock: &Rc<RefCell<TestClock>>,
+    instrument: &InstrumentAny,
+    close_price: Price,
+    ts_ns: u64,
+) {
+    let _ = test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(ts_ns), true);
+
+    let close = InstrumentClose::new(
+        instrument.id(),
+        close_price,
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(ts_ns),
+        UnixNanos::from(ts_ns),
+    );
+    msgbus::publish_any(
+        nautilus_common::msgbus::switchboard::get_instrument_close_topic(instrument.id()),
+        &close,
+    );
+}
+
 struct PendingResolutionHarness {
     context: TestContext,
     instrument: InstrumentAny,
@@ -459,7 +536,7 @@ fn setup_pending_resolution_harness(
         .borrow_mut()
         .advance_time(UnixNanos::from(50), true);
 
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
     nautilus_common::live::runner::replace_exec_event_sender(tx);
     client.start().unwrap();
 
@@ -474,14 +551,19 @@ fn setup_pending_resolution_harness(
     );
     client.process_quote_tick(&quote).unwrap();
 
-    submit_market_open_order(
+    let position = submit_open_position_and_seed_cache(
         &client,
         &cache,
         trader_id,
         &instrument,
         &format!("OPEN-{client_order_suffix}"),
-        10,
+        &format!("P-{client_order_suffix}"),
+        &mut rx,
     );
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
 
     let resting_order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument.id())
@@ -545,29 +627,15 @@ fn setup_pending_resolution_harness(
 
 fn assert_pending_resolution_transition(
     harness: &mut PendingResolutionHarness,
-    opening_order_id: &str,
     resting_order_id: &str,
     probe_order_id: &str,
-    position_id: &str,
 ) {
     let mut seen_resting_canceled = false;
     let mut seen_probe_rejected = false;
-    let mut seeded_position = false;
 
     for event in std::iter::from_fn(|| harness.rx.try_recv().ok()) {
         if let ExecutionEvent::Order(order_event) = event {
             match order_event {
-                OrderEventAny::Filled(fill)
-                    if fill.client_order_id.as_str() == opening_order_id =>
-                {
-                    seed_binary_option_position_from_fill(
-                        &harness.context.cache,
-                        &harness.instrument,
-                        fill,
-                        position_id,
-                    );
-                    seeded_position = true;
-                }
                 OrderEventAny::Canceled(c) if c.client_order_id.as_str() == resting_order_id => {
                     seen_resting_canceled = true;
                 }
@@ -586,10 +654,6 @@ fn assert_pending_resolution_transition(
     assert!(
         seen_probe_rejected,
         "expected probe order rejection with pending resolution reason"
-    );
-    assert!(
-        seeded_position,
-        "expected opening fill so a position can be settled on InstrumentClose"
     );
 }
 
@@ -952,13 +1016,7 @@ fn test_paper_binary_option_pending_resolution_then_close_settlement(
     account_id: AccountId,
 ) {
     let mut harness = setup_pending_resolution_harness(trader_id, account_id, "BO-PAPER");
-    assert_pending_resolution_transition(
-        &mut harness,
-        "OPEN-BO-PAPER",
-        "REST-BO-PAPER",
-        "PROBE-BO-PAPER",
-        "P-BO-PAPER",
-    );
+    assert_pending_resolution_transition(&mut harness, "REST-BO-PAPER", "PROBE-BO-PAPER");
 
     let close = InstrumentClose::new(
         harness.instrument.id(),
@@ -1001,13 +1059,7 @@ fn test_paper_binary_option_pending_resolution_then_close_settlement_via_data_en
         None,
     )));
     DataEngine::register_msgbus_handlers(&data_engine);
-    assert_pending_resolution_transition(
-        &mut harness,
-        "OPEN-BO-DE",
-        "REST-BO-DE",
-        "PROBE-BO-DE",
-        "P-BO-DE",
-    );
+    assert_pending_resolution_transition(&mut harness, "REST-BO-DE", "PROBE-BO-DE");
 
     let close = InstrumentClose::new(
         harness.instrument.id(),
@@ -1104,54 +1156,33 @@ fn test_instrument_close_finalizes_expired_engine_without_open_state(
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
     setup_order_event_handler();
 
-    let instrument = make_binary_option_instrument("0xFINALIZE", "0xYES", "Yes", 100);
-    let venue = instrument.id().venue;
-    let cache = Rc::new(RefCell::new(Cache::default()));
-    let test_clock = Rc::new(RefCell::new(TestClock::new()));
-    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
-    let config = create_config(trader_id, account_id, venue);
-    let core = ExecutionClientCore::new(
-        config.trader_id,
-        ClientId::new("SANDBOX"),
-        config.venue,
-        config.oms_type,
-        config.account_id,
-        config.account_type,
-        config.base_currency,
-        cache.clone(),
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id,
+        account_id,
+        "0xFINALIZE",
+        "0xYES",
+        "Yes",
+        100,
     );
-    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+    assert_eq!(harness.client.matching_engine_count(), 1);
 
-    cache
-        .borrow_mut()
-        .add_instrument(instrument.clone())
-        .unwrap();
-    client.start().unwrap();
-    client
-        .process_quote_tick(&create_binary_option_quote(instrument.id()))
-        .unwrap();
-    assert_eq!(client.matching_engine_count(), 1);
-
-    let _ = test_clock
-        .borrow_mut()
-        .advance_time(UnixNanos::from(200), true);
-
-    let close = InstrumentClose::new(
-        instrument.id(),
+    publish_expired_close(
+        &harness.test_clock,
+        &harness.instrument,
         Price::from("1.000"),
-        InstrumentCloseType::ContractExpired,
-        UnixNanos::from(200),
-        UnixNanos::from(200),
-    );
-    msgbus::publish_any(
-        nautilus_common::msgbus::switchboard::get_instrument_close_topic(instrument.id()),
-        &close,
+        200,
     );
 
-    assert_eq!(client.matching_engine_count(), 0);
-    assert!(cache.borrow().instrument(&instrument.id()).is_none());
+    assert_eq!(harness.client.matching_engine_count(), 0);
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_none()
+    );
 
-    client.stop().unwrap();
+    harness.client.stop().unwrap();
 }
 
 #[rstest]
@@ -1162,80 +1193,54 @@ fn test_instrument_close_keeps_engine_until_position_closed(
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
     setup_order_event_handler();
 
-    let instrument = make_binary_option_instrument("0xSETTLE", "0xYES", "Yes", 100);
-    let venue = instrument.id().venue;
-    let cache = Rc::new(RefCell::new(Cache::default()));
-    let test_clock = Rc::new(RefCell::new(TestClock::new()));
-    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
-    let config = create_config(trader_id, account_id, venue);
-    let core = ExecutionClientCore::new(
-        config.trader_id,
-        ClientId::new("SANDBOX"),
-        config.venue,
-        config.oms_type,
-        config.account_id,
-        config.account_type,
-        config.base_currency,
-        cache.clone(),
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id, account_id, "0xSETTLE", "0xYES", "Yes", 100,
     );
-    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
-
-    set_exec_event_sender(tx);
-    cache
-        .borrow_mut()
-        .add_instrument(instrument.clone())
-        .unwrap();
-    client.start().unwrap();
-    client
-        .process_quote_tick(&create_binary_option_quote(instrument.id()))
-        .unwrap();
-    assert_eq!(client.matching_engine_count(), 1);
+    let venue = harness.instrument.id().venue;
+    assert_eq!(harness.client.matching_engine_count(), 1);
 
     let position = submit_open_position_and_seed_cache(
-        &client,
-        &cache,
+        &harness.client,
+        &harness.cache,
         trader_id,
-        &instrument,
+        &harness.instrument,
         "OPEN-POSITION",
         "P-OPEN-POSITION",
-        &mut rx,
+        &mut harness.rx,
     );
-    cache
+    harness
+        .cache
         .borrow_mut()
         .add_position(&position, OmsType::Netting)
         .unwrap();
 
-    let _ = test_clock
-        .borrow_mut()
-        .advance_time(UnixNanos::from(200), true);
-
-    let close = InstrumentClose::new(
-        instrument.id(),
+    publish_expired_close(
+        &harness.test_clock,
+        &harness.instrument,
         Price::from("1.000"),
-        InstrumentCloseType::ContractExpired,
-        UnixNanos::from(200),
-        UnixNanos::from(200),
-    );
-    msgbus::publish_any(
-        nautilus_common::msgbus::switchboard::get_instrument_close_topic(instrument.id()),
-        &close,
+        200,
     );
 
-    assert_eq!(client.matching_engine_count(), 1);
-    assert!(cache.borrow().instrument(&instrument.id()).is_some());
+    assert_eq!(harness.client.matching_engine_count(), 1);
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_some()
+    );
 
-    let closed = settle_position_from_expiration_fill(&cache, &position, &mut rx);
-    assert!(!cache.borrow().has_orders_open(
+    let closed = settle_position_from_expiration_fill(&harness.cache, &position, &mut harness.rx);
+    assert!(!harness.cache.borrow().has_orders_open(
         Some(&venue),
-        Some(&instrument.id()),
+        Some(&harness.instrument.id()),
         None,
         None,
         None,
     ));
-    assert!(!cache.borrow().has_positions_open(
+    assert!(!harness.cache.borrow().has_positions_open(
         Some(&venue),
-        Some(&instrument.id()),
+        Some(&harness.instrument.id()),
         None,
         None,
         None,
@@ -1245,9 +1250,9 @@ fn test_instrument_close_keeps_engine_until_position_closed(
         &position_closed_event(&closed, account_id),
     );
 
-    assert_eq!(client.matching_engine_count(), 0);
+    assert_eq!(harness.client.matching_engine_count(), 0);
 
-    client.stop().unwrap();
+    harness.client.stop().unwrap();
 }
 
 #[rstest]
@@ -1255,75 +1260,106 @@ fn test_position_closed_finalize_ignores_other_account(trader_id: TraderId, acco
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
     setup_order_event_handler();
 
-    let instrument = make_binary_option_instrument("0xACCOUNT", "0xYES", "Yes", 100);
-    let venue = instrument.id().venue;
-    let cache = Rc::new(RefCell::new(Cache::default()));
-    let test_clock = Rc::new(RefCell::new(TestClock::new()));
-    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
-    let config = create_config(trader_id, account_id, venue);
-    let core = ExecutionClientCore::new(
-        config.trader_id,
-        ClientId::new("SANDBOX"),
-        config.venue,
-        config.oms_type,
-        config.account_id,
-        config.account_type,
-        config.base_currency,
-        cache.clone(),
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id,
+        account_id,
+        "0xACCOUNT",
+        "0xYES",
+        "Yes",
+        100,
     );
-    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
-
-    set_exec_event_sender(tx);
-    cache
-        .borrow_mut()
-        .add_instrument(instrument.clone())
-        .unwrap();
-    client.start().unwrap();
-    client
-        .process_quote_tick(&create_binary_option_quote(instrument.id()))
-        .unwrap();
 
     let position = submit_open_position_and_seed_cache(
-        &client,
-        &cache,
+        &harness.client,
+        &harness.cache,
         trader_id,
-        &instrument,
+        &harness.instrument,
         "OPEN-ACCOUNT",
         "P-OPEN-ACCOUNT",
-        &mut rx,
+        &mut harness.rx,
     );
-    cache
+    harness
+        .cache
         .borrow_mut()
         .add_position(&position, OmsType::Netting)
         .unwrap();
 
-    let _ = test_clock
-        .borrow_mut()
-        .advance_time(UnixNanos::from(200), true);
-
-    let close = InstrumentClose::new(
-        instrument.id(),
+    publish_expired_close(
+        &harness.test_clock,
+        &harness.instrument,
         Price::from("1.000"),
-        InstrumentCloseType::ContractExpired,
-        UnixNanos::from(200),
-        UnixNanos::from(200),
-    );
-    msgbus::publish_any(
-        nautilus_common::msgbus::switchboard::get_instrument_close_topic(instrument.id()),
-        &close,
+        200,
     );
 
-    let closed = settle_position_from_expiration_fill(&cache, &position, &mut rx);
+    let closed = settle_position_from_expiration_fill(&harness.cache, &position, &mut harness.rx);
     msgbus::publish_position_event(
         "events.position.TEST".into(),
         &position_closed_event(&closed, AccountId::from("OTHER-001")),
     );
 
-    assert_eq!(client.matching_engine_count(), 1);
-    assert!(cache.borrow().instrument(&instrument.id()).is_some());
+    assert_eq!(harness.client.matching_engine_count(), 1);
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_some()
+    );
 
-    client.stop().unwrap();
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_position_closed_does_not_purge_non_expired_instrument(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id, account_id, "0xACTIVE", "0xYES", "Yes", 1_000,
+    );
+
+    let position = submit_open_position_and_seed_cache(
+        &harness.client,
+        &harness.cache,
+        trader_id,
+        &harness.instrument,
+        "OPEN-ACTIVE",
+        "P-ACTIVE",
+        &mut harness.rx,
+    );
+    harness
+        .cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    let mut closed = position;
+    closed.side = PositionSide::Flat;
+    closed.ts_closed = Some(closed.ts_last);
+    harness.cache.borrow_mut().update_position(&closed).unwrap();
+
+    msgbus::publish_position_event(
+        "events.position.TEST".into(),
+        &position_closed_event(&closed, account_id),
+    );
+
+    assert_eq!(
+        harness.client.matching_engine_count(),
+        1,
+        "non-expired position close should not release sandbox matching engines",
+    );
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_some()
+    );
+
+    harness.client.stop().unwrap();
 }
 
 #[rstest]
@@ -1334,38 +1370,19 @@ fn test_instrument_close_removes_resting_order_only_engine_before_cancel_event_a
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
     setup_order_event_handler();
 
-    let instrument = make_binary_option_instrument("0xRESTING", "0xYES", "Yes", 100);
-    let venue = instrument.id().venue;
-    let cache = Rc::new(RefCell::new(Cache::default()));
-    let test_clock = Rc::new(RefCell::new(TestClock::new()));
-    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
-    let config = create_config(trader_id, account_id, venue);
-    let core = ExecutionClientCore::new(
-        config.trader_id,
-        ClientId::new("SANDBOX"),
-        config.venue,
-        config.oms_type,
-        config.account_id,
-        config.account_type,
-        config.base_currency,
-        cache.clone(),
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id,
+        account_id,
+        "0xRESTING",
+        "0xYES",
+        "Yes",
+        100,
     );
-    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
-
-    set_exec_event_sender(tx);
-    cache
-        .borrow_mut()
-        .add_instrument(instrument.clone())
-        .unwrap();
-    client.start().unwrap();
-    client
-        .process_quote_tick(&create_binary_option_quote(instrument.id()))
-        .unwrap();
-    assert_eq!(client.matching_engine_count(), 1);
+    let venue = harness.instrument.id().venue;
+    assert_eq!(harness.client.matching_engine_count(), 1);
 
     let resting_order = OrderTestBuilder::new(OrderType::Limit)
-        .instrument_id(instrument.id())
+        .instrument_id(harness.instrument.id())
         .side(OrderSide::Buy)
         .price(Price::from("0.050"))
         .quantity(Quantity::from("1.00"))
@@ -1373,22 +1390,24 @@ fn test_instrument_close_removes_resting_order_only_engine_before_cancel_event_a
         .ts_init(UnixNanos::from(20))
         .submit(true)
         .build();
-    cache
+    harness
+        .cache
         .borrow_mut()
         .add_order(resting_order.clone(), None, None, false)
         .unwrap();
-    client
+    harness
+        .client
         .submit_order(SubmitOrder::from_order(
             &resting_order,
             trader_id,
-            Some(client.client_id()),
+            Some(harness.client.client_id()),
             None,
             UUID4::new(),
             UnixNanos::from(20),
         ))
         .unwrap();
 
-    let order_events = apply_order_events_from_channel(&cache, &mut rx);
+    let order_events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
     assert!(
         order_events
             .iter()
@@ -1396,36 +1415,35 @@ fn test_instrument_close_removes_resting_order_only_engine_before_cancel_event_a
                 if accepted.client_order_id.as_str() == "REST-CLOSE-ONLY")),
         "expected resting order acceptance before expiration",
     );
-    assert!(
-        cache
-            .borrow()
-            .has_orders_open(Some(&venue), Some(&instrument.id()), None, None, None,)
-    );
+    assert!(harness.cache.borrow().has_orders_open(
+        Some(&venue),
+        Some(&harness.instrument.id()),
+        None,
+        None,
+        None,
+    ));
 
-    let _ = test_clock
-        .borrow_mut()
-        .advance_time(UnixNanos::from(200), true);
-
-    let close = InstrumentClose::new(
-        instrument.id(),
+    publish_expired_close(
+        &harness.test_clock,
+        &harness.instrument,
         Price::from("1.000"),
-        InstrumentCloseType::ContractExpired,
-        UnixNanos::from(200),
-        UnixNanos::from(200),
-    );
-    msgbus::publish_any(
-        nautilus_common::msgbus::switchboard::get_instrument_close_topic(instrument.id()),
-        &close,
+        200,
     );
 
     assert_eq!(
-        client.matching_engine_count(),
+        harness.client.matching_engine_count(),
         0,
         "order-only expired instruments should release their matching engine immediately",
     );
-    assert!(cache.borrow().instrument(&instrument.id()).is_some());
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_none()
+    );
 
-    let order_events = apply_order_events_from_channel(&cache, &mut rx);
+    let order_events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
     assert!(
         order_events
             .iter()
@@ -1433,21 +1451,160 @@ fn test_instrument_close_removes_resting_order_only_engine_before_cancel_event_a
                 if canceled.client_order_id.as_str() == "REST-CLOSE-ONLY")),
         "expected expiration to cancel the resting order",
     );
-    assert!(!cache.borrow().has_orders_open(
+    assert!(!harness.cache.borrow().has_orders_open(
         Some(&venue),
-        Some(&instrument.id()),
+        Some(&harness.instrument.id()),
         None,
         None,
         None,
     ));
     assert_eq!(
-        client.matching_engine_count(),
+        harness.client.matching_engine_count(),
         0,
         "cancellation replay should not recreate engine retention after close",
     );
-    assert!(cache.borrow().instrument(&instrument.id()).is_some());
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_none()
+    );
 
-    client.stop().unwrap();
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_local_expiry_removes_resting_order_only_engine_before_cancel_event_applies(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id,
+        account_id,
+        "0xLOCAL-REST",
+        "0xYES",
+        "Yes",
+        100,
+    );
+    let venue = harness.instrument.id().venue;
+    assert_eq!(harness.client.matching_engine_count(), 1);
+
+    let resting_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(harness.instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("0.050"))
+        .quantity(Quantity::from("1.00"))
+        .client_order_id("REST-LOCAL-ONLY".into())
+        .ts_init(UnixNanos::from(20))
+        .submit(true)
+        .build();
+    harness
+        .cache
+        .borrow_mut()
+        .add_order(resting_order.clone(), None, None, false)
+        .unwrap();
+    harness
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &resting_order,
+            trader_id,
+            Some(harness.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::from(20),
+        ))
+        .unwrap();
+
+    let order_events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    assert!(
+        order_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Accepted(accepted)
+                if accepted.client_order_id.as_str() == "REST-LOCAL-ONLY")),
+        "expected resting order acceptance before local expiry",
+    );
+    assert!(harness.cache.borrow().has_orders_open(
+        Some(&venue),
+        Some(&harness.instrument.id()),
+        None,
+        None,
+        None,
+    ));
+
+    let _ = harness
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(200), true);
+
+    let probe_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(harness.instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("0.050"))
+        .quantity(Quantity::from("1.00"))
+        .client_order_id("PROBE-LOCAL-ONLY".into())
+        .ts_init(UnixNanos::from(200))
+        .submit(true)
+        .build();
+    harness
+        .cache
+        .borrow_mut()
+        .add_order(probe_order.clone(), None, None, false)
+        .unwrap();
+    harness
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &probe_order,
+            trader_id,
+            Some(harness.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::from(200),
+        ))
+        .unwrap();
+
+    assert_eq!(
+        harness.client.matching_engine_count(),
+        0,
+        "local expiry should release the engine before cancel/reject events apply",
+    );
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_none()
+    );
+
+    let order_events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    assert!(
+        order_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Canceled(canceled)
+                if canceled.client_order_id.as_str() == "REST-LOCAL-ONLY")),
+        "expected local expiry to cancel the resting order",
+    );
+    assert!(
+        order_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Rejected(rejected)
+                if rejected.client_order_id.as_str() == "PROBE-LOCAL-ONLY"
+                    && rejected.reason.as_str().contains("pending resolution"))),
+        "expected local expiry to reject new orders while pending resolution",
+    );
+    assert!(!harness.cache.borrow().has_orders_open(
+        Some(&venue),
+        Some(&harness.instrument.id()),
+        None,
+        None,
+        None,
+    ));
+    assert_eq!(harness.client.matching_engine_count(), 0);
+
+    harness.client.stop().unwrap();
 }
 
 #[rstest]

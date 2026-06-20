@@ -303,7 +303,7 @@ impl SandboxInner {
         // with the already-initialized matching engine.
         if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
             engine.get_engine_mut().process_instrument_close(*close);
-            self.try_finalize_expired_instrument(instrument_id);
+            self.sync_expired_cleanup(instrument_id);
         } else {
             log::warn!(
                 "Ignoring instrument close for {instrument_id}: no existing matching engine",
@@ -311,12 +311,21 @@ impl SandboxInner {
         }
     }
 
-    fn try_finalize_expired_instrument(&mut self, instrument_id: InstrumentId) {
+    fn is_expired_now(&self, instrument_id: InstrumentId) -> bool {
         let Some(engine) = self.matching_engines.get(&instrument_id) else {
-            return;
+            return false;
         };
 
-        if !engine.get_engine().is_expiration_processed() {
+        let now_ns = self.clock.borrow().timestamp_ns();
+        engine
+            .get_engine()
+            .instrument
+            .expiration_ns()
+            .is_some_and(|ns| now_ns >= ns)
+    }
+
+    fn sync_expired_cleanup(&mut self, instrument_id: InstrumentId) {
+        if !self.is_expired_now(instrument_id) {
             return;
         }
 
@@ -333,20 +342,9 @@ impl SandboxInner {
         }
 
         self.matching_engines.remove(&instrument_id);
-
-        let has_open_orders = self.cache.borrow().has_orders_open(
-            Some(&self.config.venue),
-            Some(&instrument_id),
-            None,
-            None,
-            None,
-        );
-
-        if has_open_orders {
-            return;
-        }
-
-        self.cache.borrow_mut().purge_instrument(instrument_id);
+        self.cache
+            .borrow_mut()
+            .purge_instrument_skip_order_guard(instrument_id);
     }
 }
 
@@ -561,9 +559,11 @@ impl SandboxExecutionClient {
                     && position_closed.account_id == account_id
                     && let Some(inner_rc) = inner_weak.upgrade()
                 {
+                    // ExecutionEngine updates the cached position state before publishing
+                    // PositionClosed, so this retry observes the post-settlement cache view.
                     inner_rc
                         .borrow_mut()
-                        .try_finalize_expired_instrument(position_closed.instrument_id);
+                        .sync_expired_cleanup(position_closed.instrument_id);
                 }
             })
         };
@@ -961,6 +961,7 @@ impl ExecutionClient for SandboxExecutionClient {
             engine
                 .get_engine_mut()
                 .process_order(&mut order, account_id);
+            inner.sync_expired_cleanup(instrument_id);
         }
 
         Ok(())
@@ -1022,6 +1023,7 @@ impl ExecutionClient for SandboxExecutionClient {
                     engine
                         .get_engine_mut()
                         .process_order(&mut order_clone, account_id);
+                    inner.sync_expired_cleanup(instrument_id);
                 }
             }
         }

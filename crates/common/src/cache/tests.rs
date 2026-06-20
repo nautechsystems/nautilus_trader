@@ -3878,6 +3878,42 @@ fn test_purge_instrument_refuses_when_orders_open() {
 }
 
 #[rstest]
+fn test_purge_instrument_skip_order_guard_allows_orders_open() {
+    let mut cache = Cache::default();
+    let audusd_sim = audusd_sim();
+    let instrument_id = audusd_sim.id;
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+
+    cache.add_instrument(instrument).unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    update_order_with_event(
+        &mut cache,
+        &mut order,
+        OrderEventAny::Submitted(OrderSubmitted::default()),
+    );
+    update_order_with_event(
+        &mut cache,
+        &mut order,
+        OrderEventAny::Accepted(OrderAccepted::default()),
+    );
+    assert!(order.is_open());
+
+    cache.purge_instrument_skip_order_guard(instrument_id);
+
+    assert!(cache.instrument(&instrument_id).is_none());
+    assert!(!cache.index.instrument_orders.contains_key(&instrument_id));
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
 fn test_purge_instrument_refuses_when_orders_initialized_but_not_open() {
     // Regression: orders in non-terminal states like INITIALIZED/SUBMITTED are not in
     // `orders_open`, but purging would still leave them dangling without an instrument.
