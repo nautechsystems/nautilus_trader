@@ -986,10 +986,9 @@ impl DataClient for LighterDataClient {
         );
 
         let instrument_id = bar_type.instrument_id();
-        anyhow::ensure!(
-            self.instruments.contains_key(&instrument_id),
-            "Instrument {instrument_id} not found in cache",
-        );
+        if !self.instruments.contains_key(&instrument_id) {
+            return Err(InstrumentLookupError::not_found(instrument_id).into());
+        }
 
         let ws = self.ws_client.clone();
         get_runtime().spawn(async move {
@@ -2113,6 +2112,33 @@ mod tests {
         );
 
         DataClient::subscribe_bars(&mut client, subscription).unwrap();
+    }
+
+    #[rstest]
+    fn test_subscribe_bars_missing_cached_instrument_returns_lookup_error() {
+        let mut client = create_data_client_for_test();
+        let instrument_id = InstrumentId::new(Symbol::new("ETH-PERP"), *LIGHTER_VENUE);
+        let bar_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+            AggregationSource::External,
+        );
+        let subscription = SubscribeBars::new(
+            bar_type,
+            Some(ClientId::new("LIGHTER")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        let err = DataClient::subscribe_bars(&mut client, subscription).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            InstrumentLookupError::not_found(instrument_id).to_string()
+        );
     }
 
     #[rstest]

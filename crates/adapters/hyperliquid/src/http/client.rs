@@ -3226,7 +3226,9 @@ impl HyperliquidHttpClient {
         let asset = cache_alias_for_symbol(symbol).unwrap_or_else(|| symbol.to_string());
         let instrument = self
             .get_or_create_instrument(&Ustr::from(asset.as_str()), product_type)
-            .ok_or_else(|| Error::bad_request(format!("Instrument not found for {asset}")))?;
+            .ok_or_else(|| {
+                Error::bad_request(InstrumentLookupError::not_found(instrument_id).to_string())
+            })?;
 
         let report = match order_status {
             HyperliquidExecOrderStatus::Resting { resting } => self.create_order_status_report(

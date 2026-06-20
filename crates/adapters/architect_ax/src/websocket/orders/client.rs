@@ -26,7 +26,7 @@ use std::{
 
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
-use nautilus_common::live::get_runtime;
+use nautilus_common::{cache::InstrumentLookupError, live::get_runtime};
 use nautilus_core::{
     AtomicMap,
     consts::NAUTILUS_USER_AGENT,
@@ -556,9 +556,9 @@ impl AxOrdersWebSocketClient {
         // Get instrument from cache for precision
         let symbol = instrument_id.symbol.inner();
         let instrument = self.get_cached_instrument(&symbol).ok_or_else(|| {
-            AxOrdersWsClientError::ClientError(format!(
-                "Instrument {instrument_id} not found in cache"
-            ))
+            AxOrdersWsClientError::ClientError(
+                InstrumentLookupError::not_found(instrument_id).to_string(),
+            )
         })?;
 
         let ax_side = AxOrderSide::try_from(order_side)?;

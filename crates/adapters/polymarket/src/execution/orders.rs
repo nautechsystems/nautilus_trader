@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_common::messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList};
+use nautilus_common::{
+    cache::InstrumentLookupError,
+    messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList},
+};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderType, TimeInForce},
     identifiers::VenueOrderId,
@@ -387,7 +390,7 @@ impl PolymarketExecutionClient {
             None => {
                 self.emitter.emit_order_denied(
                     order,
-                    &format!("Instrument not found: {}", order.instrument_id()),
+                    &InstrumentLookupError::not_found(order.instrument_id()).to_string(),
                 );
                 None
             }

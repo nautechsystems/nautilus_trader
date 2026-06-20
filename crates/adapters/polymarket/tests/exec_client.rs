@@ -34,7 +34,7 @@ use axum::{
     routing::{delete, get, post},
 };
 use nautilus_common::{
-    cache::Cache,
+    cache::{Cache, INSTRUMENT_NOT_FOUND, InstrumentLookupError},
     clients::ExecutionClient,
     enums::LogLevel,
     live::runner::set_exec_event_sender,
@@ -2365,6 +2365,44 @@ async fn test_submit_order_denied_for_post_only_with_ioc() {
 
 #[rstest]
 #[tokio::test]
+async fn test_submit_order_denied_for_missing_cached_instrument() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    // Order references an instrument that is never loaded into the cache.
+    let instrument_id = InstrumentId::from("MISSING-TOKEN.POLYMARKET");
+    let order = make_limit_order(
+        "O-MISSING",
+        instrument_id,
+        OrderSide::Buy,
+        false, // reduce_only
+        false, // quote_quantity
+        false, // post_only
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let cmd = make_submit_cmd(&order, instrument_id);
+
+    client.submit_order(cmd).unwrap();
+
+    let event = rx.try_recv().unwrap();
+    let denied = assert_order_event(event, "Denied");
+    let reason = order_event_reason(&denied);
+
+    assert_eq!(
+        reason,
+        InstrumentLookupError::not_found(instrument_id).to_string()
+    );
+    assert_eq!(reason, format!("{INSTRUMENT_NOT_FOUND}: {instrument_id}"));
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_submit_order_post_only_with_gtc_allowed() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
@@ -3235,10 +3273,7 @@ async fn test_submit_order_list_filters_out_ineligible_entries(#[case] kind: &st
                 "reason was {reason}"
             ),
             "missing_instrument" => {
-                assert!(
-                    reason.contains("Instrument not found"),
-                    "reason was {reason}"
-                );
+                assert!(reason.contains(INSTRUMENT_NOT_FOUND), "reason was {reason}");
             }
             _ => unreachable!(),
         }

@@ -1125,6 +1125,34 @@ async fn test_public_market_data_request_missing_cached_instrument_returns_looku
 
 #[rstest]
 #[tokio::test]
+async fn test_request_instrument_missing_instrument_returns_lookup_error() {
+    let addr = start_test_server(Arc::new(TestServerState::default())).await;
+    let client = OKXHttpClient::new(
+        Some(format!("http://{addr}")),
+        1,
+        0,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let instrument_id = InstrumentId::from("BTC-ABOVE-DAILY-260224-1600-99999.OKX");
+
+    let message = client
+        .request_instrument(instrument_id)
+        .await
+        .unwrap_err()
+        .to_string();
+
+    assert!(
+        message.contains(&InstrumentLookupError::not_found(instrument_id).to_string()),
+        "expected canonical lookup error, was {message}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_http_get_instruments_returns_data() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{addr}");

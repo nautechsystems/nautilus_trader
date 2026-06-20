@@ -2065,11 +2065,7 @@ impl KrakenSpotHttpClient {
         for (_, (signed_qty, inst_id)) in agg {
             let instrument = self
                 .get_cached_instrument(&inst_id.symbol.inner())
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "OpenPositions: instrument disappeared from cache for {inst_id}"
-                    )
-                })?;
+                .ok_or_else(|| InstrumentLookupError::not_found(inst_id))?;
 
             let side = if signed_qty.is_sign_positive() && !signed_qty.is_zero() {
                 PositionSideSpecified::Long

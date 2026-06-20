@@ -26,7 +26,6 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
     time::get_atomic_clock_realtime,
@@ -35,7 +34,7 @@ use nautilus_model::{
     data::{Bar, BookOrder, FundingRateUpdate, TradeTick},
     enums::{BookType, OrderSide, OrderType, TimeInForce},
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
     orderbook::OrderBook,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
@@ -77,7 +76,7 @@ use super::{
     },
 };
 use crate::common::{
-    consts::{AX_HTTP_URL, AX_ORDERS_URL, AX_VENUE},
+    consts::{AX_HTTP_URL, AX_ORDERS_URL},
     credential::Credential,
     enums::{AxCandleWidth, AxInstrumentState},
     parse::{cid_to_client_order_id, client_order_id_to_cid},
@@ -1350,10 +1349,9 @@ impl AxHttpClient {
         symbol: Ustr,
         depth: Option<usize>,
     ) -> anyhow::Result<OrderBook> {
-        let requested_instrument_id = InstrumentId::new(Symbol::new(symbol.as_str()), *AX_VENUE);
         let instrument = self
             .get_instrument(&symbol)
-            .ok_or_else(|| InstrumentLookupError::not_found(requested_instrument_id))?;
+            .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found in cache"))?;
 
         let resp = self
             .inner
@@ -1414,10 +1412,9 @@ impl AxHttpClient {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        let instrument_id = InstrumentId::new(Symbol::new(symbol.as_str()), *AX_VENUE);
         let instrument = self
             .get_instrument(&symbol)
-            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
+            .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found in cache"))?;
 
         let resp = self
             .inner
@@ -1466,10 +1463,9 @@ impl AxHttpClient {
         end: Option<DateTime<Utc>>,
         width: AxCandleWidth,
     ) -> anyhow::Result<Vec<Bar>> {
-        let instrument_id = InstrumentId::new(Symbol::new(symbol.as_str()), *AX_VENUE);
         let instrument = self
             .get_instrument(&symbol)
-            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
+            .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found in cache"))?;
 
         let start_ns = start.and_then(|dt| dt.timestamp_nanos_opt()).unwrap_or(0);
         let end_ns = end

@@ -40,8 +40,8 @@ use nautilus_hyperliquid::{
     http::{
         error::Error,
         models::{
-            Cloid, HyperliquidFills, HyperliquidL2Book, OutcomeMeta, PerpMeta, PerpMetaAndCtxs,
-            SpotMeta, SpotMetaAndCtxs,
+            Cloid, HyperliquidExchangeResponse, HyperliquidFills, HyperliquidL2Book, OutcomeMeta,
+            PerpMeta, PerpMetaAndCtxs, SpotMeta, SpotMetaAndCtxs,
         },
         query::{InfoRequest, InfoRequestParams},
     },
@@ -567,6 +567,49 @@ async fn test_request_bars_missing_cached_instrument_returns_bad_request_lookup_
         .request_bars(bar_type, None, None, None)
         .await
         .expect_err("empty instrument cache must error before making a request");
+
+    assert!(matches!(
+        err,
+        Error::BadRequest(ref message)
+            if message == &InstrumentLookupError::not_found(instrument_id).to_string()
+    ));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_build_submit_order_report_missing_cached_instrument_returns_bad_request_lookup_error()
+{
+    use nautilus_model::{
+        enums::OrderSide,
+        types::{Price, Quantity},
+    };
+
+    let mut client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None)
+        .expect("failed to create Hyperliquid HTTP client");
+    client.set_account_id(AccountId::new("HYPERLIQUID-001"));
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let response = HyperliquidExchangeResponse::Status {
+        status: "ok".to_string(),
+        response: json!({
+            "type": "order",
+            "data": { "statuses": [{ "resting": { "oid": 12345 } }] },
+        }),
+    };
+
+    let err = client
+        .build_submit_order_report(
+            instrument_id,
+            ClientOrderId::new("O-001"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("1"),
+            TimeInForce::Gtc,
+            Some(Price::from("100.0")),
+            None,
+            response,
+        )
+        .expect_err("empty instrument cache must error before building the report");
 
     assert!(matches!(
         err,

@@ -19,17 +19,14 @@ use std::{collections::HashMap, net::SocketAddr, path::PathBuf, time::Duration};
 
 use axum::{Router, http::StatusCode, response::Json, routing::get};
 use nautilus_architect_ax::{
-    common::{consts::AX_VENUE, enums::AxCandleWidth},
+    common::enums::AxCandleWidth,
     http::{
         client::{AxHttpClient, AxRawHttpClient},
         error::AxHttpError,
     },
 };
-use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
-use nautilus_model::{
-    identifiers::{InstrumentId, Symbol},
-    instruments::InstrumentAny,
-};
+use nautilus_common::testing::wait_until_async;
+use nautilus_model::instruments::InstrumentAny;
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -393,7 +390,7 @@ async fn test_domain_http_get_cached_instrument() {
 #[case::trades(RequiredInstrumentCachePath::Trades)]
 #[case::bars(RequiredInstrumentCachePath::Bars)]
 #[tokio::test]
-async fn test_public_market_data_request_missing_cached_instrument_returns_lookup_error(
+async fn test_public_market_data_request_missing_cached_instrument_returns_error(
     #[case] path: RequiredInstrumentCachePath,
 ) {
     let client = AxHttpClient::new(
@@ -407,7 +404,6 @@ async fn test_public_market_data_request_missing_cached_instrument_returns_looku
     )
     .unwrap();
     let symbol = Ustr::from("BTC-PERP");
-    let instrument_id = InstrumentId::new(Symbol::new(symbol.as_str()), *AX_VENUE);
 
     let result = match path {
         RequiredInstrumentCachePath::BookSnapshot => {
@@ -425,7 +421,7 @@ async fn test_public_market_data_request_missing_cached_instrument_returns_looku
 
     assert_eq!(
         result.unwrap_err().to_string(),
-        InstrumentLookupError::not_found(instrument_id).to_string()
+        format!("Instrument {symbol} not found in cache")
     );
 }
 
