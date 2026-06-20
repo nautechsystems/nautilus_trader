@@ -43,6 +43,7 @@ COPY Cargo.toml ./
 COPY Cargo.lock ./
 COPY crates ./crates
 COPY patches ./patches
+COPY examples/tutorials ./examples/tutorials
 RUN cargo build --lib --release --all-features
 
 COPY nautilus_trader ./nautilus_trader

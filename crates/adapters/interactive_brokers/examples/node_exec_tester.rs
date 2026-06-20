@@ -48,6 +48,9 @@ use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 use rust_decimal::Decimal;
 
+// Each variant is exercised by the tests and selected by editing EXEC_SPEC_PROFILE,
+// but only the default is constructed in a non-test build
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IbExecSpecProfile {
     Lifecycle,
