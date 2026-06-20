@@ -69,6 +69,8 @@ use nautilus_model::{
 };
 use smallvec::SmallVec;
 
+#[cfg(feature = "live")]
+pub use self::database::MessageBusSubscriber;
 pub use self::{
     api::*,
     core::{MessageBus, Subscription},

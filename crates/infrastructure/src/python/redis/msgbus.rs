@@ -15,7 +15,7 @@
 
 use bytes::Bytes;
 use futures::{pin_mut, stream::StreamExt};
-use nautilus_common::msgbus::database::MessageBusDatabaseAdapter;
+use nautilus_common::msgbus::database::MessageBusBacking;
 use nautilus_core::{
     UUID4,
     python::{IntoPyObjectNautilusExt, call_python, to_pyruntime_err, to_pyvalue_err},

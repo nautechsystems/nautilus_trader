@@ -308,10 +308,10 @@ The publisher receives that record as `publish(topic, payload)`. This outbound c
 the node's bus thread. Bounded publishers drop on a full queue instead of applying back-pressure to
 the trading loop. Closing the message bus closes the configured publisher.
 
-Inbound external streams follow the same `BusMessage { topic, payload }` shape, but they are a
-separate live-node bridge: an external source yields `BusMessage`s, the node decodes the payload,
-checks the registered streaming type, and republishes internally without forwarding the message
-back out.
+Inbound external streams are exposed through the separate Rust `MessageBusSubscriber` trait. A
+subscriber yields the same `BusMessage { topic, payload }` shape, but the live-node bridge remains
+separate work: the node decodes the payload, checks the registered streaming type, and republishes
+internally without forwarding the message back out.
 
 For Redis, messages are transmitted via a Multiple-Producer Single-Consumer (MPSC) channel to a
 separate Rust task. That task writes the message to Redis streams.
@@ -382,9 +382,9 @@ Rust-native callers that inject a `MessageBusPublisher` pass concrete connection
 construct that publisher. The core message bus does not require a `DatabaseConfig` for injected
 publishers.
 
-The Rust live runtime rejects `external_streams`, so inbound stream configuration is not silently
-ignored. The missing runtime piece is the Rust live bridge from inbound `BusMessage` sources to
-internal publish.
+The Rust live runtime still rejects `external_streams`, so inbound stream configuration is not
+silently ignored. The subscriber trait exists, but the missing runtime piece is the Rust live bridge
+from inbound `BusMessage` sources to internal publish.
 
 ### Encoding
 

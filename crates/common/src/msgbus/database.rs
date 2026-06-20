@@ -176,14 +176,31 @@ pub trait MessageBusPublisher {
     fn close(&mut self);
 }
 
-/// A generic message bus database facade.
+/// External subscriber for serialized message bus publications.
+///
+/// The core bus consumes each inbound [`BusMessage`](super::BusMessage) as a transport-neutral
+/// `topic` and serialized `payload`. The receiver can be taken only once so subscribers can hand
+/// ownership of the inbound stream to the live bridge without exposing their backing transport.
+#[cfg(feature = "live")]
+pub trait MessageBusSubscriber {
+    fn is_closed(&self) -> bool;
+
+    /// # Errors
+    ///
+    /// Returns an error if the receiver has already been taken or is unavailable.
+    fn take_receiver(&mut self) -> anyhow::Result<tokio::sync::mpsc::Receiver<super::BusMessage>>;
+
+    fn close(&mut self);
+}
+
+/// A generic message bus backing facade.
 ///
 /// The main operations take a consistent `key` and `payload` which should provide enough
-/// information to implement the message bus database in many different technologies.
+/// information to implement the message bus backing in many different technologies.
 ///
 /// Delete operations may need a `payload` to target specific values.
-pub trait MessageBusDatabaseAdapter {
-    type DatabaseType;
+pub trait MessageBusBacking {
+    type BackingType;
 
     /// # Errors
     ///
@@ -192,7 +209,7 @@ pub trait MessageBusDatabaseAdapter {
         trader_id: TraderId,
         instance_id: UUID4,
         config: MessageBusConfig,
-    ) -> anyhow::Result<Self::DatabaseType>;
+    ) -> anyhow::Result<Self::BackingType>;
     fn is_closed(&self) -> bool;
     fn publish(&self, topic: Ustr, payload: Bytes);
     fn close(&mut self);
@@ -204,6 +221,31 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    #[cfg(feature = "live")]
+    use crate::msgbus::{BusMessage, MessageBusSubscriber as ReexportedMessageBusSubscriber};
+
+    #[cfg(feature = "live")]
+    struct CapturingSubscriber {
+        rx: Option<tokio::sync::mpsc::Receiver<BusMessage>>,
+        closed: bool,
+    }
+
+    #[cfg(feature = "live")]
+    impl ReexportedMessageBusSubscriber for CapturingSubscriber {
+        fn is_closed(&self) -> bool {
+            self.closed
+        }
+
+        fn take_receiver(&mut self) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {
+            self.rx
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("Stream receiver already taken"))
+        }
+
+        fn close(&mut self) {
+            self.closed = true;
+        }
+    }
 
     #[rstest]
     fn test_default_database_config() {
@@ -262,6 +304,28 @@ mod tests {
 
         let error = serde_json::from_value::<DatabaseConfig>(config_json).unwrap_err();
         assert!(error.to_string().contains("unknown field `unexpected`"));
+    }
+
+    #[cfg(feature = "live")]
+    #[rstest]
+    fn test_message_bus_subscriber_reexport_accepts_bus_messages() {
+        let (tx, rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
+        let mut subscriber = CapturingSubscriber {
+            rx: Some(rx),
+            closed: false,
+        };
+        let message = BusMessage::with_str_topic("events/data", Bytes::from_static(b"payload"));
+
+        tx.try_send(message.clone()).unwrap();
+        let mut stream_rx = ReexportedMessageBusSubscriber::take_receiver(&mut subscriber).unwrap();
+        let received = stream_rx.try_recv().unwrap();
+
+        assert_eq!(received.topic, message.topic);
+        assert_eq!(received.payload, message.payload);
+        assert!(ReexportedMessageBusSubscriber::take_receiver(&mut subscriber).is_err());
+
+        ReexportedMessageBusSubscriber::close(&mut subscriber);
+        assert!(ReexportedMessageBusSubscriber::is_closed(&subscriber));
     }
 
     #[rstest]

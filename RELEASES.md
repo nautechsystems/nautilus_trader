@@ -52,6 +52,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Changed `SyntheticInstrument` fallible methods to return `SyntheticInstrumentError` instead of `anyhow::Error` (Rust)
 - Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)
 - Renamed `BitmexInstrumentType::StockPerpetual` to `TradFiPerpetual` (covers equities, FX, and commodities)
+- Renamed `MessageBusDatabaseAdapter` to `MessageBusBacking`; use `BackingType` instead of `DatabaseType`
 - Renamed Rust/PyO3 instrument `tick_scheme_name` to `tick_scheme`; Cython keeps `tick_scheme_name`
 
 ### Security
@@ -177,6 +178,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Updated plugins concept guide for panic recovery, build pinning, and UTF-8 validation semantics
 - Updated event sourcing guide for capture dedup, recovery resilience, and snapshot-anchor verification
 - Updated message bus docs for publisher forwarding, payload encoding, and JSON defaults
+- Updated message bus docs for inbound subscriber shape and `external_streams` rejection
 - Updated commodity instrument and execution concept guides for negative price support
 - Updated OKX integration docs with EEA endpoint override guidance (#4250), thanks for reporting @msnatm-code
 

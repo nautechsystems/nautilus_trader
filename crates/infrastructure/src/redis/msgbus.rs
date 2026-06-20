@@ -44,8 +44,8 @@ use nautilus_common::{
     live::get_runtime,
     logging::{log_task_error, log_task_started, log_task_stopped},
     msgbus::{
-        BusMessage, MessageBusPublisher,
-        database::{DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
+        BusMessage, MessageBusPublisher, MessageBusSubscriber,
+        database::{DatabaseConfig, MessageBusBacking, MessageBusConfig},
         switchboard::CLOSE_TOPIC,
     },
 };
@@ -97,8 +97,8 @@ impl Debug for RedisMessageBusDatabase {
     }
 }
 
-impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
-    type DatabaseType = Self;
+impl MessageBusBacking for RedisMessageBusDatabase {
+    type BackingType = Self;
 
     /// Creates a new [`RedisMessageBusDatabase`] instance for the given `trader_id`, `instance_id`, and `config`.
     ///
@@ -177,7 +177,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         })
     }
 
-    /// Returns whether the message bus database adapter publishing channel is closed.
+    /// Returns whether the message bus backing publishing channel is closed.
     fn is_closed(&self) -> bool {
         self.pub_tx.is_closed()
     }
@@ -190,7 +190,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         }
     }
 
-    /// Closes the message bus database adapter.
+    /// Closes the message bus backing.
     fn close(&mut self) {
         log::debug!("Closing");
 
@@ -229,7 +229,23 @@ impl MessageBusPublisher for RedisMessageBusDatabase {
     }
 
     fn close(&mut self) {
-        MessageBusDatabaseAdapter::close(self);
+        MessageBusBacking::close(self);
+    }
+}
+
+impl MessageBusSubscriber for RedisMessageBusDatabase {
+    fn is_closed(&self) -> bool {
+        self.stream_handle
+            .as_ref()
+            .is_none_or(tokio::task::JoinHandle::is_finished)
+    }
+
+    fn take_receiver(&mut self) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {
+        self.get_stream_receiver()
+    }
+
+    fn close(&mut self) {
+        MessageBusBacking::close(self);
     }
 }
 
@@ -688,6 +704,61 @@ mod tests {
             "Invalid stream message format: bulk-string('\"not an array\"')"
         );
     }
+
+    #[rstest]
+    fn test_subscriber_take_receiver_delegates_to_stream_receiver() {
+        let (stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
+        let mut db = database_with_stream_receiver(stream_rx);
+        let message = BusMessage::with_str_topic("events/data", Bytes::from_static(b"payload"));
+
+        stream_tx.try_send(message.clone()).unwrap();
+        let mut receiver = MessageBusSubscriber::take_receiver(&mut db).unwrap();
+        let received = receiver.try_recv().unwrap();
+
+        assert_eq!(received.topic, message.topic);
+        assert_eq!(received.payload, message.payload);
+        assert!(MessageBusSubscriber::take_receiver(&mut db).is_err());
+    }
+
+    #[rstest]
+    fn test_subscriber_is_closed_without_stream_handle() {
+        let (_stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
+        let db = database_with_stream_receiver(stream_rx);
+
+        assert!(MessageBusSubscriber::is_closed(&db));
+    }
+
+    #[tokio::test]
+    async fn test_subscriber_is_open_with_running_stream_handle() {
+        let (_stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
+        let mut db = database_with_stream_receiver(stream_rx);
+        db.stream_handle = Some(tokio::spawn(async {
+            std::future::pending::<()>().await;
+        }));
+
+        assert!(!MessageBusSubscriber::is_closed(&db));
+
+        let handle = db.stream_handle.take().unwrap();
+        handle.abort();
+        let _ = handle.await;
+    }
+
+    fn database_with_stream_receiver(
+        stream_rx: tokio::sync::mpsc::Receiver<BusMessage>,
+    ) -> RedisMessageBusDatabase {
+        let (pub_tx, _pub_rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
+        RedisMessageBusDatabase {
+            trader_id: TraderId::from("tester-001"),
+            instance_id: UUID4::new(),
+            pub_tx,
+            pub_handle: None,
+            stream_rx: Some(stream_rx),
+            stream_handle: None,
+            stream_signal: Arc::new(AtomicBool::new(false)),
+            heartbeat_handle: None,
+            heartbeat_signal: Arc::new(AtomicBool::new(false)),
+        }
+    }
 }
 
 #[cfg(target_os = "linux")] // Run Redis tests on Linux platforms only
@@ -1083,8 +1154,8 @@ mod serial_tests {
 
         let mut db = RedisMessageBusDatabase::new(trader_id, instance_id, config).unwrap();
 
-        // Close the message bus database (test should not hang)
-        MessageBusDatabaseAdapter::close(&mut db);
+        // Close the message bus backing (test should not hang)
+        MessageBusBacking::close(&mut db);
     }
 
     #[rstest]
