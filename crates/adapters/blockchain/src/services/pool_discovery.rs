@@ -479,6 +479,7 @@ impl<'a> PoolDiscoveryService<'a> {
                 .get_block_timestamp(pool_event.block_number)
                 .copied()
                 .unwrap_or_default();
+
             let mut pool = Pool::new(
                 self.chain.clone(),
                 dex.clone(),

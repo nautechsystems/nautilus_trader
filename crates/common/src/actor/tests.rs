@@ -3085,6 +3085,7 @@ fn test_subscribe_and_receive_pools(
         18,
     );
     let pool_address = Address::from([0x12; 20]);
+
     let pool = Pool::new(
         chain,
         Arc::new(dex),
