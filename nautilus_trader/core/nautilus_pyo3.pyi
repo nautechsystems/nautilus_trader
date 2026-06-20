@@ -10765,6 +10765,16 @@ class BetaRatio:
         benchmark: dict[int, float],
     ) -> float | None: ...
 
+class DownCaptureRatio:
+    def __init__(self, period: int | None = None) -> None: ...
+    @property
+    def name(self) -> str: ...
+    def calculate_from_returns_with_benchmark(
+        self,
+        returns: dict[int, float],
+        benchmark: dict[int, float],
+    ) -> float | None: ...
+
 class InformationRatio:
     def __init__(self, period: int | None = None) -> None: ...
     @property
@@ -10791,6 +10801,16 @@ class TreynorRatio:
         period: int | None = None,
         risk_free_rate: float | None = None,
     ) -> None: ...
+    @property
+    def name(self) -> str: ...
+    def calculate_from_returns_with_benchmark(
+        self,
+        returns: dict[int, float],
+        benchmark: dict[int, float],
+    ) -> float | None: ...
+
+class UpCaptureRatio:
+    def __init__(self, period: int | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     def calculate_from_returns_with_benchmark(

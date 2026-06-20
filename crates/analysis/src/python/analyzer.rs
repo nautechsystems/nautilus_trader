@@ -30,17 +30,18 @@ use crate::{
     Returns,
     analyzer::{PortfolioAnalyzer, Statistic},
     statistics::{
-        alpha::Alpha, beta_ratio::BetaRatio, expectancy::Expectancy,
-        expected_shortfall::ExpectedShortfall, information_ratio::InformationRatio,
-        long_ratio::LongRatio, loser_avg::AvgLoser, loser_max::MaxLoser, loser_min::MinLoser,
-        omega_ratio::OmegaRatio, profit_factor::ProfitFactor, returns_avg::ReturnsAverage,
+        alpha::Alpha, beta_ratio::BetaRatio, down_capture_ratio::DownCaptureRatio,
+        expectancy::Expectancy, expected_shortfall::ExpectedShortfall,
+        information_ratio::InformationRatio, long_ratio::LongRatio, loser_avg::AvgLoser,
+        loser_max::MaxLoser, loser_min::MinLoser, omega_ratio::OmegaRatio,
+        profit_factor::ProfitFactor, returns_avg::ReturnsAverage,
         returns_avg_loss::ReturnsAverageLoss, returns_avg_win::ReturnsAverageWin,
         returns_kurtosis::ReturnsKurtosis, returns_skewness::ReturnsSkewness,
         returns_volatility::ReturnsVolatility, risk_return_ratio::RiskReturnRatio,
         sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio, tail_ratio::TailRatio,
         tracking_error::TrackingError, treynor_ratio::TreynorRatio, ulcer_index::UlcerIndex,
-        value_at_risk::ValueAtRisk, win_rate::WinRate, winner_avg::AvgWinner,
-        winner_max::MaxWinner, winner_min::MinWinner,
+        up_capture_ratio::UpCaptureRatio, value_at_risk::ValueAtRisk, win_rate::WinRate,
+        winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
     },
 };
 
@@ -234,6 +235,10 @@ impl PortfolioAnalyzer {
                 let stat = statistic.extract::<BetaRatio>(py)?;
                 self.register_statistic(Arc::new(stat));
             }
+            "DownCaptureRatio" => {
+                let stat = statistic.extract::<DownCaptureRatio>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
             "InformationRatio" => {
                 let stat = statistic.extract::<InformationRatio>(py)?;
                 self.register_statistic(Arc::new(stat));
@@ -272,6 +277,10 @@ impl PortfolioAnalyzer {
             }
             "ExpectedShortfall" => {
                 let stat = statistic.extract::<ExpectedShortfall>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "UpCaptureRatio" => {
+                let stat = statistic.extract::<UpCaptureRatio>(py)?;
                 self.register_statistic(Arc::new(stat));
             }
             _ => {
@@ -371,6 +380,10 @@ impl PortfolioAnalyzer {
                 let stat = statistic.extract::<BetaRatio>(py)?;
                 self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
+            "DownCaptureRatio" => {
+                let stat = statistic.extract::<DownCaptureRatio>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
             "InformationRatio" => {
                 let stat = statistic.extract::<InformationRatio>(py)?;
                 self.deregister_statistic(&(Arc::new(stat) as Statistic));
@@ -409,6 +422,10 @@ impl PortfolioAnalyzer {
             }
             "ExpectedShortfall" => {
                 let stat = statistic.extract::<ExpectedShortfall>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "UpCaptureRatio" => {
+                let stat = statistic.extract::<UpCaptureRatio>(py)?;
                 self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             _ => {

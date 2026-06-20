@@ -55,6 +55,7 @@ __all__ = [
     "AvgWinner",
     "BetaRatio",
     "CalmarRatio",
+    "DownCaptureRatio",
     "Expectancy",
     "ExpectedShortfall",
     "InformationRatio",
@@ -81,6 +82,7 @@ __all__ = [
     "TrackingError",
     "TreynorRatio",
     "UlcerIndex",
+    "UpCaptureRatio",
     "ValueAtRisk",
     "WinRate",
 ]
@@ -156,6 +158,20 @@ class CalmarRatio:
         self, _realized_pnls: typing.Sequence[float]
     ) -> float | None: ...
     def calculate_from_positions(self, _positions: typing.Sequence[typing.Any]) -> float | None: ...
+
+@typing.final
+class DownCaptureRatio:
+    def __init__(self, period: int | None = None) -> None: ...
+    @property
+    def name(self) -> str: ...
+    def calculate_from_returns(self, _returns: typing.Mapping[int, float]) -> float | None: ...
+    def calculate_from_realized_pnls(
+        self, _realized_pnls: typing.Sequence[float]
+    ) -> float | None: ...
+    def calculate_from_positions(self, _positions: typing.Sequence[typing.Any]) -> float | None: ...
+    def calculate_from_returns_with_benchmark(
+        self, returns: typing.Mapping[int, float], benchmark: typing.Mapping[int, float]
+    ) -> float | None: ...
 
 @typing.final
 class Expectancy:
@@ -484,6 +500,20 @@ class UlcerIndex:
         self, _realized_pnls: typing.Sequence[float]
     ) -> float | None: ...
     def calculate_from_positions(self, _positions: typing.Sequence[typing.Any]) -> float | None: ...
+
+@typing.final
+class UpCaptureRatio:
+    def __init__(self, period: int | None = None) -> None: ...
+    @property
+    def name(self) -> str: ...
+    def calculate_from_returns(self, _returns: typing.Mapping[int, float]) -> float | None: ...
+    def calculate_from_realized_pnls(
+        self, _realized_pnls: typing.Sequence[float]
+    ) -> float | None: ...
+    def calculate_from_positions(self, _positions: typing.Sequence[typing.Any]) -> float | None: ...
+    def calculate_from_returns_with_benchmark(
+        self, returns: typing.Mapping[int, float], benchmark: typing.Mapping[int, float]
+    ) -> float | None: ...
 
 @typing.final
 class ValueAtRisk:
