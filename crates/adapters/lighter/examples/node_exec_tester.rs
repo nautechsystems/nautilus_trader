@@ -100,6 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     let order_qty = Quantity::from(ORDER_QTY);
+
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
@@ -116,7 +117,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enable_limit_sells(true)
         .enable_stop_buys(false)
         .enable_stop_sells(false)
-        .tob_offset_ticks(1_000)
+        // .open_position_on_start_qty(order_qty.as_decimal())
+        .tob_offset_ticks(100)
         .use_post_only(true)
         .cancel_orders_on_stop(true)
         .close_positions_on_stop(true)

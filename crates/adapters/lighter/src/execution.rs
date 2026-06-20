@@ -137,6 +137,13 @@ const ACKED_ORDER_LOOKUP_DELAY: Duration = Duration::from_secs(2);
 const AUTH_TOKEN_REFRESH_INTERVAL: std::time::Duration =
     std::time::Duration::from_secs(6 * 60 * 60);
 
+// Refresh interval must stay below the token TTL, or rotation hands out already-expired tokens
+const _: () = assert!(
+    AUTH_TOKEN_REFRESH_INTERVAL.as_secs()
+        < crate::signing::auth_token::DEFAULT_AUTH_TOKEN_TTL_SECS as u64,
+    "AUTH_TOKEN_REFRESH_INTERVAL must stay below DEFAULT_AUTH_TOKEN_TTL_SECS",
+);
+
 // Retry budget after a scheduled rotation failure: 7 h TTL minus the 6 h
 // refresh cadence leaves one hour before the old token expires.
 const AUTH_TOKEN_REFRESH_RETRY_WINDOW: Duration = Duration::from_secs(60 * 60);
@@ -4351,6 +4358,8 @@ fn dispatch_lighter_trade(
             }
             Ok(None) => {}
             Err(e) => {
+                // Fill never reached the engine; release the dedup marker so a replay can retry
+                dispatch.unmark_trade_seen(&trade_id);
                 log::error!("Failed to parse Lighter typed fill: error={e}, trade_id={trade_id}",);
             }
         }
@@ -4370,6 +4379,8 @@ fn dispatch_lighter_trade(
             }
             Ok(None) => {}
             Err(e) => {
+                // Fill never reached the engine; release the dedup marker so a replay can retry
+                dispatch.unmark_trade_seen(&trade_id);
                 log::error!("Failed to parse Lighter fill report: error={e}, trade_id={trade_id}",);
             }
         }
@@ -7686,6 +7697,69 @@ mod tests {
             events.len(),
             2,
             "expected dedup after first dispatch, was {events:?}"
+        );
+    }
+
+    #[rstest]
+    fn dispatch_lighter_trade_parse_failure_rolls_back_dedup() {
+        // A parse failure must not consume the dedup slot, else the fill is lost on replay
+        let mut rig = dispatcher_rig("21");
+        register_identity(&rig);
+        let mut trade = dispatcher_test_trade(&rig, true);
+        trade.timestamp = -1;
+        let trade_id = parse_lighter_trade_id(&trade).expect("trade id parses");
+
+        dispatch_lighter_trade(
+            &trade,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1),
+        );
+
+        let events = drain_events(&mut rig.rx);
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, ExecutionEvent::Order(OrderEventAny::Filled(_)))),
+            "malformed trade must not emit a fill, was {events:?}",
+        );
+        assert!(
+            rig.dispatch.mark_trade_seen(trade_id),
+            "parse-failed trade must be re-markable (dedup rolled back)",
+        );
+    }
+
+    #[rstest]
+    fn dispatch_lighter_trade_untracked_parse_failure_rolls_back_dedup() {
+        // Untracked path (no registered identity -> FillReport): dedup rollback must still hold
+        let mut rig = dispatcher_rig("22");
+        let mut trade = dispatcher_test_trade(&rig, true);
+        trade.timestamp = -1;
+        let trade_id = parse_lighter_trade_id(&trade).expect("trade id parses");
+
+        dispatch_lighter_trade(
+            &trade,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1),
+        );
+
+        let events = drain_events(&mut rig.rx);
+        assert!(
+            events.is_empty(),
+            "untracked malformed trade must emit nothing, was {events:?}",
+        );
+        assert!(
+            rig.dispatch.mark_trade_seen(trade_id),
+            "untracked parse-failed trade must be re-markable (dedup rolled back)",
         );
     }
 

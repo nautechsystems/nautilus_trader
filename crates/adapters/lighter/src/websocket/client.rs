@@ -66,6 +66,12 @@ const DISCONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 /// task and exclusively owns the underlying [`WebSocketClient`]; this outer
 /// type communicates with it through a command channel and consumes events
 /// over an unbounded mpsc.
+///
+/// Authenticated channels store their auth token in `subscription_args` and
+/// replay it verbatim on reconnect. That stored token stays valid because the
+/// execution client rotates it on a 6h cadence (inside the venue's 7h TTL) by
+/// re-issuing `subscribe_account`, so a reconnect never replays a connect-time,
+/// potentially-expired token.
 pub struct LighterWebSocketClient {
     url: String,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
@@ -342,6 +348,7 @@ impl LighterWebSocketClient {
                     subscription_args.len(),
                 );
 
+                // Stored token stays inside the TTL: the execution client rotates it every 6h
                 for entry in subscription_args.iter() {
                     let (channel, auth) = entry.value().clone();
                     if let Err(e) =
@@ -761,7 +768,9 @@ impl LighterWebSocketClient {
     /// Subscribe to a private account channel using a venue auth token.
     ///
     /// The auth token must be a valid Lighter L2 auth signature; see the
-    /// `signing` module for token construction.
+    /// `signing` module for token construction. Re-issuing this with a fresh
+    /// token (as the execution client's auth-token rotation does) overwrites
+    /// the stored reconnect-replay token, keeping it within the venue TTL.
     ///
     /// # Errors
     ///

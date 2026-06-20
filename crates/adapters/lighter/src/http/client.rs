@@ -541,7 +541,8 @@ impl LighterRawHttpClient {
                 return Err(LighterHttpError::Http { status, body });
             }
 
-            if status == 429 {
+            // HTTP 405 is a Lighter rate-limit status like 429 per the docs, not a method error
+            if status == 429 || status == 405 {
                 return Err(LighterHttpError::RateLimit(body));
             }
 

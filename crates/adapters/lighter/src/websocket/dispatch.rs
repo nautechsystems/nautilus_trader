@@ -659,6 +659,13 @@ impl WsDispatchState {
         self.seen_trade_ids.insert(trade_id)
     }
 
+    /// Roll back a [`Self::mark_trade_seen`] marker when the trade could not be
+    /// parsed, so a later replay of the same `trade_id` is retried instead of
+    /// being permanently suppressed by the dedup set.
+    pub(crate) fn unmark_trade_seen(&self, trade_id: &TradeId) {
+        self.seen_trade_ids.remove(trade_id);
+    }
+
     /// Record a market_index as having reported account activity.
     pub(crate) fn note_active_market(&self, market_index: i16) {
         self.active_markets.insert(market_index);

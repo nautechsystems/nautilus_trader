@@ -514,7 +514,9 @@ async fn raw_client_maps_structured_venue_error() {
 }
 
 #[tokio::test]
-async fn raw_client_maps_http_method_not_allowed_status() {
+async fn raw_client_maps_405_status_as_rate_limit() {
+    // Lighter uses HTTP 405 as a rate-limit status alongside 429 (per the
+    // rate-limits API docs), so the client maps it to a retryable RateLimit.
     let base_url =
         spawn_server(Router::new().route("/api/v1/orderBooks", get(handle_method_not_allowed)))
             .await;
@@ -523,7 +525,7 @@ async fn raw_client_maps_http_method_not_allowed_status() {
 
     let error = client.get_order_books(&query).await.unwrap_err();
 
-    assert!(matches!(error, LighterHttpError::Http { status: 405, .. }));
+    assert!(matches!(error, LighterHttpError::RateLimit(_)));
 }
 
 #[tokio::test]
