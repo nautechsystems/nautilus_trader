@@ -95,6 +95,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Fixed `HttpClient` rejecting invalid response header keys instead of silently dropping them (Rust)
 - Fixed Hyperliquid bracket trigger-child statuses and atomic market fills orphaning orders at submission (#4160), thanks @sonnymai
 - Fixed Hyperliquid cancel-replace fill stranding on a dropped `ACCEPTED` (#4270), thanks for reporting @AlphaTraderK
+- Fixed Hyperliquid order status queries surfacing a stale cancel closing a live order mid-modify (Rust)
 - Fixed `Instrument` rejecting negative `min_price`, preventing spread instruments from loading in Python
 - Fixed Interactive Brokers reconnect startup handling (#4210), thanks @faysou
 - Fixed Interactive Brokers PERM cancel/modify routing and pending commission parsing (#4281), thanks @faysou

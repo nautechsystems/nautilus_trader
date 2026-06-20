@@ -2776,6 +2776,160 @@ async fn test_generate_order_status_report_oid_only_returns_terminal() {
     client.disconnect().await.unwrap();
 }
 
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_order_status_report_suppresses_old_leg_cancel_during_modify() {
+    // Same stale-cancel suppression as the query path, through the single-report
+    // reconcile entry point: a Canceled for the old leg while a modify is in
+    // flight must be dropped (return None) so reconciliation leaves the order
+    // alive for the replacement.
+    let old_voi = VenueOrderId::from("770001");
+
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order",
+        "order": {
+            "order": {
+                "coin": "BTC",
+                "side": "B",
+                "limitPx": "95000.0",
+                "sz": "0.0",
+                "oid": 770001,
+                "timestamp": 1700000000000u64,
+                "origSz": "0.001",
+            },
+            "status": "canceled",
+            "statusTimestamp": 1700001000000u64,
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let order = make_limit_order("O-GEN-MODIFY-CANCEL");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let coid = order.client_order_id();
+
+    let modify = ModifyOrder::new(
+        order.trader_id(),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        order.strategy_id(),
+        order.instrument_id(),
+        coid,
+        Some(old_voi),
+        Some(Quantity::from("0.0002")),
+        Some(Price::from("56800.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+    client.modify_order(modify).unwrap();
+
+    let dispatch = client.ws_dispatch_state().clone();
+    wait_until_async(
+        move || {
+            let dispatch = dispatch.clone();
+            async move { dispatch.pending_modify(&coid).is_some() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let cmd = make_status_report_cmd(Some(coid), Some(old_voi));
+    let report = client.generate_order_status_report(&cmd).await.unwrap();
+    assert!(
+        report.is_none(),
+        "stale old-leg Canceled must be suppressed during an in-flight modify, was {report:?}",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_order_status_report_forwards_old_leg_fill_during_modify() {
+    // The suppression must stay narrow: a Filled on the old leg during a modify
+    // is still returned so reconciliation can recover a dropped fill.
+    let old_voi = VenueOrderId::from("770002");
+
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order",
+        "order": {
+            "order": {
+                "coin": "BTC",
+                "side": "B",
+                "limitPx": "95000.0",
+                "sz": "0.0",
+                "oid": 770002,
+                "timestamp": 1700000000000u64,
+                "origSz": "0.001",
+            },
+            "status": "filled",
+            "statusTimestamp": 1700001000000u64,
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let order = make_limit_order("O-GEN-MODIFY-FILL");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let coid = order.client_order_id();
+
+    let modify = ModifyOrder::new(
+        order.trader_id(),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        order.strategy_id(),
+        order.instrument_id(),
+        coid,
+        Some(old_voi),
+        Some(Quantity::from("0.0002")),
+        Some(Price::from("56800.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+    client.modify_order(modify).unwrap();
+
+    let dispatch = client.ws_dispatch_state().clone();
+    wait_until_async(
+        move || {
+            let dispatch = dispatch.clone();
+            async move { dispatch.pending_modify(&coid).is_some() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let cmd = make_status_report_cmd(Some(coid), Some(old_voi));
+    let report = client
+        .generate_order_status_report(&cmd)
+        .await
+        .unwrap()
+        .expect("a fill on the old leg during a modify must be forwarded");
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.venue_order_id, old_voi);
+
+    client.disconnect().await.unwrap();
+}
+
 fn make_cancel_entry(coid: ClientOrderId, voi: VenueOrderId) -> CancelOrder {
     CancelOrder::new(
         TraderId::from("TESTER-001"),
@@ -3768,6 +3922,195 @@ async fn test_query_order_falls_back_to_oid_when_cloid_misses() {
     );
     assert_eq!(reports[0].venue_order_id, VenueOrderId::from("900002"));
     assert_eq!(reports[0].order_status, OrderStatus::Canceled);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_order_suppresses_old_leg_cancel_during_modify() {
+    // Mid cancel-replace the order is PendingUpdate on the OLD oid and the new
+    // leg is not yet in frontendOpenOrders, so the cloid-open probe misses and
+    // the oid fallback returns the old leg's Canceled. With a modify in flight
+    // that stale cancel must be dropped (it would wrongly terminate the live
+    // order now that the Guard 1 removal in reconcile_order_report no longer
+    // defers it) and the order left pending.
+    let old_voi = VenueOrderId::from("900002");
+
+    let state = TestServerState::default();
+    // New leg absent: the cloid-open probe misses.
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    // Old leg reports Canceled: the oid fallback would forward this if it ran.
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order",
+        "order": {
+            "order": {
+                "coin": "BTC",
+                "side": "B",
+                "limitPx": "95000.0",
+                "sz": "0.0",
+                "oid": 900002,
+                "timestamp": 1700000000000u64,
+                "origSz": "0.001",
+            },
+            "status": "canceled",
+            "statusTimestamp": 1700001000000u64,
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let order = make_limit_order("O-QUERY-MODIFY-INFLIGHT");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let coid = order.client_order_id();
+
+    // Establish an unconfirmed modify through the production path. The success
+    // response leaves the pending marker set (cleared only on ACCEPTED(new) or
+    // failure), so the cached venue_order_id still points at the old leg.
+    let modify = ModifyOrder::new(
+        order.trader_id(),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        order.strategy_id(),
+        order.instrument_id(),
+        coid,
+        Some(old_voi),
+        Some(Quantity::from("0.0002")),
+        Some(Price::from("56800.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+    client.modify_order(modify).unwrap();
+
+    let dispatch = client.ws_dispatch_state().clone();
+    wait_until_async(
+        move || {
+            let dispatch = dispatch.clone();
+            async move { dispatch.pending_modify(&coid).is_some() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client
+        .query_order(make_query_order_cmd(coid, Some(old_voi)))
+        .unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let reports = drain_order_status_reports(&mut rx, Duration::from_millis(250)).await;
+    assert!(
+        !reports.iter().any(|report| report.venue_order_id == old_voi
+            && report.order_status == OrderStatus::Canceled),
+        "a pending modify must suppress the stale old-leg Canceled on the query path",
+    );
+    assert!(
+        reports.is_empty(),
+        "in-flight modify with an absent new leg must emit nothing, was {reports:?}",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_order_forwards_old_leg_fill_during_modify() {
+    // The query path is the backstop that recovers a dropped WS event. If the
+    // old leg fills mid cancel-replace before the replacement appears, the oid
+    // fallback is the only source of that Filled report, so the in-flight-modify
+    // suppression must drop only the stale Canceled, never a fill.
+    let old_voi = VenueOrderId::from("900002");
+
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order",
+        "order": {
+            "order": {
+                "coin": "BTC",
+                "side": "B",
+                "limitPx": "95000.0",
+                "sz": "0.0",
+                "oid": 900002,
+                "timestamp": 1700000000000u64,
+                "origSz": "0.001",
+            },
+            "status": "filled",
+            "statusTimestamp": 1700001000000u64,
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let order = make_limit_order("O-QUERY-MODIFY-FILL");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let coid = order.client_order_id();
+
+    let modify = ModifyOrder::new(
+        order.trader_id(),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        order.strategy_id(),
+        order.instrument_id(),
+        coid,
+        Some(old_voi),
+        Some(Quantity::from("0.0002")),
+        Some(Price::from("56800.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+    client.modify_order(modify).unwrap();
+
+    let dispatch = client.ws_dispatch_state().clone();
+    wait_until_async(
+        move || {
+            let dispatch = dispatch.clone();
+            async move { dispatch.pending_modify(&coid).is_some() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client
+        .query_order(make_query_order_cmd(coid, Some(old_voi)))
+        .unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let reports = drain_order_status_reports(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(
+        reports.len(),
+        1,
+        "a fill on the old leg during a modify must be forwarded for reconciliation",
+    );
+    assert_eq!(reports[0].venue_order_id, old_voi);
+    assert_eq!(reports[0].order_status, OrderStatus::Filled);
 
     client.disconnect().await.unwrap();
 }

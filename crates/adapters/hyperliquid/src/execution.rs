@@ -1347,12 +1347,13 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let account_address = self.get_account_address()?;
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
+        let dispatch_state = self.ws_dispatch_state.clone();
 
         self.spawn_task("query_order", async move {
             // Search open orders by cloid first so modify/cancel-replace
             // resolves to the live replacement rather than a stale cached oid.
-            // Request errors here are logged and the oid fallback is still tried;
-            // a transient frontendOpenOrders failure must not abort the whole query.
+            // Request errors here are logged, not propagated, so a transient
+            // frontendOpenOrders failure does not abort the whole query.
             match http_client
                 .request_order_status_report_by_client_order_id(&account_address, &client_order_id)
                 .await
@@ -1388,8 +1389,18 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 .await
             {
                 Ok(Some(report)) => {
-                    log::debug!("Queried order status for oid {oid}");
-                    emitter.send_order_status_report(report);
+                    if is_inflight_modify_old_leg_cancel(
+                        &dispatch_state,
+                        &client_order_id,
+                        &report,
+                    ) {
+                        log::debug!(
+                            "Suppressing stale old-leg Canceled for {client_order_id}: modify in flight"
+                        );
+                    } else {
+                        log::debug!("Queried order status for oid {oid}");
+                        emitter.send_order_status_report(report);
+                    }
                 }
                 Ok(None) => {
                     log::debug!("No order status report found for oid {oid}");
@@ -1537,6 +1548,16 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .request_order_status_report(&account_address, oid)
             .await
             .context("failed to generate order status report")?;
+
+        if let Some(report) = &report
+            && let Some(client_order_id) = &cmd.client_order_id
+            && is_inflight_modify_old_leg_cancel(&self.ws_dispatch_state, client_order_id, report)
+        {
+            log::debug!(
+                "Suppressing stale old-leg Canceled for {client_order_id}: modify in flight"
+            );
+            return Ok(None);
+        }
 
         if report.is_some() {
             log::debug!("Generated order status report for oid {oid}");
@@ -1809,6 +1830,18 @@ fn filter_order_status_reports_for_command(
         (None, Some(end)) => reports.into_iter().filter(|r| r.ts_last <= end).collect(),
         (None, None) => reports,
     }
+}
+
+// During a tracked cancel-replace the cached venue_order_id is still the old
+// leg, so only its `Canceled` must be dropped (it would wrongly terminate the
+// live order); a late `Filled` or any other status is forwarded for recovery.
+fn is_inflight_modify_old_leg_cancel(
+    dispatch_state: &WsDispatchState,
+    client_order_id: &ClientOrderId,
+    report: &OrderStatusReport,
+) -> bool {
+    report.order_status == OrderStatus::Canceled
+        && dispatch_state.pending_modify(client_order_id) == Some(report.venue_order_id)
 }
 
 #[derive(Clone)]

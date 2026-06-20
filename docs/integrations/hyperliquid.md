@@ -988,6 +988,13 @@ relies on the cached `venue_order_id`, the adapter also recovers a modify that t
 HTTP call but still reaches the venue: the eventual WS `ACCEPTED(new_oid)` sees the old cached
 `oid` and translates to `OrderUpdated`. See [GH-3827](https://github.com/nautechsystems/nautilus_trader/issues/3827).
 
+The same marker guards the inflight query and single-order reconcile paths: while a modify is in
+flight, `query_order` and `generate_order_status_report` drop a `Canceled` for the superseded leg,
+so an out-of-band status probe that resolves the old `oid` before the replacement appears cannot
+terminate the live order. A non-cancel status for the old leg (such as a late `Filled`) is still
+forwarded so reconciliation can recover it. See
+[GH-4270](https://github.com/nautechsystems/nautilus_trader/issues/4270).
+
 :::note
 One narrow edge case remains when all three conditions occur together:
 
