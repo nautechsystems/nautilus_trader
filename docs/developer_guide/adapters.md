@@ -1486,6 +1486,15 @@ The execution dispatch converts order and fill messages using a two-tier routing
 4. **External/unknown order**: convert to reports (`OrderStatusReport` or `FillReport`) for
    downstream reconciliation.
 
+When the venue outcome is unconfirmed (a command times out, a stream message races the HTTP
+response, or a partial state arrives mid-modify), leave the order in its pending state and let the
+live execution engine resolve it from venue state. Do not add adapter code to cover every such
+race: the engine already owns truth-from-venue resolution through the inflight check and open-order
+queries, whose reports reconcile the order. Direct events carry the live happy path, reports carry
+external orders and reconciliation, and the engine reconciles the races. For example, a Betfair
+`replaceOrders` timeout leaves the order `PendingUpdate`, and the inflight check resolves it from
+venue state rather than the adapter adding bespoke timeout-recovery logic.
+
 #### `WsDispatchState`
 
 Execution dispatch state lives in a `WsDispatchState` struct defined in `websocket/dispatch.rs`.

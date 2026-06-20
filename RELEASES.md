@@ -159,6 +159,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Improved Polymarket execution module structure (#4271), thanks @graceyangfan
 - Improved Polymarket resolution module structure (#4269), thanks @graceyangfan
 - Optimized `Cache` query filtering to scale with open orders and positions (#4242), thanks for reporting @magnified103
+- Standardized Betfair adapter to emit order events for own orders and reports for external orders only (Rust)
 - Standardized Rust `OrderDenied` reason codes
 - Upgraded Interactive Brokers Rust adapter to `ibapi` 3.0.1 (#4209), thanks @faysou
 - Upgraded `capnp` and `capnpc` crates to v0.26.0
