@@ -66,7 +66,8 @@ use nautilus_model::{
 use nautilus_system::trader::Trader;
 use nautilus_trading::{
     ExecutionAlgorithm as ExecutionAlgorithmTrait, ExecutionAlgorithmConfig,
-    ExecutionAlgorithmCore, Strategy, StrategyConfig, StrategyCore, nautilus_strategy,
+    ExecutionAlgorithmCore, Strategy, StrategyConfig, StrategyCore, StrategyNative,
+    nautilus_strategy,
 };
 use rstest::*;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
@@ -192,10 +193,12 @@ impl EmaCross {
     }
 
     fn enter(&mut self, side: OrderSide) -> anyhow::Result<()> {
-        let order = self.core.order_factory().market(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let order = self.order_factory().market(
+            instrument_id,
             side,
-            self.trade_size,
+            trade_size,
             None,
             None,
             None,
@@ -270,10 +273,12 @@ impl SnapshotNettingFlip {
     }
 
     fn submit_market(&mut self, side: OrderSide) -> anyhow::Result<()> {
-        let order = self.core.order_factory().market(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let order = self.order_factory().market(
+            instrument_id,
             side,
-            self.trade_size,
+            trade_size,
             None,
             None,
             None,
@@ -362,10 +367,12 @@ impl DataActor for OpenOptionOnQuote {
             return Ok(());
         }
         self.opened = true;
-        let order = self.core.order_factory().market(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let order = self.order_factory().market(
+            instrument_id,
             OrderSide::Buy,
-            self.trade_size,
+            trade_size,
             None,
             None,
             None,
@@ -382,7 +389,7 @@ impl DataActor for OpenOptionOnQuote {
 fn test_add_actor_registers_actor_with_trader() {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     let actor = EmptyActor::new();
-    let actor_id = actor.actor_id();
+    let actor_id = actor.core.actor_id();
 
     engine.add_actor(actor).unwrap();
 
@@ -743,7 +750,7 @@ mod defi {
 fn test_add_exec_algorithm_registers_exec_algorithm_with_trader_and_endpoint() {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     let exec_algorithm = EmptyExecAlgorithm::new();
-    let exec_algorithm_id = ExecAlgorithmId::from(exec_algorithm.actor_id().inner().as_str());
+    let exec_algorithm_id = ExecAlgorithmId::from(exec_algorithm.core.actor_id().inner().as_str());
     let endpoint = format!("{exec_algorithm_id}.execute");
 
     engine.add_exec_algorithm(exec_algorithm).unwrap();
@@ -785,7 +792,7 @@ fn test_add_exec_algorithm_while_running_returns_error() {
 fn test_add_actor_while_running_registers_actor_with_trader() {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     let actor = EmptyActor::new();
-    let actor_id = actor.actor_id();
+    let actor_id = actor.core.actor_id();
 
     engine
         .kernel_mut()
@@ -812,7 +819,7 @@ fn test_add_actor_while_running_registers_actor_with_trader() {
 fn test_add_strategy_while_running_registers_strategy_and_market_exit_control() {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     let strategy = EmptyStrategy::new();
-    let strategy_id = StrategyId::from(strategy.actor_id().inner().as_str());
+    let strategy_id = StrategyId::from(strategy.core.actor_id().inner().as_str());
     let strategy_registry_id = strategy_id.inner();
 
     engine
@@ -1904,7 +1911,8 @@ impl DataActor for ShutdownOnTick {
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         self.tick_count += 1;
         if self.tick_count == self.shutdown_after {
-            self.shutdown_system(Some("shutdown on tick".to_string()));
+            self.core
+                .shutdown_system(Some("shutdown on tick".to_string()));
         }
         Ok(())
     }
@@ -1963,7 +1971,8 @@ impl DataActor for ShutdownBeforeFutureTimer {
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         self.tick_count += 1;
         if self.tick_count == self.shutdown_after {
-            self.shutdown_system(Some("shutdown before future timer".to_string()));
+            self.core
+                .shutdown_system(Some("shutdown before future timer".to_string()));
         }
         Ok(())
     }
@@ -2078,7 +2087,8 @@ impl DataActor for ShutdownFromTimer {
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         if event.name.as_str() == "shutdown_timer" {
             self.shutdown_fired.set(self.shutdown_fired.get() + 1);
-            self.shutdown_system(Some("shutdown from timer".to_string()));
+            self.core
+                .shutdown_system(Some("shutdown from timer".to_string()));
         } else if event.name.as_str() == "later_timer" {
             self.later_fired.set(self.later_fired.get() + 1);
         }
@@ -2147,7 +2157,8 @@ impl DataActor for ShutdownAndScheduleNewAlert {
                 None,
                 None,
             )?;
-            self.shutdown_system(Some("shutdown and reschedule".to_string()));
+            self.core
+                .shutdown_system(Some("shutdown and reschedule".to_string()));
         } else if event.name.as_str() == "post_shutdown_alert" {
             self.new_alert_fired.set(self.new_alert_fired.get() + 1);
         }
@@ -2658,10 +2669,12 @@ impl DataActor for CascadingStopStrategy {
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         if !self.entry_submitted.get() {
             self.entry_submitted.set(true);
-            let order = self.core.order_factory().market(
-                self.instrument_id,
+            let instrument_id = self.instrument_id;
+            let trade_size = self.trade_size;
+            let order = self.order_factory().market(
+                instrument_id,
                 OrderSide::Buy,
-                self.trade_size,
+                trade_size,
                 None,
                 None,
                 None,
@@ -2679,10 +2692,12 @@ impl DataActor for CascadingStopStrategy {
         // Submit stop-loss in response to fill (cascading command)
         if !self.stop_submitted.get() {
             self.stop_submitted.set(true);
-            let order = self.core.order_factory().stop_market(
-                self.instrument_id,
+            let instrument_id = self.instrument_id;
+            let trade_size = self.trade_size;
+            let order = self.order_factory().stop_market(
+                instrument_id,
                 OrderSide::Sell,
-                self.trade_size,
+                trade_size,
                 Price::from("900.00"),
                 None,
                 None,
@@ -2793,11 +2808,14 @@ impl DataActor for EmulatedStopEntryOnQuote {
         }
         self.submitted.set(true);
 
-        let order = self.core.order_factory().stop_market(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let trigger_price = self.trigger_price;
+        let order = self.order_factory().stop_market(
+            instrument_id,
             OrderSide::Buy,
-            self.trade_size,
-            self.trigger_price,
+            trade_size,
+            trigger_price,
             Some(TriggerType::BidAsk),
             Some(TimeInForce::Gtc),
             None,
@@ -2922,10 +2940,12 @@ impl DataActor for EmulatedTrailingStopOnQuote {
         }
         self.submitted.set(true);
 
-        let order = self.core.order_factory().trailing_stop_market(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let order = self.order_factory().trailing_stop_market(
+            instrument_id,
             OrderSide::Buy,
-            self.trade_size,
+            trade_size,
             Decimal::from(5),
             Some(TrailingOffsetType::Price),
             None,
@@ -3045,13 +3065,14 @@ impl DataActor for EmulatedBracketOnQuote {
         }
         self.submitted.set(true);
 
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
         let orders = self
-            .core
             .order_factory()
             .bracket()
-            .instrument_id(self.instrument_id)
+            .instrument_id(instrument_id)
             .order_side(OrderSide::Buy)
-            .quantity(self.trade_size)
+            .quantity(trade_size)
             .emulation_trigger(TriggerType::BidAsk)
             .contingency_type(ContingencyType::Oco)
             .tp_price(Price::from("1010.00"))
@@ -3225,10 +3246,12 @@ impl DataActor for DualTimerStrategy {
         } else {
             OrderSide::Sell
         };
-        let order = self.core.order_factory().market(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let order = self.order_factory().market(
+            instrument_id,
             side,
-            self.trade_size,
+            trade_size,
             None,
             None,
             None,
@@ -3844,10 +3867,12 @@ impl DataActor for CloseOnStop {
             return Ok(());
         }
         self.opened = true;
-        let order = self.core.order_factory().market(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let order = self.order_factory().market(
+            instrument_id,
             OrderSide::Buy,
-            self.trade_size,
+            trade_size,
             None,
             None,
             None,
@@ -4044,11 +4069,14 @@ impl DataActor for CancelOnStop {
             return Ok(());
         }
         self.placed = true;
-        let order = self.core.order_factory().limit(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let limit_price = self.limit_price;
+        let order = self.order_factory().limit(
+            instrument_id,
             OrderSide::Buy,
-            self.trade_size,
-            self.limit_price,
+            trade_size,
+            limit_price,
             None,
             None,
             None,
@@ -4279,10 +4307,12 @@ impl DataActor for OpenOnEveryQuote {
     }
 
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
-        let order = self.core.order_factory().market(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let order = self.order_factory().market(
+            instrument_id,
             OrderSide::Buy,
-            self.trade_size,
+            trade_size,
             None,
             None,
             None,
@@ -4497,10 +4527,11 @@ impl DataActor for MultiInstrumentCloseOnStop {
             return Ok(());
         }
         self.opened[idx] = true;
-        let order = self.core.order_factory().market(
+        let trade_size = self.trade_size;
+        let order = self.order_factory().market(
             quote.instrument_id,
             OrderSide::Buy,
-            self.trade_size,
+            trade_size,
             None,
             None,
             None,

@@ -26,7 +26,7 @@ use nautilus_model::{
         OrderCanceled, OrderDenied, OrderExpired, OrderFilled, OrderRejected, PositionClosed,
         PositionOpened,
     },
-    identifiers::{ClientOrderId, PositionId, StrategyId},
+    identifiers::{ClientOrderId, PositionId},
     orders::{Order, OrderCore},
     types::Quantity,
 };
@@ -34,7 +34,7 @@ use nautilus_model::{
 use super::config::HurstVpinDirectionalConfig;
 use crate::{
     nautilus_strategy,
-    strategy::{Strategy, StrategyCore},
+    strategy::{Strategy, StrategyCore, StrategyNative},
 };
 
 /// Directional strategy combining a Hurst-exponent regime filter on dollar bars
@@ -242,10 +242,12 @@ impl HurstVpinDirectional {
     }
 
     fn submit_entry(&mut self, side: OrderSide) -> anyhow::Result<()> {
-        let order = self.core.order_factory().market(
-            self.config.instrument_id,
+        let instrument_id = self.config.instrument_id;
+        let trade_size = self.config.trade_size;
+        let order = self.order_factory().market(
+            instrument_id,
             side,
-            self.config.trade_size,
+            trade_size,
             Some(TimeInForce::Ioc),
             None, // reduce_only
             None, // quote_quantity
@@ -260,7 +262,9 @@ impl HurstVpinDirectional {
 
     fn submit_close(&mut self) -> anyhow::Result<()> {
         let instrument_id = self.config.instrument_id;
-        let strategy_id = StrategyId::from(self.actor_id.inner().as_str());
+        let strategy_id = Strategy::core(self)
+            .strategy_id()
+            .expect("Strategy must be registered");
 
         let positions: Vec<(PositionId, Quantity, PositionSide)> = self
             .cache()
@@ -277,7 +281,7 @@ impl HurstVpinDirectional {
 
         for (position_id, quantity, side) in positions {
             let closing_side = OrderCore::closing_side(side);
-            let close_order = self.core.order_factory().market(
+            let close_order = self.order_factory().market(
                 instrument_id,
                 closing_side,
                 quantity,
@@ -298,7 +302,9 @@ impl HurstVpinDirectional {
 
     fn has_open_position(&self) -> bool {
         let instrument_id = self.config.instrument_id;
-        let strategy_id = StrategyId::from(self.actor_id.inner().as_str());
+        let strategy_id = Strategy::core(self)
+            .strategy_id()
+            .expect("Strategy must be registered");
         !self
             .cache()
             .positions_open(None, Some(&instrument_id), Some(&strategy_id), None, None)
@@ -451,7 +457,9 @@ impl DataActor for HurstVpinDirectional {
             return Ok(());
         }
 
-        let strategy_id = StrategyId::from(self.actor_id.inner().as_str());
+        let strategy_id = Strategy::core(self)
+            .strategy_id()
+            .expect("Strategy must be registered");
         let has_working = {
             let cache = self.cache();
             !cache

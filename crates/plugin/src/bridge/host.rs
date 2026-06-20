@@ -36,8 +36,9 @@ use std::{
 };
 
 use nautilus_common::{
-    actor::{DataActor, DataActorCore, registry::try_get_actor_unchecked},
+    actor::{DataActor, DataActorNative, registry::try_get_actor_unchecked},
     cache::Cache,
+    component::Component,
     msgbus,
 };
 use nautilus_core::{Params, UnixNanos, time::duration_since_unix_epoch};
@@ -47,7 +48,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId},
     orders::{Order, OrderAny},
 };
-use nautilus_trading::strategy::Strategy;
+use nautilus_trading::strategy::{Strategy, StrategyNative};
 use serde::Serialize;
 
 use crate::{
@@ -317,11 +318,11 @@ unsafe extern "C" fn host_trader_id(ctx: *const HostContext) -> PluginResult<Own
         let trader_id = if inner.is_strategy {
             let adapter_ref = try_get_actor_unchecked::<PluginStrategyAdapter>(&actor_id)
                 .ok_or_else(|| resolve_adapter_error("trader_id", inner))?;
-            adapter_ref.trader_id()
+            DataActorNative::core(&*adapter_ref).trader_id()
         } else {
             let adapter_ref = try_get_actor_unchecked::<PluginActorAdapter>(&actor_id)
                 .ok_or_else(|| resolve_adapter_error("trader_id", inner))?;
-            adapter_ref.trader_id()
+            DataActorNative::core(&*adapter_ref).trader_id()
         }
         .ok_or_else(|| {
             PluginError::new(
@@ -336,7 +337,7 @@ unsafe extern "C" fn host_trader_id(ctx: *const HostContext) -> PluginResult<Own
 
 unsafe extern "C" fn host_strategy_id(ctx: *const HostContext) -> PluginResult<OwnedBytes> {
     dispatch_strategy_query(ctx, "strategy_id", |adapter| {
-        let strategy_id = adapter.core().strategy_id().ok_or_else(|| {
+        let strategy_id = Strategy::core(adapter).strategy_id().ok_or_else(|| {
             PluginError::new(
                 PluginErrorCode::InvalidArgument,
                 "strategy_id is unavailable before strategy registration",
@@ -369,8 +370,7 @@ unsafe extern "C" fn host_generate_client_order_id(
 ) -> PluginResult<OwnedBytes> {
     dispatch_strategy_query(ctx, "generate_client_order_id", |adapter| {
         require_registered_strategy(adapter, "generate_client_order_id")?;
-        let client_order_id = adapter
-            .core_mut()
+        let client_order_id = Strategy::core_mut(adapter)
             .order_factory()
             .generate_client_order_id();
         json_bytes(&client_order_id).into_result()
@@ -382,7 +382,9 @@ unsafe extern "C" fn host_generate_order_list_id(
 ) -> PluginResult<OwnedBytes> {
     dispatch_strategy_query(ctx, "generate_order_list_id", |adapter| {
         require_registered_strategy(adapter, "generate_order_list_id")?;
-        let order_list_id = adapter.core_mut().order_factory().generate_order_list_id();
+        let order_list_id = Strategy::core_mut(adapter)
+            .order_factory()
+            .generate_order_list_id();
         json_bytes(&order_list_id).into_result()
     })
 }
@@ -1020,7 +1022,7 @@ unsafe extern "C" fn host_close_position(
     unsafe {
         dispatch_handle(ctx, command, "close_position", |adapter, cmd| {
             let position = {
-                let cache = Strategy::core(adapter).cache();
+                let cache = Strategy::core(adapter).cache_ref();
                 cache.position(&cmd.position_id).map(|p| p.cloned())
             };
             let position = position.ok_or_else(|| {
@@ -1080,7 +1082,7 @@ unsafe extern "C" fn host_query_order(
     unsafe {
         dispatch_handle(ctx, command, "query_order", |adapter, cmd| {
             let order = {
-                let cache = Strategy::core(adapter).cache();
+                let cache = Strategy::core(adapter).cache_ref();
                 cache.order(&cmd.client_order_id).map(|o| o.cloned())
             };
             let order = order.ok_or_else(|| {
@@ -1173,13 +1175,13 @@ fn validate_order_identity(
     adapter: &PluginStrategyAdapter,
     order: &OrderAny,
 ) -> Result<(), PluginError> {
-    let expected_trader_id = adapter.trader_id().ok_or_else(|| {
+    let expected_trader_id = DataActorNative::core(adapter).trader_id().ok_or_else(|| {
         PluginError::new(
             PluginErrorCode::InvalidArgument,
             "trader_id is unavailable before strategy registration",
         )
     })?;
-    let expected_strategy_id = adapter.core().strategy_id().ok_or_else(|| {
+    let expected_strategy_id = Strategy::core(adapter).strategy_id().ok_or_else(|| {
         PluginError::new(
             PluginErrorCode::InvalidArgument,
             "strategy_id is unavailable before strategy registration",
@@ -1217,7 +1219,7 @@ fn require_registered_strategy(
     adapter: &PluginStrategyAdapter,
     method: &'static str,
 ) -> Result<(), PluginError> {
-    if adapter.is_registered() {
+    if DataActorNative::core(adapter).is_registered() {
         Ok(())
     } else {
         Err(PluginError::new(
@@ -1288,12 +1290,12 @@ fn dispatch_cache_query(
         if inner.is_strategy {
             let adapter_ref = try_get_actor_unchecked::<PluginStrategyAdapter>(&actor_id)
                 .ok_or_else(|| resolve_adapter_error(method, inner))?;
-            let cache = Strategy::core(&*adapter_ref).cache();
+            let cache = Strategy::core(&*adapter_ref).cache_ref();
             f(&cache, inner).into_result()
         } else {
             let adapter_ref = try_get_actor_unchecked::<PluginActorAdapter>(&actor_id)
                 .ok_or_else(|| resolve_adapter_error(method, inner))?;
-            let cache = DataActorCore::cache(&adapter_ref);
+            let cache = DataActorNative::cache_ref(&*adapter_ref);
             f(&cache, inner).into_result()
         }
     })

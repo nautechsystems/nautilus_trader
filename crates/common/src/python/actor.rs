@@ -54,7 +54,7 @@ use pyo3::{
 
 use crate::{
     actor::{
-        Actor, DataActor,
+        Actor, DataActor, DataActorNative,
         data_actor::{DataActorConfig, DataActorCore, ImportableActorConfig},
         registry::{try_get_actor_unchecked, with_actor_registry},
     },
@@ -181,6 +181,16 @@ impl Deref for PyDataActorInner {
 
 impl DerefMut for PyDataActorInner {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.core
+    }
+}
+
+impl DataActorNative for PyDataActorInner {
+    fn core(&self) -> &DataActorCore {
+        &self.core
+    }
+
+    fn core_mut(&mut self) -> &mut DataActorCore {
         &mut self.core
     }
 }
@@ -1126,12 +1136,12 @@ impl PyDataActor {
     #[pyo3(name = "shutdown_system")]
     #[pyo3(signature = (reason=None))]
     fn py_shutdown_system(&self, reason: Option<String>) {
-        self.inner().core.shutdown_system(reason);
+        self.inner().shutdown_system(reason);
     }
 
     #[pyo3(name = "publish_data")]
     fn py_publish_data(&self, data_type: &DataType, data: &CustomData) {
-        self.inner().core.publish_data(data_type, data);
+        self.inner().publish_data(data_type, data);
     }
 
     #[pyo3(name = "publish_signal")]
@@ -1150,7 +1160,6 @@ impl PyDataActor {
         // Accept any int / float / str / bool — match v1 behaviour by coercing with `str(value)`.
         let value_str: String = value.bind(py).str()?.extract()?;
         self.inner()
-            .core
             .publish_signal(name, value_str, UnixNanos::from(ts_event));
         Ok(())
     }
@@ -1158,7 +1167,6 @@ impl PyDataActor {
     #[pyo3(name = "add_synthetic")]
     fn py_add_synthetic(&self, synthetic: SyntheticInstrument) -> PyResult<()> {
         self.inner()
-            .core
             .add_synthetic(synthetic)
             .map_err(to_pyvalue_err)
     }
@@ -1166,7 +1174,6 @@ impl PyDataActor {
     #[pyo3(name = "update_synthetic")]
     fn py_update_synthetic(&self, synthetic: SyntheticInstrument) -> PyResult<()> {
         self.inner()
-            .core
             .update_synthetic(synthetic)
             .map_err(to_pyvalue_err)
     }

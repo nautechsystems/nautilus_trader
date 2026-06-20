@@ -23,7 +23,7 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::AHashMap;
 use nautilus_common::{
-    actor::{DataActor, registry::try_get_actor_unchecked},
+    actor::{DataActor, DataActorNative, registry::try_get_actor_unchecked},
     cache::Cache,
     clock::{Clock, TestClock},
     component::{
@@ -278,7 +278,7 @@ impl Trader {
     {
         self.validate_actor_or_strategy_registration()?;
 
-        let actor_id = actor.actor_id();
+        let actor_id = DataActorNative::core(&actor).actor_id();
 
         // Check for duplicate registration
         if self.actor_ids.contains(&actor_id) {
@@ -324,7 +324,7 @@ impl Trader {
     where
         T: DataActor + Component + Debug + 'static,
     {
-        let actor_id = actor.actor_id();
+        let actor_id = DataActorNative::core(&actor).actor_id();
 
         // Register in both component and actor registries (this consumes the actor)
         register_component_actor(actor);
@@ -502,12 +502,12 @@ impl Trader {
         let existing_order_id_tags: Vec<&str> =
             self.strategy_ids.iter().map(StrategyId::get_tag).collect();
 
-        let configured_strategy_id = strategy.core().strategy_id();
-        let runtime_order_id_tag = normalize_order_id_tag(strategy.core().order_id_tag());
+        let configured_strategy_id = Strategy::core(strategy).strategy_id();
+        let runtime_order_id_tag = normalize_order_id_tag(Strategy::core(strategy).order_id_tag());
 
         let strategy_id = if let Some(strategy_id) = configured_strategy_id {
             ensure_unique_order_id_tag(&existing_order_id_tags, strategy_id.get_tag())?;
-            strategy.core_mut().change_id(strategy_id);
+            Strategy::core_mut(strategy).change_id(strategy_id);
             strategy_id
         } else {
             let order_id_tag = runtime_order_id_tag.map_or_else(
@@ -519,7 +519,7 @@ impl Trader {
             let base_id = strategy_registration_id::<T>(strategy);
             let strategy_id =
                 StrategyId::from(format!("{}-{order_id_tag}", base_strategy_id(&base_id)));
-            strategy.core_mut().change_id(strategy_id);
+            Strategy::core_mut(strategy).change_id(strategy_id);
             strategy_id
         };
 
@@ -553,7 +553,7 @@ impl Trader {
         let clock = self.create_component_clock(component_id);
 
         // Register strategy core with portfolio for order management
-        strategy.core_mut().register(
+        Strategy::core_mut(&mut strategy).register(
             self.trader_id,
             clock.clone(),
             self.cache.clone(),
@@ -561,7 +561,7 @@ impl Trader {
         )?;
 
         // Register default time event handler for this strategy
-        let actor_id = strategy.actor_id().inner();
+        let actor_id = DataActorNative::core(&strategy).actor_id().inner();
         let callback = TimeEventCallback::from(move |event: TimeEvent| {
             if let Some(mut actor) = try_get_actor_unchecked::<T>(&actor_id) {
                 actor.handle_time_event(&event);
@@ -1229,7 +1229,7 @@ mod tests {
     use nautilus_risk::engine::{RiskEngine, config::RiskEngineConfig};
     use nautilus_trading::{
         ExecutionAlgorithm as ExecutionAlgorithmTrait, ExecutionAlgorithmConfig,
-        ExecutionAlgorithmCore, nautilus_strategy,
+        ExecutionAlgorithmCore, StrategyNative, nautilus_strategy,
         strategy::{config::StrategyConfig, core::StrategyCore},
     };
     use rstest::rstest;
@@ -1435,7 +1435,7 @@ mod tests {
         );
 
         let actor = TestDataActor::new(DataActorConfig::default());
-        let actor_id = actor.actor_id();
+        let actor_id = actor.core.actor_id();
 
         let result = trader.add_actor(actor);
         assert!(result.is_ok());
@@ -1543,7 +1543,7 @@ mod tests {
 
         let mut registered = get_actor_unchecked::<TestStrategy>(&strategy_id.inner());
         let (client_order_id, order_list_id) = {
-            let mut order_factory = registered.core.order_factory();
+            let mut order_factory = registered.order_factory();
             (
                 order_factory.generate_client_order_id(),
                 order_factory.generate_order_list_id(),
@@ -1551,8 +1551,8 @@ mod tests {
         };
 
         assert_eq!(trader.strategy_ids(), vec![strategy_id]);
-        assert_eq!(registered.core().strategy_id(), Some(strategy_id));
-        assert_eq!(registered.core().order_id_tag(), Some("XNAS"));
+        assert_eq!(registered.core.strategy_id(), Some(strategy_id));
+        assert_eq!(registered.core.order_id_tag(), Some("XNAS"));
         assert!(client_order_id.as_str().ends_with("-001-XNAS-1"));
         assert!(order_list_id.as_str().ends_with("-001-XNAS-1"));
     }
@@ -1588,7 +1588,7 @@ mod tests {
 
         let mut registered = get_actor_unchecked::<TestStrategy>(&runtime_strategy_id.inner());
         let (client_order_id, order_list_id) = {
-            let mut order_factory = registered.core.order_factory();
+            let mut order_factory = registered.order_factory();
             (
                 order_factory.generate_client_order_id(),
                 order_factory.generate_order_list_id(),
@@ -1596,8 +1596,8 @@ mod tests {
         };
 
         assert_eq!(trader.strategy_ids(), vec![runtime_strategy_id]);
-        assert_eq!(registered.core().strategy_id(), Some(runtime_strategy_id));
-        assert_eq!(registered.core().order_id_tag(), Some("T01"));
+        assert_eq!(registered.core.strategy_id(), Some(runtime_strategy_id));
+        assert_eq!(registered.core.order_id_tag(), Some("T01"));
         assert!(client_order_id.as_str().ends_with("-001-T01-1"));
         assert!(order_list_id.as_str().ends_with("-001-T01-1"));
     }
@@ -1654,10 +1654,10 @@ mod tests {
             .prepare_strategy_for_registration(&mut strategy)
             .unwrap();
         assert_eq!(prepared_id, StrategyId::from("TestStrategy-000"));
-        assert_eq!(strategy.core().config.strategy_id, None);
-        assert_eq!(strategy.core().config.order_id_tag, None);
-        assert_eq!(strategy.core().strategy_id(), Some(prepared_id));
-        assert_eq!(strategy.core().order_id_tag(), Some("000"));
+        assert_eq!(Strategy::core(&strategy).config.strategy_id, None);
+        assert_eq!(Strategy::core(&strategy).config.order_id_tag, None);
+        assert_eq!(Strategy::core(&strategy).strategy_id(), Some(prepared_id));
+        assert_eq!(Strategy::core(&strategy).order_id_tag(), Some("000"));
 
         assert!(trader.add_strategy(strategy).is_ok());
         assert_eq!(trader.strategy_ids(), vec![prepared_id]);
@@ -1789,7 +1789,8 @@ mod tests {
             ..Default::default()
         };
         let exec_algorithm = TestExecAlgorithm::new(config);
-        let exec_algorithm_id = ExecAlgorithmId::from(exec_algorithm.actor_id().inner().as_str());
+        let exec_algorithm_id =
+            ExecAlgorithmId::from(exec_algorithm.core.actor_id().inner().as_str());
 
         let result = trader.add_exec_algorithm(exec_algorithm);
         assert!(result.is_ok());

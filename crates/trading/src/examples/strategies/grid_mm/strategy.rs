@@ -23,7 +23,7 @@ use nautilus_model::{
     data::QuoteTick,
     enums::{OrderSide, TimeInForce},
     events::{OrderCanceled, OrderExpired, OrderFilled, OrderRejected},
-    identifiers::{ClientOrderId, StrategyId},
+    identifiers::ClientOrderId,
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     types::{Price, Quantity},
@@ -33,7 +33,7 @@ use rust_decimal::Decimal;
 use super::config::GridMarketMakerConfig;
 use crate::{
     nautilus_strategy,
-    strategy::{Strategy, StrategyCore},
+    strategy::{Strategy, StrategyCore, StrategyNative},
 };
 
 /// Grid market making strategy with inventory-based skewing.
@@ -193,7 +193,9 @@ impl DataActor for GridMarketMaker {
         let mid = Price::new(mid_f64, price_precision);
 
         let instrument_id = self.config.instrument_id;
-        let strategy_id = StrategyId::from(self.actor_id.inner().as_str());
+        let strategy_id = Strategy::core(self)
+            .strategy_id()
+            .expect("Strategy must be registered");
 
         // Always requote when the grid is empty, even if mid is within threshold
         let has_resting = {
@@ -297,7 +299,7 @@ impl DataActor for GridMarketMaker {
         };
 
         for (side, price) in grid {
-            let order = self.core.order_factory().limit(
+            let order = self.order_factory().limit(
                 instrument_id,
                 side,
                 trade_size,

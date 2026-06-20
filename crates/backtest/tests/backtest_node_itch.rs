@@ -42,7 +42,7 @@ use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_testkit::common::{itch_aapl_equity, load_itch_aapl_deltas};
 use nautilus_trading::{
-    Strategy, StrategyConfig, StrategyCore,
+    Strategy, StrategyConfig, StrategyCore, StrategyNative,
     examples::strategies::{GridMarketMaker, GridMarketMakerConfig},
     nautilus_strategy,
 };
@@ -128,10 +128,12 @@ impl DataActor for MarketOrderStrategy {
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         if !self.submitted {
             self.submitted = true;
-            let order = self.core.order_factory().market(
-                self.instrument_id,
+            let instrument_id = self.instrument_id;
+            let trade_size = self.trade_size;
+            let order = self.order_factory().market(
+                instrument_id,
                 OrderSide::Buy,
-                self.trade_size,
+                trade_size,
                 None,
                 None,
                 None,

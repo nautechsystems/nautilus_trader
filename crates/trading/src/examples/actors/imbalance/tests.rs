@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_common::actor::DataActor;
+use nautilus_common::actor::{DataActor, DataActorNative};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas},
@@ -61,7 +61,10 @@ fn test_new_actor_starts_with_empty_states() {
     let actor = BookImbalanceActor::new(vec![instrument_a()], 0, None);
 
     assert!(actor.states().is_empty());
-    assert_eq!(actor.actor_id, ActorId::from("BOOK_IMBALANCE-001"));
+    assert_eq!(
+        DataActorNative::core(&actor).actor_id(),
+        ActorId::from("BOOK_IMBALANCE-001")
+    );
 }
 
 #[rstest]
@@ -276,5 +279,8 @@ fn test_from_config_creates_actor() {
         .with_actor_id(ActorId::from("MY_ACTOR-001"));
     let actor = BookImbalanceActor::from_config(config);
     assert!(actor.states().is_empty());
-    assert_eq!(actor.actor_id, ActorId::from("MY_ACTOR-001"));
+    assert_eq!(
+        DataActorNative::core(&actor).actor_id(),
+        ActorId::from("MY_ACTOR-001")
+    );
 }

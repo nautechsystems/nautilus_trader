@@ -52,7 +52,7 @@ use std::{
 
 use aws_lc_rs::digest;
 use nautilus_common::{
-    actor::{DataActor, registry::register_actor},
+    actor::{DataActor, DataActorNative, registry::register_actor},
     cache::{Cache, ORDER_NOT_FOUND},
     clock::{Clock, TestClock},
     component::Component,
@@ -259,8 +259,7 @@ fn register_strategy_adapter(adapter: &mut PluginStrategyAdapter) {
         clock.clone(),
         None,
     )));
-    adapter
-        .core_mut()
+    Strategy::core_mut(adapter)
         .register(trader_id, clock, cache, portfolio)
         .expect("strategy register");
     adapter.initialize().expect("strategy initialize");
@@ -722,7 +721,7 @@ fn cdylib_strategy_submit_order_normalizes_identifiers() {
         risk_handler,
     );
 
-    let actor_id = ActorId::from(adapter.actor_id().inner().as_str());
+    let actor_id = ActorId::from(DataActorNative::core(&adapter).actor_id().inner().as_str());
     let registered = register_actor(adapter);
     // SAFETY: `registered` owns the adapter and this test holds the only
     // mutable access while invoking on_start.
@@ -771,7 +770,7 @@ fn cdylib_strategy_query_order_normalizes_identifiers_for_cache_lookup() {
     .expect("strategy adapter construction succeeds");
     register_strategy_adapter(&mut adapter);
 
-    let cache_rc = adapter.core_mut().cache_rc();
+    let cache_rc = Strategy::core_mut(&mut adapter).cache_rc();
     cache_rc
         .borrow_mut()
         .add_order(
@@ -841,7 +840,7 @@ fn cdylib_strategy_cancel_order_normalizes_identifiers_for_cache_lookup() {
     .expect("strategy adapter construction succeeds");
     register_strategy_adapter(&mut adapter);
 
-    let cache_rc = adapter.core_mut().cache_rc();
+    let cache_rc = Strategy::core_mut(&mut adapter).cache_rc();
     cache_rc
         .borrow_mut()
         .add_order(
@@ -911,7 +910,7 @@ fn cdylib_strategy_modify_order_normalizes_identifiers_for_cache_lookup() {
     .expect("strategy adapter construction succeeds");
     register_strategy_adapter(&mut adapter);
 
-    let cache_rc = adapter.core_mut().cache_rc();
+    let cache_rc = Strategy::core_mut(&mut adapter).cache_rc();
     cache_rc
         .borrow_mut()
         .add_order(
@@ -987,7 +986,7 @@ fn cdylib_strategy_close_position_normalizes_identifiers_for_cache_lookup() {
     let instrument = InstrumentAny::CurrencyPair(stubs::currency_pair_ethusdt());
     let position = plugin_test_position(strategy_id, position_id);
     let expected_instrument_id = position.instrument_id;
-    let cache_rc = adapter.core_mut().cache_rc();
+    let cache_rc = Strategy::core_mut(&mut adapter).cache_rc();
     cache_rc
         .borrow_mut()
         .add_instrument(instrument)
@@ -1144,7 +1143,7 @@ fn cdylib_strategy_cancel_orders_normalizes_identifiers_for_cache_lookup() {
     .expect("strategy adapter construction succeeds");
     register_strategy_adapter(&mut adapter);
 
-    let cache_rc = adapter.core_mut().cache_rc();
+    let cache_rc = Strategy::core_mut(&mut adapter).cache_rc();
     for id in [client_order_id, secondary_client_order_id] {
         cache_rc
             .borrow_mut()
@@ -1289,7 +1288,7 @@ fn cdylib_strategy_cancel_all_orders_normalizes_identifiers_and_routes_command_f
     .expect("strategy adapter construction succeeds");
     register_strategy_adapter(&mut adapter);
 
-    let cache_rc = adapter.core_mut().cache_rc();
+    let cache_rc = Strategy::core_mut(&mut adapter).cache_rc();
     let order = plugin_test_order(strategy_id, client_order_id);
     let submitted = TestOrderEventStubs::submitted(&order, AccountId::from("SIM-001"));
     let accepted = TestOrderEventStubs::accepted(
@@ -1379,7 +1378,7 @@ fn cdylib_strategy_close_all_positions_normalizes_identifiers_for_position_looku
 
     let position = plugin_test_position(strategy_id, position_id);
     assert_eq!(position.instrument_id, expected_instrument_id);
-    let cache_rc = adapter.core_mut().cache_rc();
+    let cache_rc = Strategy::core_mut(&mut adapter).cache_rc();
     cache_rc
         .borrow_mut()
         .add_instrument(instrument)
@@ -1533,7 +1532,7 @@ fn cdylib_actor_quote_normalizes_identifiers_for_plugin() {
     }
     .expect("actor adapter construction succeeds");
     register_actor_adapter(&mut adapter);
-    let actor_id = ActorId::from(adapter.actor_id().inner().as_str());
+    let actor_id = ActorId::from(DataActorNative::core(&adapter).actor_id().inner().as_str());
     let _registered = register_actor(adapter);
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id,

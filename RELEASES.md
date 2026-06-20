@@ -43,6 +43,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Changed PyO3 `DataActor`/`Strategy` historical request `start`/`end` to require UTC datetimes
 - Changed Redis cache account/order/position storage to event logs; clear old typed state (Rust)
 - Changed Rust actor `self.clock()` to return `ClockApi`; call methods directly instead of borrowing
+- Changed Rust actor/strategy core access; use macros or native traits instead of `Deref`
 - Changed `SyntheticInstrument` fallible methods to return `SyntheticInstrumentError` instead of `anyhow::Error` (Rust)
 - Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)
 - Renamed `BitmexInstrumentType::StockPerpetual` to `TradFiPerpetual` (covers equities, FX, and commodities)

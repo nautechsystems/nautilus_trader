@@ -15,7 +15,7 @@
 
 //! Convenience macros for implementing strategy boilerplate.
 
-/// Implements `Deref<Target = DataActorCore>`, `DerefMut`, and `Strategy` for a strategy type.
+/// Implements `DataActorNative` and `Strategy` for a strategy type.
 ///
 /// The struct must contain a field of type [`StrategyCore`](crate::strategy::StrategyCore).
 /// By default the macro expects the field to be named `core`; pass a second argument
@@ -75,16 +75,12 @@ macro_rules! nautilus_strategy {
         $crate::nautilus_strategy!($ty, core, { $($extra)* });
     };
     ($ty:ty, $field:ident, { $($extra:item)* }) => {
-        impl ::std::ops::Deref for $ty {
-            type Target = $crate::_macro_reexports::DataActorCore;
-
-            fn deref(&self) -> &Self::Target {
+        impl $crate::_macro_reexports::DataActorNative for $ty {
+            fn core(&self) -> &$crate::_macro_reexports::DataActorCore {
                 &self.$field
             }
-        }
 
-        impl ::std::ops::DerefMut for $ty {
-            fn deref_mut(&mut self) -> &mut Self::Target {
+            fn core_mut(&mut self) -> &mut $crate::_macro_reexports::DataActorCore {
                 &mut self.$field
             }
         }

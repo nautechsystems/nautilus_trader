@@ -35,16 +35,16 @@ use nautilus_portfolio::portfolio::Portfolio;
 use ustr::Ustr;
 
 use super::{
+    Strategy,
     api::{OrderApi, PortfolioApi},
     config::StrategyConfig,
 };
 
-/// The core component of a [`Strategy`](super::Strategy), managing data, orders, and state.
+/// The core component of a [`Strategy`], managing data, orders, and state.
 ///
 /// This struct is intended to be held as a member within a user's custom strategy struct.
-/// The user's struct should then `Deref` and `DerefMut` to this `StrategyCore` instance
-/// to satisfy the trait bounds of [`Strategy`](super::Strategy) and
-/// [`DataActor`](nautilus_common::actor::data_actor::DataActor).
+/// Use the `nautilus_strategy!` macro to provide the trait accessors required by
+/// [`Strategy`] and [`DataActor`](nautilus_common::actor::DataActor).
 pub struct StrategyCore {
     pub(crate) actor: DataActorCore,
     /// The strategy configuration.
@@ -76,6 +76,47 @@ impl Debug for StrategyCore {
             .field("market_exit_attempts", &self.market_exit_attempts)
             .finish()
     }
+}
+
+/// Native-only access to internal strategy runtime state.
+///
+/// Use this trait from Rust strategies compiled into the same native binary as
+/// the engine, when direct access to host runtime objects matters for a
+/// performance sensitive path or host integration code needs access below the
+/// facade API.
+///
+/// Do not import this trait in strategy code intended to run through Python or
+/// the plug-in authoring surface. Those surfaces should use facade methods such
+/// as `order()` and `portfolio()`, because native borrows, `Rc<RefCell<_>>`, and
+/// core references do not cross those boundaries.
+pub trait StrategyNative {
+    /// Returns a mutable borrow of the order factory.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the strategy has not been registered.
+    fn order_factory(&mut self) -> RefMut<'_, OrderFactory>;
+
+    /// Returns a clone of the reference-counted order factory.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the strategy has not been registered.
+    fn order_factory_rc(&self) -> Rc<RefCell<OrderFactory>>;
+
+    /// Returns mutable access to the order manager.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the strategy has not been registered.
+    fn order_manager(&mut self) -> &mut OrderManager;
+
+    /// Returns a clone of the reference-counted portfolio.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the strategy has not been registered.
+    fn portfolio_rc(&self) -> Rc<RefCell<Portfolio>>;
 }
 
 impl StrategyCore {
@@ -213,54 +254,6 @@ impl StrategyCore {
         OrderApi::new(order_factory.as_ref())
     }
 
-    /// Returns a mutable reference to the [`OrderFactory`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if the strategy has not been registered.
-    pub fn order_factory(&mut self) -> RefMut<'_, OrderFactory> {
-        self.order_factory
-            .as_ref()
-            .expect("Strategy not registered: OrderFactory not initialized")
-            .borrow_mut()
-    }
-
-    /// Returns a shared reference to the [`OrderFactory`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if the strategy has not been registered.
-    #[must_use]
-    pub fn order_factory_rc(&self) -> Rc<RefCell<OrderFactory>> {
-        self.order_factory
-            .as_ref()
-            .expect("Strategy not registered: OrderFactory not initialized")
-            .clone()
-    }
-
-    /// Returns a mutable reference to the [`OrderManager`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if the strategy has not been registered.
-    pub fn order_manager(&mut self) -> &mut OrderManager {
-        self.order_manager
-            .as_mut()
-            .expect("Strategy not registered: OrderManager not initialized")
-    }
-
-    /// Returns a reference to the [`Portfolio`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if the strategy has not been registered.
-    #[must_use]
-    pub fn portfolio(&self) -> &Rc<RefCell<Portfolio>> {
-        self.portfolio
-            .as_ref()
-            .expect("Strategy not registered: Portfolio not initialized")
-    }
-
     /// Returns the user-facing portfolio read API.
     ///
     /// # Panics
@@ -280,6 +273,56 @@ impl StrategyCore {
         self.is_exiting = false;
         self.pending_stop = false;
         self.market_exit_attempts = 0;
+    }
+}
+
+impl StrategyNative for StrategyCore {
+    fn order_factory(&mut self) -> RefMut<'_, OrderFactory> {
+        self.order_factory
+            .as_ref()
+            .expect("Strategy not registered: OrderFactory not initialized")
+            .borrow_mut()
+    }
+
+    fn order_factory_rc(&self) -> Rc<RefCell<OrderFactory>> {
+        self.order_factory
+            .as_ref()
+            .expect("Strategy not registered: OrderFactory not initialized")
+            .clone()
+    }
+
+    fn order_manager(&mut self) -> &mut OrderManager {
+        self.order_manager
+            .as_mut()
+            .expect("Strategy not registered: OrderManager not initialized")
+    }
+
+    fn portfolio_rc(&self) -> Rc<RefCell<Portfolio>> {
+        self.portfolio
+            .as_ref()
+            .expect("Strategy not registered: Portfolio not initialized")
+            .clone()
+    }
+}
+
+impl<T> StrategyNative for T
+where
+    T: Strategy + ?Sized,
+{
+    fn order_factory(&mut self) -> RefMut<'_, OrderFactory> {
+        <StrategyCore as StrategyNative>::order_factory(Strategy::core_mut(self))
+    }
+
+    fn order_factory_rc(&self) -> Rc<RefCell<OrderFactory>> {
+        <StrategyCore as StrategyNative>::order_factory_rc(Strategy::core(self))
+    }
+
+    fn order_manager(&mut self) -> &mut OrderManager {
+        <StrategyCore as StrategyNative>::order_manager(Strategy::core_mut(self))
+    }
+
+    fn portfolio_rc(&self) -> Rc<RefCell<Portfolio>> {
+        <StrategyCore as StrategyNative>::portfolio_rc(Strategy::core(self))
     }
 }
 
@@ -859,7 +902,8 @@ mod tests {
         let snapshots = portfolio.snapshots(&AccountId::from("SIM-001"));
         let recorded_realized_pnls = portfolio.recorded_realized_pnls();
 
-        let _native_portfolio = core.portfolio().borrow_mut();
+        let native_portfolio = core.portfolio_rc();
+        let _native_portfolio = native_portfolio.borrow_mut();
 
         assert!(!is_initialized);
         assert!(balances_locked.is_empty());

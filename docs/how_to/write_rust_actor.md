@@ -9,8 +9,10 @@ For background on actors, traits, and handler dispatch, see the
 
 ## Define the struct
 
-An actor owns a `DataActorCore` and any state it needs. The core provides
-subscription methods, cache access, and clock access through `Deref`.
+An actor owns a `DataActorCore` and any state it needs. The core stores runtime
+state for the actor. User code normally reaches that state through the
+`DataActor` facade methods such as `clock()`, `cache()`, and the subscription
+methods.
 
 ```rust
 use nautilus_common::{nautilus_actor, actor::{DataActor, DataActorConfig, DataActorCore}};
@@ -45,10 +47,9 @@ impl SpreadMonitor {
 
 ## Wire up the core and implement Debug
 
-The `nautilus_actor!` macro generates the `Deref<Target = DataActorCore>`
-and `DerefMut` impls that give your struct direct access to subscription
-methods, cache, and clock. By default it delegates to a field named `core`;
-pass a second argument for a different field name.
+The `nautilus_actor!` macro generates the core access required by `DataActor`.
+By default it delegates to a field named `core`; pass a second argument for a
+different field name.
 
 `Debug` is a trait bound on `DataActor` (required by the blanket `Component`
 impl), so implement it manually or derive it.
@@ -84,10 +85,26 @@ impl DataActor for SpreadMonitor {
 }
 ```
 
-`subscribe_quotes` is available directly on `self` because of the `Deref` to
-`DataActorCore`. See the
-[handler table](../concepts/rust.md#handler-methods) for all available
-handlers.
+`subscribe_quotes` is available directly on `self` through the `DataActor`
+trait. See the [handler table](../concepts/rust.md#handler-methods) for all
+available handlers.
+
+## Native runtime access
+
+Use the public `DataActor` facade by default.
+
+| Actor path                  | Use native traits? | Use this API                        |
+|-----------------------------|--------------------|-------------------------------------|
+| Native Rust binary          | Only when needed   | `DataActor`, plus `DataActorNative` |
+| Rust configured from Python | Only when needed   | Same as native Rust                 |
+| Python‑authored actor       | No                 | `DataActor` facade                  |
+| Plug‑in‑compatible actor    | No                 | `DataActor` facade                  |
+
+Import `DataActorNative` only for performance-sensitive native code or host
+integration internals. It exposes borrowed core state such as `cache_ref()`,
+`cache_rc()`, `clock_mut()`, and `clock_rc()`. These types do not cross Python
+or plug-in boundaries, so portable actors should use facade methods such as
+`clock()` and `cache()`.
 
 ## Register the actor
 

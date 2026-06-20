@@ -43,7 +43,7 @@ pub use core::{ExecutionAlgorithmCore, StrategyEventHandlers};
 
 pub use config::{ExecutionAlgorithmConfig, ImportableExecAlgorithmConfig};
 use nautilus_common::{
-    actor::{DataActor, registry::try_get_actor_unchecked},
+    actor::{DataActor, DataActorNative, registry::try_get_actor_unchecked},
     enums::ComponentState,
     logging::{CMD, EVT, RECV, SEND},
     messages::execution::{CancelOrder, ModifyOrder, SubmitOrder, TradingCommand},
@@ -83,15 +83,15 @@ use ustr::Ustr;
 /// # Implementation
 ///
 /// User algorithms should implement the required methods and hold an
-/// [`ExecutionAlgorithmCore`] member. The struct should `Deref` and `DerefMut`
-/// to `ExecutionAlgorithmCore` (which itself derefs to `DataActorCore`).
+/// [`ExecutionAlgorithmCore`] member. Use the `nautilus_actor!` macro to
+/// provide the data actor core accessors.
 pub trait ExecutionAlgorithm: DataActor {
     /// Provides mutable access to the internal `ExecutionAlgorithmCore`.
     fn core_mut(&mut self) -> &mut ExecutionAlgorithmCore;
 
     /// Returns the execution algorithm ID.
     fn id(&mut self) -> ExecAlgorithmId {
-        self.core_mut().exec_algorithm_id
+        ExecutionAlgorithm::core_mut(self).exec_algorithm_id
     }
 
     /// Executes a trading command.
@@ -108,7 +108,7 @@ pub trait ExecutionAlgorithm: DataActor {
     where
         Self: 'static + std::fmt::Debug + Sized,
     {
-        let core = self.core_mut();
+        let core = ExecutionAlgorithm::core_mut(self);
         if core.config.log_commands {
             let id = &core.actor.actor_id;
             log::info!("{id} {RECV}{CMD} {command:?}");
@@ -121,12 +121,13 @@ pub trait ExecutionAlgorithm: DataActor {
         match command {
             TradingCommand::SubmitOrder(cmd) => {
                 self.subscribe_to_strategy_events(cmd.strategy_id);
-                let order = self.core_mut().get_order(&cmd.client_order_id)?;
+                let order = ExecutionAlgorithm::core_mut(self).get_order(&cmd.client_order_id)?;
                 self.on_order(order)
             }
             TradingCommand::SubmitOrderList(cmd) => {
                 self.subscribe_to_strategy_events(cmd.strategy_id);
-                let orders = self.core_mut().get_orders_for_list(&cmd.order_list)?;
+                let orders =
+                    ExecutionAlgorithm::core_mut(self).get_orders_for_list(&cmd.order_list)?;
                 self.on_order_list(cmd.order_list, orders)
             }
             TradingCommand::CancelOrder(cmd) => self.handle_cancel_order(cmd),
@@ -175,7 +176,7 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Returns an error if cancellation fails.
     fn handle_cancel_order(&mut self, command: CancelOrder) -> anyhow::Result<()> {
         let (order, is_pending_cancel) = {
-            let cache = self.core_mut().cache();
+            let cache = ExecutionAlgorithm::core_mut(self).cache_ref();
 
             let Some(order) = cache.order(&command.client_order_id) else {
                 log::warn!(
@@ -201,7 +202,7 @@ pub trait ExecutionAlgorithm: DataActor {
         let event = OrderEventAny::Canceled(self.generate_order_canceled(&order));
 
         let order = {
-            let cache_rc = self.core_mut().cache_rc();
+            let cache_rc = ExecutionAlgorithm::core_mut(self).cache_rc();
             let mut cache = cache_rc.borrow_mut();
             match cache.update_order(&event) {
                 Ok(order) => order,
@@ -226,7 +227,9 @@ pub trait ExecutionAlgorithm: DataActor {
 
     /// Generates an `OrderCanceled` event for an order.
     fn generate_order_canceled(&mut self, order: &OrderAny) -> OrderCanceled {
-        let ts_now = self.core_mut().clock().timestamp_ns();
+        let ts_now = ExecutionAlgorithm::core_mut(self)
+            .clock_mut()
+            .timestamp_ns();
 
         OrderCanceled::new(
             order.trader_id(),
@@ -244,7 +247,9 @@ pub trait ExecutionAlgorithm: DataActor {
 
     /// Generates an `OrderPendingUpdate` event for an order.
     fn generate_order_pending_update(&mut self, order: &OrderAny) -> OrderPendingUpdate {
-        let ts_now = self.core_mut().clock().timestamp_ns();
+        let ts_now = ExecutionAlgorithm::core_mut(self)
+            .clock_mut()
+            .timestamp_ns();
 
         OrderPendingUpdate::new(
             order.trader_id(),
@@ -264,7 +269,9 @@ pub trait ExecutionAlgorithm: DataActor {
 
     /// Generates an `OrderPendingCancel` event for an order.
     fn generate_order_pending_cancel(&mut self, order: &OrderAny) -> OrderPendingCancel {
-        let ts_now = self.core_mut().clock().timestamp_ns();
+        let ts_now = ExecutionAlgorithm::core_mut(self)
+            .clock_mut()
+            .timestamp_ns();
 
         OrderPendingCancel::new(
             order.trader_id(),
@@ -304,14 +311,14 @@ pub trait ExecutionAlgorithm: DataActor {
         reduce_primary: bool,
     ) -> MarketOrder {
         // Generate spawn ID first so we can track the reduction
-        let core = self.core_mut();
+        let core = ExecutionAlgorithm::core_mut(self);
         let client_order_id = core.spawn_client_order_id(&primary.client_order_id());
-        let ts_init = core.clock().timestamp_ns();
+        let ts_init = core.clock_mut().timestamp_ns();
         let exec_algorithm_id = core.exec_algorithm_id;
 
         if reduce_primary {
             self.reduce_primary_order(primary, quantity);
-            self.core_mut()
+            ExecutionAlgorithm::core_mut(self)
                 .track_pending_spawn_reduction(client_order_id, quantity);
         }
 
@@ -366,14 +373,14 @@ pub trait ExecutionAlgorithm: DataActor {
         reduce_primary: bool,
     ) -> LimitOrder {
         // Generate spawn ID first so we can track the reduction
-        let core = self.core_mut();
+        let core = ExecutionAlgorithm::core_mut(self);
         let client_order_id = core.spawn_client_order_id(&primary.client_order_id());
-        let ts_init = core.clock().timestamp_ns();
+        let ts_init = core.clock_mut().timestamp_ns();
         let exec_algorithm_id = core.exec_algorithm_id;
 
         if reduce_primary {
             self.reduce_primary_order(primary, quantity);
-            self.core_mut()
+            ExecutionAlgorithm::core_mut(self)
                 .track_pending_spawn_reduction(client_order_id, quantity);
         }
 
@@ -432,14 +439,14 @@ pub trait ExecutionAlgorithm: DataActor {
         reduce_primary: bool,
     ) -> MarketToLimitOrder {
         // Generate spawn ID first so we can track the reduction
-        let core = self.core_mut();
+        let core = ExecutionAlgorithm::core_mut(self);
         let client_order_id = core.spawn_client_order_id(&primary.client_order_id());
-        let ts_init = core.clock().timestamp_ns();
+        let ts_init = core.clock_mut().timestamp_ns();
         let exec_algorithm_id = core.exec_algorithm_id;
 
         if reduce_primary {
             self.reduce_primary_order(primary, quantity);
-            self.core_mut()
+            ExecutionAlgorithm::core_mut(self)
                 .track_pending_spawn_reduction(client_order_id, quantity);
         }
 
@@ -493,8 +500,8 @@ pub trait ExecutionAlgorithm: DataActor {
         let primary_qty = primary.quantity();
         let new_qty = Quantity::from_raw(primary_qty.raw - spawn_qty.raw, primary_qty.precision);
 
-        let core = self.core_mut();
-        let ts_now = core.clock().timestamp_ns();
+        let core = ExecutionAlgorithm::core_mut(self);
+        let ts_now = core.clock_mut().timestamp_ns();
 
         let updated = OrderUpdated::new(
             primary.trader_id(),
@@ -538,7 +545,7 @@ pub trait ExecutionAlgorithm: DataActor {
         };
 
         let reduction_qty = {
-            let core = self.core_mut();
+            let core = ExecutionAlgorithm::core_mut(self);
             core.take_pending_spawn_reduction(&order.client_order_id())
         };
 
@@ -547,7 +554,7 @@ pub trait ExecutionAlgorithm: DataActor {
         };
 
         let primary = {
-            let cache = self.core_mut().cache();
+            let cache = ExecutionAlgorithm::core_mut(self).cache_ref();
             cache.order(&exec_spawn_id).map(|o| o.clone())
         };
 
@@ -569,8 +576,8 @@ pub trait ExecutionAlgorithm: DataActor {
             primary.quantity().precision,
         );
 
-        let core = self.core_mut();
-        let ts_now = core.clock().timestamp_ns();
+        let core = ExecutionAlgorithm::core_mut(self);
+        let ts_now = core.clock_mut().timestamp_ns();
 
         let updated = OrderUpdated::new(
             primary.trader_id(),
@@ -625,16 +632,16 @@ pub trait ExecutionAlgorithm: DataActor {
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
     ) -> anyhow::Result<()> {
-        let core = self.core_mut();
+        let core = ExecutionAlgorithm::core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
-        let ts_init = core.clock().timestamp_ns();
+        let ts_init = core.clock_mut().timestamp_ns();
 
         // For spawned orders, use the parent's strategy ID
         let strategy_id = order.strategy_id();
 
         let order_exists = {
-            let cache = core.cache();
+            let cache = core.cache_ref();
             cache.order_exists(&order.client_order_id())
         };
 
@@ -710,7 +717,7 @@ pub trait ExecutionAlgorithm: DataActor {
             return Ok(());
         }
 
-        let core = self.core_mut();
+        let core = ExecutionAlgorithm::core_mut(self);
         let trader_id = registered_trader_id(core)?;
         let strategy_id = order.strategy_id();
 
@@ -720,7 +727,7 @@ pub trait ExecutionAlgorithm: DataActor {
             let event = OrderEventAny::PendingUpdate(event);
 
             {
-                let cache_rc = self.core_mut().cache_rc();
+                let cache_rc = ExecutionAlgorithm::core_mut(self).cache_rc();
                 let mut cache = cache_rc.borrow_mut();
                 match cache.update_order(&event) {
                     Ok(updated) => *order = updated,
@@ -741,7 +748,9 @@ pub trait ExecutionAlgorithm: DataActor {
             msgbus::publish_order_event(topic.into(), &event);
         }
 
-        let ts_init = self.core_mut().clock().timestamp_ns();
+        let ts_init = ExecutionAlgorithm::core_mut(self)
+            .clock_mut()
+            .timestamp_ns();
         let command = ModifyOrder::new(
             trader_id,
             client_id,
@@ -758,8 +767,8 @@ pub trait ExecutionAlgorithm: DataActor {
             None, // correlation_id
         );
 
-        if self.core_mut().config.log_commands {
-            let id = &self.core_mut().actor.actor_id;
+        if ExecutionAlgorithm::core_mut(self).config.log_commands {
+            let id = &ExecutionAlgorithm::core_mut(self).actor.actor_id;
             log::info!("{id} {SEND}{CMD} {command:?}");
         }
 
@@ -832,8 +841,8 @@ pub trait ExecutionAlgorithm: DataActor {
             anyhow::bail!("Cannot modify order in place: no parameters differ from current values");
         }
 
-        let core = self.core_mut();
-        let ts_now = core.clock().timestamp_ns();
+        let core = ExecutionAlgorithm::core_mut(self);
+        let ts_now = core.clock_mut().timestamp_ns();
 
         let updated = OrderUpdated::new(
             order.trader_id(),
@@ -884,7 +893,7 @@ pub trait ExecutionAlgorithm: DataActor {
             return Ok(());
         }
 
-        let core = self.core_mut();
+        let core = ExecutionAlgorithm::core_mut(self);
         let trader_id = registered_trader_id(core)?;
         let strategy_id = order.strategy_id();
 
@@ -894,7 +903,7 @@ pub trait ExecutionAlgorithm: DataActor {
             let event = OrderEventAny::PendingCancel(event);
 
             {
-                let cache_rc = self.core_mut().cache_rc();
+                let cache_rc = ExecutionAlgorithm::core_mut(self).cache_rc();
                 let mut cache = cache_rc.borrow_mut();
                 match cache.update_order(&event) {
                     Ok(updated) => *order = updated,
@@ -915,7 +924,9 @@ pub trait ExecutionAlgorithm: DataActor {
             msgbus::publish_order_event(topic.into(), &event);
         }
 
-        let ts_init = self.core_mut().clock().timestamp_ns();
+        let ts_init = ExecutionAlgorithm::core_mut(self)
+            .clock_mut()
+            .timestamp_ns();
         let command = CancelOrder::new(
             trader_id,
             client_id,
@@ -929,8 +940,8 @@ pub trait ExecutionAlgorithm: DataActor {
             None, // correlation_id
         );
 
-        if self.core_mut().config.log_commands {
-            let id = &self.core_mut().actor.actor_id;
+        if ExecutionAlgorithm::core_mut(self).config.log_commands {
+            let id = &ExecutionAlgorithm::core_mut(self).actor.actor_id;
             log::info!("{id} {SEND}{CMD} {command:?}");
         }
 
@@ -960,7 +971,7 @@ pub trait ExecutionAlgorithm: DataActor {
     where
         Self: 'static + std::fmt::Debug + Sized,
     {
-        let core = self.core_mut();
+        let core = ExecutionAlgorithm::core_mut(self);
         if core.is_strategy_subscribed(&strategy_id) {
             return;
         }
@@ -1010,23 +1021,23 @@ pub trait ExecutionAlgorithm: DataActor {
     ///
     /// This should be called before reset to properly clean up msgbus subscriptions.
     fn unsubscribe_all_strategy_events(&mut self) {
-        let handlers = self.core_mut().take_strategy_event_handlers();
+        let handlers = ExecutionAlgorithm::core_mut(self).take_strategy_event_handlers();
         for (strategy_id, h) in handlers {
             msgbus::unsubscribe_order_events(h.order_topic.into(), &h.order_handler);
             msgbus::unsubscribe_position_events(h.position_topic.into(), &h.position_handler);
             log::info!("Unsubscribed from events for strategy {strategy_id}");
         }
-        self.core_mut().clear_subscribed_strategies();
+        ExecutionAlgorithm::core_mut(self).clear_subscribed_strategies();
     }
 
     /// Handles an order event, filtering for algorithm-owned orders.
     fn handle_order_event(&mut self, event: OrderEventAny) {
-        if self.core_mut().state() != ComponentState::Running {
+        if ExecutionAlgorithm::core_mut(self).state() != ComponentState::Running {
             return;
         }
 
         let order = {
-            let cache = self.core_mut().cache();
+            let cache = ExecutionAlgorithm::core_mut(self).cache_ref();
             cache.order(&event.client_order_id()).map(|o| o.clone())
         };
 
@@ -1043,7 +1054,7 @@ pub trait ExecutionAlgorithm: DataActor {
         }
 
         {
-            let core = self.core_mut();
+            let core = ExecutionAlgorithm::core_mut(self);
             if core.config.log_events {
                 let id = &core.actor.actor_id;
                 log::info!("{id} {RECV}{EVT} {event}");
@@ -1065,17 +1076,17 @@ pub trait ExecutionAlgorithm: DataActor {
             }
             OrderEventAny::Accepted(e) => {
                 // Commit reduction - order accepted by venue
-                self.core_mut()
+                ExecutionAlgorithm::core_mut(self)
                     .take_pending_spawn_reduction(&order.client_order_id());
                 self.on_order_accepted(*e);
             }
             OrderEventAny::Canceled(e) => {
-                self.core_mut()
+                ExecutionAlgorithm::core_mut(self)
                     .take_pending_spawn_reduction(&order.client_order_id());
                 self.on_algo_order_canceled(*e);
             }
             OrderEventAny::Expired(e) => {
-                self.core_mut()
+                ExecutionAlgorithm::core_mut(self)
                     .take_pending_spawn_reduction(&order.client_order_id());
                 self.on_order_expired(*e);
             }
@@ -1093,12 +1104,12 @@ pub trait ExecutionAlgorithm: DataActor {
 
     /// Handles a position event.
     fn handle_position_event(&mut self, event: PositionEvent) {
-        if self.core_mut().state() != ComponentState::Running {
+        if ExecutionAlgorithm::core_mut(self).state() != ComponentState::Running {
             return;
         }
 
         {
-            let core = self.core_mut();
+            let core = ExecutionAlgorithm::core_mut(self);
             if core.config.log_events {
                 let id = &core.actor.actor_id;
                 log::info!("{id} {RECV}{EVT} {event:?}");
@@ -1144,7 +1155,7 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Returns an error if reset fails.
     fn on_reset(&mut self) -> anyhow::Result<()> {
         self.unsubscribe_all_strategy_events();
-        self.core_mut().reset();
+        ExecutionAlgorithm::core_mut(self).reset();
         Ok(())
     }
 
@@ -2283,7 +2294,7 @@ mod tests {
         algo.handle_order_event(OrderEventAny::Denied(denied));
 
         let restored_primary = {
-            let cache = algo.core.cache();
+            let cache = algo.core.cache_ref();
             cache
                 .order(&ClientOrderId::from("O-001"))
                 .map(|o| o.clone())
@@ -2368,7 +2379,7 @@ mod tests {
         algo.handle_order_event(OrderEventAny::Rejected(rejected));
 
         let restored_primary = {
-            let cache = algo.core.cache();
+            let cache = algo.core.cache_ref();
             cache
                 .order(&ClientOrderId::from("O-001"))
                 .map(|o| o.clone())
@@ -2450,7 +2461,7 @@ mod tests {
         algo.handle_order_event(OrderEventAny::Denied(denied));
 
         let final_primary = {
-            let cache = algo.core.cache();
+            let cache = algo.core.cache_ref();
             cache
                 .order(&ClientOrderId::from("O-001"))
                 .map(|o| o.clone())
@@ -2549,7 +2560,7 @@ mod tests {
         let events = events.borrow();
 
         let restored_primary = {
-            let cache = algo.core.cache();
+            let cache = algo.core.cache_ref();
             cache
                 .order(&ClientOrderId::from("O-001"))
                 .map(|o| o.clone())
@@ -2639,7 +2650,7 @@ mod tests {
         algo.handle_order_event(OrderEventAny::Accepted(accepted));
 
         let primary_after_accept = {
-            let cache = algo.core.cache();
+            let cache = algo.core.cache_ref();
             cache
                 .order(&ClientOrderId::from("O-001"))
                 .map(|o| o.clone())
@@ -2668,7 +2679,7 @@ mod tests {
         algo.handle_order_event(OrderEventAny::Canceled(canceled));
 
         let final_primary = {
-            let cache = algo.core.cache();
+            let cache = algo.core.cache_ref();
             cache
                 .order(&ClientOrderId::from("O-001"))
                 .map(|o| o.clone())

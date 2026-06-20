@@ -17,7 +17,8 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use nautilus_common::{
     actor::{
-        DataActor, DataActorCore, data_actor::DataActorConfig, registry::try_get_actor_unchecked,
+        DataActor, DataActorCore, DataActorNative, data_actor::DataActorConfig,
+        registry::try_get_actor_unchecked,
     },
     component::Component,
     msgbus::{Endpoint, MStr, TypedHandler, get_message_bus},
@@ -106,7 +107,7 @@ impl Controller {
     where
         T: DataActor + Component + Debug + 'static,
     {
-        let actor_id = actor.actor_id();
+        let actor_id = DataActorNative::core(&actor).actor_id();
         self.trader.borrow_mut().add_actor(actor)?;
 
         self.start_created_actor(actor_id, start)?;
@@ -194,7 +195,7 @@ impl Controller {
     ///
     /// Returns an error if the actor cannot be removed.
     pub fn remove_actor(&self, actor_id: &ActorId) -> anyhow::Result<()> {
-        if actor_id.inner() == self.actor_id().inner() {
+        if actor_id.inner() == self.core.actor_id().inner() {
             return Ok(());
         }
 
@@ -288,7 +289,7 @@ impl Controller {
     }
 
     fn register_execute_endpoint(&self) {
-        let controller_id = self.actor_id().inner();
+        let controller_id = self.core.actor_id().inner();
         let handler = TypedHandler::from(move |command: &ControllerCommand| {
             if let Some(mut controller) = try_get_actor_unchecked::<Self>(&controller_id) {
                 if let Err(e) = controller.execute(command.clone()) {
@@ -546,7 +547,7 @@ mod tests {
                 ..Default::default()
             }),
         );
-        let controller_id = controller.actor_id();
+        let controller_id = controller.core.actor_id();
 
         trader.borrow_mut().add_actor(controller).unwrap();
         trader.borrow_mut().start().unwrap();

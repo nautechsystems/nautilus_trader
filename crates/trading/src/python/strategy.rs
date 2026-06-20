@@ -29,7 +29,7 @@ use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use nautilus_common::{
     actor::{
-        Actor, DataActor,
+        Actor, DataActor, DataActorNative,
         data_actor::DataActorCore,
         registry::{try_get_actor_unchecked, with_actor_registry},
     },
@@ -89,6 +89,7 @@ use ustr::Ustr;
 
 use crate::strategy::{
     BatchModifyOrder, ImportableStrategyConfig, Strategy, StrategyConfig, StrategyCore,
+    StrategyNative,
 };
 
 #[pyo3::pymethods]
@@ -845,6 +846,16 @@ impl DerefMut for PyStrategyInner {
     }
 }
 
+impl DataActorNative for PyStrategyInner {
+    fn core(&self) -> &DataActorCore {
+        &self.core
+    }
+
+    fn core_mut(&mut self) -> &mut DataActorCore {
+        &mut self.core
+    }
+}
+
 impl Strategy for PyStrategyInner {
     fn core(&self) -> &StrategyCore {
         &self.core
@@ -1396,7 +1407,7 @@ impl PyStrategy {
     fn py_portfolio(&self) -> PyResult<PyPortfolio> {
         let inner = self.inner();
         if inner.core.actor.is_registered() {
-            Ok(PyPortfolio::from_rc(inner.core.portfolio().clone()))
+            Ok(PyPortfolio::from_rc(inner.portfolio_rc()))
         } else {
             Err(to_pyruntime_err(
                 "Strategy must be registered with a trader before accessing portfolio",
@@ -1409,7 +1420,7 @@ impl PyStrategy {
     fn py_order_factory(&self) -> PyResult<PyOrderFactory> {
         let inner = self.inner();
         if inner.core.actor.is_registered() {
-            Ok(PyOrderFactory::from_rc(inner.core.order_factory_rc()))
+            Ok(PyOrderFactory::from_rc(inner.order_factory_rc()))
         } else {
             Err(to_pyruntime_err(
                 "Strategy must be registered with a trader before accessing order_factory",
@@ -3022,7 +3033,7 @@ mod tests {
 
     use indexmap::IndexMap;
     use nautilus_common::{
-        actor::DataActor,
+        actor::{DataActor, DataActorNative},
         cache::Cache,
         clock::{Clock, TestClock},
         component::Component,
@@ -4058,7 +4069,7 @@ class IndicatorEventStrategy:
             let py_order = order_any_to_pyobject(py, order).unwrap();
 
             {
-                let mut clock = rust_strategy.inner_mut().core.clock();
+                let mut clock = rust_strategy.inner_mut().core.clock_mut();
                 clock
                     .set_time_alert_ns(&timer_name, UnixNanos::from(1), None, None)
                     .unwrap();
@@ -4076,7 +4087,7 @@ class IndicatorEventStrategy:
             let clock_timer_exists = rust_strategy
                 .inner_mut()
                 .core
-                .clock()
+                .clock_mut()
                 .timer_names()
                 .contains(&timer_name.as_str());
 

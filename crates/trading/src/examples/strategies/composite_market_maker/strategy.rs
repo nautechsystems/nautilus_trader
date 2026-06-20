@@ -23,7 +23,7 @@ use nautilus_model::{
     data::QuoteTick,
     enums::{OrderSide, TimeInForce},
     events::{OrderCanceled, OrderExpired, OrderFilled, OrderRejected},
-    identifiers::{ClientOrderId, StrategyId},
+    identifiers::ClientOrderId,
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     types::{Price, Quantity},
@@ -33,7 +33,7 @@ use rust_decimal::Decimal;
 use super::config::CompositeMarketMakerConfig;
 use crate::{
     nautilus_strategy,
-    strategy::{Strategy, StrategyCore},
+    strategy::{Strategy, StrategyCore, StrategyNative},
 };
 
 /// Composite market making strategy with book-mid quoting and signal-driven skew.
@@ -267,7 +267,9 @@ impl DataActor for CompositeMarketMaker {
 
         let signal_residual = self.signal_residual();
         let instrument_id = self.config.instrument_id;
-        let strategy_id = StrategyId::from(self.actor_id.inner().as_str());
+        let strategy_id = Strategy::core(self)
+            .strategy_id()
+            .expect("Strategy must be registered");
 
         let has_resting = {
             let cache = self.cache();
@@ -372,7 +374,7 @@ impl DataActor for CompositeMarketMaker {
         };
 
         for (side, price) in quotes {
-            let order = self.core.order_factory().limit(
+            let order = self.order_factory().limit(
                 instrument_id,
                 side,
                 trade_size,

@@ -25,7 +25,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use indexmap::IndexMap;
 use nautilus_common::{
-    actor::{DataActorConfig, DataActorCore},
+    actor::{DataActorConfig, DataActorCore, DataActorNative},
     cache::Cache,
     clock::Clock,
     msgbus::TypedHandler,
@@ -58,8 +58,8 @@ pub struct StrategyEventHandlers {
 /// spawn ID tracking and strategy subscriptions. It wraps a [`DataActorCore`]
 /// to provide data actor capabilities.
 ///
-/// User algorithms should hold this as a member and implement `Deref`/`DerefMut`
-/// to satisfy the trait bounds of [`ExecutionAlgorithm`](super::ExecutionAlgorithm).
+/// User algorithms should hold this as a member and use the `nautilus_actor!`
+/// macro to provide the data actor core accessors.
 pub struct ExecutionAlgorithmCore {
     /// The underlying data actor core.
     pub actor: DataActorCore,
@@ -233,7 +233,7 @@ impl ExecutionAlgorithmCore {
     ///
     /// Returns an error if the order is not found in the cache.
     pub fn get_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny> {
-        Ok(self.cache().try_order_owned(client_order_id)?)
+        Ok(self.cache_ref().try_order_owned(client_order_id)?)
     }
 
     /// Returns all orders for the given order list from the cache.

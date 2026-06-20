@@ -39,7 +39,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
-use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
+use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, StrategyNative, nautilus_strategy};
 use rstest::*;
 use rust_decimal::Decimal;
 use tempfile::TempDir;
@@ -275,10 +275,12 @@ impl DataActor for MarketOrderStrategy {
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         if !self.submitted {
             self.submitted = true;
-            let order = self.core.order_factory().market(
-                self.instrument_id,
+            let instrument_id = self.instrument_id;
+            let trade_size = self.trade_size;
+            let order = self.order_factory().market(
+                instrument_id,
                 OrderSide::Buy,
-                self.trade_size,
+                trade_size,
                 None,
                 None,
                 None,

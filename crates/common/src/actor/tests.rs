@@ -68,7 +68,7 @@ use {
     },
 };
 
-use super::{Actor, DataActor, DataActorCore, data_actor::DataActorConfig};
+use super::{Actor, DataActor, DataActorCore, DataActorNative, data_actor::DataActorConfig};
 #[cfg(feature = "defi")]
 use crate::defi::switchboard::{
     get_defi_blocks_topic, get_defi_pool_swaps_topic, get_defi_pool_topic,
@@ -334,6 +334,15 @@ impl DataActor for TestDataActor {
     }
 }
 
+#[derive(Debug)]
+struct MacroTestCustomFieldActor {
+    inner: DataActorCore,
+}
+
+nautilus_actor!(MacroTestCustomFieldActor, inner);
+
+impl DataActor for MacroTestCustomFieldActor {}
+
 // Custom functionality as required
 impl TestDataActor {
     pub(crate) fn new(config: DataActorConfig) -> Self {
@@ -441,10 +450,24 @@ fn register_data_actor(
     let mut actor = TestDataActor::new(config);
     actor.register(trader_id, clock, cache).unwrap();
 
-    let actor_id = actor.actor_id();
+    let actor_id = actor.core.actor_id();
 
     register_actor(actor);
     actor_id.inner()
+}
+
+#[rstest]
+fn test_nautilus_actor_macro_custom_field_generates_native_core_access() {
+    let actor_id = ActorId::from("MACRO-ACTOR-001");
+    let mut actor = MacroTestCustomFieldActor {
+        inner: DataActorCore::new(DataActorConfig {
+            actor_id: Some(actor_id),
+            ..Default::default()
+        }),
+    };
+
+    assert_eq!(DataActorNative::core(&actor).actor_id(), actor_id);
+    assert_eq!(DataActorNative::core_mut(&mut actor).actor_id(), actor_id);
 }
 
 #[rstest]
@@ -1565,10 +1588,10 @@ fn test_parent_book_deltas_unsubscribe_removes_per_underlying_handler(
         false,
         Some(parent_params()),
     );
-    assert_eq!(actor.deltas_handler_count(), 1);
+    assert_eq!(actor.core.deltas_handler_count(), 1);
 
     actor.unsubscribe_book_deltas(parent_id, None, Some(parent_params()));
-    assert_eq!(actor.deltas_handler_count(), 0);
+    assert_eq!(actor.core.deltas_handler_count(), 0);
 
     let underlying_topic = get_book_deltas_topic(underlying_id);
     let order = BookOrder::new(
@@ -3347,7 +3370,7 @@ fn test_on_save_and_on_load(
     // Prepare actor & register
     let mut actor = SaveLoadActor::new(config);
     actor.register(trader_id, clock, cache).unwrap();
-    let actor_id = actor.actor_id();
+    let actor_id = actor.core.actor_id();
     register_actor(actor);
 
     // Fetch back to mutate
@@ -3376,14 +3399,14 @@ fn test_data_actor_core_tracks_quote_handlers(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    assert_eq!(actor.quote_handler_count(), 0);
+    assert_eq!(actor.core.quote_handler_count(), 0);
 
     actor.subscribe_quotes(audusd_sim.id, None, None);
 
-    assert_eq!(actor.quote_handler_count(), 1);
+    assert_eq!(actor.core.quote_handler_count(), 1);
 
     let topic = get_quotes_topic(audusd_sim.id);
-    assert!(actor.has_quote_handler(topic.as_str()));
+    assert!(actor.core.has_quote_handler(topic.as_str()));
 }
 
 #[rstest]
@@ -3398,13 +3421,13 @@ fn test_data_actor_core_removes_quote_handler_on_unsubscribe(
     actor.start().unwrap();
 
     actor.subscribe_quotes(audusd_sim.id, None, None);
-    assert_eq!(actor.quote_handler_count(), 1);
+    assert_eq!(actor.core.quote_handler_count(), 1);
 
     actor.unsubscribe_quotes(audusd_sim.id, None, None);
-    assert_eq!(actor.quote_handler_count(), 0);
+    assert_eq!(actor.core.quote_handler_count(), 0);
 
     let topic = get_quotes_topic(audusd_sim.id);
-    assert!(!actor.has_quote_handler(topic.as_str()));
+    assert!(!actor.core.has_quote_handler(topic.as_str()));
 }
 
 #[rstest]
@@ -3418,14 +3441,14 @@ fn test_data_actor_core_tracks_trade_handlers(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    assert_eq!(actor.trade_handler_count(), 0);
+    assert_eq!(actor.core.trade_handler_count(), 0);
 
     actor.subscribe_trades(audusd_sim.id, None, None);
 
-    assert_eq!(actor.trade_handler_count(), 1);
+    assert_eq!(actor.core.trade_handler_count(), 1);
 
     let topic = get_trades_topic(audusd_sim.id);
-    assert!(actor.has_trade_handler(topic.as_str()));
+    assert!(actor.core.has_trade_handler(topic.as_str()));
 }
 
 #[rstest]
@@ -3440,10 +3463,10 @@ fn test_data_actor_core_removes_trade_handler_on_unsubscribe(
     actor.start().unwrap();
 
     actor.subscribe_trades(audusd_sim.id, None, None);
-    assert_eq!(actor.trade_handler_count(), 1);
+    assert_eq!(actor.core.trade_handler_count(), 1);
 
     actor.unsubscribe_trades(audusd_sim.id, None, None);
-    assert_eq!(actor.trade_handler_count(), 0);
+    assert_eq!(actor.core.trade_handler_count(), 0);
 }
 
 #[rstest]
@@ -3457,15 +3480,15 @@ fn test_data_actor_core_tracks_bar_handlers(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    assert_eq!(actor.bar_handler_count(), 0);
+    assert_eq!(actor.core.bar_handler_count(), 0);
 
     let bar_type = BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
     actor.subscribe_bars(bar_type, None, None);
 
-    assert_eq!(actor.bar_handler_count(), 1);
+    assert_eq!(actor.core.bar_handler_count(), 1);
 
     let topic = get_bars_topic(bar_type);
-    assert!(actor.has_bar_handler(topic.as_str()));
+    assert!(actor.core.has_bar_handler(topic.as_str()));
 }
 
 #[rstest]
@@ -3481,10 +3504,10 @@ fn test_data_actor_core_removes_bar_handler_on_unsubscribe(
 
     let bar_type = BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
     actor.subscribe_bars(bar_type, None, None);
-    assert_eq!(actor.bar_handler_count(), 1);
+    assert_eq!(actor.core.bar_handler_count(), 1);
 
     actor.unsubscribe_bars(bar_type, None, None);
-    assert_eq!(actor.bar_handler_count(), 0);
+    assert_eq!(actor.core.bar_handler_count(), 0);
 }
 
 #[rstest]
@@ -3498,14 +3521,14 @@ fn test_data_actor_core_tracks_deltas_handlers(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    assert_eq!(actor.deltas_handler_count(), 0);
+    assert_eq!(actor.core.deltas_handler_count(), 0);
 
     actor.subscribe_book_deltas(audusd_sim.id, BookType::L2_MBP, None, None, false, None);
 
-    assert_eq!(actor.deltas_handler_count(), 1);
+    assert_eq!(actor.core.deltas_handler_count(), 1);
 
     let topic = get_book_deltas_topic(audusd_sim.id);
-    assert!(actor.has_deltas_handler(topic.as_str()));
+    assert!(actor.core.has_deltas_handler(topic.as_str()));
 }
 
 #[rstest]
@@ -3520,10 +3543,10 @@ fn test_data_actor_core_removes_deltas_handler_on_unsubscribe(
     actor.start().unwrap();
 
     actor.subscribe_book_deltas(audusd_sim.id, BookType::L2_MBP, None, None, false, None);
-    assert_eq!(actor.deltas_handler_count(), 1);
+    assert_eq!(actor.core.deltas_handler_count(), 1);
 
     actor.unsubscribe_book_deltas(audusd_sim.id, None, None);
-    assert_eq!(actor.deltas_handler_count(), 0);
+    assert_eq!(actor.core.deltas_handler_count(), 0);
 }
 
 #[rstest]
@@ -3542,18 +3565,18 @@ fn test_data_actor_core_multiple_subscriptions_tracked(
     actor.subscribe_quotes(gbpusd_sim.id, None, None);
     actor.subscribe_trades(audusd_sim.id, None, None);
 
-    assert_eq!(actor.quote_handler_count(), 2);
-    assert_eq!(actor.trade_handler_count(), 1);
+    assert_eq!(actor.core.quote_handler_count(), 2);
+    assert_eq!(actor.core.trade_handler_count(), 1);
 
     actor.unsubscribe_quotes(audusd_sim.id, None, None);
 
-    assert_eq!(actor.quote_handler_count(), 1);
-    assert_eq!(actor.trade_handler_count(), 1);
+    assert_eq!(actor.core.quote_handler_count(), 1);
+    assert_eq!(actor.core.trade_handler_count(), 1);
 
     let aud_topic = get_quotes_topic(audusd_sim.id);
     let gbp_topic = get_quotes_topic(gbpusd_sim.id);
-    assert!(!actor.has_quote_handler(aud_topic.as_str()));
-    assert!(actor.has_quote_handler(gbp_topic.as_str()));
+    assert!(!actor.core.has_quote_handler(aud_topic.as_str()));
+    assert!(actor.core.has_quote_handler(gbp_topic.as_str()));
 }
 
 #[rstest]
@@ -3793,7 +3816,7 @@ fn test_subscribe_signal_dispatches_in_priority_order(
     actor_high
         .register(trader_id, clock.clone(), cache.clone())
         .unwrap();
-    let high_id = actor_high.actor_id().inner();
+    let high_id = actor_high.core.actor_id().inner();
     register_actor(actor_high);
 
     let mut actor_low = TestDataActor::new(DataActorConfig {
@@ -3801,7 +3824,7 @@ fn test_subscribe_signal_dispatches_in_priority_order(
         ..DataActorConfig::default()
     });
     actor_low.register(trader_id, clock, cache).unwrap();
-    let low_id = actor_low.actor_id().inner();
+    let low_id = actor_low.core.actor_id().inner();
     register_actor(actor_low);
 
     let mut high = get_actor_unchecked::<TestDataActor>(&high_id);

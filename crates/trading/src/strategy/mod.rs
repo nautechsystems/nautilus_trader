@@ -17,14 +17,14 @@ pub mod api;
 pub mod config;
 pub mod core;
 
-pub use core::StrategyCore;
+pub use core::{StrategyCore, StrategyNative};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use ahash::AHashSet;
 pub use api::{OrderApi, PortfolioApi};
 pub use config::{ImportableStrategyConfig, StrategyConfig};
 use nautilus_common::{
-    actor::DataActor,
+    actor::{DataActor, DataActorNative},
     component::Component,
     enums::ComponentState,
     logging::{CMD, EVT, RECV, SEND},
@@ -81,7 +81,7 @@ pub type BatchModifyOrder = (
 ///
 /// # Implementation
 ///
-/// Use the `nautilus_strategy!` macro to generate `Deref`, `DerefMut`, and
+/// Use the `nautilus_strategy!` macro to generate core access and
 /// `Strategy` implementations. For strategies that override additional trait
 /// methods, pass them in a block:
 ///
@@ -116,12 +116,12 @@ pub trait Strategy: DataActor {
 
     /// Returns the user-facing order creation API.
     fn order(&self) -> OrderApi<'_> {
-        self.core().order()
+        Strategy::core(self).order()
     }
 
     /// Returns the user-facing portfolio read API.
     fn portfolio(&self) -> PortfolioApi<'_> {
-        self.core().portfolio_api()
+        Strategy::core(self).portfolio_api()
     }
 
     /// Submits an order.
@@ -136,11 +136,11 @@ pub trait Strategy: DataActor {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) -> anyhow::Result<()> {
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
-        let ts_init = core.clock().timestamp_ns();
+        let ts_init = core.clock_mut().timestamp_ns();
 
         if order.status() != OrderStatus::Initialized {
             anyhow::bail!(
@@ -161,7 +161,7 @@ pub trait Strategy: DataActor {
             return Ok(());
         }
 
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
         let params = params.filter(|params| !params.is_empty());
 
         {
@@ -239,7 +239,7 @@ pub trait Strategy: DataActor {
         }
 
         let should_deny = {
-            let core = self.core_mut();
+            let core = Strategy::core_mut(self);
             let tag = core.market_exit_tag;
             core.is_exiting
                 && orders.iter().any(|o| {
@@ -252,11 +252,11 @@ pub trait Strategy: DataActor {
             return Ok(());
         }
 
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
-        let ts_init = core.clock().timestamp_ns();
+        let ts_init = core.clock_mut().timestamp_ns();
 
         // TODO: Replace with fluent builder API for order list construction
         let order_list = if orders.first().is_some_and(|o| o.order_list_id().is_some()) {
@@ -359,7 +359,7 @@ pub trait Strategy: DataActor {
         params: Option<Params>,
     ) -> anyhow::Result<()> {
         let (trader_id, strategy_id) = {
-            let core = self.core_mut();
+            let core = Strategy::core_mut(self);
             (
                 registered_trader_id(core)?,
                 StrategyId::from(core.actor_id().inner().as_str()),
@@ -369,8 +369,7 @@ pub trait Strategy: DataActor {
         let params = params.filter(|params| !params.is_empty());
 
         // TODO: Snapshot the order from the cache. See `cancel_order` for the rationale.
-        let order = self
-            .core_mut()
+        let order = Strategy::core_mut(self)
             .cache_rc()
             .borrow()
             .try_order_owned(&client_order_id)
@@ -436,7 +435,7 @@ pub trait Strategy: DataActor {
             price,
             trigger_price,
             UUID4::new(),
-            self.core_mut().clock().timestamp_ns(),
+            Strategy::core_mut(self).clock_mut().timestamp_ns(),
             params,
             None, // correlation_id
         );
@@ -468,16 +467,16 @@ pub trait Strategy: DataActor {
         }
 
         let (trader_id, strategy_id, ts_init) = {
-            let core = self.core_mut();
+            let core = Strategy::core_mut(self);
             (
                 registered_trader_id(core)?,
                 StrategyId::from(core.actor_id().inner().as_str()),
-                core.clock().timestamp_ns(),
+                core.clock_mut().timestamp_ns(),
             )
         };
 
         let orders: Vec<OrderAny> = {
-            let cache_rc = self.core_mut().cache_rc();
+            let cache_rc = Strategy::core_mut(self).cache_rc();
             let cache = cache_rc.borrow();
             updates
                 .iter()
@@ -607,11 +606,11 @@ pub trait Strategy: DataActor {
         params: Option<Params>,
     ) -> anyhow::Result<()> {
         let (trader_id, strategy_id, ts_init) = {
-            let core = self.core_mut();
+            let core = Strategy::core_mut(self);
             (
                 registered_trader_id(core)?,
                 StrategyId::from(core.actor_id().inner().as_str()),
-                core.clock().timestamp_ns(),
+                core.clock_mut().timestamp_ns(),
             )
         };
 
@@ -620,8 +619,7 @@ pub trait Strategy: DataActor {
         // TODO: Snapshot the order from the cache. Callers identify it by ID; we own the
         // snapshot so later calls (which take `&OrderAny` and may re-enter the cache)
         // run without holding a live cache borrow.
-        let order = self
-            .core_mut()
+        let order = Strategy::core_mut(self)
             .cache_rc()
             .borrow()
             .try_order_owned(&client_order_id)
@@ -658,7 +656,7 @@ pub trait Strategy: DataActor {
             send_exec_command(TradingCommand::CancelOrder(command));
         }
 
-        if self.core().config.manage_gtd_expiry
+        if Strategy::core(self).config.manage_gtd_expiry
             && order.time_in_force() == TimeInForce::Gtd
             && self.has_gtd_expiry_timer(&order.client_order_id())
         {
@@ -685,17 +683,17 @@ pub trait Strategy: DataActor {
         }
 
         let (trader_id, strategy_id, ts_init) = {
-            let core = self.core_mut();
+            let core = Strategy::core_mut(self);
             (
                 registered_trader_id(core)?,
                 StrategyId::from(core.actor_id().inner().as_str()),
-                core.clock().timestamp_ns(),
+                core.clock_mut().timestamp_ns(),
             )
         };
 
         // TODO: Snapshot all orders from the cache. See `cancel_order` for the rationale.
         let orders: Vec<OrderAny> = {
-            let cache_rc = self.core_mut().cache_rc();
+            let cache_rc = Strategy::core_mut(self).cache_rc();
             let cache = cache_rc.borrow();
             client_order_ids
                 .iter()
@@ -780,7 +778,7 @@ pub trait Strategy: DataActor {
         let event = OrderEventAny::PendingUpdate(self.generate_order_pending_update(order));
 
         {
-            let cache_rc = self.core_mut().cache_rc();
+            let cache_rc = Strategy::core_mut(self).cache_rc();
             let mut cache = cache_rc.borrow_mut();
             match cache.update_order(&event) {
                 Ok(_) => {}
@@ -826,7 +824,7 @@ pub trait Strategy: DataActor {
         let event = OrderEventAny::PendingCancel(self.generate_order_pending_cancel(order));
 
         {
-            let cache_rc = self.core_mut().cache_rc();
+            let cache_rc = Strategy::core_mut(self).cache_rc();
             let mut cache = cache_rc.borrow_mut();
             match cache.update_order(&event) {
                 Ok(_) => {}
@@ -852,7 +850,7 @@ pub trait Strategy: DataActor {
 
     /// Generates an `OrderPendingUpdate` event for an order.
     fn generate_order_pending_update(&mut self, order: &OrderAny) -> OrderPendingUpdate {
-        let ts_now = self.core_mut().clock().timestamp_ns();
+        let ts_now = Strategy::core_mut(self).clock_mut().timestamp_ns();
 
         OrderPendingUpdate::new(
             order.trader_id(),
@@ -872,7 +870,7 @@ pub trait Strategy: DataActor {
 
     /// Generates an `OrderPendingCancel` event for an order.
     fn generate_order_pending_cancel(&mut self, order: &OrderAny) -> OrderPendingCancel {
-        let ts_now = self.core_mut().clock().timestamp_ns();
+        let ts_now = Strategy::core_mut(self).clock_mut().timestamp_ns();
 
         OrderPendingCancel::new(
             order.trader_id(),
@@ -903,12 +901,12 @@ pub trait Strategy: DataActor {
         params: Option<Params>,
     ) -> anyhow::Result<()> {
         let params = params.filter(|params| !params.is_empty());
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
-        let ts_init = core.clock().timestamp_ns();
-        let cache = core.cache();
+        let ts_init = core.clock_mut().timestamp_ns();
+        let cache = core.cache_ref();
 
         let open_count = cache.orders_open_count(
             None,
@@ -1043,7 +1041,7 @@ pub trait Strategy: DataActor {
         reduce_only: Option<bool>,
         quote_quantity: Option<bool>,
     ) -> anyhow::Result<()> {
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
 
         if position.is_closed() {
             log::warn!("Cannot close position (already closed): {}", position.id);
@@ -1084,9 +1082,9 @@ pub trait Strategy: DataActor {
         reduce_only: Option<bool>,
         quote_quantity: Option<bool>,
     ) -> anyhow::Result<()> {
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
-        let cache = core.cache();
+        let cache = core.cache_ref();
 
         let positions_open = cache.positions_open(
             None,
@@ -1122,7 +1120,7 @@ pub trait Strategy: DataActor {
                 continue;
             }
 
-            let core = self.core_mut();
+            let core = Strategy::core_mut(self);
             let closing_side = OrderCore::closing_side(pos_side);
             let order = core.order_factory().market(
                 pos_instrument_id,
@@ -1157,10 +1155,10 @@ pub trait Strategy: DataActor {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) -> anyhow::Result<()> {
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
-        let ts_init = core.clock().timestamp_ns();
+        let ts_init = core.clock_mut().timestamp_ns();
 
         let command = QueryAccount::new(
             trader_id,
@@ -1190,11 +1188,11 @@ pub trait Strategy: DataActor {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) -> anyhow::Result<()> {
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
-        let ts_init = core.clock().timestamp_ns();
+        let ts_init = core.clock_mut().timestamp_ns();
 
         let command = QueryOrder::new(
             trader_id,
@@ -1216,7 +1214,7 @@ pub trait Strategy: DataActor {
     /// Handles an order event, dispatching to the appropriate handler and routing to the order manager.
     fn handle_order_event(&mut self, event: OrderEventAny) {
         let state = {
-            let core = self.core_mut();
+            let core = Strategy::core_mut(self);
             let id = &core.actor.actor_id;
             let is_warning = matches!(
                 &event,
@@ -1260,7 +1258,7 @@ pub trait Strategy: DataActor {
         // Contingent order manager observes events before user handlers so OCO
         // bookkeeping is consistent with what the strategy then sees.
         {
-            let core = self.core_mut();
+            let core = Strategy::core_mut(self);
             if let Some(manager) = &mut core.order_manager {
                 let actions = manager.handle_event(&event);
                 debug_assert!(
@@ -1298,7 +1296,7 @@ pub trait Strategy: DataActor {
     /// Handles a position event, dispatching to the appropriate handler.
     fn handle_position_event(&mut self, event: PositionEvent) {
         let state = {
-            let core = self.core_mut();
+            let core = Strategy::core_mut(self);
 
             if core.actor.config.log_events {
                 let id = &core.actor.actor_id;
@@ -1334,7 +1332,7 @@ pub trait Strategy: DataActor {
     ///
     /// Returns an error if strategy initialization fails.
     fn on_start(&mut self) -> anyhow::Result<()> {
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         log::info!("Starting {strategy_id}");
 
@@ -1494,7 +1492,7 @@ pub trait Strategy: DataActor {
     ///
     /// Strategies can check this to avoid submitting new orders during exit.
     fn is_exiting(&self) -> bool {
-        self.core().is_exiting
+        Strategy::core(self).is_exiting
     }
 
     /// Initiates an iterative market exit for the strategy.
@@ -1513,7 +1511,7 @@ pub trait Strategy: DataActor {
     ///
     /// Returns an error if the market exit cannot be initiated.
     fn market_exit(&mut self) -> anyhow::Result<()> {
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
 
         if core.actor.state() != ComponentState::Running {
@@ -1535,8 +1533,8 @@ pub trait Strategy: DataActor {
 
         self.on_market_exit();
 
-        let core = self.core_mut();
-        let cache = core.cache();
+        let core = Strategy::core_mut(self);
+        let cache = core.cache_ref();
 
         let mut instruments: AHashSet<InstrumentId> = AHashSet::new();
 
@@ -1588,14 +1586,14 @@ pub trait Strategy: DataActor {
             }
         }
 
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
         let interval_ms = core.config.market_exit_interval_ms;
         let timer_name = core.market_exit_timer_name;
 
         log::info!("{strategy_id} Setting market exit timer at {interval_ms}ms intervals");
 
         let interval_ns = interval_ms * 1_000_000;
-        let result = core.clock().set_timer_ns(
+        let result = core.clock_mut().set_timer_ns(
             timer_name.as_str(),
             interval_ns,
             None,
@@ -1624,7 +1622,7 @@ pub trait Strategy: DataActor {
             return;
         }
 
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
 
         core.market_exit_attempts += 1;
@@ -1636,7 +1634,7 @@ pub trait Strategy: DataActor {
         );
 
         if attempts >= max_attempts {
-            let cache = core.cache();
+            let cache = core.cache_ref();
             let open_orders_count =
                 cache.orders_open_count(None, None, Some(&strategy_id), None, None);
             let inflight_orders_count =
@@ -1657,7 +1655,7 @@ pub trait Strategy: DataActor {
             return;
         }
 
-        let cache = core.cache();
+        let cache = core.cache_ref();
         let has_open_orders = !cache
             .orders_open(None, None, Some(&strategy_id), None, None)
             .is_empty();
@@ -1684,7 +1682,7 @@ pub trait Strategy: DataActor {
                     continue;
                 }
 
-                let core = self.core_mut();
+                let core = Strategy::core_mut(self);
                 let time_in_force = core.config.market_exit_time_in_force;
                 let reduce_only = core.config.market_exit_reduce_only;
                 let market_exit_tag = core.market_exit_tag;
@@ -1719,7 +1717,7 @@ pub trait Strategy: DataActor {
     /// and stops the strategy if a stop was pending.
     fn finalize_market_exit(&mut self) {
         let (strategy_id, should_stop) = {
-            let core = self.core_mut();
+            let core = Strategy::core_mut(self);
             let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
             let should_stop = core.pending_stop;
             (strategy_id, should_stop)
@@ -1743,7 +1741,7 @@ pub trait Strategy: DataActor {
             }
         }
 
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
         debug_assert!(
             !(core.pending_stop
                 && !core.is_exiting
@@ -1756,11 +1754,15 @@ pub trait Strategy: DataActor {
     ///
     /// Used when `stop()` is called during an active market exit to avoid state leaks.
     fn cancel_market_exit(&mut self) {
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
         let timer_name = core.market_exit_timer_name;
 
-        if core.clock().timer_names().contains(&timer_name.as_str()) {
-            core.clock().cancel_timer(timer_name.as_str());
+        if core
+            .clock_mut()
+            .timer_names()
+            .contains(&timer_name.as_str())
+        {
+            core.clock_mut().cancel_timer(timer_name.as_str());
         }
 
         core.is_exiting = false;
@@ -1781,7 +1783,7 @@ pub trait Strategy: DataActor {
     /// the stop is being deferred until market exit completes.
     fn stop(&mut self) -> bool {
         let (manage_stop, is_exiting, should_initiate_exit) = {
-            let core = self.core_mut();
+            let core = Strategy::core_mut(self);
             let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
             let manage_stop = core.config.manage_stop;
             let state = core.actor.state();
@@ -1813,7 +1815,7 @@ pub trait Strategy: DataActor {
         if manage_stop {
             if should_initiate_exit && let Err(e) = self.market_exit() {
                 log::warn!("Market exit failed during stop: {e}, proceeding with stop");
-                self.core_mut().pending_stop = false;
+                Strategy::core_mut(self).pending_stop = false;
                 return true;
             }
             debug_assert!(
@@ -1836,7 +1838,7 @@ pub trait Strategy: DataActor {
     /// This method creates an `OrderDenied` event, applies it to the order,
     /// and updates the cache.
     fn deny_order(&mut self, order: &OrderAny, reason: Ustr) {
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
         let Some(trader_id) = core.trader_id() else {
             log::error!(
                 "Cannot deny order {}: trader_id is not set",
@@ -1845,7 +1847,7 @@ pub trait Strategy: DataActor {
             return;
         };
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
-        let ts_now = core.clock().timestamp_ns();
+        let ts_now = core.clock_mut().timestamp_ns();
 
         let event = OrderDenied::new(
             trader_id,
@@ -1922,7 +1924,7 @@ pub trait Strategy: DataActor {
     ///
     /// Returns an error if timer creation fails.
     fn set_gtd_expiry(&mut self, order: &OrderAny) -> anyhow::Result<()> {
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
 
         if !core.config.manage_gtd_expiry || order.time_in_force() != TimeInForce::Gtd {
             return Ok(());
@@ -1936,7 +1938,7 @@ pub trait Strategy: DataActor {
         let timer_name = format!("GTD-EXPIRY:{client_order_id}");
 
         let current_time_ns = {
-            let clock = core.clock();
+            let clock = core.clock_mut();
             clock.timestamp_ns()
         };
 
@@ -1946,7 +1948,7 @@ pub trait Strategy: DataActor {
         }
 
         {
-            let mut clock = core.clock();
+            let mut clock = core.clock_mut();
             clock.set_time_alert_ns(&timer_name, expire_time, None, None)?;
         }
 
@@ -1959,17 +1961,17 @@ pub trait Strategy: DataActor {
 
     /// Cancels a GTD expiry timer for an order.
     fn cancel_gtd_expiry(&mut self, client_order_id: &ClientOrderId) {
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
 
         if let Some(timer_name) = core.gtd_timers.remove(client_order_id) {
-            core.clock().cancel_timer(timer_name.as_str());
+            core.clock_mut().cancel_timer(timer_name.as_str());
             log::debug!("Canceled GTD expiry timer for {client_order_id}");
         }
     }
 
     /// Checks if a GTD expiry timer exists for an order.
     fn has_gtd_expiry_timer(&mut self, client_order_id: &ClientOrderId) -> bool {
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
         core.gtd_timers.contains_key(client_order_id)
     }
 
@@ -1985,10 +1987,10 @@ pub trait Strategy: DataActor {
 
         let client_order_id = ClientOrderId::from(client_order_id_str);
 
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
         core.gtd_timers.remove(&client_order_id);
 
-        let order = core.cache().order(&client_order_id).map(|o| o.clone());
+        let order = core.cache_ref().order(&client_order_id).map(|o| o.clone());
         let Some(order) = order else {
             log::warn!("GTD order {client_order_id} not found in cache");
             return;
@@ -2006,12 +2008,12 @@ pub trait Strategy: DataActor {
     /// Queries the cache for all open GTD orders and creates timers for those
     /// that haven't expired yet. Orders that have already expired are canceled immediately.
     fn reactivate_gtd_timers(&mut self) {
-        let core = self.core_mut();
+        let core = Strategy::core_mut(self);
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
-        let current_time_ns = core.clock().timestamp_ns();
+        let current_time_ns = core.clock_mut().timestamp_ns();
 
         let gtd_orders: Vec<OrderAny> = core
-            .cache()
+            .cache_ref()
             .orders_open(None, None, Some(&strategy_id), None, None)
             .into_iter()
             .filter(|o| o.time_in_force() == TimeInForce::Gtd)
@@ -2575,6 +2577,24 @@ mod tests {
     }
 
     #[rstest]
+    fn test_strategy_native_methods_are_available_on_strategy_type() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        drop(strategy.order_factory());
+        let _ = strategy.order_manager();
+
+        assert!(Rc::ptr_eq(
+            &strategy.order_factory_rc(),
+            strategy.core.order_factory.as_ref().unwrap()
+        ));
+        assert!(Rc::ptr_eq(
+            &strategy.portfolio_rc(),
+            strategy.core.portfolio.as_ref().unwrap()
+        ));
+    }
+
+    #[rstest]
     fn test_handle_order_event_dispatches_to_handler() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
@@ -2971,7 +2991,7 @@ mod tests {
         );
         assert_eq!(timeline.borrow().as_slice(), &["init1", "init2", "command"]);
 
-        let cache = strategy.core.cache();
+        let cache = strategy.core.cache_ref();
         let cached_order1 = cache.order(&client_order_id1).unwrap();
         let cached_order2 = cache.order(&client_order_id2).unwrap();
         let order_list_id = cached_order1.order_list_id().unwrap();
@@ -3126,7 +3146,7 @@ mod tests {
         msgbus::unsubscribe_order_events(topic.into(), &event_handler);
 
         {
-            let cache = strategy.core.cache();
+            let cache = strategy.core.cache_ref();
             let cached_order = cache.order(&order.client_order_id()).unwrap();
             assert_eq!(cached_order.status(), OrderStatus::PendingUpdate);
         }
@@ -3191,7 +3211,7 @@ mod tests {
         msgbus::unsubscribe_order_events(topic.into(), &event_handler);
 
         {
-            let cache = strategy.core.cache();
+            let cache = strategy.core.cache_ref();
             let cached_order1 = cache.order(&order1.client_order_id()).unwrap();
             let cached_order2 = cache.order(&order2.client_order_id()).unwrap();
             assert_eq!(cached_order1.status(), OrderStatus::PendingUpdate);
@@ -3248,7 +3268,7 @@ mod tests {
         msgbus::unsubscribe_order_events(topic.into(), &event_handler);
 
         {
-            let cache = strategy.core.cache();
+            let cache = strategy.core.cache_ref();
             let cached_order = cache.order(&order.client_order_id()).unwrap();
             assert_eq!(cached_order.status(), OrderStatus::PendingCancel);
             assert!(cache.is_order_pending_cancel_local(&order.client_order_id()));
@@ -3301,7 +3321,7 @@ mod tests {
         msgbus::unsubscribe_order_events(topic.into(), &event_handler);
 
         {
-            let cache = strategy.core.cache();
+            let cache = strategy.core.cache_ref();
             let cached_order1 = cache.order(&order1.client_order_id()).unwrap();
             let cached_order2 = cache.order(&order2.client_order_id()).unwrap();
             assert_eq!(cached_order1.status(), OrderStatus::PendingCancel);
@@ -3350,7 +3370,7 @@ mod tests {
         let mut pending_cancel = AHashSet::new();
         pending_cancel.insert(OrderStatus::PendingCancel);
 
-        let cache = strategy.core.cache();
+        let cache = strategy.core.cache_ref();
         let own_book = cache.own_order_book(&order.instrument_id()).unwrap();
         assert!(own_book.bids_as_map(Some(&accepted), None, None).is_empty());
         let pending_bids = own_book.bids_as_map(Some(&pending_cancel), None, None);
@@ -4282,7 +4302,7 @@ mod tests {
         msgbus::unsubscribe_order_events(topic.into(), &event_handler);
 
         assert!(result.is_ok());
-        let cache = strategy.core.cache();
+        let cache = strategy.core.cache_ref();
         let cached_order = cache.order(&client_order_id).unwrap();
         assert_eq!(cached_order.status(), OrderStatus::Denied);
 
@@ -4370,7 +4390,7 @@ mod tests {
         assert!(result.is_ok());
 
         {
-            let cache = strategy.core.cache();
+            let cache = strategy.core.cache_ref();
             let cached_order1 = cache.order(&client_order_id1).unwrap();
             let cached_order2 = cache.order(&client_order_id2).unwrap();
             assert_eq!(cached_order1.status(), OrderStatus::Denied);
@@ -4505,7 +4525,7 @@ mod tests {
         let result = strategy.submit_order(order, None, None, None);
 
         assert!(result.is_ok());
-        let cache = strategy.core.cache();
+        let cache = strategy.core.cache_ref();
         let cached_order = cache.order(&client_order_id).unwrap();
         assert_ne!(cached_order.status(), OrderStatus::Denied);
     }
@@ -4542,7 +4562,7 @@ mod tests {
         let result = strategy.submit_order(order, None, None, None);
 
         assert!(result.is_ok());
-        let cache = strategy.core.cache();
+        let cache = strategy.core.cache_ref();
         let cached_order = cache.order(&client_order_id).unwrap();
         assert_ne!(cached_order.status(), OrderStatus::Denied);
     }
@@ -4591,17 +4611,26 @@ mod tests {
         let simple = MacroTestSimple {
             core: StrategyCore::new(config.clone()),
         };
-        assert_eq!(simple.core().config.strategy_id, config.strategy_id);
+        assert_eq!(
+            Strategy::core(&simple).config.strategy_id,
+            config.strategy_id
+        );
 
         let hooks = MacroTestWithHooks {
             core: StrategyCore::new(config.clone()),
         };
-        assert_eq!(hooks.core().config.strategy_id, config.strategy_id);
+        assert_eq!(
+            Strategy::core(&hooks).config.strategy_id,
+            config.strategy_id
+        );
 
         let custom = MacroTestCustomField {
             inner: StrategyCore::new(config.clone()),
         };
-        assert_eq!(custom.core().config.strategy_id, config.strategy_id);
+        assert_eq!(
+            Strategy::core(&custom).config.strategy_id,
+            config.strategy_id
+        );
         assert!(custom.external_order_claims().is_none());
     }
 }

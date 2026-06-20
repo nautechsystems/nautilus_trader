@@ -30,7 +30,7 @@ pub(crate) fn strategy_registration_id<T>(strategy: &T) -> String
 where
     T: Strategy + Component + Debug + 'static,
 {
-    strategy.core().config.strategy_id.map_or_else(
+    Strategy::core(strategy).config.strategy_id.map_or_else(
         || {
             let strategy_type = type_name::<T>()
                 .rsplit("::")

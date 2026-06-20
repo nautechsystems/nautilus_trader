@@ -136,11 +136,12 @@ places (e.g. `0.00000001`).
 
 ## Actors
 
-An actor receives market data, custom data/signals, and system events but does not manage orders.
-Implement the `DataActor` trait and bind your struct to `DataActorCore` via
-`Deref`/`DerefMut`. Your struct must also implement `Debug` (required by the
-blanket `Component` impl). The core provides subscription methods, cache
-access, and clock access directly on your struct.
+An actor receives market data, custom data/signals, and system events but does
+not manage orders. Implement the `DataActor` trait and use `nautilus_actor!` to
+wire your `DataActorCore` field into the runtime contract. Your struct must
+also implement `Debug` (required by the blanket `Component` impl). User code
+normally uses the `DataActor` facade methods for subscriptions, cache access,
+and clock access.
 
 ### Handler methods
 
@@ -175,10 +176,10 @@ For a complete example, see
 
 ## Strategies
 
-A strategy extends an actor with order management. Implement both
-`DataActor` (for data handling) and `Strategy` (for access to
-`StrategyCore`). The `StrategyCore` wraps `DataActorCore` and adds an
-`OrderFactory`, `OrderManager`, and portfolio integration.
+A strategy extends an actor with order management. Implement `DataActor` for
+data handling and use `nautilus_strategy!` to wire your `StrategyCore` field
+into the strategy runtime contract. `StrategyCore` wraps `DataActorCore` and
+adds an `OrderFactory`, `OrderManager`, and portfolio integration.
 
 ### Order management
 
@@ -200,6 +201,39 @@ The `OrderApi` (accessed via `self.order()`) builds orders and order lists:
 `stop_market`, `stop_limit`, `market_to_limit`, `market_if_touched`,
 `limit_if_touched`, `trailing_stop_market`, `trailing_stop_limit`, `bracket`,
 and `create_list`.
+
+### Core wiring macros
+
+Rust actors and strategies keep their runtime core as a struct field. The
+macros tell the traits where that field lives.
+
+| Macro                      | Core field      | Generates                              |
+|----------------------------|-----------------|----------------------------------------|
+| `nautilus_actor!(Type)`    | `DataActorCore` | Data actor core access.                |
+| `nautilus_strategy!(Type)` | `StrategyCore`  | Data actor core access and `Strategy`. |
+
+Both macros expect a field named `core`; pass a field name as the second
+argument when needed. They do not make the actor or strategy deref to its core.
+Normal code uses facade methods such as `clock()`, `cache()`, `order()`, and
+`portfolio()`.
+
+### Native traits
+
+Use facade methods by default: `clock()`, `cache()`, `order()`, and
+`portfolio()`. `DataActorNative` and `StrategyNative` are for native-only access
+below that facade.
+
+| Authoring path            | Use native traits? | Use this API                |
+|---------------------------|--------------------|-----------------------------|
+| Native Rust binary        | Only when needed   | Facades, then native traits |
+| Rust launched from Python | Only when needed   | Same as native Rust         |
+| Python‑authored component | No                 | Facades only                |
+| Plug‑in‑compatible code   | No                 | Facades only                |
+
+Native traits expose borrowed core state, `Rc<RefCell<_>>`, and runtime
+references. Use them for performance-sensitive native paths or host integration
+internals. Do not use them in Python-authored or plug-in-compatible strategies
+and actors, because those types do not cross those boundaries.
 
 For a step-by-step walkthrough, see the
 [Write a Strategy (Rust)](../how_to/write_rust_strategy.md) how-to guide.

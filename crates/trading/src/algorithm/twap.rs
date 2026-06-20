@@ -33,7 +33,11 @@
 use std::time::Duration;
 
 use ahash::AHashMap;
-use nautilus_common::{actor::DataActor, nautilus_actor, timer::TimeEvent};
+use nautilus_common::{
+    actor::{DataActor, DataActorNative},
+    nautilus_actor,
+    timer::TimeEvent,
+};
 use nautilus_model::{
     enums::OrderType,
     identifiers::ClientOrderId,
@@ -74,8 +78,8 @@ impl TwapAlgorithm {
     /// Completes the execution sequence for a primary order.
     fn complete_sequence(&mut self, primary_id: ClientOrderId) {
         let timer_name = primary_id.as_str();
-        if self.core.clock().timer_names().contains(&timer_name) {
-            self.core.clock().cancel_timer(timer_name);
+        if self.core.clock_mut().timer_names().contains(&timer_name) {
+            self.core.clock_mut().cancel_timer(timer_name);
         }
         self.scheduled_sizes.remove(&primary_id);
         log::info!("Completed TWAP execution for {primary_id}");
@@ -124,7 +128,7 @@ impl ExecutionAlgorithm for TwapAlgorithm {
         }
 
         let instrument = {
-            let cache = self.core.cache();
+            let cache = self.core.cache_ref();
             cache.instrument(&order.instrument_id()).cloned()
         };
 
@@ -268,7 +272,7 @@ impl ExecutionAlgorithm for TwapAlgorithm {
         );
         self.submit_order(spawned.into(), None, None)?;
 
-        self.core.clock().set_timer(
+        self.core.clock_mut().set_timer(
             primary_id.as_str(),
             Duration::from_secs_f64(interval_secs),
             None,
@@ -291,7 +295,7 @@ impl ExecutionAlgorithm for TwapAlgorithm {
         let primary_id = ClientOrderId::new(event.name.as_str());
 
         let primary = {
-            let cache = self.core.cache();
+            let cache = self.core.cache_ref();
             cache.order(&primary_id).map(|o| o.clone())
         };
 
@@ -344,7 +348,7 @@ impl ExecutionAlgorithm for TwapAlgorithm {
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        self.core.clock().cancel_timers();
+        self.core.clock_mut().cancel_timers();
         Ok(())
     }
 
@@ -641,7 +645,7 @@ mod tests {
         algo.on_order(order).unwrap();
 
         let (primary, spawned) = {
-            let cache = algo.core.cache();
+            let cache = algo.core.cache_ref();
             let primary = cache.order(&primary_id).map(|o| o.clone()).unwrap();
             let spawned = cache
                 .order(&ClientOrderId::from("O-001-E1"))
@@ -859,7 +863,7 @@ mod tests {
         // Verify timer is set
         assert!(
             algo.core
-                .clock()
+                .clock_mut()
                 .timer_names()
                 .contains(&primary_id.as_str())
         );
@@ -868,7 +872,7 @@ mod tests {
         DataActor::on_stop(&mut algo).unwrap();
 
         // Timer should be canceled
-        assert!(algo.core.clock().timer_names().is_empty());
+        assert!(algo.core.clock_mut().timer_names().is_empty());
     }
 
     #[rstest]

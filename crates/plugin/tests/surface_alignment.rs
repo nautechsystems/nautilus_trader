@@ -180,22 +180,14 @@ const PLUGIN_DATA_ACTOR_CORE_DEFERRED_METHODS: &[&str] = &[
 ];
 
 const PLUGIN_DATA_ACTOR_CORE_HOST_OWNED_METHODS: &[&str] = &[
-    // Construction, registration, and direct shared references stay host-owned
+    // Construction and registration stay host-owned
     "new",
     "mem_address",
-    "clock",
-    "clock_rc",
-    "cache",
-    "cache_rc",
     "register",
     "is_registered",
 ];
 
-const PLUGIN_STRATEGY_CORE_BRIDGED_METHODS: &[(&str, &str)] = &[
-    ("strategy_id", "strategy_id"),
-    ("order_factory", "generate_client_order_id"),
-    ("order_factory", "generate_order_list_id"),
-];
+const PLUGIN_STRATEGY_CORE_BRIDGED_METHODS: &[(&str, &str)] = &[("strategy_id", "strategy_id")];
 
 const PLUGIN_STRATEGY_CORE_DEFERRED_METHODS: &[&str] = &[];
 
@@ -208,9 +200,6 @@ const PLUGIN_STRATEGY_CORE_HOST_OWNED_METHODS: &[&str] = &[
     "register",
     // Direct access to host-owned runtime state does not cross the boundary
     "order",
-    "order_manager",
-    "order_factory_rc",
-    "portfolio",
     // Market-exit state remains inside the host runtime
     "reset_market_exit_state",
 ];
