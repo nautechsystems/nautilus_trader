@@ -1180,16 +1180,17 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             converted_price = nautilus_price_to_ib_price(command.price.as_double(), price_magnifier)
             ib_order.lmtPrice = converted_price
 
-        if command.trigger_price and command.trigger_price.as_double() != getattr(
-            ib_order,
-            "auxPrice",
-            None,
-        ):
+        if command.trigger_price:
             converted_trigger_price = nautilus_price_to_ib_price(
                 command.trigger_price.as_double(),
                 price_magnifier,
             )
-            ib_order.auxPrice = converted_trigger_price
+
+            if isinstance(nautilus_order, TrailingStopLimitOrder | TrailingStopMarketOrder):
+                if converted_trigger_price != getattr(ib_order, "trailStopPrice", None):
+                    ib_order.trailStopPrice = converted_trigger_price
+            elif converted_trigger_price != getattr(ib_order, "auxPrice", None):
+                ib_order.auxPrice = converted_trigger_price
 
         self._log.info(f"Placing {ib_order!r}")
         self._client.place_order(ib_order)
@@ -1231,12 +1232,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ib_order.totalQuantity = 0
 
         if isinstance(order, TrailingStopLimitOrder | TrailingStopMarketOrder):
-            if order.trailing_offset_type != TrailingOffsetType.PRICE:
+            if order.trailing_offset_type == TrailingOffsetType.PRICE:
+                ib_order.auxPrice = float(order.trailing_offset)
+            elif order.trailing_offset_type == TrailingOffsetType.BASIS_POINTS:
+                ib_order.trailingPercent = float(order.trailing_offset) / 100.0
+            else:
                 raise ValueError(
                     f"`TrailingOffsetType` {trailing_offset_type_to_str(order.trailing_offset_type)} is not supported",
                 )
-
-            ib_order.auxPrice = float(order.trailing_offset)
 
             if order.trigger_price:
                 converted_trigger_price = nautilus_price_to_ib_price(
