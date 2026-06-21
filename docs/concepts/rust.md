@@ -272,7 +272,9 @@ need actor-core or strategy-core access. Do not use them in ordinary actor or
 strategy logic, Python-authored components, or plug-in-compatible code, because
 those types do not cross those boundaries.
 
-Choose the smallest native handle and keep each borrow scoped:
+Choose the smallest native handle and keep each borrow scoped. Use `order()`
+for normal strategy order construction. Reach for
+`order_factory()` only when native code needs the raw mutable factory borrow.
 
 `DataActorNative` methods:
 
@@ -287,13 +289,13 @@ Choose the smallest native handle and keep each borrow scoped:
 
 `StrategyNative` methods:
 
-| Native method         | Return shape                 | Use when                         |
-|-----------------------|------------------------------|----------------------------------|
-| `strategy_core()`     | `&StrategyCore`              | Read strategy internals.         |
-| `strategy_core_mut()` | `&mut StrategyCore`          | Mutate strategy internals.       |
-| `order_factory()`     | `RefMut<'_, OrderFactory>`   | Need a mutable factory borrow.   |
-| `order_factory_rc()`  | `Rc<RefCell<OrderFactory>>`  | Store or pass the factory.       |
-| `portfolio_rc()`      | `Rc<RefCell<Portfolio>>`     | Store or pass the portfolio.     |
+| Native method         | Return shape                 | Use when                          |
+|-----------------------|------------------------------|-----------------------------------|
+| `strategy_core()`     | `&StrategyCore`              | Read strategy internals.          |
+| `strategy_core_mut()` | `&mut StrategyCore`          | Mutate strategy internals.        |
+| `order_factory()`     | `RefMut<'_, OrderFactory>`   | Need raw mutable factory borrow.  |
+| `order_factory_rc()`  | `Rc<RefCell<OrderFactory>>`  | Store or pass the factory.        |
+| `portfolio_rc()`      | `Rc<RefCell<Portfolio>>`     | Store or pass the portfolio.      |
 
 For a step-by-step walkthrough, see the
 [Write a Strategy (Rust)](../how_to/write_rust_strategy.md) how-to guide.

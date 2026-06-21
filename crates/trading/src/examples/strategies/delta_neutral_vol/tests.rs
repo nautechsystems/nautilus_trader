@@ -31,7 +31,7 @@ use nautilus_portfolio::portfolio::Portfolio;
 use rstest::rstest;
 
 use super::{DeltaNeutralVol, DeltaNeutralVolConfig};
-use crate::strategy::StrategyNative;
+use crate::strategy::Strategy;
 
 fn create_config() -> DeltaNeutralVolConfig {
     DeltaNeutralVolConfig::new(
@@ -100,7 +100,7 @@ fn register_strategy(strategy: &mut DeltaNeutralVol) {
 fn test_new_sets_strategy_id() {
     let strategy = create_strategy();
     assert_eq!(
-        StrategyNative::strategy_core(&strategy).config.strategy_id,
+        strategy.strategy_id(),
         Some(StrategyId::from("DELTA_NEUTRAL_VOL-001")),
     );
 }

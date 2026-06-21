@@ -139,7 +139,9 @@ Use the public facade in strategy logic:
 Import `DataActorNative` or `StrategyNative` only in engine, runtime,
 registration, PyO3, testkit, plug-in host, or performance-sensitive native
 code that must access borrowed runtime state. Choose the smallest native handle
-and keep each borrow scoped:
+and keep each borrow scoped. Use `order()` for normal strategy order
+construction; reach for `order_factory()` only when code needs the raw mutable
+factory borrow.
 
 `DataActorNative` methods:
 
@@ -154,13 +156,13 @@ and keep each borrow scoped:
 
 `StrategyNative` methods:
 
-| Native method         | Return shape                 | Use when                       |
-|-----------------------|------------------------------|--------------------------------|
-| `strategy_core()`     | `&StrategyCore`              | Read strategy internals.       |
-| `strategy_core_mut()` | `&mut StrategyCore`          | Mutate strategy internals.     |
-| `order_factory()`     | `RefMut<'_, OrderFactory>`   | Need a mutable factory borrow. |
-| `order_factory_rc()`  | `Rc<RefCell<OrderFactory>>`  | Store or pass the factory.     |
-| `portfolio_rc()`      | `Rc<RefCell<Portfolio>>`     | Store or pass the portfolio.   |
+| Native method         | Return shape                 | Use when                         |
+|-----------------------|------------------------------|----------------------------------|
+| `strategy_core()`     | `&StrategyCore`              | Read strategy internals.         |
+| `strategy_core_mut()` | `&mut StrategyCore`          | Mutate strategy internals.       |
+| `order_factory()`     | `RefMut<'_, OrderFactory>`   | Need raw mutable factory borrow. |
+| `order_factory_rc()`  | `Rc<RefCell<OrderFactory>>`  | Store or pass the factory.       |
+| `portfolio_rc()`      | `Rc<RefCell<Portfolio>>`     | Store or pass the portfolio.     |
 
 Those native handles do not cross Python or plug-in authoring boundaries.
 

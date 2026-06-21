@@ -27,7 +27,7 @@ use nautilus_model::{
 };
 use nautilus_trading::{
     nautilus_strategy,
-    strategy::{Strategy, StrategyCore, StrategyNative},
+    strategy::{Strategy, StrategyCore},
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 
@@ -794,7 +794,7 @@ impl ExecTester {
         let display_qty = self.config.order_display_qty;
         let emulation_trigger = self.config.emulation_trigger;
 
-        let buy_order = self.order_factory().limit(
+        let buy_order = self.order().limit(
             instrument_id,
             OrderSide::Buy,
             quantity,
@@ -813,7 +813,7 @@ impl ExecTester {
             None,
         );
 
-        let sell_order = self.order_factory().limit(
+        let sell_order = self.order().limit(
             instrument_id,
             OrderSide::Sell,
             quantity,
@@ -1058,7 +1058,7 @@ impl ExecTester {
         let display_qty = self.config.order_display_qty;
         let emulation_trigger = self.config.emulation_trigger;
 
-        let order = self.order_factory().limit(
+        let order = self.order().limit(
             instrument_id,
             order_side,
             quantity,
@@ -1132,10 +1132,8 @@ impl ExecTester {
         let trailing_offset = self.config.trailing_offset;
         let trailing_offset_type = self.config.trailing_offset_type;
 
-        let mut factory = self.order_factory();
-
         let mut order: OrderAny = match stop_order_type {
-            OrderType::StopMarket => factory.stop_market(
+            OrderType::StopMarket => self.order().stop_market(
                 instrument_id,
                 order_side,
                 quantity,
@@ -1157,7 +1155,7 @@ impl ExecTester {
                 let Some(limit_price) = limit_price else {
                     anyhow::bail!("STOP_LIMIT order requires limit_price");
                 };
-                factory.stop_limit(
+                self.order().stop_limit(
                     instrument_id,
                     order_side,
                     quantity,
@@ -1178,7 +1176,7 @@ impl ExecTester {
                     None, // client_order_id
                 )
             }
-            OrderType::MarketIfTouched => factory.market_if_touched(
+            OrderType::MarketIfTouched => self.order().market_if_touched(
                 instrument_id,
                 order_side,
                 quantity,
@@ -1199,7 +1197,7 @@ impl ExecTester {
                 let Some(limit_price) = limit_price else {
                     anyhow::bail!("LIMIT_IF_TOUCHED order requires limit_price");
                 };
-                factory.limit_if_touched(
+                self.order().limit_if_touched(
                     instrument_id,
                     order_side,
                     quantity,
@@ -1224,7 +1222,7 @@ impl ExecTester {
                 let Some(trailing_offset) = trailing_offset else {
                     anyhow::bail!("TRAILING_STOP_MARKET order requires trailing_offset config");
                 };
-                factory.trailing_stop_market(
+                self.order().trailing_stop_market(
                     instrument_id,
                     order_side,
                     quantity,
@@ -1250,7 +1248,6 @@ impl ExecTester {
                 anyhow::bail!("Unknown stop order type: {stop_order_type:?}");
             }
         };
-        drop(factory);
 
         if let OrderAny::TrailingStopMarket(order) = &mut order {
             order.activation_price = Some(trigger_price);
@@ -1336,7 +1333,7 @@ impl ExecTester {
         let emulation_trigger = self.config.emulation_trigger;
         let stop_trigger_type = self.config.stop_trigger_type;
         let orders = self
-            .order_factory()
+            .order()
             .bracket()
             .instrument_id(instrument_id)
             .order_side(order_side)
@@ -1405,7 +1402,7 @@ impl ExecTester {
         let time_in_force = self.config.open_position_time_in_force;
         let quote_quantity = self.config.use_quote_quantity;
 
-        let order = self.order_factory().market(
+        let order = self.order().market(
             instrument_id,
             order_side,
             quantity,

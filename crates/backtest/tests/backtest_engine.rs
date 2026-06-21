@@ -66,8 +66,7 @@ use nautilus_model::{
 use nautilus_system::trader::Trader;
 use nautilus_trading::{
     ExecutionAlgorithm as ExecutionAlgorithmTrait, ExecutionAlgorithmConfig,
-    ExecutionAlgorithmCore, Strategy, StrategyConfig, StrategyCore, StrategyNative,
-    nautilus_strategy,
+    ExecutionAlgorithmCore, Strategy, StrategyConfig, StrategyCore, nautilus_strategy,
 };
 use rstest::*;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
@@ -195,7 +194,7 @@ impl EmaCross {
     fn enter(&mut self, side: OrderSide) -> anyhow::Result<()> {
         let instrument_id = self.instrument_id;
         let trade_size = self.trade_size;
-        let order = self.order_factory().market(
+        let order = self.order().market(
             instrument_id,
             side,
             trade_size,
@@ -275,7 +274,7 @@ impl SnapshotNettingFlip {
     fn submit_market(&mut self, side: OrderSide) -> anyhow::Result<()> {
         let instrument_id = self.instrument_id;
         let trade_size = self.trade_size;
-        let order = self.order_factory().market(
+        let order = self.order().market(
             instrument_id,
             side,
             trade_size,
@@ -369,7 +368,7 @@ impl DataActor for OpenOptionOnQuote {
         self.opened = true;
         let instrument_id = self.instrument_id;
         let trade_size = self.trade_size;
-        let order = self.order_factory().market(
+        let order = self.order().market(
             instrument_id,
             OrderSide::Buy,
             trade_size,
@@ -2667,7 +2666,7 @@ impl DataActor for CascadingStopStrategy {
             self.entry_submitted.set(true);
             let instrument_id = self.instrument_id;
             let trade_size = self.trade_size;
-            let order = self.order_factory().market(
+            let order = self.order().market(
                 instrument_id,
                 OrderSide::Buy,
                 trade_size,
@@ -2690,7 +2689,7 @@ impl DataActor for CascadingStopStrategy {
             self.stop_submitted.set(true);
             let instrument_id = self.instrument_id;
             let trade_size = self.trade_size;
-            let order = self.order_factory().stop_market(
+            let order = self.order().stop_market(
                 instrument_id,
                 OrderSide::Sell,
                 trade_size,
@@ -2807,7 +2806,7 @@ impl DataActor for EmulatedStopEntryOnQuote {
         let instrument_id = self.instrument_id;
         let trade_size = self.trade_size;
         let trigger_price = self.trigger_price;
-        let order = self.order_factory().stop_market(
+        let order = self.order().stop_market(
             instrument_id,
             OrderSide::Buy,
             trade_size,
@@ -2938,7 +2937,7 @@ impl DataActor for EmulatedTrailingStopOnQuote {
 
         let instrument_id = self.instrument_id;
         let trade_size = self.trade_size;
-        let order = self.order_factory().trailing_stop_market(
+        let order = self.order().trailing_stop_market(
             instrument_id,
             OrderSide::Buy,
             trade_size,
@@ -3064,7 +3063,7 @@ impl DataActor for EmulatedBracketOnQuote {
         let instrument_id = self.instrument_id;
         let trade_size = self.trade_size;
         let orders = self
-            .order_factory()
+            .order()
             .bracket()
             .instrument_id(instrument_id)
             .order_side(OrderSide::Buy)
@@ -3244,7 +3243,7 @@ impl DataActor for DualTimerStrategy {
         };
         let instrument_id = self.instrument_id;
         let trade_size = self.trade_size;
-        let order = self.order_factory().market(
+        let order = self.order().market(
             instrument_id,
             side,
             trade_size,
@@ -3865,7 +3864,7 @@ impl DataActor for CloseOnStop {
         self.opened = true;
         let instrument_id = self.instrument_id;
         let trade_size = self.trade_size;
-        let order = self.order_factory().market(
+        let order = self.order().market(
             instrument_id,
             OrderSide::Buy,
             trade_size,
@@ -4068,7 +4067,7 @@ impl DataActor for CancelOnStop {
         let instrument_id = self.instrument_id;
         let trade_size = self.trade_size;
         let limit_price = self.limit_price;
-        let order = self.order_factory().limit(
+        let order = self.order().limit(
             instrument_id,
             OrderSide::Buy,
             trade_size,
@@ -4305,7 +4304,7 @@ impl DataActor for OpenOnEveryQuote {
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         let instrument_id = self.instrument_id;
         let trade_size = self.trade_size;
-        let order = self.order_factory().market(
+        let order = self.order().market(
             instrument_id,
             OrderSide::Buy,
             trade_size,
@@ -4524,7 +4523,7 @@ impl DataActor for MultiInstrumentCloseOnStop {
         }
         self.opened[idx] = true;
         let trade_size = self.trade_size;
-        let order = self.order_factory().market(
+        let order = self.order().market(
             quote.instrument_id,
             OrderSide::Buy,
             trade_size,

@@ -39,7 +39,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
-use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, StrategyNative, nautilus_strategy};
+use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rstest::*;
 use rust_decimal::Decimal;
 use tempfile::TempDir;
@@ -278,7 +278,7 @@ impl DataActor for MarketOrderStrategy {
             self.submitted = true;
             let instrument_id = self.instrument_id;
             let trade_size = self.trade_size;
-            let order = self.order_factory().market(
+            let order = self.order().market(
                 instrument_id,
                 OrderSide::Buy,
                 trade_size,
