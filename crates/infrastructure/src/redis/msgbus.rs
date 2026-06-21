@@ -55,7 +55,7 @@ use nautilus_core::{
 };
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::identifiers::TraderId;
-use redis::{AsyncCommands, streams};
+use redis::{AsyncCommands, RetryMethod, aio::ConnectionManager, streams};
 use serde::{Deserialize, Serialize};
 use streams::StreamReadOptions;
 use ustr::Ustr;
@@ -243,7 +243,7 @@ impl RedisMessageBusBacking {
     ///
     /// # Errors
     ///
-    /// Returns an error if establishing the Redis connection for publishing fails.
+    /// Returns an error if the heartbeat interval is configured as zero seconds.
     pub fn new(
         trader_id: TraderId,
         instance_id: UUID4,
@@ -251,6 +251,10 @@ impl RedisMessageBusBacking {
         backing: RedisMessageBusConfig,
     ) -> anyhow::Result<Self> {
         install_cryptographic_provider();
+
+        if config.heartbeat_interval_secs == Some(0) {
+            anyhow::bail!("heartbeat_interval_secs must be greater than 0");
+        }
 
         let external_streams = config.external_streams.clone().unwrap_or_default();
         let heartbeat_interval_secs = config.heartbeat_interval_secs;
@@ -594,8 +598,8 @@ async fn drain_buffer(
 /// # Errors
 ///
 /// Returns an error if:
-/// - Establishing the Redis connection fails.
-/// - Any Redis read operation fails.
+/// - Establishing the Redis connection fails before the terminate signal is received.
+/// - A Redis read operation returns a non-retryable error.
 pub async fn stream_messages(
     tx: tokio::sync::mpsc::Sender<BusMessage>,
     config: RedisMessageBusConfig,
@@ -604,7 +608,12 @@ pub async fn stream_messages(
 ) -> anyhow::Result<()> {
     log_task_started(MSGBUS_STREAM);
 
-    let mut con = create_redis_connection(MSGBUS_STREAM, &config).await?;
+    let Some(mut con) = connect_stream_connection(&config, &stream_signal).await? else {
+        log_task_stopped(MSGBUS_STREAM);
+        return Ok(());
+    };
+
+    let mut read_error_count = 0;
 
     let stream_keys = &stream_keys
         .iter()
@@ -642,6 +651,8 @@ pub async fn stream_messages(
 
         match result {
             Ok(stream_bulk) => {
+                read_error_count = 0;
+
                 if stream_bulk.is_empty() {
                     // Timeout occurred: no messages received
                     continue;
@@ -670,13 +681,109 @@ pub async fn stream_messages(
                 }
             }
             Err(e) => {
-                anyhow::bail!("Error reading from stream: {e:?}");
+                if !is_retryable_stream_error(&e) {
+                    anyhow::bail!("Error reading from stream: {e:?}");
+                }
+
+                log::error!("Error reading from stream: {e:?}");
+
+                let Some(reconnected) =
+                    reconnect_stream_connection(&config, &stream_signal, &mut read_error_count)
+                        .await?
+                else {
+                    break;
+                };
+                con = reconnected;
             }
         }
     }
 
     log_task_stopped(MSGBUS_STREAM);
     Ok(())
+}
+
+async fn connect_stream_connection(
+    config: &RedisMessageBusConfig,
+    stream_signal: &Arc<AtomicBool>,
+) -> anyhow::Result<Option<ConnectionManager>> {
+    let connect = create_redis_connection(MSGBUS_STREAM, config);
+    let terminate = wait_for_stream_signal(stream_signal);
+
+    tokio::pin!(connect);
+    tokio::pin!(terminate);
+
+    tokio::select! {
+        result = &mut connect => result.map(Some),
+        () = &mut terminate => Ok(None),
+    }
+}
+
+async fn reconnect_stream_connection(
+    config: &RedisMessageBusConfig,
+    stream_signal: &Arc<AtomicBool>,
+    read_error_count: &mut usize,
+) -> anyhow::Result<Option<ConnectionManager>> {
+    loop {
+        let retry_delay = stream_retry_delay(config, *read_error_count);
+        *read_error_count = (*read_error_count).saturating_add(1);
+
+        if !wait_for_retry_delay(retry_delay, stream_signal).await {
+            return Ok(None);
+        }
+
+        match connect_stream_connection(config, stream_signal).await {
+            Ok(Some(con)) => return Ok(Some(con)),
+            Ok(None) => return Ok(None),
+            Err(e) => {
+                log::error!("Error reconnecting to stream: {e:?}");
+            }
+        }
+    }
+}
+
+fn stream_retry_delay(config: &RedisMessageBusConfig, attempt: usize) -> Duration {
+    let exponent = u32::try_from(attempt.min(32)).unwrap_or(32);
+    let delay_ms = config
+        .factor
+        .saturating_mul(config.exponent_base.saturating_pow(exponent));
+    let max_delay = Duration::from_secs(config.max_delay);
+
+    Duration::from_millis(delay_ms)
+        .min(max_delay)
+        .max(Duration::from_millis(1))
+}
+
+fn is_retryable_stream_error(error: &redis::RedisError) -> bool {
+    matches!(
+        error.retry_method(),
+        RetryMethod::Reconnect
+            | RetryMethod::ReconnectFromInitialConnections
+            | RetryMethod::RetryImmediately
+            | RetryMethod::WaitAndRetry
+    )
+}
+
+async fn wait_for_retry_delay(retry_delay: Duration, stream_signal: &Arc<AtomicBool>) -> bool {
+    let retry_timer = tokio::time::sleep(retry_delay);
+    let terminate = wait_for_stream_signal(stream_signal);
+
+    tokio::pin!(retry_timer);
+    tokio::pin!(terminate);
+
+    tokio::select! {
+        () = &mut retry_timer => true,
+        () = &mut terminate => false,
+    }
+}
+
+async fn wait_for_stream_signal(stream_signal: &Arc<AtomicBool>) {
+    let check_timer = tokio::time::interval(Duration::from_millis(100));
+
+    tokio::pin!(check_timer);
+
+    while !stream_signal.load(Ordering::Relaxed) {
+        check_timer.tick().await;
+    }
 }
 
 /// Decodes a Redis stream message value into a `BusMessage`.
@@ -761,6 +868,7 @@ fn create_heartbeat_msg() -> BusMessage {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::testing::wait_until_async;
     use redis::Value;
     use rstest::*;
     use serde_json::json;
@@ -901,6 +1009,66 @@ mod tests {
             format!("{}", result.unwrap_err()),
             "Invalid stream message format: bulk-string('\"not an array\"')"
         );
+    }
+
+    #[rstest]
+    fn test_new_rejects_zero_heartbeat_interval() {
+        let trader_id = TraderId::from("tester-001");
+        let instance_id = UUID4::new();
+        let config = MessageBusConfig {
+            heartbeat_interval_secs: Some(0),
+            ..Default::default()
+        };
+
+        let result = RedisMessageBusBacking::new(
+            trader_id,
+            instance_id,
+            config,
+            RedisMessageBusConfig::default(),
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "heartbeat_interval_secs must be greater than 0"
+        );
+    }
+
+    #[rstest]
+    fn test_stream_retry_delay_uses_config_bounds() {
+        let config = RedisMessageBusConfig {
+            factor: 10,
+            exponent_base: 2,
+            max_delay: 1,
+            ..Default::default()
+        };
+
+        assert_eq!(stream_retry_delay(&config, 0), Duration::from_millis(10));
+        assert_eq!(stream_retry_delay(&config, 1), Duration::from_millis(20));
+        assert_eq!(stream_retry_delay(&config, 10), Duration::from_secs(1));
+    }
+
+    #[rstest]
+    fn test_stream_error_retry_classification() {
+        let dropped =
+            redis::RedisError::from(std::io::Error::from(std::io::ErrorKind::ConnectionReset));
+        let client: redis::RedisError = (redis::ErrorKind::Client, "client error").into();
+
+        assert!(is_retryable_stream_error(&dropped));
+        assert!(!is_retryable_stream_error(&client));
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_retry_delay_returns_false_when_signaled() {
+        let stream_signal = Arc::new(AtomicBool::new(true));
+        let signal = stream_signal.clone();
+        let fut = async move { wait_for_retry_delay(Duration::from_secs(30), &signal).await };
+
+        let handle = tokio::spawn(fut);
+
+        wait_until_async(|| async { handle.is_finished() }, Duration::from_secs(1)).await;
+
+        assert!(!handle.await.unwrap());
     }
 
     #[rstest]
@@ -1114,7 +1282,7 @@ mod serial_tests {
         });
 
         // Receive and verify the message
-        let msg = rx.recv().await.unwrap();
+        let msg = receive_bus_message(&mut rx, Duration::from_secs(2)).await;
         assert_eq!(msg.topic, "topic1");
         assert_eq!(msg.payload, Bytes::from("data1"));
 
@@ -1122,6 +1290,112 @@ mod serial_tests {
         rx.close();
         stream_signal.store(true, Ordering::Relaxed);
         handle.await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_stream_messages_skips_malformed_entry(
+        #[future] redis_connection: ConnectionManager,
+    ) {
+        let mut con = redis_connection.await;
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
+
+        let suffix = UUID4::new();
+        let stream_key = format!("test:stream:malformed:{suffix}");
+        let external_streams = vec![stream_key.clone()];
+        let stream_signal = Arc::new(AtomicBool::new(false));
+        let stream_signal_clone = stream_signal.clone();
+
+        let clock = get_atomic_clock_realtime();
+        let base_id = clock.get_time_ms() + 1_000_000;
+
+        let _: () = con
+            .xadd(
+                &stream_key,
+                format!("{}", base_id + 1),
+                &[("topic", "missing-payload")],
+            )
+            .await
+            .unwrap();
+        let _: () = con
+            .xadd(
+                &stream_key,
+                format!("{}", base_id + 2),
+                &[("topic", "valid"), ("payload", "data")],
+            )
+            .await
+            .unwrap();
+
+        let handle = tokio::spawn(async move {
+            stream_messages(
+                tx,
+                RedisMessageBusConfig::default(),
+                external_streams,
+                stream_signal_clone,
+            )
+            .await
+            .unwrap();
+        });
+
+        let msg = receive_bus_message(&mut rx, Duration::from_secs(2)).await;
+
+        rx.close();
+        stream_signal.store(true, Ordering::Relaxed);
+        handle.await.unwrap();
+
+        assert_eq!(msg.topic, "valid");
+        assert_eq!(msg.payload, Bytes::from("data"));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_stream_messages_returns_unrecoverable_read_error(
+        #[future] redis_connection: ConnectionManager,
+    ) {
+        let mut con = redis_connection.await;
+        let (tx, _rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
+
+        let suffix = UUID4::new();
+        let stream_key = format!("test:stream:wrong-type:{suffix}");
+        let external_streams = vec![stream_key.clone()];
+        let stream_signal = Arc::new(AtomicBool::new(false));
+
+        let _: () = con.set(&stream_key, "not-a-stream").await.unwrap();
+
+        let result = stream_messages(
+            tx,
+            RedisMessageBusConfig::default(),
+            external_streams,
+            stream_signal,
+        )
+        .await;
+
+        let _: () = con.del(&stream_key).await.unwrap();
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Error reading from stream")
+        );
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_stream_connection_returns_none_when_signaled() {
+        let config = RedisMessageBusConfig {
+            port: Some(1),
+            connection_timeout: 20,
+            ..Default::default()
+        };
+        let stream_signal = Arc::new(AtomicBool::new(true));
+        let signal = stream_signal.clone();
+        let handle = tokio::spawn(async move { connect_stream_connection(&config, &signal).await });
+
+        wait_until_async(|| async { handle.is_finished() }, Duration::from_secs(1)).await;
+
+        assert!(handle.await.unwrap().unwrap().is_none());
     }
 
     #[rstest]
@@ -1227,10 +1501,7 @@ mod serial_tests {
             .await
             .unwrap();
 
-        let msg = tokio::time::timeout(Duration::from_secs(2), rx.recv())
-            .await
-            .expect("Stream 1 message should be received")
-            .unwrap();
+        let msg = receive_bus_message(&mut rx, Duration::from_secs(2)).await;
         assert_eq!(msg.topic, "stream1-first");
 
         // Publish to stream 2 at lower ID (tests independent cursor tracking)
@@ -1243,10 +1514,7 @@ mod serial_tests {
             .await
             .unwrap();
 
-        let msg = tokio::time::timeout(Duration::from_secs(2), rx.recv())
-            .await
-            .expect("Stream 2 message should be received")
-            .unwrap();
+        let msg = receive_bus_message(&mut rx, Duration::from_secs(2)).await;
         assert_eq!(msg.topic, "stream2-second");
 
         // Shutdown and cleanup
@@ -1299,10 +1567,7 @@ mod serial_tests {
             )
             .await
             .unwrap();
-        let msg = tokio::time::timeout(Duration::from_secs(2), rx.recv())
-            .await
-            .expect("Stream 1 message should be received")
-            .unwrap();
+        let msg = receive_bus_message(&mut rx, Duration::from_secs(2)).await;
         assert_eq!(msg.topic, "s1m1");
 
         // Stream 2 gets message at lower ID - would be skipped with global cursor
@@ -1314,10 +1579,7 @@ mod serial_tests {
             )
             .await
             .unwrap();
-        let msg = tokio::time::timeout(Duration::from_secs(2), rx.recv())
-            .await
-            .expect("Stream 2 message should be received")
-            .unwrap();
+        let msg = receive_bus_message(&mut rx, Duration::from_secs(2)).await;
         assert_eq!(msg.topic, "s2m1");
 
         // Stream 3 gets message at even lower ID
@@ -1329,10 +1591,7 @@ mod serial_tests {
             )
             .await
             .unwrap();
-        let msg = tokio::time::timeout(Duration::from_secs(2), rx.recv())
-            .await
-            .expect("Stream 3 message should be received")
-            .unwrap();
+        let msg = receive_bus_message(&mut rx, Duration::from_secs(2)).await;
         assert_eq!(msg.topic, "s3m1");
 
         // Shutdown and cleanup
@@ -1372,10 +1631,7 @@ mod serial_tests {
         // Start the heartbeat task with a short interval
         let handle = tokio::spawn(run_heartbeat(1, signal.clone(), tx));
 
-        let heartbeat = tokio::time::timeout(Duration::from_secs(2), rx.recv())
-            .await
-            .expect("Heartbeat should be received")
-            .unwrap();
+        let heartbeat = receive_unbounded_bus_message(&mut rx, Duration::from_secs(2)).await;
 
         // Stop the heartbeat task
         signal.store(true, Ordering::Relaxed);
@@ -1383,5 +1639,49 @@ mod serial_tests {
 
         // Ensure heartbeats were sent
         assert_eq!(heartbeat.topic, HEARTBEAT_TOPIC);
+    }
+
+    async fn receive_bus_message(
+        rx: &mut tokio::sync::mpsc::Receiver<BusMessage>,
+        timeout: Duration,
+    ) -> BusMessage {
+        let mut received = None;
+
+        wait_until_async(
+            || {
+                if received.is_none() {
+                    received = rx.try_recv().ok();
+                }
+
+                let has_received = received.is_some();
+                async move { has_received }
+            },
+            timeout,
+        )
+        .await;
+
+        received.unwrap()
+    }
+
+    async fn receive_unbounded_bus_message(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<BusMessage>,
+        timeout: Duration,
+    ) -> BusMessage {
+        let mut received = None;
+
+        wait_until_async(
+            || {
+                if received.is_none() {
+                    received = rx.try_recv().ok();
+                }
+
+                let has_received = received.is_some();
+                async move { has_received }
+            },
+            timeout,
+        )
+        .await;
+
+        received.unwrap()
     }
 }
