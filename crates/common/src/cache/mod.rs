@@ -2686,7 +2686,7 @@ impl Cache {
     /// other actor, strategy, or engine still relies on may cause incorrect behavior
     /// (missing instrument lookups, lost market-data history). The caller is
     /// responsible for ensuring the instrument is no longer in use before purging.
-    pub fn purge_instrument(&mut self, instrument_id: InstrumentId) {
+    fn purge_instrument_inner(&mut self, instrument_id: InstrumentId, skip_order_guard: bool) {
         #[cfg(feature = "defi")]
         let defi_found = self.defi.pools.contains_key(&instrument_id)
             || self.defi.pool_profilers.contains_key(&instrument_id);
@@ -2702,7 +2702,8 @@ impl Cache {
             return;
         }
 
-        if let Some(orders) = self.index.instrument_orders.get(&instrument_id) {
+        if !skip_order_guard && let Some(orders) = self.index.instrument_orders.get(&instrument_id)
+        {
             let has_non_terminal = orders
                 .iter()
                 .any(|client_order_id| !self.index.orders_closed.contains(client_order_id));
@@ -2754,6 +2755,26 @@ impl Cache {
         self.index.instrument_positions.remove(&instrument_id);
 
         log::info!("Purged instrument {instrument_id}");
+    }
+
+    /// Purges the instrument with the `instrument_id` from the cache.
+    ///
+    /// This refuses to purge when associated orders or positions remain in
+    /// non-terminal state.
+    pub fn purge_instrument(&mut self, instrument_id: InstrumentId) {
+        self.purge_instrument_inner(instrument_id, false);
+    }
+
+    /// Purges the instrument with the `instrument_id` from the cache while skipping the
+    /// non-terminal order guard.
+    ///
+    /// This still refuses to purge when any associated position is non-closed. Intended
+    /// for actors which own an instrument-expiration lifecycle and have already invalidated
+    /// any remaining order state externally, but may still observe order-terminal events
+    /// arriving later than the cleanup decision. During that window, the order objects may
+    /// still exist even though `instrument_orders` is removed from the cache index.
+    pub fn purge_instrument_skip_order_guard(&mut self, instrument_id: InstrumentId) {
+        self.purge_instrument_inner(instrument_id, true);
     }
 
     /// Purges all account state events which are outside the lookback window.

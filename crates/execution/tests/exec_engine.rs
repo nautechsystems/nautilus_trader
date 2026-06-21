@@ -1834,6 +1834,109 @@ fn test_process_same_side_fill_publishes_position_changed_after_order_topic(
 }
 
 #[rstest]
+fn test_process_closing_fill_updates_cache_before_publishing_position_closed(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let (instrument, opening_order) = prepare_accepted_order(&mut execution_engine);
+    let opening_fill = OrderEventAny::Filled(build_order_filled(
+        opening_order.trader_id(),
+        opening_order.strategy_id(),
+        instrument.id(),
+        opening_order.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::new("T-OPEN"),
+        opening_order.order_side(),
+        opening_order.order_type(),
+        opening_order.quantity(),
+        Price::from_str("1.0").unwrap(),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        Some(Money::from("1 USD")),
+    ));
+    execution_engine.process(&opening_fill);
+
+    let closing_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(opening_order.trader_id())
+        .strategy_id(opening_order.strategy_id())
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
+        .side(OrderSide::Sell)
+        .quantity(opening_order.quantity())
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            closing_order.clone(),
+            None,
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+
+    let closing_submitted =
+        TestOrderEventStubs::submitted(&closing_order, AccountId::test_default());
+    execution_engine.process(&closing_submitted);
+    let closing_accepted = TestOrderEventStubs::accepted(
+        &closing_order,
+        AccountId::test_default(),
+        VenueOrderId::from("V-002"),
+    );
+    execution_engine.process(&closing_accepted);
+
+    let position_topic = switchboard::get_event_positions_topic(closing_order.strategy_id());
+    let instrument_id = instrument.id();
+    let venue = instrument_id.venue;
+    let account_id = AccountId::test_default();
+    let observed_cache_open = Rc::new(RefCell::new(Vec::<bool>::new()));
+    let position_handler = TypedHandler::from({
+        let cache = Rc::clone(execution_engine.cache());
+        let observed_cache_open = observed_cache_open.clone();
+        move |event: &PositionEvent| {
+            if matches!(event, PositionEvent::PositionClosed(_)) {
+                observed_cache_open
+                    .borrow_mut()
+                    .push(cache.borrow().has_positions_open(
+                        Some(&venue),
+                        Some(&instrument_id),
+                        None,
+                        Some(&account_id),
+                        None,
+                    ));
+            }
+        }
+    });
+    msgbus::subscribe_position_events(position_topic.into(), position_handler.clone(), None);
+
+    let closing_fill = OrderEventAny::Filled(build_order_filled(
+        closing_order.trader_id(),
+        closing_order.strategy_id(),
+        instrument_id,
+        closing_order.client_order_id(),
+        VenueOrderId::from("V-002"),
+        account_id,
+        TradeId::new("T-CLOSE"),
+        closing_order.order_side(),
+        closing_order.order_type(),
+        closing_order.quantity(),
+        Price::from_str("1.0").unwrap(),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        Some(Money::from("1 USD")),
+    ));
+
+    execution_engine.process(&closing_fill);
+    msgbus::unsubscribe_position_events(position_topic.into(), &position_handler);
+
+    assert_eq!(observed_cache_open.borrow().as_slice(), &[false]);
+}
+
+#[rstest]
 fn test_process_leg_fill_without_order_updates_position_and_publishes_order_before_position(
     mut execution_engine: ExecutionEngine,
 ) {
