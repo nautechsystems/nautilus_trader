@@ -31,7 +31,7 @@ use nautilus_common::{
     },
     msgbus::{self, MessagingSwitchboard},
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, correctness::CorrectnessResult};
 use nautilus_model::{
     data::{
         Bar, BarType, InstrumentClose, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
@@ -4933,7 +4933,13 @@ impl OrderMatchingEngine {
             &fee_order
         };
 
-        let underlying_px = self.fee_underlying_price();
+        let underlying_px = self.fee_underlying_price().unwrap_or_else(|e| {
+            panic!(
+                "Failed to compute commission for {}: {}",
+                order.client_order_id(),
+                e
+            );
+        });
         let commission = self
             .fee_model
             .get_commission_with_context(
@@ -5113,28 +5119,34 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn fee_underlying_price(&self) -> Option<Price> {
+    fn fee_underlying_price(&self) -> CorrectnessResult<Option<Price>> {
         if !matches!(
             self.instrument,
             InstrumentAny::CryptoOption(_) | InstrumentAny::OptionContract(_)
         ) {
-            return None;
+            return Ok(None);
         }
 
-        let underlying = self.instrument.underlying()?;
+        let Some(underlying) = self.instrument.underlying() else {
+            return Ok(None);
+        };
+
         let underlying_id = InstrumentId::from(format!("{underlying}.{}", self.venue).as_str());
         let instrument_id = self.instrument.id();
         let cache = self.cache.borrow();
-        cache
+        if let Some(price) = cache
             .price(&underlying_id, PriceType::Last)
             .or_else(|| cache.price(&underlying_id, PriceType::Mark))
             .or_else(|| cache.price(&underlying_id, PriceType::Mid))
-            .or_else(|| {
-                cache
-                    .option_greeks(&instrument_id)
-                    .and_then(|greeks| greeks.underlying_price)
-                    .map(|price| Price::new(price, FIXED_PRECISION))
-            })
+        {
+            return Ok(Some(price));
+        }
+
+        cache
+            .option_greeks(&instrument_id)
+            .and_then(|greeks| greeks.underlying_price)
+            .map(|price| Price::new_checked(price, FIXED_PRECISION))
+            .transpose()
     }
 
     fn cached_order_is_closed(&self, client_order_id: ClientOrderId) -> bool {
@@ -6282,15 +6294,21 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{cache::Cache, clock::TestClock};
+    use nautilus_core::correctness::CorrectnessError;
     use nautilus_model::{
+        data::option_chain::OptionGreeks,
         enums::{AccountType, BookType, LiquiditySide, OmsType, OrderSide, OrderType},
         events::OrderEventAny,
         identifiers::AccountId,
-        instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+        instruments::{
+            Instrument, InstrumentAny,
+            stubs::{crypto_option_btc_deribit, crypto_perpetual_ethusdt},
+        },
         orders::{Order, OrderTestBuilder},
         types::{Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
     };
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use super::{BarTickSizes, OrderMatchingEngine};
     use crate::models::{fee::FeeModelAny, fill::FillModelAny};
@@ -6378,6 +6396,83 @@ mod tests {
         assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
         assert_eq!(commission.currency, instrument.quote_currency());
         assert_eq!(commission.as_decimal(), expected_commission);
+    }
+
+    #[rstest]
+    fn test_fee_underlying_price_uses_valid_cached_greeks_price() {
+        let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit(
+            3,
+            1,
+            Price::from("0.001"),
+            Quantity::from("0.1"),
+        ));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache.borrow_mut().add_option_greeks(OptionGreeks {
+            instrument_id: instrument.id(),
+            underlying_price: Some(50_000.0),
+            ..Default::default()
+        });
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let engine = OrderMatchingEngine::new(
+            instrument,
+            1,
+            FillModelAny::default(),
+            FeeModelAny::default(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            cache,
+            Default::default(),
+        );
+
+        let price = engine
+            .fee_underlying_price()
+            .unwrap()
+            .expect("expected underlying price");
+
+        assert_eq!(price.precision, FIXED_PRECISION);
+        assert_eq!(price.as_decimal(), Decimal::from(50_000));
+    }
+
+    #[rstest]
+    fn test_fee_underlying_price_rejects_invalid_cached_greeks_price() {
+        let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit(
+            3,
+            1,
+            Price::from("0.001"),
+            Quantity::from("0.1"),
+        ));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache.borrow_mut().add_option_greeks(OptionGreeks {
+            instrument_id: instrument.id(),
+            underlying_price: Some(f64::NAN),
+            ..Default::default()
+        });
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let engine = OrderMatchingEngine::new(
+            instrument,
+            1,
+            FillModelAny::default(),
+            FeeModelAny::default(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            cache,
+            Default::default(),
+        );
+
+        let error = engine.fee_underlying_price().unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::InvalidValue {
+                param: "value".to_string(),
+                value: "NaN".to_string(),
+                type_name: "f64",
+            }
+        );
     }
 
     #[rstest]
