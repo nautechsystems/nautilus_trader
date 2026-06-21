@@ -76,6 +76,7 @@ fn xnas_venue_config() -> BacktestVenueConfig {
         .starting_balances(vec!["1_000_000 USD".to_string()])
         .base_currency(Currency::from("USD"))
         .build()
+        .unwrap()
 }
 
 fn quote_data_config(catalog_path: &str, instrument_id: InstrumentId) -> BacktestDataConfig {

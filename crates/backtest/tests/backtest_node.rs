@@ -172,6 +172,7 @@ fn binance_venue_config() -> BacktestVenueConfig {
         .book_type(BookType::L1_MBP)
         .starting_balances(vec!["1_000_000 USDT".to_string()])
         .build()
+        .unwrap()
 }
 
 fn data_config(catalog_path: &str, instrument_id: InstrumentId) -> BacktestDataConfig {
@@ -1139,7 +1140,8 @@ fn test_l2_venue_without_book_data_rejected(crypto_perpetual_ethusdt: CryptoPerp
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec!["1_000_000 USDT".to_string()])
-        .build();
+        .build()
+        .unwrap();
 
     // QuoteTick data only, no order book data for L2 venue
     let data = data_config(&catalog_path, instrument.id());
@@ -1166,7 +1168,8 @@ fn test_l2_venue_with_unfiltered_book_data_accepted() {
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec!["1_000_000 USDT".to_string()])
-        .build();
+        .build()
+        .unwrap();
 
     // Unfiltered OrderBookDelta config (no instrument_id) covers all venues
     let book_data = BacktestDataConfig::builder()

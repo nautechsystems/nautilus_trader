@@ -19,7 +19,10 @@ use std::{fmt::Display, str::FromStr, time::Duration};
 
 use ahash::AHashMap;
 use nautilus_common::{
-    cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
+    cache::CacheConfig,
+    config::{ConfigError, ConfigErrorCollector, ConfigResult},
+    enums::Environment,
+    logging::logger::LoggerConfig,
     msgbus::backing::MessageBusConfig,
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -366,8 +369,10 @@ pub struct SimulatedVenueConfig {
     reason = "venue config fields mirror the existing Rust and Python backtest surfaces"
 )]
 #[derive(Debug, Clone, bon::Builder)]
+#[builder(finish_fn(name = build_inner, vis = ""))]
 pub struct BacktestVenueConfig {
     /// The name of the venue.
+    #[builder(into)]
     name: Ustr,
     /// The order management system type for the exchange. If ``HEDGING`` will generate new position IDs.
     oms_type: OmsType,
@@ -469,7 +474,80 @@ pub struct BacktestVenueConfig {
     liquidation_cancel_open_orders: bool,
 }
 
+impl<S: backtest_venue_config_builder::IsComplete> BacktestVenueConfigBuilder<S> {
+    /// Validates and builds the [`BacktestVenueConfig`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] if any field fails validation
+    /// (see [`BacktestVenueConfig::validate`]).
+    pub fn build(self) -> ConfigResult<BacktestVenueConfig> {
+        let config = self.build_inner();
+        config.validate()?;
+        Ok(config)
+    }
+}
+
 impl BacktestVenueConfig {
+    /// Validates the venue configuration, collecting every field violation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
+    /// invalid) if any field fails validation.
+    pub fn validate(&self) -> ConfigResult<()> {
+        let mut errors = ConfigErrorCollector::new();
+
+        if self.name.is_empty() {
+            errors.push(ConfigError::empty_field("name"));
+        } else if let Err(e) = Venue::new_checked(self.name.as_str()) {
+            errors.push(ConfigError::invalid_value(
+                "name",
+                format!("must be a valid venue identifier ({e})"),
+            ));
+        }
+        errors.check(
+            self.default_leverage > Decimal::ZERO,
+            ConfigError::range(
+                "default_leverage",
+                format!("must be positive, was {}", self.default_leverage),
+            ),
+        );
+
+        if let Some(leverages) = &self.leverages {
+            for (instrument_id, leverage) in leverages {
+                errors.check(
+                    *leverage > Decimal::ZERO,
+                    ConfigError::range(
+                        "leverages",
+                        format!("leverage for {instrument_id} must be positive, was {leverage}"),
+                    ),
+                );
+            }
+        }
+        errors.check(
+            self.liquidation_trigger_ratio.is_finite() && self.liquidation_trigger_ratio > 0.0,
+            ConfigError::range(
+                "liquidation_trigger_ratio",
+                format!(
+                    "must be a positive finite value, was {}",
+                    self.liquidation_trigger_ratio
+                ),
+            ),
+        );
+
+        for balance in &self.starting_balances {
+            if let Err(reason) = balance.parse::<Money>() {
+                errors.push(ConfigError::invalid_format(
+                    "starting_balances",
+                    format!("a valid money string, was '{balance}' ({reason})"),
+                ));
+            }
+        }
+
+        errors.into_result()
+    }
+
     #[must_use]
     pub fn name(&self) -> Ustr {
         self.name
@@ -929,5 +1007,128 @@ impl BacktestRunConfig {
     #[must_use]
     pub fn end(&self) -> Option<UnixNanos> {
         self.end
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    macro_rules! minimal_builder {
+        () => {
+            BacktestVenueConfig::builder()
+                .name("SIM")
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+        };
+    }
+
+    #[rstest]
+    fn test_minimal_config_is_valid() {
+        assert!(minimal_builder!().build().is_ok());
+    }
+
+    #[rstest]
+    fn test_empty_name_rejected() {
+        let result = BacktestVenueConfig::builder()
+            .name("")
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .build();
+        assert!(matches!(result, Err(ConfigError::EmptyField { field }) if field == "name"));
+    }
+
+    #[rstest]
+    #[case("   ")]
+    #[case("vénue")]
+    fn test_invalid_venue_name_rejected(#[case] name: &str) {
+        let result = BacktestVenueConfig::builder()
+            .name(name)
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .build();
+        assert!(matches!(result, Err(ConfigError::InvalidValue { field, .. }) if field == "name"));
+    }
+
+    #[rstest]
+    #[case(Decimal::ZERO)]
+    #[case(Decimal::from(-1))]
+    fn test_non_positive_default_leverage_rejected(#[case] leverage: Decimal) {
+        let result = minimal_builder!().default_leverage(leverage).build();
+        assert!(
+            matches!(result, Err(ConfigError::Range { field, .. }) if field == "default_leverage")
+        );
+    }
+
+    #[rstest]
+    fn test_non_positive_instrument_leverage_rejected() {
+        let mut leverages = AHashMap::new();
+        leverages.insert(InstrumentId::from("ESZ21.GLBX"), Decimal::ZERO);
+        let result = minimal_builder!().leverages(leverages).build();
+        assert!(matches!(result, Err(ConfigError::Range { field, .. }) if field == "leverages"));
+    }
+
+    #[rstest]
+    #[case(0.0)]
+    #[case(-1.0)]
+    #[case(f64::INFINITY)]
+    #[case(f64::NAN)]
+    fn test_invalid_liquidation_trigger_ratio_rejected(#[case] ratio: f64) {
+        let result = minimal_builder!().liquidation_trigger_ratio(ratio).build();
+        assert!(
+            matches!(result, Err(ConfigError::Range { field, .. }) if field == "liquidation_trigger_ratio")
+        );
+    }
+
+    #[rstest]
+    fn test_unparsable_starting_balance_rejected() {
+        let result = minimal_builder!()
+            .starting_balances(vec!["not a balance".to_string()])
+            .build();
+        assert!(
+            matches!(result, Err(ConfigError::InvalidFormat { field, .. }) if field == "starting_balances")
+        );
+    }
+
+    #[rstest]
+    fn test_valid_starting_balance_accepted() {
+        let result = minimal_builder!()
+            .starting_balances(vec!["1_000_000 USD".to_string()])
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_multiple_violations_collected() {
+        let result = BacktestVenueConfig::builder()
+            .name("")
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .default_leverage(Decimal::ZERO)
+            .starting_balances(vec!["bad".to_string()])
+            .build();
+        let ConfigError::Multiple { errors } = result.unwrap_err() else {
+            panic!("expected ConfigError::Multiple");
+        };
+        assert_eq!(errors.len(), 3);
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, ConfigError::EmptyField { field } if field == "name"))
+        );
+        assert!(
+            errors.iter().any(
+                |e| matches!(e, ConfigError::Range { field, .. } if field == "default_leverage")
+            )
+        );
+        assert!(errors.iter().any(
+            |e| matches!(e, ConfigError::InvalidFormat { field, .. } if field == "starting_balances")
+        ));
     }
 }

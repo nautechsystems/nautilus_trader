@@ -117,7 +117,7 @@ fn main() -> anyhow::Result<()> {
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![STARTING_BALANCE.to_string()])
-        .build();
+        .build()?;
 
     let data_config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)

@@ -338,7 +338,7 @@ impl BacktestVenueConfig {
             .map(|obj| Python::attach(|py| pyobject_to_fee_model_any(obj.bind(py))))
             .transpose()?;
 
-        Ok(Self::builder()
+        Self::builder()
             .name(Ustr::from(name))
             .oms_type(oms_type)
             .account_type(account_type)
@@ -373,7 +373,8 @@ impl BacktestVenueConfig {
             .maybe_liquidation_enabled(liquidation_enabled)
             .maybe_liquidation_trigger_ratio(liquidation_trigger_ratio)
             .maybe_liquidation_cancel_open_orders(liquidation_cancel_open_orders)
-            .build())
+            .build()
+            .map_err(nautilus_core::python::to_pyvalue_err)
     }
 
     #[getter]

@@ -279,7 +279,7 @@ fn main() -> anyhow::Result<()> {
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![starting_balance(series_id.settlement_currency)])
         .fee_model(option_fee_model()?)
-        .build();
+        .build()?;
 
     let quote_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)

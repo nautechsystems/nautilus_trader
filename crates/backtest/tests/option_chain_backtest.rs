@@ -116,6 +116,7 @@ fn deribit_venue_config() -> BacktestVenueConfig {
         .book_type(BookType::L1_MBP)
         .starting_balances(vec!["10 BTC".to_string()])
         .build()
+        .unwrap()
 }
 
 fn series_id() -> OptionSeriesId {
