@@ -192,8 +192,9 @@ const PLUGIN_STRATEGY_CORE_BRIDGED_METHODS: &[(&str, &str)] = &[("strategy_id", 
 const PLUGIN_STRATEGY_CORE_DEFERRED_METHODS: &[&str] = &[];
 
 const PLUGIN_STRATEGY_CORE_HOST_OWNED_METHODS: &[&str] = &[
-    // Construction and registration mutate host runtime state
+    // Construction, config reads, and registration stay host-owned
     "new",
+    "config",
     "change_id",
     "change_order_id_tag",
     "order_id_tag",

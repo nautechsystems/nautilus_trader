@@ -178,6 +178,12 @@ impl StrategyCore {
         }
     }
 
+    /// Returns the strategy configuration.
+    #[must_use]
+    pub fn config(&self) -> &StrategyConfig {
+        &self.config
+    }
+
     /// Changes the strategy ID before registration.
     pub fn change_id(&mut self, strategy_id: StrategyId) {
         let strategy_id = strategy_id_with_order_id_tag(strategy_id, self.order_id_tag());

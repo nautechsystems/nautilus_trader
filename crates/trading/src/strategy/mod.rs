@@ -4609,18 +4609,21 @@ mod tests {
             core: StrategyCore::new(config.clone()),
         };
         assert_eq!(simple.strategy_id(), config.strategy_id);
+        assert_eq!(simple.config().order_id_tag, config.order_id_tag);
         assert_eq!(simple.actor_id(), ActorId::from("MACRO-001"));
 
         let hooks = MacroTestWithHooks {
             core: StrategyCore::new(config.clone()),
         };
         assert_eq!(hooks.strategy_id(), config.strategy_id);
+        assert_eq!(hooks.config().order_id_tag, config.order_id_tag);
         assert_eq!(hooks.actor_id(), ActorId::from("MACRO-001"));
 
         let custom = MacroTestCustomField {
             inner: StrategyCore::new(config.clone()),
         };
         assert_eq!(custom.strategy_id(), config.strategy_id);
+        assert_eq!(custom.config().order_id_tag, config.order_id_tag);
         assert_eq!(custom.actor_id(), ActorId::from("MACRO-001"));
         assert!(custom.external_order_claims().is_none());
     }

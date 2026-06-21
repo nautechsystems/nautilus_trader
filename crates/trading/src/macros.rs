@@ -20,6 +20,8 @@
 /// The struct must contain a field of type [`StrategyCore`](crate::strategy::StrategyCore).
 /// By default the macro expects the field to be named `core`; pass a second argument
 /// to use a different name.
+/// The macro also adds an inherent `config()` method on the strategy type which
+/// returns the user-supplied [`StrategyConfig`](crate::strategy::StrategyConfig).
 ///
 /// An optional brace-delimited block adds extra methods to the generated `impl Strategy`.
 /// Do not redefine `core` or `core_mut` inside the block; they are already generated
@@ -75,6 +77,15 @@ macro_rules! nautilus_strategy {
         $crate::nautilus_strategy!($ty, core, { $($extra)* });
     };
     ($ty:ty, $field:ident, { $($extra:item)* }) => {
+        impl $ty {
+            /// Returns the strategy configuration.
+            #[allow(dead_code, unreachable_pub)]
+            #[must_use]
+            pub fn config(&self) -> &$crate::strategy::StrategyConfig {
+                self.$field.config()
+            }
+        }
+
         impl $crate::_macro_reexports::DataActorNative for $ty {
             fn core(&self) -> &$crate::_macro_reexports::DataActorCore {
                 $crate::_macro_reexports::DataActorNative::core(&self.$field)

@@ -59,6 +59,8 @@ The `nautilus_strategy!` macro generates the native runtime wiring used by
 registration and the `Strategy` trait impl. By default it delegates to a field
 named `core`; pass a second argument for a different field name. The macro
 does not make your strategy or its `StrategyCore` deref to runtime internals.
+It also adds `config()`, which returns the `StrategyConfig` passed to
+`StrategyCore::new`.
 
 Runtime registration uses blanket `Actor` and `Component` implementations that
 require native wiring and `Debug`. The macro supplies the native wiring;
