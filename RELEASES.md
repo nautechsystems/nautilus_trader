@@ -56,6 +56,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
   errors instead of `anyhow::Error` (Rust)
 - Changed `OrderAny::from_events` to return `OrderReplayError` instead of `anyhow::Error` (Rust)
 - Changed `OrderList::validate` to return `OrderListValidationError` instead of `anyhow::Error` (Rust)
+- Changed Rust message bus subscriber-count and presence queries to return invalid-topic errors instead of panicking
 - Changed `SyntheticInstrument` fallible methods to return `SyntheticInstrumentError` instead of `anyhow::Error` (Rust)
 - Changed tick scheme constructors and parsing to return `TickSchemeError` instead of `anyhow::Error` (Rust)
 - Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)

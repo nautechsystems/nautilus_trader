@@ -853,7 +853,11 @@ pub fn is_subscribed_any<T: AsRef<str>>(pattern: T, handler: ShareableMessageHan
 }
 
 /// Returns the count of Any-based subscriptions for a topic.
-pub fn subscriptions_count_any<S: AsRef<str>>(topic: S) -> usize {
+///
+/// # Errors
+///
+/// Returns an error if the `topic` is not a valid topic string.
+pub fn subscriptions_count_any<S: AsRef<str>>(topic: S) -> anyhow::Result<usize> {
     get_message_bus().borrow().subscriptions_count(topic)
 }
 

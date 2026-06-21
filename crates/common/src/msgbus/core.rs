@@ -94,7 +94,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, correctness::FAILED};
+use nautilus_core::UUID4;
 use nautilus_model::{
     data::{
         Bar, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
@@ -576,21 +576,25 @@ impl MessageBus {
     }
 
     /// Returns whether there are subscribers for the `topic`.
-    pub fn has_subscribers<T: AsRef<str>>(&self, topic: T) -> bool {
-        self.subscriptions_count(topic) > 0
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `topic` is not a valid topic string.
+    pub fn has_subscribers<T: AsRef<str>>(&self, topic: T) -> anyhow::Result<bool> {
+        Ok(self.subscriptions_count(topic)? > 0)
     }
 
     /// Returns the count of subscribers for the `topic`.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the `topic` is not a valid topic string.
-    #[must_use]
-    pub fn subscriptions_count<T: AsRef<str>>(&self, topic: T) -> usize {
-        let topic = MStr::<Topic>::topic(topic).expect(FAILED);
-        self.topics
+    /// Returns an error if the `topic` is not a valid topic string.
+    pub fn subscriptions_count<T: AsRef<str>>(&self, topic: T) -> anyhow::Result<usize> {
+        let topic = MStr::<Topic>::topic(topic)?;
+        Ok(self
+            .topics
             .get(&topic)
-            .map_or_else(|| self.find_topic_matches(topic).len(), Vec::len)
+            .map_or_else(|| self.find_topic_matches(topic).len(), Vec::len))
     }
 
     /// Returns active subscriptions.
@@ -778,7 +782,7 @@ mod tests {
     fn test_topics_when_no_subscriptions() {
         let msgbus = get_message_bus();
         assert!(msgbus.borrow().patterns().is_empty());
-        assert!(!msgbus.borrow().has_subscribers("my-topic"));
+        assert!(!msgbus.borrow().has_subscribers("my-topic").unwrap());
     }
 
     #[rstest]
@@ -910,7 +914,7 @@ mod tests {
 
         msgbus::subscribe_any(topic.into(), handler, Some(1));
 
-        assert!(msgbus.borrow().has_subscribers(topic));
+        assert!(msgbus.borrow().has_subscribers(topic).unwrap());
         assert_eq!(msgbus.borrow().patterns(), vec![topic]);
     }
 
@@ -923,8 +927,48 @@ mod tests {
         msgbus::subscribe_any(topic.into(), handler.clone(), None);
         msgbus::unsubscribe_any(topic.into(), &handler);
 
-        assert!(!msgbus.borrow().has_subscribers(topic));
+        assert!(!msgbus.borrow().has_subscribers(topic).unwrap());
         assert!(msgbus.borrow().patterns().is_empty());
+    }
+
+    #[rstest]
+    fn test_subscriptions_count_rejects_invalid_topic() {
+        let msgbus = get_message_bus();
+
+        let err = msgbus
+            .borrow()
+            .subscriptions_count("data.*")
+            .expect_err("wildcards are invalid in topics");
+
+        assert_eq!(
+            err.to_string(),
+            "Topic `value` contained invalid characters, was data.*"
+        );
+    }
+
+    #[rstest]
+    fn test_has_subscribers_rejects_invalid_topic() {
+        let msgbus = get_message_bus();
+
+        let err = msgbus
+            .borrow()
+            .has_subscribers("data.*")
+            .expect_err("wildcards are invalid in topics");
+
+        assert_eq!(
+            err.to_string(),
+            "Topic `value` contained invalid characters, was data.*"
+        );
+    }
+
+    #[rstest]
+    fn test_subscriptions_count_any_rejects_invalid_topic() {
+        let err = subscriptions_count_any("data.*").expect_err("wildcards are invalid in topics");
+
+        assert_eq!(
+            err.to_string(),
+            "Topic `value` contained invalid characters, was data.*"
+        );
     }
 
     #[rstest]
@@ -953,7 +997,7 @@ mod tests {
             msgbus.borrow().patterns(),
             vec![pattern, pattern, pattern, pattern]
         );
-        assert_eq!(subscriptions_count_any(pattern), 4);
+        assert_eq!(subscriptions_count_any(pattern).unwrap(), 4);
 
         let topic = pattern;
         let subs = msgbus.borrow_mut().matching_subscriptions(topic);
