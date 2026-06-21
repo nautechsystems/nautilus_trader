@@ -138,11 +138,10 @@ places (e.g. `0.00000001`).
 
 An actor receives market data, custom data/signals, and system events but does
 not manage orders. Implement the `DataActor` trait and use `nautilus_actor!` to
-wire your `DataActorCore` field into the runtime contract. Runtime
-registration requires `DataActor + DataActorNative + Debug`; the macro supplies
-`DataActorNative`, and your type implements or derives `Debug`. User code
-normally uses the `DataActor` facade methods for subscriptions, cache access,
-and clock access.
+wire your `DataActorCore` field into the runtime contract. Your type
+implements or derives `Debug`; the macro supplies the native runtime wiring.
+User code normally uses the `DataActor` facade methods for subscriptions,
+cache access, and clock access.
 
 ### Handler methods
 

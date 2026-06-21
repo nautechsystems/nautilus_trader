@@ -14,7 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use ahash::AHashSet;
-use nautilus_common::{actor::DataActor, enums::LogColor, log_info, log_warn, timer::TimeEvent};
+use nautilus_common::{
+    actor::{DataActor, DataActorNative},
+    enums::LogColor,
+    log_info, log_warn,
+    timer::TimeEvent,
+};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick},
@@ -27,7 +32,7 @@ use nautilus_model::{
 };
 use nautilus_trading::{
     nautilus_strategy,
-    strategy::{Strategy, StrategyCore},
+    strategy::{Strategy, StrategyCore, StrategyNative},
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 
@@ -124,7 +129,12 @@ impl DataActor for ExecTester {
 
         let instrument_id = self.config.instrument_id;
         let client_id = self.config.client_id;
-        let strategy_id = StrategyId::from(self.actor_id().inner().as_str());
+        let strategy_id = StrategyId::from(
+            DataActorNative::core(&self.core)
+                .actor_id()
+                .inner()
+                .as_str(),
+        );
 
         if self.config.cancel_orders_on_stop {
             self.cancel_active_orders(instrument_id, strategy_id, client_id);
@@ -201,7 +211,7 @@ impl DataActor for ExecTester {
             log_info!("\n{instrument_id}\n{book_str}", color = LogColor::Cyan);
 
             // Log own order book if available
-            if self.is_registered() {
+            if DataActorNative::core(&self.core).is_registered() {
                 let cache = self.cache();
                 if let Some(own_book) = cache.own_order_book(&instrument_id) {
                     let own_book_str = own_book.pprint(num_levels, None);
@@ -339,7 +349,7 @@ impl ExecTester {
     }
 
     fn expire_time_from_delta(&self, mins: u64) -> UnixNanos {
-        let current_ns = self.clock().timestamp_ns();
+        let current_ns = DataActorNative::core(&self.core).timestamp_ns();
         let delta_ns = mins.saturating_mul(60).saturating_mul(1_000_000_000);
         UnixNanos::from(current_ns.as_u64() + delta_ns)
     }
@@ -794,7 +804,7 @@ impl ExecTester {
         let display_qty = self.config.order_display_qty;
         let emulation_trigger = self.config.emulation_trigger;
 
-        let buy_order = self.order().limit(
+        let buy_order = self.order_factory().limit(
             instrument_id,
             OrderSide::Buy,
             quantity,
@@ -813,7 +823,7 @@ impl ExecTester {
             None,
         );
 
-        let sell_order = self.order().limit(
+        let sell_order = self.order_factory().limit(
             instrument_id,
             OrderSide::Sell,
             quantity,
@@ -1058,7 +1068,7 @@ impl ExecTester {
         let display_qty = self.config.order_display_qty;
         let emulation_trigger = self.config.emulation_trigger;
 
-        let order = self.order().limit(
+        let order = self.order_factory().limit(
             instrument_id,
             order_side,
             quantity,
@@ -1132,8 +1142,10 @@ impl ExecTester {
         let trailing_offset = self.config.trailing_offset;
         let trailing_offset_type = self.config.trailing_offset_type;
 
+        let mut factory = self.order_factory();
+
         let mut order: OrderAny = match stop_order_type {
-            OrderType::StopMarket => self.order().stop_market(
+            OrderType::StopMarket => factory.stop_market(
                 instrument_id,
                 order_side,
                 quantity,
@@ -1155,7 +1167,7 @@ impl ExecTester {
                 let Some(limit_price) = limit_price else {
                     anyhow::bail!("STOP_LIMIT order requires limit_price");
                 };
-                self.order().stop_limit(
+                factory.stop_limit(
                     instrument_id,
                     order_side,
                     quantity,
@@ -1176,7 +1188,7 @@ impl ExecTester {
                     None, // client_order_id
                 )
             }
-            OrderType::MarketIfTouched => self.order().market_if_touched(
+            OrderType::MarketIfTouched => factory.market_if_touched(
                 instrument_id,
                 order_side,
                 quantity,
@@ -1197,7 +1209,7 @@ impl ExecTester {
                 let Some(limit_price) = limit_price else {
                     anyhow::bail!("LIMIT_IF_TOUCHED order requires limit_price");
                 };
-                self.order().limit_if_touched(
+                factory.limit_if_touched(
                     instrument_id,
                     order_side,
                     quantity,
@@ -1222,7 +1234,7 @@ impl ExecTester {
                 let Some(trailing_offset) = trailing_offset else {
                     anyhow::bail!("TRAILING_STOP_MARKET order requires trailing_offset config");
                 };
-                self.order().trailing_stop_market(
+                factory.trailing_stop_market(
                     instrument_id,
                     order_side,
                     quantity,
@@ -1248,6 +1260,7 @@ impl ExecTester {
                 anyhow::bail!("Unknown stop order type: {stop_order_type:?}");
             }
         };
+        drop(factory);
 
         if let OrderAny::TrailingStopMarket(order) = &mut order {
             order.activation_price = Some(trigger_price);
@@ -1333,7 +1346,7 @@ impl ExecTester {
         let emulation_trigger = self.config.emulation_trigger;
         let stop_trigger_type = self.config.stop_trigger_type;
         let orders = self
-            .order()
+            .order_factory()
             .bracket()
             .instrument_id(instrument_id)
             .order_side(order_side)
@@ -1402,7 +1415,7 @@ impl ExecTester {
         let time_in_force = self.config.open_position_time_in_force;
         let quote_quantity = self.config.use_quote_quantity;
 
-        let order = self.order().market(
+        let order = self.order_factory().market(
             instrument_id,
             order_side,
             quantity,

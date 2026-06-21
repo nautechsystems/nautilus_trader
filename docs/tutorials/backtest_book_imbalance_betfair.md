@@ -186,10 +186,9 @@ A `DataActor` in Rust needs three pieces:
 3. The `DataActor` trait implementation with your callbacks.
 
 The framework provides blanket `Actor` and `Component` implementations for
-runtime actors that implement `DataActor + DataActorNative + Debug`. The
-`nautilus_actor!` macro supplies the native runtime wiring when your struct
-holds a `DataActorCore`, so normal actor code only implements the callbacks
-it needs.
+runtime actors. The `nautilus_actor!` macro supplies the native runtime wiring
+when your struct holds a `DataActorCore`, so normal actor code only implements
+the callbacks it needs.
 
 On start the actor subscribes to `OrderBookDeltas` for each instrument. On
 each update it sums per-side volume from the individual deltas and

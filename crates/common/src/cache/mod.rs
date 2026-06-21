@@ -152,9 +152,9 @@ impl From<Rc<RefCell<Cache>>> for CacheView {
 /// User-facing cache API.
 ///
 /// Point reads return owned snapshots where possible, so actor code does not retain a `Ref` into
-/// the live [`Cache`]. Collection reads (`quotes`, `orders_open`, `positions_open`) return owned
-/// copies of all matching values. Prefer the count, ID, or `has_*` methods in hot paths when a full
-/// snapshot is not needed.
+/// the live [`Cache`]. Plural collection reads return owned snapshots of all matching values and
+/// are intentionally named as bulk reads. Prefer the count, ID, or `has_*` methods in hot paths
+/// when a full snapshot is not needed.
 #[derive(Debug)]
 pub struct CacheApi<'a> {
     cache: &'a RefCell<Cache>,

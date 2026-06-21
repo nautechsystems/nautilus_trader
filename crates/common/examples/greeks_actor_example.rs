@@ -48,24 +48,17 @@ const GREEKS_UNDERLYING: &str = "SPY";
 #[derive(Debug)]
 struct GreeksActor {
     core: DataActorCore,
-    greeks_calculator: GreeksCalculator,
+    greeks_calculator: Option<GreeksCalculator>,
 }
 
 impl GreeksActor {
     /// Creates a new [`GreeksActor`] instance.
-    pub(crate) fn new(
-        config: DataActorConfig,
-        cache: Rc<RefCell<Cache>>, // TODO: Change to standard registration pattern
-        clock: Rc<RefCell<LiveClock>>, // TODO: Change to standard registration pattern
-    ) -> Self {
+    pub(crate) fn new(config: DataActorConfig) -> Self {
         let core = DataActorCore::new(config);
-
-        // Create the GreeksCalculator with the same clock and cache
-        let greeks_calculator = GreeksCalculator::new(cache, clock);
 
         Self {
             core,
-            greeks_calculator,
+            greeks_calculator: None,
         }
     }
 
@@ -78,9 +71,9 @@ impl GreeksActor {
             .instrument_id(instrument_id)
             .cache_greeks(true)
             .publish_greeks(true)
-            .ts_event(self.core.timestamp_ns())
+            .ts_event(self.clock().timestamp_ns())
             .build()
-            .calculate(&self.greeks_calculator)
+            .calculate(self.calculator()?)
     }
 
     /// Calculates portfolio greeks.
@@ -90,17 +83,26 @@ impl GreeksActor {
             .cache_greeks(true)
             .publish_greeks(true)
             .build()
-            .calculate(&self.greeks_calculator)
+            .calculate(self.calculator()?)
     }
 
     /// Subscribes to greeks data for a specific underlying.
-    pub(crate) fn subscribe_to_greeks(&self, underlying: &str) {
-        self.greeks_calculator
+    pub(crate) fn subscribe_to_greeks(&mut self, underlying: &str) -> anyhow::Result<()> {
+        self.calculator()?
             .subscribe_greeks(underlying, Some(Self::handle_greeks as fn(&GreeksData)));
+        Ok(())
     }
 
     fn handle_greeks(greeks: &GreeksData) {
         println!("Received greeks data: {greeks:?}");
+    }
+
+    fn calculator(&self) -> anyhow::Result<&GreeksCalculator> {
+        let Some(calculator) = &self.greeks_calculator else {
+            anyhow::bail!("GreeksActor must be started before calculating greeks");
+        };
+
+        Ok(calculator)
     }
 }
 
@@ -108,8 +110,8 @@ nautilus_actor!(GreeksActor);
 
 impl DataActor for GreeksActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        self.subscribe_to_greeks(GREEKS_UNDERLYING);
-        Ok(())
+        self.greeks_calculator = Some(GreeksCalculator::from_actor(self));
+        self.subscribe_to_greeks(GREEKS_UNDERLYING)
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
@@ -133,7 +135,7 @@ fn main() -> anyhow::Result<()> {
     let trader_id = TraderId::from(TRADER_ID);
 
     // Create the GreeksActor
-    let mut actor = GreeksActor::new(config, cache.clone(), clock.clone()); // TODO: Change to registration pattern
+    let mut actor = GreeksActor::new(config);
     actor.register(trader_id, clock, cache).unwrap();
 
     // Start the actor

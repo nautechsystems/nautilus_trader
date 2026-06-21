@@ -58,9 +58,9 @@ runtime contract. By default it delegates to a field named `core`; pass a second
 argument for a different field name. Normal callbacks do not call the generated
 native accessors; use the `DataActor` facade methods on `self`.
 
-Runtime registration uses blanket `Actor` and `Component` implementations that
-require `DataActorNative` and `Debug`. The macro supplies `DataActorNative`;
-implement `Debug` manually or derive it.
+Runtime registration uses blanket `Actor` and `Component` implementations.
+The macro supplies the native runtime wiring; implement `Debug` manually or
+derive it.
 
 ```rust
 nautilus_actor!(SpreadMonitor);

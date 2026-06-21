@@ -32,6 +32,7 @@ use nautilus_model::{
 };
 
 use crate::{
+    actor::DataActorNative,
     cache::{Cache, refs::PositionRef},
     clock::Clock,
     msgbus,
@@ -325,6 +326,15 @@ impl GreeksCalculator {
             clock,
             cached_futures_spreads: RefCell::new(AHashMap::new()),
         }
+    }
+
+    /// Creates a new [`GreeksCalculator`] from a registered native actor.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor has not been registered with a trader.
+    pub fn from_actor(actor: &impl DataActorNative) -> Self {
+        Self::new(actor.cache_rc(), actor.clock_rc())
     }
 
     /// Calculates option or underlying greeks for a given instrument and a quantity of 1.
