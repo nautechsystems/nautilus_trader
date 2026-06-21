@@ -403,7 +403,7 @@ impl BetfairInstrumentProvider {
         let code = details
             .currency_code
             .ok_or_else(|| anyhow::anyhow!("No currency_code in account details"))?;
-        code.as_str().parse::<Currency>()
+        Ok(code.as_str().parse::<Currency>()?)
     }
 
     /// Builds an effective filter by merging runtime overrides with the base filter.

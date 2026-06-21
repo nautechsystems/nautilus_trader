@@ -521,7 +521,7 @@ impl FromStr for Money {
                 .map_err(|e| format!("Error parsing amount '{}' as Decimal: {e}", parts[0]))?
         };
 
-        let currency = Currency::from_str(parts[1]).map_err(|e: anyhow::Error| e.to_string())?;
+        let currency = Currency::from_str(parts[1]).map_err(|e| e.to_string())?;
         Self::from_decimal(decimal, currency).map_err(|e| e.to_string())
     }
 }

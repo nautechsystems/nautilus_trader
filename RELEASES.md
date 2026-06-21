@@ -43,6 +43,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Changed Bybit `BybitHttpClient::submit_order` to take a trailing native TP/SL params argument; the PyO3 binding defaults it to `None` (Rust)
 - Changed `CacheDatabaseAdapter::load_index_order_position` to return position IDs instead of positions (Rust)
 - Changed default message bus/cache encoding to JSON; set `encoding="msgpack"` for MessagePack
+- Changed `Currency::from_str` and `Currency::is_*` to return `CurrencyLookupError` instead of `anyhow::Error` (Rust)
 - Changed `PoolProfiler.price_sqrt_ratio_x96` to return `int` instead of `str`
 - Changed PyO3 `DataActor`/`Strategy` historical request `start`/`end` to require UTC datetimes
 - Changed Redis cache account/order/position storage to event logs; clear old typed state (Rust)
