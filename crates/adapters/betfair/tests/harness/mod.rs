@@ -119,7 +119,8 @@ impl Harness {
 
         let exec_cfg = ExecutionEngineConfig::builder()
             .manage_own_order_books(true)
-            .build();
+            .build()
+            .expect("execution engine config should be valid");
         let exec_engine = Rc::new(RefCell::new(ExecutionEngine::new(
             clock.clone(),
             cache.clone(),
