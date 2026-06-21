@@ -346,6 +346,12 @@ impl SandboxInner {
             .borrow_mut()
             .purge_instrument_skip_order_guard(instrument_id);
     }
+
+    fn sync_expired_cleanup_many(&mut self, instrument_ids: &[InstrumentId]) {
+        for &instrument_id in instrument_ids {
+            self.sync_expired_cleanup(instrument_id);
+        }
+    }
 }
 
 /// Registered message handlers for later deregistration.
@@ -561,9 +567,14 @@ impl SandboxExecutionClient {
                 {
                     // ExecutionEngine updates the cached position state before publishing
                     // PositionClosed, so this retry observes the post-settlement cache view.
-                    inner_rc
-                        .borrow_mut()
-                        .sync_expired_cleanup(position_closed.instrument_id);
+                    if let Ok(mut inner) = inner_rc.try_borrow_mut() {
+                        inner.sync_expired_cleanup(position_closed.instrument_id);
+                    } else {
+                        log::debug!(
+                            "Skipping immediate expired cleanup retry for {} due to active sandbox borrow",
+                            position_closed.instrument_id,
+                        );
+                    }
                 }
             })
         };
@@ -969,6 +980,7 @@ impl ExecutionClient for SandboxExecutionClient {
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         let ts_init = self.clock.borrow().timestamp_ns();
+        let mut cleanup_instrument_ids = Vec::new();
 
         let orders: Vec<OrderAny> = self
             .cache
@@ -993,6 +1005,9 @@ impl ExecutionClient for SandboxExecutionClient {
             }
 
             let instrument_id = order.instrument_id();
+            if !cleanup_instrument_ids.contains(&instrument_id) {
+                cleanup_instrument_ids.push(instrument_id);
+            }
             let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
 
             if let Some(instrument) = instrument {
@@ -1023,9 +1038,14 @@ impl ExecutionClient for SandboxExecutionClient {
                     engine
                         .get_engine_mut()
                         .process_order(&mut order_clone, account_id);
-                    inner.sync_expired_cleanup(instrument_id);
                 }
             }
+        }
+
+        if !cleanup_instrument_ids.is_empty() {
+            self.inner
+                .borrow_mut()
+                .sync_expired_cleanup_many(&cleanup_instrument_ids);
         }
 
         Ok(())

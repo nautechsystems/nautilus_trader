@@ -24,11 +24,11 @@ use nautilus_common::{
     live::set_exec_event_sender,
     messages::{
         ExecutionEvent,
-        execution::{SubmitOrder, TradingCommand},
+        execution::{SubmitOrder, SubmitOrderList, TradingCommand},
     },
     msgbus::{
         self, MessageBus, MessagingSwitchboard, TypedHandler,
-        stubs::get_typed_into_message_saving_handler,
+        stubs::get_typed_into_message_saving_handler, typed_handler::TypedIntoHandler,
     },
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -46,12 +46,15 @@ use nautilus_model::{
         OrderSide, OrderType, PositionSide,
     },
     events::{AccountState, OrderEventAny, OrderFilled, PositionClosed, PositionEvent},
-    identifiers::{AccountId, ClientId, InstrumentId, PositionId, TradeId, TraderId, Venue},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, TradeId,
+        TraderId, Venue,
+    },
     instruments::{
         CryptoPerpetual, Instrument, InstrumentAny,
         stubs::{binary_option, crypto_perpetual_ethusdt},
     },
-    orders::OrderTestBuilder,
+    orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };
@@ -366,6 +369,44 @@ fn apply_order_events_from_channel(
     }
 
     order_events
+}
+
+fn create_submit_order_list(
+    trader_id: TraderId,
+    client_id: ClientId,
+    instrument_id: InstrumentId,
+    orders: &[OrderAny],
+) -> SubmitOrderList {
+    let strategy_id = orders
+        .first()
+        .expect("expected non-empty order list")
+        .strategy_id();
+    let order_list = OrderList::new(
+        OrderListId::from("OL-SANDBOX-001"),
+        instrument_id,
+        strategy_id,
+        orders.iter().map(OrderAny::client_order_id).collect(),
+        UnixNanos::default(),
+    );
+
+    SubmitOrderList {
+        trader_id,
+        client_id: Some(client_id),
+        strategy_id,
+        instrument_id,
+        order_list,
+        order_inits: orders
+            .iter()
+            .map(|order| order.init_event().clone())
+            .collect(),
+        exec_algorithm_id: None,
+        position_id: None,
+        params: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    }
 }
 
 fn seed_binary_option_position_from_fill(
@@ -1472,6 +1513,268 @@ fn test_instrument_close_removes_resting_order_only_engine_before_cancel_event_a
     );
 
     harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_submit_order_list_keeps_processing_all_expired_legs_before_cleanup(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id,
+        account_id,
+        "0xORDER-LIST",
+        "0xYES",
+        "Yes",
+        100,
+    );
+    let client_id = harness.client.client_id();
+
+    let _ = harness
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(200), true);
+
+    let first = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(harness.instrument.id())
+        .client_order_id(ClientOrderId::from("O-EXPIRED-LIST-001"))
+        .side(OrderSide::Buy)
+        .price(Price::from("0.400"))
+        .quantity(Quantity::from("1"))
+        .build();
+    let second = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(harness.instrument.id())
+        .client_order_id(ClientOrderId::from("O-EXPIRED-LIST-002"))
+        .side(OrderSide::Buy)
+        .price(Price::from("0.450"))
+        .quantity(Quantity::from("1"))
+        .build();
+    let orders = vec![first, second];
+
+    for order in &orders {
+        harness
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id), false)
+            .unwrap();
+    }
+
+    harness
+        .client
+        .submit_order_list(create_submit_order_list(
+            trader_id,
+            client_id,
+            harness.instrument.id(),
+            &orders,
+        ))
+        .unwrap();
+
+    let order_events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+
+    for order in &orders {
+        assert!(
+            order_events.iter().any(|event| {
+                event.client_order_id() == order.client_order_id()
+                    && matches!(event, OrderEventAny::Rejected(_))
+            }),
+            "expired order-list leg should emit a terminal rejection, not stay SUBMITTED",
+        );
+    }
+
+    assert_eq!(harness.client.matching_engine_count(), 0);
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_none()
+    );
+
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_instrument_close_sync_cleanup_handles_synchronous_position_closed_reentry(
+    trader_id: TraderId,
+) {
+    std::thread::spawn(move || {
+        *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+        let venue = Venue::new("BINANCE");
+        let account_id = AccountId::from("BINANCE-001");
+        let client_id = ClientId::new("SANDBOX");
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let test_clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+
+        let mut binary = binary_option();
+        binary.id = InstrumentId::from("YES.BINANCE");
+        binary.raw_symbol = "YES".into();
+        binary.activation_ns = UnixNanos::from(1);
+        binary.expiration_ns = UnixNanos::from(100);
+        let instrument = InstrumentAny::BinaryOption(binary);
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_quote(create_binary_option_quote(instrument.id()))
+            .unwrap();
+
+        let cache_for_handler = cache.clone();
+        let order_events = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+        let order_events_for_handler = order_events.clone();
+        let opening_fill = Rc::new(RefCell::new(None::<OrderFilled>));
+        let opening_fill_for_handler = opening_fill.clone();
+        let instrument_for_position = instrument.clone();
+        let instrument_for_handler = instrument.clone();
+        let order_handler = TypedIntoHandler::from(move |event: OrderEventAny| {
+            order_events_for_handler.borrow_mut().push(event.clone());
+            let _ = cache_for_handler.borrow_mut().update_order(&event);
+
+            let OrderEventAny::Filled(mut fill) = event else {
+                return;
+            };
+
+            if fill.client_order_id.as_str().starts_with("EXPIRATION-") {
+                let position = cache_for_handler
+                    .borrow()
+                    .positions_open(
+                        Some(&venue),
+                        Some(&instrument_for_handler.id()),
+                        None,
+                        Some(&account_id),
+                        None,
+                    )
+                    .into_iter()
+                    .next()
+                    .expect("expected open position before expiration fill")
+                    .clone();
+                fill.position_id = Some(position.id);
+
+                let mut closed = position;
+                closed.apply(&fill);
+                cache_for_handler
+                    .borrow_mut()
+                    .update_position(&closed)
+                    .unwrap();
+
+                let position_closed =
+                    PositionClosed::create(&closed, &fill, UUID4::new(), fill.ts_event);
+                msgbus::publish_position_event(
+                    "events.position.TEST".into(),
+                    &PositionEvent::PositionClosed(position_closed),
+                );
+            } else {
+                *opening_fill_for_handler.borrow_mut() = Some(fill);
+            }
+        });
+        msgbus::register_order_event_endpoint(
+            MessagingSwitchboard::exec_engine_process(),
+            order_handler,
+        );
+
+        let usd = Currency::USD();
+        let config = SandboxExecutionClientConfig {
+            trader_id,
+            account_id,
+            venue,
+            starting_balances: vec![Money::new(100_000.0, usd)],
+            base_currency: Some(usd),
+            oms_type: OmsType::Netting,
+            account_type: AccountType::Margin,
+            default_leverage: Decimal::ONE,
+            leverages: ahash::AHashMap::new(),
+            book_type: BookType::L1_MBP,
+            fee_model: None,
+            frozen_account: false,
+            bar_execution: false,
+            trade_execution: false,
+            reject_stop_orders: true,
+            support_gtd_orders: true,
+            support_contingent_orders: true,
+            use_position_ids: true,
+            use_random_ids: false,
+            use_reduce_only: true,
+        };
+        let core = ExecutionClientCore::new(
+            trader_id,
+            client_id,
+            venue,
+            config.oms_type,
+            config.account_id,
+            config.account_type,
+            config.base_currency,
+            cache.clone(),
+        );
+        let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+        client.start().unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(trader_id)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-SYNC-REENTRY-001"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.00"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id), false)
+            .unwrap();
+
+        let ts = test_clock.borrow().timestamp_ns();
+        client
+            .submit_order(SubmitOrder::from_order(
+                &order,
+                trader_id,
+                Some(client_id),
+                None,
+                UUID4::new(),
+                ts,
+            ))
+            .unwrap();
+
+        assert!(
+            order_events
+                .borrow()
+                .iter()
+                .any(|event| matches!(event, OrderEventAny::Filled(_))),
+            "expected opening fill event, found {:?}",
+            order_events.borrow(),
+        );
+
+        let mut opening_fill = opening_fill
+            .borrow_mut()
+            .take()
+            .expect("expected opening fill before expiration");
+        opening_fill.position_id = Some(PositionId::new("P-SYNC-REENTRY"));
+        let position = Position::new(&instrument_for_position, opening_fill);
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+
+        assert!(cache.borrow().has_positions_open(
+            Some(&venue),
+            Some(&instrument.id()),
+            None,
+            Some(&account_id),
+            None,
+        ));
+
+        publish_expired_close(&test_clock, &instrument, Price::from("1.000"), 200);
+
+        assert_eq!(client.matching_engine_count(), 0);
+        assert!(cache.borrow().instrument(&instrument.id()).is_none());
+        client.stop().unwrap();
+    })
+    .join()
+    .unwrap();
 }
 
 #[rstest]

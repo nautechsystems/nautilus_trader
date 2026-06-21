@@ -1545,6 +1545,10 @@ impl Cache {
         log::info!("Purged instrument {instrument_id}");
     }
 
+    /// Purges the instrument with the `instrument_id` from the cache.
+    ///
+    /// This refuses to purge when associated orders or positions remain in
+    /// non-terminal state.
     pub fn purge_instrument(&mut self, instrument_id: InstrumentId) {
         self.purge_instrument_inner(instrument_id, false);
     }
@@ -1555,7 +1559,8 @@ impl Cache {
     /// This still refuses to purge when any associated position is non-closed. Intended
     /// for actors which own an instrument-expiration lifecycle and have already invalidated
     /// any remaining order state externally, but may still observe order-terminal events
-    /// arriving later than the cleanup decision.
+    /// arriving later than the cleanup decision. During that window, the order objects may
+    /// still exist even though `instrument_orders` is removed from the cache index.
     pub fn purge_instrument_skip_order_guard(&mut self, instrument_id: InstrumentId) {
         self.purge_instrument_inner(instrument_id, true);
     }
