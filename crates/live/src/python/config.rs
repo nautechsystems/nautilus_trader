@@ -17,7 +17,7 @@ use std::{collections::HashMap, time::Duration};
 
 use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
-    msgbus::backing::MessageBusConfig,
+    msgbus::backing::MessageBusConfig, python::config_error_to_pyvalue_err,
 };
 use nautilus_core::{UUID4, python::to_pyvalue_err};
 use nautilus_model::{
@@ -244,17 +244,17 @@ impl LiveRiskEngineConfig {
             "LiveRiskEngineConfig.max_order_submit_rate",
             &max_order_submit_rate,
         )
-        .map_err(to_pyvalue_err)?;
+        .map_err(config_error_to_pyvalue_err)?;
         parse_rate_limit(
             "LiveRiskEngineConfig.max_order_modify_rate",
             &max_order_modify_rate,
         )
-        .map_err(to_pyvalue_err)?;
+        .map_err(config_error_to_pyvalue_err)?;
         validate_max_notional_per_order(
             "LiveRiskEngineConfig.max_notional_per_order",
             &max_notional_per_order,
         )
-        .map_err(to_pyvalue_err)?;
+        .map_err(config_error_to_pyvalue_err)?;
 
         Ok(Self {
             bypass: bypass.unwrap_or(default.bypass),
@@ -326,7 +326,7 @@ impl LiveExecEngineConfig {
                 "LiveExecEngineConfig.reconciliation_startup_delay_secs",
                 delay,
             )
-            .map_err(to_pyvalue_err)?;
+            .map_err(config_error_to_pyvalue_err)?;
         }
 
         if let Some(ids) = reconciliation_instrument_ids.as_ref() {
@@ -334,12 +334,12 @@ impl LiveExecEngineConfig {
                 "LiveExecEngineConfig.reconciliation_instrument_ids",
                 ids,
             )
-            .map_err(to_pyvalue_err)?;
+            .map_err(config_error_to_pyvalue_err)?;
         }
 
         if let Some(ids) = filtered_client_order_ids.as_ref() {
             validate_client_order_id_strings("LiveExecEngineConfig.filtered_client_order_ids", ids)
-                .map_err(to_pyvalue_err)?;
+                .map_err(config_error_to_pyvalue_err)?;
         }
 
         Ok(Self {
@@ -671,7 +671,7 @@ impl LiveNodeConfig {
         let default = Self::default();
 
         let to_duration = |value: f64, name: &str| -> PyResult<Duration> {
-            duration_from_secs_f64(name, value).map_err(to_pyvalue_err)
+            duration_from_secs_f64(name, value).map_err(config_error_to_pyvalue_err)
         };
 
         Ok(Self {

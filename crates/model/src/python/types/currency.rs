@@ -15,10 +15,10 @@
 
 use std::str::FromStr;
 
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::python::{correctness_error_to_pyvalue_err, to_pyruntime_err, to_pyvalue_err};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
-use crate::{enums::CurrencyType, types::Currency};
+use crate::{enums::CurrencyType, python::currency_lookup_error_to_pyvalue_err, types::Currency};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -34,7 +34,8 @@ impl Currency {
         name: &str,
         currency_type: CurrencyType,
     ) -> PyResult<Self> {
-        Self::new_checked(code, precision, iso4217, name, currency_type).map_err(to_pyvalue_err)
+        Self::new_checked(code, precision, iso4217, name, currency_type)
+            .map_err(correctness_error_to_pyvalue_err)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
@@ -59,7 +60,8 @@ impl Currency {
         currency_type_str: &str,
     ) -> PyResult<Self> {
         let currency_type = CurrencyType::from_str(currency_type_str).map_err(to_pyvalue_err)?;
-        Self::new_checked(code, precision, iso4217, name, currency_type).map_err(to_pyvalue_err)
+        Self::new_checked(code, precision, iso4217, name, currency_type)
+            .map_err(correctness_error_to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -110,7 +112,7 @@ impl Currency {
     #[staticmethod]
     #[pyo3(name = "is_fiat")]
     fn py_is_fiat(code: &str) -> PyResult<bool> {
-        Self::is_fiat(code).map_err(to_pyvalue_err)
+        Self::is_fiat(code).map_err(currency_lookup_error_to_pyvalue_err)
     }
 
     /// Checks if the currency identified by the given `code` is a cryptocurrency.
@@ -123,13 +125,13 @@ impl Currency {
     #[staticmethod]
     #[pyo3(name = "is_crypto")]
     fn py_is_crypto(code: &str) -> PyResult<bool> {
-        Self::is_crypto(code).map_err(to_pyvalue_err)
+        Self::is_crypto(code).map_err(currency_lookup_error_to_pyvalue_err)
     }
 
     #[staticmethod]
     #[pyo3(name = "is_commodity_backed")]
     fn py_is_commodidity_backed(code: &str) -> PyResult<bool> {
-        Self::is_commodity_backed(code).map_err(to_pyvalue_err)
+        Self::is_commodity_backed(code).map_err(currency_lookup_error_to_pyvalue_err)
     }
 
     #[staticmethod]
@@ -140,10 +142,10 @@ impl Currency {
             Ok(currency) => Ok(currency),
             Err(e) => {
                 if strict {
-                    Err(to_pyvalue_err(e))
+                    Err(currency_lookup_error_to_pyvalue_err(e))
                 } else {
                     Self::new_checked(value, 8, 0, value, CurrencyType::Crypto)
-                        .map_err(to_pyvalue_err)
+                        .map_err(correctness_error_to_pyvalue_err)
                 }
             }
         }

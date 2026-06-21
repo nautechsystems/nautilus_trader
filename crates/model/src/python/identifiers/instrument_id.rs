@@ -19,7 +19,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
+use nautilus_core::python::{IntoPyObjectNautilusExt, correctness_error_to_pyvalue_err};
 use pyo3::{
     IntoPyObjectExt,
     prelude::*,
@@ -30,6 +30,7 @@ use pyo3::{
 use crate::{
     enums::InstrumentClass,
     identifiers::{InstrumentId, Symbol, Venue},
+    python::instrument_id_error_to_pyvalue_err,
 };
 
 #[pymethods]
@@ -51,14 +52,14 @@ impl InstrumentId {
                 .cast::<PyString>()?
                 .extract::<&str>()?,
         )
-        .map_err(to_pyvalue_err)?;
+        .map_err(correctness_error_to_pyvalue_err)?;
         self.venue = Venue::new_checked(
             py_tuple
                 .get_item(1)?
                 .cast::<PyString>()?
                 .extract::<&str>()?,
         )
-        .map_err(to_pyvalue_err)?;
+        .map_err(correctness_error_to_pyvalue_err)?;
         Ok(())
     }
 
@@ -127,7 +128,7 @@ impl InstrumentId {
     #[staticmethod]
     #[pyo3(name = "from_str")]
     fn py_from_str(value: &str) -> PyResult<Self> {
-        Self::from_str(value).map_err(to_pyvalue_err)
+        Self::from_str(value).map_err(instrument_id_error_to_pyvalue_err)
     }
 
     #[pyo3(name = "is_synthetic")]
