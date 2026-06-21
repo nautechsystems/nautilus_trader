@@ -257,10 +257,10 @@ def test_live_risk_engine_config_rejects_invalid_rate_limit():
 
 
 def test_live_risk_engine_config_rejects_zero_rate_limit_values():
-    with pytest.raises(ValueError, match="limit must be greater than zero"):
+    with pytest.raises(ValueError, match="Invalid limit: 0"):
         LiveRiskEngineConfig(max_order_submit_rate="0/00:00:01")
 
-    with pytest.raises(ValueError, match="interval must be greater than zero"):
+    with pytest.raises(ValueError, match="Invalid interval_ns: 0"):
         LiveRiskEngineConfig(max_order_modify_rate="100/00:00:00")
 
 
