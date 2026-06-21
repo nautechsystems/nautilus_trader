@@ -116,12 +116,17 @@ Read-only properties are available on the facade:
 | Plug‑in‑compatible actor    | No                   | `DataActor` facade |
 
 Import `DataActorNative` only for performance-sensitive native code or host
-integration internals. It exposes borrowed core state such as:
+integration internals. Choose the smallest native handle and keep each borrow
+scoped:
 
-- `clock_mut()`
-- `clock_rc()`
-- `cache_ref()`
-- `cache_rc()`
+| Native method | Return shape             | Use when                        |
+|---------------|--------------------------|---------------------------------|
+| `core()`      | `&DataActorCore`         | Read actor internals.           |
+| `core_mut()`  | `&mut DataActorCore`     | Mutate actor internals.         |
+| `clock_mut()` | `RefMut<'_, dyn Clock>`  | Need a mutable clock borrow.    |
+| `clock_rc()`  | `Rc<RefCell<dyn Clock>>` | Store or pass the shared clock. |
+| `cache_ref()` | `Ref<'_, Cache>`         | Need short live‑cache reads.    |
+| `cache_rc()`  | `Rc<RefCell<Cache>>`     | Mutate, store, or pass cache.   |
 
 These types do not cross Python or plug-in boundaries, so portable actors
 should use facade methods such as:

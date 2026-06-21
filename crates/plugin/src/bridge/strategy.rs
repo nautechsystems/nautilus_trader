@@ -39,7 +39,11 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
 };
 
-use nautilus_common::{actor::DataActor, signal::Signal, timer::TimeEvent};
+use nautilus_common::{
+    actor::{DataActor, DataActorNative},
+    signal::Signal,
+    timer::TimeEvent,
+};
 use nautilus_model::{
     data::{
         Bar, CustomData, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
@@ -101,7 +105,7 @@ impl Debug for PluginStrategyAdapter {
         f.debug_struct(stringify!(PluginStrategyAdapter))
             .field("plugin_name", &self.plugin_name)
             .field("type_name", &self.type_name)
-            .field("actor_id", &self.core.actor_id())
+            .field("actor_id", &DataActorNative::core(&self.core).actor_id())
             .finish_non_exhaustive()
     }
 }
@@ -152,7 +156,7 @@ impl PluginStrategyAdapter {
         // SAFETY: vtable comes from a validated manifest entry.
         let create = unsafe { validated_slot!(StrategyVTable, vtable.as_ptr(), create) };
         let core = StrategyCore::new(strategy_config);
-        let actor_id = ActorId::from(core.actor_id().inner().as_str());
+        let actor_id = ActorId::from(DataActorNative::core(&core).actor_id().inner().as_str());
 
         let ctx = leak_host_context(HostContextInner {
             actor_id,

@@ -124,7 +124,7 @@ impl DataActor for ExecTester {
 
         let instrument_id = self.config.instrument_id;
         let client_id = self.config.client_id;
-        let strategy_id = StrategyId::from(self.core.actor_id.inner().as_str());
+        let strategy_id = StrategyId::from(self.actor_id().inner().as_str());
 
         if self.config.cancel_orders_on_stop {
             self.cancel_active_orders(instrument_id, strategy_id, client_id);
@@ -201,7 +201,7 @@ impl DataActor for ExecTester {
             log_info!("\n{instrument_id}\n{book_str}", color = LogColor::Cyan);
 
             // Log own order book if available
-            if self.core.is_registered() {
+            if self.is_registered() {
                 let cache = self.cache();
                 if let Some(own_book) = cache.own_order_book(&instrument_id) {
                     let own_book_str = own_book.pprint(num_levels, None);
@@ -339,7 +339,7 @@ impl ExecTester {
     }
 
     fn expire_time_from_delta(&self, mins: u64) -> UnixNanos {
-        let current_ns = self.core.timestamp_ns();
+        let current_ns = self.clock().timestamp_ns();
         let delta_ns = mins.saturating_mul(60).saturating_mul(1_000_000_000);
         UnixNanos::from(current_ns.as_u64() + delta_ns)
     }

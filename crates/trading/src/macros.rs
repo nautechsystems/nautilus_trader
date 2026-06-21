@@ -77,11 +77,11 @@ macro_rules! nautilus_strategy {
     ($ty:ty, $field:ident, { $($extra:item)* }) => {
         impl $crate::_macro_reexports::DataActorNative for $ty {
             fn core(&self) -> &$crate::_macro_reexports::DataActorCore {
-                &self.$field
+                $crate::_macro_reexports::DataActorNative::core(&self.$field)
             }
 
             fn core_mut(&mut self) -> &mut $crate::_macro_reexports::DataActorCore {
-                &mut self.$field
+                $crate::_macro_reexports::DataActorNative::core_mut(&mut self.$field)
             }
         }
 

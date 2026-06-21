@@ -24,7 +24,7 @@ use ahash::AHashSet;
 pub use api::{OrderApi, PortfolioApi};
 pub use config::{ImportableStrategyConfig, StrategyConfig};
 use nautilus_common::{
-    actor::{DataActor, DataActorNative},
+    actor::DataActor,
     component::Component,
     enums::ComponentState,
     logging::{CMD, EVT, RECV, SEND},
@@ -2128,8 +2128,8 @@ mod tests {
         },
         events::{OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted},
         identifiers::{
-            AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, TradeId,
-            TraderId, VenueOrderId,
+            AccountId, ActorId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
+            TradeId, TraderId, VenueOrderId,
         },
         orderbook::own::OwnOrderBook,
         orders::{LimitOrder, MarketOrder, OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -4624,6 +4624,7 @@ mod tests {
             config.strategy_id
         );
         assert_eq!(simple.strategy_id(), config.strategy_id);
+        assert_eq!(simple.actor_id(), ActorId::from("MACRO-001"));
 
         let hooks = MacroTestWithHooks {
             core: StrategyCore::new(config.clone()),
@@ -4641,6 +4642,7 @@ mod tests {
             config.strategy_id
         );
         assert_eq!(custom.strategy_id(), config.strategy_id);
+        assert_eq!(custom.actor_id(), ActorId::from("MACRO-001"));
         assert!(custom.external_order_claims().is_none());
     }
 }

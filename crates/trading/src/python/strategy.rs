@@ -836,23 +836,23 @@ impl Deref for PyStrategyInner {
     type Target = DataActorCore;
 
     fn deref(&self) -> &Self::Target {
-        &self.core
+        DataActorNative::core(&self.core)
     }
 }
 
 impl DerefMut for PyStrategyInner {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
+        DataActorNative::core_mut(&mut self.core)
     }
 }
 
 impl DataActorNative for PyStrategyInner {
     fn core(&self) -> &DataActorCore {
-        &self.core
+        DataActorNative::core(&self.core)
     }
 
     fn core_mut(&mut self) -> &mut DataActorCore {
-        &mut self.core
+        DataActorNative::core_mut(&mut self.core)
     }
 }
 
@@ -1544,13 +1544,17 @@ impl PyStrategy {
     #[getter]
     #[pyo3(name = "registered_indicators")]
     fn py_registered_indicators(&self, py: Python<'_>) -> PyResult<Py<PyList>> {
-        registered_python_indicators(py, self.inner().core.registered_indicators())
+        let inner = self.inner();
+        registered_python_indicators(
+            py,
+            DataActorNative::core(&inner.core).registered_indicators(),
+        )
     }
 
     #[pyo3(name = "indicators_initialized")]
     fn py_indicators_initialized(&self, _py: Python<'_>) -> PyResult<bool> {
-        self.inner()
-            .core
+        let inner = self.inner();
+        DataActorNative::core(&inner.core)
             .indicators_initialized()
             .map_err(to_pyruntime_err)
     }
@@ -1563,8 +1567,8 @@ impl PyStrategy {
         indicator: Py<PyAny>,
     ) {
         let indicator = wrap_python_indicator(py, indicator);
-        self.inner_mut()
-            .core
+        let inner = self.inner_mut();
+        DataActorNative::core_mut(&mut inner.core)
             .register_indicator_for_quote_ticks(instrument_id, indicator);
     }
 
@@ -1576,8 +1580,8 @@ impl PyStrategy {
         indicator: Py<PyAny>,
     ) {
         let indicator = wrap_python_indicator(py, indicator);
-        self.inner_mut()
-            .core
+        let inner = self.inner_mut();
+        DataActorNative::core_mut(&mut inner.core)
             .register_indicator_for_trade_ticks(instrument_id, indicator);
     }
 
@@ -1589,9 +1593,8 @@ impl PyStrategy {
         indicator: Py<PyAny>,
     ) {
         let indicator = wrap_python_indicator(py, indicator);
-        self.inner_mut()
-            .core
-            .register_indicator_for_bars(bar_type, indicator);
+        let inner = self.inner_mut();
+        DataActorNative::core_mut(&mut inner.core).register_indicator_for_bars(bar_type, indicator);
     }
 
     #[pyo3(name = "submit_order")]
@@ -3043,7 +3046,7 @@ mod tests {
 
     use indexmap::IndexMap;
     use nautilus_common::{
-        actor::{DataActor, DataActorNative},
+        actor::DataActor,
         cache::Cache,
         clock::{Clock, TestClock},
         component::Component,

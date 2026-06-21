@@ -819,7 +819,7 @@ fn test_add_actor_while_running_registers_actor_with_trader() {
 fn test_add_strategy_while_running_registers_strategy_and_market_exit_control() {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     let strategy = EmptyStrategy::new();
-    let strategy_id = StrategyId::from(strategy.core.actor_id().inner().as_str());
+    let strategy_id = StrategyId::from(strategy.actor_id().inner().as_str());
     let strategy_registry_id = strategy_id.inner();
 
     engine
@@ -1911,8 +1911,7 @@ impl DataActor for ShutdownOnTick {
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         self.tick_count += 1;
         if self.tick_count == self.shutdown_after {
-            self.core
-                .shutdown_system(Some("shutdown on tick".to_string()));
+            self.shutdown_system(Some("shutdown on tick".to_string()));
         }
         Ok(())
     }
@@ -1971,8 +1970,7 @@ impl DataActor for ShutdownBeforeFutureTimer {
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         self.tick_count += 1;
         if self.tick_count == self.shutdown_after {
-            self.core
-                .shutdown_system(Some("shutdown before future timer".to_string()));
+            self.shutdown_system(Some("shutdown before future timer".to_string()));
         }
         Ok(())
     }
@@ -2087,8 +2085,7 @@ impl DataActor for ShutdownFromTimer {
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         if event.name.as_str() == "shutdown_timer" {
             self.shutdown_fired.set(self.shutdown_fired.get() + 1);
-            self.core
-                .shutdown_system(Some("shutdown from timer".to_string()));
+            self.shutdown_system(Some("shutdown from timer".to_string()));
         } else if event.name.as_str() == "later_timer" {
             self.later_fired.set(self.later_fired.get() + 1);
         }
@@ -2157,8 +2154,7 @@ impl DataActor for ShutdownAndScheduleNewAlert {
                 None,
                 None,
             )?;
-            self.core
-                .shutdown_system(Some("shutdown and reschedule".to_string()));
+            self.shutdown_system(Some("shutdown and reschedule".to_string()));
         } else if event.name.as_str() == "post_shutdown_alert" {
             self.new_alert_fired.set(self.new_alert_fired.get() + 1);
         }

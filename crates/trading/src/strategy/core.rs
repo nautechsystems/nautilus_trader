@@ -14,15 +14,14 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    cell::{RefCell, RefMut},
+    cell::{Ref, RefCell, RefMut},
     fmt::Debug,
-    ops::{Deref, DerefMut},
     rc::Rc,
 };
 
 use ahash::AHashMap;
 use nautilus_common::{
-    actor::{DataActorConfig, DataActorCore},
+    actor::{DataActorConfig, DataActorCore, DataActorNative},
     cache::Cache,
     clock::Clock,
     factories::OrderFactory,
@@ -45,7 +44,9 @@ use super::{
 /// This struct is intended to be held as a member within a user's custom strategy struct.
 /// Use the `nautilus_strategy!` macro to provide the trait accessors required by
 /// [`Strategy`](crate::strategy::Strategy), [`StrategyNative`], and
-/// [`DataActor`](nautilus_common::actor::DataActor).
+/// [`DataActor`](nautilus_common::actor::DataActor). It does not deref to
+/// [`DataActorCore`]; normal strategy logic should use facade methods on the
+/// strategy value.
 pub struct StrategyCore {
     pub(crate) actor: DataActorCore,
     /// The strategy configuration.
@@ -286,11 +287,41 @@ impl StrategyCore {
         PortfolioApi::new(portfolio.as_ref())
     }
 
+    pub(crate) fn actor_id(&self) -> ActorId {
+        self.actor.actor_id()
+    }
+
+    pub(crate) fn trader_id(&self) -> Option<TraderId> {
+        self.actor.trader_id()
+    }
+
+    pub(crate) fn clock_mut(&mut self) -> RefMut<'_, dyn Clock> {
+        DataActorNative::clock_mut(self)
+    }
+
+    pub(crate) fn cache_ref(&self) -> Ref<'_, Cache> {
+        DataActorNative::cache_ref(self)
+    }
+
+    pub(crate) fn cache_rc(&self) -> Rc<RefCell<Cache>> {
+        DataActorNative::cache_rc(self)
+    }
+
     /// Resets the market exit state.
     pub fn reset_market_exit_state(&mut self) {
         self.is_exiting = false;
         self.pending_stop = false;
         self.market_exit_attempts = 0;
+    }
+}
+
+impl DataActorNative for StrategyCore {
+    fn core(&self) -> &DataActorCore {
+        &self.actor
+    }
+
+    fn core_mut(&mut self) -> &mut DataActorCore {
+        &mut self.actor
     }
 }
 
@@ -316,19 +347,6 @@ fn strategy_id_with_order_id_tag(
         strategy_id
     } else {
         StrategyId::from(format!("{strategy_id}-{order_id_tag}"))
-    }
-}
-
-impl Deref for StrategyCore {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.actor
-    }
-}
-
-impl DerefMut for StrategyCore {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.actor
     }
 }
 
@@ -905,7 +923,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_strategy_core_deref() {
+    fn test_strategy_core_actor_state_starts_unregistered() {
         let config = create_test_config();
         let core = StrategyCore::new(config);
 
