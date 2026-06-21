@@ -18,8 +18,9 @@
 use std::{fmt::Display, str::FromStr, sync::LazyLock};
 
 use nautilus_core::correctness::{
-    CorrectnessResult, check_predicate_true, check_valid_string_ascii_optional,
+    CorrectnessError, CorrectnessResult, check_predicate_true, check_valid_string_ascii_optional,
 };
+use thiserror::Error;
 
 #[cfg(not(feature = "high-precision"))]
 use crate::types::fixed::f64_to_fixed_i64;
@@ -34,6 +35,118 @@ use crate::types::{
 pub trait TickSchemeRule: Display {
     fn next_bid_price(&self, value: f64, n: i32, precision: u8) -> Option<Price>;
     fn next_ask_price(&self, value: f64, n: i32, precision: u8) -> Option<Price>;
+}
+
+/// Error returned when tick scheme construction or parsing fails.
+#[derive(Clone, Debug, Error, PartialEq)]
+pub enum TickSchemeError {
+    /// A fixed tick size was not finite.
+    #[error("tick must be finite")]
+    TickNotFinite {
+        /// The invalid tick size.
+        tick: f64,
+    },
+    /// A fixed tick size was not positive.
+    #[error("tick must be positive")]
+    TickNotPositive {
+        /// The invalid tick size.
+        tick: f64,
+    },
+    /// No tier definitions were supplied.
+    #[error("tiers must not be empty")]
+    EmptyTiers,
+    /// A tier contained a NaN value.
+    #[error("tier {index}: values must not be NaN")]
+    TierValuesNaN {
+        /// The invalid tier index.
+        index: usize,
+        /// The tier start value.
+        start: f64,
+        /// The tier stop value.
+        stop: f64,
+        /// The tier step value.
+        step: f64,
+    },
+    /// A tier start was not less than its stop.
+    #[error("tier {index}: start ({start}) must be less than stop ({stop})")]
+    TierStartNotLessThanStop {
+        /// The invalid tier index.
+        index: usize,
+        /// The tier start value.
+        start: f64,
+        /// The tier stop value.
+        stop: f64,
+    },
+    /// A tier step was not positive.
+    #[error("tier {index}: step ({step}) must be positive")]
+    TierStepNotPositive {
+        /// The invalid tier index.
+        index: usize,
+        /// The tier step value.
+        step: f64,
+    },
+    /// A finite tier step was not smaller than the tier range.
+    #[error("tier {index}: step ({step}) must be less than range ({stop} - {start} = {range})")]
+    TierStepNotLessThanRange {
+        /// The invalid tier index.
+        index: usize,
+        /// The tier start value.
+        start: f64,
+        /// The tier stop value.
+        stop: f64,
+        /// The tier step value.
+        step: f64,
+        /// The tier range.
+        range: f64,
+    },
+    /// A tier overlaps the previous tier.
+    #[error("tier {index}: start ({start}) overlaps previous tier stop ({prev_stop})")]
+    TierOverlapsPrevious {
+        /// The invalid tier index.
+        index: usize,
+        /// The tier start value.
+        start: f64,
+        /// The previous tier stop value.
+        prev_stop: f64,
+    },
+    /// A tier start was outside the representable price range.
+    #[error("tier {index}: start ({start}) outside Price range")]
+    TierStartOutsidePriceRange {
+        /// The invalid tier index.
+        index: usize,
+        /// The tier start value.
+        start: f64,
+    },
+    /// A tier stop was outside the representable price range.
+    #[error("tier {index}: stop ({stop}) outside Price range")]
+    TierStopOutsidePriceRange {
+        /// The invalid tier index.
+        index: usize,
+        /// The tier stop value.
+        stop: f64,
+    },
+    /// The requested price precision is invalid.
+    #[error("{source}")]
+    InvalidPrecision {
+        /// The source correctness error.
+        #[source]
+        source: CorrectnessError,
+    },
+    /// Tier expansion produced no ticks.
+    #[error("tier expansion produced no ticks")]
+    EmptyTickExpansion,
+    /// An expanded tick value was outside the representable price range.
+    #[error("expanded tick value {value} outside Price range")]
+    ExpandedTickOutsidePriceRange {
+        /// The invalid expanded tick value.
+        value: f64,
+    },
+    /// The requested tick scheme name is not registered.
+    #[error("unknown tick scheme {name}")]
+    UnknownName {
+        /// The requested tick scheme name.
+        name: String,
+    },
 }
 
 pub const BETFAIR_TICK_SCHEME_NAME: &str = "BETFAIR";
@@ -116,9 +229,15 @@ impl FixedTickScheme {
     /// # Errors
     ///
     /// Returns an error if `tick` is not finite or not positive.
-    pub fn new(tick: f64) -> anyhow::Result<Self> {
-        check_predicate_true(tick.is_finite(), "tick must be finite")?;
-        check_predicate_true(tick > 0.0, "tick must be positive")?;
+    pub fn new(tick: f64) -> Result<Self, TickSchemeError> {
+        if !tick.is_finite() {
+            return Err(TickSchemeError::TickNotFinite { tick });
+        }
+
+        if tick <= 0.0 {
+            return Err(TickSchemeError::TickNotPositive { tick });
+        }
+
         Ok(Self { tick })
     }
 }
@@ -172,58 +291,67 @@ impl TieredTickScheme {
         tiers: &[(f64, f64, f64)],
         price_precision: u8,
         max_ticks_per_tier: usize,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, TickSchemeError> {
         if tiers.is_empty() {
-            anyhow::bail!("tiers must not be empty");
+            return Err(TickSchemeError::EmptyTiers);
         }
 
-        for (i, &(start, stop, step)) in tiers.iter().enumerate() {
+        for (index, &(start, stop, step)) in tiers.iter().enumerate() {
             if start.is_nan() || stop.is_nan() || step.is_nan() {
-                anyhow::bail!("tier {i}: values must not be NaN");
+                return Err(TickSchemeError::TierValuesNaN {
+                    index,
+                    start,
+                    stop,
+                    step,
+                });
             }
 
             if start >= stop {
-                anyhow::bail!("tier {i}: start ({start}) must be less than stop ({stop})");
+                return Err(TickSchemeError::TierStartNotLessThanStop { index, start, stop });
             }
 
             if step <= 0.0 {
-                anyhow::bail!("tier {i}: step ({step}) must be positive");
+                return Err(TickSchemeError::TierStepNotPositive { index, step });
             }
 
             if !stop.is_infinite() && step >= (stop - start) {
-                anyhow::bail!(
-                    "tier {i}: step ({step}) must be less than range ({} - {} = {})",
-                    stop,
+                return Err(TickSchemeError::TierStepNotLessThanRange {
+                    index,
                     start,
-                    stop - start,
-                );
+                    stop,
+                    step,
+                    range: stop - start,
+                });
             }
 
-            if i > 0 {
-                let prev_stop = tiers[i - 1].1;
+            if index > 0 {
+                let prev_stop = tiers[index - 1].1;
 
                 if start < prev_stop {
-                    anyhow::bail!(
-                        "tier {i}: start ({start}) overlaps previous tier stop ({prev_stop})"
-                    );
+                    return Err(TickSchemeError::TierOverlapsPrevious {
+                        index,
+                        start,
+                        prev_stop,
+                    });
                 }
             }
 
             if !(PRICE_MIN..=PRICE_MAX).contains(&start) {
-                anyhow::bail!("tier {i}: start ({start}) outside Price range");
+                return Err(TickSchemeError::TierStartOutsidePriceRange { index, start });
             }
 
             if !stop.is_infinite() && !(PRICE_MIN..=PRICE_MAX).contains(&stop) {
-                anyhow::bail!("tier {i}: stop ({stop}) outside Price range");
+                return Err(TickSchemeError::TierStopOutsidePriceRange { index, stop });
             }
         }
 
-        let _ = Price::new_checked(0.0, price_precision)?;
+        let _ = Price::new_checked(0.0, price_precision)
+            .map_err(|source| TickSchemeError::InvalidPrecision { source })?;
 
         let ticks = Self::build_ticks(tiers, price_precision, max_ticks_per_tier)?;
 
         if ticks.is_empty() {
-            anyhow::bail!("tier expansion produced no ticks");
+            return Err(TickSchemeError::EmptyTickExpansion);
         }
         Ok(Self {
             ticks,
@@ -235,7 +363,7 @@ impl TieredTickScheme {
         tiers: &[(f64, f64, f64)],
         precision: u8,
         max_ticks_per_tier: usize,
-    ) -> anyhow::Result<Vec<PriceRaw>> {
+    ) -> Result<Vec<PriceRaw>, TickSchemeError> {
         let mut all_ticks = Vec::new();
 
         for &(start, stop, step) in tiers {
@@ -253,7 +381,7 @@ impl TieredTickScheme {
                 }
 
                 if !value.is_finite() || !(PRICE_MIN..=PRICE_MAX).contains(&value) {
-                    anyhow::bail!("expanded tick value {value} outside Price range");
+                    return Err(TickSchemeError::ExpandedTickOutsidePriceRange { value });
                 }
                 let raw = f64_to_raw(value, precision);
 
@@ -435,7 +563,7 @@ impl Display for TickScheme {
 }
 
 impl FromStr for TickScheme {
-    type Err = anyhow::Error;
+    type Err = TickSchemeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim().to_ascii_uppercase().as_str() {
@@ -452,7 +580,9 @@ impl FromStr for TickScheme {
                     let tick = 10_f64.powi(-i32::from(precision));
                     return Ok(Self::Fixed(FixedTickScheme::new(tick)?));
                 }
-                anyhow::bail!("unknown tick scheme {s}")
+                Err(TickSchemeError::UnknownName {
+                    name: s.to_string(),
+                })
             }
         }
     }
@@ -600,9 +730,11 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "tick must be positive")]
-    fn fixed_tick_negative() {
-        FixedTickScheme::new(-0.01).unwrap();
+    fn fixed_tick_negative_returns_typed_error_with_display() {
+        let error = FixedTickScheme::new(-0.01).unwrap_err();
+
+        assert_eq!(error, TickSchemeError::TickNotPositive { tick: -0.01 });
+        assert_eq!(error.to_string(), "tick must be positive");
     }
 
     #[rstest]
@@ -648,12 +780,32 @@ mod tests {
 
     #[rstest]
     fn tick_scheme_unknown() {
-        assert!(TickScheme::from_str("UNKNOWN").is_err());
+        let error = TickScheme::from_str("UNKNOWN").unwrap_err();
+
+        assert_eq!(
+            error,
+            TickSchemeError::UnknownName {
+                name: "UNKNOWN".to_string(),
+            }
+        );
+        assert_eq!(error.to_string(), "unknown tick scheme UNKNOWN");
+    }
+
+    #[rstest]
+    fn tick_scheme_fixed_precision_above_max_returns_unknown_name() {
+        let name = format!("FIXED_PRECISION_{}", FIXED_PRECISION + 1);
+        let error = TickScheme::from_str(&name).unwrap_err();
+
+        assert_eq!(error, TickSchemeError::UnknownName { name: name.clone() });
+        assert_eq!(error.to_string(), format!("unknown tick scheme {name}"));
     }
 
     #[rstest]
     fn fixed_tick_zero() {
-        assert!(FixedTickScheme::new(0.0).is_err());
+        let error = FixedTickScheme::new(0.0).unwrap_err();
+
+        assert_eq!(error, TickSchemeError::TickNotPositive { tick: 0.0 });
+        assert_eq!(error.to_string(), "tick must be positive");
     }
 
     #[rstest]
@@ -661,7 +813,19 @@ mod tests {
     #[case(f64::NAN)]
     fn fixed_tick_non_finite_returns_error(#[case] tick: f64) {
         let error = FixedTickScheme::new(tick).unwrap_err();
-        assert!(error.to_string().contains("tick must be finite"), "{error}");
+
+        match &error {
+            TickSchemeError::TickNotFinite {
+                tick: returned_tick,
+            } => {
+                assert!(
+                    *returned_tick == tick || returned_tick.is_nan() && tick.is_nan(),
+                    "returned tick {returned_tick} did not match input {tick}",
+                );
+            }
+            _ => panic!("unexpected error variant: {error:?}"),
+        }
+        assert_eq!(error.to_string(), "tick must be finite");
     }
 
     #[rstest]
@@ -843,45 +1007,183 @@ mod tests {
     }
 
     #[rstest]
-    fn tiered_tick_scheme_validation_start_ge_stop() {
-        let result = TieredTickScheme::new(&[(100.0, 50.0, 1.0)], 2, 100);
-        assert!(result.is_err());
-    }
-
-    #[rstest]
-    fn tiered_tick_scheme_validation_negative_step() {
-        let result = TieredTickScheme::new(&[(0.0, 100.0, -1.0)], 2, 100);
-        assert!(result.is_err());
-    }
-
-    #[rstest]
-    fn tiered_tick_scheme_validation_step_ge_range() {
-        let result = TieredTickScheme::new(&[(0.0, 100.0, 200.0)], 2, 100);
-        assert!(result.is_err());
-    }
-
-    #[rstest]
-    fn tiered_tick_scheme_validation_invalid_precision() {
-        let result = TieredTickScheme::new(&[(1.0, 10.0, 1.0)], 50, 100);
-        assert!(result.is_err());
-    }
-
-    #[rstest]
     fn tiered_tick_scheme_validation_empty_tiers() {
-        let result = TieredTickScheme::new(&[], 2, 100);
-        assert!(result.is_err());
+        let error = TieredTickScheme::new(&[], 2, 100).unwrap_err();
+
+        assert_eq!(error, TickSchemeError::EmptyTiers);
+        assert_eq!(error.to_string(), "tiers must not be empty");
     }
 
     #[rstest]
-    fn tiered_tick_scheme_validation_non_monotonic_tiers() {
-        let result = TieredTickScheme::new(&[(10.0, 20.0, 1.0), (1.0, 10.0, 1.0)], 1, 100);
-        assert!(result.is_err());
+    #[case(
+        vec![(100.0, 50.0, 1.0)],
+        TickSchemeError::TierStartNotLessThanStop {
+            index: 0,
+            start: 100.0,
+            stop: 50.0,
+        },
+        "tier 0: start (100) must be less than stop (50)"
+    )]
+    #[case(
+        vec![(2.0, 2.0, 0.1)],
+        TickSchemeError::TierStartNotLessThanStop {
+            index: 0,
+            start: 2.0,
+            stop: 2.0,
+        },
+        "tier 0: start (2) must be less than stop (2)"
+    )]
+    #[case(
+        vec![(0.0, 100.0, -1.0)],
+        TickSchemeError::TierStepNotPositive {
+            index: 0,
+            step: -1.0,
+        },
+        "tier 0: step (-1) must be positive"
+    )]
+    #[case(
+        vec![(1.0, 2.0, 0.0)],
+        TickSchemeError::TierStepNotPositive {
+            index: 0,
+            step: 0.0,
+        },
+        "tier 0: step (0) must be positive"
+    )]
+    #[case(
+        vec![(0.0, 100.0, 200.0)],
+        TickSchemeError::TierStepNotLessThanRange {
+            index: 0,
+            start: 0.0,
+            stop: 100.0,
+            step: 200.0,
+            range: 100.0,
+        },
+        "tier 0: step (200) must be less than range (100 - 0 = 100)"
+    )]
+    #[case(
+        vec![(10.0, 20.0, 1.0), (1.0, 10.0, 1.0)],
+        TickSchemeError::TierOverlapsPrevious {
+            index: 1,
+            start: 1.0,
+            prev_stop: 20.0,
+        },
+        "tier 1: start (1) overlaps previous tier stop (20)"
+    )]
+    #[case(
+        vec![(1.0, 10.0, 1.0), (5.0, 15.0, 1.0)],
+        TickSchemeError::TierOverlapsPrevious {
+            index: 1,
+            start: 5.0,
+            prev_stop: 10.0,
+        },
+        "tier 1: start (5) overlaps previous tier stop (10)"
+    )]
+    fn tiered_tick_scheme_invalid_tiers_return_typed_errors(
+        #[case] tiers: Vec<(f64, f64, f64)>,
+        #[case] expected_error: TickSchemeError,
+        #[case] expected_display: &str,
+    ) {
+        let error = TieredTickScheme::new(&tiers, 2, 100).unwrap_err();
+
+        assert_eq!(error, expected_error);
+        assert_eq!(error.to_string(), expected_display);
     }
 
     #[rstest]
-    fn tiered_tick_scheme_validation_overlapping_tiers() {
-        let result = TieredTickScheme::new(&[(1.0, 10.0, 1.0), (5.0, 15.0, 1.0)], 1, 100);
-        assert!(result.is_err());
+    #[case(vec![(f64::NAN, 10.0, 1.0)])]
+    #[case(vec![(1.0, f64::NAN, 1.0)])]
+    #[case(vec![(1.0, 10.0, f64::NAN)])]
+    fn tiered_tick_scheme_nan_tiers_return_typed_error(#[case] tiers: Vec<(f64, f64, f64)>) {
+        let error = TieredTickScheme::new(&tiers, 2, 100).unwrap_err();
+
+        match &error {
+            TickSchemeError::TierValuesNaN {
+                index,
+                start,
+                stop,
+                step,
+            } => {
+                assert_eq!(*index, 0);
+                assert!(
+                    start.is_nan() || stop.is_nan() || step.is_nan(),
+                    "expected one NaN tier value in {error:?}",
+                );
+            }
+            _ => panic!("unexpected error variant: {error:?}"),
+        }
+        assert_eq!(error.to_string(), "tier 0: values must not be NaN");
+    }
+
+    #[rstest]
+    fn tiered_tick_scheme_start_outside_price_range_returns_typed_error() {
+        let start = PRICE_MIN - 1.0;
+        let stop = PRICE_MIN + 1.0;
+        let error = TieredTickScheme::new(&[(start, stop, 1.0)], 2, 100).unwrap_err();
+
+        assert_eq!(
+            error,
+            TickSchemeError::TierStartOutsidePriceRange { index: 0, start }
+        );
+        assert_eq!(
+            error.to_string(),
+            format!("tier 0: start ({start}) outside Price range")
+        );
+    }
+
+    #[rstest]
+    fn tiered_tick_scheme_stop_outside_price_range_returns_typed_error() {
+        let start = PRICE_MAX - 2.0;
+        let stop = PRICE_MAX + 1.0;
+        let error = TieredTickScheme::new(&[(start, stop, 1.0)], 2, 100).unwrap_err();
+
+        assert_eq!(
+            error,
+            TickSchemeError::TierStopOutsidePriceRange { index: 0, stop }
+        );
+        assert_eq!(
+            error.to_string(),
+            format!("tier 0: stop ({stop}) outside Price range")
+        );
+    }
+
+    #[rstest]
+    fn tiered_tick_scheme_invalid_precision_wraps_source_error() {
+        let invalid_precision = FIXED_PRECISION + 1;
+        let source = Price::new_checked(0.0, invalid_precision).unwrap_err();
+        let error = TieredTickScheme::new(&[(1.0, 10.0, 1.0)], invalid_precision, 100).unwrap_err();
+
+        assert_eq!(
+            error,
+            TickSchemeError::InvalidPrecision {
+                source: source.clone(),
+            }
+        );
+        assert_eq!(error.to_string(), source.to_string());
+    }
+
+    #[rstest]
+    fn tiered_tick_scheme_empty_expansion_returns_typed_error() {
+        let error = TieredTickScheme::new(&[(1.0, f64::INFINITY, 1.0)], 2, 0).unwrap_err();
+
+        assert_eq!(error, TickSchemeError::EmptyTickExpansion);
+        assert_eq!(error.to_string(), "tier expansion produced no ticks");
+    }
+
+    #[rstest]
+    fn tiered_tick_scheme_expanded_tick_outside_range_returns_typed_error() {
+        let invalid_value = PRICE_MAX + 1.0;
+        let error = TieredTickScheme::new(&[(PRICE_MAX, f64::INFINITY, 1.0)], 2, 2).unwrap_err();
+
+        assert_eq!(
+            error,
+            TickSchemeError::ExpandedTickOutsidePriceRange {
+                value: invalid_value,
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            format!("expanded tick value {invalid_value} outside Price range")
+        );
     }
 
     #[rstest]
@@ -933,36 +1235,6 @@ mod tests {
     fn tiered_tick_scheme_display() {
         let scheme = TieredTickScheme::new(&[(1.0, 10.0, 1.0)], 2, 100).unwrap();
         assert_eq!(scheme.to_string(), "TIERED");
-    }
-
-    #[rstest]
-    fn tiered_tick_scheme_validation_start_equals_stop() {
-        let result = TieredTickScheme::new(&[(2.0, 2.0, 0.1)], 2, 100);
-        assert!(result.is_err());
-    }
-
-    #[rstest]
-    fn tiered_tick_scheme_validation_nan_stop() {
-        let result = TieredTickScheme::new(&[(1.0, f64::NAN, 1.0)], 2, 100);
-        assert!(result.is_err());
-    }
-
-    #[rstest]
-    fn tiered_tick_scheme_validation_nan_start() {
-        let result = TieredTickScheme::new(&[(f64::NAN, 10.0, 1.0)], 2, 100);
-        assert!(result.is_err());
-    }
-
-    #[rstest]
-    fn tiered_tick_scheme_validation_nan_step() {
-        let result = TieredTickScheme::new(&[(1.0, 10.0, f64::NAN)], 2, 100);
-        assert!(result.is_err());
-    }
-
-    #[rstest]
-    fn tiered_tick_scheme_validation_zero_step() {
-        let result = TieredTickScheme::new(&[(1.0, 2.0, 0.0)], 2, 100);
-        assert!(result.is_err());
     }
 
     #[rstest]

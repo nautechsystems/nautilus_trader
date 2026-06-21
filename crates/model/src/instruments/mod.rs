@@ -75,7 +75,8 @@ pub use crate::instruments::{
     perpetual_contract::PerpetualContract,
     synthetic::{SyntheticInstrument, SyntheticInstrumentError},
     tick_scheme::{
-        FixedTickScheme, TickScheme, TickSchemeRule, TieredTickScheme, tick_scheme_rule_from_name,
+        FixedTickScheme, TickScheme, TickSchemeError, TickSchemeRule, TieredTickScheme,
+        tick_scheme_rule_from_name,
     },
     tokenized_asset::TokenizedAsset,
 };
