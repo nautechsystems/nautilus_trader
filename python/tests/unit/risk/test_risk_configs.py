@@ -106,6 +106,12 @@ def test_risk_engine_config_rejects_invalid_notional():
         RiskEngineConfig(max_notional_per_order={"ETHUSDT.BINANCE": "not-a-number"})
 
 
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_risk_engine_config_rejects_non_positive_notional(value):
+    with pytest.raises(ValueError, match="max_notional_per_order"):
+        RiskEngineConfig(max_notional_per_order={"ETHUSDT.BINANCE": value})
+
+
 def test_risk_engine_config_rejects_unsupported_args():
     with pytest.raises(TypeError, match="qsize"):
         RiskEngineConfig(qsize=25_000)

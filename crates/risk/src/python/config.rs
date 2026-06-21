@@ -132,13 +132,14 @@ impl RiskEngineConfig {
             None => default.max_notional_per_order,
         };
 
-        Ok(Self {
-            bypass: bypass.unwrap_or(default.bypass),
-            max_order_submit,
-            max_order_modify,
-            max_notional_per_order,
-            debug: debug.unwrap_or(default.debug),
-        })
+        Self::builder()
+            .bypass(bypass.unwrap_or(default.bypass))
+            .max_order_submit(max_order_submit)
+            .max_order_modify(max_order_modify)
+            .max_notional_per_order(max_notional_per_order)
+            .debug(debug.unwrap_or(default.debug))
+            .build()
+            .map_err(to_pyvalue_err)
     }
 
     #[getter]
