@@ -362,8 +362,9 @@ error. Transport failures, timeouts, ambiguous retry exhaustion, statusless `Pol
 malformed responses, and server-side failures keep the order submitted.
 
 For unknown outcomes, both adapters derive the expected Polymarket order hash from the signed
-EIP-712 order when possible and cache it as the `VenueOrderId`. Later WebSocket or reconciliation
-reports then attach to the local `ClientOrderId` instead of becoming external orders.
+EIP-712 order when possible and cache it as the `VenueOrderId`. Later WebSocket order events
+(or reconciliation reports) then attach to the local `ClientOrderId` instead of becoming external
+orders.
 
 Quote-quantity market BUY orders still apply the signed quote-to-base quantity update on the
 unknown path. Cancels requested while submit outcome is unknown are deferred until the expected

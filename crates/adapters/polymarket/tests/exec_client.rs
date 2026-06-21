@@ -364,7 +364,11 @@ async fn handle_post_orders(
         .iter()
         .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
         .collect();
-    *state.batch_order_post_count.lock().await += 1;
+    let post_count = {
+        let mut count = state.batch_order_post_count.lock().await;
+        *count += 1;
+        *count
+    };
 
     let parsed = serde_json::from_slice::<Value>(&body).ok();
     let request_count = parsed
@@ -379,11 +383,13 @@ async fn handle_post_orders(
     let status = *state.batch_order_response_status.lock().await;
     let resp = state.batch_order_response.lock().await;
     let body = resp.clone().unwrap_or_else(|| {
+        // Namespace by POST count so order IDs are globally unique across chunks, matching the
+        // venue (each order receives a distinct ID); a per-chunk index alone would collide.
         let entries: Vec<Value> = (0..request_count.max(1))
             .map(|i| {
                 json!({
                     "success": true,
-                    "orderID": format!("0xauto-{i}"),
+                    "orderID": format!("0xauto-{post_count}-{i}"),
                     "errorMsg": ""
                 })
             })
@@ -1932,14 +1938,20 @@ fn assert_order_status_report(event: ExecutionEvent, expected_status: OrderStatu
 }
 
 #[rstest]
+#[case("UNMATCHED", "Rejected")]
+#[case("CANCELED", "Canceled")]
+#[case("CANCELED_MARKET_RESOLVED", "Expired")]
 #[tokio::test]
-async fn test_fok_deferred_check_emits_rejected_for_unmatched() {
+async fn test_fok_deferred_check_emits_terminal_event(
+    #[case] venue_status: &str,
+    #[case] expected_event: &str,
+) {
     let state = TestServerState::default();
-    // REST returns UNMATCHED for the FOK order status check
+    // REST resolves the unfilled FOK order to a terminal status for the deferred check.
     *state.single_order_response.lock().await = Some(json!({
         "associate_trades": [],
         "id": "test-fok-order-id",
-        "status": "UNMATCHED",
+        "status": venue_status,
         "market": "0xtest",
         "original_size": "10.0000",
         "outcome": "Yes",
@@ -1996,12 +2008,78 @@ async fn test_fok_deferred_check_emits_rejected_for_unmatched() {
         .unwrap();
     assert_order_event(event, "Accepted");
 
-    // Deferred FOK check: after ~5s, should emit a Rejected status report
+    // Deferred FOK check: after ~5s, the own order resolves via REST to a terminal state and
+    // emits the matching order event (the order was submitted through this client, so it is
+    // tracked).
     let event = tokio::time::timeout(Duration::from_secs(10), rx.recv())
         .await
         .unwrap()
         .unwrap();
-    assert_order_status_report(event, OrderStatus::Rejected);
+    assert_order_event(event, expected_event);
+}
+
+/// A FOK order the venue reports as MATCHED but for which no fills reached the tracker (the live
+/// trade stream missed them) is a reconciliation case: the deferred REST check emits an
+/// OrderStatusReport, not a fabricated OrderFilled event, so the engine reconstructs the fills
+/// from venue trade history. This is the deliberate exception to the tracked-own-order-to-events
+/// rule, since the adapter has no fill details (trade id, price, commission) to build the event.
+#[rstest]
+#[tokio::test]
+async fn test_fok_deferred_check_filled_emits_report_for_reconciliation() {
+    let state = TestServerState::default();
+    *state.single_order_response.lock().await = Some(json!({
+        "associate_trades": [],
+        "id": "test-fok-order-id",
+        "status": "MATCHED",
+        "market": "0xtest",
+        "original_size": "10.0000",
+        "outcome": "Yes",
+        "maker_address": "0xtest",
+        "owner": "test-owner",
+        "price": "0.5100",
+        "side": "BUY",
+        "size_matched": "10.0000",
+        "asset_id": "TEST-TOKEN",
+        "expiration": null,
+        "order_type": "FOK",
+        "created_at": 1_703_875_200_000_i64
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+
+    let order = make_market_order_with_time_in_force(
+        "O-FOK-MATCHED",
+        instrument_id,
+        OrderSide::Buy,
+        true,
+        TimeInForce::Fok,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let cmd = make_submit_cmd(&order, instrument_id);
+
+    client.submit_order(cmd).unwrap();
+
+    for expected in ["Submitted", "Updated", "Accepted"] {
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_order_event(event, expected);
+    }
+
+    // Deferred FOK check: venue Filled with no local fills surfaces a report for reconciliation.
+    let event = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_order_status_report(event, OrderStatus::Filled);
 }
 
 fn make_stop_market_order(

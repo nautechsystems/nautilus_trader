@@ -206,6 +206,7 @@ impl PolymarketExecutionClient {
         let pending_submits = self.pending_submits.clone();
         let pending_fills = self.pending_fills.clone();
         let pending_order_reports = self.pending_order_reports.clone();
+        let order_identities = self.order_identities.clone();
 
         let handle = get_runtime().spawn(async move {
             let mut state = WsDispatchState::default();
@@ -215,6 +216,7 @@ impl PolymarketExecutionClient {
                 pending_submits: &pending_submits,
                 pending_fills: &pending_fills,
                 pending_order_reports: &pending_order_reports,
+                order_identities: &order_identities,
                 emitter: &emitter,
                 account_id,
                 clock,

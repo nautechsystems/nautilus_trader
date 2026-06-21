@@ -81,6 +81,7 @@ impl PolymarketExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let fill_tracker = self.fill_tracker.clone();
+        let order_identities = self.order_identities.clone();
         let pending_submits = self.pending_submits.clone();
         let pending_fills = self.pending_fills.clone();
         let pending_order_reports = self.pending_order_reports.clone();
@@ -107,6 +108,7 @@ impl PolymarketExecutionClient {
                         &emitter,
                         clock,
                         &fill_tracker,
+                        &order_identities,
                         &pending_fills,
                         &pending_order_reports,
                         &pending_cancels,
@@ -135,6 +137,7 @@ impl PolymarketExecutionClient {
                         &emitter,
                         clock,
                         &fill_tracker,
+                        &order_identities,
                         &pending_submits,
                         &pending_fills,
                         &pending_order_reports,
@@ -201,6 +204,7 @@ impl PolymarketExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let fill_tracker = self.fill_tracker.clone();
+        let order_identities = self.order_identities.clone();
         let pending_submits = self.pending_submits.clone();
         let pending_fills = self.pending_fills.clone();
         let pending_order_reports = self.pending_order_reports.clone();
@@ -283,6 +287,7 @@ impl PolymarketExecutionClient {
                         &emitter,
                         clock,
                         &fill_tracker,
+                        &order_identities,
                         &pending_fills,
                         &pending_order_reports,
                         &pending_cancels,
@@ -306,11 +311,10 @@ impl PolymarketExecutionClient {
                         check_fok_status(
                             &submitter,
                             &order_id,
+                            &order,
                             &fill_tracker,
                             &emitter,
                             account_id,
-                            order.instrument_id(),
-                            order.order_side(),
                             size_precision,
                             price_precision,
                             clock,
@@ -349,6 +353,7 @@ impl PolymarketExecutionClient {
                             &emitter,
                             clock,
                             &fill_tracker,
+                            &order_identities,
                             &pending_submits,
                             &pending_fills,
                             &pending_order_reports,
@@ -507,6 +512,7 @@ impl PolymarketExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let fill_tracker = self.fill_tracker.clone();
+        let order_identities = self.order_identities.clone();
         let pending_submits = self.pending_submits.clone();
         let pending_fills = self.pending_fills.clone();
         let pending_order_reports = self.pending_order_reports.clone();
@@ -568,6 +574,7 @@ impl PolymarketExecutionClient {
                         &emitter,
                         clock,
                         &fill_tracker,
+                        &order_identities,
                         &pending_submits,
                         &pending_fills,
                         &pending_order_reports,
@@ -593,6 +600,7 @@ impl PolymarketExecutionClient {
                                 &emitter,
                                 clock,
                                 &fill_tracker,
+                                &order_identities,
                                 &pending_fills,
                                 &pending_order_reports,
                                 &pending_cancels,
@@ -615,6 +623,7 @@ impl PolymarketExecutionClient {
                                         &emitter,
                                         clock,
                                         &fill_tracker,
+                                        &order_identities,
                                         &pending_submits,
                                         &pending_fills,
                                         &pending_order_reports,

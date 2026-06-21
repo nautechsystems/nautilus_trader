@@ -27,7 +27,7 @@ use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{OrderEventAny, OrderUpdated},
-    identifiers::{AccountId, InstrumentId, VenueOrderId},
+    identifiers::{AccountId, VenueOrderId},
     orders::{Order, OrderAny},
     reports::{FillReport, OrderStatusReport},
     types::{Price, Quantity},
@@ -37,8 +37,12 @@ use tokio::task::JoinHandle;
 
 use super::{
     PendingCancelTracker, PendingFillMap, PendingOrderReportMap, PendingSubmitMap,
-    cancellations::execute_deferred_cancel, order_fill_tracker::OrderFillTrackerMap,
-    reports::get_pusd_currency, submitter::OrderSubmitter, types::BatchLimitOrderContext,
+    cancellations::execute_deferred_cancel,
+    identity::{OrderIdentity, OrderIdentityRegistry},
+    order_fill_tracker::OrderFillTrackerMap,
+    reports::get_pusd_currency,
+    submitter::OrderSubmitter,
+    types::BatchLimitOrderContext,
 };
 use crate::http::query::OrderResponse;
 
@@ -50,6 +54,7 @@ pub(super) async fn handle_batch_order_responses(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
+    order_identities: &OrderIdentityRegistry,
     pending_fills: &PendingFillMap,
     pending_order_reports: &PendingOrderReportMap,
     pending_cancels: &PendingCancelTracker,
@@ -75,6 +80,7 @@ pub(super) async fn handle_batch_order_responses(
             emitter,
             clock,
             fill_tracker,
+            order_identities,
             pending_fills,
             pending_order_reports,
             pending_cancels,
@@ -205,6 +211,7 @@ pub(super) async fn handle_single_order_response(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
+    order_identities: &OrderIdentityRegistry,
     pending_submits: &PendingSubmitMap,
     pending_fills: &PendingFillMap,
     pending_order_reports: &PendingOrderReportMap,
@@ -219,6 +226,7 @@ pub(super) async fn handle_single_order_response(
                 emitter,
                 clock,
                 fill_tracker,
+                order_identities,
                 pending_fills,
                 pending_order_reports,
                 pending_cancels,
@@ -247,6 +255,7 @@ pub(super) async fn handle_single_order_response(
                 emitter,
                 clock,
                 fill_tracker,
+                order_identities,
                 pending_submits,
                 pending_fills,
                 pending_order_reports,
@@ -288,6 +297,7 @@ pub(super) fn handle_unknown_submit_result(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
+    order_identities: &OrderIdentityRegistry,
     pending_submits: &PendingSubmitMap,
     pending_fills: &PendingFillMap,
     pending_order_reports: &PendingOrderReportMap,
@@ -302,6 +312,8 @@ pub(super) fn handle_unknown_submit_result(
         expected_venue_order_id
     );
 
+    order_identities
+        .register_order_identity(expected_venue_order_id, OrderIdentity::from_order(order));
     pending_submits
         .lock()
         .expect(MUTEX_POISONED)
@@ -313,6 +325,7 @@ pub(super) fn handle_unknown_submit_result(
         emitter,
         clock,
         fill_tracker,
+        order_identities,
         fill_tracker_quantity,
         pending_fills,
         pending_order_reports,
@@ -336,6 +349,7 @@ pub(super) fn drain_pending_reports_for_known_order(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
+    order_identities: &OrderIdentityRegistry,
     fill_tracker_quantity: Option<Quantity>,
     pending_fills: &PendingFillMap,
     pending_order_reports: &PendingOrderReportMap,
@@ -354,6 +368,7 @@ pub(super) fn drain_pending_reports_for_known_order(
             emitter,
             clock,
             fill_tracker,
+            order_identities,
             fill_tracker_quantity,
             pending_fills,
             size_precision,
@@ -383,35 +398,30 @@ pub(super) fn drain_pending_reports_for_known_order(
         Vec::new()
     };
 
-    let mut has_filled = false;
+    let has_filled = buffered
+        .iter()
+        .any(|report| report.order_status == OrderStatus::Filled);
 
-    for report in &buffered {
-        if report.order_status == OrderStatus::Filled {
-            has_filled = true;
+    // The unknown-submit path did not emit OrderAccepted at submit; synthesize it once now
+    // that buffered activity confirms the venue accepted the order, before terminal events.
+    if should_register {
+        let ts_event = buffered
+            .iter()
+            .map(|report| report.ts_last)
+            .min()
+            .unwrap_or_else(|| clock.get_time_ns());
+
+        if order_identities.mark_accepted(venue_order_id) {
+            emitter.emit_order_accepted(order, venue_order_id, ts_event);
         }
     }
 
-    let tracked_filled = fill_tracker
-        .get_cumulative_filled(&venue_order_id)
-        .unwrap_or(0.0);
-    let tracked_qty = Quantity::new(tracked_filled, size_precision);
-
-    for mut report in buffered {
-        report.client_order_id = Some(order.client_order_id());
-        if report.filled_qty > tracked_qty {
-            log::debug!(
-                "Capping buffered filled_qty for {venue_order_id} from {} to {} \
-                 (awaiting trade messages)",
-                report.filled_qty,
-                tracked_qty,
-            );
-            report.filled_qty = tracked_qty;
-        }
-        emitter.send_order_status_report(report);
+    for report in &buffered {
+        emit_drained_order_report(order, report, emitter);
     }
 
     for fill in buffered_fills {
-        emitter.send_fill_report(fill);
+        emit_drained_fill(order, &fill, emitter);
     }
 
     if has_filled {
@@ -427,7 +437,7 @@ pub(super) fn drain_pending_reports_for_known_order(
             ts_now,
             ts_now,
         ) {
-            emitter.send_fill_report(dust_fill);
+            emit_drained_fill(order, &dust_fill, emitter);
         }
     }
 }
@@ -439,6 +449,7 @@ pub(super) fn accept_order_with_pending_fills(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
+    order_identities: &OrderIdentityRegistry,
     fill_tracker_quantity: Option<Quantity>,
     pending_fills: &PendingFillMap,
     size_precision: u8,
@@ -457,7 +468,11 @@ pub(super) fn accept_order_with_pending_fills(
         .map(|fill| fill.ts_event)
         .min()
         .unwrap_or_else(|| clock.get_time_ns());
-    emitter.emit_order_accepted(order, venue_order_id, ts_event);
+
+    if order_identities.mark_accepted(venue_order_id) {
+        emitter.emit_order_accepted(order, venue_order_id, ts_event);
+    }
+
     let tracker_quantity = fill_tracker_quantity.unwrap_or_else(|| order.quantity());
     fill_tracker.register(
         venue_order_id,
@@ -470,7 +485,7 @@ pub(super) fn accept_order_with_pending_fills(
 
     for fill in prepare_pending_fills_for_known_order(order, venue_order_id, fill_tracker, buffered)
     {
-        emitter.send_fill_report(fill);
+        emit_drained_fill(order, &fill, emitter);
     }
 }
 
@@ -520,6 +535,7 @@ pub(super) fn handle_order_response(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
+    order_identities: &OrderIdentityRegistry,
     pending_fills: &PendingFillMap,
     pending_order_reports: &PendingOrderReportMap,
     pending_cancels: &PendingCancelTracker,
@@ -533,7 +549,11 @@ pub(super) fn handle_order_response(
                 if let Some(order_id) = response.order_id {
                     let venue_order_id = VenueOrderId::from(order_id.as_str());
                     let ts_now = clock.get_time_ns();
-                    emitter.emit_order_accepted(order, venue_order_id, ts_now);
+                    order_identities
+                        .register_order_identity(venue_order_id, OrderIdentity::from_order(order));
+                    if order_identities.mark_accepted(venue_order_id) {
+                        emitter.emit_order_accepted(order, venue_order_id, ts_now);
+                    }
 
                     fill_tracker.register(
                         venue_order_id,
@@ -558,7 +578,7 @@ pub(super) fn handle_order_response(
                                 fill.last_px.as_f64(),
                                 fill.ts_event,
                             );
-                            emitter.send_fill_report(fill);
+                            emit_drained_fill(order, &fill, emitter);
                         }
                     }
 
@@ -567,30 +587,14 @@ pub(super) fn handle_order_response(
                         .expect(MUTEX_POISONED)
                         .remove(&venue_order_id)
                     {
-                        let mut has_filled = false;
+                        // Drained order reports convert to lifecycle events; fills arrive from
+                        // the drained fill buffer, so no filled_qty is carried here.
+                        let has_filled = buffered
+                            .iter()
+                            .any(|report| report.order_status == OrderStatus::Filled);
 
                         for report in &buffered {
-                            if report.order_status == OrderStatus::Filled {
-                                has_filled = true;
-                            }
-                        }
-
-                        let tracked_filled = fill_tracker
-                            .get_cumulative_filled(&venue_order_id)
-                            .unwrap_or(0.0);
-                        let tracked_qty = Quantity::new(tracked_filled, size_precision);
-
-                        for mut report in buffered {
-                            if report.filled_qty > tracked_qty {
-                                log::debug!(
-                                    "Capping buffered filled_qty for {venue_order_id} \
-                                     from {} to {} (awaiting trade messages)",
-                                    report.filled_qty,
-                                    tracked_qty,
-                                );
-                                report.filled_qty = tracked_qty;
-                            }
-                            emitter.send_order_status_report(report);
+                            emit_drained_order_report(order, report, emitter);
                         }
 
                         if has_filled {
@@ -604,7 +608,7 @@ pub(super) fn handle_order_response(
                                 ts_now,
                                 ts_now,
                             ) {
-                                emitter.send_fill_report(dust_fill);
+                                emit_drained_fill(order, &dust_fill, emitter);
                             }
                         }
                     }
@@ -641,15 +645,58 @@ pub(super) fn handle_order_response(
     None
 }
 
+/// Emits an `OrderFilled` event for a drained own-order fill.
+fn emit_drained_fill(order: &OrderAny, fill: &FillReport, emitter: &ExecutionEventEmitter) {
+    emitter.emit_order_filled(
+        order,
+        fill.venue_order_id,
+        fill.venue_position_id,
+        fill.trade_id,
+        fill.last_qty,
+        fill.last_px,
+        get_pusd_currency(),
+        Some(fill.commission),
+        fill.liquidity_side,
+        fill.ts_event,
+    );
+}
+
+/// Emits the lifecycle event for a drained own-order status report.
+///
+/// Acceptance is emitted on the submit happy path and fills arrive as `OrderFilled` from the
+/// drained fill buffer, so `Accepted` / `PartiallyFilled` / `Filled` reports produce no event
+/// here; only terminal transitions (cancel, expire, reject) convert.
+fn emit_drained_order_report(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    emitter: &ExecutionEventEmitter,
+) {
+    match report.order_status {
+        OrderStatus::Canceled => {
+            emitter.emit_order_canceled(order, Some(report.venue_order_id), report.ts_last);
+        }
+        OrderStatus::Expired => {
+            emitter.emit_order_expired(order, Some(report.venue_order_id), report.ts_last);
+        }
+        OrderStatus::Rejected => {
+            let reason = report
+                .cancel_reason
+                .clone()
+                .unwrap_or_else(|| "REJECTED".to_string());
+            emitter.emit_order_rejected(order, &reason, report.ts_last, false);
+        }
+        _ => {}
+    }
+}
+
 #[expect(clippy::too_many_arguments)]
 pub(super) async fn check_fok_status(
     submitter: &OrderSubmitter,
     order_id: &str,
+    order: &OrderAny,
     fill_tracker: &Arc<OrderFillTrackerMap>,
     emitter: &ExecutionEventEmitter,
     account_id: AccountId,
-    instrument_id: InstrumentId,
-    order_side: OrderSide,
     size_precision: u8,
     price_precision: u8,
     clock: &'static AtomicTime,
@@ -678,69 +725,77 @@ pub(super) async fn check_fok_status(
     };
 
     let order_status = OrderStatus::from(venue_order.status);
-
-    if !matches!(
-        order_status,
-        OrderStatus::Rejected | OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Filled
-    ) {
-        return;
-    }
-
-    let quantity = Quantity::new(
-        venue_order
-            .original_size
-            .to_string()
-            .parse::<f64>()
-            .unwrap_or(0.0),
-        size_precision,
-    );
-    let filled_qty = Quantity::new(
-        venue_order
-            .size_matched
-            .to_string()
-            .parse::<f64>()
-            .unwrap_or(0.0),
-        size_precision,
-    );
-    let price = Price::new(
-        venue_order.price.to_string().parse::<f64>().unwrap_or(0.0),
-        price_precision,
-    );
-
     let ts_now = clock.get_time_ns();
-    let mut report = OrderStatusReport::new(
-        account_id,
-        instrument_id,
-        None,
-        venue_order_id,
-        order_side,
-        OrderType::Limit,
-        TimeInForce::Fok,
-        order_status,
-        quantity,
-        filled_qty,
-        ts_now,
-        ts_now,
-        ts_now,
-        None,
-    );
-    report.price = Some(price);
 
-    log::info!("FOK order {order_id} resolved via REST as {order_status:?}");
+    match order_status {
+        OrderStatus::Rejected => {
+            log::info!("FOK order {order_id} resolved via REST as Rejected");
+            emitter.emit_order_rejected(order, "FOK order unfilled", ts_now, false);
+        }
+        OrderStatus::Canceled => {
+            log::info!("FOK order {order_id} resolved via REST as Canceled");
+            emitter.emit_order_canceled(order, Some(venue_order_id), ts_now);
+        }
+        OrderStatus::Expired => {
+            log::info!("FOK order {order_id} resolved via REST as Expired");
+            emitter.emit_order_expired(order, Some(venue_order_id), ts_now);
+        }
+        OrderStatus::Filled => {
+            // The venue reports Filled but no fills reached the tracker. Build a report so the
+            // engine reconciles from venue state rather than synthesizing fabricated fills.
+            let quantity = Quantity::new(
+                venue_order
+                    .original_size
+                    .to_string()
+                    .parse::<f64>()
+                    .unwrap_or(0.0),
+                size_precision,
+            );
+            let filled_qty = Quantity::new(
+                venue_order
+                    .size_matched
+                    .to_string()
+                    .parse::<f64>()
+                    .unwrap_or(0.0),
+                size_precision,
+            );
+            let price = Price::new(
+                venue_order.price.to_string().parse::<f64>().unwrap_or(0.0),
+                price_precision,
+            );
 
-    emitter.send_order_status_report(report);
+            let mut report = OrderStatusReport::new(
+                account_id,
+                order.instrument_id(),
+                Some(order.client_order_id()),
+                venue_order_id,
+                order.order_side(),
+                OrderType::Limit,
+                TimeInForce::Fok,
+                order_status,
+                quantity,
+                filled_qty,
+                ts_now,
+                ts_now,
+                ts_now,
+                None,
+            );
+            report.price = Some(price);
+
+            log::info!("FOK order {order_id} resolved via REST as Filled; reconciling via report");
+            emitter.send_order_status_report(report);
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::{
-        cache::fifo::FifoCacheMap,
-        messages::{ExecutionEvent, ExecutionReport},
-    };
+    use nautilus_common::{cache::fifo::FifoCacheMap, messages::ExecutionEvent};
     use nautilus_core::{UnixNanos, collections::AtomicMap};
     use nautilus_model::{
         enums::{AccountType, LiquiditySide},
-        identifiers::{ClientOrderId, StrategyId, TradeId, TraderId},
+        identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId},
         instruments::{Instrument, InstrumentAny},
         orders::{LimitOrder, MarketOrder, Order},
         types::{Currency, Money},
@@ -878,6 +933,7 @@ mod tests {
         let pending_fills = Arc::new(Mutex::new(FifoCacheMap::default()));
         let pending_order_reports = Arc::new(Mutex::new(FifoCacheMap::default()));
         let pending_cancels = PendingCancelTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
 
         assert!(
             handle_unknown_submit_result(
@@ -888,6 +944,7 @@ mod tests {
                 &emitter,
                 nautilus_core::time::get_atomic_clock_realtime(),
                 &fill_tracker,
+                &order_identities,
                 &pending_submits,
                 &pending_fills,
                 &pending_order_reports,
@@ -917,6 +974,7 @@ mod tests {
             pending_submits: &pending_submits,
             pending_fills: &pending_fills,
             pending_order_reports: &pending_order_reports,
+            order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -926,12 +984,13 @@ mod tests {
 
         dispatch_user_message(&UserWsMessage::Order(ws_order), &ctx, &mut state);
 
-        let event = receiver.try_recv().expect("expected order report");
+        // The tracked own order emits an OrderAccepted event, not a report.
+        let event = receiver.try_recv().expect("expected accepted event");
         match event {
-            ExecutionEvent::Report(ExecutionReport::Order(report)) => {
-                assert_eq!(report.client_order_id, Some(order.client_order_id()));
+            ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) => {
+                assert_eq!(accepted.client_order_id, order.client_order_id());
             }
-            other => panic!("expected order report, was {other:?}"),
+            other => panic!("expected accepted event, was {other:?}"),
         }
 
         assert!(
@@ -955,6 +1014,7 @@ mod tests {
         let pending_fills = Arc::new(Mutex::new(FifoCacheMap::default()));
         let pending_order_reports = Arc::new(Mutex::new(FifoCacheMap::default()));
         let pending_cancels = PendingCancelTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
 
         pending_fills.lock().unwrap().insert(
             venue_order_id,
@@ -1005,6 +1065,7 @@ mod tests {
                 &emitter,
                 nautilus_core::time::get_atomic_clock_realtime(),
                 &fill_tracker,
+                &order_identities,
                 &pending_submits,
                 &pending_fills,
                 &pending_order_reports,
@@ -1026,14 +1087,15 @@ mod tests {
             other => panic!("expected accepted event, was {other:?}"),
         }
 
-        let fill = receiver.try_recv().expect("expected fill report");
+        // The drained own-order fill emits an OrderFilled event, not a report.
+        let fill = receiver.try_recv().expect("expected filled event");
         match fill {
-            ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
-                assert_eq!(report.client_order_id, Some(order.client_order_id()));
-                assert_eq!(report.venue_order_id, venue_order_id);
-                assert_eq!(report.last_qty, Quantity::new(18.180, 3));
+            ExecutionEvent::Order(OrderEventAny::Filled(event)) => {
+                assert_eq!(event.client_order_id, order.client_order_id());
+                assert_eq!(event.venue_order_id, venue_order_id);
+                assert_eq!(event.last_qty, Quantity::new(18.180, 3));
             }
-            other => panic!("expected fill report, was {other:?}"),
+            other => panic!("expected filled event, was {other:?}"),
         }
 
         assert!(fill_tracker.contains(&venue_order_id));
@@ -1042,5 +1104,87 @@ mod tests {
             Some(18.18)
         );
         assert!(pending_fills.lock().unwrap().get(&venue_order_id).is_none());
+    }
+
+    // A terminal order update can race ahead of the submit confirmation and be buffered. On
+    // drain it synthesizes acceptance (never emitted at submit) then converts to the event.
+    #[rstest]
+    #[case(OrderStatus::Canceled, "Canceled")]
+    #[case(OrderStatus::Expired, "Expired")]
+    fn test_drain_buffered_terminal_emits_accepted_then_event(
+        #[case] status: OrderStatus,
+        #[case] expected: &str,
+    ) {
+        let instrument = test_instrument();
+        let instrument_id = instrument.id();
+        let order = test_limit_order("O-DRAIN-TERMINAL", instrument_id);
+        let venue_order_id = VenueOrderId::from("0xdrain-terminal-order");
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let pending_submits = Arc::new(Mutex::new(FifoCacheMap::default()));
+        let pending_fills = Arc::new(Mutex::new(FifoCacheMap::default()));
+        let pending_order_reports = Arc::new(Mutex::new(FifoCacheMap::default()));
+        let pending_cancels = PendingCancelTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+
+        let report = OrderStatusReport::new(
+            AccountId::from("POLY-001"),
+            instrument_id,
+            None,
+            venue_order_id,
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            status,
+            Quantity::new(10.0, 0),
+            Quantity::new(0.0, 0),
+            UnixNanos::from(1_000u64),
+            UnixNanos::from(1_000u64),
+            UnixNanos::from(1_000u64),
+            None,
+        );
+        pending_order_reports
+            .lock()
+            .unwrap()
+            .insert(venue_order_id, vec![report]);
+
+        let result = handle_unknown_submit_result(
+            &order,
+            venue_order_id,
+            "transport timeout",
+            None,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            &fill_tracker,
+            &order_identities,
+            &pending_submits,
+            &pending_fills,
+            &pending_order_reports,
+            &pending_cancels,
+            AccountId::from("POLY-001"),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+        assert!(result.is_none());
+
+        // Acceptance is synthesized first, then the buffered terminal report converts to an event.
+        match receiver.try_recv().expect("expected accepted event") {
+            ExecutionEvent::Order(OrderEventAny::Accepted(event)) => {
+                assert_eq!(event.client_order_id, order.client_order_id());
+            }
+            other => panic!("expected accepted event, was {other:?}"),
+        }
+
+        match receiver.try_recv().expect("expected terminal event") {
+            ExecutionEvent::Order(order_event) => {
+                assert!(
+                    format!("{order_event:?}").starts_with(expected),
+                    "expected {expected}, was {order_event:?}"
+                );
+                assert_eq!(order_event.client_order_id(), order.client_order_id());
+                assert_eq!(order_event.venue_order_id(), Some(venue_order_id));
+            }
+            other => panic!("expected order event, was {other:?}"),
+        }
     }
 }

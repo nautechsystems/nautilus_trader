@@ -21,6 +21,7 @@ mod orders;
 mod reports;
 mod responses;
 
+pub(crate) mod identity;
 pub mod order_builder;
 pub(crate) mod order_fill_tracker;
 pub mod parse;
@@ -65,8 +66,8 @@ use tokio::task::JoinHandle;
 use ustr::Ustr;
 
 use self::{
-    order_builder::PolymarketOrderBuilder, order_fill_tracker::OrderFillTrackerMap,
-    submitter::OrderSubmitter,
+    identity::OrderIdentityRegistry, order_builder::PolymarketOrderBuilder,
+    order_fill_tracker::OrderFillTrackerMap, submitter::OrderSubmitter,
 };
 use crate::{
     common::{consts::POLYMARKET_VENUE, credential::Secrets, enums::SignatureType},
@@ -106,6 +107,7 @@ pub struct PolymarketExecutionClient {
     pending_cancels: PendingCancelTracker,
     pending_fills: PendingFillMap,
     pending_order_reports: PendingOrderReportMap,
+    order_identities: Arc<OrderIdentityRegistry>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -240,6 +242,7 @@ impl PolymarketExecutionClient {
             pending_cancels: PendingCancelTracker::default(),
             pending_fills: Arc::new(Mutex::new(FifoCacheMap::default())),
             pending_order_reports: Arc::new(Mutex::new(FifoCacheMap::default())),
+            order_identities: Arc::new(OrderIdentityRegistry::default()),
         })
     }
 }
