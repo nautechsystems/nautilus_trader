@@ -23,12 +23,11 @@ mod serial_tests {
     use bytes::Bytes;
     use nautilus_common::{
         cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
-        database::DatabaseConfig,
         testing::wait_until_async,
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_infrastructure::redis::{
-        cache::{RedisCacheDatabase, RedisCacheDatabaseAdapter},
+        cache::{RedisCacheConfig, RedisCacheDatabase, RedisCacheDatabaseAdapter},
         queries::DatabaseQueries,
     };
     use nautilus_model::{
@@ -61,6 +60,14 @@ mod serial_tests {
         LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
     }
 
+    fn redis_cache_config() -> RedisCacheConfig {
+        RedisCacheConfig {
+            host: Some("localhost".to_string()),
+            port: Some(6379),
+            ..Default::default()
+        }
+    }
+
     async fn get_redis_cache_adapter()
     -> Result<RedisCacheDatabaseAdapter, Box<dyn std::error::Error>> {
         let mut adapter = connect_redis_cache_adapter().await?;
@@ -78,26 +85,9 @@ mod serial_tests {
         let trader_id = TraderId::from("test-trader");
         let instance_id = UUID4::new();
 
-        // Create a Redis database config
-        let config = CacheConfig {
-            database: Some(DatabaseConfig {
-                database_type: "redis".to_string(),
-                host: Some("localhost".to_string()),
-                port: Some(6379),
-                username: None,
-                password: None,
-                ssl: false,
-                connection_timeout: 20,
-                response_timeout: 20,
-                number_of_retries: 100,
-                exponent_base: 2,
-                max_delay: 1000,
-                factor: 2,
-            }),
-            ..Default::default()
-        };
-
-        let database = RedisCacheDatabase::new(trader_id, instance_id, config).await?;
+        let config = CacheConfig::default();
+        let database =
+            RedisCacheDatabase::new(trader_id, instance_id, config, redis_cache_config()).await?;
 
         let adapter = RedisCacheDatabaseAdapter { database };
 
@@ -601,27 +591,14 @@ mod serial_tests {
         let instance_id = UUID4::new();
 
         let config = CacheConfig {
-            database: Some(DatabaseConfig {
-                database_type: "redis".to_string(),
-                host: Some("localhost".to_string()),
-                port: Some(6379),
-                username: None,
-                password: None,
-                ssl: false,
-                connection_timeout: 20,
-                response_timeout: 20,
-                number_of_retries: 100,
-                exponent_base: 2,
-                max_delay: 1000,
-                factor: 2,
-            }),
             buffer_interval_ms: Some(50),
             ..Default::default()
         };
 
-        let mut database = RedisCacheDatabase::new(trader_id, instance_id, config)
-            .await
-            .expect("Failed to create database");
+        let mut database =
+            RedisCacheDatabase::new(trader_id, instance_id, config, redis_cache_config())
+                .await
+                .expect("Failed to create database");
         database.flushdb().await;
 
         let trader_key = database.trader_key.clone();
@@ -664,27 +641,14 @@ mod serial_tests {
         let instance_id = UUID4::new();
 
         let config = CacheConfig {
-            database: Some(DatabaseConfig {
-                database_type: "redis".to_string(),
-                host: Some("localhost".to_string()),
-                port: Some(6379),
-                username: None,
-                password: None,
-                ssl: false,
-                connection_timeout: 20,
-                response_timeout: 20,
-                number_of_retries: 100,
-                exponent_base: 2,
-                max_delay: 1000,
-                factor: 2,
-            }),
             buffer_interval_ms: Some(0),
             ..Default::default()
         };
 
-        let mut database = RedisCacheDatabase::new(trader_id, instance_id, config)
-            .await
-            .expect("Failed to create database");
+        let mut database =
+            RedisCacheDatabase::new(trader_id, instance_id, config, redis_cache_config())
+                .await
+                .expect("Failed to create database");
         database.flushdb().await;
 
         let trader_key = database.trader_key.clone();
@@ -726,27 +690,14 @@ mod serial_tests {
         let instance_id = UUID4::new();
 
         let config = CacheConfig {
-            database: Some(DatabaseConfig {
-                database_type: "redis".to_string(),
-                host: Some("localhost".to_string()),
-                port: Some(6379),
-                username: None,
-                password: None,
-                ssl: false,
-                connection_timeout: 20,
-                response_timeout: 20,
-                number_of_retries: 100,
-                exponent_base: 2,
-                max_delay: 1000,
-                factor: 2,
-            }),
             buffer_interval_ms: Some(10000),
             ..Default::default()
         };
 
-        let mut database = RedisCacheDatabase::new(trader_id, instance_id, config)
-            .await
-            .expect("Failed to create database");
+        let mut database =
+            RedisCacheDatabase::new(trader_id, instance_id, config, redis_cache_config())
+                .await
+                .expect("Failed to create database");
         database.flushdb().await;
 
         let trader_key = database.trader_key.clone();

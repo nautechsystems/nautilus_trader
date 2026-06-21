@@ -1234,7 +1234,6 @@ impl CacheConfig {
         persist_account_events: Option<bool>,
     ) -> Self {
         Self::new(
-            None, // database is None since we can't expose it to Python yet
             encoding.unwrap_or_default(),
             timestamps_as_iso8601.unwrap_or(false),
             buffer_interval_ms,

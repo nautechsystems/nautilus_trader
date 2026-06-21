@@ -81,44 +81,73 @@ config = TradingNodeConfig(
 
 ### Cache database configuration
 
-```python
-from nautilus_trader.config import CacheConfig
-from nautilus_trader.config import DatabaseConfig
+Rust-native live systems keep cache behavior in `CacheConfig` and Redis connection settings in
+`RedisCacheConfig`.
 
-cache_config = CacheConfig(
-    database=DatabaseConfig(
-        host="localhost",
-        port=6379,
-        username="nautilus",
-        password="pass",
-        connection_timeout=2,
-        response_timeout=2,
-    ),
-    encoding="msgpack",  # or "json"
-    timestamps_as_iso8601=True,
-    buffer_interval_ms=100,
-    flush_on_start=False,
-)
+```rust
+use nautilus_common::{
+    cache::{CacheConfig, database::CacheDatabaseFactory},
+    enums::SerializationEncoding,
+};
+use nautilus_infrastructure::redis::cache::RedisCacheConfig;
+
+let config = CacheConfig {
+    encoding: SerializationEncoding::MsgPack,
+    timestamps_as_iso8601: true,
+    buffer_interval_ms: Some(100),
+    flush_on_start: false,
+    ..Default::default()
+};
+
+let database = RedisCacheConfig {
+    host: Some("localhost".to_string()),
+    port: Some(6379),
+    username: Some("nautilus".to_string()),
+    password: Some("pass".to_string()),
+    connection_timeout: 2,
+    response_timeout: 2,
+    ..Default::default()
+};
+
+let cache_database = database
+    .create(trader_id, instance_id, config.clone())
+    .await?;
 ```
 
 ### MessageBus configuration
 
-```python
-from nautilus_trader.config import MessageBusConfig
-from nautilus_trader.config import MessageBusBackingConfig
+Message bus behavior stays in `MessageBusConfig`. Redis connection settings live in
+`RedisMessageBusConfig`, which constructs the backing through `MessageBusBackingFactory`.
 
-message_bus_config = MessageBusConfig(
-    backing=MessageBusBackingConfig(
-        connection_timeout=2,
-        response_timeout=2,
-    ),
-    timestamps_as_iso8601=True,
-    use_instance_id=False,
-    types_filter=[QuoteTick, TradeTick],  # Filter specific message types
-    stream_per_topic=False,
-    autotrim_mins=30,  # Automatic message trimming
-    heartbeat_interval_secs=1,
-)
+```rust
+use nautilus_common::{
+    enums::SerializationEncoding,
+    msgbus::backing::{MessageBusBackingFactory, MessageBusConfig},
+};
+use nautilus_infrastructure::redis::msgbus::RedisMessageBusConfig;
+
+let config = MessageBusConfig {
+    encoding: SerializationEncoding::Json,
+    timestamps_as_iso8601: true,
+    use_instance_id: false,
+    types_filter: Some(vec!["QuoteTick".to_string(), "TradeTick".to_string()]),
+    stream_per_topic: false,
+    autotrim_mins: Some(30),
+    heartbeat_interval_secs: Some(1),
+    ..Default::default()
+};
+
+let backing = RedisMessageBusConfig {
+    connection_timeout: 2,
+    response_timeout: 2,
+    ..Default::default()
+};
+
+let message_bus_backing = backing.create(
+    trader_id,
+    instance_id,
+    config.clone(),
+)?;
 ```
 
 ## Multi-venue configuration

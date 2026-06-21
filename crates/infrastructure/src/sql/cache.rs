@@ -13,17 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::VecDeque, ops::ControlFlow, pin::Pin, time::Duration};
+use std::{collections::VecDeque, fmt::Debug, ops::ControlFlow, pin::Pin, time::Duration};
 
 use ahash::AHashMap;
 use bytes::Bytes;
 use nautilus_common::{
-    cache::database::{CacheDatabaseAdapter, CacheMap},
+    cache::{
+        CacheConfig,
+        database::{CacheDatabaseAdapter, CacheDatabaseFactory, CacheMap},
+    },
     live::get_runtime,
     logging::{log_task_awaiting, log_task_started, log_task_stopped},
     signal::Signal,
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, CustomData, DataType, FundingRateUpdate, QuoteTick, TradeTick},
@@ -33,7 +36,7 @@ use nautilus_model::{
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
-        VenueOrderId,
+        TraderId, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
@@ -41,6 +44,7 @@ use nautilus_model::{
     position::Position,
     types::{Currency, Money},
 };
+use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, postgres::PgConnectOptions};
 use tokio::{time::Instant, try_join};
 use ustr::Ustr;
@@ -52,6 +56,117 @@ use crate::sql::{
 
 // Task and connection names
 const CACHE_PROCESS: &str = "cache-process";
+
+/// Configuration for a Postgres-backed cache database.
+///
+/// Missing fields are resolved from Postgres environment variables and then built-in defaults.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.infrastructure",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.infrastructure")
+)]
+pub struct PostgresCacheConfig {
+    /// The Postgres host address.
+    pub host: Option<String>,
+    /// The Postgres port.
+    pub port: Option<u16>,
+    /// The Postgres account username.
+    pub username: Option<String>,
+    /// The Postgres account password.
+    pub password: Option<String>,
+    /// The Postgres database name.
+    pub database: Option<String>,
+}
+
+impl Debug for PostgresCacheConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let redacted = self.password.as_ref().map(|_| "***");
+        f.debug_struct(stringify!(PostgresCacheConfig))
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &redacted)
+            .field("database", &self.database)
+            .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use serde_json::json;
+
+    use super::*;
+
+    #[rstest]
+    fn test_default_postgres_cache_config() {
+        let config = PostgresCacheConfig::default();
+
+        assert_eq!(config.host, None);
+        assert_eq!(config.port, None);
+        assert_eq!(config.username, None);
+        assert_eq!(config.password, None);
+        assert_eq!(config.database, None);
+    }
+
+    #[rstest]
+    fn test_deserialize_postgres_cache_config() {
+        let config_json = json!({
+            "host": "localhost",
+            "port": 5432,
+            "username": "user",
+            "password": "pass",
+            "database": "nautilus"
+        });
+
+        let config: PostgresCacheConfig = serde_json::from_value(config_json).unwrap();
+
+        assert_eq!(config.host, Some("localhost".to_string()));
+        assert_eq!(config.port, Some(5432));
+        assert_eq!(config.username, Some("user".to_string()));
+        assert_eq!(config.password, Some("pass".to_string()));
+        assert_eq!(config.database, Some("nautilus".to_string()));
+    }
+
+    #[rstest]
+    fn test_deserialize_postgres_cache_config_rejects_type_selector() {
+        let config_json = json!({
+            "type": "postgres",
+        });
+
+        let error = serde_json::from_value::<PostgresCacheConfig>(config_json).unwrap_err();
+
+        assert!(error.to_string().contains("unknown field `type`"));
+    }
+}
+
+#[async_trait::async_trait]
+impl CacheDatabaseFactory for PostgresCacheConfig {
+    async fn create(
+        &self,
+        _trader_id: TraderId,
+        _instance_id: UUID4,
+        _config: CacheConfig,
+    ) -> anyhow::Result<Box<dyn CacheDatabaseAdapter>> {
+        let database = PostgresCacheDatabase::connect(
+            self.host.clone(),
+            self.port,
+            self.username.clone(),
+            self.password.clone(),
+            self.database.clone(),
+        )
+        .await?;
+        Ok(Box::new(database))
+    }
+}
 
 #[derive(Debug)]
 #[cfg_attr(
@@ -227,8 +342,6 @@ pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
     .await?)
 }
 
-#[allow(dead_code)]
-#[allow(unused)]
 #[async_trait::async_trait]
 impl CacheDatabaseAdapter for PostgresCacheDatabase {
     fn close(&mut self) -> anyhow::Result<()> {
@@ -576,7 +689,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     async fn load_synthetic(
         &self,
-        instrument_id: &InstrumentId,
+        _instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<SyntheticInstrument>> {
         todo!()
     }
@@ -644,19 +757,19 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         rx.recv()?
     }
 
-    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
+    fn load_actor(&self, _component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
         todo!()
     }
 
-    fn delete_actor(&self, component_id: &ComponentId) -> anyhow::Result<()> {
+    fn delete_actor(&self, _component_id: &ComponentId) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
+    fn load_strategy(&self, _strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
         todo!()
     }
 
-    fn delete_strategy(&self, component_id: &StrategyId) -> anyhow::Result<()> {
+    fn delete_strategy(&self, _strategy_id: &StrategyId) -> anyhow::Result<()> {
         todo!()
     }
 
@@ -697,7 +810,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
-    fn add_synthetic(&self, synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
+    fn add_synthetic(&self, _synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
         todo!()
     }
 
@@ -741,7 +854,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
-    fn add_order_book(&self, order_book: &OrderBook) -> anyhow::Result<()> {
+    fn add_order_book(&self, _order_book: &OrderBook) -> anyhow::Result<()> {
         todo!()
     }
 
@@ -977,8 +1090,8 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     fn index_venue_order_id(
         &self,
-        client_order_id: ClientOrderId,
-        venue_order_id: VenueOrderId,
+        _client_order_id: ClientOrderId,
+        _venue_order_id: VenueOrderId,
     ) -> anyhow::Result<()> {
         todo!()
     }
@@ -1033,20 +1146,20 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
-    fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {
+    fn snapshot_order_state(&self, _order: &OrderAny) -> anyhow::Result<()> {
         todo!()
     }
 
     fn snapshot_position_state(
         &self,
-        position: &Position,
-        ts_snapshot: UnixNanos,
-        unrealized_pnl: Option<Money>,
+        _position: &Position,
+        _ts_snapshot: UnixNanos,
+        _unrealized_pnl: Option<Money>,
     ) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn heartbeat(&self, timestamp: UnixNanos) -> anyhow::Result<()> {
+    fn heartbeat(&self, _timestamp: UnixNanos) -> anyhow::Result<()> {
         todo!()
     }
 }

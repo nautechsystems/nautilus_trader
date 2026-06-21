@@ -28,7 +28,6 @@ pub mod actor;
 pub mod cache;
 pub mod clock;
 pub mod custom;
-pub mod database;
 pub mod enums;
 pub mod fifo;
 pub mod greeks;
@@ -66,8 +65,6 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::actor::data_actor::DataActorConfig>()?;
     m.add_class::<crate::actor::data_actor::ImportableActorConfig>()?;
     m.add_class::<crate::msgbus::BusMessage>()?;
-    m.add_class::<crate::database::DatabaseConfig>()?;
-    m.add_class::<crate::msgbus::backing::MessageBusBackingConfig>()?;
     m.add_class::<crate::msgbus::backing::MessageBusConfig>()?;
     m.add_class::<crate::python::msgbus::PyMessageBus>()?;
     m.add_class::<crate::enums::ComponentState>()?;

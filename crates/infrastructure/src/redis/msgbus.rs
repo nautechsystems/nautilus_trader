@@ -45,7 +45,7 @@ use nautilus_common::{
     logging::{log_task_error, log_task_started, log_task_stopped},
     msgbus::{
         BusMessage, MessageBusPublisher, MessageBusSubscriber,
-        backing::{MessageBusBacking, MessageBusBackingConfig, MessageBusConfig},
+        backing::{MessageBusBacking, MessageBusBackingFactory, MessageBusConfig},
         switchboard::CLOSE_TOPIC,
     },
 };
@@ -56,11 +56,12 @@ use nautilus_core::{
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::identifiers::TraderId;
 use redis::{AsyncCommands, streams};
+use serde::{Deserialize, Serialize};
 use streams::StreamReadOptions;
 use ustr::Ustr;
 
 use super::{REDIS_MINID, REDIS_XTRIM, await_handle};
-use crate::redis::{create_redis_connection, get_stream_key};
+use crate::redis::{RedisConnectionConfig, create_redis_connection, get_stream_key};
 
 const MSGBUS_PUBLISH: &str = "msgbus-publish";
 const MSGBUS_STREAM: &str = "msgbus-stream";
@@ -69,6 +70,146 @@ const HEARTBEAT_TOPIC: &str = "health:heartbeat";
 const TRIM_BUFFER_SECS: u64 = 60;
 
 type RedisStreamBulk = Vec<HashMap<String, Vec<HashMap<String, redis::Value>>>>;
+
+/// Configuration for a Redis-backed message bus backing.
+///
+/// Redis 6.2 or higher is required for correct operation.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.infrastructure",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.infrastructure")
+)]
+pub struct RedisMessageBusConfig {
+    /// The Redis host address. If `None`, `127.0.0.1` is used.
+    pub host: Option<String>,
+    /// The Redis port. If `None`, `6379` is used.
+    pub port: Option<u16>,
+    /// The Redis account username.
+    pub username: Option<String>,
+    /// The Redis account password.
+    pub password: Option<String>,
+    /// If Redis should use an SSL-enabled connection.
+    pub ssl: bool,
+    /// The timeout (in seconds) to wait for a new connection.
+    pub connection_timeout: u16,
+    /// The timeout (in seconds) to wait for a response.
+    pub response_timeout: u16,
+    /// The number of retry attempts with exponential backoff for connection attempts.
+    pub number_of_retries: usize,
+    /// The base value for exponential backoff calculation.
+    pub exponent_base: u64,
+    /// The maximum delay between retry attempts (in seconds).
+    pub max_delay: u64,
+    /// The multiplication factor for retry delay calculation.
+    pub factor: u64,
+}
+
+impl Debug for RedisMessageBusConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let redacted = self.password.as_ref().map(|_| "***");
+        f.debug_struct(stringify!(RedisMessageBusConfig))
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &redacted)
+            .field("ssl", &self.ssl)
+            .field("connection_timeout", &self.connection_timeout)
+            .field("response_timeout", &self.response_timeout)
+            .field("number_of_retries", &self.number_of_retries)
+            .field("exponent_base", &self.exponent_base)
+            .field("max_delay", &self.max_delay)
+            .field("factor", &self.factor)
+            .finish()
+    }
+}
+
+impl Default for RedisMessageBusConfig {
+    fn default() -> Self {
+        Self {
+            host: None,
+            port: None,
+            username: None,
+            password: None,
+            ssl: false,
+            connection_timeout: 20,
+            response_timeout: 20,
+            number_of_retries: 100,
+            exponent_base: 2,
+            max_delay: 1000,
+            factor: 2,
+        }
+    }
+}
+
+impl RedisConnectionConfig for RedisMessageBusConfig {
+    fn host(&self) -> Option<&str> {
+        self.host.as_deref()
+    }
+
+    fn port(&self) -> Option<u16> {
+        self.port
+    }
+
+    fn username(&self) -> Option<&str> {
+        self.username.as_deref()
+    }
+
+    fn password(&self) -> Option<&str> {
+        self.password.as_deref()
+    }
+
+    fn ssl(&self) -> bool {
+        self.ssl
+    }
+
+    fn connection_timeout(&self) -> u16 {
+        self.connection_timeout
+    }
+
+    fn response_timeout(&self) -> u16 {
+        self.response_timeout
+    }
+
+    fn number_of_retries(&self) -> usize {
+        self.number_of_retries
+    }
+
+    fn exponent_base(&self) -> u64 {
+        self.exponent_base
+    }
+
+    fn max_delay(&self) -> u64 {
+        self.max_delay
+    }
+
+    fn factor(&self) -> u64 {
+        self.factor
+    }
+}
+
+impl MessageBusBackingFactory for RedisMessageBusConfig {
+    fn create(
+        &self,
+        trader_id: TraderId,
+        instance_id: UUID4,
+        config: MessageBusConfig,
+    ) -> anyhow::Result<Box<dyn MessageBusBacking>> {
+        Ok(Box::new(RedisMessageBusBacking::new(
+            trader_id,
+            instance_id,
+            config,
+            self.clone(),
+        )?))
+    }
+}
 
 #[cfg_attr(
     feature = "python",
@@ -97,40 +238,35 @@ impl Debug for RedisMessageBusBacking {
     }
 }
 
-impl MessageBusBacking for RedisMessageBusBacking {
-    type BackingType = Self;
-
+impl RedisMessageBusBacking {
     /// Creates a new [`RedisMessageBusBacking`] instance for the given `trader_id`, `instance_id`, and `config`.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - The backing configuration is missing in `config`.
-    /// - Establishing the Redis connection for publishing fails.
-    fn new(
+    /// Returns an error if establishing the Redis connection for publishing fails.
+    pub fn new(
         trader_id: TraderId,
         instance_id: UUID4,
         config: MessageBusConfig,
+        backing: RedisMessageBusConfig,
     ) -> anyhow::Result<Self> {
         install_cryptographic_provider();
 
-        let config_clone = config.clone();
-        let backing_config = config
-            .backing
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("No message bus backing config"))?;
+        let external_streams = config.external_streams.clone().unwrap_or_default();
+        let heartbeat_interval_secs = config.heartbeat_interval_secs;
+        let publish = backing.clone();
 
         let (pub_tx, pub_rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
 
         // Create publish task (start the runtime here for now)
         let pub_handle = Some(get_runtime().spawn(async move {
-            if let Err(e) = publish_messages(pub_rx, trader_id, instance_id, config_clone).await {
+            if let Err(e) = publish_messages(pub_rx, trader_id, instance_id, config, publish).await
+            {
                 log_task_error(MSGBUS_PUBLISH, &e);
             }
         }));
 
         // Conditionally create stream task and channel if external streams configured
-        let external_streams = config.external_streams.clone().unwrap_or_default();
         let stream_signal = Arc::new(AtomicBool::new(false));
         let (stream_rx, stream_handle) = if external_streams.is_empty() {
             (None, None)
@@ -142,7 +278,7 @@ impl MessageBusBacking for RedisMessageBusBacking {
                 Some(get_runtime().spawn(async move {
                     if let Err(e) = stream_messages(
                         stream_tx,
-                        backing_config,
+                        backing.clone(),
                         external_streams,
                         stream_signal_clone,
                     )
@@ -156,8 +292,7 @@ impl MessageBusBacking for RedisMessageBusBacking {
 
         // Create heartbeat task
         let heartbeat_signal = Arc::new(AtomicBool::new(false));
-        let heartbeat_handle = if let Some(heartbeat_interval_secs) = config.heartbeat_interval_secs
-        {
+        let heartbeat_handle = if let Some(heartbeat_interval_secs) = heartbeat_interval_secs {
             let signal = heartbeat_signal.clone();
             let pub_tx_clone = pub_tx.clone();
 
@@ -180,7 +315,9 @@ impl MessageBusBacking for RedisMessageBusBacking {
             heartbeat_signal,
         })
     }
+}
 
+impl MessageBusBacking for RedisMessageBusBacking {
     /// Returns whether the message bus backing publishing channel is closed.
     fn is_closed(&self) -> bool {
         self.pub_tx.is_closed()
@@ -298,14 +435,11 @@ pub async fn publish_messages(
     trader_id: TraderId,
     instance_id: UUID4,
     config: MessageBusConfig,
+    backing: RedisMessageBusConfig,
 ) -> anyhow::Result<()> {
     log_task_started(MSGBUS_PUBLISH);
 
-    let backing_config = config
-        .backing
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("No message bus backing config"))?;
-    let mut con = create_redis_connection(MSGBUS_PUBLISH, backing_config.clone().into()).await?;
+    let mut con = create_redis_connection(MSGBUS_PUBLISH, &backing).await?;
     let stream_key = get_stream_key(trader_id, instance_id, &config);
 
     // Auto-trimming
@@ -464,13 +598,13 @@ async fn drain_buffer(
 /// - Any Redis read operation fails.
 pub async fn stream_messages(
     tx: tokio::sync::mpsc::Sender<BusMessage>,
-    config: MessageBusBackingConfig,
+    config: RedisMessageBusConfig,
     stream_keys: Vec<String>,
     stream_signal: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     log_task_started(MSGBUS_STREAM);
 
-    let mut con = create_redis_connection(MSGBUS_STREAM, config.into()).await?;
+    let mut con = create_redis_connection(MSGBUS_STREAM, &config).await?;
 
     let stream_keys = &stream_keys
         .iter()
@@ -629,8 +763,68 @@ fn create_heartbeat_msg() -> BusMessage {
 mod tests {
     use redis::Value;
     use rstest::*;
+    use serde_json::json;
 
     use super::*;
+
+    #[rstest]
+    fn test_default_redis_message_bus_config() {
+        let config = RedisMessageBusConfig::default();
+
+        assert_eq!(config.host, None);
+        assert_eq!(config.port, None);
+        assert_eq!(config.username, None);
+        assert_eq!(config.password, None);
+        assert!(!config.ssl);
+        assert_eq!(config.connection_timeout, 20);
+        assert_eq!(config.response_timeout, 20);
+        assert_eq!(config.number_of_retries, 100);
+        assert_eq!(config.exponent_base, 2);
+        assert_eq!(config.max_delay, 1000);
+        assert_eq!(config.factor, 2);
+    }
+
+    #[rstest]
+    fn test_deserialize_redis_message_bus_config() {
+        let config_json = json!({
+            "host": "localhost",
+            "port": 6379,
+            "username": "user",
+            "password": "pass",
+            "ssl": true,
+            "connection_timeout": 30,
+            "response_timeout": 10,
+            "number_of_retries": 3,
+            "exponent_base": 2,
+            "max_delay": 10,
+            "factor": 2
+        });
+
+        let config: RedisMessageBusConfig = serde_json::from_value(config_json).unwrap();
+
+        assert_eq!(config.host, Some("localhost".to_string()));
+        assert_eq!(config.port, Some(6379));
+        assert_eq!(config.username, Some("user".to_string()));
+        assert_eq!(config.password, Some("pass".to_string()));
+        assert!(config.ssl);
+        assert_eq!(config.connection_timeout, 30);
+        assert_eq!(config.response_timeout, 10);
+        assert_eq!(config.number_of_retries, 3);
+        assert_eq!(config.exponent_base, 2);
+        assert_eq!(config.max_delay, 10);
+        assert_eq!(config.factor, 2);
+    }
+
+    #[rstest]
+    fn test_deserialize_redis_message_bus_config_rejects_type_selector() {
+        let config_json = json!({
+            "type": "redis",
+        });
+
+        let error = serde_json::from_value::<RedisMessageBusConfig>(config_json).unwrap_err();
+
+        assert!(error.to_string().contains("unknown field `type`"));
+    }
 
     #[rstest]
     fn test_decode_bus_message_valid() {
@@ -768,7 +962,7 @@ mod tests {
 #[cfg(target_os = "linux")] // Run Redis tests on Linux platforms only
 #[cfg(test)]
 mod serial_tests {
-    use nautilus_common::{database::DatabaseConfig, testing::wait_until_async};
+    use nautilus_common::testing::wait_until_async;
     use redis::aio::ConnectionManager;
     use rstest::*;
 
@@ -776,8 +970,8 @@ mod serial_tests {
 
     #[fixture]
     async fn redis_connection() -> ConnectionManager {
-        let config = DatabaseConfig::default();
-        create_redis_connection(MSGBUS_STREAM, config)
+        let config = RedisMessageBusConfig::default();
+        create_redis_connection(MSGBUS_STREAM, &config)
             .await
             .unwrap()
     }
@@ -791,7 +985,6 @@ mod serial_tests {
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
-            backing: Some(MessageBusBackingConfig::default()),
             use_instance_id: true,
             ..Default::default()
         };
@@ -805,7 +998,7 @@ mod serial_tests {
         let handle = tokio::spawn(async move {
             stream_messages(
                 tx,
-                MessageBusBackingConfig::default(),
+                RedisMessageBusConfig::default(),
                 external_streams,
                 stream_signal_clone,
             )
@@ -832,7 +1025,6 @@ mod serial_tests {
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
-            backing: Some(MessageBusBackingConfig::default()),
             use_instance_id: true,
             ..Default::default()
         };
@@ -864,7 +1056,7 @@ mod serial_tests {
         let handle = tokio::spawn(async move {
             stream_messages(
                 tx,
-                MessageBusBackingConfig::default(),
+                RedisMessageBusConfig::default(),
                 external_streams,
                 stream_signal_clone,
             )
@@ -885,7 +1077,6 @@ mod serial_tests {
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
-            backing: Some(MessageBusBackingConfig::default()),
             use_instance_id: true,
             ..Default::default()
         };
@@ -914,7 +1105,7 @@ mod serial_tests {
         let handle = tokio::spawn(async move {
             stream_messages(
                 tx,
-                MessageBusBackingConfig::default(),
+                RedisMessageBusConfig::default(),
                 external_streams,
                 stream_signal_clone,
             )
@@ -942,7 +1133,6 @@ mod serial_tests {
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
-            backing: Some(MessageBusBackingConfig::default()),
             use_instance_id: true,
             stream_per_topic: false,
             ..Default::default()
@@ -951,9 +1141,15 @@ mod serial_tests {
 
         // Start the publish_messages task
         let handle = tokio::spawn(async move {
-            publish_messages(rx, trader_id, instance_id, config)
-                .await
-                .unwrap();
+            publish_messages(
+                rx,
+                trader_id,
+                instance_id,
+                config,
+                RedisMessageBusConfig::default(),
+            )
+            .await
+            .unwrap();
         });
 
         // Send a test message
@@ -1013,7 +1209,7 @@ mod serial_tests {
         let handle = tokio::spawn(async move {
             stream_messages(
                 tx,
-                MessageBusBackingConfig::default(),
+                RedisMessageBusConfig::default(),
                 external_streams,
                 stream_signal_clone,
             )
@@ -1086,7 +1282,7 @@ mod serial_tests {
         let handle = tokio::spawn(async move {
             stream_messages(
                 tx,
-                MessageBusBackingConfig::default(),
+                RedisMessageBusConfig::default(),
                 external_streams,
                 stream_signal_clone,
             )
@@ -1151,12 +1347,17 @@ mod serial_tests {
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
-            backing: Some(MessageBusBackingConfig::default()),
             use_instance_id: true,
             ..Default::default()
         };
 
-        let mut db = RedisMessageBusBacking::new(trader_id, instance_id, config).unwrap();
+        let mut db = RedisMessageBusBacking::new(
+            trader_id,
+            instance_id,
+            config,
+            RedisMessageBusConfig::default(),
+        )
+        .unwrap();
 
         // Close the message bus backing (test should not hang)
         MessageBusBacking::close(&mut db);

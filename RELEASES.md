@@ -26,6 +26,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added PyO3 cache purge APIs (#4249), thanks @graceyangfan
 - Added PyO3 instrument `tick_scheme` fields with Arrow persistence
 - Added Redis cache adapter order, position, and order-index write persistence (Rust)
+- Added `RedisCacheConfig`, `PostgresCacheConfig`, and `RedisMessageBusConfig` for Rust factories
 - Added SEC1 EC private key support to socket TLS configuration (Rust)
 - Added SBE and Cap'n Proto encodings for Rust-native message bus publishers
 - Added Tardis Lighter venue mapping
@@ -47,6 +48,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Changed `PoolProfiler.price_sqrt_ratio_x96` to return `int` instead of `str`
 - Changed PyO3 `DataActor`/`Strategy` historical request `start`/`end` to require UTC datetimes
 - Changed Redis cache account/order/position storage to event logs; clear old typed state (Rust)
+- Changed cache database and message bus backing construction to use factory-owned config structs (Rust)
 - Changed Rust actor `self.clock()` to return `ClockApi`; call methods directly instead of borrowing
 - Changed Rust actor/strategy core access; use macros or native traits instead of `Deref`
 - Changed `SerializationEncoding` repr order to `Json=0`, `MsgPack=1`, `Capnp=2`, `Sbe=3`
@@ -54,8 +56,10 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
   errors instead of `anyhow::Error` (Rust)
 - Changed `SyntheticInstrument` fallible methods to return `SyntheticInstrumentError` instead of `anyhow::Error` (Rust)
 - Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)
+- Removed `CacheConfig.database` and `MessageBusConfig.backing`; pass adapters separately
+- Removed common `DatabaseConfig` and `MessageBusBackingConfig`; use Redis/Postgres configs
 - Renamed `BitmexInstrumentType::StockPerpetual` to `TradFiPerpetual` (covers equities, FX, and commodities)
-- Renamed message bus database terminology to backing, including `MessageBusConfig.backing`
+- Renamed message bus database terminology to backing in Rust message bus APIs
 - Renamed Rust/PyO3 instrument `tick_scheme_name` to `tick_scheme`; Cython keeps `tick_scheme_name`
 
 ### Security
@@ -182,6 +186,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Updated event sourcing guide for capture dedup, recovery resilience, and snapshot-anchor verification
 - Updated message bus docs for publisher forwarding, payload encoding, and JSON defaults
 - Updated message bus docs for backing terminology and inbound subscriber shape
+- Updated cache and message bus docs for technology-owned config factories
 - Updated commodity instrument and execution concept guides for negative price support
 - Updated OKX integration docs with EEA endpoint override guidance (#4250), thanks for reporting @msnatm-code
 

@@ -23,108 +23,6 @@ use ustr::Ustr;
 
 use crate::enums::SerializationEncoding;
 
-/// Configuration for message bus backing connections.
-///
-/// # Notes
-///
-/// If `backing_type` is `"redis"`, it requires Redis version 6.2 or higher for correct operation.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
-)]
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct MessageBusBackingConfig {
-    /// The message bus backing type.
-    #[serde(alias = "type")]
-    pub backing_type: String,
-    /// The backing host address. If `None`, the typical default should be used.
-    pub host: Option<String>,
-    /// The backing port. If `None`, the typical default should be used.
-    pub port: Option<u16>,
-    /// The account username for the backing connection.
-    pub username: Option<String>,
-    /// The account password for the backing connection.
-    pub password: Option<String>,
-    /// If the backing should use an SSL-enabled connection.
-    pub ssl: bool,
-    /// The timeout (in seconds) to wait for a new connection.
-    pub connection_timeout: u16,
-    /// The timeout (in seconds) to wait for a response.
-    pub response_timeout: u16,
-    /// The number of retry attempts with exponential backoff for connection attempts.
-    pub number_of_retries: usize,
-    /// The base value for exponential backoff calculation.
-    pub exponent_base: u64,
-    /// The maximum delay between retry attempts (in seconds).
-    pub max_delay: u64,
-    /// The multiplication factor for retry delay calculation.
-    pub factor: u64,
-}
-
-impl Debug for MessageBusBackingConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let redacted = self.password.as_ref().map(|_| "***");
-        f.debug_struct(stringify!(MessageBusBackingConfig))
-            .field("backing_type", &self.backing_type)
-            .field("host", &self.host)
-            .field("port", &self.port)
-            .field("username", &self.username)
-            .field("password", &redacted)
-            .field("ssl", &self.ssl)
-            .field("connection_timeout", &self.connection_timeout)
-            .field("response_timeout", &self.response_timeout)
-            .field("number_of_retries", &self.number_of_retries)
-            .field("exponent_base", &self.exponent_base)
-            .field("max_delay", &self.max_delay)
-            .field("factor", &self.factor)
-            .finish()
-    }
-}
-
-impl Default for MessageBusBackingConfig {
-    /// Creates a new default [`MessageBusBackingConfig`] instance.
-    fn default() -> Self {
-        Self {
-            backing_type: "redis".to_string(),
-            host: None,
-            port: None,
-            username: None,
-            password: None,
-            ssl: false,
-            connection_timeout: 20,
-            response_timeout: 20,
-            number_of_retries: 100,
-            exponent_base: 2,
-            max_delay: 1000,
-            factor: 2,
-        }
-    }
-}
-
-impl From<MessageBusBackingConfig> for crate::database::DatabaseConfig {
-    fn from(config: MessageBusBackingConfig) -> Self {
-        Self {
-            database_type: config.backing_type,
-            host: config.host,
-            port: config.port,
-            username: config.username,
-            password: config.password,
-            ssl: config.ssl,
-            connection_timeout: config.connection_timeout,
-            response_timeout: config.response_timeout,
-            number_of_retries: config.number_of_retries,
-            exponent_base: config.exponent_base,
-            max_delay: config.max_delay,
-            factor: config.factor,
-        }
-    }
-}
-
 /// Configuration for `MessageBus` instances.
 #[cfg_attr(
     feature = "python",
@@ -137,8 +35,6 @@ impl From<MessageBusBackingConfig> for crate::database::DatabaseConfig {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 pub struct MessageBusConfig {
-    /// The configuration for the external message bus backing technology.
-    pub backing: Option<MessageBusBackingConfig>,
     /// The encoding for backing operations, controls the type of serializer used.
     #[builder(default = SerializationEncoding::Json)]
     pub encoding: SerializationEncoding,
@@ -212,21 +108,29 @@ pub trait MessageBusSubscriber {
     fn close(&mut self);
 }
 
+/// Factory for constructing external message bus backings at runtime.
+///
+/// Implementations own the concrete backing configuration and return the transport-neutral
+/// [`MessageBusBacking`] surface used by the core bus.
+pub trait MessageBusBackingFactory: Debug + Send + Sync {
+    /// Creates a message bus backing for the given bus runtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if backing construction or connection setup fails.
+    fn create(
+        &self,
+        trader_id: TraderId,
+        instance_id: UUID4,
+        config: MessageBusConfig,
+    ) -> anyhow::Result<Box<dyn MessageBusBacking>>;
+}
+
 /// A generic message bus backing facade.
 ///
 /// Implementations own the concrete backing technology and expose transport-neutral publisher and
 /// subscriber surfaces through separate traits.
 pub trait MessageBusBacking {
-    type BackingType;
-
-    /// # Errors
-    ///
-    /// Returns an error if initializing the backing connection fails.
-    fn new(
-        trader_id: TraderId,
-        instance_id: UUID4,
-        config: MessageBusConfig,
-    ) -> anyhow::Result<Self::BackingType>;
     fn is_closed(&self) -> bool;
     fn publish(&self, topic: Ustr, payload: Bytes);
     fn close(&mut self);
@@ -262,65 +166,6 @@ mod tests {
         fn close(&mut self) {
             self.closed = true;
         }
-    }
-
-    #[rstest]
-    fn test_default_message_bus_backing_config() {
-        let config = MessageBusBackingConfig::default();
-        assert_eq!(config.backing_type, "redis");
-        assert_eq!(config.host, None);
-        assert_eq!(config.port, None);
-        assert_eq!(config.username, None);
-        assert_eq!(config.password, None);
-        assert!(!config.ssl);
-        assert_eq!(config.connection_timeout, 20);
-        assert_eq!(config.response_timeout, 20);
-        assert_eq!(config.number_of_retries, 100);
-        assert_eq!(config.exponent_base, 2);
-        assert_eq!(config.max_delay, 1000);
-        assert_eq!(config.factor, 2);
-    }
-
-    #[rstest]
-    fn test_deserialize_message_bus_backing_config() {
-        let config_json = json!({
-            "type": "redis",
-            "host": "localhost",
-            "port": 6379,
-            "username": "user",
-            "password": "pass",
-            "ssl": true,
-            "connection_timeout": 30,
-            "response_timeout": 10,
-            "number_of_retries": 3,
-            "exponent_base": 2,
-            "max_delay": 10,
-            "factor": 2
-        });
-        let config: MessageBusBackingConfig = serde_json::from_value(config_json).unwrap();
-        assert_eq!(config.backing_type, "redis");
-        assert_eq!(config.host, Some("localhost".to_string()));
-        assert_eq!(config.port, Some(6379));
-        assert_eq!(config.username, Some("user".to_string()));
-        assert_eq!(config.password, Some("pass".to_string()));
-        assert!(config.ssl);
-        assert_eq!(config.connection_timeout, 30);
-        assert_eq!(config.response_timeout, 10);
-        assert_eq!(config.number_of_retries, 3);
-        assert_eq!(config.exponent_base, 2);
-        assert_eq!(config.max_delay, 10);
-        assert_eq!(config.factor, 2);
-    }
-
-    #[rstest]
-    fn test_deserialize_message_bus_backing_config_rejects_unknown_field() {
-        let config_json = json!({
-            "type": "redis",
-            "unexpected": true,
-        });
-
-        let error = serde_json::from_value::<MessageBusBackingConfig>(config_json).unwrap_err();
-        assert!(error.to_string().contains("unknown field `unexpected`"));
     }
 
     #[cfg(feature = "live")]
@@ -364,20 +209,6 @@ mod tests {
     #[rstest]
     fn test_deserialize_message_bus_config() {
         let config_json = json!({
-            "backing": {
-                "type": "redis",
-                "host": "localhost",
-                "port": 6379,
-                "username": "user",
-                "password": "pass",
-                "ssl": true,
-                "connection_timeout": 30,
-                "response_timeout": 10,
-                "number_of_retries": 3,
-                "exponent_base": 2,
-                "max_delay": 10,
-                "factor": 2
-            },
             "encoding": "json",
             "timestamps_as_iso8601": true,
             "buffer_interval_ms": 100,
@@ -408,6 +239,16 @@ mod tests {
             config.types_filter,
             Some(vec!["type1".to_string(), "type2".to_string()])
         );
+    }
+
+    #[rstest]
+    fn test_deserialize_message_bus_config_rejects_backing_field() {
+        let config_json = json!({
+            "backing": {},
+        });
+
+        let error = serde_json::from_value::<MessageBusConfig>(config_json).unwrap_err();
+        assert!(error.to_string().contains("unknown field `backing`"));
     }
 
     #[rstest]

@@ -752,11 +752,6 @@ impl LiveNodeConfig {
 
         if let Some(config) = &self.msgbus {
             collector.collect(check_supported_field(
-                "LiveNodeConfig.msgbus.backing",
-                config.backing.is_none(),
-                RUST_RUNTIME_UNSUPPORTED,
-            ));
-            collector.collect(check_supported_field(
                 "LiveNodeConfig.msgbus.external_streams",
                 config.external_streams.is_none(),
                 RUST_RUNTIME_UNSUPPORTED,
@@ -1017,7 +1012,6 @@ impl NautilusKernelConfig for LiveNodeConfig {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::msgbus::backing::MessageBusBackingConfig;
     use nautilus_system::config::RotationConfig;
     use rstest::rstest;
 
@@ -1068,30 +1062,6 @@ mod tests {
         };
 
         assert!(config.validate_runtime_support().is_ok());
-    }
-
-    #[rstest]
-    fn test_validate_runtime_support_rejects_msgbus_backing() {
-        let config = LiveNodeConfig {
-            msgbus: Some(MessageBusConfig {
-                backing: Some(MessageBusBackingConfig::default()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-
-        let error = config.validate_runtime_support().unwrap_err();
-        assert_eq!(
-            error,
-            ConfigError::UnsupportedField {
-                field: "LiveNodeConfig.msgbus.backing".to_string(),
-                reason: RUST_RUNTIME_UNSUPPORTED.to_string(),
-            },
-        );
-        assert_eq!(
-            error.to_string(),
-            "LiveNodeConfig.msgbus.backing is not supported by the Rust live runtime yet"
-        );
     }
 
     #[rstest]

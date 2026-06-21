@@ -16,7 +16,7 @@
 use nautilus_core::correctness::{CorrectnessResultExt, FAILED, check_positive_usize};
 use serde::{Deserialize, Deserializer, Serialize, de::Error};
 
-use crate::{database::DatabaseConfig, enums::SerializationEncoding};
+use crate::enums::SerializationEncoding;
 
 /// Configuration for `Cache` instances.
 #[cfg_attr(
@@ -30,8 +30,6 @@ use crate::{database::DatabaseConfig, enums::SerializationEncoding};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 pub struct CacheConfig {
-    /// The configuration for the cache backing database.
-    pub database: Option<DatabaseConfig>,
     /// The encoding for database operations, controls the type of serializer used.
     #[builder(default = SerializationEncoding::Json)]
     pub encoding: SerializationEncoding,
@@ -86,7 +84,6 @@ impl CacheConfig {
     #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
-        database: Option<DatabaseConfig>,
         encoding: SerializationEncoding,
         timestamps_as_iso8601: bool,
         buffer_interval_ms: Option<usize>,
@@ -104,7 +101,6 @@ impl CacheConfig {
         check_positive_usize(bar_capacity, stringify!(bar_capacity)).expect_display(FAILED);
 
         Self {
-            database,
             encoding,
             timestamps_as_iso8601,
             buffer_interval_ms,
@@ -170,7 +166,6 @@ mod tests {
     #[should_panic]
     fn test_new_rejects_zero_capacities(#[case] tick_capacity: usize, #[case] bar_capacity: usize) {
         let _ = CacheConfig::new(
-            None,
             SerializationEncoding::MsgPack,
             false,
             None,

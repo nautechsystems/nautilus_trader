@@ -29,12 +29,20 @@ use pyo3::{prelude::*, pymodule};
 ///
 /// Returns a `PyErr` if the module initialization fails, e.g., when adding classes to the module.
 #[pymodule]
-#[allow(unused_variables)]
 pub fn infrastructure(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    #[cfg(not(any(feature = "redis", feature = "postgres")))]
+    let _ = m;
+
+    #[cfg(feature = "redis")]
+    m.add_class::<crate::redis::cache::RedisCacheConfig>()?;
     #[cfg(feature = "redis")]
     m.add_class::<crate::redis::cache::RedisCacheDatabase>()?;
     #[cfg(feature = "redis")]
+    m.add_class::<crate::redis::msgbus::RedisMessageBusConfig>()?;
+    #[cfg(feature = "redis")]
     m.add_class::<crate::redis::msgbus::RedisMessageBusBacking>()?;
+    #[cfg(feature = "postgres")]
+    m.add_class::<crate::sql::cache::PostgresCacheConfig>()?;
     #[cfg(feature = "postgres")]
     m.add_class::<crate::sql::cache::PostgresCacheDatabase>()?;
     #[cfg(feature = "postgres")]

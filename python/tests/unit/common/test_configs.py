@@ -17,11 +17,9 @@ import pytest
 
 from nautilus_trader.common import CacheConfig
 from nautilus_trader.common import DataActorConfig
-from nautilus_trader.common import DatabaseConfig
 from nautilus_trader.common import FileWriterConfig
 from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.common import LoggerConfig
-from nautilus_trader.common import MessageBusBackingConfig
 from nautilus_trader.common import MessageBusConfig
 from nautilus_trader.model import ActorId
 
@@ -108,6 +106,11 @@ def test_cache_config_rejects_public_string_encoding_argument():
         CacheConfig("msgpack", False, True, True, False, False, False, 1000, 1000, 100, 1000, True)
 
 
+def test_cache_config_rejects_embedded_database_config():
+    with pytest.raises(TypeError, match="database"):
+        CacheConfig(database=None)
+
+
 def test_data_actor_config_accepts_explicit_kwargs():
     config = DataActorConfig(
         actor_id=ActorId("ACTOR-001"),
@@ -116,70 +119,6 @@ def test_data_actor_config_accepts_explicit_kwargs():
     )
 
     assert isinstance(config, DataActorConfig)
-
-
-def test_database_config_defaults():
-    config = DatabaseConfig()
-
-    assert config.database_type == "redis"
-    assert config.host is None
-    assert config.port is None
-    assert config.username is None
-    assert config.password is None
-    assert config.ssl is False
-    assert config.connection_timeout == 20
-    assert config.response_timeout == 20
-    assert config.number_of_retries == 100
-    assert config.exponent_base == 2
-    assert config.max_delay == 1000
-    assert config.factor == 2
-
-
-def test_database_config_accepts_explicit_kwargs():
-    config = DatabaseConfig(
-        database_type="redis",
-        host="localhost",
-        port=6379,
-        username="user",
-        password="pass",
-        ssl=True,
-        connection_timeout=1,
-        response_timeout=2,
-        number_of_retries=3,
-        exponent_base=4,
-        max_delay=5,
-        factor=6,
-    )
-
-    assert config.database_type == "redis"
-    assert config.host == "localhost"
-    assert config.port == 6379
-    assert config.username == "user"
-    assert config.password == "pass"
-    assert config.ssl is True
-    assert config.connection_timeout == 1
-    assert config.response_timeout == 2
-    assert config.number_of_retries == 3
-    assert config.exponent_base == 4
-    assert config.max_delay == 5
-    assert config.factor == 6
-
-
-def test_message_bus_backing_config_defaults():
-    config = MessageBusBackingConfig()
-
-    assert config.backing_type == "redis"
-    assert config.host is None
-    assert config.port is None
-    assert config.username is None
-    assert config.password is None
-    assert config.ssl is False
-    assert config.connection_timeout == 20
-    assert config.response_timeout == 20
-    assert config.number_of_retries == 100
-    assert config.exponent_base == 2
-    assert config.max_delay == 1000
-    assert config.factor == 2
 
 
 def test_file_writer_config_construction(tmp_path):
@@ -214,7 +153,6 @@ def test_logger_config_from_spec():
 def test_message_bus_config_defaults():
     config = MessageBusConfig()
 
-    assert config.backing is None
     assert config.timestamps_as_iso8601 is False
     assert config.buffer_interval_ms is None
     assert config.autotrim_mins is None
@@ -229,22 +167,7 @@ def test_message_bus_config_defaults():
 
 
 def test_message_bus_config_accepts_explicit_kwargs():
-    backing = MessageBusBackingConfig(
-        backing_type="redis",
-        host="localhost",
-        port=6379,
-        username="user",
-        password="pass",
-        ssl=True,
-        connection_timeout=1,
-        response_timeout=2,
-        number_of_retries=3,
-        exponent_base=4,
-        max_delay=5,
-        factor=6,
-    )
     config = MessageBusConfig(
-        backing=backing,
         timestamps_as_iso8601=True,
         buffer_interval_ms=7,
         autotrim_mins=8,
@@ -258,7 +181,6 @@ def test_message_bus_config_accepts_explicit_kwargs():
         heartbeat_interval_secs=9,
     )
 
-    assert config.backing.host == "localhost"
     assert config.timestamps_as_iso8601 is True
     assert config.buffer_interval_ms == 7
     assert config.autotrim_mins == 8
@@ -270,3 +192,8 @@ def test_message_bus_config_accepts_explicit_kwargs():
     assert config.external_streams == ["orders", "fills"]
     assert config.types_filter == ["Signal", "CustomData"]
     assert config.heartbeat_interval_secs == 9
+
+
+def test_message_bus_config_rejects_embedded_backing_config():
+    with pytest.raises(TypeError, match="backing"):
+        MessageBusConfig(backing=None)

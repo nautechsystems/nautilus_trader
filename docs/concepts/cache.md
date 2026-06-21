@@ -101,24 +101,25 @@ These limits provide a good balance between memory usage and data availability. 
 
 ### Configuration options
 
-The `CacheConfig` class supports these parameters:
+The `CacheConfig` type supports these parameters:
 
-```python
-from nautilus_trader.config import CacheConfig
+```rust
+use nautilus_common::{cache::CacheConfig, enums::SerializationEncoding};
 
-cache_config = CacheConfig(
-    database: DatabaseConfig | None = None,  # Database configuration for persistence
-    encoding: str = "msgpack",               # Data encoding format ('msgpack' or 'json')
-    timestamps_as_iso8601: bool = False,     # Store timestamps as ISO8601 strings
-    buffer_interval_ms: int | None = None,   # Buffer interval for batch operations
-    bulk_read_batch_size: int | None = None, # Batch size for bulk reads (e.g., MGET)
-    use_trader_prefix: bool = True,          # Use trader prefix in keys
-    use_instance_id: bool = False,           # Include instance ID in keys
-    flush_on_start: bool = False,            # Clear database on startup
-    drop_instruments_on_reset: bool = True,  # Clear instruments on reset
-    tick_capacity: int = 10_000,             # Maximum ticks stored per instrument
-    bar_capacity: int = 10_000,              # Maximum bars stored per each bar-type
-)
+let config = CacheConfig {
+    encoding: SerializationEncoding::MsgPack,
+    timestamps_as_iso8601: false,
+    buffer_interval_ms: None,
+    bulk_read_batch_size: None,
+    use_trader_prefix: true,
+    use_instance_id: false,
+    flush_on_start: false,
+    drop_instruments_on_reset: true,
+    tick_capacity: 10_000,
+    bar_capacity: 10_000,
+    persist_account_events: true,
+    save_market_data: false,
+};
 ```
 
 :::note
@@ -129,25 +130,44 @@ When `bar_capacity` is reached, the `Cache` automatically removes the oldest dat
 ### Database configuration
 
 For persistence between system restarts, you can configure a database backend.
+`CacheConfig` controls cache behavior only. Connection settings belong to the concrete cache
+database technology config, such as `RedisCacheConfig` or `PostgresCacheConfig`.
 
 When is it useful to use persistence?
 
 - **Long-running systems**: If you want your data to survive system restarts, upgrading, or unexpected failures, having a database configuration helps to pick up exactly where you left off.
 - **Historical insights**: When you need to preserve past trading data for detailed post-analysis or audits.
-- **Multi-node or distributed setups**: If multiple services or nodes need to access the same state, a persistent store helps ensure shared and consistent data.
+- **Multi-node or distributed setups**: If multiple services or nodes need to access the same
+  state, a persistent store helps ensure shared and consistent data.
 
-```python
-from nautilus_trader.config import DatabaseConfig
+Rust-native callers build a concrete database config and use the `CacheDatabaseFactory` trait to
+construct the adapter passed into the system builder:
 
-config = CacheConfig(
-    database=DatabaseConfig(
-        type="redis",            # Database type
-        host="localhost",        # Database host
-        port=6379,               # Database port
-        connection_timeout=2,    # Connection timeout (seconds)
-        response_timeout=2,      # Response timeout (seconds)
-    ),
-)
+```rust
+use nautilus_common::{
+    cache::{CacheConfig, database::CacheDatabaseFactory},
+    enums::SerializationEncoding,
+};
+use nautilus_infrastructure::redis::cache::RedisCacheConfig;
+
+let config = CacheConfig {
+    encoding: SerializationEncoding::MsgPack,
+    timestamps_as_iso8601: true,
+    buffer_interval_ms: Some(100),
+    ..Default::default()
+};
+
+let database = RedisCacheConfig {
+    host: Some("localhost".to_string()),
+    port: Some(6379),
+    connection_timeout: 2,
+    response_timeout: 2,
+    ..Default::default()
+};
+
+let cache_database = database
+    .create(trader_id, instance_id, config.clone())
+    .await?;
 ```
 
 ## Using the cache

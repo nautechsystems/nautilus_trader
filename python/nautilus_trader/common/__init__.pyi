@@ -21,7 +21,6 @@ __all__ = [
     "CustomData",
     "DataActor",
     "DataActorConfig",
-    "DatabaseConfig",
     "Environment",
     "FifoCache",
     "FileWriterConfig",
@@ -34,7 +33,6 @@ __all__ = [
     "Logger",
     "LoggerConfig",
     "MessageBus",
-    "MessageBusBackingConfig",
     "MessageBusConfig",
     "MessageBusListener",
     "OrderFactory",
@@ -129,48 +127,6 @@ class DataActorConfig:
     ) -> None: ...
 
 @typing.final
-class DatabaseConfig:
-    def __init__(
-        self,
-        database_type: str | None = None,
-        host: str | None = None,
-        port: int | None = None,
-        username: str | None = None,
-        password: str | None = None,
-        ssl: bool | None = None,
-        connection_timeout: int | None = None,
-        response_timeout: int | None = None,
-        number_of_retries: int | None = None,
-        exponent_base: int | None = None,
-        max_delay: int | None = None,
-        factor: int | None = None,
-    ) -> None: ...
-    @property
-    def database_type(self) -> str: ...
-    @property
-    def host(self) -> str | None: ...
-    @property
-    def port(self) -> int | None: ...
-    @property
-    def username(self) -> str | None: ...
-    @property
-    def password(self) -> str | None: ...
-    @property
-    def ssl(self) -> bool: ...
-    @property
-    def connection_timeout(self) -> int: ...
-    @property
-    def response_timeout(self) -> int: ...
-    @property
-    def number_of_retries(self) -> int: ...
-    @property
-    def exponent_base(self) -> int: ...
-    @property
-    def max_delay(self) -> int: ...
-    @property
-    def factor(self) -> int: ...
-
-@typing.final
 class FileWriterConfig:
     def __init__(
         self,
@@ -213,52 +169,9 @@ class LoggerConfig:
     def from_spec(spec: str) -> LoggerConfig: ...
 
 @typing.final
-class MessageBusBackingConfig:
-    def __init__(
-        self,
-        backing_type: str | None = None,
-        host: str | None = None,
-        port: int | None = None,
-        username: str | None = None,
-        password: str | None = None,
-        ssl: bool | None = None,
-        connection_timeout: int | None = None,
-        response_timeout: int | None = None,
-        number_of_retries: int | None = None,
-        exponent_base: int | None = None,
-        max_delay: int | None = None,
-        factor: int | None = None,
-    ) -> None: ...
-    @property
-    def backing_type(self) -> str: ...
-    @property
-    def host(self) -> str | None: ...
-    @property
-    def port(self) -> int | None: ...
-    @property
-    def username(self) -> str | None: ...
-    @property
-    def password(self) -> str | None: ...
-    @property
-    def ssl(self) -> bool: ...
-    @property
-    def connection_timeout(self) -> int: ...
-    @property
-    def response_timeout(self) -> int: ...
-    @property
-    def number_of_retries(self) -> int: ...
-    @property
-    def exponent_base(self) -> int: ...
-    @property
-    def max_delay(self) -> int: ...
-    @property
-    def factor(self) -> int: ...
-
-@typing.final
 class MessageBusConfig:
     def __init__(
         self,
-        backing: MessageBusBackingConfig | None = None,
         encoding: SerializationEncoding | None = None,
         timestamps_as_iso8601: bool | None = None,
         buffer_interval_ms: int | None = None,
@@ -272,8 +185,6 @@ class MessageBusConfig:
         types_filter: typing.Sequence[str] | None = None,
         heartbeat_interval_secs: int | None = None,
     ) -> None: ...
-    @property
-    def backing(self) -> MessageBusBackingConfig | None: ...
     @property
     def encoding(self) -> SerializationEncoding: ...
     @property

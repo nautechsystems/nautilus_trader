@@ -353,38 +353,44 @@ def register_serializable_type(
 
 ## Configuration
 
-The message bus external backing technology can be configured by importing `MessageBusConfig` and
-`MessageBusBackingConfig`, then passing the message bus config to your `TradingNodeConfig`. Each of
-these config options will be described below.
+The message bus external backing technology uses a behavior config plus a technology-owned backing
+config. `MessageBusConfig` controls message bus behavior. `RedisMessageBusConfig` owns Redis
+connection settings and implements `MessageBusBackingFactory`.
 
-```python
-from nautilus_trader.config import MessageBusBackingConfig
-from nautilus_trader.config import MessageBusConfig
+```rust
+use nautilus_common::{
+    enums::SerializationEncoding,
+    msgbus::backing::{MessageBusBackingFactory, MessageBusConfig},
+};
+use nautilus_infrastructure::redis::msgbus::RedisMessageBusConfig;
 
-...  # Other config omitted
-message_bus=MessageBusConfig(
-    backing=MessageBusBackingConfig(),
-    encoding="json",
-    timestamps_as_iso8601=True,
-    buffer_interval_ms=100,
-    autotrim_mins=30,
-    use_trader_prefix=True,
-    use_trader_id=True,
-    use_instance_id=False,
-    streams_prefix="streams",
-    types_filter=[QuoteTick, TradeTick],
-)
-...
+let config = MessageBusConfig {
+    encoding: SerializationEncoding::Json,
+    timestamps_as_iso8601: true,
+    buffer_interval_ms: Some(100),
+    autotrim_mins: Some(30),
+    use_trader_prefix: true,
+    use_trader_id: true,
+    use_instance_id: false,
+    streams_prefix: "streams".to_string(),
+    types_filter: Some(vec!["QuoteTick".to_string(), "TradeTick".to_string()]),
+    ..Default::default()
+};
+
+let backing = RedisMessageBusConfig::default();
+let message_bus_backing = backing.create(trader_id, instance_id, config.clone())?;
 ```
 
 ### Backing config
 
-A `MessageBusBackingConfig` is required when using the built-in Redis publisher. For a default Redis
-setup on the local loopback you can pass a `MessageBusBackingConfig()`, which uses matching
-defaults.
+A `RedisMessageBusConfig` is required when using the built-in Redis backing. For a default Redis
+setup on the local loopback you can pass `RedisMessageBusConfig::default()`.
+
+Redis selection is explicit in the Rust type. The config does not use a user-facing selector such
+as `type = "redis"` or `backing_type = "redis"`.
 
 Rust-native callers that inject a `MessageBusPublisher` pass concrete connection details when they
-construct that publisher. The core message bus does not require a `MessageBusBackingConfig` for
+construct that publisher. The core message bus does not require a `RedisMessageBusConfig` for
 injected publishers.
 
 The Rust live runtime still rejects `external_streams`, so inbound stream configuration is not
@@ -414,7 +420,7 @@ Use `msgpack` when payload size and serialization performance are a primary conc
 ### Timestamp formatting
 
 By default timestamps are formatted as UNIX epoch nanosecond integers. Alternatively you can
-configure ISO 8601 string formatting by setting the `timestamps_as_iso8601` to `True`.
+configure ISO 8601 string formatting by setting the `timestamps_as_iso8601` to `true`.
 
 ### Message stream keys
 
@@ -523,49 +529,50 @@ and a downstream consumer node publishes these data messages onto its internal m
 #### Producer node
 
 We configure the `MessageBus` of the producer node to publish to a `"binance"` stream.
-The settings `use_trader_id`, `use_trader_prefix`, and `use_instance_id` are all set to `False`
+The settings `use_trader_id`, `use_trader_prefix`, and `use_instance_id` are all set to `false`
 to ensure a simple and predictable stream key that the consumer nodes can register for.
 
-```python
-from nautilus_trader.config import MessageBusBackingConfig
-from nautilus_trader.config import MessageBusConfig
+```rust
+let message_bus = MessageBusConfig {
+    use_trader_id: false,
+    use_trader_prefix: false,
+    use_instance_id: false,
+    streams_prefix: "binance".to_string(), // <---
+    stream_per_topic: false,
+    autotrim_mins: Some(30),
+    ..Default::default()
+};
 
-message_bus=MessageBusConfig(
-    backing=MessageBusBackingConfig(
-        connection_timeout=2,
-        response_timeout=2,
-    ),
-    use_trader_id=False,
-    use_trader_prefix=False,
-    use_instance_id=False,
-    streams_prefix="binance",  # <---
-    stream_per_topic=False,
-    autotrim_mins=30,
-),
+let backing = RedisMessageBusConfig {
+    connection_timeout: 2,
+    response_timeout: 2,
+    ..Default::default()
+};
 ```
 
 #### Consumer node
 
-We configure the `MessageBus` of the consumer node to receive messages from the same `"binance"` stream.
-The node will listen to the external stream keys to publish these messages onto its internal message bus.
-Additionally, we declare the client ID `"BINANCE_EXT"` as an external client. This ensures that the
-`DataEngine` does not attempt to send data commands to this client ID, as we expect these messages to be
-published onto the internal message bus from the external stream, to which the node has subscribed to the relevant topics.
+We configure the `MessageBus` of the consumer node to receive messages from the same `"binance"`
+stream. The node listens to the external stream keys to publish these messages onto its internal
+message bus. We declare the client ID `"BINANCE_EXT"` as an external client so the `DataEngine`
+does not attempt to send data commands to this client ID.
 
-```python
-from nautilus_trader.config import MessageBusBackingConfig
-from nautilus_trader.config import MessageBusConfig
+```rust
+let data_engine = LiveDataEngineConfig {
+    external_clients: Some(vec![ClientId::from("BINANCE_EXT")]),
+    ..Default::default()
+};
 
-data_engine=LiveDataEngineConfig(
-    external_clients=[ClientId("BINANCE_EXT")],
-),
-message_bus=MessageBusConfig(
-    backing=MessageBusBackingConfig(
-        connection_timeout=2,
-        response_timeout=2,
-    ),
-    external_streams=["binance"],  # <---
-),
+let message_bus = MessageBusConfig {
+    external_streams: Some(vec!["binance".to_string()]), // <---
+    ..Default::default()
+};
+
+let backing = RedisMessageBusConfig {
+    connection_timeout: 2,
+    response_timeout: 2,
+    ..Default::default()
+};
 ```
 
 ## Related guides
