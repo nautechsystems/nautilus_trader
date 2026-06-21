@@ -25,17 +25,18 @@
 //! methods. Trade fills are deduped via a FIFO cache; maker and taker fills are handled separately
 //! to account for multi-leg maker order matching.
 
-use std::{str::FromStr, sync::Mutex};
+use std::str::FromStr;
 
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
-use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos, collections::AtomicMap, time::AtomicTime};
+use nautilus_core::{UUID4, UnixNanos, collections::AtomicMap, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{
         OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderRejected,
+        OrderUpdated,
     },
-    identifiers::{AccountId, ClientOrderId, VenueOrderId},
+    identifiers::{AccountId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
@@ -57,6 +58,7 @@ use crate::{
             build_maker_fill_report, compute_commission, determine_order_side,
             instrument_taker_fee, make_composite_trade_id, parse_liquidity_side,
         },
+        pending::PendingSubmitTracker,
     },
 };
 
@@ -79,9 +81,7 @@ pub(crate) struct WsDispatchState {
 pub(crate) struct WsDispatchContext<'a> {
     pub token_instruments: &'a AtomicMap<Ustr, InstrumentAny>,
     pub fill_tracker: &'a OrderFillTrackerMap,
-    pub pending_submits: &'a Mutex<FifoCacheMap<VenueOrderId, ClientOrderId, 10_000>>,
-    pub pending_fills: &'a Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>,
-    pub pending_order_reports: &'a Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>,
+    pub pending_submits: &'a PendingSubmitTracker,
     pub order_identities: &'a OrderIdentityRegistry,
     pub emitter: &'a ExecutionEventEmitter,
     pub account_id: AccountId,
@@ -125,32 +125,28 @@ fn dispatch_order_update(
     let ts_init = ctx.clock.get_time_ns();
     let mut report =
         build_ws_order_status_report(order, instrument, ctx.account_id, ts_event, ts_init);
-    let local_client_order_id = local_client_order_id(&venue_order_id, ctx.pending_submits);
+    let local_client_order_id = ctx.pending_submits.client_order_id(&venue_order_id);
     let mut is_accepted = ctx.fill_tracker.contains(&venue_order_id);
     report.client_order_id = local_client_order_id;
 
-    if local_client_order_id.is_some()
+    // A known own order (submit in flight) self-registers on its first WS update
+    let buffered_fills = if local_client_order_id.is_some()
         && !is_accepted
         && report.order_status != OrderStatus::Rejected
     {
-        ctx.fill_tracker.register(
+        is_accepted = true;
+        ctx.fill_tracker.register_and_take_pending_fills(
             venue_order_id,
+            local_client_order_id,
             report.quantity,
             report.order_side,
             report.instrument_id,
             instrument.size_precision(),
             instrument.price_precision(),
-        );
-        is_accepted = true;
-    }
-
-    let buffered_fills = if is_accepted {
-        drain_pending_fills_for_known_order(
-            venue_order_id,
-            local_client_order_id,
-            ctx.fill_tracker,
-            ctx.pending_fills,
         )
+    } else if is_accepted {
+        ctx.fill_tracker
+            .take_pending_fills(venue_order_id, local_client_order_id)
     } else {
         Vec::new()
     };
@@ -186,8 +182,15 @@ fn dispatch_order_update(
             Some(identity) => emit_tracked_order_status(&report, &identity, ts_event, ctx),
             None => ctx.emitter.send_order_status_report(report),
         }
-    } else {
-        buffer_order_report(report, venue_order_id, ctx.pending_order_reports);
+    } else if let Some(report) = ctx
+        .fill_tracker
+        .accept_or_buffer_report(venue_order_id, report)
+    {
+        // Registered between the early accepted-check and here: emit rather than buffer
+        match ctx.order_identities.get(&venue_order_id) {
+            Some(identity) => emit_tracked_order_status(&report, &identity, ts_event, ctx),
+            None => ctx.emitter.send_order_status_report(report),
+        }
     }
 
     for fill in buffered_fills {
@@ -197,7 +200,8 @@ fn dispatch_order_update(
         }
     }
 
-    // MATCHED convergence: check for dust residual
+    // MATCHED convergence: check for dust residual. A dust fill is only built for a
+    // registered order, so it always emits (accepted by construction, no gate).
     if order.status == PolymarketOrderStatus::Matched {
         let price_precision = instrument.price_precision();
         let price = Decimal::from_str(&order.price)
@@ -214,9 +218,9 @@ fn dispatch_order_update(
             ts_event,
             ts_init,
         ) {
-            match identity.filter(|_| is_accepted) {
+            match ctx.order_identities.get(&venue_order_id) {
                 Some(identity) => emit_order_filled(&identity, &dust_fill, ctx),
-                None => buffer_fill_report(dust_fill, venue_order_id, ctx.pending_fills),
+                None => ctx.emitter.send_fill_report(dust_fill),
             }
         }
     }
@@ -320,29 +324,20 @@ fn dispatch_maker_fills(
             ts_init,
         );
         let maker_venue_order_id = report.venue_order_id;
-        report.client_order_id = local_client_order_id(&maker_venue_order_id, ctx.pending_submits);
+        report.client_order_id = ctx.pending_submits.client_order_id(&maker_venue_order_id);
         report.last_qty = ctx
             .fill_tracker
             .snap_fill_qty(&maker_venue_order_id, report.last_qty);
-        let is_accepted = ctx.fill_tracker.contains(&maker_venue_order_id);
 
-        if is_accepted {
-            ctx.fill_tracker.record_fill(
-                &maker_venue_order_id,
-                report.last_qty.as_f64(),
-                report.last_px.as_f64(),
-                report.ts_event,
-            );
-        }
-
-        if is_accepted {
+        if let Some(report) = ctx
+            .fill_tracker
+            .accept_or_buffer_fill(maker_venue_order_id, report)
+        {
             match ctx.order_identities.get(&maker_venue_order_id) {
                 Some(identity) => emit_order_filled(&identity, &report, ctx),
                 None => ctx.emitter.send_fill_report(report),
             }
             reemit_terminal_cancel(maker_venue_order_id, state, ctx);
-        } else {
-            buffer_fill_report(report, maker_venue_order_id, ctx.pending_fills);
         }
     }
 }
@@ -374,30 +369,20 @@ fn dispatch_taker_fill(
         ts_event,
         ts_init,
     );
-    report.client_order_id = local_client_order_id(&venue_order_id, ctx.pending_submits);
+    report.client_order_id = ctx.pending_submits.client_order_id(&venue_order_id);
     report.last_qty = ctx
         .fill_tracker
         .snap_fill_qty(&venue_order_id, report.last_qty);
 
-    let is_accepted = ctx.fill_tracker.contains(&venue_order_id);
-
-    if is_accepted {
-        ctx.fill_tracker.record_fill(
-            &venue_order_id,
-            report.last_qty.as_f64(),
-            report.last_px.as_f64(),
-            report.ts_event,
-        );
-    }
-
-    if is_accepted {
+    if let Some(report) = ctx
+        .fill_tracker
+        .accept_or_buffer_fill(venue_order_id, report)
+    {
         match ctx.order_identities.get(&venue_order_id) {
             Some(identity) => emit_order_filled(&identity, &report, ctx),
             None => ctx.emitter.send_fill_report(report),
         }
         reemit_terminal_cancel(venue_order_id, state, ctx);
-    } else {
-        buffer_fill_report(report, venue_order_id, ctx.pending_fills);
     }
 }
 
@@ -526,75 +511,6 @@ fn build_ws_taker_fill_report(
     }
 }
 
-fn local_client_order_id(
-    venue_order_id: &VenueOrderId,
-    pending_submits: &Mutex<FifoCacheMap<VenueOrderId, ClientOrderId, 10_000>>,
-) -> Option<ClientOrderId> {
-    pending_submits
-        .lock()
-        .expect(MUTEX_POISONED)
-        .get(venue_order_id)
-        .copied()
-}
-
-fn drain_pending_fills_for_known_order(
-    venue_order_id: VenueOrderId,
-    client_order_id: Option<ClientOrderId>,
-    fill_tracker: &OrderFillTrackerMap,
-    pending: &Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>,
-) -> Vec<FillReport> {
-    let Some(buffered) = pending
-        .lock()
-        .expect(MUTEX_POISONED)
-        .remove(&venue_order_id)
-    else {
-        return Vec::new();
-    };
-
-    buffered
-        .into_iter()
-        .map(|mut fill| {
-            fill.client_order_id = client_order_id;
-            fill.last_qty = fill_tracker.snap_fill_qty(&venue_order_id, fill.last_qty);
-            fill_tracker.record_fill(
-                &venue_order_id,
-                fill.last_qty.as_f64(),
-                fill.last_px.as_f64(),
-                fill.ts_event,
-            );
-            fill
-        })
-        .collect()
-}
-
-/// Buffers an order status report until the originating order is accepted.
-fn buffer_order_report(
-    report: OrderStatusReport,
-    venue_order_id: VenueOrderId,
-    pending: &Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>,
-) {
-    let mut guard = pending.lock().expect(MUTEX_POISONED);
-    if let Some(reports) = guard.get_mut(&venue_order_id) {
-        reports.push(report);
-    } else {
-        guard.insert(venue_order_id, vec![report]);
-    }
-}
-
-/// Buffers a fill report until the originating order is accepted.
-fn buffer_fill_report(
-    report: FillReport,
-    venue_order_id: VenueOrderId,
-    pending: &Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>,
-) {
-    let mut guard = pending.lock().expect(MUTEX_POISONED);
-    if let Some(fills) = guard.get_mut(&venue_order_id) {
-        fills.push(report);
-    } else {
-        guard.insert(venue_order_id, vec![report]);
-    }
-}
-
 /// Emits order events for a tracked own-order status update.
 ///
 /// Order-channel messages drive lifecycle events only; fills arrive separately on the trade
@@ -664,6 +580,11 @@ fn ensure_accepted(
 /// Builds and emits an `OrderFilled` event for a tracked order, synthesizing acceptance first.
 fn emit_order_filled(identity: &OrderIdentity, fill: &FillReport, ctx: &WsDispatchContext<'_>) {
     ensure_accepted(identity, fill.venue_order_id, fill.ts_event, ctx);
+
+    if let Some(new_qty) = ctx.fill_tracker.buy_overfill_bump(&fill.venue_order_id) {
+        emit_buy_overfill_update(identity, fill.venue_order_id, new_qty, fill.ts_event, ctx);
+    }
+
     let filled = OrderFilled::new(
         ctx.emitter.trader_id(),
         identity.strategy_id,
@@ -686,6 +607,39 @@ fn emit_order_filled(identity: &OrderIdentity, fill: &FillReport, ctx: &WsDispat
         Some(fill.commission),
     );
     ctx.emitter.send_order_event(OrderEventAny::Filled(filled));
+}
+
+/// Emits an `OrderUpdated` raising the order quantity to the actual BUY fill, before the fill.
+///
+/// A Polymarket BUY is bounded by the USDC it spends, so a marketable fill below the limit price
+/// returns more shares than the nominal quantity. The engine rejects a fill past the order
+/// quantity, so the quantity is raised first. The price is left unchanged (`None`).
+fn emit_buy_overfill_update(
+    identity: &OrderIdentity,
+    venue_order_id: VenueOrderId,
+    new_qty: Quantity,
+    ts_event: UnixNanos,
+    ctx: &WsDispatchContext<'_>,
+) {
+    let updated = OrderUpdated::new(
+        ctx.emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        identity.client_order_id,
+        new_qty,
+        UUID4::new(),
+        ts_event,
+        ctx.clock.get_time_ns(),
+        false,
+        Some(venue_order_id),
+        Some(ctx.account_id),
+        None,
+        None,
+        None,
+        false,
+    );
+    ctx.emitter
+        .send_order_event(OrderEventAny::Updated(updated));
 }
 
 fn emit_order_canceled(
@@ -762,7 +716,7 @@ mod tests {
     use nautilus_model::{
         enums::{AccountType, OrderStatus},
         events::OrderEventAny,
-        identifiers::{InstrumentId, StrategyId, TraderId},
+        identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
         types::Currency,
     };
     use rstest::rstest;
@@ -885,9 +839,7 @@ mod tests {
         token_instruments.insert(order.asset_id, instrument);
 
         let fill_tracker = OrderFillTrackerMap::new();
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
         let order_identities = OrderIdentityRegistry::default();
         let emitter = test_emitter();
 
@@ -895,8 +847,6 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
             order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
@@ -910,9 +860,8 @@ mod tests {
         assert!(result.is_none());
 
         // Order not registered in fill_tracker, so should be buffered
-        let guard = pending_order_reports.lock().unwrap();
         let venue_order_id = VenueOrderId::from(order.id.as_str());
-        assert!(guard.get(&venue_order_id).is_some());
+        assert!(fill_tracker.has_pending_report(&venue_order_id));
     }
 
     #[rstest]
@@ -924,9 +873,7 @@ mod tests {
         token_instruments.insert(order.asset_id, instrument);
 
         let fill_tracker = OrderFillTrackerMap::new();
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
         let order_identities = OrderIdentityRegistry::default();
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -934,10 +881,7 @@ mod tests {
 
         let venue_order_id = VenueOrderId::from(order.id.as_str());
         let client_order_id = ClientOrderId::from("O-UNKNOWN-SUBMIT");
-        pending_submits
-            .lock()
-            .unwrap()
-            .insert(venue_order_id, client_order_id);
+        pending_submits.insert(venue_order_id, client_order_id);
         register_identity(
             &order_identities,
             venue_order_id,
@@ -949,8 +893,6 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
             order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
@@ -971,8 +913,7 @@ mod tests {
             other => panic!("Expected accepted event, was {other:?}"),
         }
 
-        let guard = pending_order_reports.lock().unwrap();
-        assert!(guard.get(&venue_order_id).is_none());
+        assert!(!fill_tracker.has_pending_report(&venue_order_id));
     }
 
     #[rstest]
@@ -984,9 +925,7 @@ mod tests {
         token_instruments.insert(trade.asset_id, instrument);
 
         let fill_tracker = OrderFillTrackerMap::new();
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
         let order_identities = OrderIdentityRegistry::default();
         let emitter = test_emitter();
 
@@ -994,8 +933,6 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
             order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
@@ -1005,23 +942,15 @@ mod tests {
         };
         let mut state = WsDispatchState::default();
 
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+
         // First dispatch processes the trade
         let _ = dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
-        let fills_count = {
-            let guard = pending_fills.lock().unwrap();
-            let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
-            guard.get(&venue_order_id).map_or(0, |v| v.len())
-        };
-        assert_eq!(fills_count, 1);
+        assert_eq!(fill_tracker.pending_fills_for(&venue_order_id).len(), 1);
 
         // Second dispatch should be deduped, no additional fill
-        let _ = dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
-        let fills_count_after = {
-            let guard = pending_fills.lock().unwrap();
-            let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
-            guard.get(&venue_order_id).map_or(0, |v| v.len())
-        };
-        assert_eq!(fills_count_after, 1);
+        let _ = dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
+        assert_eq!(fill_tracker.pending_fills_for(&venue_order_id).len(), 1);
     }
 
     #[rstest]
@@ -1033,25 +962,18 @@ mod tests {
         token_instruments.insert(trade.asset_id, instrument);
 
         let fill_tracker = OrderFillTrackerMap::new();
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
         let order_identities = OrderIdentityRegistry::default();
         let emitter = test_emitter();
 
         let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
         let client_order_id = ClientOrderId::from("O-UNKNOWN-FILL");
-        pending_submits
-            .lock()
-            .unwrap()
-            .insert(venue_order_id, client_order_id);
+        pending_submits.insert(venue_order_id, client_order_id);
 
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
             order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
@@ -1063,10 +985,7 @@ mod tests {
 
         let _ = dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
 
-        let guard = pending_fills.lock().unwrap();
-        let fills = guard
-            .get(&venue_order_id)
-            .expect("expected buffered fill report");
+        let fills = fill_tracker.pending_fills_for(&venue_order_id);
         assert_eq!(fills[0].client_order_id, Some(client_order_id));
     }
 
@@ -1091,9 +1010,7 @@ mod tests {
             instrument.price_precision(),
         );
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
         // No identity registered, so the order surfaces as a report (the external/reconciliation
         // fallback), where filled_qty is capped to tracked fills.
         let order_identities = OrderIdentityRegistry::default();
@@ -1105,8 +1022,6 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
             order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
@@ -1152,9 +1067,7 @@ mod tests {
         );
         fill_tracker.record_fill(&venue_order_id, 50.0, 0.5, UnixNanos::from(1_000u64));
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
         // No identity registered, so the order surfaces as a report (the external/reconciliation
         // fallback), where filled_qty is capped to tracked fills.
         let order_identities = OrderIdentityRegistry::default();
@@ -1166,8 +1079,6 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
             order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
@@ -1211,9 +1122,7 @@ mod tests {
         );
         fill_tracker.record_fill(&venue_order_id, 99.995, 0.5, UnixNanos::from(1_000u64));
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
         let order_identities = OrderIdentityRegistry::default();
         register_identity(
             &order_identities,
@@ -1235,8 +1144,6 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
             order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
@@ -1285,9 +1192,7 @@ mod tests {
             instrument.price_precision(),
         );
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
         let order_identities = OrderIdentityRegistry::default();
         register_identity(
             &order_identities,
@@ -1304,8 +1209,6 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
             order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
@@ -1371,9 +1274,7 @@ mod tests {
             instrument.price_precision(),
         );
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
         let order_identities = OrderIdentityRegistry::default();
         register_identity(
             &order_identities,
@@ -1390,8 +1291,6 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
             order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
@@ -1427,9 +1326,7 @@ mod tests {
         let fill_tracker = OrderFillTrackerMap::new();
         let venue_order_id = VenueOrderId::from(cancel_order.id.as_str());
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
         let order_identities = OrderIdentityRegistry::default();
         let emitter = test_emitter();
 
@@ -1437,8 +1334,6 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
             order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
@@ -1452,10 +1347,7 @@ mod tests {
         dispatch_user_message(&UserWsMessage::Order(cancel_order), &ctx, &mut state);
 
         // Cancel should be buffered (not emitted) AND saved to terminal_cancel_reports
-        let guard = pending_order_reports.lock().unwrap();
-        assert!(guard.get(&venue_order_id).is_some());
-        drop(guard);
-
+        assert!(fill_tracker.has_pending_report(&venue_order_id));
         assert!(state.terminal_cancel_reports.get(&venue_order_id).is_some());
     }
 
@@ -1501,9 +1393,7 @@ mod tests {
             instrument.price_precision(),
         );
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
         let order_identities = OrderIdentityRegistry::default();
         register_identity(&order_identities, venue_order_id, instrument.id(), "O-3797");
         order_identities.mark_accepted(venue_order_id);
@@ -1515,8 +1405,6 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
             order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
@@ -1694,9 +1582,7 @@ mod tests {
             instrument.price_precision(),
         );
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
         let order_identities = OrderIdentityRegistry::default();
         register_identity(
             &order_identities,
@@ -1713,8 +1599,6 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
             order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
@@ -1779,6 +1663,105 @@ mod tests {
         }
     }
 
+    #[rstest]
+    fn test_dispatch_taker_fill_gross_overfill_raises_qty_then_fills() {
+        // A marketable BUY filled below its limit returns more shares than the nominal qty (a
+        // gross overfill, beyond the dust band). The dispatcher must raise the order qty via
+        // OrderUpdated before the OrderFilled, or the engine drops the fill as an overfill.
+        use crate::common::enums::{
+            PolymarketEventType, PolymarketOrderSide, PolymarketOutcome, PolymarketTradeStatus,
+        };
+
+        let instrument = test_instrument();
+        let asset_id = instrument.id().symbol.inner();
+        let size_precision = instrument.size_precision();
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(asset_id, instrument.clone());
+
+        let fill_tracker = OrderFillTrackerMap::new();
+        let venue_order_id = VenueOrderId::from("0xtaker-gross-overfill");
+        let submitted = Quantity::new(30.0, size_precision);
+        fill_tracker.register(
+            venue_order_id,
+            submitted,
+            OrderSide::Buy,
+            instrument.id(),
+            size_precision,
+            instrument.price_precision(),
+        );
+
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+        register_identity(
+            &order_identities,
+            venue_order_id,
+            instrument.id(),
+            "O-GROSS-OVERFILL",
+        );
+        order_identities.mark_accepted(venue_order_id);
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
+            order_identities: &order_identities,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+        let mut state = WsDispatchState::default();
+
+        // 33.846152 shares against a nominal 30: a marketable fill below the limit price.
+        let trade = PolymarketUserTrade {
+            asset_id,
+            bucket_index: 0,
+            fee_rate_bps: "0".to_string(),
+            id: "trade-gross-overfill".to_string(),
+            last_update: "1700000001".to_string(),
+            maker_address: Ustr::from("0xmaker"),
+            maker_orders: vec![],
+            market: Ustr::from("0xmarket"),
+            match_time: "1700000000".to_string(),
+            outcome: PolymarketOutcome::yes(),
+            owner: Ustr::from("00000000-0000-0000-0000-000000000001"),
+            price: "0.014".to_string(),
+            side: PolymarketOrderSide::Buy,
+            size: "33.846152".to_string(),
+            status: PolymarketTradeStatus::Matched,
+            taker_order_id: venue_order_id.as_str().to_string(),
+            timestamp: "1700000000000".to_string(),
+            trade_owner: Ustr::from("00000000-0000-0000-0000-000000000001"),
+            trader_side: PolymarketLiquiditySide::Taker,
+            event_type: PolymarketEventType::Trade,
+        };
+
+        dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
+
+        let expected_qty = Quantity::new(33.846152, size_precision);
+
+        // The raise must precede the fill so the engine accepts the larger quantity.
+        match receiver.try_recv().expect("expected an updated event") {
+            ExecutionEvent::Order(OrderEventAny::Updated(updated)) => {
+                assert_eq!(updated.quantity, expected_qty);
+                assert_eq!(updated.venue_order_id, Some(venue_order_id));
+            }
+            other => panic!("expected updated event raising qty to the fill, was {other:?}"),
+        }
+
+        match receiver.try_recv().expect("expected a filled event") {
+            ExecutionEvent::Order(OrderEventAny::Filled(filled)) => {
+                assert_eq!(filled.last_qty, expected_qty);
+                assert_eq!(filled.venue_order_id, venue_order_id);
+            }
+            other => panic!("expected filled event, was {other:?}"),
+        }
+    }
+
     // Unmatched -> Rejected (placement never became live); CanceledMarketResolved -> Expired
     // (market settled). Both are tracked own-order terminal states emitted as order events.
     #[rstest]
@@ -1813,9 +1796,7 @@ mod tests {
             instrument.price_precision(),
         );
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
         let order_identities = OrderIdentityRegistry::default();
         register_identity(
             &order_identities,
@@ -1832,8 +1813,6 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
             order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),

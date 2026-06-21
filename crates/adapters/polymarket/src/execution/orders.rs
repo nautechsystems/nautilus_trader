@@ -83,8 +83,6 @@ impl PolymarketExecutionClient {
         let fill_tracker = self.fill_tracker.clone();
         let order_identities = self.order_identities.clone();
         let pending_submits = self.pending_submits.clone();
-        let pending_fills = self.pending_fills.clone();
-        let pending_order_reports = self.pending_order_reports.clone();
         let pending_cancels = self.pending_cancels.clone();
         let account_id = self.core.account_id;
         let size_precision = instrument.size_precision();
@@ -109,8 +107,6 @@ impl PolymarketExecutionClient {
                         clock,
                         &fill_tracker,
                         &order_identities,
-                        &pending_fills,
-                        &pending_order_reports,
                         &pending_cancels,
                         account_id,
                         size_precision,
@@ -139,8 +135,6 @@ impl PolymarketExecutionClient {
                         &fill_tracker,
                         &order_identities,
                         &pending_submits,
-                        &pending_fills,
-                        &pending_order_reports,
                         &pending_cancels,
                         account_id,
                         size_precision,
@@ -206,8 +200,6 @@ impl PolymarketExecutionClient {
         let fill_tracker = self.fill_tracker.clone();
         let order_identities = self.order_identities.clone();
         let pending_submits = self.pending_submits.clone();
-        let pending_fills = self.pending_fills.clone();
-        let pending_order_reports = self.pending_order_reports.clone();
         let pending_cancels = self.pending_cancels.clone();
         let account_id = self.core.account_id;
         let size_precision = instrument.size_precision();
@@ -288,8 +280,6 @@ impl PolymarketExecutionClient {
                         clock,
                         &fill_tracker,
                         &order_identities,
-                        &pending_fills,
-                        &pending_order_reports,
                         &pending_cancels,
                         account_id,
                         size_precision,
@@ -355,8 +345,6 @@ impl PolymarketExecutionClient {
                             &fill_tracker,
                             &order_identities,
                             &pending_submits,
-                            &pending_fills,
-                            &pending_order_reports,
                             &pending_cancels,
                             account_id,
                             size_precision,
@@ -514,8 +502,6 @@ impl PolymarketExecutionClient {
         let fill_tracker = self.fill_tracker.clone();
         let order_identities = self.order_identities.clone();
         let pending_submits = self.pending_submits.clone();
-        let pending_fills = self.pending_fills.clone();
-        let pending_order_reports = self.pending_order_reports.clone();
         let pending_cancels = self.pending_cancels.clone();
         let pending_tasks = self.pending_tasks.clone();
         let stopping = self.stopping.clone();
@@ -576,8 +562,6 @@ impl PolymarketExecutionClient {
                         &fill_tracker,
                         &order_identities,
                         &pending_submits,
-                        &pending_fills,
-                        &pending_order_reports,
                         &pending_cancels,
                         account_id,
                     )
@@ -601,8 +585,6 @@ impl PolymarketExecutionClient {
                                 clock,
                                 &fill_tracker,
                                 &order_identities,
-                                &pending_fills,
-                                &pending_order_reports,
                                 &pending_cancels,
                                 &pending_tasks,
                                 &stopping,
@@ -625,8 +607,6 @@ impl PolymarketExecutionClient {
                                         &fill_tracker,
                                         &order_identities,
                                         &pending_submits,
-                                        &pending_fills,
-                                        &pending_order_reports,
                                         &pending_cancels,
                                         account_id,
                                         batch_order.size_precision,

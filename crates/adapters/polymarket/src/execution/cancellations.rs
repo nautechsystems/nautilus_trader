@@ -22,7 +22,7 @@ use nautilus_model::{
     orders::{Order, OrderAny},
 };
 
-use super::{PendingCancelTracker, PolymarketExecutionClient};
+use super::{PolymarketExecutionClient, pending::PendingCancelTracker};
 use crate::{execution::types::CancelOutcome, http::query::CancelResponse};
 
 impl PolymarketExecutionClient {

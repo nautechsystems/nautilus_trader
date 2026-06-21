@@ -204,8 +204,6 @@ impl PolymarketExecutionClient {
 
         let fill_tracker = self.fill_tracker.clone();
         let pending_submits = self.pending_submits.clone();
-        let pending_fills = self.pending_fills.clone();
-        let pending_order_reports = self.pending_order_reports.clone();
         let order_identities = self.order_identities.clone();
 
         let handle = get_runtime().spawn(async move {
@@ -214,8 +212,6 @@ impl PolymarketExecutionClient {
                 token_instruments: &token_instruments,
                 fill_tracker: &fill_tracker,
                 pending_submits: &pending_submits,
-                pending_fills: &pending_fills,
-                pending_order_reports: &pending_order_reports,
                 order_identities: &order_identities,
                 emitter: &emitter,
                 account_id,

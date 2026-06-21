@@ -25,17 +25,16 @@ pub(crate) mod identity;
 pub mod order_builder;
 pub(crate) mod order_fill_tracker;
 pub mod parse;
+pub(crate) mod pending;
 pub(crate) mod reconciliation;
 pub(crate) mod submitter;
 pub(crate) mod types;
 
 use std::sync::{Arc, Mutex, atomic::AtomicBool};
 
-use ahash::AHashSet;
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
-    cache::fifo::FifoCacheMap,
     clients::ExecutionClient,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
@@ -45,7 +44,7 @@ use nautilus_common::{
     msgbus::TypedHandler,
 };
 use nautilus_core::{
-    MUTEX_POISONED, UnixNanos,
+    UnixNanos,
     collections::AtomicMap,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -65,9 +64,13 @@ use nautilus_network::retry::RetryConfig;
 use tokio::task::JoinHandle;
 use ustr::Ustr;
 
+pub(crate) use self::reports::get_pusd_currency;
 use self::{
-    identity::OrderIdentityRegistry, order_builder::PolymarketOrderBuilder,
-    order_fill_tracker::OrderFillTrackerMap, submitter::OrderSubmitter,
+    identity::OrderIdentityRegistry,
+    order_builder::PolymarketOrderBuilder,
+    order_fill_tracker::OrderFillTrackerMap,
+    pending::{PendingCancelTracker, PendingSubmitTracker},
+    submitter::OrderSubmitter,
 };
 use crate::{
     common::{consts::POLYMARKET_VENUE, credential::Secrets, enums::SignatureType},
@@ -76,12 +79,6 @@ use crate::{
     signing::eip712::OrderSigner,
     websocket::client::PolymarketWebSocketClient,
 };
-
-type PendingSubmitMap = Arc<Mutex<FifoCacheMap<VenueOrderId, ClientOrderId, 10_000>>>;
-type PendingFillMap = Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>;
-type PendingOrderReportMap = Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>>;
-
-pub(crate) use self::reports::get_pusd_currency;
 
 /// Live execution client for the Polymarket prediction market.
 #[derive(Debug)]
@@ -102,40 +99,10 @@ pub struct PolymarketExecutionClient {
     position_event_handler: Option<TypedHandler<PositionEvent>>,
     shared_token_instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
     neg_risk_index: Arc<AtomicMap<InstrumentId, bool>>,
-    fill_tracker: Arc<OrderFillTrackerMap>,
-    pending_submits: PendingSubmitMap,
+    pending_submits: PendingSubmitTracker,
     pending_cancels: PendingCancelTracker,
-    pending_fills: PendingFillMap,
-    pending_order_reports: PendingOrderReportMap,
     order_identities: Arc<OrderIdentityRegistry>,
-}
-
-#[derive(Clone, Debug, Default)]
-struct PendingCancelTracker {
-    client_order_ids: Arc<Mutex<AHashSet<ClientOrderId>>>,
-}
-
-impl PendingCancelTracker {
-    fn insert(&self, client_order_id: ClientOrderId) {
-        self.client_order_ids
-            .lock()
-            .expect(MUTEX_POISONED)
-            .insert(client_order_id);
-    }
-
-    fn remove(&self, client_order_id: &ClientOrderId) -> bool {
-        self.client_order_ids
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(client_order_id)
-    }
-
-    fn contains(&self, client_order_id: &ClientOrderId) -> bool {
-        self.client_order_ids
-            .lock()
-            .expect(MUTEX_POISONED)
-            .contains(client_order_id)
-    }
+    fill_tracker: Arc<OrderFillTrackerMap>,
 }
 
 impl PolymarketExecutionClient {
@@ -237,12 +204,10 @@ impl PolymarketExecutionClient {
             position_event_handler: None,
             shared_token_instruments: Arc::new(AtomicMap::new()),
             neg_risk_index: Arc::new(AtomicMap::new()),
-            fill_tracker: Arc::new(OrderFillTrackerMap::new()),
-            pending_submits: Arc::new(Mutex::new(FifoCacheMap::default())),
+            pending_submits: PendingSubmitTracker::default(),
             pending_cancels: PendingCancelTracker::default(),
-            pending_fills: Arc::new(Mutex::new(FifoCacheMap::default())),
-            pending_order_reports: Arc::new(Mutex::new(FifoCacheMap::default())),
             order_identities: Arc::new(OrderIdentityRegistry::default()),
+            fill_tracker: Arc::new(OrderFillTrackerMap::new()),
         })
     }
 }
