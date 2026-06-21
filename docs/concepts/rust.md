@@ -255,7 +255,8 @@ Use facade methods by default:
 - `portfolio()`
 
 `DataActorNative` and `StrategyNative` are for native-only access below that
-facade.
+facade. This section documents host integration and explicit latency-sensitive
+native Rust code, not the portable authoring path.
 
 | Authoring path            | Native traits?   | Normal API                          |
 |---------------------------|------------------|-------------------------------------|
@@ -265,18 +266,19 @@ facade.
 | Plug‑in‑compatible code   | No               | Facades only.                       |
 
 Native traits expose borrowed core state, `Rc<RefCell<_>>`, and runtime
-references. Use them only for performance-sensitive native paths or host
-integration internals. Engine, runtime, registration, PyO3, testkit, and
-plug-in host code can import `DataActorNative` or `StrategyNative` when they
-need actor-core or strategy-core access. Do not use them in ordinary actor or
-strategy logic, Python-authored components, or plug-in-compatible code, because
-those types do not cross those boundaries.
+references. Use them when native Rust code intentionally accepts those borrow
+rules for an explicit latency-sensitive path or host integration. Engine,
+runtime, registration, PyO3, testkit, and plug-in host code can import
+`DataActorNative` or `StrategyNative` when they need actor-core or
+strategy-core access. Do not use them in ordinary portable actor or strategy
+logic, Python-authored components, or plug-in-compatible code, because those
+types do not cross those boundaries.
 
 Choose the smallest native handle and keep each borrow scoped. Use `order()`
 for normal strategy order construction. Reach for
 `order_factory()` only when native code needs the raw mutable factory borrow.
 
-`DataActorNative` methods:
+#### `DataActorNative` methods
 
 | Native method | Return shape             | Use when                        |
 |---------------|--------------------------|---------------------------------|
@@ -287,7 +289,7 @@ for normal strategy order construction. Reach for
 | `cache_ref()` | `Ref<'_, Cache>`         | Need short live‑cache reads.    |
 | `cache_rc()`  | `Rc<RefCell<Cache>>`     | Mutate, store, or pass cache.   |
 
-`StrategyNative` methods:
+#### `StrategyNative` methods
 
 | Native method         | Return shape                 | Use when                          |
 |-----------------------|------------------------------|-----------------------------------|

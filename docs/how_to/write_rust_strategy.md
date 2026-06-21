@@ -129,42 +129,24 @@ Use the public facade in strategy logic:
 - `strategy_id()`
 - The order management methods on `Strategy`
 
-| Strategy path               | Native traits?   | Normal API                          |
-|-----------------------------|------------------|-------------------------------------|
-| Native Rust binary          | Only when needed | `Strategy` and `DataActor` facades. |
-| Rust configured from Python | Only when needed | Same as native Rust.                |
-| Python‑authored strategy    | No               | Facades only.                       |
-| Plug‑in‑compatible strategy | No               | Facades only.                       |
+Normal strategy code does not import `DataActorNative` or `StrategyNative`, and
+does not call native handles such as:
 
-Import `DataActorNative` or `StrategyNative` only in engine, runtime,
-registration, PyO3, testkit, plug-in host, or performance-sensitive native
-code that must access borrowed runtime state. Choose the smallest native handle
-and keep each borrow scoped. Use `order()` for normal strategy order
-construction; reach for `order_factory()` only when code needs the raw mutable
-factory borrow.
+- `core()`
+- `core_mut()`
+- `strategy_core()`
+- `strategy_core_mut()`
+- `order_factory()`
+- `order_factory_rc()`
+- `portfolio_rc()`
 
-`DataActorNative` methods:
+Those native handles expose borrowed runtime state and stay in engine, runtime,
+registration, PyO3, testkit, plug-in host, or explicit latency-sensitive native
+code. The [Rust native traits](../concepts/rust.md#native-traits) section
+covers the native-traits applicability matrix and these method tables:
 
-| Native method | Return shape             | Use when                        |
-|---------------|--------------------------|---------------------------------|
-| `core()`      | `&DataActorCore`         | Read actor internals.           |
-| `core_mut()`  | `&mut DataActorCore`     | Mutate actor internals.         |
-| `clock_mut()` | `RefMut<'_, dyn Clock>`  | Need a mutable clock borrow.    |
-| `clock_rc()`  | `Rc<RefCell<dyn Clock>>` | Store or pass the shared clock. |
-| `cache_ref()` | `Ref<'_, Cache>`         | Need short live‑cache reads.    |
-| `cache_rc()`  | `Rc<RefCell<Cache>>`     | Mutate, store, or pass cache.   |
-
-`StrategyNative` methods:
-
-| Native method         | Return shape                 | Use when                         |
-|-----------------------|------------------------------|----------------------------------|
-| `strategy_core()`     | `&StrategyCore`              | Read strategy internals.         |
-| `strategy_core_mut()` | `&mut StrategyCore`          | Mutate strategy internals.       |
-| `order_factory()`     | `RefMut<'_, OrderFactory>`   | Need raw mutable factory borrow. |
-| `order_factory_rc()`  | `Rc<RefCell<OrderFactory>>`  | Store or pass the factory.       |
-| `portfolio_rc()`      | `Rc<RefCell<Portfolio>>`     | Store or pass the portfolio.     |
-
-Those native handles do not cross Python or plug-in authoring boundaries.
+- [`DataActorNative` methods](../concepts/rust.md#dataactornative-methods)
+- [`StrategyNative` methods](../concepts/rust.md#strategynative-methods)
 
 ## Override Strategy hooks
 

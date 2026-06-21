@@ -51,7 +51,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_portfolio::portfolio::Portfolio;
-use nautilus_trading::StrategyNative;
+use nautilus_trading::Strategy;
 use rstest::*;
 use rust_decimal::Decimal;
 
@@ -2715,7 +2715,7 @@ fn test_collect_cancellable_orders_excludes_contingency_group(
         .expect("bracket order_list_id");
 
     // Plain limit added directly so it lands in cache without an OrderList.
-    let plain = tester.order_factory().limit(
+    let plain = tester.order().limit(
         instrument.id(),
         OrderSide::Sell,
         Quantity::from("0.01"),

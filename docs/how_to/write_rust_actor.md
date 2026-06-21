@@ -108,27 +108,12 @@ Read-only properties are available on the facade:
 - `trader_id()`
 - `is_registered()`
 
-| Actor path                  | Native‑only access?  | Normal API         |
-|-----------------------------|----------------------|--------------------|
-| Native Rust binary          | Only when needed     | `DataActor` facade |
-| Rust configured from Python | Only when needed     | `DataActor` facade |
-| Python‑authored actor       | No                   | `DataActor` facade |
-| Plug‑in‑compatible actor    | No                   | `DataActor` facade |
+The [Rust native traits](../concepts/rust.md#native-traits) section covers the
+native-traits applicability matrix and this method table:
 
-Import `DataActorNative` only for performance-sensitive native code or host
-integration internals. Choose the smallest native handle and keep each borrow
-scoped:
+- [`DataActorNative` methods](../concepts/rust.md#dataactornative-methods)
 
-| Native method | Return shape             | Use when                        |
-|---------------|--------------------------|---------------------------------|
-| `core()`      | `&DataActorCore`         | Read actor internals.           |
-| `core_mut()`  | `&mut DataActorCore`     | Mutate actor internals.         |
-| `clock_mut()` | `RefMut<'_, dyn Clock>`  | Need a mutable clock borrow.    |
-| `clock_rc()`  | `Rc<RefCell<dyn Clock>>` | Store or pass the shared clock. |
-| `cache_ref()` | `Ref<'_, Cache>`         | Need short live‑cache reads.    |
-| `cache_rc()`  | `Rc<RefCell<Cache>>`     | Mutate, store, or pass cache.   |
-
-These types do not cross Python or plug-in boundaries, so portable actors
+Those types do not cross Python or plug-in boundaries, so portable actors
 should use facade methods such as:
 
 - `clock()`

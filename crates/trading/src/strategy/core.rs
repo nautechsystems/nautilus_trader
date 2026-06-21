@@ -82,10 +82,10 @@ impl Debug for StrategyCore {
 
 /// Native-only access to internal strategy runtime state.
 ///
-/// Use this trait from Rust strategies compiled into the same native binary as
-/// the engine, when direct access to host runtime objects matters for a
-/// performance sensitive path or host integration code needs access below the
-/// facade API.
+/// Use this trait from engine, runtime, testkit, or opt-in native strategy
+/// code when direct access to host runtime objects matters for an explicit
+/// latency-sensitive path, or when host integration code needs access below
+/// the facade API.
 ///
 /// Do not import this trait in strategy code intended to run through Python or
 /// the plug-in authoring surface. Those surfaces should use facade methods such
