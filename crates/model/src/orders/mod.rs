@@ -50,7 +50,7 @@ pub use crate::orders::{
     any::{LimitOrderAny, OrderAny, PassiveOrderAny, StopOrderAny},
     limit::LimitOrder,
     limit_if_touched::LimitIfTouchedOrder,
-    list::OrderList,
+    list::{OrderList, OrderListValidationError},
     market::MarketOrder,
     market_if_touched::MarketIfTouchedOrder,
     market_to_limit::MarketToLimitOrder,

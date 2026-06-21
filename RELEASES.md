@@ -54,6 +54,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Changed `SerializationEncoding` repr order to `Json=0`, `MsgPack=1`, `Capnp=2`, `Sbe=3`
 - Changed `InstrumentId` and `OptionSeriesId` string constructors to return typed invalid-value
   errors instead of `anyhow::Error` (Rust)
+- Changed `OrderList::validate` to return `OrderListValidationError` instead of `anyhow::Error` (Rust)
 - Changed `SyntheticInstrument` fallible methods to return `SyntheticInstrumentError` instead of `anyhow::Error` (Rust)
 - Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)
 - Removed `CacheConfig.database` and `MessageBusConfig.backing`; pass adapters separately
