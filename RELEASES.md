@@ -20,6 +20,9 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added Hyperliquid builder attribution opt-out
 - Added Hyperliquid historical trade requests
 - Added Hyperliquid minimum notional handling
+- Added capability-aware `analyze-pool(s)`/`sync-dex` validation that fails before sync for unsupported DEXes
+- Added PancakeSwap V3 on-chain snapshot validation via the Uniswap V3 pool reads
+- Added PancakeSwap V3 pool-event parsers on BSC, Base, Arbitrum, and Ethereum
 - Added Polymarket RTDS custom data subscriptions (#4214), thanks @graceyangfan
 - Added Postgres cache position event-log persistence and restart recovery (Rust)
 - Added `ProbabilityPriceFeeModel` and configurable sandbox fee models (#4262), thanks @graceyangfan
@@ -90,6 +93,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Fixed Blockchain snapshot bootstrap checks
 - Fixed Blockchain pool-event replay to require durable timestamps before checkpoints
 - Fixed Blockchain pool sync aborting on swaps with an unrepresentable spot price
+- Fixed Blockchain pool profiler logging self-correcting tick and liquidity mismatches at error severity (now warn)
 - Fixed Blockchain snapshot validation rejecting fee-protocol-only mismatches
 - Fixed Bybit demo native TP/SL and option params being denied instead of routed through the create-order endpoint (Rust and Python)
 - Fixed custom `DataType` metadata ordering and shared custom-data unsubscribes (Rust)

@@ -13,8 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod core;
-pub mod pancakeswap_v3;
-pub mod uniswap_v2;
-pub mod uniswap_v3;
-pub mod uniswap_v4;
+//! PancakeSwap V3 event parsers.
+//!
+//! PancakeSwap V3 is a Uniswap V3 fork; every event except Swap is byte-identical, so those
+//! reuse the [`uniswap_v3`](super::uniswap_v3) parsers. The Swap event appends
+//! protocolFeesToken0/1 to the Uniswap V3 layout and hashes to a distinct topic0, so it has its
+//! own parser here.
+
+pub mod swap;

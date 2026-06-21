@@ -1541,7 +1541,11 @@ impl BlockchainDataClientCore {
     /// using the profiler's active positions and last processed block number.
     /// Used for profiler state restoration after bootstrapping and validation.
     async fn get_on_chain_snapshot(&self, profiler: &PoolProfiler) -> anyhow::Result<PoolSnapshot> {
-        if profiler.pool.dex.name == DexType::UniswapV3 {
+        // PancakeSwap V3 shares the Uniswap V3 pool read ABI, so it hydrates through the same contract
+        if matches!(
+            profiler.pool.dex.name,
+            DexType::UniswapV3 | DexType::PancakeSwapV3
+        ) {
             let last_processed_event = Self::last_processed_event_for_on_chain_snapshot(profiler)?;
             let timestamp = Self::timestamp_for_on_chain_snapshot(
                 profiler,

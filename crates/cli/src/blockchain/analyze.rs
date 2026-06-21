@@ -18,7 +18,7 @@ use std::{fs, sync::Arc};
 use nautilus_blockchain::{
     config::BlockchainDataClientConfig,
     data::core::{BlockchainDataClientCore, SnapshotValidation},
-    exchanges::{find_dex_type_case_insensitive, get_supported_dexes_for_chain},
+    exchanges::{find_dex_type_case_insensitive, get_dex_extended, get_supported_dexes_for_chain},
     rpc::providers::check_infura_rpc_provider,
 };
 use nautilus_infrastructure::sql::pg::get_postgres_connect_options;
@@ -450,7 +450,36 @@ fn parse_chain_dex(chain: &str, dex: &str) -> anyhow::Result<(Chain, DexType)> {
         }
     })?;
 
+    ensure_pool_analysis_supported(chain, dex_type)?;
+
     Ok((chain.to_owned(), dex_type))
+}
+
+// A DEX can be registered for discovery yet lack the analysis parsers; fail here instead of
+// syncing and only failing deep inside profiling.
+fn ensure_pool_analysis_supported(chain: &Chain, dex_type: DexType) -> anyhow::Result<()> {
+    let dex_extended = get_dex_extended(chain.name, &dex_type).ok_or_else(|| {
+        anyhow::anyhow!(
+            "DEX '{dex_type}' is not registered on chain '{}'",
+            chain.name
+        )
+    })?;
+
+    let missing = dex_extended.missing_pool_analysis_parsers();
+    if !missing.is_empty() {
+        let families = missing
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        anyhow::bail!(
+            "DEX '{dex_type}' on chain '{}' cannot be analyzed: missing pool-event parser(s) for {families}. \
+             Pool analysis needs Initialize, Swap, Mint, Burn, and Collect parsers.",
+            chain.name
+        );
+    }
+
+    Ok(())
 }
 
 fn rpc_http_url(chain: &Chain, rpc_url: Option<String>) -> anyhow::Result<String> {
@@ -708,6 +737,26 @@ mod tests {
                 "0x2222222222222222222222222222222222222222".to_string(),
                 "0x3333333333333333333333333333333333333333".to_string(),
             ]
+        );
+    }
+
+    #[rstest]
+    #[case("bsc", DexType::PancakeSwapV3)]
+    #[case("ethereum", DexType::PancakeSwapV3)]
+    #[case("ethereum", DexType::UniswapV3)]
+    fn ensure_pool_analysis_supported_accepts_wired_dex(#[case] chain: &str, #[case] dex: DexType) {
+        let chain = Chain::from_chain_name(chain).unwrap();
+        assert!(ensure_pool_analysis_supported(chain, dex).is_ok());
+    }
+
+    #[rstest]
+    fn ensure_pool_analysis_supported_rejects_dex_without_parsers() {
+        // SushiSwapV3 on Arbitrum is registered for pool discovery but has no event parsers.
+        let chain = Chain::from_chain_name("arbitrum").unwrap();
+        let err = ensure_pool_analysis_supported(chain, DexType::SushiSwapV3).unwrap_err();
+        assert!(
+            err.to_string().contains("missing pool-event parser"),
+            "unexpected error message: {err}"
         );
     }
 

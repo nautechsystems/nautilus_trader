@@ -17,6 +17,7 @@ use std::{ops::Deref, sync::Arc};
 
 use nautilus_model::defi::{
     dex::{Dex, SharedDex},
+    pool_analysis::PoolEventKind,
     rpc::RpcLog,
 };
 
@@ -461,6 +462,50 @@ impl DexExtended {
     #[must_use]
     pub fn needs_initialization(&self) -> bool {
         self.dex.initialize_event.is_some()
+    }
+
+    /// Returns `true` if this DEX can discover pools from HyperSync `PoolCreated` logs.
+    ///
+    /// `sync-dex` streams `PoolCreated` logs to populate the pool set, so a DEX without this
+    /// parser cannot be synced.
+    #[must_use]
+    pub fn supports_pool_discovery(&self) -> bool {
+        self.parse_pool_created_event_hypersync_fn.is_some()
+    }
+
+    /// Returns the pool-event families required to build snapshots that this DEX cannot parse
+    /// from HyperSync logs.
+    ///
+    /// `analyze-pool(s)` sync and profile a pool's swap, liquidity, and fee events and seed the
+    /// starting price from `Initialize`, so a registered DEX missing any of these parsers cannot
+    /// produce snapshots. An empty result means analysis can run.
+    #[must_use]
+    pub fn missing_pool_analysis_parsers(&self) -> Vec<PoolEventKind> {
+        [
+            (
+                PoolEventKind::Initialize,
+                self.parse_initialize_event_hypersync_fn.is_some(),
+            ),
+            (
+                PoolEventKind::Swap,
+                self.parse_swap_event_hypersync_fn.is_some(),
+            ),
+            (
+                PoolEventKind::Mint,
+                self.parse_mint_event_hypersync_fn.is_some(),
+            ),
+            (
+                PoolEventKind::Burn,
+                self.parse_burn_event_hypersync_fn.is_some(),
+            ),
+            (
+                PoolEventKind::Collect,
+                self.parse_collect_event_hypersync_fn.is_some(),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(kind, present)| (!present).then_some(kind))
+        .collect()
     }
 }
 

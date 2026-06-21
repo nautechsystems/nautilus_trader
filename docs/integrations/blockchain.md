@@ -362,6 +362,14 @@ provider limits if too many ticks or positions are packed into a single RPC call
 behavior is fail-closed on hydration failure; successful delivery for very large pools depends on
 provider limits or future chunked/minimal hydration work.
 
+PancakeSwap V3 reuses `UniswapV3PoolContract` for on-chain hydration because its pool read functions
+(`slot0`, `ticks`, `positions`, `liquidity`, `feeGrowthGlobal0X128`, `feeGrowthGlobal1X128`) share the
+Uniswap V3 ABI. The one
+difference is `slot0.feeProtocol`: PancakeSwap V3 returns a `uint32` (it packs both token protocol
+fees), which the Uniswap V3 `uint8` binding decodes to its low byte, so the recorded fee protocol
+differs from the on-chain value. A fee-protocol-only mismatch is non-blocking for validation, so the
+structural state (tick, liquidity, ticks, positions) still validates to `on_chain`.
+
 ## Smoke tests
 
 ### HyperSync authentication
@@ -433,6 +441,14 @@ These surface as `analyze-pool(s)` failures with a clear cause and fix.
 if the pool was never discovered. Run `sync-dex` for the chain/DEX once to populate the `pool` table
 first.
 
+#### Unsupported DEX combinations fail before sync
+
+A DEX can be registered for a chain yet lack the event parsers a command needs. `analyze-pool(s)`
+rejects such a DEX up front with `missing pool-event parser(s) for ...`, listing the absent families
+(analysis needs Initialize, Swap, Mint, Burn, and Collect parsers). `sync-dex` likewise rejects a DEX
+that cannot parse `PoolCreated` logs for discovery. This fails fast instead of syncing and erroring
+deep in profiling. PancakeSwap V3 is fully supported on BSC, Base, Arbitrum, and Ethereum.
+
 #### Use checksummed pool addresses
 
 Addresses must be EIP-55 checksummed; a lowercase address fails with
@@ -472,6 +488,66 @@ avoid the per-pool failure.
 line with `"status": "failure"`. Rely on the exit code for an overall pass/fail signal, and parse
 each result line's `status` for per-pool detail.
 
+## Runbook: live pool-sync smoke test
+
+A reproducible end-to-end check that pool discovery, event parsing, and snapshot generation work for a
+DEX on a chain. The example uses PancakeSwap V3 on Arbitrum (the smallest PancakeSwap V3 deployment,
+about 935 pools).
+
+### Prerequisites
+
+- `ENVIO_API_TOKEN` exported. The HyperSync client panics at construction without it.
+- An RPC HTTP URL for the chain (`--rpc-url` or `RPC_HTTP_URL`). Arbitrum: `https://arb1.arbitrum.io/rpc`.
+- Postgres up with the schema (`make start-services && make init-db`). Defaults: `127.0.0.1:5432`,
+  database `nautilus`, user `nautilus`, password `pass`.
+- A built CLI: `cargo build -p nautilus-cli --features defi --bin nautilus`. The `defi` feature pulls
+  in `nautilus-blockchain/hypersync`, which gates the `exchanges` parsers.
+
+### Steps
+
+Discover pools first (cheap: `PoolCreated` is sparse, token metadata batches through Multicall3),
+then analyze specific pools:
+
+```fish
+./target/debug/nautilus blockchain sync-dex --chain arbitrum --dex PancakeSwapV3 \
+    --rpc-url https://arb1.arbitrum.io/rpc \
+    --host 127.0.0.1 --port 5432 --username nautilus --password pass --database nautilus
+
+./target/debug/nautilus blockchain analyze-pools --chain arbitrum --dex PancakeSwapV3 \
+    --address <pool-address> --address <pool-address> \
+    --rpc-url https://arb1.arbitrum.io/rpc \
+    --host 127.0.0.1 --port 5432 --username nautilus --password pass --database nautilus \
+    --concurrency 1
+```
+
+Verify by counting rows in `pool_swap_event`, `pool_liquidity_event`, `pool_collect_event`,
+`pool_flash_event`, `pool_snapshot`, `pool_position`, and `pool_tick`.
+
+### Gotchas found running this
+
+- A free Envio token caps requests per window (for example 40). Discovery is cheap, but analyzing a
+  high-activity pool from its creation block spends most of its time backing off
+  (`rate limited by server (remaining=0/40 ...)`). Pick short-history or low-event pools, or bound the
+  range (see below). Probe a pool's size with a HyperSync log query before a full run.
+- The development Postgres can be emptied out-of-band mid-session (the schema stays, the data goes),
+  which surfaces later as `Pool <address> is not registered` because `load_pool` finds nothing. Run
+  `sync-dex` immediately before `analyze-pool(s)`; do not assume pools persist across a session.
+- On-chain snapshot validation covers Uniswap V3 and PancakeSwap V3 (both share the V3 pool read ABI).
+  Other forks with a different pool ABI (for example Algebra-based DEXes) still log
+  `Could not validate snapshot against on-chain state ... Fetching on-chain snapshot for Dex protocol
+  <name> is not supported yet` and keep `validation_state = replay`. The compare reads pool state at
+  the snapshot block, so an archive RPC is only needed when that block predates a non-archive node's
+  retention; recent targets reach `on_chain` on a non-archive node.
+- `--from-block` at a mid-life block skips the creation-block `Initialize` event, so the profiler
+  bootstrap fails with `Pool is not initialized and it doesn't contain initial price, cannot bootstrap
+  profiler`. Sync from creation when you need a snapshot. A bounded window still parses and persists
+  the events it covers (this is how a single `Flash` event was captured), only the snapshot step fails.
+- Addresses must be EIP-55 checksummed; the `pool.address` column is a custom domain, so plain text
+  equality from an external SQL client is unreliable. Use the CLI or `count(*)` to inspect.
+- The capability guard fails an unregistered combination before any sync: `sync-dex` needs a
+  `PoolCreated` parser, and `analyze-pool(s)` need `Initialize`, `Swap`, `Mint`, `Burn`, and `Collect`
+  parsers (see [Unsupported DEX combinations fail before sync](#unsupported-dex-combinations-fail-before-sync)).
+
 ## Current limitations
 
 - Very large Uniswap V3 pools can still hit provider payload, timeout, or rate limits during
@@ -480,3 +556,6 @@ each result line's `status` for per-pool detail.
   paths still need chunking hardening.
 - A full successful WETH/USDT or WETH/USDC delivery test needs a real HTTP RPC provider that can
   serve the final-state reads, or the adapter needs minimal/chunked hydration first.
+- On-chain snapshot validation covers Uniswap V3 and PancakeSwap V3 (shared V3 pool read ABI). Forks
+  with a different pool ABI sync events and produce replay snapshots, but cannot reach
+  `validation_state = on_chain` until the final-state hydration covers their pool contracts.

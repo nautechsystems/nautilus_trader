@@ -312,7 +312,7 @@ impl PoolProfiler {
 
         // Verify simulation against event data - correct with event values if mismatch detected
         if swap.tick != self.state.current_tick {
-            log::error!(
+            log::warn!(
                 "Inconsistency in swap processing: Current tick mismatch: simulated {}, event {} on block {}",
                 self.state.current_tick,
                 swap.tick,
@@ -322,7 +322,7 @@ impl PoolProfiler {
         }
 
         if swap.liquidity != self.tick_map.liquidity {
-            log::error!(
+            log::warn!(
                 "Inconsistency in swap processing: Active liquidity mismatch: simulated {}, event {} on block {}",
                 self.tick_map.liquidity,
                 swap.liquidity,

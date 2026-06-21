@@ -18,7 +18,7 @@ use std::sync::Arc;
 use nautilus_blockchain::{
     config::BlockchainDataClientConfig,
     data::core::BlockchainDataClientCore,
-    exchanges::{find_dex_type_case_insensitive, get_supported_dexes_for_chain},
+    exchanges::{find_dex_type_case_insensitive, get_dex_extended, get_supported_dexes_for_chain},
     rpc::providers::check_infura_rpc_provider,
 };
 use nautilus_core::string::secret::mask_api_key;
@@ -46,6 +46,22 @@ pub(crate) async fn run_sync_dex(
             anyhow::anyhow!("Invalid DEX name '{}' (case-insensitive). Supported DEXes for chain '{}': {}",dex,chain.name,supported_dexes.join(", "))
         }
     })?;
+
+    // Fail before connecting to the RPC/database when the DEX cannot discover pools from
+    // PoolCreated logs; without a parser sync-dex would otherwise find zero pools silently.
+    let dex_extended = get_dex_extended(chain.name, &dex_type).ok_or_else(|| {
+        anyhow::anyhow!(
+            "DEX '{dex_type}' is not registered on chain '{}'",
+            chain.name
+        )
+    })?;
+
+    if !dex_extended.supports_pool_discovery() {
+        anyhow::bail!(
+            "DEX '{dex_type}' on chain '{}' cannot be synced: missing a PoolCreated parser for pool discovery.",
+            chain.name
+        );
+    }
 
     let postgres_connect_options = get_postgres_connect_options(
         database.host,
