@@ -91,7 +91,7 @@ use nautilus_plugin::{
     manifest::{PluginManifest, ValidatedPluginManifest},
 };
 use nautilus_portfolio::portfolio::Portfolio;
-use nautilus_trading::strategy::{Strategy, StrategyConfig};
+use nautilus_trading::strategy::{StrategyConfig, StrategyNative};
 use rstest::{fixture, rstest};
 
 const EXAMPLE_NAME: &str = "custom_data_plugin";
@@ -259,7 +259,7 @@ fn register_strategy_adapter(adapter: &mut PluginStrategyAdapter) {
         clock.clone(),
         None,
     )));
-    Strategy::core_mut(adapter)
+    StrategyNative::strategy_core_mut(adapter)
         .register(trader_id, clock, cache, portfolio)
         .expect("strategy register");
     adapter.initialize().expect("strategy initialize");
@@ -770,7 +770,7 @@ fn cdylib_strategy_query_order_normalizes_identifiers_for_cache_lookup() {
     .expect("strategy adapter construction succeeds");
     register_strategy_adapter(&mut adapter);
 
-    let cache_rc = Strategy::core_mut(&mut adapter).cache_rc();
+    let cache_rc = StrategyNative::strategy_core_mut(&mut adapter).cache_rc();
     cache_rc
         .borrow_mut()
         .add_order(
@@ -840,7 +840,7 @@ fn cdylib_strategy_cancel_order_normalizes_identifiers_for_cache_lookup() {
     .expect("strategy adapter construction succeeds");
     register_strategy_adapter(&mut adapter);
 
-    let cache_rc = Strategy::core_mut(&mut adapter).cache_rc();
+    let cache_rc = StrategyNative::strategy_core_mut(&mut adapter).cache_rc();
     cache_rc
         .borrow_mut()
         .add_order(
@@ -910,7 +910,7 @@ fn cdylib_strategy_modify_order_normalizes_identifiers_for_cache_lookup() {
     .expect("strategy adapter construction succeeds");
     register_strategy_adapter(&mut adapter);
 
-    let cache_rc = Strategy::core_mut(&mut adapter).cache_rc();
+    let cache_rc = StrategyNative::strategy_core_mut(&mut adapter).cache_rc();
     cache_rc
         .borrow_mut()
         .add_order(
@@ -986,7 +986,7 @@ fn cdylib_strategy_close_position_normalizes_identifiers_for_cache_lookup() {
     let instrument = InstrumentAny::CurrencyPair(stubs::currency_pair_ethusdt());
     let position = plugin_test_position(strategy_id, position_id);
     let expected_instrument_id = position.instrument_id;
-    let cache_rc = Strategy::core_mut(&mut adapter).cache_rc();
+    let cache_rc = StrategyNative::strategy_core_mut(&mut adapter).cache_rc();
     cache_rc
         .borrow_mut()
         .add_instrument(instrument)
@@ -1143,7 +1143,7 @@ fn cdylib_strategy_cancel_orders_normalizes_identifiers_for_cache_lookup() {
     .expect("strategy adapter construction succeeds");
     register_strategy_adapter(&mut adapter);
 
-    let cache_rc = Strategy::core_mut(&mut adapter).cache_rc();
+    let cache_rc = StrategyNative::strategy_core_mut(&mut adapter).cache_rc();
     for id in [client_order_id, secondary_client_order_id] {
         cache_rc
             .borrow_mut()
@@ -1288,7 +1288,7 @@ fn cdylib_strategy_cancel_all_orders_normalizes_identifiers_and_routes_command_f
     .expect("strategy adapter construction succeeds");
     register_strategy_adapter(&mut adapter);
 
-    let cache_rc = Strategy::core_mut(&mut adapter).cache_rc();
+    let cache_rc = StrategyNative::strategy_core_mut(&mut adapter).cache_rc();
     let order = plugin_test_order(strategy_id, client_order_id);
     let submitted = TestOrderEventStubs::submitted(&order, AccountId::from("SIM-001"));
     let accepted = TestOrderEventStubs::accepted(
@@ -1378,7 +1378,7 @@ fn cdylib_strategy_close_all_positions_normalizes_identifiers_for_position_looku
 
     let position = plugin_test_position(strategy_id, position_id);
     assert_eq!(position.instrument_id, expected_instrument_id);
-    let cache_rc = Strategy::core_mut(&mut adapter).cache_rc();
+    let cache_rc = StrategyNative::strategy_core_mut(&mut adapter).cache_rc();
     cache_rc
         .borrow_mut()
         .add_instrument(instrument)

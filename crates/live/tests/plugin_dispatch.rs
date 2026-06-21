@@ -119,7 +119,7 @@ use nautilus_plugin::{
     },
 };
 use nautilus_portfolio::portfolio::Portfolio;
-use nautilus_trading::strategy::{Strategy, StrategyConfig};
+use nautilus_trading::strategy::{Strategy, StrategyConfig, StrategyNative};
 use rstest::rstest;
 
 // Counters for the actor surface. Each callback the plug-in observes
@@ -1506,7 +1506,7 @@ fn register_strategy_adapter_with_clock_and_cache(
         clock.clone(),
         None,
     )));
-    Strategy::core_mut(adapter)
+    StrategyNative::strategy_core_mut(adapter)
         .register(trader_id, clock.clone(), cache.clone(), portfolio)
         .expect("strategy register");
     adapter.initialize().expect("strategy initialize");

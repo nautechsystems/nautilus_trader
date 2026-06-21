@@ -154,8 +154,8 @@ covers the native-traits applicability matrix and these method tables:
 
 To override `Strategy` trait methods such as order or position event
 handlers, pass them in a block. The macro generates the internal plumbing
-automatically; do not redefine the generated `core()` or `core_mut()`
-accessors in the block.
+automatically; keep `DataActor` handlers in the separate `impl DataActor`
+block.
 
 ```rust
 nautilus_strategy!(MyStrategy, {

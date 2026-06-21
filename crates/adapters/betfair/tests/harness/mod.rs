@@ -57,7 +57,7 @@ use nautilus_model::{
 use nautilus_portfolio::Portfolio;
 use nautilus_risk::engine::{RiskEngine, config::RiskEngineConfig};
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
-use nautilus_trading::strategy::Strategy;
+use nautilus_trading::strategy::StrategyNative;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt},
     net::TcpListener,
@@ -312,7 +312,7 @@ impl Harness {
             self.clock.clone(),
             None,
         )));
-        Strategy::core_mut(&mut tester)
+        StrategyNative::strategy_core_mut(&mut tester)
             .register(
                 self.trader_id,
                 self.clock.clone(),

@@ -867,14 +867,6 @@ impl StrategyNative for PyStrategyInner {
 }
 
 impl Strategy for PyStrategyInner {
-    fn core(&self) -> &StrategyCore {
-        &self.core
-    }
-
-    fn core_mut(&mut self) -> &mut StrategyCore {
-        &mut self.core
-    }
-
     fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
         self.core.config.external_order_claims.clone()
     }

@@ -84,8 +84,9 @@ pub type BatchModifyOrder = (
 /// Use the `nautilus_strategy!` macro to generate the native runtime wiring
 /// and `Strategy` implementations. Normal strategy logic should call facade
 /// methods such as `strategy_id()`, `clock()`, `cache()`, `order()`, and
-/// `portfolio()`. For strategies that override additional trait methods, pass
-/// them in a block:
+/// `portfolio()`. Native runtime code that needs the internal core should use
+/// [`StrategyNative`]. For strategies that override additional trait methods,
+/// pass them in a block:
 ///
 /// ```ignore
 /// nautilus_strategy!(MyStrategy, {
@@ -95,21 +96,12 @@ pub type BatchModifyOrder = (
 /// });
 /// ```
 ///
-/// All order and position management methods are provided as default
-/// implementations.
+/// Default methods that read or mutate native runtime state carry explicit
+/// [`StrategyNative`] bounds. Strategy implementations that only need core-free
+/// callbacks can implement this trait with their own [`Component`]
+/// implementation, while runtime-registered strategies keep using native
+/// wiring.
 pub trait Strategy: DataActor {
-    /// Provides access to the internal `StrategyCore`.
-    ///
-    /// Generated automatically by the `nautilus_strategy!` macro.
-    #[doc(hidden)]
-    fn core(&self) -> &StrategyCore;
-
-    /// Provides mutable access to the internal `StrategyCore`.
-    ///
-    /// Generated automatically by the `nautilus_strategy!` macro.
-    #[doc(hidden)]
-    fn core_mut(&mut self) -> &mut StrategyCore;
-
     /// Returns the external order claims for this strategy.
     ///
     /// These are instrument IDs whose external orders should be claimed by this strategy
@@ -119,18 +111,27 @@ pub trait Strategy: DataActor {
     }
 
     /// Returns the runtime strategy ID, when configured or registered.
-    fn strategy_id(&self) -> Option<StrategyId> {
-        Strategy::core(self).strategy_id()
+    fn strategy_id(&self) -> Option<StrategyId>
+    where
+        Self: StrategyNative,
+    {
+        StrategyNative::strategy_core(self).strategy_id()
     }
 
     /// Returns the user-facing order creation API.
-    fn order(&self) -> OrderApi<'_> {
-        Strategy::core(self).order()
+    fn order(&self) -> OrderApi<'_>
+    where
+        Self: StrategyNative,
+    {
+        StrategyNative::strategy_core(self).order()
     }
 
     /// Returns the user-facing portfolio read API.
-    fn portfolio(&self) -> PortfolioApi<'_> {
-        Strategy::core(self).portfolio_api()
+    fn portfolio(&self) -> PortfolioApi<'_>
+    where
+        Self: StrategyNative,
+    {
+        StrategyNative::strategy_core(self).portfolio_api()
     }
 
     /// Submits an order.
@@ -144,8 +145,11 @@ pub trait Strategy: DataActor {
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) -> anyhow::Result<()> {
-        let core = Strategy::core_mut(self);
+    ) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
@@ -170,7 +174,7 @@ pub trait Strategy: DataActor {
             return Ok(());
         }
 
-        let core = Strategy::core_mut(self);
+        let core = StrategyNative::strategy_core_mut(self);
         let params = params.filter(|params| !params.is_empty());
 
         {
@@ -220,7 +224,10 @@ pub trait Strategy: DataActor {
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
         if orders.is_empty() {
             log::error!("OrderList denied: no orders to submit");
             anyhow::bail!("OrderList denied: no orders to submit");
@@ -248,7 +255,7 @@ pub trait Strategy: DataActor {
         }
 
         let should_deny = {
-            let core = Strategy::core_mut(self);
+            let core = StrategyNative::strategy_core_mut(self);
             let tag = core.market_exit_tag;
             core.is_exiting
                 && orders.iter().any(|o| {
@@ -261,7 +268,7 @@ pub trait Strategy: DataActor {
             return Ok(());
         }
 
-        let core = Strategy::core_mut(self);
+        let core = StrategyNative::strategy_core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
@@ -366,9 +373,12 @@ pub trait Strategy: DataActor {
         trigger_price: Option<Price>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
         let (trader_id, strategy_id) = {
-            let core = Strategy::core_mut(self);
+            let core = StrategyNative::strategy_core_mut(self);
             (
                 registered_trader_id(core)?,
                 StrategyId::from(core.actor_id().inner().as_str()),
@@ -378,7 +388,7 @@ pub trait Strategy: DataActor {
         let params = params.filter(|params| !params.is_empty());
 
         // TODO: Snapshot the order from the cache. See `cancel_order` for the rationale.
-        let order = Strategy::core_mut(self)
+        let order = StrategyNative::strategy_core_mut(self)
             .cache_rc()
             .borrow()
             .try_order_owned(&client_order_id)
@@ -444,7 +454,9 @@ pub trait Strategy: DataActor {
             price,
             trigger_price,
             UUID4::new(),
-            Strategy::core_mut(self).clock_mut().timestamp_ns(),
+            StrategyNative::strategy_core_mut(self)
+                .clock_mut()
+                .timestamp_ns(),
             params,
             None, // correlation_id
         );
@@ -470,13 +482,16 @@ pub trait Strategy: DataActor {
         updates: Vec<BatchModifyOrder>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
         if updates.is_empty() {
             anyhow::bail!("Cannot batch modify empty order list");
         }
 
         let (trader_id, strategy_id, ts_init) = {
-            let core = Strategy::core_mut(self);
+            let core = StrategyNative::strategy_core_mut(self);
             (
                 registered_trader_id(core)?,
                 StrategyId::from(core.actor_id().inner().as_str()),
@@ -485,7 +500,7 @@ pub trait Strategy: DataActor {
         };
 
         let orders: Vec<OrderAny> = {
-            let cache_rc = Strategy::core_mut(self).cache_rc();
+            let cache_rc = StrategyNative::strategy_core_mut(self).cache_rc();
             let cache = cache_rc.borrow();
             updates
                 .iter()
@@ -613,9 +628,12 @@ pub trait Strategy: DataActor {
         client_order_id: ClientOrderId,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
         let (trader_id, strategy_id, ts_init) = {
-            let core = Strategy::core_mut(self);
+            let core = StrategyNative::strategy_core_mut(self);
             (
                 registered_trader_id(core)?,
                 StrategyId::from(core.actor_id().inner().as_str()),
@@ -628,7 +646,7 @@ pub trait Strategy: DataActor {
         // TODO: Snapshot the order from the cache. Callers identify it by ID; we own the
         // snapshot so later calls (which take `&OrderAny` and may re-enter the cache)
         // run without holding a live cache borrow.
-        let order = Strategy::core_mut(self)
+        let order = StrategyNative::strategy_core_mut(self)
             .cache_rc()
             .borrow()
             .try_order_owned(&client_order_id)
@@ -665,7 +683,7 @@ pub trait Strategy: DataActor {
             send_exec_command(TradingCommand::CancelOrder(command));
         }
 
-        if Strategy::core(self).config.manage_gtd_expiry
+        if StrategyNative::strategy_core(self).config.manage_gtd_expiry
             && order.time_in_force() == TimeInForce::Gtd
             && self.has_gtd_expiry_timer(&order.client_order_id())
         {
@@ -686,13 +704,16 @@ pub trait Strategy: DataActor {
         client_order_ids: Vec<ClientOrderId>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
         if client_order_ids.is_empty() {
             anyhow::bail!("Cannot batch cancel empty order list");
         }
 
         let (trader_id, strategy_id, ts_init) = {
-            let core = Strategy::core_mut(self);
+            let core = StrategyNative::strategy_core_mut(self);
             (
                 registered_trader_id(core)?,
                 StrategyId::from(core.actor_id().inner().as_str()),
@@ -702,7 +723,7 @@ pub trait Strategy: DataActor {
 
         // TODO: Snapshot all orders from the cache. See `cancel_order` for the rationale.
         let orders: Vec<OrderAny> = {
-            let cache_rc = Strategy::core_mut(self).cache_rc();
+            let cache_rc = StrategyNative::strategy_core_mut(self).cache_rc();
             let cache = cache_rc.borrow();
             client_order_ids
                 .iter()
@@ -777,7 +798,10 @@ pub trait Strategy: DataActor {
     /// # Errors
     ///
     /// Returns an error if applying the pending update event to the cache fails.
-    fn mark_order_pending_update(&mut self, order: &OrderAny) -> anyhow::Result<bool> {
+    fn mark_order_pending_update(&mut self, order: &OrderAny) -> anyhow::Result<bool>
+    where
+        Self: StrategyNative,
+    {
         if order.is_active_local() {
             return Ok(true);
         }
@@ -787,7 +811,7 @@ pub trait Strategy: DataActor {
         let event = OrderEventAny::PendingUpdate(self.generate_order_pending_update(order));
 
         {
-            let cache_rc = Strategy::core_mut(self).cache_rc();
+            let cache_rc = StrategyNative::strategy_core_mut(self).cache_rc();
             let mut cache = cache_rc.borrow_mut();
             match cache.update_order(&event) {
                 Ok(_) => {}
@@ -815,7 +839,10 @@ pub trait Strategy: DataActor {
     /// # Errors
     ///
     /// Returns an error if applying the pending cancel event to the cache fails.
-    fn mark_order_pending_cancel(&mut self, order: &OrderAny) -> anyhow::Result<bool> {
+    fn mark_order_pending_cancel(&mut self, order: &OrderAny) -> anyhow::Result<bool>
+    where
+        Self: StrategyNative,
+    {
         if order.is_closed() || order.is_pending_cancel() {
             log::warn!(
                 "Cannot cancel order: state is {:?}, {order:?}",
@@ -833,7 +860,7 @@ pub trait Strategy: DataActor {
         let event = OrderEventAny::PendingCancel(self.generate_order_pending_cancel(order));
 
         {
-            let cache_rc = Strategy::core_mut(self).cache_rc();
+            let cache_rc = StrategyNative::strategy_core_mut(self).cache_rc();
             let mut cache = cache_rc.borrow_mut();
             match cache.update_order(&event) {
                 Ok(_) => {}
@@ -858,8 +885,13 @@ pub trait Strategy: DataActor {
     }
 
     /// Generates an `OrderPendingUpdate` event for an order.
-    fn generate_order_pending_update(&mut self, order: &OrderAny) -> OrderPendingUpdate {
-        let ts_now = Strategy::core_mut(self).clock_mut().timestamp_ns();
+    fn generate_order_pending_update(&mut self, order: &OrderAny) -> OrderPendingUpdate
+    where
+        Self: StrategyNative,
+    {
+        let ts_now = StrategyNative::strategy_core_mut(self)
+            .clock_mut()
+            .timestamp_ns();
 
         OrderPendingUpdate::new(
             order.trader_id(),
@@ -878,8 +910,13 @@ pub trait Strategy: DataActor {
     }
 
     /// Generates an `OrderPendingCancel` event for an order.
-    fn generate_order_pending_cancel(&mut self, order: &OrderAny) -> OrderPendingCancel {
-        let ts_now = Strategy::core_mut(self).clock_mut().timestamp_ns();
+    fn generate_order_pending_cancel(&mut self, order: &OrderAny) -> OrderPendingCancel
+    where
+        Self: StrategyNative,
+    {
+        let ts_now = StrategyNative::strategy_core_mut(self)
+            .clock_mut()
+            .timestamp_ns();
 
         OrderPendingCancel::new(
             order.trader_id(),
@@ -908,9 +945,12 @@ pub trait Strategy: DataActor {
         order_side: Option<OrderSide>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
         let params = params.filter(|params| !params.is_empty());
-        let core = Strategy::core_mut(self);
+        let core = StrategyNative::strategy_core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
@@ -1049,8 +1089,11 @@ pub trait Strategy: DataActor {
         time_in_force: Option<TimeInForce>,
         reduce_only: Option<bool>,
         quote_quantity: Option<bool>,
-    ) -> anyhow::Result<()> {
-        let core = Strategy::core_mut(self);
+    ) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
 
         if position.is_closed() {
             log::warn!("Cannot close position (already closed): {}", position.id);
@@ -1090,8 +1133,11 @@ pub trait Strategy: DataActor {
         time_in_force: Option<TimeInForce>,
         reduce_only: Option<bool>,
         quote_quantity: Option<bool>,
-    ) -> anyhow::Result<()> {
-        let core = Strategy::core_mut(self);
+    ) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let cache = core.cache_ref();
 
@@ -1129,7 +1175,7 @@ pub trait Strategy: DataActor {
                 continue;
             }
 
-            let core = Strategy::core_mut(self);
+            let core = StrategyNative::strategy_core_mut(self);
             let closing_side = OrderCore::closing_side(pos_side);
             let order = core.order_factory().market(
                 pos_instrument_id,
@@ -1163,8 +1209,11 @@ pub trait Strategy: DataActor {
         account_id: AccountId,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) -> anyhow::Result<()> {
-        let core = Strategy::core_mut(self);
+    ) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
         let ts_init = core.clock_mut().timestamp_ns();
@@ -1196,8 +1245,11 @@ pub trait Strategy: DataActor {
         order: &OrderAny,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) -> anyhow::Result<()> {
-        let core = Strategy::core_mut(self);
+    ) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
@@ -1221,9 +1273,12 @@ pub trait Strategy: DataActor {
     }
 
     /// Handles an order event, dispatching to the appropriate handler.
-    fn handle_order_event(&mut self, event: OrderEventAny) {
+    fn handle_order_event(&mut self, event: OrderEventAny)
+    where
+        Self: StrategyNative,
+    {
         let state = {
-            let core = Strategy::core_mut(self);
+            let core = StrategyNative::strategy_core_mut(self);
             let id = &core.actor.actor_id;
             let is_warning = matches!(
                 &event,
@@ -1267,7 +1322,7 @@ pub trait Strategy: DataActor {
         // Contingent order manager observes events before user handlers so OCO
         // bookkeeping is consistent with what the strategy then sees.
         {
-            let core = Strategy::core_mut(self);
+            let core = StrategyNative::strategy_core_mut(self);
             if let Some(manager) = &mut core.order_manager {
                 let actions = manager.handle_event(&event);
                 debug_assert!(
@@ -1303,9 +1358,12 @@ pub trait Strategy: DataActor {
     }
 
     /// Handles a position event, dispatching to the appropriate handler.
-    fn handle_position_event(&mut self, event: PositionEvent) {
+    fn handle_position_event(&mut self, event: PositionEvent)
+    where
+        Self: StrategyNative,
+    {
         let state = {
-            let core = Strategy::core_mut(self);
+            let core = StrategyNative::strategy_core_mut(self);
 
             if core.actor.config.log_events {
                 let id = &core.actor.actor_id;
@@ -1340,8 +1398,11 @@ pub trait Strategy: DataActor {
     /// # Errors
     ///
     /// Returns an error if strategy initialization fails.
-    fn on_start(&mut self) -> anyhow::Result<()> {
-        let core = Strategy::core_mut(self);
+    fn on_start(&mut self) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         log::info!("Starting {strategy_id}");
 
@@ -1360,7 +1421,10 @@ pub trait Strategy: DataActor {
     /// # Errors
     ///
     /// Returns an error if time event handling fails.
-    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
         if event.name.starts_with("GTD-EXPIRY:") {
             self.expire_gtd_order(event.clone());
         } else if event.name.starts_with("MARKET_EXIT_CHECK:") {
@@ -1500,8 +1564,11 @@ pub trait Strategy: DataActor {
     /// Returns whether the strategy is currently executing a market exit.
     ///
     /// Strategies can check this to avoid submitting new orders during exit.
-    fn is_exiting(&self) -> bool {
-        Strategy::core(self).is_exiting
+    fn is_exiting(&self) -> bool
+    where
+        Self: StrategyNative,
+    {
+        StrategyNative::strategy_core(self).is_exiting
     }
 
     /// Initiates an iterative market exit for the strategy.
@@ -1519,8 +1586,11 @@ pub trait Strategy: DataActor {
     /// # Errors
     ///
     /// Returns an error if the market exit cannot be initiated.
-    fn market_exit(&mut self) -> anyhow::Result<()> {
-        let core = Strategy::core_mut(self);
+    fn market_exit(&mut self) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
 
         if core.actor.state() != ComponentState::Running {
@@ -1542,7 +1612,7 @@ pub trait Strategy: DataActor {
 
         self.on_market_exit();
 
-        let core = Strategy::core_mut(self);
+        let core = StrategyNative::strategy_core_mut(self);
         let cache = core.cache_ref();
 
         let mut instruments: AHashSet<InstrumentId> = AHashSet::new();
@@ -1595,7 +1665,7 @@ pub trait Strategy: DataActor {
             }
         }
 
-        let core = Strategy::core_mut(self);
+        let core = StrategyNative::strategy_core_mut(self);
         let interval_ms = core.config.market_exit_interval_ms;
         let timer_name = core.market_exit_timer_name;
 
@@ -1625,13 +1695,16 @@ pub trait Strategy: DataActor {
     /// Checks if the market exit is complete and finalizes if so.
     ///
     /// This method is called by the market exit timer.
-    fn check_market_exit(&mut self, _event: TimeEvent) {
+    fn check_market_exit(&mut self, _event: TimeEvent)
+    where
+        Self: StrategyNative,
+    {
         // Guard against stale timer events after cancel_market_exit
         if !self.is_exiting() {
             return;
         }
 
-        let core = Strategy::core_mut(self);
+        let core = StrategyNative::strategy_core_mut(self);
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
 
         core.market_exit_attempts += 1;
@@ -1691,7 +1764,7 @@ pub trait Strategy: DataActor {
                     continue;
                 }
 
-                let core = Strategy::core_mut(self);
+                let core = StrategyNative::strategy_core_mut(self);
                 let time_in_force = core.config.market_exit_time_in_force;
                 let reduce_only = core.config.market_exit_reduce_only;
                 let market_exit_tag = core.market_exit_tag;
@@ -1724,9 +1797,12 @@ pub trait Strategy: DataActor {
     ///
     /// Cancels the market exit timer, resets state, calls the `post_market_exit` hook,
     /// and stops the strategy if a stop was pending.
-    fn finalize_market_exit(&mut self) {
+    fn finalize_market_exit(&mut self)
+    where
+        Self: StrategyNative,
+    {
         let (strategy_id, should_stop) = {
-            let core = Strategy::core_mut(self);
+            let core = StrategyNative::strategy_core_mut(self);
             let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
             let should_stop = core.pending_stop;
             (strategy_id, should_stop)
@@ -1750,7 +1826,7 @@ pub trait Strategy: DataActor {
             }
         }
 
-        let core = Strategy::core_mut(self);
+        let core = StrategyNative::strategy_core_mut(self);
         debug_assert!(
             !(core.pending_stop
                 && !core.is_exiting
@@ -1762,8 +1838,11 @@ pub trait Strategy: DataActor {
     /// Cancels an active market exit without calling hooks.
     ///
     /// Used when `stop()` is called during an active market exit to avoid state leaks.
-    fn cancel_market_exit(&mut self) {
-        let core = Strategy::core_mut(self);
+    fn cancel_market_exit(&mut self)
+    where
+        Self: StrategyNative,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
         let timer_name = core.market_exit_timer_name;
 
         if core
@@ -1790,9 +1869,12 @@ pub trait Strategy: DataActor {
     ///
     /// Returns `true` if the strategy should proceed with stopping, `false` if
     /// the stop is being deferred until market exit completes.
-    fn stop(&mut self) -> bool {
+    fn stop(&mut self) -> bool
+    where
+        Self: StrategyNative,
+    {
         let (manage_stop, is_exiting, should_initiate_exit) = {
-            let core = Strategy::core_mut(self);
+            let core = StrategyNative::strategy_core_mut(self);
             let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
             let manage_stop = core.config.manage_stop;
             let state = core.actor.state();
@@ -1824,7 +1906,7 @@ pub trait Strategy: DataActor {
         if manage_stop {
             if should_initiate_exit && let Err(e) = self.market_exit() {
                 log::warn!("Market exit failed during stop: {e}, proceeding with stop");
-                Strategy::core_mut(self).pending_stop = false;
+                StrategyNative::strategy_core_mut(self).pending_stop = false;
                 return true;
             }
             debug_assert!(
@@ -1846,8 +1928,11 @@ pub trait Strategy: DataActor {
     ///
     /// This method creates an `OrderDenied` event, applies it to the order,
     /// and updates the cache.
-    fn deny_order(&mut self, order: &OrderAny, reason: Ustr) {
-        let core = Strategy::core_mut(self);
+    fn deny_order(&mut self, order: &OrderAny, reason: Ustr)
+    where
+        Self: StrategyNative,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
         let Some(trader_id) = core.trader_id() else {
             log::error!(
                 "Cannot deny order {}: trader_id is not set",
@@ -1915,7 +2000,10 @@ pub trait Strategy: DataActor {
     /// Denies all orders in an order list.
     ///
     /// This method denies each non-closed order in the list.
-    fn deny_order_list(&mut self, orders: &[OrderAny], reason: Ustr) {
+    fn deny_order_list(&mut self, orders: &[OrderAny], reason: Ustr)
+    where
+        Self: StrategyNative,
+    {
         for order in orders {
             if !order.is_closed() {
                 self.deny_order(order, reason);
@@ -1932,8 +2020,11 @@ pub trait Strategy: DataActor {
     /// # Errors
     ///
     /// Returns an error if timer creation fails.
-    fn set_gtd_expiry(&mut self, order: &OrderAny) -> anyhow::Result<()> {
-        let core = Strategy::core_mut(self);
+    fn set_gtd_expiry(&mut self, order: &OrderAny) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
 
         if !core.config.manage_gtd_expiry || order.time_in_force() != TimeInForce::Gtd {
             return Ok(());
@@ -1969,8 +2060,11 @@ pub trait Strategy: DataActor {
     }
 
     /// Cancels a GTD expiry timer for an order.
-    fn cancel_gtd_expiry(&mut self, client_order_id: &ClientOrderId) {
-        let core = Strategy::core_mut(self);
+    fn cancel_gtd_expiry(&mut self, client_order_id: &ClientOrderId)
+    where
+        Self: StrategyNative,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
 
         if let Some(timer_name) = core.gtd_timers.remove(client_order_id) {
             core.clock_mut().cancel_timer(timer_name.as_str());
@@ -1979,15 +2073,21 @@ pub trait Strategy: DataActor {
     }
 
     /// Checks if a GTD expiry timer exists for an order.
-    fn has_gtd_expiry_timer(&mut self, client_order_id: &ClientOrderId) -> bool {
-        let core = Strategy::core_mut(self);
+    fn has_gtd_expiry_timer(&mut self, client_order_id: &ClientOrderId) -> bool
+    where
+        Self: StrategyNative,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
         core.gtd_timers.contains_key(client_order_id)
     }
 
     /// Handles GTD order expiry by canceling the order.
     ///
     /// This method is called when a GTD expiry timer fires.
-    fn expire_gtd_order(&mut self, event: TimeEvent) {
+    fn expire_gtd_order(&mut self, event: TimeEvent)
+    where
+        Self: StrategyNative,
+    {
         let timer_name = event.name.to_string();
         let Some(client_order_id_str) = timer_name.strip_prefix("GTD-EXPIRY:") else {
             log::error!("Invalid GTD timer name format: {timer_name}");
@@ -1996,7 +2096,7 @@ pub trait Strategy: DataActor {
 
         let client_order_id = ClientOrderId::from(client_order_id_str);
 
-        let core = Strategy::core_mut(self);
+        let core = StrategyNative::strategy_core_mut(self);
         core.gtd_timers.remove(&client_order_id);
 
         let order = core.cache_ref().order(&client_order_id).map(|o| o.clone());
@@ -2016,8 +2116,11 @@ pub trait Strategy: DataActor {
     ///
     /// Queries the cache for all open GTD orders and creates timers for those
     /// that haven't expired yet. Orders that have already expired are canceled immediately.
-    fn reactivate_gtd_timers(&mut self) {
-        let core = Strategy::core_mut(self);
+    fn reactivate_gtd_timers(&mut self)
+    where
+        Self: StrategyNative,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let current_time_ns = core.clock_mut().timestamp_ns();
 
@@ -2112,6 +2215,7 @@ mod tests {
         cache::{Cache, ORDER_NOT_FOUND},
         clock::{Clock, TestClock},
         component::Component,
+        enums::{ComponentState, ComponentTrigger},
         msgbus::{
             self, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
             stubs::{
@@ -2128,8 +2232,8 @@ mod tests {
         },
         events::{OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted},
         identifiers::{
-            AccountId, ActorId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
-            TradeId, TraderId, VenueOrderId,
+            AccountId, ActorId, ClientOrderId, ComponentId, InstrumentId, OrderListId, PositionId,
+            StrategyId, TradeId, TraderId, VenueOrderId,
         },
         orderbook::own::OwnOrderBook,
         orders::{LimitOrder, MarketOrder, OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -2157,6 +2261,45 @@ mod tests {
         on_position_changed_called: bool,
         on_position_closed_called: bool,
     }
+
+    #[derive(Debug)]
+    struct CoreFreeStrategy {
+        state: ComponentState,
+        started: bool,
+    }
+
+    impl Component for CoreFreeStrategy {
+        fn component_id(&self) -> ComponentId {
+            ComponentId::new("CoreFreeStrategy")
+        }
+
+        fn state(&self) -> ComponentState {
+            self.state
+        }
+
+        fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
+            self.state = self.state.transition(&trigger)?;
+            Ok(())
+        }
+
+        fn register(
+            &mut self,
+            _trader_id: TraderId,
+            _clock: Rc<RefCell<dyn Clock>>,
+            _cache: Rc<RefCell<Cache>>,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl DataActor for CoreFreeStrategy {
+        fn on_start(&mut self) -> anyhow::Result<()> {
+            self.started = true;
+            Ok(())
+        }
+    }
+
+    impl Strategy for CoreFreeStrategy {}
 
     impl TestStrategy {
         fn new(config: StrategyConfig) -> Self {
@@ -4596,6 +4739,21 @@ mod tests {
     });
 
     impl DataActor for MacroTestCustomField {}
+
+    #[rstest]
+    fn test_strategy_behavior_does_not_require_native_core_access() {
+        fn assert_strategy<T: Strategy + DataActor + Component>() {}
+
+        assert_strategy::<CoreFreeStrategy>();
+
+        let mut strategy = CoreFreeStrategy {
+            state: ComponentState::PreInitialized,
+            started: false,
+        };
+        DataActor::on_start(&mut strategy).unwrap();
+
+        assert!(strategy.started);
+    }
 
     #[rstest]
     fn test_nautilus_strategy_macro_forms() {

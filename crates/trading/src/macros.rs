@@ -24,8 +24,8 @@
 /// returns the user-supplied [`StrategyConfig`](crate::strategy::StrategyConfig).
 ///
 /// An optional brace-delimited block adds extra methods to the generated `impl Strategy`.
-/// Do not redefine `core` or `core_mut` inside the block; they are already generated
-/// by the macro and duplicates will cause a compile error.
+/// Native runtime core access is generated through `StrategyNative`; normal strategy
+/// logic should use `Strategy` facade methods.
 ///
 /// # Examples
 ///
@@ -107,14 +107,6 @@ macro_rules! nautilus_strategy {
         }
 
         impl $crate::strategy::Strategy for $ty {
-            fn core(&self) -> &$crate::strategy::StrategyCore {
-                &self.$field
-            }
-
-            fn core_mut(&mut self) -> &mut $crate::strategy::StrategyCore {
-                &mut self.$field
-            }
-
             $($extra)*
         }
     };
