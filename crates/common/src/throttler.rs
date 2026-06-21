@@ -25,6 +25,7 @@ use std::{
     collections::VecDeque,
     fmt::Debug,
     marker::PhantomData,
+    num::{NonZeroU64, NonZeroUsize},
     rc::Rc,
 };
 
@@ -43,18 +44,40 @@ use crate::{
 };
 
 /// Represents a throttling limit per interval.
+///
+/// The non-zero field types make a degenerate rate limit unrepresentable: a zero `limit`
+/// underflows the throttler's `limit - 1` indexing, and a zero `interval_ns` disables
+/// throttling entirely.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RateLimit {
-    pub limit: usize,
-    pub interval_ns: u64,
+    pub limit: NonZeroUsize,
+    pub interval_ns: NonZeroU64,
 }
 
 impl RateLimit {
+    /// Creates a new [`RateLimit`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `limit` or `interval_ns` is zero.
+    pub fn new_checked(limit: usize, interval_ns: u64) -> anyhow::Result<Self> {
+        let limit = NonZeroUsize::new(limit)
+            .ok_or_else(|| anyhow::anyhow!("Invalid limit: {limit} (must be non-zero)"))?;
+        let interval_ns = NonZeroU64::new(interval_ns).ok_or_else(|| {
+            anyhow::anyhow!("Invalid interval_ns: {interval_ns} (must be non-zero)")
+        })?;
+        Ok(Self { limit, interval_ns })
+    }
+
     /// Creates a new [`RateLimit`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `limit` or `interval_ns` is zero.
     #[must_use]
-    pub const fn new(limit: usize, interval_ns: u64) -> Self {
-        Self { limit, interval_ns }
+    pub fn new(limit: usize, interval_ns: u64) -> Self {
+        Self::new_checked(limit, interval_ns).expect(FAILED)
     }
 }
 
@@ -470,6 +493,21 @@ mod tests {
         }
     }
 
+    #[rstest]
+    #[case(0, 1_000)]
+    #[case(1_000, 0)]
+    fn test_rate_limit_new_checked_rejects_zero(#[case] limit: usize, #[case] interval_ns: u64) {
+        assert!(RateLimit::new_checked(limit, interval_ns).is_err());
+    }
+
+    #[rstest]
+    fn test_rate_limit_new_checked_accepts_positive() {
+        let rate = RateLimit::new_checked(5, 10).unwrap();
+
+        assert_eq!(rate.limit.get(), 5);
+        assert_eq!(rate.interval_ns.get(), 10);
+    }
+
     #[fixture]
     pub fn test_throttler_buffered() -> TestThrottler {
         let output_send: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
@@ -478,13 +516,13 @@ mod tests {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, 10);
-        let interval = rate_limit.interval_ns;
+        let interval = rate_limit.interval_ns.get();
         let actor_id = Ustr::from(UUID4::new().as_str());
 
         TestThrottler {
             throttler: Throttler::new(
-                rate_limit.limit,
-                rate_limit.interval_ns,
+                rate_limit.limit.get(),
+                rate_limit.interval_ns.get(),
                 clock,
                 "buffer_timer",
                 output_send,
@@ -508,13 +546,13 @@ mod tests {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, 10);
-        let interval = rate_limit.interval_ns;
+        let interval = rate_limit.interval_ns.get();
         let actor_id = Ustr::from(UUID4::new().as_str());
 
         TestThrottler {
             throttler: Throttler::new(
-                rate_limit.limit,
-                rate_limit.interval_ns,
+                rate_limit.limit.get(),
+                rate_limit.interval_ns.get(),
                 clock,
                 "dropper_timer",
                 output_send,

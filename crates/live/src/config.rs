@@ -269,8 +269,6 @@ pub(crate) fn parse_rate_limit(field: impl Into<String>, input: &str) -> ConfigR
         .parse::<usize>()
         .map_err(|e| ConfigError::invalid_format(field.clone(), format!("limit: {e}")))?;
 
-    check_range(field.clone(), limit > 0, "limit must be greater than zero")?;
-
     let mut parts = interval.split(':');
     let mut next = |label: &str| -> ConfigResult<u64> {
         parts
@@ -294,9 +292,7 @@ pub(crate) fn parse_rate_limit(field: impl Into<String>, input: &str) -> ConfigR
         .saturating_add(seconds)
         .saturating_mul(NANOSECONDS_IN_SECOND);
 
-    check_range(field, interval_ns > 0, "interval must be greater than zero")?;
-
-    Ok(RateLimit::new(limit, interval_ns))
+    RateLimit::new_checked(limit, interval_ns).map_err(|e| ConfigError::range(field, e.to_string()))
 }
 
 pub(crate) fn validate_max_notional_per_order(
@@ -1432,7 +1428,8 @@ mod tests {
         let err = parse_rate_limit("test.rate_limit", "0/00:00:01")
             .unwrap_err()
             .to_string();
-        assert!(err.contains("limit must be greater than zero"));
+        assert!(err.contains("Invalid limit"));
+        assert!(err.contains("must be non-zero"));
     }
 
     #[rstest]
@@ -1440,7 +1437,8 @@ mod tests {
         let err = parse_rate_limit("test.rate_limit", "100/00:00:00")
             .unwrap_err()
             .to_string();
-        assert!(err.contains("interval must be greater than zero"));
+        assert!(err.contains("Invalid interval_ns"));
+        assert!(err.contains("must be non-zero"));
     }
 
     #[rstest]

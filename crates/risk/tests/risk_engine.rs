@@ -849,16 +849,22 @@ fn test_set_trading_state_changes_value_and_publishes_event() {
 fn test_max_order_submit_rate_when_no_risk_config_returns_10_per_second() {
     let risk_engine = get_risk_engine(None, None, None, false);
 
-    assert_eq!(risk_engine.config().max_order_submit.limit, 10);
-    assert_eq!(risk_engine.config().max_order_submit.interval_ns, 1000);
+    assert_eq!(risk_engine.config().max_order_submit.limit.get(), 10);
+    assert_eq!(
+        risk_engine.config().max_order_submit.interval_ns.get(),
+        1000
+    );
 }
 
 #[rstest]
 fn test_max_order_modify_rate_when_no_risk_config_returns_5_per_second() {
     let risk_engine = get_risk_engine(None, None, None, false);
 
-    assert_eq!(risk_engine.config().max_order_modify.limit, 5);
-    assert_eq!(risk_engine.config().max_order_modify.interval_ns, 1000);
+    assert_eq!(risk_engine.config().max_order_modify.limit.get(), 5);
+    assert_eq!(
+        risk_engine.config().max_order_modify.interval_ns.get(),
+        1000
+    );
 }
 
 #[rstest]

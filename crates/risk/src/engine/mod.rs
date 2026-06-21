@@ -56,20 +56,19 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 fn format_rate_limit(rate_limit: &RateLimit) -> String {
-    let total_secs = rate_limit.interval_ns / 1_000_000_000;
-    let remainder_ns = rate_limit.interval_ns % 1_000_000_000;
+    let interval_ns = rate_limit.interval_ns.get();
+    let limit = rate_limit.limit.get();
+    let total_secs = interval_ns / 1_000_000_000;
+    let remainder_ns = interval_ns % 1_000_000_000;
     let hours = total_secs / 3600;
     let minutes = (total_secs % 3600) / 60;
     let seconds = total_secs % 60;
 
     if remainder_ns == 0 {
-        format!("{}/{hours:02}:{minutes:02}:{seconds:02}", rate_limit.limit)
+        format!("{limit}/{hours:02}:{minutes:02}:{seconds:02}")
     } else {
         let micros = remainder_ns / 1_000;
-        format!(
-            "{}/{hours:02}:{minutes:02}:{seconds:02}.{micros:06}",
-            rate_limit.limit
-        )
+        format!("{limit}/{hours:02}:{minutes:02}:{seconds:02}.{micros:06}")
     }
 }
 
@@ -266,8 +265,8 @@ impl RiskEngine {
         };
 
         Throttler::new(
-            config.max_order_submit.limit,
-            config.max_order_submit.interval_ns,
+            config.max_order_submit.limit.get(),
+            config.max_order_submit.interval_ns.get(),
             clock,
             "ORDER_SUBMIT_THROTTLER",
             success_handler,
@@ -311,8 +310,8 @@ impl RiskEngine {
         };
 
         Throttler::new(
-            config.max_order_modify.limit,
-            config.max_order_modify.interval_ns,
+            config.max_order_modify.limit.get(),
+            config.max_order_modify.interval_ns.get(),
             clock,
             "ORDER_MODIFY_THROTTLER",
             success_handler,
