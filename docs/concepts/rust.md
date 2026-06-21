@@ -265,11 +265,12 @@ facade.
 
 Native traits expose borrowed core state, `Rc<RefCell<_>>`, and runtime
 references. Use them only for performance-sensitive native paths or host
-integration internals. Import `DataActorNative` for actor-level state such as
-cache or clock borrows, and import `StrategyNative` for strategy-level state
+integration internals. Engine, runtime, registration, testkit, and host
+integration code can import `DataActorNative` for actor-level native state such
+as cache or clock borrows, and `StrategyNative` for strategy-level native state
 such as strategy core, order factory, or portfolio borrows. Do not use them in
-Python-authored or plug-in-compatible strategies and actors, because those
-types do not cross those boundaries.
+ordinary actor or strategy logic, Python-authored components, or plug-in-compatible code,
+because those types do not cross those boundaries.
 
 For a step-by-step walkthrough, see the
 [Write a Strategy (Rust)](../how_to/write_rust_strategy.md) how-to guide.
