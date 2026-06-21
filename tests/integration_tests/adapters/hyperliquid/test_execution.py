@@ -1752,6 +1752,173 @@ async def test_modify_order_cancel_replace_emits_updated_not_canceled(
 
 
 @pytest.mark.asyncio
+async def test_generate_order_status_report_promotes_inflight_modify_replacement(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    GH-4270 no-fill recovery.
+
+    When the replacement ACCEPTED is dropped on the WS stream and no fill arrives, a
+    query surfaces the replacement leg (ACCEPTED, new venue_order_id) under the same
+    client_order_id. generate_order_status_report must promote the binding (rebind the
+    cloid, emit OrderUpdated, clear the pending-modify markers) so subsequent
+    modifies/cancels target the live replacement, and still return the report so the
+    engine confirms the order is open.
+
+    """
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-QR-001"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00020"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    old_voi = VenueOrderId("467363884452")
+    new_voi = VenueOrderId("467364492392")
+    cache.add_venue_order_id(order.client_order_id, old_voi)
+    client._accepted_orders.add(order.client_order_id.value)
+
+    # Simulate the in-flight modify state set by `_modify_order`. The target
+    # absolute total (0.00050) differs from the venue's remaining-only report
+    # quantity (0.00020) so the assertion pins the target, not the remaining.
+    target_total = Quantity.from_str("0.00050")
+    client._pending_modify_keys[order.client_order_id.value] = old_voi.value
+    client._pending_modify_target_qty[order.client_order_id.value] = target_total
+    client._pending_modify_target_price[order.client_order_id.value] = Price.from_str("53893.0")
+
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    pyo3_report = _build_status_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        new_voi.value,
+        nautilus_pyo3.OrderStatus.ACCEPTED,
+        price="53893.0",
+        quantity="0.00020",
+    )
+    http_client.request_order_status_report.return_value = pyo3_report
+
+    command = GenerateOrderStatusReport(
+        instrument_id=instrument.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=old_voi,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    try:
+        # Act
+        report = await client.generate_order_status_report(command)
+
+        # Assert
+        updated_events = [e for e in captured if isinstance(e, OrderUpdated)]
+
+        assert len(updated_events) == 1
+        assert updated_events[0].venue_order_id == new_voi
+        # OrderUpdated carries the user target total, not the venue remaining.
+        assert updated_events[0].quantity == target_total
+        assert updated_events[0].price == Price.from_str("53893.0")
+        assert cache.venue_order_id(order.client_order_id) == new_voi
+        assert order.client_order_id.value not in client._pending_modify_keys
+        assert order.client_order_id.value not in client._pending_modify_target_qty
+        assert report is not None
+        assert report.venue_order_id == new_voi
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_generate_order_status_report_does_not_promote_without_inflight_modify(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    Promotion is gated on a tracked modify.
+
+    With no pending modify, a query report carrying a
+    different venue_order_id must NOT be promoted: no OrderUpdated, cache binding unchanged, and
+    the report returned as-is. This isolates the pending-modify guard (the venue_order_id does
+    diverge, so only that guard prevents promotion).
+
+    """
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-QR-002"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00020"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    old_voi = VenueOrderId("467363884452")
+    new_voi = VenueOrderId("467364492392")
+    cache.add_venue_order_id(order.client_order_id, old_voi)
+    client._accepted_orders.add(order.client_order_id.value)
+    # No pending modify is tracked for this cloid.
+
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    pyo3_report = _build_status_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        new_voi.value,
+        nautilus_pyo3.OrderStatus.ACCEPTED,
+        price="56730.0",
+        quantity="0.00020",
+    )
+    http_client.request_order_status_report.return_value = pyo3_report
+
+    command = GenerateOrderStatusReport(
+        instrument_id=instrument.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=old_voi,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    try:
+        # Act
+        report = await client.generate_order_status_report(command)
+
+        # Assert
+        updated_events = [e for e in captured if isinstance(e, OrderUpdated)]
+
+        assert updated_events == []
+        assert cache.venue_order_id(order.client_order_id) == old_voi
+        assert report is not None
+        assert report.venue_order_id == new_voi
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
 async def test_modify_order_cancel_replace_uses_target_qty_after_partial_fill(
     exec_client_builder,
     monkeypatch,

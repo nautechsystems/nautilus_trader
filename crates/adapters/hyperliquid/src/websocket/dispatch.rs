@@ -54,6 +54,11 @@
 //! identity has no price to promote with; `handle_accepted` drains the buffer
 //! on the replacement `ACCEPTED`. A delayed earlier-leg fill during a chained
 //! modify is a known limitation. See GH-3972.
+//!
+//! When neither the replacement `ACCEPTED` nor a fill arrives, a query that
+//! resolves the replacement by `cloid` promotes the binding the same way via
+//! [`promote_replacement_from_query`], so a dropped `ACCEPTED` with no fill
+//! cannot leave the order bound to the canceled leg.
 
 use std::{
     collections::VecDeque,
@@ -895,6 +900,74 @@ fn promote_cancel_replace(
     }
 }
 
+/// Promotes a cancel-replace replacement surfaced by a query during an in-flight modify.
+///
+/// When the query returns the replacement leg (`Accepted`, `venue_order_id` diverging from the
+/// cached one, modify tracked), emits the `OrderUpdated` that rebinds the order, so a dropped
+/// replacement `Accepted` with no fill cannot strand the binding on the canceled leg. Returns
+/// `true` when promoted; the caller still forwards the report so the engine confirms the order.
+pub fn promote_replacement_from_query(
+    report: &OrderStatusReport,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+    ts_init: UnixNanos,
+) -> bool {
+    if report.order_status != OrderStatus::Accepted {
+        return false;
+    }
+
+    let Some(client_order_id) = report.client_order_id else {
+        return false;
+    };
+
+    if state.pending_modify(&client_order_id).is_none() {
+        return false;
+    }
+
+    let Some(cached_voi) = state.cached_venue_order_id(&client_order_id) else {
+        return false;
+    };
+
+    if report.venue_order_id == cached_voi {
+        return false;
+    }
+
+    let Some(identity) = state.lookup_identity(&client_order_id) else {
+        return false;
+    };
+
+    let Some(price) = report.price.or(identity.price) else {
+        log::warn!(
+            "Cannot promote cancel-replace from query for {client_order_id}: \
+             no price on report and no cached price on identity",
+        );
+        return false;
+    };
+
+    // Prefer the user target over the venue's remaining-only `report.quantity`
+    let updated_quantity = state
+        .pending_modify_target_qty(&client_order_id)
+        .unwrap_or(report.quantity);
+
+    promote_cancel_replace(
+        client_order_id,
+        &identity,
+        state,
+        emitter,
+        report.venue_order_id,
+        report.account_id,
+        price,
+        updated_quantity,
+        report.trigger_price,
+        report.ts_last,
+        ts_init,
+    );
+
+    log::debug!("Promoted cancel-replace replacement for {client_order_id} from query");
+
+    true
+}
+
 // Queue a corrective reduce when a fill that raced the modify left the replacement
 // oversized. Reached from both promotion paths; the engine overfill guard backstops.
 fn maybe_queue_corrective_reduce(
@@ -907,13 +980,16 @@ fn maybe_queue_corrective_reduce(
     let Ok(new_oid) = venue_order_id.as_str().parse::<u64>() else {
         return;
     };
+
     let filled = state
         .previous_filled_qty(&client_order_id)
         .unwrap_or_else(|| Quantity::zero(target.precision));
     if filled >= target {
         return;
     }
+
     let remaining = (target - filled).as_decimal().normalize();
+
     let sent_size = sent_request.size;
     if sent_size > remaining {
         let mut corrective = sent_request;

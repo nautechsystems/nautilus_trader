@@ -34,6 +34,7 @@ use nautilus_common::messages::ExecutionEvent;
 use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_hyperliquid::websocket::dispatch::{
     DispatchOutcome, OrderIdentity, WsDispatchState, dispatch_order_event, dispatch_order_fill,
+    promote_replacement_from_query,
 };
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
@@ -866,6 +867,90 @@ fn test_fill_during_pending_modify_promotes_when_accepted_dropped() {
     } else {
         panic!("expected OrderEventAny::Filled at index 1");
     }
+}
+
+/// GH-4270 (no-fill recovery): when the replacement ACCEPTED is dropped on the
+/// WS stream and no fill arrives, a query surfaces the replacement leg
+/// (ACCEPTED, new venue_order_id) under the same client_order_id.
+/// `promote_replacement_from_query` promotes the binding (a single OrderUpdated)
+/// so subsequent modifies/cancels target the live replacement rather than the
+/// canceled old leg.
+#[rstest]
+fn test_query_promotes_inflight_modify_replacement_when_accepted_dropped() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("O-QR-001");
+    state.register_identity(cid, identity(OrderType::Limit));
+    state.insert_accepted(cid);
+    state.record_venue_order_id(cid, VenueOrderId::new("9200"));
+    // Target absolute total (0.00050) differs from the venue's remaining-only
+    // report quantity (0.00020) so the assertion pins the target, not remaining.
+    let target_total = Quantity::from("0.00050");
+    state.mark_pending_modify(cid, VenueOrderId::new("9200"), target_total);
+
+    // Query by cloid surfaces the replacement leg; the ACCEPTED was never
+    // delivered and no fill has arrived.
+    let report = make_status_report(
+        Some("O-QR-001"),
+        "9201",
+        OrderStatus::Accepted,
+        Some("53893.0"),
+        "0.00020",
+    );
+    let promoted = promote_replacement_from_query(&report, &state, &emitter, UnixNanos::default());
+
+    assert!(promoted);
+    let events = drain_events(&mut rx);
+    assert_event_types(&events, &["Updated"]);
+    // The binding advanced to the replacement leg and the modify marker cleared.
+    assert_eq!(
+        state.cached_venue_order_id(&cid),
+        Some(VenueOrderId::new("9201")),
+    );
+    assert!(state.pending_modify(&cid).is_none());
+
+    if let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = &events[0] {
+        assert_eq!(updated.venue_order_id, Some(VenueOrderId::new("9201")));
+        // OrderUpdated carries the user target total, not the venue remaining.
+        assert_eq!(updated.quantity, target_total);
+        assert_eq!(updated.price, Some(Price::from("53893.0")));
+    } else {
+        panic!("expected OrderEventAny::Updated at index 0");
+    }
+}
+
+/// A query report whose venue_order_id matches the cached one (no cancel-replace)
+/// is not promoted; the caller forwards it to the engine unchanged.
+#[rstest]
+fn test_query_does_not_promote_when_venue_order_id_unchanged() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("O-QR-002");
+    state.register_identity(cid, identity(OrderType::Limit));
+    state.insert_accepted(cid);
+    state.record_venue_order_id(cid, VenueOrderId::new("9300"));
+    state.mark_pending_modify(
+        cid,
+        VenueOrderId::new("9300"),
+        identity(OrderType::Limit).quantity,
+    );
+
+    let report = make_status_report(
+        Some("O-QR-002"),
+        "9300",
+        OrderStatus::Accepted,
+        Some("53893.0"),
+        "0.00020",
+    );
+    let promoted = promote_replacement_from_query(&report, &state, &emitter, UnixNanos::default());
+
+    assert!(!promoted);
+    assert!(drain_events(&mut rx).is_empty());
+    assert_eq!(
+        state.cached_venue_order_id(&cid),
+        Some(VenueOrderId::new("9300")),
+    );
+    assert!(state.pending_modify(&cid).is_some());
 }
 
 /// GH-4270: when the replacement fill arrives before the ACCEPTED, the fill

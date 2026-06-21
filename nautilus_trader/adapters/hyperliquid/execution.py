@@ -353,6 +353,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 if resolved_id:
                     report.client_order_id = resolved_id
 
+            self._promote_replacement_if_inflight_modify(report)
+
             if self._is_inflight_modify_old_leg_cancel(report):
                 self._log.debug(
                     f"Suppressing in-flight modify old-leg CANCELED for "
@@ -387,6 +389,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                     resolved_id = self._cache.client_order_id(report.venue_order_id)
                     if resolved_id:
                         report.client_order_id = resolved_id
+
+                self._promote_replacement_if_inflight_modify(report)
 
                 if self._is_inflight_modify_old_leg_cancel(report):
                     self._log.debug(
@@ -1603,6 +1607,53 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         if buffered:
             for pyo3_buffered in buffered:
                 self._handle_fill_report_pyo3(pyo3_buffered)
+
+    def _promote_replacement_if_inflight_modify(self, report: OrderStatusReport) -> None:
+        # During a tracked cancel-replace a query can surface the replacement leg
+        # (ACCEPTED, new venue_order_id) before the WS ACCEPTED push or any fill.
+        # Promote here so the binding advances without waiting for a signal that may
+        # never arrive (dropped ACCEPTED with no fill).
+        if report.order_status != OrderStatus.ACCEPTED:
+            return
+
+        if report.client_order_id is None or report.venue_order_id is None:
+            return
+
+        key = report.client_order_id.value
+        if key not in self._pending_modify_keys:
+            return
+
+        cached_voi = self._cache.venue_order_id(report.client_order_id)
+        if cached_voi is None or report.venue_order_id == cached_voi:
+            return
+
+        order = self._cache.order(report.client_order_id)
+        if order is None or order.is_closed:
+            return
+
+        update_price = report.price
+        if update_price is None:
+            update_price = self._pending_modify_target_price.get(key)
+        if update_price is None and order.has_price:
+            update_price = order.price
+        if update_price is None:
+            self._log.warning(
+                f"Cannot promote cancel-replace from query for {report.client_order_id!r}: "
+                "no price on report or cached order",
+            )
+            return
+
+        target_qty = self._pending_modify_target_qty.get(key)
+        update_quantity = target_qty if target_qty is not None else report.quantity
+
+        self._promote_cancel_replace(
+            order,
+            report.venue_order_id,
+            price=update_price,
+            quantity=update_quantity,
+            trigger_price=report.trigger_price,
+            ts_event=report.ts_last,
+        )
 
     def _promote_cancel_replace(
         self,

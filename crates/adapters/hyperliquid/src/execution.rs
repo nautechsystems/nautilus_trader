@@ -83,7 +83,7 @@ use crate::{
         client::HyperliquidWebSocketClient,
         dispatch::{
             DispatchOutcome, OrderIdentity, WsDispatchState, dispatch_order_event,
-            dispatch_order_fill,
+            dispatch_order_fill, promote_replacement_from_query,
         },
     },
 };
@@ -1348,6 +1348,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let dispatch_state = self.ws_dispatch_state.clone();
+        let clock = self.clock;
 
         self.spawn_task("query_order", async move {
             // Search open orders by cloid first so modify/cancel-replace
@@ -1359,6 +1360,12 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 .await
             {
                 Ok(Some(report)) => {
+                    promote_replacement_from_query(
+                        &report,
+                        &dispatch_state,
+                        &emitter,
+                        clock.get_time_ns(),
+                    );
                     log::debug!("Queried order status for {client_order_id}");
                     emitter.send_order_status_report(report);
                     return Ok(());
@@ -1505,6 +1512,12 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 .await
             {
                 Ok(Some(report)) => {
+                    promote_replacement_from_query(
+                        &report,
+                        &self.ws_dispatch_state,
+                        &self.emitter,
+                        self.clock.get_time_ns(),
+                    );
                     log::debug!("Generated order status report for {client_order_id}");
                     return Ok(Some(report));
                 }
