@@ -62,35 +62,27 @@ use nautilus_model::{
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
-let eurusd_perp = PerpetualContract::new(
-    InstrumentId::from("EURUSD-PERP.AX"),
-    Symbol::from("EURUSD-PERP"),
-    Ustr::from("EURUSD"),
-    AssetClass::FX,
-    Some(Currency::from("EUR")),
-    Currency::from("USD"),
-    Currency::from("USD"),
-    false,
-    5,
-    0,
-    Price::from("0.00001"),
-    Quantity::from("1"),
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    Some(dec!(0.03)),
-    Some(dec!(0.03)),
-    Some(dec!(0.00002)),
-    Some(dec!(0.00002)),
-    None,
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+let eurusd_perp = PerpetualContract::builder()
+    .instrument_id(InstrumentId::from("EURUSD-PERP.AX"))
+    .raw_symbol(Symbol::from("EURUSD-PERP"))
+    .underlying(Ustr::from("EURUSD"))
+    .asset_class(AssetClass::FX)
+    .base_currency(Currency::from("EUR"))
+    .quote_currency(Currency::from("USD"))
+    .settlement_currency(Currency::from("USD"))
+    .is_inverse(false)
+    .price_precision(5)
+    .size_precision(0)
+    .price_increment(Price::from("0.00001"))
+    .size_increment(Quantity::from("1"))
+    .margin_init(dec!(0.03))
+    .margin_maint(dec!(0.03))
+    .maker_fee(dec!(0.00002))
+    .taker_fee(dec!(0.00002))
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 ```
 
 ```python tab="Python"

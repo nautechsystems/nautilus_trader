@@ -66,36 +66,28 @@ use ustr::Ustr;
 let activation = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
 let expiration = Utc.with_ymd_and_hms(2026, 5, 19, 8, 0, 0).unwrap();
 
-let btc_spread = CryptoOptionSpread::new(
-    InstrumentId::from("BTC-CS-19MAY26-70000_75000.DERIBIT"),
-    Symbol::from("BTC-CS-19MAY26-70000_75000"),
-    Currency::from("BTC"),
-    Currency::from("USD"),
-    Currency::from("BTC"),
-    false,
-    Ustr::from("CS"),
-    UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
-    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
-    4,
-    1,
-    Price::from("0.0001"),
-    Quantity::from("0.1"),
-    Some(Quantity::from("1")),
-    None,
-    None,
-    Some(Quantity::from("0.1")),
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    Some(dec!(0.0003)),
-    Some(dec!(0.0003)),
-    None,
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+let btc_spread = CryptoOptionSpread::builder()
+    .instrument_id(InstrumentId::from("BTC-CS-19MAY26-70000_75000.DERIBIT"))
+    .raw_symbol(Symbol::from("BTC-CS-19MAY26-70000_75000"))
+    .underlying(Currency::from("BTC"))
+    .quote_currency(Currency::from("USD"))
+    .settlement_currency(Currency::from("BTC"))
+    .is_inverse(false)
+    .strategy_type(Ustr::from("CS"))
+    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
+    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .price_precision(4)
+    .size_precision(1)
+    .price_increment(Price::from("0.0001"))
+    .size_increment(Quantity::from("0.1"))
+    .multiplier(Quantity::from("1"))
+    .min_quantity(Quantity::from("0.1"))
+    .maker_fee(dec!(0.0003))
+    .taker_fee(dec!(0.0003))
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 ```
 
 ```python tab="Python"

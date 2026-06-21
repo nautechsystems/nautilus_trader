@@ -104,6 +104,7 @@ pub struct FuturesContract {
     pub ts_init: UnixNanos,
 }
 
+#[bon::bon]
 impl FuturesContract {
     /// Creates a new [`FuturesContract`] instance with correctness checking.
     ///
@@ -244,6 +245,70 @@ impl FuturesContract {
             ts_init,
         )
         .expect_display(FAILED)
+    }
+
+    /// Returns a fluent builder for a [`FuturesContract`] instance.
+    ///
+    /// Required fields are enforced at compile time; optional fields can be omitted and default
+    /// the same way they do in [`FuturesContract::new_checked`], which the builder calls so the same
+    /// correctness checks run on `build`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails (see [`FuturesContract::new_checked`]).
+    #[builder(start_fn = builder, finish_fn = build)]
+    pub fn build_checked(
+        instrument_id: InstrumentId,
+        raw_symbol: Symbol,
+        asset_class: AssetClass,
+        exchange: Option<Ustr>,
+        underlying: Ustr,
+        activation_ns: UnixNanos,
+        expiration_ns: UnixNanos,
+        currency: Currency,
+        price_precision: u8,
+        price_increment: Price,
+        multiplier: Quantity,
+        lot_size: Quantity,
+        max_quantity: Option<Quantity>,
+        min_quantity: Option<Quantity>,
+        max_price: Option<Price>,
+        min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
+        info: Option<Params>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> CorrectnessResult<Self> {
+        Self::new_checked(
+            instrument_id,
+            raw_symbol,
+            asset_class,
+            exchange,
+            underlying,
+            activation_ns,
+            expiration_ns,
+            currency,
+            price_precision,
+            price_increment,
+            multiplier,
+            lot_size,
+            max_quantity,
+            min_quantity,
+            max_price,
+            min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            tick_scheme,
+            info,
+            ts_event,
+            ts_init,
+        )
     }
 }
 
@@ -404,6 +469,7 @@ impl Instrument for FuturesContract {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use crate::{
@@ -534,5 +600,67 @@ mod tests {
         let json = serde_json::to_string(&inst).unwrap();
         let deserialized: FuturesContract = serde_json::from_str(&json).unwrap();
         assert_eq!(inst, deserialized);
+    }
+
+    #[rstest]
+    fn test_builder_matches_new_checked() {
+        let positional = FuturesContract::new_checked(
+            InstrumentId::from("ESZ21.GLBX"),
+            Symbol::from("ESZ21"),
+            AssetClass::Index,
+            Some(Ustr::from("XCME")),
+            Ustr::from("ES"),
+            1_000.into(),
+            2_000.into(),
+            Currency::USD(),
+            2,
+            Price::from("0.01"),
+            Quantity::from(50),
+            Quantity::from(10),
+            Some(Quantity::from("10000")),
+            Some(Quantity::from("5")),
+            Some(Price::from("9999.99")),
+            Some(Price::from("0.01")),
+            Some(dec!(0.01)),
+            Some(dec!(0.02)),
+            Some(dec!(0.0002)),
+            Some(dec!(0.0004)),
+            None,
+            None,
+            1.into(),
+            2.into(),
+        )
+        .unwrap();
+
+        let built = FuturesContract::builder()
+            .instrument_id(InstrumentId::from("ESZ21.GLBX"))
+            .raw_symbol(Symbol::from("ESZ21"))
+            .asset_class(AssetClass::Index)
+            .exchange(Ustr::from("XCME"))
+            .underlying(Ustr::from("ES"))
+            .activation_ns(1_000.into())
+            .expiration_ns(2_000.into())
+            .currency(Currency::USD())
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .multiplier(Quantity::from(50))
+            .lot_size(Quantity::from(10))
+            .max_quantity(Quantity::from("10000"))
+            .min_quantity(Quantity::from("5"))
+            .max_price(Price::from("9999.99"))
+            .min_price(Price::from("0.01"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .maker_fee(dec!(0.0002))
+            .taker_fee(dec!(0.0004))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&positional).unwrap(),
+            serde_json::to_value(&built).unwrap(),
+        );
     }
 }

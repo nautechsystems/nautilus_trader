@@ -56,31 +56,25 @@ use nautilus_model::{
 };
 use rust_decimal_macros::dec;
 
-let audusd = Cfd::new(
-    InstrumentId::from("AUDUSD.OANDA"),
-    Symbol::from("AUD/USD"),
-    AssetClass::FX,
-    Some(Currency::from("AUD")),
-    Currency::from("USD"),
-    5,
-    0,
-    Price::from("0.00001"),
-    Quantity::from("1"),
-    Some(Quantity::from("1000")),
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    Some(dec!(0.03)),
-    Some(dec!(0.03)),
-    Some(dec!(0.00002)),
-    Some(dec!(0.00002)),
-    None,
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+let audusd = Cfd::builder()
+    .instrument_id(InstrumentId::from("AUDUSD.OANDA"))
+    .raw_symbol(Symbol::from("AUD/USD"))
+    .asset_class(AssetClass::FX)
+    .base_currency(Currency::from("AUD"))
+    .quote_currency(Currency::from("USD"))
+    .price_precision(5)
+    .size_precision(0)
+    .price_increment(Price::from("0.00001"))
+    .size_increment(Quantity::from("1"))
+    .lot_size(Quantity::from("1000"))
+    .margin_init(dec!(0.03))
+    .margin_maint(dec!(0.03))
+    .maker_fee(dec!(0.00002))
+    .taker_fee(dec!(0.00002))
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 ```
 
 ```python tab="Python"

@@ -90,6 +90,7 @@ pub struct Equity {
     pub ts_init: UnixNanos,
 }
 
+#[bon::bon]
 impl Equity {
     /// Creates a new [`Equity`] instance with correctness checking.
     ///
@@ -209,6 +210,60 @@ impl Equity {
             ts_init,
         )
         .expect_display(FAILED)
+    }
+
+    /// Returns a fluent builder for a [`Equity`] instance.
+    ///
+    /// Required fields are enforced at compile time; optional fields can be omitted and default
+    /// the same way they do in [`Equity::new_checked`], which the builder calls so the same
+    /// correctness checks run on `build`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails (see [`Equity::new_checked`]).
+    #[builder(start_fn = builder, finish_fn = build)]
+    pub fn build_checked(
+        instrument_id: InstrumentId,
+        raw_symbol: Symbol,
+        isin: Option<Ustr>,
+        currency: Currency,
+        price_precision: u8,
+        price_increment: Price,
+        lot_size: Option<Quantity>,
+        max_quantity: Option<Quantity>,
+        min_quantity: Option<Quantity>,
+        max_price: Option<Price>,
+        min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
+        info: Option<Params>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> CorrectnessResult<Self> {
+        Self::new_checked(
+            instrument_id,
+            raw_symbol,
+            isin,
+            currency,
+            price_precision,
+            price_increment,
+            lot_size,
+            max_quantity,
+            min_quantity,
+            max_price,
+            min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            tick_scheme,
+            info,
+            ts_event,
+            ts_init,
+        )
     }
 }
 
@@ -369,6 +424,8 @@ impl Instrument for Equity {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
+    use ustr::Ustr;
 
     use crate::{
         enums::{AssetClass, InstrumentClass},
@@ -518,5 +575,57 @@ mod tests {
         let json = serde_json::to_string(&equity_aapl).unwrap();
         let deserialized: Equity = serde_json::from_str(&json).unwrap();
         assert_eq!(equity_aapl, deserialized);
+    }
+
+    #[rstest]
+    fn test_builder_matches_new_checked() {
+        let positional = Equity::new_checked(
+            InstrumentId::from("AAPL.XNAS"),
+            Symbol::from("AAPL"),
+            Some(Ustr::from("US0378331005")),
+            Currency::USD(),
+            2,
+            Price::from("0.01"),
+            Some(Quantity::from("100")),
+            Some(Quantity::from("10000.0")),
+            Some(Quantity::from("0.001")),
+            Some(Price::from("9999.99")),
+            Some(Price::from("0.01")),
+            Some(dec!(0.01)),
+            Some(dec!(0.02)),
+            Some(dec!(0.0002)),
+            Some(dec!(0.0004)),
+            None,
+            None,
+            1.into(),
+            2.into(),
+        )
+        .unwrap();
+
+        let built = Equity::builder()
+            .instrument_id(InstrumentId::from("AAPL.XNAS"))
+            .raw_symbol(Symbol::from("AAPL"))
+            .isin(Ustr::from("US0378331005"))
+            .currency(Currency::USD())
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .lot_size(Quantity::from("100"))
+            .max_quantity(Quantity::from("10000.0"))
+            .min_quantity(Quantity::from("0.001"))
+            .max_price(Price::from("9999.99"))
+            .min_price(Price::from("0.01"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .maker_fee(dec!(0.0002))
+            .taker_fee(dec!(0.0004))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&positional).unwrap(),
+            serde_json::to_value(&built).unwrap(),
+        );
     }
 }

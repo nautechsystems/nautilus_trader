@@ -110,6 +110,7 @@ pub struct CryptoFuturesSpread {
     pub ts_init: UnixNanos,
 }
 
+#[bon::bon]
 impl CryptoFuturesSpread {
     /// Creates a new [`CryptoFuturesSpread`] instance with correctness checking.
     ///
@@ -281,6 +282,80 @@ impl CryptoFuturesSpread {
         )
         .expect_display(FAILED)
     }
+
+    /// Returns a fluent builder for a [`CryptoFuturesSpread`] instance.
+    ///
+    /// Required fields are enforced at compile time; optional fields can be omitted and default
+    /// the same way they do in [`CryptoFuturesSpread::new_checked`], which the builder calls so the
+    /// same correctness checks run on `build`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails (see [`CryptoFuturesSpread::new_checked`]).
+    #[builder(start_fn = builder, finish_fn = build)]
+    pub fn build_checked(
+        instrument_id: InstrumentId,
+        raw_symbol: Symbol,
+        underlying: Currency,
+        quote_currency: Currency,
+        settlement_currency: Currency,
+        is_inverse: bool,
+        strategy_type: Ustr,
+        activation_ns: UnixNanos,
+        expiration_ns: UnixNanos,
+        price_precision: u8,
+        size_precision: u8,
+        price_increment: Price,
+        size_increment: Quantity,
+        multiplier: Option<Quantity>,
+        lot_size: Option<Quantity>,
+        max_quantity: Option<Quantity>,
+        min_quantity: Option<Quantity>,
+        max_notional: Option<Money>,
+        min_notional: Option<Money>,
+        max_price: Option<Price>,
+        min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
+        info: Option<Params>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> CorrectnessResult<Self> {
+        Self::new_checked(
+            instrument_id,
+            raw_symbol,
+            underlying,
+            quote_currency,
+            settlement_currency,
+            is_inverse,
+            strategy_type,
+            activation_ns,
+            expiration_ns,
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            multiplier,
+            lot_size,
+            max_quantity,
+            min_quantity,
+            max_notional,
+            min_notional,
+            max_price,
+            min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            tick_scheme,
+            info,
+            ts_event,
+            ts_init,
+        )
+    }
 }
 
 impl PartialEq<Self> for CryptoFuturesSpread {
@@ -446,12 +521,14 @@ impl Instrument for CryptoFuturesSpread {
 mod tests {
     use nautilus_core::correctness::CorrectnessResult;
     use rstest::rstest;
+    use rust_decimal_macros::dec;
+    use ustr::Ustr;
 
     use crate::{
         enums::{AssetClass, InstrumentClass},
         identifiers::{InstrumentId, Symbol},
         instruments::{CryptoFuturesSpread, Instrument, stubs::*},
-        types::{Currency, Price, Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
 
     #[rstest]
@@ -539,6 +616,78 @@ mod tests {
         let json = serde_json::to_string(&crypto_futures_spread_btc_deribit).unwrap();
         let deserialized: CryptoFuturesSpread = serde_json::from_str(&json).unwrap();
         assert_eq!(crypto_futures_spread_btc_deribit, deserialized);
+    }
+
+    #[rstest]
+    fn test_builder_matches_new_checked() {
+        let positional = CryptoFuturesSpread::new_checked(
+            InstrumentId::from("BTC-FS-19MAY26_PERP.DERIBIT"),
+            Symbol::from("BTC-FS-19MAY26_PERP"),
+            Currency::BTC(),
+            Currency::USD(),
+            Currency::USDC(),
+            false,
+            Ustr::from("FS"),
+            1.into(),
+            2.into(),
+            1,
+            0,
+            Price::from("0.5"),
+            Quantity::from("1"),
+            Some(Quantity::from("10")),
+            Some(Quantity::from("1")),
+            Some(Quantity::from("100")),
+            Some(Quantity::from("1")),
+            Some(Money::new(5_000_000.0, Currency::USD())),
+            Some(Money::new(10.0, Currency::USD())),
+            Some(Price::from("1000000.0")),
+            Some(Price::from("0.5")),
+            Some(dec!(0.01)),
+            Some(dec!(0.02)),
+            Some(dec!(0.0002)),
+            Some(dec!(0.0004)),
+            None,
+            None,
+            10.into(),
+            20.into(),
+        )
+        .unwrap();
+
+        let built = CryptoFuturesSpread::builder()
+            .instrument_id(InstrumentId::from("BTC-FS-19MAY26_PERP.DERIBIT"))
+            .raw_symbol(Symbol::from("BTC-FS-19MAY26_PERP"))
+            .underlying(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .settlement_currency(Currency::USDC())
+            .is_inverse(false)
+            .strategy_type(Ustr::from("FS"))
+            .activation_ns(1.into())
+            .expiration_ns(2.into())
+            .price_precision(1)
+            .size_precision(0)
+            .price_increment(Price::from("0.5"))
+            .size_increment(Quantity::from("1"))
+            .multiplier(Quantity::from("10"))
+            .lot_size(Quantity::from("1"))
+            .max_quantity(Quantity::from("100"))
+            .min_quantity(Quantity::from("1"))
+            .max_notional(Money::new(5_000_000.0, Currency::USD()))
+            .min_notional(Money::new(10.0, Currency::USD()))
+            .max_price(Price::from("1000000.0"))
+            .min_price(Price::from("0.5"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .maker_fee(dec!(0.0002))
+            .taker_fee(dec!(0.0004))
+            .ts_event(10.into())
+            .ts_init(20.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&positional).unwrap(),
+            serde_json::to_value(&built).unwrap(),
+        );
     }
 
     fn crypto_futures_spread_result(

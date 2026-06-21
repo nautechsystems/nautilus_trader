@@ -66,33 +66,26 @@ let raw_symbol = Symbol::from(
 );
 let expiration = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
 
-let yes_outcome = BinaryOption::new(
-    InstrumentId::new(raw_symbol, Venue::from("POLYMARKET")),
-    raw_symbol,
-    AssetClass::Alternative,
-    Currency::from("USDC"),
-    UnixNanos::default(),
-    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
-    3,
-    2,
-    Price::from("0.001"),
-    Quantity::from("0.01"),
-    Some(Ustr::from("Yes")),
-    Some(Ustr::from("Will the outcome of this market be 'Yes'?")),
-    None,
-    Some(Quantity::from("5")),
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    Some(dec!(0)),
-    Some(dec!(0)),
-    None,
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+let yes_outcome = BinaryOption::builder()
+    .instrument_id(InstrumentId::new(raw_symbol, Venue::from("POLYMARKET")))
+    .raw_symbol(raw_symbol)
+    .asset_class(AssetClass::Alternative)
+    .currency(Currency::from("USDC"))
+    .activation_ns(UnixNanos::default())
+    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .price_precision(3)
+    .size_precision(2)
+    .price_increment(Price::from("0.001"))
+    .size_increment(Quantity::from("0.01"))
+    .outcome(Ustr::from("Yes"))
+    .description(Ustr::from("Will the outcome of this market be 'Yes'?"))
+    .min_quantity(Quantity::from("5"))
+    .maker_fee(dec!(0))
+    .taker_fee(dec!(0))
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 ```
 
 ```python tab="Python"

@@ -99,6 +99,7 @@ pub struct CurrencyPair {
     pub ts_init: UnixNanos,
 }
 
+#[bon::bon]
 impl CurrencyPair {
     /// Creates a new [`CurrencyPair`] instance with correctness checking.
     ///
@@ -248,6 +249,70 @@ impl CurrencyPair {
             ts_init,
         )
         .expect_display(FAILED)
+    }
+
+    /// Returns a fluent builder for a [`CurrencyPair`] instance.
+    ///
+    /// Required fields are enforced at compile time; optional fields can be omitted and default
+    /// the same way they do in [`CurrencyPair::new_checked`], which the builder calls so the same
+    /// correctness checks run on `build`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails (see [`CurrencyPair::new_checked`]).
+    #[builder(start_fn = builder, finish_fn = build)]
+    pub fn build_checked(
+        instrument_id: InstrumentId,
+        raw_symbol: Symbol,
+        base_currency: Currency,
+        quote_currency: Currency,
+        price_precision: u8,
+        size_precision: u8,
+        price_increment: Price,
+        size_increment: Quantity,
+        multiplier: Option<Quantity>,
+        lot_size: Option<Quantity>,
+        max_quantity: Option<Quantity>,
+        min_quantity: Option<Quantity>,
+        max_notional: Option<Money>,
+        min_notional: Option<Money>,
+        max_price: Option<Price>,
+        min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
+        info: Option<Params>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> CorrectnessResult<Self> {
+        Self::new_checked(
+            instrument_id,
+            raw_symbol,
+            base_currency,
+            quote_currency,
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            multiplier,
+            lot_size,
+            max_quantity,
+            min_quantity,
+            max_notional,
+            min_notional,
+            max_price,
+            min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            tick_scheme,
+            info,
+            ts_event,
+            ts_init,
+        )
     }
 }
 
@@ -414,12 +479,13 @@ impl Instrument for CurrencyPair {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use crate::{
         enums::{AssetClass, InstrumentClass},
         identifiers::{InstrumentId, Symbol},
         instruments::{CurrencyPair, Instrument, stubs::*},
-        types::{Currency, Price, Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
 
     #[rstest]
@@ -521,5 +587,67 @@ mod tests {
         let json = serde_json::to_string(&currency_pair_btcusdt).unwrap();
         let deserialized: CurrencyPair = serde_json::from_str(&json).unwrap();
         assert_eq!(currency_pair_btcusdt, deserialized);
+    }
+
+    #[rstest]
+    fn test_builder_matches_new_checked() {
+        let positional = CurrencyPair::new_checked(
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            Symbol::from("BTCUSDT"),
+            Currency::BTC(),
+            Currency::USDT(),
+            2,
+            6,
+            Price::from("0.01"),
+            Quantity::from("0.000001"),
+            Some(Quantity::from("10")),
+            Some(Quantity::from("5")),
+            Some(Quantity::from("9000.0")),
+            Some(Quantity::from("0.000001")),
+            Some(Money::new(1_000_000.0, Currency::USDT())),
+            Some(Money::new(10.0, Currency::USDT())),
+            Some(Price::from("1000000.00")),
+            Some(Price::from("0.01")),
+            Some(dec!(0.01)),
+            Some(dec!(0.02)),
+            Some(dec!(0.0002)),
+            Some(dec!(0.0004)),
+            None,
+            None,
+            1.into(),
+            2.into(),
+        )
+        .unwrap();
+
+        let built = CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .raw_symbol(Symbol::from("BTCUSDT"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .price_precision(2)
+            .size_precision(6)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.000001"))
+            .multiplier(Quantity::from("10"))
+            .lot_size(Quantity::from("5"))
+            .max_quantity(Quantity::from("9000.0"))
+            .min_quantity(Quantity::from("0.000001"))
+            .max_notional(Money::new(1_000_000.0, Currency::USDT()))
+            .min_notional(Money::new(10.0, Currency::USDT()))
+            .max_price(Price::from("1000000.00"))
+            .min_price(Price::from("0.01"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .maker_fee(dec!(0.0002))
+            .taker_fee(dec!(0.0004))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&positional).unwrap(),
+            serde_json::to_value(&built).unwrap(),
+        );
     }
 }

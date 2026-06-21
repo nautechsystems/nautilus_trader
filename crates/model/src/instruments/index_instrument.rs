@@ -72,6 +72,7 @@ pub struct IndexInstrument {
     pub ts_init: UnixNanos,
 }
 
+#[bon::bon]
 impl IndexInstrument {
     /// Creates a new [`IndexInstrument`] instance with correctness checking.
     ///
@@ -161,6 +162,44 @@ impl IndexInstrument {
             ts_init,
         )
         .expect_display(FAILED)
+    }
+
+    /// Returns a fluent builder for a [`IndexInstrument`] instance.
+    ///
+    /// Required fields are enforced at compile time; optional fields can be omitted and default
+    /// the same way they do in [`IndexInstrument::new_checked`], which the builder calls so the same
+    /// correctness checks run on `build`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails (see [`IndexInstrument::new_checked`]).
+    #[builder(start_fn = builder, finish_fn = build)]
+    pub fn build_checked(
+        instrument_id: InstrumentId,
+        raw_symbol: Symbol,
+        currency: Currency,
+        price_precision: u8,
+        size_precision: u8,
+        price_increment: Price,
+        size_increment: Quantity,
+        tick_scheme: Option<Ustr>,
+        info: Option<Params>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> CorrectnessResult<Self> {
+        Self::new_checked(
+            instrument_id,
+            raw_symbol,
+            currency,
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            tick_scheme,
+            info,
+            ts_event,
+            ts_init,
+        )
     }
 }
 
@@ -351,5 +390,41 @@ mod tests {
         let json = serde_json::to_string(&index_instrument_spx).unwrap();
         let deserialized: IndexInstrument = serde_json::from_str(&json).unwrap();
         assert_eq!(index_instrument_spx, deserialized);
+    }
+
+    #[rstest]
+    fn test_builder_matches_new_checked() {
+        let positional = IndexInstrument::new_checked(
+            InstrumentId::from("SPX.INDEX"),
+            Symbol::from("SPX"),
+            Currency::USD(),
+            2,
+            0,
+            Price::from("0.01"),
+            Quantity::from("1"),
+            None,
+            None,
+            1.into(),
+            2.into(),
+        )
+        .unwrap();
+
+        let built = IndexInstrument::builder()
+            .instrument_id(InstrumentId::from("SPX.INDEX"))
+            .raw_symbol(Symbol::from("SPX"))
+            .currency(Currency::USD())
+            .price_precision(2)
+            .size_precision(0)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("1"))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&positional).unwrap(),
+            serde_json::to_value(&built).unwrap(),
+        );
     }
 }

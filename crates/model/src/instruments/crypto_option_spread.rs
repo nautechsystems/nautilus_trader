@@ -110,6 +110,7 @@ pub struct CryptoOptionSpread {
     pub ts_init: UnixNanos,
 }
 
+#[bon::bon]
 impl CryptoOptionSpread {
     /// Creates a new [`CryptoOptionSpread`] instance with correctness checking.
     ///
@@ -281,6 +282,80 @@ impl CryptoOptionSpread {
         )
         .expect_display(FAILED)
     }
+
+    /// Returns a fluent builder for a [`CryptoOptionSpread`] instance.
+    ///
+    /// Required fields are enforced at compile time; optional fields can be omitted and default
+    /// the same way they do in [`CryptoOptionSpread::new_checked`], which the builder calls so the
+    /// same correctness checks run on `build`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails (see [`CryptoOptionSpread::new_checked`]).
+    #[builder(start_fn = builder, finish_fn = build)]
+    pub fn build_checked(
+        instrument_id: InstrumentId,
+        raw_symbol: Symbol,
+        underlying: Currency,
+        quote_currency: Currency,
+        settlement_currency: Currency,
+        is_inverse: bool,
+        strategy_type: Ustr,
+        activation_ns: UnixNanos,
+        expiration_ns: UnixNanos,
+        price_precision: u8,
+        size_precision: u8,
+        price_increment: Price,
+        size_increment: Quantity,
+        multiplier: Option<Quantity>,
+        lot_size: Option<Quantity>,
+        max_quantity: Option<Quantity>,
+        min_quantity: Option<Quantity>,
+        max_notional: Option<Money>,
+        min_notional: Option<Money>,
+        max_price: Option<Price>,
+        min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
+        info: Option<Params>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> CorrectnessResult<Self> {
+        Self::new_checked(
+            instrument_id,
+            raw_symbol,
+            underlying,
+            quote_currency,
+            settlement_currency,
+            is_inverse,
+            strategy_type,
+            activation_ns,
+            expiration_ns,
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            multiplier,
+            lot_size,
+            max_quantity,
+            min_quantity,
+            max_notional,
+            min_notional,
+            max_price,
+            min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            tick_scheme,
+            info,
+            ts_event,
+            ts_init,
+        )
+    }
 }
 
 impl PartialEq<Self> for CryptoOptionSpread {
@@ -446,12 +521,13 @@ impl Instrument for CryptoOptionSpread {
 mod tests {
     use nautilus_core::correctness::CorrectnessResult;
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use crate::{
         enums::{AssetClass, InstrumentClass},
         identifiers::{InstrumentId, Symbol},
         instruments::{CryptoOptionSpread, Instrument, stubs::*},
-        types::{Currency, Price, Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
 
     #[rstest]
@@ -539,6 +615,78 @@ mod tests {
         let json = serde_json::to_string(&crypto_option_spread_btc_deribit).unwrap();
         let deserialized: CryptoOptionSpread = serde_json::from_str(&json).unwrap();
         assert_eq!(crypto_option_spread_btc_deribit, deserialized);
+    }
+
+    #[rstest]
+    fn test_builder_matches_new_checked() {
+        let positional = CryptoOptionSpread::new_checked(
+            InstrumentId::from("BTC-CS-19MAY26-70000_75000.DERIBIT"),
+            Symbol::from("BTC-CS-19MAY26-70000_75000"),
+            Currency::BTC(),
+            Currency::USDC(),
+            Currency::USDT(),
+            false,
+            ustr::Ustr::from("CS"),
+            1.into(),
+            2.into(),
+            4,
+            1,
+            Price::from("0.0001"),
+            Quantity::from("0.1"),
+            Some(Quantity::from("10")),
+            Some(Quantity::from("5")),
+            Some(Quantity::from("1000.0")),
+            Some(Quantity::from("0.1")),
+            Some(Money::new(1_000_000.0, Currency::USDC())),
+            Some(Money::new(10.0, Currency::USDC())),
+            Some(Price::from("9.9999")),
+            Some(Price::from("0.0001")),
+            Some(dec!(0.01)),
+            Some(dec!(0.02)),
+            Some(dec!(0.0002)),
+            Some(dec!(0.0004)),
+            None,
+            None,
+            1.into(),
+            2.into(),
+        )
+        .unwrap();
+
+        let built = CryptoOptionSpread::builder()
+            .instrument_id(InstrumentId::from("BTC-CS-19MAY26-70000_75000.DERIBIT"))
+            .raw_symbol(Symbol::from("BTC-CS-19MAY26-70000_75000"))
+            .underlying(Currency::BTC())
+            .quote_currency(Currency::USDC())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .strategy_type(ustr::Ustr::from("CS"))
+            .activation_ns(1.into())
+            .expiration_ns(2.into())
+            .price_precision(4)
+            .size_precision(1)
+            .price_increment(Price::from("0.0001"))
+            .size_increment(Quantity::from("0.1"))
+            .multiplier(Quantity::from("10"))
+            .lot_size(Quantity::from("5"))
+            .max_quantity(Quantity::from("1000.0"))
+            .min_quantity(Quantity::from("0.1"))
+            .max_notional(Money::new(1_000_000.0, Currency::USDC()))
+            .min_notional(Money::new(10.0, Currency::USDC()))
+            .max_price(Price::from("9.9999"))
+            .min_price(Price::from("0.0001"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .maker_fee(dec!(0.0002))
+            .taker_fee(dec!(0.0004))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&positional).unwrap(),
+            serde_json::to_value(&built).unwrap(),
+        );
     }
 
     fn crypto_option_spread_result(

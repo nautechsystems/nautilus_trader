@@ -57,30 +57,20 @@ use nautilus_model::{
     types::{Currency, Price, Quantity},
 };
 
-let gold = Commodity::new(
-    InstrumentId::from("GOLD.COMEX"),
-    Symbol::from("GOLD"),
-    AssetClass::Commodity,
-    Currency::from("USD"),
-    2,
-    0,
-    Price::from("0.01"),
-    Quantity::from("1"),
-    Some(Quantity::from("1")),
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+let gold = Commodity::builder()
+    .instrument_id(InstrumentId::from("GOLD.COMEX"))
+    .raw_symbol(Symbol::from("GOLD"))
+    .asset_class(AssetClass::Commodity)
+    .quote_currency(Currency::from("USD"))
+    .price_precision(2)
+    .size_precision(0)
+    .price_increment(Price::from("0.01"))
+    .size_increment(Quantity::from("1"))
+    .lot_size(Quantity::from("1"))
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 ```
 
 ```python tab="Python"

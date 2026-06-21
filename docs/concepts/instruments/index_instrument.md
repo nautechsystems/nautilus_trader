@@ -41,18 +41,18 @@ use nautilus_model::{
     types::{Currency, Price, Quantity},
 };
 
-let spx = IndexInstrument::new(
-    InstrumentId::from("SPX.XCBO"),
-    Symbol::from("SPX"),
-    Currency::from("USD"),
-    2,
-    0,
-    Price::from("0.01"),
-    Quantity::from("1"),
-    None,
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+let spx = IndexInstrument::builder()
+    .instrument_id(InstrumentId::from("SPX.XCBO"))
+    .raw_symbol(Symbol::from("SPX"))
+    .currency(Currency::from("USD"))
+    .price_precision(2)
+    .size_precision(0)
+    .price_increment(Price::from("0.01"))
+    .size_increment(Quantity::from("1"))
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 ```
 
 ```python tab="Python"

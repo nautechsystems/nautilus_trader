@@ -108,6 +108,7 @@ pub struct OptionContract {
     pub ts_init: UnixNanos,
 }
 
+#[bon::bon]
 impl OptionContract {
     /// Creates a new [`OptionContract`] instance with correctness checking.
     ///
@@ -256,6 +257,74 @@ impl OptionContract {
             ts_init,
         )
         .expect_display(FAILED)
+    }
+
+    /// Returns a fluent builder for a [`OptionContract`] instance.
+    ///
+    /// Required fields are enforced at compile time; optional fields can be omitted and default
+    /// the same way they do in [`OptionContract::new_checked`], which the builder calls so the same
+    /// correctness checks run on `build`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails (see [`OptionContract::new_checked`]).
+    #[builder(start_fn = builder, finish_fn = build)]
+    pub fn build_checked(
+        instrument_id: InstrumentId,
+        raw_symbol: Symbol,
+        asset_class: AssetClass,
+        exchange: Option<Ustr>,
+        underlying: Ustr,
+        option_kind: OptionKind,
+        strike_price: Price,
+        currency: Currency,
+        activation_ns: UnixNanos,
+        expiration_ns: UnixNanos,
+        price_precision: u8,
+        price_increment: Price,
+        multiplier: Quantity,
+        lot_size: Quantity,
+        max_quantity: Option<Quantity>,
+        min_quantity: Option<Quantity>,
+        max_price: Option<Price>,
+        min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
+        info: Option<Params>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> CorrectnessResult<Self> {
+        Self::new_checked(
+            instrument_id,
+            raw_symbol,
+            asset_class,
+            exchange,
+            underlying,
+            option_kind,
+            strike_price,
+            currency,
+            activation_ns,
+            expiration_ns,
+            price_precision,
+            price_increment,
+            multiplier,
+            lot_size,
+            max_quantity,
+            min_quantity,
+            max_price,
+            min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            tick_scheme,
+            info,
+            ts_event,
+            ts_init,
+        )
     }
 }
 
@@ -416,6 +485,7 @@ impl Instrument for OptionContract {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use crate::{
@@ -526,5 +596,71 @@ mod tests {
         let json = serde_json::to_string(&option_contract_appl).unwrap();
         let deserialized: OptionContract = serde_json::from_str(&json).unwrap();
         assert_eq!(option_contract_appl, deserialized);
+    }
+
+    #[rstest]
+    fn test_builder_matches_new_checked() {
+        let positional = OptionContract::new_checked(
+            InstrumentId::from("AAPL211217C00150000.OPRA"),
+            Symbol::from("AAPL211217C00150000"),
+            AssetClass::Equity,
+            Some(Ustr::from("GMNI")),
+            Ustr::from("AAPL"),
+            OptionKind::Call,
+            Price::from("149.0"),
+            Currency::USD(),
+            1.into(),
+            2.into(),
+            2,
+            Price::from("0.01"),
+            Quantity::from(10),
+            Quantity::from(5),
+            Some(Quantity::from("100")),
+            Some(Quantity::from("1")),
+            Some(Price::from("999.0")),
+            Some(Price::from("1.0")),
+            Some(dec!(0.01)),
+            Some(dec!(0.02)),
+            Some(dec!(0.0002)),
+            Some(dec!(0.0004)),
+            None,
+            None,
+            3.into(),
+            4.into(),
+        )
+        .unwrap();
+
+        let built = OptionContract::builder()
+            .instrument_id(InstrumentId::from("AAPL211217C00150000.OPRA"))
+            .raw_symbol(Symbol::from("AAPL211217C00150000"))
+            .asset_class(AssetClass::Equity)
+            .exchange(Ustr::from("GMNI"))
+            .underlying(Ustr::from("AAPL"))
+            .option_kind(OptionKind::Call)
+            .strike_price(Price::from("149.0"))
+            .currency(Currency::USD())
+            .activation_ns(1.into())
+            .expiration_ns(2.into())
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .multiplier(Quantity::from(10))
+            .lot_size(Quantity::from(5))
+            .max_quantity(Quantity::from("100"))
+            .min_quantity(Quantity::from("1"))
+            .max_price(Price::from("999.0"))
+            .min_price(Price::from("1.0"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .maker_fee(dec!(0.0002))
+            .taker_fee(dec!(0.0004))
+            .ts_event(3.into())
+            .ts_init(4.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&positional).unwrap(),
+            serde_json::to_value(&built).unwrap(),
+        );
     }
 }

@@ -65,33 +65,30 @@ use nautilus_model::{
 };
 use rust_decimal_macros::dec;
 
-let ethusdt_perp = CryptoPerpetual::new(
-    InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-    Symbol::from("ETHUSDT"),
-    Currency::from("ETH"),
-    Currency::from("USDT"),
-    Currency::from("USDT"),
-    false,
-    2,
-    3,
-    Price::from("0.01"),
-    Quantity::from("0.001"),
-    None,
-    None,
-    Some(Quantity::from("10000.000")),
-    Some(Quantity::from("0.001")),
-    None,
-    Some(Money::from("10.00 USDT")),
-    Some(Price::from("15000.00")),
-    Some(Price::from("1.00")),
-    Some(dec!(1.0)),
-    Some(dec!(0.35)),
-    Some(dec!(0.0002)),
-    Some(dec!(0.0004)),
-    None,
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+let ethusdt_perp = CryptoPerpetual::builder()
+    .instrument_id(InstrumentId::from("ETHUSDT-PERP.BINANCE"))
+    .raw_symbol(Symbol::from("ETHUSDT"))
+    .base_currency(Currency::from("ETH"))
+    .quote_currency(Currency::from("USDT"))
+    .settlement_currency(Currency::from("USDT"))
+    .is_inverse(false)
+    .price_precision(2)
+    .size_precision(3)
+    .price_increment(Price::from("0.01"))
+    .size_increment(Quantity::from("0.001"))
+    .max_quantity(Quantity::from("10000.000"))
+    .min_quantity(Quantity::from("0.001"))
+    .min_notional(Money::from("10.00 USDT"))
+    .max_price(Price::from("15000.00"))
+    .min_price(Price::from("1.00"))
+    .margin_init(dec!(1.0))
+    .margin_maint(dec!(0.35))
+    .maker_fee(dec!(0.0002))
+    .taker_fee(dec!(0.0004))
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 
 let instrument = InstrumentAny::CryptoPerpetual(ethusdt_perp);
 ```

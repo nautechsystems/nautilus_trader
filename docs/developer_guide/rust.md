@@ -492,6 +492,39 @@ Always use the `FAILED` constant for `.expect_display()` messages on
 use nautilus_core::correctness::{CorrectnessResult, CorrectnessResultExt, FAILED};
 ```
 
+#### Fluent builders for many-optional constructors
+
+Types with large constructors dominated by optional fields (the `instruments`
+domain types) also expose a fluent `bon` builder, so callers set only the fields
+they need instead of passing a long run of `None`. Put `#[bon::bon]` on the
+inherent impl and add a builder method that delegates to `new_checked`, which
+keeps a single validated construction path:
+
+```rust
+#[bon::bon]
+impl CryptoPerpetual {
+    // new_checked / new as above
+
+    /// Returns a fluent builder for a [`CryptoPerpetual`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails (see [`CryptoPerpetual::new_checked`]).
+    #[builder(start_fn = builder, finish_fn = build)]
+    pub fn build_checked(/* same parameters as new_checked */) -> CorrectnessResult<Self> {
+        Self::new_checked(/* forward verbatim */)
+    }
+}
+```
+
+Callers write `CryptoPerpetual::builder().instrument_id(..)..build()?`. Required
+(non-`Option`) parameters are enforced at compile time by bon's typestate;
+`Option` parameters are omittable and default exactly as `new_checked` applies
+them. `build()` returns the same `CorrectnessResult` as `new_checked`, so every
+correctness check still runs. Unlike the test-only event specs, this builder lives
+on the production type, ships in production builds, and returns a `Result` rather
+than the value. Keep `new()` and `new_checked()` in place; the builder is additive.
+
 ### Type conversion patterns
 
 For types that parse from strings, provide both fallible and infallible conversions:

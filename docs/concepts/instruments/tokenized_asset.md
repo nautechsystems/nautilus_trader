@@ -57,33 +57,23 @@ use nautilus_model::{
 };
 use rust_decimal_macros::dec;
 
-let aaplx = TokenizedAsset::new(
-    InstrumentId::from("AAPLx/USD.KRAKEN"),
-    Symbol::from("AAPLxUSD"),
-    AssetClass::Equity,
-    Currency::get_or_create_crypto("AAPLx"),
-    Currency::from("USD"),
-    None,
-    2,
-    4,
-    Price::from("0.01"),
-    Quantity::from("0.0001"),
-    None,
-    None,
-    None,
-    Some(Quantity::from("0.0001")),
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    Some(dec!(-0.0002)),
-    Some(dec!(0.001)),
-    None,
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+let aaplx = TokenizedAsset::builder()
+    .instrument_id(InstrumentId::from("AAPLx/USD.KRAKEN"))
+    .raw_symbol(Symbol::from("AAPLxUSD"))
+    .asset_class(AssetClass::Equity)
+    .base_currency(Currency::get_or_create_crypto("AAPLx"))
+    .quote_currency(Currency::from("USD"))
+    .price_precision(2)
+    .size_precision(4)
+    .price_increment(Price::from("0.01"))
+    .size_increment(Quantity::from("0.0001"))
+    .min_quantity(Quantity::from("0.0001"))
+    .maker_fee(dec!(-0.0002))
+    .taker_fee(dec!(0.001))
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 ```
 
 ```python tab="Python"

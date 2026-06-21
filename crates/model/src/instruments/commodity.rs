@@ -95,6 +95,7 @@ pub struct Commodity {
     pub ts_init: UnixNanos,
 }
 
+#[bon::bon]
 impl Commodity {
     /// Creates a new [`Commodity`] instance with correctness checking.
     ///
@@ -236,6 +237,68 @@ impl Commodity {
             ts_init,
         )
         .expect_display(FAILED)
+    }
+
+    /// Returns a fluent builder for a [`Commodity`] instance.
+    ///
+    /// Required fields are enforced at compile time; optional fields can be omitted and default
+    /// the same way they do in [`Commodity::new_checked`], which the builder calls so the same
+    /// correctness checks run on `build`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails (see [`Commodity::new_checked`]).
+    #[builder(start_fn = builder, finish_fn = build)]
+    pub fn build_checked(
+        instrument_id: InstrumentId,
+        raw_symbol: Symbol,
+        asset_class: AssetClass,
+        quote_currency: Currency,
+        price_precision: u8,
+        size_precision: u8,
+        price_increment: Price,
+        size_increment: Quantity,
+        lot_size: Option<Quantity>,
+        max_quantity: Option<Quantity>,
+        min_quantity: Option<Quantity>,
+        max_notional: Option<Money>,
+        min_notional: Option<Money>,
+        max_price: Option<Price>,
+        min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
+        info: Option<Params>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> CorrectnessResult<Self> {
+        Self::new_checked(
+            instrument_id,
+            raw_symbol,
+            asset_class,
+            quote_currency,
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            lot_size,
+            max_quantity,
+            min_quantity,
+            max_notional,
+            min_notional,
+            max_price,
+            min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            tick_scheme,
+            info,
+            ts_event,
+            ts_init,
+        )
     }
 }
 
@@ -402,12 +465,13 @@ impl Instrument for Commodity {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use crate::{
         enums::{AssetClass, InstrumentClass},
         identifiers::{InstrumentId, Symbol},
         instruments::{Commodity, Instrument, stubs::*},
-        types::{Currency, Price, Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
 
     #[rstest]
@@ -488,5 +552,65 @@ mod tests {
         let json = serde_json::to_string(&commodity_gold).unwrap();
         let deserialized: Commodity = serde_json::from_str(&json).unwrap();
         assert_eq!(commodity_gold, deserialized);
+    }
+
+    #[rstest]
+    fn test_builder_matches_new_checked() {
+        let positional = Commodity::new_checked(
+            InstrumentId::from("GOLD.COMEX"),
+            Symbol::from("GOLD"),
+            AssetClass::Commodity,
+            Currency::USD(),
+            2,
+            0,
+            Price::from("0.01"),
+            Quantity::from("1"),
+            Some(Quantity::from("1")),
+            Some(Quantity::from("10000")),
+            Some(Quantity::from("1")),
+            Some(Money::new(5_000_000.0, Currency::USD())),
+            Some(Money::new(10.0, Currency::USD())),
+            Some(Price::from("100000.00")),
+            Some(Price::from("0.01")),
+            Some(dec!(0.01)),
+            Some(dec!(0.02)),
+            Some(dec!(0.0002)),
+            Some(dec!(0.0004)),
+            None,
+            None,
+            1.into(),
+            2.into(),
+        )
+        .unwrap();
+
+        let built = Commodity::builder()
+            .instrument_id(InstrumentId::from("GOLD.COMEX"))
+            .raw_symbol(Symbol::from("GOLD"))
+            .asset_class(AssetClass::Commodity)
+            .quote_currency(Currency::USD())
+            .price_precision(2)
+            .size_precision(0)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("1"))
+            .lot_size(Quantity::from("1"))
+            .max_quantity(Quantity::from("10000"))
+            .min_quantity(Quantity::from("1"))
+            .max_notional(Money::new(5_000_000.0, Currency::USD()))
+            .min_notional(Money::new(10.0, Currency::USD()))
+            .max_price(Price::from("100000.00"))
+            .min_price(Price::from("0.01"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .maker_fee(dec!(0.0002))
+            .taker_fee(dec!(0.0004))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&positional).unwrap(),
+            serde_json::to_value(&built).unwrap(),
+        );
     }
 }
