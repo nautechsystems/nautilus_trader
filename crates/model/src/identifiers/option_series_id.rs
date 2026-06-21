@@ -21,8 +21,9 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, correctness::CorrectnessError};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use ustr::Ustr;
 
 use crate::{identifiers::Venue, instruments::CryptoOption};
@@ -46,6 +47,39 @@ pub struct OptionSeriesId {
     pub settlement_currency: Ustr,
     /// UNIX timestamp (nanoseconds) for contract expiration.
     pub expiration_ns: UnixNanos,
+}
+
+/// Error returned when a value is not a valid [`OptionSeriesId`].
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum OptionSeriesIdError {
+    /// The value does not match the expected four-component format.
+    #[error(
+        "invalid `OptionSeriesId` value '{value}': expected format 'VENUE:UNDERLYING:SETTLEMENT:EXPIRY'"
+    )]
+    InvalidFormat {
+        /// The invalid identifier value.
+        value: String,
+    },
+    /// The venue component is invalid.
+    #[error("invalid `OptionSeriesId` value '{value}': invalid venue: {source}")]
+    InvalidVenue {
+        /// The invalid identifier value.
+        value: String,
+        /// The venue validation failure.
+        source: Box<CorrectnessError>,
+    },
+    /// The expiration component is invalid.
+    #[error(
+        "invalid `OptionSeriesId` value '{value}': invalid expiration '{expiration}': {reason}"
+    )]
+    InvalidExpiration {
+        /// The invalid identifier value.
+        value: String,
+        /// The invalid expiration component.
+        expiration: String,
+        /// The expiration validation failure.
+        reason: String,
+    },
 }
 
 impl OptionSeriesId {
@@ -72,17 +106,28 @@ impl OptionSeriesId {
     ///
     /// # Errors
     ///
-    /// Returns an error if `date_str` cannot be parsed as a valid date or timestamp.
+    /// Returns an error if `venue` or `date_str` is invalid.
     pub fn from_expiry(
         venue: &str,
         underlying: &str,
         settlement_currency: &str,
         date_str: &str,
-    ) -> anyhow::Result<Self> {
-        let expiration_ns = UnixNanos::from_str(date_str)
-            .map_err(|e| anyhow::anyhow!("Failed to parse expiry date '{date_str}': {e}"))?;
+    ) -> Result<Self, OptionSeriesIdError> {
+        let value = format!("{venue}:{underlying}:{settlement_currency}:{date_str}");
+        let venue =
+            Venue::new_checked(venue).map_err(|source| OptionSeriesIdError::InvalidVenue {
+                value: value.clone(),
+                source: Box::new(source),
+            })?;
+        let expiration_ns =
+            UnixNanos::from_str(date_str).map_err(|e| OptionSeriesIdError::InvalidExpiration {
+                value: value.clone(),
+                expiration: date_str.to_string(),
+                reason: e.to_string(),
+            })?;
+
         Ok(Self {
-            venue: Venue::new(venue),
+            venue,
             underlying: Ustr::from(underlying),
             settlement_currency: Ustr::from(settlement_currency),
             expiration_ns,
@@ -142,27 +187,30 @@ impl Debug for OptionSeriesId {
 }
 
 impl FromStr for OptionSeriesId {
-    type Err = anyhow::Error;
+    type Err = OptionSeriesIdError;
 
     /// Parses `VENUE:UNDERLYING:SETTLEMENT:EXPIRY` where EXPIRY can be
     /// nanoseconds (`1772524800000000000`) or a date (`2026-03-03`).
-    fn from_str(s: &str) -> anyhow::Result<Self> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let value = s.to_string();
         let parts: Vec<&str> = s.splitn(4, ':').collect();
         if parts.len() != 4 {
-            anyhow::bail!(
-                "Error parsing `OptionSeriesId` from '{s}': expected format 'VENUE:UNDERLYING:SETTLEMENT:EXPIRY'"
-            );
+            return Err(OptionSeriesIdError::InvalidFormat { value });
         }
 
-        let venue = Venue::new(parts[0]);
+        let venue =
+            Venue::new_checked(parts[0]).map_err(|source| OptionSeriesIdError::InvalidVenue {
+                value: value.clone(),
+                source: Box::new(source),
+            })?;
         let underlying = Ustr::from(parts[1]);
         let settlement_currency = Ustr::from(parts[2]);
-        let expiration_ns = UnixNanos::from_str(parts[3]).map_err(|e| {
-            anyhow::anyhow!(
-                "Error parsing `OptionSeriesId` expiration from '{}': {e}",
-                parts[3]
-            )
-        })?;
+        let expiration_ns =
+            UnixNanos::from_str(parts[3]).map_err(|e| OptionSeriesIdError::InvalidExpiration {
+                value: value.clone(),
+                expiration: parts[3].to_string(),
+                reason: e.to_string(),
+            })?;
 
         Ok(Self {
             venue,
@@ -281,12 +329,63 @@ mod tests {
 
     #[rstest]
     fn test_option_series_id_from_str_invalid_format() {
-        assert!(OptionSeriesId::from_str("DERIBIT:BTC:BTC").is_err());
+        let error = OptionSeriesId::from_str("DERIBIT:BTC:BTC").unwrap_err();
+
+        assert_eq!(
+            error,
+            OptionSeriesIdError::InvalidFormat {
+                value: "DERIBIT:BTC:BTC".to_string(),
+            },
+        );
+        assert_eq!(
+            error.to_string(),
+            "invalid `OptionSeriesId` value 'DERIBIT:BTC:BTC': expected format 'VENUE:UNDERLYING:SETTLEMENT:EXPIRY'",
+        );
+    }
+
+    #[rstest]
+    fn test_option_series_id_from_str_invalid_venue() {
+        let error = OptionSeriesId::from_str("DÉRIBIT:BTC:BTC:1700000000000000000").unwrap_err();
+
+        assert_eq!(
+            error,
+            OptionSeriesIdError::InvalidVenue {
+                value: "DÉRIBIT:BTC:BTC:1700000000000000000".to_string(),
+                source: Box::new(CorrectnessError::NonAsciiString {
+                    param: "value".to_string(),
+                    value: "DÉRIBIT".to_string(),
+                }),
+            },
+        );
+        assert_eq!(
+            error.to_string(),
+            concat!(
+                "invalid `OptionSeriesId` value 'DÉRIBIT:BTC:BTC:1700000000000000000': ",
+                "invalid venue: invalid string for 'value' contained a non-ASCII char, ",
+                "was 'DÉRIBIT'",
+            ),
+        );
     }
 
     #[rstest]
     fn test_option_series_id_from_str_invalid_expiry() {
-        assert!(OptionSeriesId::from_str("DERIBIT:BTC:BTC:not_a_date").is_err());
+        let error = OptionSeriesId::from_str("DERIBIT:BTC:BTC:not_a_date").unwrap_err();
+
+        assert_eq!(
+            error,
+            OptionSeriesIdError::InvalidExpiration {
+                value: "DERIBIT:BTC:BTC:not_a_date".to_string(),
+                expiration: "not_a_date".to_string(),
+                reason: "Invalid format: not_a_date".to_string(),
+            },
+        );
+        assert_eq!(
+            error.to_string(),
+            concat!(
+                "invalid `OptionSeriesId` value 'DERIBIT:BTC:BTC:not_a_date': ",
+                "invalid expiration 'not_a_date': Invalid format: not_a_date",
+            ),
+        );
     }
 
     #[rstest]
@@ -352,7 +451,32 @@ mod tests {
     #[rstest]
     fn test_from_expiry_invalid_date() {
         let result = OptionSeriesId::from_expiry("DERIBIT", "BTC", "BTC", "not-a-date");
-        assert!(result.is_err());
+        let error = result.unwrap_err();
+
+        assert_eq!(
+            error,
+            OptionSeriesIdError::InvalidExpiration {
+                value: "DERIBIT:BTC:BTC:not-a-date".to_string(),
+                expiration: "not-a-date".to_string(),
+                reason: "Invalid format: not-a-date".to_string(),
+            },
+        );
+    }
+
+    #[rstest]
+    fn test_from_expiry_invalid_venue() {
+        let error = OptionSeriesId::from_expiry("DÉRIBIT", "BTC", "BTC", "2025-03-28").unwrap_err();
+
+        assert_eq!(
+            error,
+            OptionSeriesIdError::InvalidVenue {
+                value: "DÉRIBIT:BTC:BTC:2025-03-28".to_string(),
+                source: Box::new(CorrectnessError::NonAsciiString {
+                    param: "value".to_string(),
+                    value: "DÉRIBIT".to_string(),
+                }),
+            },
+        );
     }
 
     #[rstest]

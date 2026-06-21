@@ -183,7 +183,7 @@ def test_instrument_id_from_str_with_utf8():
     [
         (
             "BTCUSDT",
-            "Error parsing `InstrumentId` from 'BTCUSDT': "
+            "invalid `InstrumentId` value 'BTCUSDT': "
             "missing '.' separator between symbol and venue components",
         ),
         (".USDT", "invalid string for 'value', was empty"),

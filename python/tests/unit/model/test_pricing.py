@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import re
+
 import pytest
 
 from nautilus_trader.model import BlackScholesGreeksResult
@@ -57,6 +59,57 @@ def test_option_series_id_from_expiry_and_from_str():
     assert series_id.settlement_currency == "USD"
     assert restored.value == series_id.value
     assert hash(restored) == hash(series_id)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected_err"),
+    [
+        (
+            "DERIBIT:BTC:USD",
+            "invalid `OptionSeriesId` value 'DERIBIT:BTC:USD': "
+            "expected format 'VENUE:UNDERLYING:SETTLEMENT:EXPIRY'",
+        ),
+        (
+            ":BTC:USD:1700000000000000000",
+            "invalid `OptionSeriesId` value ':BTC:USD:1700000000000000000': "
+            "invalid venue: invalid string for 'value', was empty",
+        ),
+        (
+            "DERIBIT:BTC:USD:not-a-date",
+            "invalid `OptionSeriesId` value 'DERIBIT:BTC:USD:not-a-date': "
+            "invalid expiration 'not-a-date': Invalid format: not-a-date",
+        ),
+    ],
+)
+def test_option_series_id_from_str_when_invalid(value, expected_err):
+    with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
+        OptionSeriesId.from_str(value)
+
+    assert str(exc_info.value) == expected_err
+
+
+@pytest.mark.parametrize(
+    ("venue", "date_str", "expected_err"),
+    [
+        (
+            "",
+            "2024-03-29",
+            "invalid `OptionSeriesId` value ':BTC:USD:2024-03-29': "
+            "invalid venue: invalid string for 'value', was empty",
+        ),
+        (
+            "DERIBIT",
+            "not-a-date",
+            "invalid `OptionSeriesId` value 'DERIBIT:BTC:USD:not-a-date': "
+            "invalid expiration 'not-a-date': Invalid format: not-a-date",
+        ),
+    ],
+)
+def test_option_series_id_from_expiry_when_invalid(venue, date_str, expected_err):
+    with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
+        OptionSeriesId.from_expiry(venue, "BTC", "USD", date_str)
+
+    assert str(exc_info.value) == expected_err
 
 
 def test_option_greeks_and_strike_data_properties():
