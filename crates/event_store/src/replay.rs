@@ -1826,6 +1826,11 @@ mod tests {
             &[],
         ),
         cache_mutation(
+            "purge_instrument_skip_order_guard",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
             "purge_account_events",
             CacheMutationRecoveryClass::SnapshotOwned,
             &[],

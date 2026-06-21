@@ -22,7 +22,10 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::{UnixNanos, python::to_pyvalue_err};
+use nautilus_core::{
+    UnixNanos,
+    python::{correctness_error_to_pyvalue_err, to_pyvalue_err},
+};
 use nautilus_model::{
     data::{
         QuoteTick,
@@ -146,12 +149,11 @@ impl PyOptionChainManager {
             .extract::<OptionGreeks>()
             .or_else(|_| OptionGreeks::from_pyobject(greeks_obj))?;
 
-        // Update ATM tracker from greeks forward price
         self.aggregator
             .atm_tracker_mut()
-            .update_from_option_greeks(&greeks);
+            .try_update_from_option_greeks(&greeks)
+            .map_err(correctness_error_to_pyvalue_err)?;
 
-        // Update aggregator buffers
         self.aggregator.update_greeks(&greeks);
 
         if !self.bootstrapped && self.aggregator.atm_tracker().atm_price().is_some() {
