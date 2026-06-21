@@ -129,6 +129,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Fixed Polymarket instrument expiration precision for Gamma markets (#4278), thanks for reporting @OnlyC
 - Fixed Polymarket expired instruments re-entering live data paths (#4272), thanks @graceyangfan
 - Fixed portfolio account update scoping in Rust
+- Fixed PyO3 domain `from_raw` methods panicking on invalid input instead of raising `ValueError`
 - Fixed rate limiter arithmetic to saturate so extreme quotas deny instead of admitting every request (Rust)
 - Fixed reconnect backoff jitter collapsing to zero at the maximum delay (Rust)
 - Fixed reconnect timeout cancelling the writer swap and replaying buffered messages into a readerless connection (Rust)

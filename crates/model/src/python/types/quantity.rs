@@ -20,7 +20,9 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::python::{get_pytype_name, to_pytype_err, to_pyvalue_err};
+use nautilus_core::python::{
+    correctness_error_to_pyvalue_err, get_pytype_name, to_pytype_err, to_pyvalue_err,
+};
 use pyo3::{basic::CompareOp, conversion::IntoPyObjectExt, prelude::*, types::PyFloat};
 use rust_decimal::{Decimal, RoundingStrategy};
 
@@ -340,8 +342,8 @@ impl Quantity {
     /// Creates a new `Quantity` instance from the given `raw` fixed-point value and `precision`.
     #[staticmethod]
     #[pyo3(name = "from_raw")]
-    fn py_from_raw(raw: QuantityRaw, precision: u8) -> Self {
-        Self::from_raw(raw, precision)
+    fn py_from_raw(raw: QuantityRaw, precision: u8) -> PyResult<Self> {
+        Self::from_raw_checked(raw, precision).map_err(correctness_error_to_pyvalue_err)
     }
 
     /// Creates a new `Quantity` instance with a value of zero with the given `precision`.
@@ -465,5 +467,28 @@ impl Quantity {
     #[pyo3(name = "checked_sub")]
     fn py_checked_sub(&self, other: Self) -> Option<Self> {
         self.checked_sub(other)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pyo3::Python;
+    use rstest::rstest;
+
+    use super::*;
+    use crate::types::quantity::QUANTITY_RAW_MAX;
+
+    #[rstest]
+    fn test_py_from_raw_rejects_out_of_range_raw_value() {
+        Python::initialize();
+        Python::attach(|_| {
+            let raw = QUANTITY_RAW_MAX.saturating_add(1);
+            let error = Quantity::py_from_raw(raw, 0).unwrap_err();
+
+            assert_eq!(
+                error.to_string(),
+                format!("ValueError: raw value {raw} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX}")
+            );
+        });
     }
 }
