@@ -26,7 +26,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
-    actor::DataActor,
+    actor::{DataActor, DataActorNative},
     cache::Cache,
     clock::{Clock, TestClock},
     component::Component,
@@ -495,7 +495,7 @@ impl BacktestEngine {
     /// state for strategy registration.
     pub fn add_strategy<T>(&mut self, strategy: T) -> anyhow::Result<()>
     where
-        T: Strategy + Component + Debug + 'static,
+        T: Strategy + DataActorNative + Component + Debug + 'static,
     {
         self.kernel.trader.borrow_mut().add_strategy(strategy)
     }
@@ -507,7 +507,7 @@ impl BacktestEngine {
     /// Returns an error if any strategy fails to register; preceding strategies remain registered.
     pub fn add_strategies<T>(&mut self, strategies: Vec<T>) -> anyhow::Result<()>
     where
-        T: Strategy + Component + Debug + 'static,
+        T: Strategy + DataActorNative + Component + Debug + 'static,
     {
         for strategy in strategies {
             self.add_strategy(strategy)?;
@@ -523,7 +523,7 @@ impl BacktestEngine {
     /// state for actor registration.
     pub fn add_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
     where
-        T: DataActor + Component + Debug + 'static,
+        T: DataActor + DataActorNative + Component + Debug + 'static,
     {
         self.kernel.trader.borrow_mut().add_actor(actor)
     }
@@ -535,7 +535,7 @@ impl BacktestEngine {
     /// Returns an error if any actor fails to register; preceding actors remain registered.
     pub fn add_actors<T>(&mut self, actors: Vec<T>) -> anyhow::Result<()>
     where
-        T: DataActor + Component + Debug + 'static,
+        T: DataActor + DataActorNative + Component + Debug + 'static,
     {
         for actor in actors {
             self.add_actor(actor)?;
@@ -550,7 +550,7 @@ impl BacktestEngine {
     /// Returns an error if the algorithm is already registered or the trader is running.
     pub fn add_exec_algorithm<T>(&mut self, exec_algorithm: T) -> anyhow::Result<()>
     where
-        T: ExecutionAlgorithm + Component + Debug + 'static,
+        T: ExecutionAlgorithm + DataActorNative + Component + Debug + 'static,
     {
         self.kernel
             .trader
@@ -566,7 +566,7 @@ impl BacktestEngine {
     /// registered.
     pub fn add_exec_algorithms<T>(&mut self, exec_algorithms: Vec<T>) -> anyhow::Result<()>
     where
-        T: ExecutionAlgorithm + Component + Debug + 'static,
+        T: ExecutionAlgorithm + DataActorNative + Component + Debug + 'static,
     {
         for exec_algorithm in exec_algorithms {
             self.add_exec_algorithm(exec_algorithm)?;

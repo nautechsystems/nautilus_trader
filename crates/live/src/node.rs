@@ -90,7 +90,7 @@ use std::{
 
 use indexmap::IndexSet;
 use nautilus_common::{
-    actor::{Actor, DataActor},
+    actor::{Actor, DataActor, DataActorNative},
     cache::database::CacheDatabaseAdapter,
     component::Component,
     enums::{Environment, LogColor},
@@ -1613,7 +1613,7 @@ impl LiveNode {
     /// - The node is currently running.
     pub fn add_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
     where
-        T: DataActor + Component + Actor + 'static,
+        T: DataActor + DataActorNative + Component + Actor + 'static,
     {
         if self.state() != NodeState::Idle {
             anyhow::bail!(
@@ -1638,7 +1638,7 @@ impl LiveNode {
     pub fn add_actor_from_factory<F, T>(&mut self, factory: F) -> anyhow::Result<()>
     where
         F: FnOnce() -> anyhow::Result<T>,
-        T: DataActor + Component + Actor + 'static,
+        T: DataActor + DataActorNative + Component + Actor + 'static,
     {
         if self.state() != NodeState::Idle {
             anyhow::bail!(
@@ -1664,7 +1664,7 @@ impl LiveNode {
     /// - A strategy with the same ID is already registered.
     pub fn add_strategy<T>(&mut self, mut strategy: T) -> anyhow::Result<()>
     where
-        T: Strategy + Component + Debug + 'static,
+        T: Strategy + DataActorNative + Component + Debug + 'static,
     {
         if self.state() != NodeState::Idle {
             anyhow::bail!(
@@ -1706,7 +1706,7 @@ impl LiveNode {
     /// - An execution algorithm with the same ID is already registered.
     pub fn add_exec_algorithm<T>(&mut self, exec_algorithm: T) -> anyhow::Result<()>
     where
-        T: ExecutionAlgorithm + Component + Debug + 'static,
+        T: ExecutionAlgorithm + DataActorNative + Component + Debug + 'static,
     {
         if self.state() != NodeState::Idle {
             anyhow::bail!(

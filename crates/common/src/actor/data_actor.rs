@@ -154,7 +154,7 @@ pub struct ImportableActorConfig {
 
 type RequestCallback = Arc<dyn Fn(UUID4) + Send + Sync>;
 
-/// Explicit native-only escape hatch for data actor runtime state.
+/// Explicit native-only access for data actor runtime state.
 ///
 /// Normal actor and strategy code should use facade methods such as
 /// [`DataActor::clock`] and [`DataActor::cache`]. Import this trait only from
@@ -230,24 +230,43 @@ pub trait DataActorNative {
     }
 }
 
-pub trait DataActor: Component + DataActorNative {
+/// Defines lifecycle callbacks, data handlers, and subscription/request
+/// methods for data actors.
+///
+/// Default methods that read or mutate native runtime state carry explicit
+/// [`DataActorNative`] bounds. Data actor implementations that only need
+/// core-free callbacks can implement this trait with their own [`Component`]
+/// implementation, while runtime-registered actors keep using native wiring.
+pub trait DataActor: Component {
     /// Returns the actor ID.
-    fn actor_id(&self) -> ActorId {
+    fn actor_id(&self) -> ActorId
+    where
+        Self: DataActorNative,
+    {
         self.core().actor_id()
     }
 
     /// Returns the trader ID this actor is registered to.
-    fn trader_id(&self) -> Option<TraderId> {
+    fn trader_id(&self) -> Option<TraderId>
+    where
+        Self: DataActorNative,
+    {
         self.core().trader_id()
     }
 
     /// Returns whether the actor is registered with a trader.
-    fn is_registered(&self) -> bool {
+    fn is_registered(&self) -> bool
+    where
+        Self: DataActorNative,
+    {
         self.core().is_registered()
     }
 
     /// Returns the actor configuration.
-    fn config(&self) -> &DataActorConfig {
+    fn config(&self) -> &DataActorConfig
+    where
+        Self: DataActorNative,
+    {
         &self.core().config
     }
 
@@ -696,12 +715,18 @@ pub trait DataActor: Component + DataActorNative {
     }
 
     /// Returns the user-facing clock API.
-    fn clock(&self) -> ClockApi<'_> {
+    fn clock(&self) -> ClockApi<'_>
+    where
+        Self: DataActorNative,
+    {
         self.core().clock_api()
     }
 
     /// Returns the user-facing cache API.
-    fn cache(&self) -> CacheApi<'_> {
+    fn cache(&self) -> CacheApi<'_>
+    where
+        Self: DataActorNative,
+    {
         self.core().cache_api()
     }
 
@@ -710,7 +735,10 @@ pub trait DataActor: Component + DataActorNative {
     /// # Panics
     ///
     /// Panics if the actor is not registered or has no trader ID.
-    fn shutdown_system(&self, reason: Option<String>) {
+    fn shutdown_system(&self, reason: Option<String>)
+    where
+        Self: DataActorNative,
+    {
         self.core().shutdown_system(reason);
     }
 
@@ -722,7 +750,10 @@ pub trait DataActor: Component + DataActorNative {
     /// # Panics
     ///
     /// Panics if the actor is not registered with a trader.
-    fn publish_data(&self, data_type: &DataType, data: &CustomData) {
+    fn publish_data(&self, data_type: &DataType, data: &CustomData)
+    where
+        Self: DataActorNative,
+    {
         self.core().publish_data(data_type, data);
     }
 
@@ -731,7 +762,10 @@ pub trait DataActor: Component + DataActorNative {
     /// # Panics
     ///
     /// Panics if the actor is not registered with a trader.
-    fn publish_signal(&self, name: &str, value: String, ts_event: UnixNanos) {
+    fn publish_signal(&self, name: &str, value: String, ts_event: UnixNanos)
+    where
+        Self: DataActorNative,
+    {
         self.core().publish_signal(name, value, ts_event);
     }
 
@@ -746,7 +780,10 @@ pub trait DataActor: Component + DataActorNative {
     /// # Panics
     ///
     /// Panics if the actor is not registered with a trader.
-    fn add_synthetic(&self, synthetic: SyntheticInstrument) -> anyhow::Result<()> {
+    fn add_synthetic(&self, synthetic: SyntheticInstrument) -> anyhow::Result<()>
+    where
+        Self: DataActorNative,
+    {
         self.core().add_synthetic(synthetic)
     }
 
@@ -761,7 +798,10 @@ pub trait DataActor: Component + DataActorNative {
     /// # Panics
     ///
     /// Panics if the actor is not registered with a trader.
-    fn update_synthetic(&self, synthetic: SyntheticInstrument) -> anyhow::Result<()> {
+    fn update_synthetic(&self, synthetic: SyntheticInstrument) -> anyhow::Result<()>
+    where
+        Self: DataActorNative,
+    {
         self.core().update_synthetic(synthetic)
     }
 
@@ -850,7 +890,10 @@ pub trait DataActor: Component + DataActorNative {
     }
 
     /// Handles a received quote.
-    fn handle_quote(&mut self, quote: &QuoteTick) {
+    fn handle_quote(&mut self, quote: &QuoteTick)
+    where
+        Self: DataActorNative,
+    {
         log_received(&quote);
 
         if let Err(e) = self.core().handle_indicators_for_quote(quote) {
@@ -869,7 +912,10 @@ pub trait DataActor: Component + DataActorNative {
     }
 
     /// Handles a received trade.
-    fn handle_trade(&mut self, trade: &TradeTick) {
+    fn handle_trade(&mut self, trade: &TradeTick)
+    where
+        Self: DataActorNative,
+    {
         log_received(&trade);
 
         if let Err(e) = self.core().handle_indicators_for_trade(trade) {
@@ -888,7 +934,10 @@ pub trait DataActor: Component + DataActorNative {
     }
 
     /// Handles a receiving bar.
-    fn handle_bar(&mut self, bar: &Bar) {
+    fn handle_bar(&mut self, bar: &Bar)
+    where
+        Self: DataActorNative,
+    {
         log_received(&bar);
 
         if let Err(e) = self.core().handle_indicators_for_bar(bar) {
@@ -1005,7 +1054,10 @@ pub trait DataActor: Component + DataActorNative {
     }
 
     /// Handles a received order filled event.
-    fn handle_order_filled(&mut self, event: &OrderFilled) {
+    fn handle_order_filled(&mut self, event: &OrderFilled)
+    where
+        Self: DataActorNative,
+    {
         log_received(&event);
 
         // Check for double-handling: if the event's strategy_id matches this actor's id,
@@ -1026,7 +1078,10 @@ pub trait DataActor: Component + DataActorNative {
     }
 
     /// Handles a received order canceled event.
-    fn handle_order_canceled(&mut self, event: &OrderCanceled) {
+    fn handle_order_canceled(&mut self, event: &OrderCanceled)
+    where
+        Self: DataActorNative,
+    {
         log_received(&event);
 
         // Check for double-handling: if the event's strategy_id matches this actor's id,
@@ -1205,7 +1260,10 @@ pub trait DataActor: Component + DataActorNative {
     }
 
     /// Handles a quotes response.
-    fn handle_quotes_response(&mut self, resp: &QuotesResponse) {
+    fn handle_quotes_response(&mut self, resp: &QuotesResponse)
+    where
+        Self: DataActorNative,
+    {
         log_received_bulk("QuotesResponse", &resp.correlation_id, resp.data.len());
         log::trace!("{RECV} {resp:?}");
 
@@ -1220,7 +1278,10 @@ pub trait DataActor: Component + DataActorNative {
     }
 
     /// Handles a trades response.
-    fn handle_trades_response(&mut self, resp: &TradesResponse) {
+    fn handle_trades_response(&mut self, resp: &TradesResponse)
+    where
+        Self: DataActorNative,
+    {
         log_received_bulk("TradesResponse", &resp.correlation_id, resp.data.len());
         log::trace!("{RECV} {resp:?}");
 
@@ -1235,7 +1296,10 @@ pub trait DataActor: Component + DataActorNative {
     }
 
     /// Handles a bars response.
-    fn handle_bars_response(&mut self, resp: &BarsResponse) {
+    fn handle_bars_response(&mut self, resp: &BarsResponse)
+    where
+        Self: DataActorNative,
+    {
         log_received_bulk("BarsResponse", &resp.correlation_id, resp.data.len());
         log::trace!("{RECV} {resp:?}");
 
@@ -1270,6 +1334,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1296,6 +1361,7 @@ pub trait DataActor: Component + DataActorNative {
     /// [`unsubscribe_signal`](Self::unsubscribe_signal) first.
     fn subscribe_signal(&mut self, name: &str, priority: Option<u32>)
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1321,6 +1387,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1351,6 +1418,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1381,6 +1449,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1414,6 +1483,7 @@ pub trait DataActor: Component + DataActorNative {
         managed: bool,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1451,6 +1521,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1480,6 +1551,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1506,6 +1578,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1525,6 +1598,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1551,6 +1625,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1577,6 +1652,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1603,6 +1679,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1633,6 +1710,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1659,6 +1737,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1690,6 +1769,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1718,6 +1798,7 @@ pub trait DataActor: Component + DataActorNative {
     /// Subscribe to [`OrderFilled`] events for the `instrument_id`.
     fn subscribe_order_fills(&mut self, instrument_id: InstrumentId)
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1735,6 +1816,7 @@ pub trait DataActor: Component + DataActorNative {
     /// Subscribe to [`OrderCanceled`] events for the `instrument_id`.
     fn subscribe_order_cancels(&mut self, instrument_id: InstrumentId)
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1757,6 +1839,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1777,6 +1860,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1804,6 +1888,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1831,6 +1916,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1858,6 +1944,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1885,6 +1972,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -1911,6 +1999,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_data(self.core_mut(), data_type, client_id, params);
@@ -1919,6 +2008,7 @@ pub trait DataActor: Component + DataActorNative {
     /// Unsubscribe from [`Signal`] data by `name`.
     fn unsubscribe_signal(&mut self, name: &str)
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_signal(self.core_mut(), name);
@@ -1931,6 +2021,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_instruments(self.core_mut(), venue, client_id, params);
@@ -1943,6 +2034,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_instrument(self.core_mut(), instrument_id, client_id, params);
@@ -1955,6 +2047,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_book_deltas(self.core_mut(), instrument_id, client_id, params);
@@ -1968,6 +2061,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_book_at_interval(
@@ -1986,6 +2080,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_quotes(self.core_mut(), instrument_id, client_id, params);
@@ -1998,6 +2093,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_trades(self.core_mut(), instrument_id, client_id, params);
@@ -2010,6 +2106,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_bars(self.core_mut(), bar_type, client_id, params);
@@ -2022,6 +2119,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_mark_prices(self.core_mut(), instrument_id, client_id, params);
@@ -2034,6 +2132,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_index_prices(self.core_mut(), instrument_id, client_id, params);
@@ -2046,6 +2145,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_funding_rates(self.core_mut(), instrument_id, client_id, params);
@@ -2058,6 +2158,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_option_greeks(self.core_mut(), instrument_id, client_id, params);
@@ -2070,6 +2171,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_instrument_status(
@@ -2087,6 +2189,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_instrument_close(
@@ -2100,6 +2203,7 @@ pub trait DataActor: Component + DataActorNative {
     /// Unsubscribe from streaming [`OptionChainSlice`] snapshots for the option `series_id`.
     fn unsubscribe_option_chain(&mut self, series_id: OptionSeriesId, client_id: Option<ClientId>)
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_option_chain(self.core_mut(), series_id, client_id);
@@ -2108,6 +2212,7 @@ pub trait DataActor: Component + DataActorNative {
     /// Unsubscribe from [`OrderFilled`] events for the `instrument_id`.
     fn unsubscribe_order_fills(&mut self, instrument_id: InstrumentId)
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_order_fills(self.core_mut(), instrument_id);
@@ -2116,6 +2221,7 @@ pub trait DataActor: Component + DataActorNative {
     /// Unsubscribe from [`OrderCanceled`] events for the `instrument_id`.
     fn unsubscribe_order_cancels(&mut self, instrument_id: InstrumentId)
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_order_cancels(self.core_mut(), instrument_id);
@@ -2129,6 +2235,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_blocks(self.core_mut(), chain, client_id, params);
@@ -2142,6 +2249,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_pool(self.core_mut(), instrument_id, client_id, params);
@@ -2155,6 +2263,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_pool_swaps(self.core_mut(), instrument_id, client_id, params);
@@ -2168,6 +2277,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_pool_liquidity_updates(
@@ -2186,6 +2296,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_pool_fee_collects(
@@ -2204,6 +2315,7 @@ pub trait DataActor: Component + DataActorNative {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_pool_flash_events(
@@ -2229,6 +2341,7 @@ pub trait DataActor: Component + DataActorNative {
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -2262,6 +2375,7 @@ pub trait DataActor: Component + DataActorNative {
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -2294,6 +2408,7 @@ pub trait DataActor: Component + DataActorNative {
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -2325,6 +2440,7 @@ pub trait DataActor: Component + DataActorNative {
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -2357,6 +2473,7 @@ pub trait DataActor: Component + DataActorNative {
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -2393,6 +2510,7 @@ pub trait DataActor: Component + DataActorNative {
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -2428,6 +2546,7 @@ pub trait DataActor: Component + DataActorNative {
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -2462,6 +2581,7 @@ pub trait DataActor: Component + DataActorNative {
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -2496,6 +2616,7 @@ pub trait DataActor: Component + DataActorNative {
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -2530,6 +2651,7 @@ pub trait DataActor: Component + DataActorNative {
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
@@ -2553,7 +2675,7 @@ pub trait DataActor: Component + DataActorNative {
 // Blanket implementation: any DataActor automatically implements Actor
 impl<T> Actor for T
 where
-    T: DataActor + Debug + 'static,
+    T: DataActor + DataActorNative + Debug + 'static,
 {
     fn id(&self) -> Ustr {
         self.core().actor_id.inner()
@@ -2572,7 +2694,7 @@ where
 // Blanket implementation: any DataActor automatically implements Component
 impl<T> Component for T
 where
-    T: DataActor + Debug + 'static,
+    T: DataActor + DataActorNative + Debug + 'static,
 {
     fn component_id(&self) -> ComponentId {
         ComponentId::new(self.core().actor_id.inner().as_str())

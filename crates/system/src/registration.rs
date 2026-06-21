@@ -16,6 +16,7 @@
 use std::{any::type_name, fmt::Debug};
 
 use nautilus_common::{
+    actor::DataActorNative,
     component::Component,
     msgbus::{Endpoint, MStr},
 };
@@ -28,7 +29,7 @@ pub(crate) fn strategy_control_endpoint(strategy_id: StrategyId) -> MStr<Endpoin
 
 pub(crate) fn strategy_registration_id<T>(strategy: &T) -> String
 where
-    T: Strategy + Component + Debug + 'static,
+    T: Strategy + DataActorNative + Component + Debug + 'static,
 {
     Strategy::core(strategy).config.strategy_id.map_or_else(
         || {

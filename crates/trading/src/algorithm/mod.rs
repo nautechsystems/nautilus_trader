@@ -106,6 +106,7 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Returns an error if command handling fails.
     fn execute(&mut self, command: TradingCommand) -> anyhow::Result<()>
     where
+        Self: DataActorNative,
         Self: 'static + std::fmt::Debug + Sized,
     {
         let core = ExecutionAlgorithm::core_mut(self);
@@ -969,6 +970,7 @@ pub trait ExecutionAlgorithm: DataActor {
     /// This is called automatically when the first order is received from a strategy.
     fn subscribe_to_strategy_events(&mut self, strategy_id: StrategyId)
     where
+        Self: DataActorNative,
         Self: 'static + std::fmt::Debug + Sized,
     {
         let core = ExecutionAlgorithm::core_mut(self);

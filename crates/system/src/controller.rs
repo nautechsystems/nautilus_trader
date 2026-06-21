@@ -17,7 +17,8 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use nautilus_common::{
     actor::{
-        DataActor, DataActorCore, data_actor::DataActorConfig, registry::try_get_actor_unchecked,
+        DataActor, DataActorCore, DataActorNative, data_actor::DataActorConfig,
+        registry::try_get_actor_unchecked,
     },
     component::Component,
     msgbus::{Endpoint, MStr, TypedHandler, get_message_bus},
@@ -104,7 +105,7 @@ impl Controller {
     /// Returns an error if actor registration or startup fails.
     pub fn create_actor<T>(&self, actor: T, start: bool) -> anyhow::Result<ActorId>
     where
-        T: DataActor + Component + Debug + 'static,
+        T: DataActor + DataActorNative + Component + Debug + 'static,
     {
         let actor_id = actor.actor_id();
         self.trader.borrow_mut().add_actor(actor)?;
@@ -126,7 +127,7 @@ impl Controller {
     ) -> anyhow::Result<ActorId>
     where
         F: FnOnce() -> anyhow::Result<T>,
-        T: DataActor + Component + Debug + 'static,
+        T: DataActor + DataActorNative + Component + Debug + 'static,
     {
         let actor = factory()?;
         self.create_actor(actor, start)
@@ -139,7 +140,7 @@ impl Controller {
     /// Returns an error if strategy registration or startup fails.
     pub fn create_strategy<T>(&self, mut strategy: T, start: bool) -> anyhow::Result<StrategyId>
     where
-        T: Strategy + Component + Debug + 'static,
+        T: Strategy + DataActorNative + Component + Debug + 'static,
     {
         let strategy_id = self
             .trader
@@ -164,7 +165,7 @@ impl Controller {
     ) -> anyhow::Result<StrategyId>
     where
         F: FnOnce() -> anyhow::Result<T>,
-        T: Strategy + Component + Debug + 'static,
+        T: Strategy + DataActorNative + Component + Debug + 'static,
     {
         let strategy = factory()?;
         self.create_strategy(strategy, start)

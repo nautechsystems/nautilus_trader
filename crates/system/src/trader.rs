@@ -23,7 +23,7 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::AHashMap;
 use nautilus_common::{
-    actor::{DataActor, registry::try_get_actor_unchecked},
+    actor::{DataActor, DataActorNative, registry::try_get_actor_unchecked},
     cache::Cache,
     clock::{Clock, TestClock},
     component::{
@@ -274,7 +274,7 @@ impl Trader {
     /// - An actor with the same ID is already registered.
     pub fn add_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
     where
-        T: DataActor + Component + Debug + 'static,
+        T: DataActor + DataActorNative + Component + Debug + 'static,
     {
         self.validate_actor_or_strategy_registration()?;
 
@@ -308,7 +308,7 @@ impl Trader {
     pub fn add_actor_from_factory<F, T>(&mut self, factory: F) -> anyhow::Result<()>
     where
         F: FnOnce() -> anyhow::Result<T>,
-        T: DataActor + Component + Debug + 'static,
+        T: DataActor + DataActorNative + Component + Debug + 'static,
     {
         let actor = factory()?;
 
@@ -322,7 +322,7 @@ impl Trader {
     /// Returns an error if the actor cannot be registered in the component registry.
     pub fn add_registered_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
     where
-        T: DataActor + Component + Debug + 'static,
+        T: DataActor + DataActorNative + Component + Debug + 'static,
     {
         let actor_id = actor.actor_id();
 
@@ -405,7 +405,7 @@ impl Trader {
         strategy_id: StrategyId,
     ) -> anyhow::Result<()>
     where
-        T: Strategy + Component + Debug + 'static,
+        T: Strategy + DataActorNative + Component + Debug + 'static,
     {
         if self.strategy_ids.contains(&strategy_id) {
             anyhow::bail!("Strategy '{strategy_id}' is already tracked by trader");
@@ -497,7 +497,7 @@ impl Trader {
         strategy: &mut T,
     ) -> anyhow::Result<StrategyId>
     where
-        T: Strategy + Component + Debug + 'static,
+        T: Strategy + DataActorNative + Component + Debug + 'static,
     {
         let existing_order_id_tags: Vec<&str> =
             self.strategy_ids.iter().map(StrategyId::get_tag).collect();
@@ -543,7 +543,7 @@ impl Trader {
     /// - A strategy with the same ID is already registered.
     pub fn add_strategy<T>(&mut self, mut strategy: T) -> anyhow::Result<()>
     where
-        T: Strategy + Component + Debug + 'static,
+        T: Strategy + DataActorNative + Component + Debug + 'static,
     {
         self.validate_actor_or_strategy_registration()?;
 
@@ -656,7 +656,7 @@ impl Trader {
     /// - An execution algorithm with the same ID is already registered.
     pub fn add_exec_algorithm<T>(&mut self, mut exec_algorithm: T) -> anyhow::Result<()>
     where
-        T: ExecutionAlgorithm + Component + Debug + 'static,
+        T: ExecutionAlgorithm + DataActorNative + Component + Debug + 'static,
     {
         self.validate_exec_algorithm_registration()?;
 

@@ -57,6 +57,11 @@ For Rust actors, generated or assigned runtime IDs live on the actor core rather
 written back into `DataActorConfig`. This differs from Python bridge paths which may copy
 inherited config fields into runtime state when a Python object is created from an importable
 config.
+
+Rust authors implement `DataActor` and use the facade methods on `self`.
+`DataActorNative` is native-only access for runtime wiring and borrowed
+core state. Import it only for same-binary performance paths or host integration
+internals.
 :::
 
 ## Lifecycle

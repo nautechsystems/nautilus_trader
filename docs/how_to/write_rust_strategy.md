@@ -56,13 +56,14 @@ impl MyStrategy {
 
 ## Wire up the core and implement Debug
 
-The `nautilus_strategy!` macro generates the core access required by
-`DataActor` and the `Strategy` trait impl (the `core()`/`core_mut()`
-accessors). By default it delegates to a field named `core`; pass a second
-argument for a different field name.
+The `nautilus_strategy!` macro generates the native core access used by runtime
+registration and core-backed defaults, plus the `Strategy` trait impl. By
+default it delegates to a field named `core`; pass a second argument for a
+different field name.
 
-`Debug` is a trait bound on `DataActor`, so implement it manually or derive
-it.
+Runtime registration uses blanket `Actor` and `Component` implementations that
+require native wiring and `Debug`. The macro supplies the native wiring;
+implement `Debug` manually or derive it.
 
 ```rust
 nautilus_strategy!(MyStrategy);
@@ -115,7 +116,7 @@ Use the public facade by default: `clock()`, `cache()`, `order()`,
 
 | Strategy path               | Use native traits? | Use this API                                        |
 |-----------------------------|--------------------|-----------------------------------------------------|
-| Native Rust binary          | Only when needed   | Facades, plus `DataActorNative` or `StrategyNative` |
+| Native Rust binary          | Only when needed   | Facades on `Strategy` and `DataActor`               |
 | Rust configured from Python | Only when needed   | Same as native Rust                                 |
 | Python‑authored strategy    | No                 | Facades only                                        |
 | Plug‑in‑compatible strategy | No                 | Facades only                                        |

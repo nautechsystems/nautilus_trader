@@ -80,9 +80,9 @@ A Rust `DataActor` needs three pieces:
 2. The `nautilus_actor!(YourType)` macro plus a `Debug` implementation.
 3. A `DataActor` trait implementation with your callbacks.
 
-The macro generates blanket `Actor` and `Component` implementations, so
-you only implement the callbacks you need. Every callback has a default
-no-op implementation.
+The macro supplies the native runtime wiring required by the blanket `Actor`
+and `Component` implementations, so you only implement the callbacks you need.
+Every callback has a default no-op implementation.
 
 ## Part 1: per-instrument Greeks
 

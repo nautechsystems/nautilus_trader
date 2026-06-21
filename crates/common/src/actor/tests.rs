@@ -76,8 +76,9 @@ use crate::defi::switchboard::{
 use crate::{
     actor::registry::{get_actor, get_actor_unchecked, register_actor},
     cache::Cache,
-    clock::TestClock,
+    clock::{Clock, TestClock},
     component::Component,
+    enums::{ComponentState, ComponentTrigger},
     logging::{logger::LogGuard, logging_is_initialized},
     messages::data::{
         BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
@@ -177,6 +178,43 @@ struct TestDataActor {
     pub received_pool_swaps: Vec<PoolSwap>,
     #[cfg(feature = "defi")]
     pub received_pool_liquidity_updates: Vec<PoolLiquidityUpdate>,
+}
+
+#[derive(Debug)]
+struct FacadeOnlyActor {
+    state: ComponentState,
+    started: bool,
+}
+
+impl Component for FacadeOnlyActor {
+    fn component_id(&self) -> ComponentId {
+        ComponentId::new("FacadeOnlyActor")
+    }
+
+    fn state(&self) -> ComponentState {
+        self.state
+    }
+
+    fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
+        self.state = self.state.transition(&trigger)?;
+        Ok(())
+    }
+
+    fn register(
+        &mut self,
+        _trader_id: TraderId,
+        _clock: Rc<RefCell<dyn Clock>>,
+        _cache: Rc<RefCell<Cache>>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+impl DataActor for FacadeOnlyActor {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.started = true;
+        Ok(())
+    }
 }
 
 nautilus_actor!(TestDataActor);
@@ -454,6 +492,24 @@ fn register_data_actor(
 
     register_actor(actor);
     actor_id.inner()
+}
+
+#[rstest]
+fn test_data_actor_facade_behavior_does_not_require_native_core_access() {
+    fn assert_data_actor<T: DataActor + Component>() {}
+
+    assert_data_actor::<FacadeOnlyActor>();
+
+    let mut actor = FacadeOnlyActor {
+        state: ComponentState::PreInitialized,
+        started: false,
+    };
+
+    DataActor::on_start(&mut actor).unwrap();
+    let state = DataActor::on_save(&actor).unwrap();
+
+    assert!(actor.started);
+    assert!(state.is_empty());
 }
 
 #[rstest]

@@ -52,8 +52,9 @@ runtime contract. By default it delegates to a field named `core`; pass a second
 argument for a different field name. Normal callbacks do not call the generated
 native accessors; use the `DataActor` facade methods on `self`.
 
-`Debug` is a trait bound on `DataActor` (required by the blanket `Component`
-impl), so implement it manually or derive it.
+Runtime registration uses blanket `Actor` and `Component` implementations that
+require `DataActorNative` and `Debug`. The macro supplies `DataActorNative`;
+implement `Debug` manually or derive it.
 
 ```rust
 nautilus_actor!(SpreadMonitor);
@@ -93,11 +94,11 @@ available handlers.
 ## Native runtime access
 
 Use the public `DataActor` facade by default. Add `DataActorNative` only for an
-explicit native escape hatch that the facade methods cannot serve.
+explicit native-only access path that the facade methods cannot serve.
 Read-only properties such as `actor_id()`, `trader_id()`, `is_registered()`,
 and `config()` are available on the facade.
 
-| Actor path                  | Native escape hatch? | Normal API         |
+| Actor path                  | Native‑only access?  | Normal API         |
 |-----------------------------|----------------------|--------------------|
 | Native Rust binary          | Only when needed     | `DataActor` facade |
 | Rust configured from Python | Only when needed     | `DataActor` facade |
