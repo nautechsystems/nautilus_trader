@@ -47,7 +47,7 @@ use ustr::Ustr;
 #[cfg(any(test, feature = "stubs"))]
 pub use crate::orders::builder::OrderTestBuilder;
 pub use crate::orders::{
-    any::{LimitOrderAny, OrderAny, PassiveOrderAny, StopOrderAny},
+    any::{LimitOrderAny, OrderAny, OrderReplayError, PassiveOrderAny, StopOrderAny},
     limit::LimitOrder,
     limit_if_touched::LimitIfTouchedOrder,
     list::{OrderList, OrderListValidationError},

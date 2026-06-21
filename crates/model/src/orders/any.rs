@@ -17,14 +17,40 @@ use std::fmt::Display;
 
 use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use super::{
-    Order, limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder, market::MarketOrder,
-    market_if_touched::MarketIfTouchedOrder, market_to_limit::MarketToLimitOrder,
-    stop_limit::StopLimitOrder, stop_market::StopMarketOrder,
+    Order, OrderError, limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder,
+    market::MarketOrder, market_if_touched::MarketIfTouchedOrder,
+    market_to_limit::MarketToLimitOrder, stop_limit::StopLimitOrder, stop_market::StopMarketOrder,
     trailing_stop_limit::TrailingStopLimitOrder, trailing_stop_market::TrailingStopMarketOrder,
 };
 use crate::{events::OrderEventAny, identifiers::OrderListId, types::Price};
+
+/// Error returned when [`OrderAny::from_events`] cannot replay order events.
+#[derive(Debug, Error)]
+pub enum OrderReplayError {
+    /// No events were supplied.
+    #[error("No order events provided to create OrderAny")]
+    EmptyInput,
+    /// The first event was not an initialization event.
+    #[error("First event must be `OrderInitialized`")]
+    WrongFirstEvent,
+    /// The initialization event could not be converted into an order.
+    #[error("Invalid `OrderInitialized` event: {source}")]
+    InvalidInitialization {
+        /// The source order conversion error.
+        #[source]
+        source: OrderError,
+    },
+    /// A later event could not be applied to the initialized order.
+    #[error("{source}")]
+    ApplyFailed {
+        /// The source event application error.
+        #[source]
+        source: OrderError,
+    },
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[enum_dispatch(Order)]
@@ -52,29 +78,25 @@ impl OrderAny {
     ///   (e.g. missing required price/trigger fields, invalid quantity, invalid TIF/expire combo).
     /// - Any subsequent event has an invalid state transition when applied to the order.
     ///
-    #[expect(clippy::missing_panics_doc)] // Guarded by empty check above
-    pub fn from_events(events: Vec<OrderEventAny>) -> anyhow::Result<Self> {
-        if events.is_empty() {
-            anyhow::bail!("No order events provided to create OrderAny");
+    pub fn from_events(events: Vec<OrderEventAny>) -> Result<Self, OrderReplayError> {
+        let Some(init_event) = events.first() else {
+            return Err(OrderReplayError::EmptyInput);
+        };
+
+        let OrderEventAny::Initialized(init) = init_event else {
+            return Err(OrderReplayError::WrongFirstEvent);
+        };
+
+        let mut order = Self::try_from(init.clone())
+            .map_err(|source| OrderReplayError::InvalidInitialization { source })?;
+
+        for event in events.into_iter().skip(1) {
+            order
+                .apply(event)
+                .map_err(|source| OrderReplayError::ApplyFailed { source })?;
         }
 
-        // Pop the first event
-        let init_event = events.first().unwrap();
-        match init_event {
-            OrderEventAny::Initialized(init) => {
-                let mut order = Self::try_from(init.clone())
-                    .map_err(|e| anyhow::anyhow!("Invalid `OrderInitialized` event: {e}"))?;
-                // Apply the rest of the events
-                for event in events.into_iter().skip(1) {
-                    // Apply event to order
-                    order.apply(event)?;
-                }
-                Ok(order)
-            }
-            _ => {
-                anyhow::bail!("First event must be `OrderInitialized`");
-            }
-        }
+        Ok(order)
     }
 
     /// Returns a reference to the [`crate::events::OrderInitialized`] event.
@@ -355,7 +377,7 @@ mod tests {
             OrderEventAny, OrderInitialized, OrderUpdated, order::spec::OrderInitializedSpec,
         },
         identifiers::{ClientOrderId, InstrumentId, StrategyId},
-        orders::builder::OrderTestBuilder,
+        orders::{OrderError, builder::OrderTestBuilder},
         types::{Price, Quantity},
     };
 
@@ -405,11 +427,11 @@ mod tests {
     #[rstest]
     fn test_order_any_from_events_empty_error() {
         let events: Vec<OrderEventAny> = vec![];
-        let result = OrderAny::from_events(events);
+        let err = OrderAny::from_events(events).expect_err("empty events should fail");
 
-        assert!(result.is_err());
+        assert!(matches!(err, OrderReplayError::EmptyInput));
         assert_eq!(
-            result.unwrap_err().to_string(),
+            err.to_string(),
             "No order events provided to create OrderAny"
         );
     }
@@ -425,14 +447,21 @@ mod tests {
             .build();
 
         let events = vec![OrderEventAny::Initialized(init_event)];
-        let result = OrderAny::from_events(events);
+        let err =
+            OrderAny::from_events(events).expect_err("invalid initialization should fail replay");
 
-        assert!(result.is_err());
-        let msg = result.unwrap_err().to_string();
-        assert!(
-            msg.contains("Invalid `OrderInitialized` event")
-                && msg.contains("`price` is required for `LimitOrder`"),
-            "unexpected error message: {msg}"
+        match &err {
+            OrderReplayError::InvalidInitialization { source } => {
+                assert_eq!(
+                    source.to_string(),
+                    "`price` is required for `LimitOrder` initialization",
+                );
+            }
+            _ => panic!("expected InvalidInitialization, was {err:?}"),
+        }
+        assert_eq!(
+            err.to_string(),
+            "Invalid `OrderInitialized` event: `price` is required for `LimitOrder` initialization",
         );
     }
 
@@ -469,10 +498,14 @@ mod tests {
             .build();
 
         let events = vec![OrderEventAny::Initialized(init_event)];
-        let result = OrderAny::from_events(events);
+        let err =
+            OrderAny::from_events(events).expect_err("invalid initialization should fail replay");
 
-        assert!(result.is_err());
-        let msg = result.unwrap_err().to_string();
+        assert!(matches!(
+            err,
+            OrderReplayError::InvalidInitialization { .. }
+        ));
+        let msg = err.to_string();
         assert!(
             msg.contains("Invalid `OrderInitialized` event") && msg.contains(expected_msg),
             "unexpected error message: {msg}"
@@ -713,10 +746,14 @@ mod tests {
         // Each case omits exactly one required field for its order type. `from_events` must
         // surface the per-type `TryFrom` error rather than panicking inside `OrderAny::from`.
         let events = vec![OrderEventAny::Initialized(init)];
-        let result = OrderAny::from_events(events);
+        let err =
+            OrderAny::from_events(events).expect_err("invalid initialization should fail replay");
 
-        assert!(result.is_err());
-        let msg = result.unwrap_err().to_string();
+        assert!(matches!(
+            err,
+            OrderReplayError::InvalidInitialization { .. }
+        ));
+        let msg = err.to_string();
         assert!(
             msg.contains("Invalid `OrderInitialized` event") && msg.contains(expected_field_msg),
             "unexpected error message: {msg}"
@@ -740,12 +777,33 @@ mod tests {
         let events = vec![OrderEventAny::Updated(update_event)];
 
         // Attempt to create order should fail
-        let result = OrderAny::from_events(events);
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "First event must be `OrderInitialized`"
-        );
+        let err = OrderAny::from_events(events).expect_err("wrong first event should fail replay");
+        assert!(matches!(err, OrderReplayError::WrongFirstEvent));
+        assert_eq!(err.to_string(), "First event must be `OrderInitialized`");
+    }
+
+    #[rstest]
+    fn test_order_any_from_events_apply_failure() {
+        let init_event = OrderInitializedSpec::builder()
+            .order_type(OrderType::Market)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .build();
+
+        let events = vec![
+            OrderEventAny::Initialized(init_event.clone()),
+            OrderEventAny::Initialized(init_event),
+        ];
+        let err =
+            OrderAny::from_events(events).expect_err("later invalid event should fail replay");
+
+        match &err {
+            OrderReplayError::ApplyFailed { source } => {
+                assert!(matches!(source, OrderError::InvalidStateTransition));
+            }
+            _ => panic!("expected ApplyFailed, was {err:?}"),
+        }
+        assert_eq!(err.to_string(), "Invalid order state transition");
     }
 
     #[rstest]
