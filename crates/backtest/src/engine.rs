@@ -58,7 +58,10 @@ use nautilus_model::{
     types::Price,
 };
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
-use nautilus_trading::{ExecutionAlgorithm, strategy::Strategy};
+use nautilus_trading::{
+    ExecutionAlgorithm,
+    strategy::{Strategy, StrategyNative},
+};
 
 use crate::{
     accumulator::TimeEventAccumulator,
@@ -495,7 +498,7 @@ impl BacktestEngine {
     /// state for strategy registration.
     pub fn add_strategy<T>(&mut self, strategy: T) -> anyhow::Result<()>
     where
-        T: Strategy + DataActorNative + Component + Debug + 'static,
+        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
     {
         self.kernel.trader.borrow_mut().add_strategy(strategy)
     }
@@ -507,7 +510,7 @@ impl BacktestEngine {
     /// Returns an error if any strategy fails to register; preceding strategies remain registered.
     pub fn add_strategies<T>(&mut self, strategies: Vec<T>) -> anyhow::Result<()>
     where
-        T: Strategy + DataActorNative + Component + Debug + 'static,
+        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
     {
         for strategy in strategies {
             self.add_strategy(strategy)?;

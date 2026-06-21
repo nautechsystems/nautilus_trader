@@ -11,8 +11,14 @@ For background on actors, traits, and handler dispatch, see the
 
 An actor owns a `DataActorCore` and any state it needs. The core stores runtime
 state for the actor. User code normally reaches that state through the
-`DataActor` facade methods such as `actor_id()`, `trader_id()`, `config()`,
-`clock()`, `cache()`, and the subscription methods.
+`DataActor` facade methods such as:
+
+- `clock()`
+- `cache()`
+- `config()`
+- `actor_id()`
+- `trader_id()`
+- Subscription methods
 
 ```rust
 use nautilus_common::{nautilus_actor, actor::{DataActor, DataActorConfig, DataActorCore}};
@@ -95,8 +101,12 @@ available handlers.
 
 Use the public `DataActor` facade by default. Add `DataActorNative` only for an
 explicit native-only access path that the facade methods cannot serve.
-Read-only properties such as `actor_id()`, `trader_id()`, `is_registered()`,
-and `config()` are available on the facade.
+Read-only properties are available on the facade:
+
+- `config()`
+- `actor_id()`
+- `trader_id()`
+- `is_registered()`
 
 | Actor path                  | Native‑only access?  | Normal API         |
 |-----------------------------|----------------------|--------------------|
@@ -106,10 +116,18 @@ and `config()` are available on the facade.
 | Plug‑in‑compatible actor    | No                   | `DataActor` facade |
 
 Import `DataActorNative` only for performance-sensitive native code or host
-integration internals. It exposes borrowed core state such as `cache_ref()`,
-`cache_rc()`, `clock_mut()`, and `clock_rc()`. These types do not cross Python
-or plug-in boundaries, so portable actors should use facade methods such as
-`clock()` and `cache()`.
+integration internals. It exposes borrowed core state such as:
+
+- `clock_mut()`
+- `clock_rc()`
+- `cache_ref()`
+- `cache_rc()`
+
+These types do not cross Python or plug-in boundaries, so portable actors
+should use facade methods such as:
+
+- `clock()`
+- `cache()`
 
 ## Register the actor
 

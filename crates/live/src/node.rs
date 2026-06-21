@@ -114,7 +114,10 @@ use nautilus_model::{
     reports::{OrderStatusReport, PositionStatusReport},
 };
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
-use nautilus_trading::{ExecutionAlgorithm, strategy::Strategy};
+use nautilus_trading::{
+    ExecutionAlgorithm,
+    strategy::{Strategy, StrategyNative},
+};
 use tabled::{Table, Tabled, settings::Style};
 
 use crate::{
@@ -1664,7 +1667,7 @@ impl LiveNode {
     /// - A strategy with the same ID is already registered.
     pub fn add_strategy<T>(&mut self, mut strategy: T) -> anyhow::Result<()>
     where
-        T: Strategy + DataActorNative + Component + Debug + 'static,
+        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
     {
         if self.state() != NodeState::Idle {
             anyhow::bail!(

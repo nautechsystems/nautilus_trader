@@ -193,9 +193,7 @@ impl DataActor for GridMarketMaker {
         let mid = Price::new(mid_f64, price_precision);
 
         let instrument_id = self.config.instrument_id;
-        let strategy_id = Strategy::core(self)
-            .strategy_id()
-            .expect("Strategy must be registered");
+        let strategy_id = self.strategy_id().expect("Strategy must be registered");
 
         // Always requote when the grid is empty, even if mid is within threshold
         let has_resting = {

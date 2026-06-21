@@ -262,9 +262,7 @@ impl HurstVpinDirectional {
 
     fn submit_close(&mut self) -> anyhow::Result<()> {
         let instrument_id = self.config.instrument_id;
-        let strategy_id = Strategy::core(self)
-            .strategy_id()
-            .expect("Strategy must be registered");
+        let strategy_id = self.strategy_id().expect("Strategy must be registered");
 
         let positions: Vec<(PositionId, Quantity, PositionSide)> = self
             .cache()
@@ -302,9 +300,7 @@ impl HurstVpinDirectional {
 
     fn has_open_position(&self) -> bool {
         let instrument_id = self.config.instrument_id;
-        let strategy_id = Strategy::core(self)
-            .strategy_id()
-            .expect("Strategy must be registered");
+        let strategy_id = self.strategy_id().expect("Strategy must be registered");
         !self
             .cache()
             .positions_open(None, Some(&instrument_id), Some(&strategy_id), None, None)
@@ -457,9 +453,7 @@ impl DataActor for HurstVpinDirectional {
             return Ok(());
         }
 
-        let strategy_id = Strategy::core(self)
-            .strategy_id()
-            .expect("Strategy must be registered");
+        let strategy_id = self.strategy_id().expect("Strategy must be registered");
         let has_working = {
             let cache = self.cache();
             !cache

@@ -47,7 +47,10 @@ use nautilus_model::{
     },
 };
 use nautilus_portfolio::portfolio::Portfolio;
-use nautilus_trading::{ExecutionAlgorithm, strategy::Strategy};
+use nautilus_trading::{
+    ExecutionAlgorithm,
+    strategy::{Strategy, StrategyNative},
+};
 use ustr::Ustr;
 
 use crate::registration::{
@@ -405,7 +408,7 @@ impl Trader {
         strategy_id: StrategyId,
     ) -> anyhow::Result<()>
     where
-        T: Strategy + DataActorNative + Component + Debug + 'static,
+        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
     {
         if self.strategy_ids.contains(&strategy_id) {
             anyhow::bail!("Strategy '{strategy_id}' is already tracked by trader");
@@ -497,17 +500,18 @@ impl Trader {
         strategy: &mut T,
     ) -> anyhow::Result<StrategyId>
     where
-        T: Strategy + DataActorNative + Component + Debug + 'static,
+        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
     {
         let existing_order_id_tags: Vec<&str> =
             self.strategy_ids.iter().map(StrategyId::get_tag).collect();
 
-        let configured_strategy_id = Strategy::core(strategy).strategy_id();
-        let runtime_order_id_tag = normalize_order_id_tag(Strategy::core(strategy).order_id_tag());
+        let configured_strategy_id = StrategyNative::strategy_core(strategy).strategy_id();
+        let runtime_order_id_tag =
+            normalize_order_id_tag(StrategyNative::strategy_core(strategy).order_id_tag());
 
         let strategy_id = if let Some(strategy_id) = configured_strategy_id {
             ensure_unique_order_id_tag(&existing_order_id_tags, strategy_id.get_tag())?;
-            Strategy::core_mut(strategy).change_id(strategy_id);
+            StrategyNative::strategy_core_mut(strategy).change_id(strategy_id);
             strategy_id
         } else {
             let order_id_tag = runtime_order_id_tag.map_or_else(
@@ -519,7 +523,7 @@ impl Trader {
             let base_id = strategy_registration_id::<T>(strategy);
             let strategy_id =
                 StrategyId::from(format!("{}-{order_id_tag}", base_strategy_id(&base_id)));
-            Strategy::core_mut(strategy).change_id(strategy_id);
+            StrategyNative::strategy_core_mut(strategy).change_id(strategy_id);
             strategy_id
         };
 
@@ -543,7 +547,7 @@ impl Trader {
     /// - A strategy with the same ID is already registered.
     pub fn add_strategy<T>(&mut self, mut strategy: T) -> anyhow::Result<()>
     where
-        T: Strategy + DataActorNative + Component + Debug + 'static,
+        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
     {
         self.validate_actor_or_strategy_registration()?;
 
@@ -553,7 +557,7 @@ impl Trader {
         let clock = self.create_component_clock(component_id);
 
         // Register strategy core with portfolio for order management
-        Strategy::core_mut(&mut strategy).register(
+        StrategyNative::strategy_core_mut(&mut strategy).register(
             self.trader_id,
             clock.clone(),
             self.cache.clone(),
@@ -1654,10 +1658,11 @@ mod tests {
             .prepare_strategy_for_registration(&mut strategy)
             .unwrap();
         assert_eq!(prepared_id, StrategyId::from("TestStrategy-000"));
-        assert_eq!(Strategy::core(&strategy).config.strategy_id, None);
-        assert_eq!(Strategy::core(&strategy).config.order_id_tag, None);
-        assert_eq!(Strategy::core(&strategy).strategy_id(), Some(prepared_id));
-        assert_eq!(Strategy::core(&strategy).order_id_tag(), Some("000"));
+        let core = StrategyNative::strategy_core(&strategy);
+        assert_eq!(core.config.strategy_id, None);
+        assert_eq!(core.config.order_id_tag, None);
+        assert_eq!(core.strategy_id(), Some(prepared_id));
+        assert_eq!(core.order_id_tag(), Some("000"));
 
         assert!(trader.add_strategy(strategy).is_ok());
         assert_eq!(trader.strategy_ids(), vec![prepared_id]);

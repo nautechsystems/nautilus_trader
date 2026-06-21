@@ -186,7 +186,7 @@ normal strategy logic uses `Strategy` methods and the facade methods on `self`.
 
 ### Order management
 
-The `Strategy` trait provides order methods through `StrategyCore`:
+The `Strategy` trait provides order methods through the facade:
 
 | Method                | Action                                    |
 |-----------------------|-------------------------------------------|
@@ -200,10 +200,20 @@ The `Strategy` trait provides order methods through `StrategyCore`:
 | `close_all_positions` | Close all open positions.                 |
 
 The `OrderApi` (accessed via `self.order()`) builds orders and order lists:
-`generate_client_order_id`, `generate_order_list_id`, `market`, `limit`,
-`stop_market`, `stop_limit`, `market_to_limit`, `market_if_touched`,
-`limit_if_touched`, `trailing_stop_market`, `trailing_stop_limit`, `bracket`,
-and `create_list`.
+
+- `generate_client_order_id`
+- `generate_order_list_id`
+- `market`
+- `limit`
+- `stop_market`
+- `stop_limit`
+- `market_to_limit`
+- `market_if_touched`
+- `limit_if_touched`
+- `trailing_stop_market`
+- `trailing_stop_limit`
+- `bracket`
+- `create_list`
 
 ### Core wiring macros
 
@@ -217,14 +227,32 @@ macros tell the traits where that field lives.
 
 Both macros expect a field named `core`; pass a field name as the second
 argument when needed. They do not make the actor or strategy deref to its core.
-Normal code uses facade methods such as `actor_id()`, `trader_id()`,
-`is_registered()`, `config()`, `clock()`, `cache()`, `order()`, and
-`portfolio()`.
+Normal code uses facade methods such as:
+
+- `actor_id()`
+- `trader_id()`
+- `is_registered()`
+- `config()`
+- `strategy_id()`
+- `clock()`
+- `cache()`
+- `order()`
+- `portfolio()`
 
 ### Native traits
 
-Use facade methods by default: `actor_id()`, `trader_id()`, `is_registered()`,
-`config()`, `clock()`, `cache()`, `order()`, and `portfolio()`.
+Use facade methods by default:
+
+- `actor_id()`
+- `trader_id()`
+- `is_registered()`
+- `config()`
+- `strategy_id()`
+- `clock()`
+- `cache()`
+- `order()`
+- `portfolio()`
+
 `DataActorNative` and `StrategyNative` are for native-only access below that
 facade.
 
@@ -239,7 +267,7 @@ Native traits expose borrowed core state, `Rc<RefCell<_>>`, and runtime
 references. Use them only for performance-sensitive native paths or host
 integration internals. Import `DataActorNative` for actor-level state such as
 cache or clock borrows, and import `StrategyNative` for strategy-level state
-such as order factory, order manager, or portfolio borrows. Do not use them in
+such as strategy core, order factory, or portfolio borrows. Do not use them in
 Python-authored or plug-in-compatible strategies and actors, because those
 types do not cross those boundaries.
 

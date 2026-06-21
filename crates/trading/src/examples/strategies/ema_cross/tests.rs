@@ -30,7 +30,7 @@ use nautilus_portfolio::portfolio::Portfolio;
 use rstest::rstest;
 
 use super::{EmaCross, EmaCrossConfig};
-use crate::strategy::Strategy;
+use crate::strategy::StrategyNative;
 
 const INSTRUMENT_ID: &str = "AUDUSD.SIM";
 
@@ -82,7 +82,7 @@ fn warm_up(strategy: &mut EmaCross, mid: &str, count: usize) {
 fn test_new_sets_strategy_id() {
     let strategy = create_strategy(3, 10);
     assert_eq!(
-        strategy.core().config.strategy_id,
+        StrategyNative::strategy_core(&strategy).config.strategy_id,
         Some(StrategyId::from("EMA_CROSS-001")),
     );
 }
@@ -307,7 +307,7 @@ fn test_from_config_with_custom_strategy_id() {
 
     let strategy = EmaCross::from_config(config);
     assert_eq!(
-        strategy.core().config.strategy_id,
+        StrategyNative::strategy_core(&strategy).config.strategy_id,
         Some(StrategyId::from("MY_EMA-002")),
     );
     assert_eq!(strategy.instrument_id, InstrumentId::from(INSTRUMENT_ID));

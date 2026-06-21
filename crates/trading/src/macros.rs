@@ -15,7 +15,7 @@
 
 //! Convenience macros for implementing strategy boilerplate.
 
-/// Implements `DataActorNative` and `Strategy` for a strategy type.
+/// Implements `DataActorNative`, `StrategyNative`, and `Strategy` for a strategy type.
 ///
 /// The struct must contain a field of type [`StrategyCore`](crate::strategy::StrategyCore).
 /// By default the macro expects the field to be named `core`; pass a second argument
@@ -81,6 +81,16 @@ macro_rules! nautilus_strategy {
             }
 
             fn core_mut(&mut self) -> &mut $crate::_macro_reexports::DataActorCore {
+                &mut self.$field
+            }
+        }
+
+        impl $crate::strategy::StrategyNative for $ty {
+            fn strategy_core(&self) -> &$crate::strategy::StrategyCore {
+                &self.$field
+            }
+
+            fn strategy_core_mut(&mut self) -> &mut $crate::strategy::StrategyCore {
                 &mut self.$field
             }
         }

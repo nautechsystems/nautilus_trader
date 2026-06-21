@@ -856,6 +856,16 @@ impl DataActorNative for PyStrategyInner {
     }
 }
 
+impl StrategyNative for PyStrategyInner {
+    fn strategy_core(&self) -> &StrategyCore {
+        &self.core
+    }
+
+    fn strategy_core_mut(&mut self) -> &mut StrategyCore {
+        &mut self.core
+    }
+}
+
 impl Strategy for PyStrategyInner {
     fn core(&self) -> &StrategyCore {
         &self.core

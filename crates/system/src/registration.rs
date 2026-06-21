@@ -21,7 +21,7 @@ use nautilus_common::{
     msgbus::{Endpoint, MStr},
 };
 use nautilus_model::identifiers::StrategyId;
-use nautilus_trading::strategy::Strategy;
+use nautilus_trading::strategy::{Strategy, StrategyNative};
 
 pub(crate) fn strategy_control_endpoint(strategy_id: StrategyId) -> MStr<Endpoint> {
     format!("{strategy_id}.control").into()
@@ -29,18 +29,21 @@ pub(crate) fn strategy_control_endpoint(strategy_id: StrategyId) -> MStr<Endpoin
 
 pub(crate) fn strategy_registration_id<T>(strategy: &T) -> String
 where
-    T: Strategy + DataActorNative + Component + Debug + 'static,
+    T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
 {
-    Strategy::core(strategy).config.strategy_id.map_or_else(
-        || {
-            let strategy_type = type_name::<T>()
-                .rsplit("::")
-                .next()
-                .unwrap_or_else(|| type_name::<T>());
-            strategy_type.to_string()
-        },
-        |strategy_id| strategy_id.to_string(),
-    )
+    StrategyNative::strategy_core(strategy)
+        .config
+        .strategy_id
+        .map_or_else(
+            || {
+                let strategy_type = type_name::<T>()
+                    .rsplit("::")
+                    .next()
+                    .unwrap_or_else(|| type_name::<T>());
+                strategy_type.to_string()
+            },
+            |strategy_id| strategy_id.to_string(),
+        )
 }
 
 pub(crate) fn base_strategy_id(strategy_id: &str) -> String {

@@ -35,16 +35,17 @@ use nautilus_portfolio::portfolio::Portfolio;
 use ustr::Ustr;
 
 use super::{
-    Strategy,
     api::{OrderApi, PortfolioApi},
     config::StrategyConfig,
 };
 
-/// The core component of a [`Strategy`], managing data, orders, and state.
+/// The core component of a [`Strategy`](crate::strategy::Strategy), managing data, orders,
+/// and state.
 ///
 /// This struct is intended to be held as a member within a user's custom strategy struct.
 /// Use the `nautilus_strategy!` macro to provide the trait accessors required by
-/// [`Strategy`] and [`DataActor`](nautilus_common::actor::DataActor).
+/// [`Strategy`](crate::strategy::Strategy), [`StrategyNative`], and
+/// [`DataActor`](nautilus_common::actor::DataActor).
 pub struct StrategyCore {
     pub(crate) actor: DataActorCore,
     /// The strategy configuration.
@@ -90,33 +91,50 @@ impl Debug for StrategyCore {
 /// as `order()` and `portfolio()`, because native borrows, `Rc<RefCell<_>>`, and
 /// core references do not cross those boundaries.
 pub trait StrategyNative {
+    /// Returns the strategy core.
+    fn strategy_core(&self) -> &StrategyCore;
+
+    /// Returns the mutable strategy core.
+    fn strategy_core_mut(&mut self) -> &mut StrategyCore;
+
     /// Returns a mutable borrow of the order factory.
     ///
     /// # Panics
     ///
     /// Panics if the strategy has not been registered.
-    fn order_factory(&mut self) -> RefMut<'_, OrderFactory>;
+    fn order_factory(&mut self) -> RefMut<'_, OrderFactory> {
+        self.strategy_core_mut()
+            .order_factory
+            .as_ref()
+            .expect("Strategy not registered: OrderFactory not initialized")
+            .borrow_mut()
+    }
 
     /// Returns a clone of the reference-counted order factory.
     ///
     /// # Panics
     ///
     /// Panics if the strategy has not been registered.
-    fn order_factory_rc(&self) -> Rc<RefCell<OrderFactory>>;
-
-    /// Returns mutable access to the order manager.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the strategy has not been registered.
-    fn order_manager(&mut self) -> &mut OrderManager;
+    fn order_factory_rc(&self) -> Rc<RefCell<OrderFactory>> {
+        self.strategy_core()
+            .order_factory
+            .as_ref()
+            .expect("Strategy not registered: OrderFactory not initialized")
+            .clone()
+    }
 
     /// Returns a clone of the reference-counted portfolio.
     ///
     /// # Panics
     ///
     /// Panics if the strategy has not been registered.
-    fn portfolio_rc(&self) -> Rc<RefCell<Portfolio>>;
+    fn portfolio_rc(&self) -> Rc<RefCell<Portfolio>> {
+        self.strategy_core()
+            .portfolio
+            .as_ref()
+            .expect("Strategy not registered: Portfolio not initialized")
+            .clone()
+    }
 }
 
 impl StrategyCore {
@@ -277,52 +295,12 @@ impl StrategyCore {
 }
 
 impl StrategyNative for StrategyCore {
-    fn order_factory(&mut self) -> RefMut<'_, OrderFactory> {
-        self.order_factory
-            .as_ref()
-            .expect("Strategy not registered: OrderFactory not initialized")
-            .borrow_mut()
+    fn strategy_core(&self) -> &StrategyCore {
+        self
     }
 
-    fn order_factory_rc(&self) -> Rc<RefCell<OrderFactory>> {
-        self.order_factory
-            .as_ref()
-            .expect("Strategy not registered: OrderFactory not initialized")
-            .clone()
-    }
-
-    fn order_manager(&mut self) -> &mut OrderManager {
-        self.order_manager
-            .as_mut()
-            .expect("Strategy not registered: OrderManager not initialized")
-    }
-
-    fn portfolio_rc(&self) -> Rc<RefCell<Portfolio>> {
-        self.portfolio
-            .as_ref()
-            .expect("Strategy not registered: Portfolio not initialized")
-            .clone()
-    }
-}
-
-impl<T> StrategyNative for T
-where
-    T: Strategy + ?Sized,
-{
-    fn order_factory(&mut self) -> RefMut<'_, OrderFactory> {
-        <StrategyCore as StrategyNative>::order_factory(Strategy::core_mut(self))
-    }
-
-    fn order_factory_rc(&self) -> Rc<RefCell<OrderFactory>> {
-        <StrategyCore as StrategyNative>::order_factory_rc(Strategy::core(self))
-    }
-
-    fn order_manager(&mut self) -> &mut OrderManager {
-        <StrategyCore as StrategyNative>::order_manager(Strategy::core_mut(self))
-    }
-
-    fn portfolio_rc(&self) -> Rc<RefCell<Portfolio>> {
-        <StrategyCore as StrategyNative>::portfolio_rc(Strategy::core(self))
+    fn strategy_core_mut(&mut self) -> &mut StrategyCore {
+        self
     }
 }
 

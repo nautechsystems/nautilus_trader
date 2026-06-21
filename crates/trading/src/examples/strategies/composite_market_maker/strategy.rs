@@ -267,9 +267,7 @@ impl DataActor for CompositeMarketMaker {
 
         let signal_residual = self.signal_residual();
         let instrument_id = self.config.instrument_id;
-        let strategy_id = Strategy::core(self)
-            .strategy_id()
-            .expect("Strategy must be registered");
+        let strategy_id = self.strategy_id().expect("Strategy must be registered");
 
         let has_resting = {
             let cache = self.cache();

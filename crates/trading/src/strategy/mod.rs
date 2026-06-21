@@ -77,13 +77,15 @@ pub type BatchModifyOrder = (
 /// - Order lifecycle management (submit, modify, cancel).
 /// - Position management (open, close, monitor).
 /// - Access to the trading cache and portfolio.
-/// - Event routing to order manager and emulator.
+/// - Event routing for orders and emulator events.
 ///
 /// # Implementation
 ///
-/// Use the `nautilus_strategy!` macro to generate core access and
-/// `Strategy` implementations. For strategies that override additional trait
-/// methods, pass them in a block:
+/// Use the `nautilus_strategy!` macro to generate the native runtime wiring
+/// and `Strategy` implementations. Normal strategy logic should call facade
+/// methods such as `strategy_id()`, `clock()`, `cache()`, `order()`, and
+/// `portfolio()`. For strategies that override additional trait methods, pass
+/// them in a block:
 ///
 /// ```ignore
 /// nautilus_strategy!(MyStrategy, {
@@ -99,11 +101,13 @@ pub trait Strategy: DataActor {
     /// Provides access to the internal `StrategyCore`.
     ///
     /// Generated automatically by the `nautilus_strategy!` macro.
+    #[doc(hidden)]
     fn core(&self) -> &StrategyCore;
 
     /// Provides mutable access to the internal `StrategyCore`.
     ///
     /// Generated automatically by the `nautilus_strategy!` macro.
+    #[doc(hidden)]
     fn core_mut(&mut self) -> &mut StrategyCore;
 
     /// Returns the external order claims for this strategy.
@@ -112,6 +116,11 @@ pub trait Strategy: DataActor {
     /// during reconciliation.
     fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
         None
+    }
+
+    /// Returns the runtime strategy ID, when configured or registered.
+    fn strategy_id(&self) -> Option<StrategyId> {
+        Strategy::core(self).strategy_id()
     }
 
     /// Returns the user-facing order creation API.
@@ -1211,7 +1220,7 @@ pub trait Strategy: DataActor {
         Ok(())
     }
 
-    /// Handles an order event, dispatching to the appropriate handler and routing to the order manager.
+    /// Handles an order event, dispatching to the appropriate handler.
     fn handle_order_event(&mut self, event: OrderEventAny) {
         let state = {
             let core = Strategy::core_mut(self);
@@ -2582,7 +2591,6 @@ mod tests {
         register_strategy(&mut strategy);
 
         drop(strategy.order_factory());
-        let _ = strategy.order_manager();
 
         assert!(Rc::ptr_eq(
             &strategy.order_factory_rc(),
@@ -4612,15 +4620,16 @@ mod tests {
             core: StrategyCore::new(config.clone()),
         };
         assert_eq!(
-            Strategy::core(&simple).config.strategy_id,
+            StrategyNative::strategy_core(&simple).config.strategy_id,
             config.strategy_id
         );
+        assert_eq!(simple.strategy_id(), config.strategy_id);
 
         let hooks = MacroTestWithHooks {
             core: StrategyCore::new(config.clone()),
         };
         assert_eq!(
-            Strategy::core(&hooks).config.strategy_id,
+            StrategyNative::strategy_core(&hooks).config.strategy_id,
             config.strategy_id
         );
 
@@ -4628,9 +4637,10 @@ mod tests {
             inner: StrategyCore::new(config.clone()),
         };
         assert_eq!(
-            Strategy::core(&custom).config.strategy_id,
+            StrategyNative::strategy_core(&custom).config.strategy_id,
             config.strategy_id
         );
+        assert_eq!(custom.strategy_id(), config.strategy_id);
         assert!(custom.external_order_claims().is_none());
     }
 }
