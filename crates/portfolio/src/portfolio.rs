@@ -27,7 +27,7 @@ use nautilus_common::{
     msgbus::{self, MessagingSwitchboard, TypedHandler, TypedIntoHandler},
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{UUID4, WeakCell, datetime::NANOSECONDS_IN_MILLISECOND};
+use nautilus_core::{UUID4, UnixNanos, WeakCell, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{Bar, MarkPriceUpdate, QuoteTick},
@@ -53,6 +53,7 @@ struct PortfolioState {
     analyzer: PortfolioAnalyzer,
     unrealized_pnls: IndexMap<InstrumentId, Money>,
     realized_pnls: IndexMap<InstrumentId, Money>,
+    recorded_closed_position_cycles: AHashSet<(PositionId, UnixNanos)>,
     snapshot_sum_per_position: AHashMap<PositionId, Money>,
     snapshot_last_per_position: AHashMap<PositionId, Money>,
     snapshot_processed_counts: AHashMap<PositionId, usize>,
@@ -90,6 +91,7 @@ impl PortfolioState {
             analyzer: PortfolioAnalyzer::default(),
             unrealized_pnls: IndexMap::new(),
             realized_pnls: IndexMap::new(),
+            recorded_closed_position_cycles: AHashSet::new(),
             snapshot_sum_per_position: AHashMap::new(),
             snapshot_last_per_position: AHashMap::new(),
             snapshot_processed_counts: AHashMap::new(),
@@ -112,6 +114,7 @@ impl PortfolioState {
         self.net_positions.clear();
         self.unrealized_pnls.clear();
         self.realized_pnls.clear();
+        self.recorded_closed_position_cycles.clear();
         self.snapshot_sum_per_position.clear();
         self.snapshot_last_per_position.clear();
         self.snapshot_processed_counts.clear();
@@ -1479,7 +1482,7 @@ impl Portfolio {
 
     /// Returns realized PnLs recorded during portfolio event processing.
     #[must_use]
-    pub fn recorded_realized_pnls(&self) -> AHashMap<Currency, IndexMap<PositionId, f64>> {
+    pub fn recorded_realized_pnls(&self) -> AHashMap<Currency, Vec<(PositionId, f64)>> {
         self.inner.borrow().analyzer.recorded_realized_pnls.clone()
     }
 
@@ -2617,20 +2620,39 @@ fn record_closed_position_pnl(
         return;
     };
 
-    inner
-        .borrow_mut()
-        .analyzer
-        .record_trade(&position.id, &realized_pnl);
+    let mut inner_ref = inner.borrow_mut();
 
-    let Some(account) = cache_ref.account(&event.account_id()) else {
+    if !inner_ref
+        .recorded_closed_position_cycles
+        .insert((position.id, position.ts_opened))
+    {
         return;
-    };
-    let Some(base_currency) = account.base_currency() else {
-        return;
-    };
+    }
+
+    let converted_pnl =
+        converted_realized_pnl(&cache_ref, config, event, position_id, realized_pnl);
+
+    inner_ref.analyzer.record_trade(&position.id, &realized_pnl);
+
+    if let Some(converted_pnl) = converted_pnl {
+        inner_ref
+            .analyzer
+            .record_trade(&position.id, &converted_pnl);
+    }
+}
+
+fn converted_realized_pnl(
+    cache_ref: &Cache,
+    config: PortfolioConfig,
+    event: &PositionEvent,
+    position_id: PositionId,
+    realized_pnl: Money,
+) -> Option<Money> {
+    let account = cache_ref.account(&event.account_id())?;
+    let base_currency = account.base_currency()?;
 
     if realized_pnl.currency == base_currency {
-        return;
+        return None;
     }
 
     let xrate = if config.use_mark_xrates {
@@ -2651,22 +2673,17 @@ fn record_closed_position_pnl(
             "Cannot record account-currency realized PnL for {position_id}: conversion failed from {} to {base_currency}",
             realized_pnl.currency
         );
-        return;
+        return None;
     };
 
     let amount = (realized_pnl.as_decimal() * xrate).round_dp(u32::from(base_currency.precision));
-    let amount = match Money::from_decimal(amount, base_currency) {
-        Ok(amount) => amount,
+    match Money::from_decimal(amount, base_currency) {
+        Ok(amount) => Some(amount),
         Err(e) => {
             log::warn!("Cannot record account-currency realized PnL for {position_id}: {e}");
-            return;
+            None
         }
-    };
-
-    inner
-        .borrow_mut()
-        .analyzer
-        .record_trade(&position.id, &amount);
+    }
 }
 
 fn update_account(

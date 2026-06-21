@@ -1551,38 +1551,38 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
 
     let cache_rc = engine.kernel().cache();
     let (
-        expected_total,
+        expected_currency,
+        mut expected_pnls,
         cached_positions_count,
-        cache_realized_count,
         snapshots_realized,
-        snapshots_realized_count,
         snapshot_positions_count,
     ) = {
         let cache = cache_rc.borrow();
         let positions = cache.positions(None, None, None, None, None);
 
-        let cache_realized: f64 = positions
+        let mut expected_pnls: Vec<(PositionId, Currency, f64)> = positions
             .iter()
-            .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
-            .sum();
-        let cache_realized_count = positions
-            .iter()
-            .filter(|p| p.realized_pnl.is_some())
-            .count() as f64;
+            .filter_map(|p| {
+                p.realized_pnl
+                    .as_ref()
+                    .map(|m| (p.id, m.currency, m.as_f64()))
+            })
+            .collect();
 
         let snapshot_positions: Vec<Position> = positions
             .iter()
             .flat_map(|p| cache.position_snapshots(Some(&p.id), None))
             .collect();
         let snapshot_positions_count = snapshot_positions.len();
+        expected_pnls.extend(snapshot_positions.iter().filter_map(|p| {
+            p.realized_pnl
+                .as_ref()
+                .map(|m| (p.id, m.currency, m.as_f64()))
+        }));
         let snapshots_realized: f64 = snapshot_positions
             .iter()
             .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
             .sum();
-        let snapshots_realized_count = snapshot_positions
-            .iter()
-            .filter(|p| p.realized_pnl.is_some())
-            .count() as f64;
 
         assert!(
             snapshot_positions_count > 0,
@@ -1593,17 +1593,43 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
             "expected non-zero snapshot realized history"
         );
 
+        let expected_currency = expected_pnls
+            .first()
+            .map(|(_, currency, _)| *currency)
+            .expect("expected realized PnL history");
+        let expected_pnls = expected_pnls
+            .into_iter()
+            .filter_map(|(position_id, currency, pnl)| {
+                (currency == expected_currency).then_some((position_id, pnl))
+            })
+            .collect::<Vec<_>>();
+
         (
-            cache_realized + snapshots_realized,
+            expected_currency,
+            expected_pnls,
             positions.len(),
-            cache_realized_count,
             snapshots_realized,
-            snapshots_realized_count,
             snapshot_positions_count,
         )
     };
 
-    let expected_expectancy = expected_total / (cache_realized_count + snapshots_realized_count);
+    if let Some(recorded_pnls) = engine
+        .kernel()
+        .portfolio
+        .borrow()
+        .recorded_realized_pnls()
+        .get(&expected_currency)
+    {
+        expected_pnls.retain(|(position_id, _)| {
+            !recorded_pnls
+                .iter()
+                .any(|(recorded_position_id, _)| recorded_position_id == position_id)
+        });
+        expected_pnls.extend(recorded_pnls.iter().copied());
+    }
+
+    let expected_expectancy =
+        expected_pnls.iter().map(|(_, pnl)| pnl).sum::<f64>() / expected_pnls.len() as f64;
 
     let bt_result = engine.get_result();
     assert_eq!(
