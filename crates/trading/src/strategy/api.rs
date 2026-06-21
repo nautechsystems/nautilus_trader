@@ -923,7 +923,7 @@ impl<'a> PortfolioApi<'a> {
     ///
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
-    pub fn recorded_realized_pnls(&self) -> AHashMap<Currency, IndexMap<PositionId, f64>> {
+    pub fn recorded_realized_pnls(&self) -> AHashMap<Currency, Vec<(PositionId, f64)>> {
         self.portfolio.borrow().recorded_realized_pnls()
     }
 }

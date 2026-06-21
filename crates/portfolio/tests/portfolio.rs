@@ -2363,6 +2363,9 @@ fn test_market_value_when_insufficient_data_for_xrate_returns_none(
         .borrow_mut()
         .add_position(&position, OmsType::Hedging)
         .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+    assert!(portfolio.recorded_realized_pnls().is_empty());
+
     portfolio
         .cache()
         .borrow_mut()
@@ -2906,7 +2909,7 @@ fn test_closing_position_updates_portfolio(
 }
 
 #[rstest]
-fn test_closed_position_records_account_currency_realized_pnl(
+fn test_position_records_account_currency_realized_pnl(
     mut simple_cache: Cache,
     clock: TestClock,
     instrument_audusd: InstrumentAny,
@@ -2954,6 +2957,7 @@ fn test_closed_position_records_account_currency_realized_pnl(
         side: PositionSide::Flat,
         signed_qty: 0.0,
         quantity: Quantity::from("0"),
+        ts_last: UnixNanos::from(1),
         ts_closed: Some(UnixNanos::from(1)),
         realized_pnl: Some(Money::from("12.34 USD")),
         ..position.clone()
@@ -2969,25 +2973,24 @@ fn test_closed_position_records_account_currency_realized_pnl(
         .borrow_mut()
         .update_position(&closed_position)
         .unwrap();
-    portfolio.update_position(&PositionEvent::PositionClosed(get_closed_position(
-        &closed_position,
-    )));
+    let position_closed = PositionEvent::PositionClosed(get_closed_position(&closed_position));
+    portfolio.update_position(&position_closed);
+    portfolio.update_position(&position_closed);
 
     let recorded = portfolio.recorded_realized_pnls();
-    assert_eq!(
-        recorded
-            .get(&Currency::USD())
-            .and_then(|pnls| pnls.get(&position_id))
-            .copied(),
-        Some(12.34),
-    );
-    assert_eq!(
-        recorded
-            .get(&Currency::EUR())
-            .and_then(|pnls| pnls.get(&position_id))
-            .copied(),
-        Some(11.11),
-    );
+    assert_eq!(recorded.get(&Currency::USD()).unwrap().len(), 1);
+    assert_eq!(recorded.get(&Currency::EUR()).unwrap().len(), 1);
+    let usd_record = recorded
+        .get(&Currency::USD())
+        .and_then(|pnls| pnls.first())
+        .unwrap();
+    assert_eq!(*usd_record, (position_id, 12.34));
+
+    let eur_record = recorded
+        .get(&Currency::EUR())
+        .and_then(|pnls| pnls.first())
+        .unwrap();
+    assert_eq!(*eur_record, (position_id, 11.11));
 }
 
 #[rstest]

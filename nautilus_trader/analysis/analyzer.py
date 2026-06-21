@@ -239,8 +239,15 @@ class PortfolioAnalyzer:
 
         """
         currency = realized_pnl.currency
-        realized_pnls = self._recorded_realized_pnls.get(currency, pd.Series(dtype=float64))
-        realized_pnls.loc[position_id.value] = realized_pnl.as_double()
+        trade_pnl = pd.Series(
+            [realized_pnl.as_double()],
+            index=[position_id.value],
+            dtype=float64,
+        )
+        realized_pnls = self._recorded_realized_pnls.get(currency)
+        realized_pnls = (
+            trade_pnl if realized_pnls is None else pd.concat([realized_pnls, trade_pnl])
+        )
         self._recorded_realized_pnls[currency] = realized_pnls
 
     def add_position_return(self, timestamp: datetime, value: float) -> None:
@@ -316,11 +323,11 @@ class PortfolioAnalyzer:
         if recorded_realized_pnls is None:
             return realized_pnls
 
-        output = realized_pnls.copy()
-        for position_id, pnl in recorded_realized_pnls.items():
-            output.loc[position_id] = pnl
-
-        return output
+        output = realized_pnls.drop(
+            recorded_realized_pnls.index.unique(),
+            errors="ignore",
+        )
+        return pd.concat([output, recorded_realized_pnls])
 
     def total_pnl(
         self,

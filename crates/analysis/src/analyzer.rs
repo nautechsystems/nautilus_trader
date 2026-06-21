@@ -62,7 +62,7 @@ pub struct PortfolioAnalyzer {
     pub account_balances: IndexMap<Currency, Money>,
     pub positions: Vec<Position>,
     pub realized_pnls: AHashMap<Currency, Vec<(PositionId, f64)>>,
-    pub recorded_realized_pnls: AHashMap<Currency, IndexMap<PositionId, f64>>,
+    pub recorded_realized_pnls: AHashMap<Currency, Vec<(PositionId, f64)>>,
     pub position_returns: Returns,
     pub portfolio_returns: Returns,
     /// Alias for the primary returns source.
@@ -225,7 +225,7 @@ impl PortfolioAnalyzer {
     pub fn record_trade(&mut self, position_id: &PositionId, pnl: &Money) {
         let currency = pnl.currency;
         let entry = self.recorded_realized_pnls.entry(currency).or_default();
-        entry.insert(*position_id, pnl.as_f64());
+        entry.push((*position_id, pnl.as_f64()));
     }
 
     /// Records a position return at a specific timestamp.
@@ -333,12 +333,14 @@ impl PortfolioAnalyzer {
         (!returns.is_empty()).then_some(returns)
     }
 
-    /// Retrieves realized PnLs for a specific currency.
+    /// Retrieves trade PnL records for a specific currency.
+    ///
+    /// Duplicate position IDs are preserved for NETTING position cycles.
     ///
     /// Returns `None` if no PnLs exist, or if multiple currencies exist
     /// without an explicit currency specified.
     #[must_use]
-    pub fn realized_pnls(&self, currency: Option<&Currency>) -> Option<Vec<(PositionId, f64)>> {
+    pub fn trade_pnl_records(&self, currency: Option<&Currency>) -> Option<Vec<(PositionId, f64)>> {
         if self.realized_pnls.is_empty() && self.recorded_realized_pnls.is_empty() {
             return None;
         }
@@ -365,22 +367,31 @@ impl PortfolioAnalyzer {
         match (realized_pnls, recorded_realized_pnls) {
             (None, None) => None,
             (Some(realized_pnls), None) => Some(realized_pnls.clone()),
-            (None, Some(recorded_realized_pnls)) => Some(
-                recorded_realized_pnls
-                    .iter()
-                    .map(|(position_id, pnl)| (*position_id, *pnl))
-                    .collect(),
-            ),
+            (None, Some(recorded_realized_pnls)) => Some(recorded_realized_pnls.clone()),
             (Some(realized_pnls), Some(recorded_realized_pnls)) => {
-                let mut output: IndexMap<PositionId, f64> = realized_pnls.iter().copied().collect();
+                let recorded_position_ids: IndexSet<PositionId> = recorded_realized_pnls
+                    .iter()
+                    .map(|(position_id, _)| *position_id)
+                    .collect();
+                let mut output: Vec<(PositionId, f64)> = realized_pnls
+                    .iter()
+                    .copied()
+                    .filter(|(position_id, _)| !recorded_position_ids.contains(position_id))
+                    .collect();
+                output.extend(recorded_realized_pnls.iter().copied());
 
-                for (position_id, pnl) in recorded_realized_pnls {
-                    output.insert(*position_id, *pnl);
-                }
-
-                Some(output.into_iter().collect())
+                Some(output)
             }
         }
+    }
+
+    /// Retrieves realized PnLs for a specific currency.
+    ///
+    /// Returns `None` if no PnLs exist, or if multiple currencies exist
+    /// without an explicit currency specified.
+    #[must_use]
+    pub fn realized_pnls(&self, currency: Option<&Currency>) -> Option<Vec<(PositionId, f64)>> {
+        self.trade_pnl_records(currency)
     }
 
     /// Calculates total PnL including unrealized PnL if provided.
@@ -512,10 +523,10 @@ impl PortfolioAnalyzer {
             self.total_pnl_percentage(currency, unrealized_pnl)?,
         );
 
-        if let Some(realized_pnls) = self.realized_pnls(currency) {
+        if let Some(trade_pnl_records) = self.trade_pnl_records(currency) {
             for (name, stat) in &self.statistics {
                 if let Some(value) = stat.calculate_from_realized_pnls(
-                    &realized_pnls
+                    &trade_pnl_records
                         .iter()
                         .map(|(_, pnl)| *pnl)
                         .collect::<Vec<f64>>(),
@@ -1059,6 +1070,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_add_positions_records_open_position_realized_pnl() {
+        let mut analyzer = PortfolioAnalyzer::new();
+        let currency = Currency::USD();
+        let mut position = create_mock_position("AUD/USD", 100.0, 0.1, currency);
+        position.ts_closed = None;
+        let position_id = position.id;
+
+        analyzer.add_positions(&[position]);
+
+        let records = analyzer.trade_pnl_records(Some(&currency)).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0], (position_id, 100.0));
+        assert!(analyzer.position_returns().is_empty());
+    }
+
+    #[rstest]
     fn test_performance_stats_calculation() {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
@@ -1143,6 +1170,32 @@ mod tests {
         assert_eq!(*pnl_stats.get("test_stat").unwrap(), 90.0);
     }
 
+    #[rstest]
+    fn test_record_trade_preserves_duplicate_position_ids() {
+        let mut analyzer = PortfolioAnalyzer::new();
+        let account_currency = Currency::EUR();
+        let stat: Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync> =
+            Arc::new(MockStatistic::new("test_stat"));
+        let position_id = PositionId::new("pos1");
+
+        analyzer.register_statistic(Arc::clone(&stat));
+        analyzer.record_trade(&position_id, &Money::new(90.0, account_currency));
+        analyzer.record_trade(&position_id, &Money::new(-45.0, account_currency));
+
+        let records = analyzer.trade_pnl_records(Some(&account_currency)).unwrap();
+        let recorded_pnls = analyzer.realized_pnls(Some(&account_currency)).unwrap();
+        let pnl_stats = analyzer
+            .get_performance_stats_pnls(Some(&account_currency), None)
+            .unwrap();
+
+        assert_eq!(records[0], (position_id, 90.0));
+        assert_eq!(records[1], (position_id, -45.0));
+        assert_eq!(
+            recorded_pnls,
+            vec![(position_id, 90.0), (position_id, -45.0)]
+        );
+        assert_eq!(*pnl_stats.get("test_stat").unwrap(), 45.0);
+    }
     #[rstest]
     fn test_formatted_output() {
         let mut analyzer = PortfolioAnalyzer::new();

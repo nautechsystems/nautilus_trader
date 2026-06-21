@@ -184,6 +184,23 @@ class TestPortfolioAnalyzer:
         assert stats[stat.name] == 1.0
         assert stat.last_realized_pnls_input == [90.0]
 
+    def test_record_trade_preserves_duplicate_position_ids(self):
+        # Arrange
+        stat = _RecordingPyo3Statistic()
+        self.analyzer.register_statistic(stat)
+
+        # Act
+        self.analyzer.record_trade(PositionId("P-1"), Money(90.0, EUR))
+        self.analyzer.record_trade(PositionId("P-1"), Money(-45.0, EUR))
+        recorded_pnls = self.analyzer.realized_pnls(EUR)
+        stats = self.analyzer.get_performance_stats_pnls(currency=EUR)
+
+        # Assert
+        assert recorded_pnls.tolist() == [90.0, -45.0]
+        assert recorded_pnls.index.tolist() == ["P-1", "P-1"]
+        assert stat.last_realized_pnls_input == [90.0, -45.0]
+        assert stats[stat.name] == 1.0
+
     def test_get_performance_stats_returns_converts_pyo3_statistics_input(self):
         # Arrange
         stat = _RecordingPyo3Statistic()
