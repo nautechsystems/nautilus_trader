@@ -2567,10 +2567,7 @@ mod tests {
     #[rstest]
     fn test_strategy_creation() {
         let strategy = create_test_strategy();
-        assert_eq!(
-            strategy.core.config.strategy_id,
-            Some(StrategyId::from("TEST-001"))
-        );
+        assert_eq!(strategy.strategy_id(), Some(StrategyId::from("TEST-001")));
         assert!(!strategy.on_order_rejected_called);
         assert!(!strategy.on_position_opened_called);
     }
@@ -2656,7 +2653,7 @@ mod tests {
         register_strategy(&mut strategy);
         start_strategy(&mut strategy);
         stop_strategy(&mut strategy);
-        assert_eq!(strategy.core.actor.state(), ComponentState::Stopped);
+        assert_eq!(strategy.state(), ComponentState::Stopped);
 
         strategy.handle_position_event(make_position_opened());
 
@@ -2999,7 +2996,7 @@ mod tests {
         );
         assert_eq!(timeline.borrow().as_slice(), &["init1", "init2", "command"]);
 
-        let cache = strategy.core.cache_ref();
+        let cache = strategy.cache();
         let cached_order1 = cache.order(&client_order_id1).unwrap();
         let cached_order2 = cache.order(&client_order_id2).unwrap();
         let order_list_id = cached_order1.order_list_id().unwrap();
@@ -3153,11 +3150,9 @@ mod tests {
 
         msgbus::unsubscribe_order_events(topic.into(), &event_handler);
 
-        {
-            let cache = strategy.core.cache_ref();
-            let cached_order = cache.order(&order.client_order_id()).unwrap();
-            assert_eq!(cached_order.status(), OrderStatus::PendingUpdate);
-        }
+        let cache = strategy.cache();
+        let cached_order = cache.order(&order.client_order_id()).unwrap();
+        assert_eq!(cached_order.status(), OrderStatus::PendingUpdate);
 
         let risk_messages = risk_messages.get_messages();
         assert_eq!(risk_messages.len(), 1);
@@ -3218,13 +3213,11 @@ mod tests {
 
         msgbus::unsubscribe_order_events(topic.into(), &event_handler);
 
-        {
-            let cache = strategy.core.cache_ref();
-            let cached_order1 = cache.order(&order1.client_order_id()).unwrap();
-            let cached_order2 = cache.order(&order2.client_order_id()).unwrap();
-            assert_eq!(cached_order1.status(), OrderStatus::PendingUpdate);
-            assert_eq!(cached_order2.status(), OrderStatus::PendingUpdate);
-        }
+        let cache = strategy.cache();
+        let cached_order1 = cache.order(&order1.client_order_id()).unwrap();
+        let cached_order2 = cache.order(&order2.client_order_id()).unwrap();
+        assert_eq!(cached_order1.status(), OrderStatus::PendingUpdate);
+        assert_eq!(cached_order2.status(), OrderStatus::PendingUpdate);
 
         let risk_messages = risk_messages.get_messages();
         assert_eq!(risk_messages.len(), 1);
@@ -3275,12 +3268,11 @@ mod tests {
 
         msgbus::unsubscribe_order_events(topic.into(), &event_handler);
 
-        {
-            let cache = strategy.core.cache_ref();
-            let cached_order = cache.order(&order.client_order_id()).unwrap();
-            assert_eq!(cached_order.status(), OrderStatus::PendingCancel);
-            assert!(cache.is_order_pending_cancel_local(&order.client_order_id()));
-        }
+        let cache = strategy.cache();
+        let cached_order = cache.order(&order.client_order_id()).unwrap();
+        assert_eq!(cached_order.status(), OrderStatus::PendingCancel);
+        let cache = strategy.core.cache_ref();
+        assert!(cache.is_order_pending_cancel_local(&order.client_order_id()));
 
         let exec_messages = exec_messages.get_messages();
         assert_eq!(exec_messages.len(), 1);
@@ -3328,15 +3320,14 @@ mod tests {
 
         msgbus::unsubscribe_order_events(topic.into(), &event_handler);
 
-        {
-            let cache = strategy.core.cache_ref();
-            let cached_order1 = cache.order(&order1.client_order_id()).unwrap();
-            let cached_order2 = cache.order(&order2.client_order_id()).unwrap();
-            assert_eq!(cached_order1.status(), OrderStatus::PendingCancel);
-            assert_eq!(cached_order2.status(), OrderStatus::PendingCancel);
-            assert!(cache.is_order_pending_cancel_local(&order1.client_order_id()));
-            assert!(cache.is_order_pending_cancel_local(&order2.client_order_id()));
-        }
+        let cache = strategy.cache();
+        let cached_order1 = cache.order(&order1.client_order_id()).unwrap();
+        let cached_order2 = cache.order(&order2.client_order_id()).unwrap();
+        assert_eq!(cached_order1.status(), OrderStatus::PendingCancel);
+        assert_eq!(cached_order2.status(), OrderStatus::PendingCancel);
+        let cache = strategy.core.cache_ref();
+        assert!(cache.is_order_pending_cancel_local(&order1.client_order_id()));
+        assert!(cache.is_order_pending_cancel_local(&order2.client_order_id()));
 
         let exec_messages = exec_messages.get_messages();
         assert_eq!(exec_messages.len(), 1);
@@ -3378,7 +3369,7 @@ mod tests {
         let mut pending_cancel = AHashSet::new();
         pending_cancel.insert(OrderStatus::PendingCancel);
 
-        let cache = strategy.core.cache_ref();
+        let cache = strategy.cache();
         let own_book = cache.own_order_book(&order.instrument_id()).unwrap();
         assert!(own_book.bids_as_map(Some(&accepted), None, None).is_empty());
         let pending_bids = own_book.bids_as_map(Some(&pending_cancel), None, None);
@@ -3592,7 +3583,7 @@ mod tests {
             .insert(client_order_id, Ustr::from("GTD-EXPIRY:O-001"));
 
         stop_strategy(&mut strategy);
-        assert_eq!(strategy.core.actor.state(), ComponentState::Stopped);
+        assert_eq!(strategy.state(), ComponentState::Stopped);
 
         strategy.handle_order_event(make_event(client_order_id));
 
@@ -3622,7 +3613,7 @@ mod tests {
         register_strategy(&mut strategy);
         start_strategy(&mut strategy);
         stop_strategy(&mut strategy);
-        assert_eq!(strategy.core.actor.state(), ComponentState::Stopped);
+        assert_eq!(strategy.state(), ComponentState::Stopped);
 
         strategy.handle_order_event(make_rejected(ClientOrderId::from("O-001")));
 
@@ -4117,7 +4108,7 @@ mod tests {
         register_strategy(&mut strategy);
 
         // State is not Running (default is PreInitialized)
-        assert_ne!(strategy.core.actor.state(), ComponentState::Running);
+        assert!(!strategy.is_running());
 
         let result = strategy.market_exit();
 
@@ -4219,7 +4210,7 @@ mod tests {
         register_strategy(&mut strategy);
 
         // State is not Running (default)
-        assert_ne!(strategy.core.actor.state(), ComponentState::Running);
+        assert!(!strategy.is_running());
 
         let should_proceed = Strategy::stop(&mut strategy);
 
@@ -4245,7 +4236,7 @@ mod tests {
         strategy.finalize_market_exit();
 
         // Should have transitioned to Stopped
-        assert_eq!(strategy.core.actor.state(), ComponentState::Stopped);
+        assert_eq!(strategy.state(), ComponentState::Stopped);
         assert!(!strategy.core.is_exiting);
         assert!(!strategy.core.pending_stop);
     }
@@ -4268,7 +4259,7 @@ mod tests {
         strategy.finalize_market_exit();
 
         // Should stay Running
-        assert_eq!(strategy.core.actor.state(), ComponentState::Running);
+        assert_eq!(strategy.state(), ComponentState::Running);
         assert!(!strategy.core.is_exiting);
     }
 
@@ -4310,7 +4301,7 @@ mod tests {
         msgbus::unsubscribe_order_events(topic.into(), &event_handler);
 
         assert!(result.is_ok());
-        let cache = strategy.core.cache_ref();
+        let cache = strategy.cache();
         let cached_order = cache.order(&client_order_id).unwrap();
         assert_eq!(cached_order.status(), OrderStatus::Denied);
 
@@ -4397,13 +4388,11 @@ mod tests {
 
         assert!(result.is_ok());
 
-        {
-            let cache = strategy.core.cache_ref();
-            let cached_order1 = cache.order(&client_order_id1).unwrap();
-            let cached_order2 = cache.order(&client_order_id2).unwrap();
-            assert_eq!(cached_order1.status(), OrderStatus::Denied);
-            assert_eq!(cached_order2.status(), OrderStatus::Denied);
-        }
+        let cache = strategy.cache();
+        let cached_order1 = cache.order(&client_order_id1).unwrap();
+        let cached_order2 = cache.order(&client_order_id2).unwrap();
+        assert_eq!(cached_order1.status(), OrderStatus::Denied);
+        assert_eq!(cached_order2.status(), OrderStatus::Denied);
 
         let event_messages = event_messages.borrow();
         assert_eq!(event_messages.len(), 4);
@@ -4533,7 +4522,7 @@ mod tests {
         let result = strategy.submit_order(order, None, None, None);
 
         assert!(result.is_ok());
-        let cache = strategy.core.cache_ref();
+        let cache = strategy.cache();
         let cached_order = cache.order(&client_order_id).unwrap();
         assert_ne!(cached_order.status(), OrderStatus::Denied);
     }
@@ -4570,7 +4559,7 @@ mod tests {
         let result = strategy.submit_order(order, None, None, None);
 
         assert!(result.is_ok());
-        let cache = strategy.core.cache_ref();
+        let cache = strategy.cache();
         let cached_order = cache.order(&client_order_id).unwrap();
         assert_ne!(cached_order.status(), OrderStatus::Denied);
     }
@@ -4619,28 +4608,18 @@ mod tests {
         let simple = MacroTestSimple {
             core: StrategyCore::new(config.clone()),
         };
-        assert_eq!(
-            StrategyNative::strategy_core(&simple).config.strategy_id,
-            config.strategy_id
-        );
         assert_eq!(simple.strategy_id(), config.strategy_id);
         assert_eq!(simple.actor_id(), ActorId::from("MACRO-001"));
 
         let hooks = MacroTestWithHooks {
             core: StrategyCore::new(config.clone()),
         };
-        assert_eq!(
-            StrategyNative::strategy_core(&hooks).config.strategy_id,
-            config.strategy_id
-        );
+        assert_eq!(hooks.strategy_id(), config.strategy_id);
+        assert_eq!(hooks.actor_id(), ActorId::from("MACRO-001"));
 
         let custom = MacroTestCustomField {
             inner: StrategyCore::new(config.clone()),
         };
-        assert_eq!(
-            StrategyNative::strategy_core(&custom).config.strategy_id,
-            config.strategy_id
-        );
         assert_eq!(custom.strategy_id(), config.strategy_id);
         assert_eq!(custom.actor_id(), ActorId::from("MACRO-001"));
         assert!(custom.external_order_claims().is_none());

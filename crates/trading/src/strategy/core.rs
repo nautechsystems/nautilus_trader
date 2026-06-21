@@ -507,7 +507,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_strategy_core_register_uses_order_id_tag_for_factory() {
+    fn test_strategy_core_register_uses_order_id_tag_for_order_api_ids() {
         let config = StrategyConfig {
             strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
             order_id_tag: Some("T01".to_string()),
@@ -526,13 +526,9 @@ mod tests {
 
         core.register(trader_id, clock, cache, portfolio).unwrap();
 
-        let (client_order_id, order_list_id) = {
-            let mut order_factory = core.order_factory();
-            (
-                order_factory.generate_client_order_id(),
-                order_factory.generate_order_list_id(),
-            )
-        };
+        let orders = core.order();
+        let client_order_id = orders.generate_client_order_id();
+        let order_list_id = orders.generate_order_list_id();
 
         assert_eq!(
             core.strategy_id(),
@@ -829,7 +825,7 @@ mod tests {
 
     #[rstest]
     fn test_strategy_core_order_api_generates_ids() {
-        let mut core = registered_test_core();
+        let core = registered_test_core();
         let (client_order_id, order_list_id) = {
             let orders = core.order();
             (
@@ -838,10 +834,11 @@ mod tests {
             )
         };
 
-        let _native_order_factory = core.order_factory().generate_client_order_id();
+        let next_client_order_id = core.order().generate_client_order_id();
 
         assert_eq!(client_order_id.as_str(), "O-19700101-000000-001-001-1");
         assert_eq!(order_list_id.as_str(), "OL-19700101-000000-001-001-1");
+        assert_eq!(next_client_order_id.as_str(), "O-19700101-000000-001-001-2");
     }
 
     #[rstest]
@@ -877,6 +874,7 @@ mod tests {
         let portfolio = core.portfolio_api();
         let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
         let venue = instrument_id.venue;
+        let account_id = AccountId::from("SIM-001");
 
         let is_initialized = portfolio.is_initialized();
         let balances_locked = portfolio.balances_locked(&venue);
@@ -895,11 +893,9 @@ mod tests {
         let is_flat = portfolio.is_flat(&instrument_id);
         let net_position = portfolio.net_position(&instrument_id);
         let missing_prices = portfolio.missing_price_instruments(&venue);
-        let snapshots = portfolio.snapshots(&AccountId::from("SIM-001"));
+        let snapshots = portfolio.snapshots(&account_id);
         let recorded_realized_pnls = portfolio.recorded_realized_pnls();
-
-        let native_portfolio = core.portfolio_rc();
-        let _native_portfolio = native_portfolio.borrow_mut();
+        let built_snapshot = portfolio.build_snapshot(&account_id);
 
         assert!(!is_initialized);
         assert!(balances_locked.is_empty());
@@ -920,6 +916,7 @@ mod tests {
         assert!(missing_prices.is_empty());
         assert!(snapshots.is_empty());
         assert!(recorded_realized_pnls.is_empty());
+        assert_eq!(built_snapshot, None);
     }
 
     #[rstest]
