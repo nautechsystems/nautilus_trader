@@ -466,8 +466,7 @@ pub(crate) mod invariants {
         );
     }
 
-    // Asserts no closed (or missing) order lingers in the own order book: the
-    // balloon regression the Betfair report-path bug produced.
+    // Asserts no closed (or missing) order lingers in the own order book.
     pub(crate) fn assert_own_book_consistent(cache: &Cache, instrument_id: &InstrumentId) {
         let Some(book) = cache.own_order_book(instrument_id) else {
             return;
@@ -476,10 +475,7 @@ pub(crate) mod invariants {
         order_ids.extend(book.ask_client_order_ids());
         for id in order_ids {
             let open = cache.order(&id).is_some_and(|order| !order.is_closed());
-            assert!(
-                open,
-                "own order book retains closed or missing order {id} (balloon regression)",
-            );
+            assert!(open, "own order book retains closed or missing order {id}",);
         }
     }
 
