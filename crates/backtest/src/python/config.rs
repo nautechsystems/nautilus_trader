@@ -19,9 +19,9 @@ use std::{collections::HashMap, time::Duration};
 
 use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
-    msgbus::backing::MessageBusConfig,
+    msgbus::backing::MessageBusConfig, python::config_error_to_pyvalue_err,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, python::to_pyvalue_err};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
     engine::config::ExecutionEngineConfig, python::fee::pyobject_to_fee_model_any,
@@ -374,7 +374,7 @@ impl BacktestVenueConfig {
             .maybe_liquidation_trigger_ratio(liquidation_trigger_ratio)
             .maybe_liquidation_cancel_open_orders(liquidation_cancel_open_orders)
             .build()
-            .map_err(nautilus_core::python::to_pyvalue_err)
+            .map_err(config_error_to_pyvalue_err)
     }
 
     #[getter]
@@ -484,8 +484,8 @@ impl BacktestDataConfig {
     ) -> pyo3::PyResult<Self> {
         let data_type = data_type
             .parse::<NautilusDataType>()
-            .map_err(nautilus_core::python::to_pyvalue_err)?;
-        Ok(Self::builder()
+            .map_err(to_pyvalue_err)?;
+        Self::builder()
             .data_type(data_type)
             .catalog_path(catalog_path)
             .maybe_catalog_fs_protocol(catalog_fs_protocol)
@@ -505,7 +505,8 @@ impl BacktestDataConfig {
             .maybe_bar_spec(bar_spec)
             .maybe_bar_types(bar_types)
             .maybe_optimize_file_loading(optimize_file_loading)
-            .build())
+            .build()
+            .map_err(config_error_to_pyvalue_err)
     }
 
     #[getter]
@@ -559,7 +560,7 @@ impl BacktestRunConfig {
         dispose_on_completion: Option<bool>,
         start: Option<u64>,
         end: Option<u64>,
-    ) -> Self {
+    ) -> pyo3::PyResult<Self> {
         Self::builder()
             .venues(venues)
             .data(data)
@@ -571,6 +572,7 @@ impl BacktestRunConfig {
             .maybe_start(start.map(UnixNanos::from))
             .maybe_end(end.map(UnixNanos::from))
             .build()
+            .map_err(config_error_to_pyvalue_err)
     }
 
     #[getter]

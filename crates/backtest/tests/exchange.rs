@@ -89,7 +89,8 @@ fn get_exchange(
         .starting_balances(vec![Money::new(1000.0, Currency::USD())])
         .default_leverage(Decimal::ONE)
         .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel))
-        .build();
+        .build()
+        .unwrap();
     let exchange = Rc::new(RefCell::new(
         SimulatedExchange::new(config, cache.clone(), clock).unwrap(),
     ));
@@ -1406,7 +1407,8 @@ fn build_exchange_with_options(
         .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel))
         .frozen_account(frozen_account)
         .allow_cash_borrowing(allow_cash_borrowing)
-        .build();
+        .build()
+        .unwrap();
     let exchange = Rc::new(RefCell::new(
         SimulatedExchange::new(config, cache.clone(), clock.clone()).unwrap(),
     ));
@@ -2468,7 +2470,8 @@ fn get_exchange_with_module(
         .default_leverage(Decimal::ONE)
         .modules(modules)
         .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel))
-        .build();
+        .build()
+        .unwrap();
     let exchange = Rc::new(RefCell::new(
         SimulatedExchange::new(config, cache.clone(), clock).unwrap(),
     ));

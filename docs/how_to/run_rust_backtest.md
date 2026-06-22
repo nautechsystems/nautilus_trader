@@ -48,7 +48,8 @@ let mut engine = BacktestEngine::new(BacktestEngineConfig::default())?;
 ### 2. Add a venue
 
 `SimulatedVenueConfig` uses a `bon::Builder`: only required fields must be set,
-every other setting falls back to a documented default.
+every other setting falls back to a documented default. `build()` validates the
+configuration and returns a `ConfigResult`, so propagate or unwrap it.
 
 ```rust
 use nautilus_backtest::config::SimulatedVenueConfig;
@@ -65,7 +66,7 @@ engine.add_venue(
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USD")])
-        .build(),
+        .build()?,
 )?;
 ```
 

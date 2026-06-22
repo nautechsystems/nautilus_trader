@@ -43,6 +43,8 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added benchmark-relative portfolio stats (#4251), thanks @mahimn01
 
 ### Breaking Changes
+- Changed backtest config builders to validate on `build()` and return `ConfigResult` (Rust)
+- Changed `BacktestDataConfig` to require an `instrument_id`, `instrument_ids`, or `bar_types` target
 - Changed plug-in loader to reject build mismatches by default; opt out with `set_allow_build_mismatch` (Rust)
 - Changed Bybit `BybitHttpClient::submit_order` to take a trailing native TP/SL params argument; the PyO3 binding defaults it to `None` (Rust)
 - Changed `CacheDatabaseAdapter::load_index_order_position` to return position IDs instead of positions (Rust)

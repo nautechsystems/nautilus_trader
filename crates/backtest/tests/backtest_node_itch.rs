@@ -85,6 +85,7 @@ fn quote_data_config(catalog_path: &str, instrument_id: InstrumentId) -> Backtes
         .catalog_path(catalog_path.to_string())
         .instrument_id(instrument_id)
         .build()
+        .unwrap()
 }
 
 struct MarketOrderStrategy {
@@ -161,7 +162,8 @@ fn test_itch_node_oneshot() {
         .venues(vec![xnas_venue_config()])
         .data(vec![quote_data_config(&catalog_path, instrument_id)])
         .dispose_on_completion(false)
-        .build();
+        .build()
+        .unwrap();
     let config_id = config.id().to_string();
 
     let mut node = BacktestNode::new(vec![config]).unwrap();
@@ -204,7 +206,8 @@ fn test_itch_node_streaming() {
         .data(vec![quote_data_config(&catalog_path, instrument_id)])
         .chunk_size(500)
         .dispose_on_completion(false)
-        .build();
+        .build()
+        .unwrap();
     let config_id = config.id().to_string();
 
     let mut node = BacktestNode::new(vec![config]).unwrap();
@@ -253,7 +256,8 @@ fn test_itch_node_grid_market_maker() {
         .data(vec![quote_data_config(&catalog_path, instrument_id)])
         .engine(engine_config)
         .dispose_on_completion(false)
-        .build();
+        .build()
+        .unwrap();
     let config_id = config.id().to_string();
 
     let mut node = BacktestNode::new(vec![config]).unwrap();
@@ -309,7 +313,8 @@ fn test_itch_node_streaming_grid_market_maker() {
         .engine(engine_config)
         .chunk_size(1000)
         .dispose_on_completion(false)
-        .build();
+        .build()
+        .unwrap();
     let config_id = config.id().to_string();
 
     let mut node = BacktestNode::new(vec![config]).unwrap();

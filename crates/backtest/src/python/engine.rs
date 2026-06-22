@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use ahash::AHashMap;
 use nautilus_common::{
     actor::data_actor::ImportableActorConfig,
-    python::{actor::PyDataActor, cache::PyCache},
+    python::{actor::PyDataActor, cache::PyCache, config_error_to_pyvalue_err},
 };
 use nautilus_core::{
     UUID4, UnixNanos,
@@ -285,7 +285,8 @@ impl PyBacktestEngine {
             .liquidation_enabled(liquidation_enabled)
             .liquidation_trigger_ratio(liquidation_trigger_ratio.unwrap_or(1.0))
             .liquidation_cancel_open_orders(liquidation_cancel_open_orders)
-            .build();
+            .build()
+            .map_err(config_error_to_pyvalue_err)?;
 
         self.0.add_venue(sim_config).map_err(to_pyruntime_err)?;
 

@@ -103,7 +103,7 @@ fn main() -> anyhow::Result<()> {
             .account_type(AccountType::Margin)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from(STARTING_BALANCE)])
-            .build(),
+            .build()?,
     )?;
 
     let instrument = InstrumentAny::CurrencyPair(audusd_sim());

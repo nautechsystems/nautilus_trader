@@ -1934,7 +1934,8 @@ mod tests {
             .account_type(AccountType::Margin)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000_000 USDT")])
-            .build();
+            .build()
+            .unwrap();
         engine.add_venue(venue_config).unwrap();
         engine
     }
@@ -2064,7 +2065,8 @@ mod tests {
             .account_type(AccountType::Margin)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000_000 USDT")])
-            .build();
+            .build()
+            .unwrap();
         engine.add_venue(venue_config).unwrap();
 
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);

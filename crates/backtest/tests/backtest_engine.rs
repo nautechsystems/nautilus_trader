@@ -865,7 +865,8 @@ fn create_engine() -> BacktestEngine {
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
     engine
 }
@@ -883,7 +884,8 @@ fn create_eur_base_margin_engine() -> BacktestEngine {
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 EUR")])
         .base_currency(Currency::EUR())
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
     engine
 }
@@ -1083,7 +1085,8 @@ fn test_run_rejects_depth_book_without_book_data(crypto_perpetual_ethusdt: Crypt
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -1132,7 +1135,8 @@ fn test_run_with_depth_venue_and_book_data_succeeds(crypto_perpetual_ethusdt: Cr
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -1162,7 +1166,8 @@ fn test_run_depth_check_fires_on_validate_false_path(crypto_perpetual_ethusdt: C
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -1264,7 +1269,8 @@ fn test_add_strategies_stops_at_first_error() {
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let s1 = EmptyStrategy::new();
@@ -1460,7 +1466,8 @@ fn test_simulated_venue_config_settlement_prices_used_on_instrument_close(
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
         .settlement_prices([(instrument_id, settlement_price)].into_iter().collect())
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
     engine.add_instrument(&instrument).unwrap();
     engine
@@ -2414,7 +2421,8 @@ fn test_multi_venue_data_routing(crypto_perpetual_ethusdt: CryptoPerpetual) {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
 
@@ -2426,7 +2434,8 @@ fn test_multi_venue_data_routing(crypto_perpetual_ethusdt: CryptoPerpetual) {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
 
@@ -3594,7 +3603,8 @@ fn test_list_venues_multiple() {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
 
@@ -3606,7 +3616,8 @@ fn test_list_venues_multiple() {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
 
@@ -3650,7 +3661,8 @@ fn test_option_expiry_timer_closes_position_without_data_at_expiration() {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
 
@@ -3766,7 +3778,8 @@ fn run_call_option_expiry_timer(
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
 
@@ -3822,7 +3835,8 @@ fn test_add_venue_with_queue_position(crypto_perpetual_ethusdt: CryptoPerpetual)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000_000 USDT")])
             .queue_position(true)
-            .build(),
+            .build()
+            .unwrap(),
     );
     assert!(result.is_ok());
 
@@ -4005,7 +4019,8 @@ fn test_end_does_not_double_run_modules_at_same_timestamp(
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
         .modules(vec![Box::new(module)])
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -4236,7 +4251,8 @@ fn test_close_all_positions_in_on_stop_is_processed_with_latency(
             UnixNanos::default(),
             UnixNanos::default(),
         )))
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -4359,7 +4375,8 @@ fn test_trailing_final_tick_order_settles_with_latency(crypto_perpetual_ethusdt:
             UnixNanos::default(),
             UnixNanos::default(),
         )))
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -4430,7 +4447,8 @@ fn test_cancel_all_orders_in_on_stop_is_processed_with_latency(
             UnixNanos::default(),
             UnixNanos::from(1_500_000_000),
         )))
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -4592,7 +4610,8 @@ fn test_close_all_positions_on_stop_multi_venue_latency_aggregates(
                     UnixNanos::default(),
                     UnixNanos::default(),
                 )))
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
     engine
@@ -4609,7 +4628,8 @@ fn test_close_all_positions_on_stop_multi_venue_latency_aggregates(
                     UnixNanos::default(),
                     UnixNanos::default(),
                 )))
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
 
@@ -4678,7 +4698,8 @@ fn test_add_venue_with_oto_full_trigger(crypto_perpetual_ethusdt: CryptoPerpetua
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000_000 USDT")])
             .oto_full_trigger(true)
-            .build(),
+            .build()
+            .unwrap(),
     );
     assert!(result.is_ok());
 

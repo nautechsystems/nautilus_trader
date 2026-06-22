@@ -40,7 +40,8 @@ fn create_engine() -> BacktestEngine {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
     engine

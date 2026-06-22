@@ -123,14 +123,14 @@ fn main() -> anyhow::Result<()> {
         .data_type(NautilusDataType::QuoteTick)
         .catalog_path(catalog_path)
         .instrument_id(instrument_id)
-        .build();
+        .build()?;
 
     let run_config = BacktestRunConfig::builder()
         .id(RUN_ID.to_string())
         .venues(vec![venue_config])
         .data(vec![data_config])
         .chunk_size(CHUNK_SIZE)
-        .build();
+        .build()?;
 
     // Build and run the backtest
     let mut node = BacktestNode::new(vec![run_config])?;

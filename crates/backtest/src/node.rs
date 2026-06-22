@@ -153,7 +153,7 @@ impl BacktestNode {
                     .liquidation_enabled(venue_config.liquidation_enabled())
                     .liquidation_trigger_ratio(venue_config.liquidation_trigger_ratio())
                     .liquidation_cancel_open_orders(venue_config.liquidation_cancel_open_orders())
-                    .build();
+                    .build()?;
                 engine.add_venue(sim_config)?;
             }
 
@@ -248,10 +248,7 @@ impl BacktestNode {
 
             match config.chunk_size() {
                 None => run_oneshot(engine, config)?,
-                Some(chunk_size) => {
-                    anyhow::ensure!(chunk_size > 0, "chunk_size must be > 0");
-                    run_streaming(engine, config, chunk_size)?;
-                }
+                Some(chunk_size) => run_streaming(engine, config, chunk_size)?,
             }
 
             results.push(engine.get_result());

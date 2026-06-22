@@ -65,7 +65,8 @@ fn create_engine(instrument: &InstrumentAny) -> BacktestEngine {
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
                 .base_currency(Currency::from("USD"))
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
     engine.add_instrument(instrument).unwrap();

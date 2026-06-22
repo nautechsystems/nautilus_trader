@@ -218,7 +218,7 @@ engine.add_venue(
         .account_type(AccountType::Cash)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::from("1_000_000 GBP")])
-        .build(),
+        .build()?,
 )?;
 ```
 

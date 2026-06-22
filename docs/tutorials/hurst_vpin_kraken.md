@@ -355,7 +355,7 @@ engine.add_venue(
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("100_000 USD")])
-        .build(),
+        .build()?,
 )?;
 
 engine.add_instrument(&InstrumentAny::CryptoPerpetual(instrument))?;

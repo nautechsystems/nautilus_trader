@@ -314,18 +314,21 @@ fn run_chain_backtest(
         .data_type(NautilusDataType::QuoteTick)
         .catalog_path(catalog_path.to_string())
         .instrument_ids(instrument_ids.clone())
-        .build();
+        .build()
+        .unwrap();
     let greeks_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::OptionGreeks)
         .catalog_path(catalog_path.to_string())
         .instrument_ids(instrument_ids)
-        .build();
+        .build()
+        .unwrap();
 
     let config = BacktestRunConfig::builder()
         .venues(vec![deribit_venue_config()])
         .data(vec![quote_data, greeks_data])
         .maybe_chunk_size(chunk_size)
-        .build();
+        .build()
+        .unwrap();
     let config_id = config.id().to_string();
 
     let mut node = BacktestNode::new(vec![config]).unwrap();
