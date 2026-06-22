@@ -28,7 +28,7 @@ dependencies = [
   "fsspec>=2026.2.0,<=2026.2.0",
   "msgspec>=0.21.1,<1.0.0",
   "numpy>=1.26.4",
-  "pandas>=2.3.3,<3.0.0",
+  "pandas>=2.3.3,<4.0.0",
   "portion>=2.6.1",
   "pyarrow>=24.0.0",
   "pytz>=2026.2",
@@ -94,7 +94,7 @@ dev = [
   "jupytext>=1.19.3,<2.0.0",
   "setuptools>=82",
   "mypy==1.20.2,<2.0.0", # Pinned to 1.20.2 (keep in line with .pre-commit-config.yaml)
-  "pandas-stubs>=2.3.3,<3.0.0",
+  "pandas-stubs>=2.3.3,<4.0.0",
   "ruff==0.15.18", # Pinned to 0.15.18 (keep in line with .pre-commit-config.yaml)
   "types-pytz>=2026.2,<2027.0",
   "types-toml>=0.10.8,<1.0.0",

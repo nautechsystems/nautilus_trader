@@ -195,6 +195,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Upgraded `capnp` and `capnpc` crates to v0.26.0
 - Upgraded `redis` crate to v1.2.4
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.29.0
+- Upgraded `pandas` to v3.0 and widened the supported range to `<4.0.0`
 
 ### Documentation Updates
 - Added developer-guide rate-limiting policy distinguishing data and execution paths
