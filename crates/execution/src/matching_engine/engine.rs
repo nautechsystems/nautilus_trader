@@ -69,7 +69,7 @@ use crate::{
     matching_engine::{config::OrderMatchingEngineConfig, ids_generator::IdsGenerator},
     models::{
         fee::{FeeModel, FeeModelHandle},
-        fill::{FillModel, FillModelAny},
+        fill::{FillModel, FillModelHandle},
     },
     protection::protection_price_calculate,
     trailing::trailing_stop_calculate,
@@ -97,7 +97,7 @@ pub struct OrderMatchingEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     book: OrderBook,
-    fill_model: FillModelAny,
+    fill_model: FillModelHandle,
     fee_model: FeeModelHandle,
     event_handler: Option<Rc<dyn Fn(OrderEventAny)>>,
     target_bid: Option<Price>,
@@ -147,7 +147,7 @@ impl OrderMatchingEngine {
     pub fn new(
         instrument: InstrumentAny,
         raw_id: u32,
-        fill_model: FillModelAny,
+        fill_model: FillModelHandle,
         fee_model: FeeModelHandle,
         book_type: BookType,
         oms_type: OmsType,
@@ -403,7 +403,7 @@ impl OrderMatchingEngine {
     }
 
     /// Sets the fill model for the matching engine.
-    pub fn set_fill_model(&mut self, fill_model: FillModelAny) {
+    pub fn set_fill_model(&mut self, fill_model: FillModelHandle) {
         self.core
             .set_fill_limit_inside_spread(fill_model.fill_limit_inside_spread());
         self.fill_model = fill_model;
@@ -6297,9 +6297,9 @@ mod tests {
     };
 
     use nautilus_common::{cache::Cache, clock::TestClock};
-    use nautilus_core::correctness::CorrectnessError;
+    use nautilus_core::{UnixNanos, correctness::CorrectnessError};
     use nautilus_model::{
-        data::option_chain::OptionGreeks,
+        data::{QuoteTick, option_chain::OptionGreeks},
         enums::{AccountType, BookType, LiquiditySide, OmsType, OrderSide, OrderType},
         events::OrderEventAny,
         identifiers::AccountId,
@@ -6307,6 +6307,7 @@ mod tests {
             Instrument, InstrumentAny,
             stubs::{crypto_option_btc_deribit, crypto_perpetual_ethusdt},
         },
+        orderbook::OrderBook,
         orders::{Order, OrderAny, OrderTestBuilder},
         types::{Money, Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
     };
@@ -6316,7 +6317,7 @@ mod tests {
     use super::{BarTickSizes, OrderMatchingEngine};
     use crate::models::{
         fee::{FeeModel, FeeModelAny, FeeModelHandle},
-        fill::FillModelAny,
+        fill::{FillModel, FillModelHandle},
     };
 
     fn assert_valid_bar_tick_sizes(volume: Quantity, size_increment: Quantity) {
@@ -6354,7 +6355,7 @@ mod tests {
         let mut engine = OrderMatchingEngine::new(
             instrument.clone(),
             1,
-            FillModelAny::default(),
+            FillModelHandle::default(),
             FeeModelAny::default().into(),
             BookType::L1_MBP,
             OmsType::Netting,
@@ -6420,7 +6421,7 @@ mod tests {
         let mut engine = OrderMatchingEngine::new(
             instrument.clone(),
             1,
-            FillModelAny::default(),
+            FillModelHandle::default(),
             cloned_fee_model,
             BookType::L1_MBP,
             OmsType::Netting,
@@ -6484,6 +6485,74 @@ mod tests {
     }
 
     #[rstest]
+    fn test_custom_fill_model_handle_is_called_by_market_fill() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let calls = Rc::new(Cell::new(0));
+        let fill_model = FillModelHandle::new(RecordingFillModel {
+            calls: Rc::clone(&calls),
+        });
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            fill_model,
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            cache,
+            Default::default(),
+        );
+        let quote = QuoteTick::new(
+            instrument.id(),
+            Price::from("1500.00"),
+            Price::from("1501.00"),
+            Quantity::from("10.000"),
+            Quantity::from("10.000"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        engine.process_quote_tick(&quote);
+
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .submit(true)
+            .build();
+        engine.process_order(&mut order, AccountId::from("ACCOUNT-001"));
+
+        assert_eq!(calls.get(), 1);
+    }
+
+    struct RecordingFillModel {
+        calls: Rc<Cell<u32>>,
+    }
+
+    impl FillModel for RecordingFillModel {
+        fn is_limit_filled(&mut self) -> bool {
+            true
+        }
+
+        fn is_slipped(&mut self) -> bool {
+            false
+        }
+
+        fn get_orderbook_for_fill_simulation(
+            &mut self,
+            _instrument: &InstrumentAny,
+            _order: &OrderAny,
+            _best_bid: Price,
+            _best_ask: Price,
+        ) -> Option<OrderBook> {
+            self.calls.set(self.calls.get() + 1);
+            None
+        }
+    }
+
+    #[rstest]
     fn test_fee_underlying_price_uses_valid_cached_greeks_price() {
         let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit(
             3,
@@ -6501,7 +6570,7 @@ mod tests {
         let engine = OrderMatchingEngine::new(
             instrument,
             1,
-            FillModelAny::default(),
+            FillModelHandle::default(),
             FeeModelAny::default().into(),
             BookType::L1_MBP,
             OmsType::Netting,
@@ -6538,7 +6607,7 @@ mod tests {
         let engine = OrderMatchingEngine::new(
             instrument,
             1,
-            FillModelAny::default(),
+            FillModelHandle::default(),
             FeeModelAny::default().into(),
             BookType::L1_MBP,
             OmsType::Netting,

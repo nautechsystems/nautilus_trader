@@ -276,7 +276,7 @@ impl SimulatedExchange {
     /// Sets the fill model for the exchange.
     pub fn set_fill_model(&mut self, fill_model: FillModelAny) {
         for matching_engine in self.matching_engines.values_mut() {
-            matching_engine.set_fill_model(fill_model.clone());
+            matching_engine.set_fill_model(fill_model.clone().into());
             log::info!(
                 "Setting fill model for {} to {}",
                 matching_engine.venue,
@@ -404,7 +404,7 @@ impl SimulatedExchange {
         let matching_engine = OrderMatchingEngine::new(
             instrument,
             raw_id,
-            self.fill_model.clone(),
+            self.fill_model.clone().into(),
             self.fee_model.clone(),
             self.book_type,
             self.oms_type,

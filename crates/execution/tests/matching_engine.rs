@@ -33,7 +33,7 @@ use nautilus_execution::{
     matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
     models::{
         fee::{CappedOptionFeeModel, FeeModelAny, FixedFeeModel},
-        fill::{BestPriceFillModel, DefaultFillModel, FillModelAny},
+        fill::{BestPriceFillModel, DefaultFillModel, FillModelAny, FillModelHandle},
     },
 };
 use nautilus_model::{
@@ -247,7 +247,7 @@ fn get_order_matching_engine(
     OrderMatchingEngine::new(
         instrument,
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -271,7 +271,7 @@ fn get_order_matching_engine_l2(
     OrderMatchingEngine::new(
         instrument,
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L2_MBP,
         OmsType::Netting,
@@ -7083,7 +7083,7 @@ fn test_trade_execution_fill_model_at_limit_with_prob_zero_does_not_fill(
     let mut engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
-        fill_model,
+        fill_model.into(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -7166,7 +7166,7 @@ fn test_trade_execution_fill_model_at_limit_with_prob_one_fills(
     let mut engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
-        fill_model,
+        fill_model.into(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -7257,7 +7257,7 @@ fn test_trade_execution_crossing_limit_fills_regardless_of_fill_model(
     let mut engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
-        fill_model,
+        fill_model.into(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -7431,7 +7431,7 @@ fn test_trade_execution_fill_model_rejection_still_applies_liquidity_consumption
     let mut engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
-        fill_model,
+        fill_model.into(),
         FeeModelAny::default().into(),
         BookType::L2_MBP,
         OmsType::Netting,
@@ -8048,7 +8048,7 @@ fn test_settlement_price_used_on_contract_expiration(
     let mut engine = OrderMatchingEngine::new(
         instrument_es.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         fee_model.into(),
         BookType::L2_MBP,
         OmsType::Netting,
@@ -8749,7 +8749,7 @@ fn get_l1_queue_position_engine(
     let engine = OrderMatchingEngine::new(
         instrument,
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -10053,7 +10053,7 @@ fn test_l1_trade_only_no_initial_quote_ask_tracks_price(
     let mut engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
-        fill_model,
+        fill_model.into(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -10175,7 +10175,7 @@ fn test_stale_trade_tick_does_not_mutate_book(instrument_eth_usdt: InstrumentAny
     let mut engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -10221,7 +10221,7 @@ fn test_stale_quote_tick_does_not_mutate_book(instrument_eth_usdt: InstrumentAny
     let mut engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -10715,7 +10715,7 @@ fn test_update_instrument_resets_market_state(instrument_eth_usdt: InstrumentAny
     let mut engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -10761,7 +10761,7 @@ fn test_update_instrument_without_precision_change_keeps_market_state(
     let mut engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -11230,7 +11230,7 @@ fn test_option_cash_settlement_at_intrinsic_value(account_id: AccountId) {
     let mut engine = OrderMatchingEngine::new(
         option.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -11314,7 +11314,7 @@ fn test_option_physical_settlement_delivers_underlying(account_id: AccountId) {
     let mut engine = OrderMatchingEngine::new(
         option.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -11395,7 +11395,7 @@ fn test_marketable_resting_limit_at_expiration_boundary_fills_before_close(accou
     let mut engine = OrderMatchingEngine::new(
         instrument.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L2_MBP,
         OmsType::Netting,
@@ -11551,7 +11551,7 @@ fn run_otm_expiry_case(kind: OptionKind, spot: Price, account_id: AccountId) {
     let mut engine = OrderMatchingEngine::new(
         option.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -11654,7 +11654,7 @@ fn test_option_cash_settlement_put_pays_strike_minus_spot(account_id: AccountId)
     let mut engine = OrderMatchingEngine::new(
         option.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -11735,7 +11735,7 @@ fn test_option_physical_settlement_put_flips_underlying_side(account_id: Account
     let mut engine = OrderMatchingEngine::new(
         option,
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -11803,7 +11803,7 @@ fn test_check_instrument_expiration_fallback_uses_book(account_id: AccountId) {
     let mut engine = OrderMatchingEngine::new(
         instrument.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         fee_model.into(),
         BookType::L2_MBP,
         OmsType::Netting,
@@ -11939,7 +11939,7 @@ fn test_process_option_expiry_no_positions_is_noop(account_id: AccountId) {
     let mut engine = OrderMatchingEngine::new(
         option,
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -11990,7 +11990,7 @@ fn test_process_option_expiry_missing_underlying_instrument_is_noop(account_id: 
     let mut engine = OrderMatchingEngine::new(
         option,
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -12050,7 +12050,7 @@ fn test_process_option_expiry_missing_underlying_price_is_noop(account_id: Accou
     let mut engine = OrderMatchingEngine::new(
         option,
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -12124,7 +12124,7 @@ fn test_check_instrument_expiration_idempotent_after_processed(account_id: Accou
     let mut engine = OrderMatchingEngine::new(
         option,
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -12190,7 +12190,7 @@ fn test_check_instrument_expiration_uses_close_price_fallback(account_id: Accoun
     let mut engine = OrderMatchingEngine::new(
         instrument.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         fee_model.into(),
         BookType::L2_MBP,
         OmsType::Netting,
@@ -12290,7 +12290,7 @@ fn test_binary_option_pending_resolution_then_instrument_close_settles_position(
     let mut engine = OrderMatchingEngine::new(
         instrument.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L2_MBP,
         OmsType::Netting,
@@ -12448,7 +12448,7 @@ fn test_binary_option_expiration_check_uses_engine_clock_not_order_ts_init(accou
     let mut engine = OrderMatchingEngine::new(
         instrument.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L2_MBP,
         OmsType::Netting,
@@ -12562,7 +12562,7 @@ fn test_crypto_option_cash_settlement(account_id: AccountId) {
     let mut engine = OrderMatchingEngine::new(
         option.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -12631,7 +12631,7 @@ fn test_capped_option_fee_uses_underlying_mid_quote(
     let mut engine = OrderMatchingEngine::new(
         option.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         fee_model.into(),
         BookType::L2_MBP,
         OmsType::Netting,
@@ -12709,7 +12709,7 @@ fn test_capped_option_fee_uses_option_greeks_underlying_price(
     let mut engine = OrderMatchingEngine::new(
         option.clone(),
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         fee_model.into(),
         BookType::L2_MBP,
         OmsType::Netting,
@@ -12803,7 +12803,7 @@ fn test_option_cash_settlement_with_custom_settlement_price(account_id: AccountI
     let mut engine = OrderMatchingEngine::new(
         option,
         1,
-        FillModelAny::default(),
+        FillModelHandle::default(),
         FeeModelAny::default().into(),
         BookType::L1_MBP,
         OmsType::Netting,
