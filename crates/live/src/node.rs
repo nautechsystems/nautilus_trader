@@ -2177,7 +2177,7 @@ mod tests {
         clock::Clock,
         enums::SerializationEncoding,
         msgbus::{
-            self, MessageBusPublisher, MessagingSwitchboard, TypedIntoHandler,
+            self, BusMessage, MessageBusPublisher, MessagingSwitchboard, TypedIntoHandler,
             backing::MessageBusConfig,
         },
     };
@@ -2193,7 +2193,6 @@ mod tests {
     };
     use nautilus_system::{KernelEventStore, RegisteredComponents, event_store::EventStoreConfig};
     use rstest::*;
-    use ustr::Ustr;
 
     use super::*;
 
@@ -3295,10 +3294,10 @@ mod tests {
             self.closed.get()
         }
 
-        fn publish(&self, topic: Ustr, payload: Bytes) {
+        fn publish(&self, message: BusMessage) {
             self.publications.borrow_mut().push(CapturedPublication {
-                topic: topic.to_string(),
-                payload,
+                topic: message.topic.to_string(),
+                payload: message.payload,
             });
         }
 

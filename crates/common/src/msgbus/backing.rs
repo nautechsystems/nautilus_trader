@@ -21,7 +21,10 @@ use nautilus_model::identifiers::TraderId;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::enums::SerializationEncoding;
+use crate::{
+    config::{ConfigError, ConfigErrorCollector, ConfigResult},
+    enums::SerializationEncoding,
+};
 
 /// Configuration for `MessageBus` instances.
 #[cfg_attr(
@@ -38,6 +41,10 @@ pub struct MessageBusConfig {
     /// The encoding for backing operations, controls the type of serializer used.
     #[builder(default = SerializationEncoding::Json)]
     pub encoding: SerializationEncoding,
+    /// The encoding for market data payloads supported by the external bus binary codecs.
+    pub encoding_market_data: Option<SerializationEncoding>,
+    /// The encoding for built-in account, portfolio, order, and position payloads.
+    pub encoding_builtin: Option<SerializationEncoding>,
     /// If timestamps should be persisted as ISO 8601 strings.
     /// If `false`, then timestamps will be persisted as UNIX nanoseconds.
     #[builder(default)]
@@ -80,14 +87,85 @@ impl Default for MessageBusConfig {
     }
 }
 
+impl MessageBusConfig {
+    /// Validates external message bus encoding policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] when the default encoding cannot carry custom payloads, or when
+    /// a category override selects an encoding unsupported by any payload type in that category.
+    pub fn validate(&self) -> ConfigResult<()> {
+        let mut errors = ConfigErrorCollector::new();
+
+        if !super::BusPayloadType::Custom(Ustr::from("Custom")).supports(self.encoding) {
+            errors.push(ConfigError::unsupported_value(
+                "MessageBusConfig.encoding",
+                format!(
+                    "{} does not support custom or unmapped payloads",
+                    self.encoding
+                ),
+            ));
+        }
+
+        if let Some(encoding) = self.encoding_market_data {
+            validate_category_encoding(
+                &mut errors,
+                "MessageBusConfig.encoding_market_data",
+                super::BusPayloadCategory::MarketData,
+                encoding,
+            );
+        }
+
+        if let Some(encoding) = self.encoding_builtin {
+            validate_category_encoding(
+                &mut errors,
+                "MessageBusConfig.encoding_builtin",
+                super::BusPayloadCategory::BuiltIn,
+                encoding,
+            );
+        }
+
+        errors.into_result()
+    }
+}
+
+fn validate_category_encoding(
+    errors: &mut ConfigErrorCollector,
+    field: &'static str,
+    category: super::BusPayloadCategory,
+    encoding: SerializationEncoding,
+) {
+    let unsupported = super::BusPayloadType::PUBLISHED_TYPES
+        .iter()
+        .copied()
+        .filter(|payload_type| payload_type.category() == category)
+        .filter(|payload_type| !payload_type.supports(encoding))
+        .map(|payload_type| payload_type.as_str().to_string())
+        .collect::<Vec<_>>();
+
+    if unsupported.is_empty() {
+        return;
+    }
+
+    errors.push(ConfigError::unsupported_value(
+        field,
+        format!(
+            "{} is not supported by {}",
+            encoding,
+            unsupported.join(", ")
+        ),
+    ));
+}
+
 /// External publisher for serialized message bus publications.
 ///
-/// The core bus passes each outbound [`BusMessage`](super::BusMessage) as a `topic` and serialized
-/// `payload`. Implementations must not block the publishing thread. If the underlying publisher is
-/// full, drop the message in the implementation rather than applying back-pressure to the node.
+/// The core bus passes each outbound message as a [`BusMessage`](super::BusMessage) carrying the
+/// `topic`, `payload_type`, and serialized `payload`. Implementations must not block the publishing
+/// thread. If the underlying publisher is full, drop the message in the implementation rather than
+/// applying back-pressure to the node.
 pub trait MessageBusPublisher {
     fn is_closed(&self) -> bool;
-    fn publish(&self, topic: Ustr, payload: Bytes);
+    fn publish(&self, message: super::BusMessage);
     fn close(&mut self);
 }
 
@@ -143,7 +221,9 @@ mod tests {
 
     use super::*;
     #[cfg(feature = "live")]
-    use crate::msgbus::{BusMessage, MessageBusSubscriber as ReexportedMessageBusSubscriber};
+    use crate::msgbus::{
+        BusMessage, BusPayloadType, MessageBusSubscriber as ReexportedMessageBusSubscriber,
+    };
 
     #[cfg(feature = "live")]
     struct CapturingSubscriber {
@@ -176,7 +256,12 @@ mod tests {
             rx: Some(rx),
             closed: false,
         };
-        let message = BusMessage::with_str_topic("events/data", Bytes::from_static(b"payload"));
+        let message = BusMessage::with_str_topic(
+            "events/data",
+            SerializationEncoding::Json,
+            BusPayloadType::QuoteTick,
+            Bytes::from_static(b"payload"),
+        );
 
         tx.try_send(message.clone()).unwrap();
         let mut stream_rx = ReexportedMessageBusSubscriber::take_receiver(&mut subscriber).unwrap();
@@ -194,6 +279,8 @@ mod tests {
     fn test_default_message_bus_config() {
         let config = MessageBusConfig::default();
         assert_eq!(config.encoding, SerializationEncoding::Json);
+        assert_eq!(config.encoding_market_data, None);
+        assert_eq!(config.encoding_builtin, None);
         assert!(!config.timestamps_as_iso8601);
         assert_eq!(config.buffer_interval_ms, None);
         assert_eq!(config.autotrim_mins, None);
@@ -210,6 +297,8 @@ mod tests {
     fn test_deserialize_message_bus_config() {
         let config_json = json!({
             "encoding": "json",
+            "encoding_market_data": "sbe",
+            "encoding_builtin": "msgpack",
             "timestamps_as_iso8601": true,
             "buffer_interval_ms": 100,
             "autotrim_mins": 60,
@@ -223,6 +312,14 @@ mod tests {
         });
         let config: MessageBusConfig = serde_json::from_value(config_json).unwrap();
         assert_eq!(config.encoding, SerializationEncoding::Json);
+        assert_eq!(
+            config.encoding_market_data,
+            Some(SerializationEncoding::Sbe)
+        );
+        assert_eq!(
+            config.encoding_builtin,
+            Some(SerializationEncoding::MsgPack)
+        );
         assert!(config.timestamps_as_iso8601);
         assert_eq!(config.buffer_interval_ms, Some(100));
         assert_eq!(config.autotrim_mins, Some(60));
@@ -264,5 +361,109 @@ mod tests {
 
         let config: MessageBusConfig = serde_json::from_value(config_json).unwrap();
         assert_eq!(config.encoding, expected);
+    }
+
+    #[rstest]
+    fn message_bus_config_validate_accepts_default() {
+        let config = MessageBusConfig::default();
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn message_bus_config_validate_accepts_custom_safe_default(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let config = MessageBusConfig {
+            encoding,
+            ..Default::default()
+        };
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Sbe)]
+    #[case(SerializationEncoding::Capnp)]
+    fn message_bus_config_validate_rejects_schema_default(#[case] encoding: SerializationEncoding) {
+        let config = MessageBusConfig {
+            encoding,
+            ..Default::default()
+        };
+
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            ConfigError::UnsupportedValue { field, .. }
+                if field == "MessageBusConfig.encoding"
+        ));
+    }
+
+    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    #[rstest]
+    #[cfg_attr(feature = "sbe", case(SerializationEncoding::Sbe))]
+    #[cfg_attr(feature = "capnp", case(SerializationEncoding::Capnp))]
+    fn message_bus_config_validate_accepts_market_data_override(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let config = MessageBusConfig {
+            encoding_market_data: Some(encoding),
+            ..Default::default()
+        };
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[cfg(not(feature = "sbe"))]
+    #[rstest]
+    fn message_bus_config_validate_rejects_market_data_sbe_without_feature() {
+        let config = MessageBusConfig {
+            encoding_market_data: Some(SerializationEncoding::Sbe),
+            ..Default::default()
+        };
+
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            ConfigError::UnsupportedValue { field, .. }
+                if field == "MessageBusConfig.encoding_market_data"
+        ));
+    }
+
+    #[cfg(not(feature = "capnp"))]
+    #[rstest]
+    fn message_bus_config_validate_rejects_market_data_capnp_without_feature() {
+        let config = MessageBusConfig {
+            encoding_market_data: Some(SerializationEncoding::Capnp),
+            ..Default::default()
+        };
+
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            ConfigError::UnsupportedValue { field, .. }
+                if field == "MessageBusConfig.encoding_market_data"
+        ));
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Sbe)]
+    #[case(SerializationEncoding::Capnp)]
+    fn message_bus_config_validate_rejects_builtin_schema_override(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let config = MessageBusConfig {
+            encoding_builtin: Some(encoding),
+            ..Default::default()
+        };
+
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            ConfigError::UnsupportedValue { field, .. }
+                if field == "MessageBusConfig.encoding_builtin"
+        ));
     }
 }

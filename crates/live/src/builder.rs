@@ -20,7 +20,7 @@ use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc, time::Duratio
 use nautilus_common::{
     cache::CacheConfig,
     clock::Clock,
-    enums::{Environment, SerializationEncoding},
+    enums::Environment,
     factories::{
         ClientConfig, DataClientFactory, ExecutionClientFactory, SimulatedExecutionClientFactory,
     },
@@ -440,14 +440,10 @@ impl LiveNodeBuilder {
         )?;
 
         if let Some(publisher) = self.msgbus_publisher {
-            let encoding = self
-                .config
-                .msgbus
-                .as_ref()
-                .map_or(SerializationEncoding::Json, |c| c.encoding);
+            let config = self.config.msgbus.clone().unwrap_or_default();
             nautilus_common::msgbus::get_message_bus()
                 .borrow_mut()
-                .set_publisher(publisher, encoding);
+                .set_publisher_config(publisher, &config)?;
         }
 
         for (name, factory) in self.data_client_factories {

@@ -36,6 +36,7 @@ use crate::{
         mstr::{Endpoint, MStr, Pattern, Topic},
         typed_handler::{Handler, ShareableMessageHandler, TypedHandler},
     },
+    python::config_error_to_pyvalue_err,
 };
 
 #[pymethods]
@@ -45,6 +46,18 @@ impl BusMessage {
     #[pyo3(name = "topic")]
     fn py_topic(&self) -> String {
         self.topic.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "payload_type")]
+    fn py_payload_type(&self) -> String {
+        self.payload_type.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "encoding")]
+    fn py_encoding(&self) -> SerializationEncoding {
+        self.encoding
     }
 
     #[getter]
@@ -68,9 +81,11 @@ impl MessageBusConfig {
     /// Configuration for `MessageBus` instances.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (encoding=None, timestamps_as_iso8601=None, buffer_interval_ms=None, autotrim_mins=None, use_trader_prefix=None, use_trader_id=None, use_instance_id=None, streams_prefix=None, stream_per_topic=None, external_streams=None, types_filter=None, heartbeat_interval_secs=None))]
+    #[pyo3(signature = (encoding=None, encoding_market_data=None, encoding_builtin=None, timestamps_as_iso8601=None, buffer_interval_ms=None, autotrim_mins=None, use_trader_prefix=None, use_trader_id=None, use_instance_id=None, streams_prefix=None, stream_per_topic=None, external_streams=None, types_filter=None, heartbeat_interval_secs=None))]
     fn py_new(
         encoding: Option<SerializationEncoding>,
+        encoding_market_data: Option<SerializationEncoding>,
+        encoding_builtin: Option<SerializationEncoding>,
         timestamps_as_iso8601: Option<bool>,
         buffer_interval_ms: Option<u32>,
         autotrim_mins: Option<u32>,
@@ -82,10 +97,12 @@ impl MessageBusConfig {
         external_streams: Option<Vec<String>>,
         types_filter: Option<Vec<String>>,
         heartbeat_interval_secs: Option<u16>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let default = Self::default();
-        Self {
+        let config = Self {
             encoding: encoding.unwrap_or(default.encoding),
+            encoding_market_data,
+            encoding_builtin,
             timestamps_as_iso8601: timestamps_as_iso8601.unwrap_or(default.timestamps_as_iso8601),
             buffer_interval_ms,
             autotrim_mins,
@@ -97,7 +114,10 @@ impl MessageBusConfig {
             external_streams,
             types_filter,
             heartbeat_interval_secs,
-        }
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     fn __repr__(&self) -> String {
@@ -111,6 +131,16 @@ impl MessageBusConfig {
     #[getter]
     fn encoding(&self) -> SerializationEncoding {
         self.encoding
+    }
+
+    #[getter]
+    fn encoding_market_data(&self) -> Option<SerializationEncoding> {
+        self.encoding_market_data
+    }
+
+    #[getter]
+    fn encoding_builtin(&self) -> Option<SerializationEncoding> {
+        self.encoding_builtin
     }
 
     #[getter]
@@ -694,10 +724,43 @@ impl PyMessageBus {
 mod tests {
     use std::any::Any;
 
-    use pyo3::ffi::c_str;
+    use pyo3::{exceptions::PyValueError, ffi::c_str};
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn message_bus_config_py_new_maps_validate_error_to_value_error() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let err = MessageBusConfig::py_new(
+                Some(SerializationEncoding::Json),
+                None,
+                Some(SerializationEncoding::Capnp),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap_err();
+
+            assert!(err.is_instance_of::<PyValueError>(py));
+            assert_eq!(
+                err.value(py).to_string(),
+                format!(
+                    "MessageBusConfig.encoding_builtin has unsupported value: {} is not supported by AccountState, OrderEventAny, PositionEvent, PortfolioSnapshot",
+                    SerializationEncoding::Capnp
+                )
+            );
+        });
+    }
 
     #[rstest]
     fn test_py_message_downcast() {

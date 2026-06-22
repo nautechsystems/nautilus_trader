@@ -41,10 +41,11 @@ use std::{
 use bytes::Bytes;
 use futures::stream::Stream;
 use nautilus_common::{
+    enums::SerializationEncoding,
     live::get_runtime,
     logging::{log_task_error, log_task_started, log_task_stopped},
     msgbus::{
-        BusMessage, MessageBusPublisher, MessageBusSubscriber,
+        BusMessage, BusPayloadType, MessageBusPublisher, MessageBusSubscriber,
         backing::{MessageBusBacking, MessageBusBackingFactory, MessageBusConfig},
         switchboard::CLOSE_TOPIC,
     },
@@ -329,7 +330,13 @@ impl MessageBusBacking for RedisMessageBusBacking {
 
     /// Publishes a message with the given `topic` and `payload`.
     fn publish(&self, topic: Ustr, payload: Bytes) {
-        let msg = BusMessage::new(topic, payload);
+        let msg = BusMessage::new(
+            topic,
+            SerializationEncoding::default(),
+            BusPayloadType::Custom(Ustr::default()),
+            payload,
+        );
+
         if let Err(e) = self.pub_tx.send(msg) {
             log::error!("Failed to send message: {e}");
         }
@@ -366,9 +373,8 @@ impl MessageBusPublisher for RedisMessageBusBacking {
         self.pub_tx.is_closed()
     }
 
-    fn publish(&self, topic: Ustr, payload: Bytes) {
-        let msg = BusMessage::new(topic, payload);
-        if let Err(e) = self.pub_tx.send(msg) {
+    fn publish(&self, message: BusMessage) {
+        if let Err(e) = self.pub_tx.send(message) {
             log::error!("Failed to send Redis message bus publication: {e}");
         }
     }
@@ -550,8 +556,11 @@ async fn drain_buffer(
     pipe.atomic();
 
     for msg in buffer.drain(..) {
+        let encoding = msg.encoding.to_string();
         let items: Vec<(&str, &[u8])> = vec![
             ("topic", msg.topic.as_ref()),
+            ("type", msg.payload_type.as_str().as_bytes()),
+            ("encoding", encoding.as_bytes()),
             ("payload", msg.payload.as_ref()),
         ];
         let stream_key = if stream_per_topic {
@@ -786,41 +795,75 @@ async fn wait_for_stream_signal(stream_signal: &Arc<AtomicBool>) {
     }
 }
 
-/// Decodes a Redis stream message value into a `BusMessage`.
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - The incoming `stream_msg` is not an array.
-/// - The array has fewer than four elements (invalid format).
-/// - Parsing the topic or payload fails.
+// Redis fields are unordered, and older streams may omit type or encoding headers
 fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
-    if let redis::Value::Array(stream_msg) = stream_msg {
-        if stream_msg.len() < 4 {
-            anyhow::bail!("Invalid stream message format: {stream_msg:?}");
-        }
+    let redis::Value::Array(fields) = stream_msg else {
+        anyhow::bail!("Invalid stream message format: {stream_msg:?}");
+    };
 
-        let topic = match &stream_msg[1] {
-            redis::Value::BulkString(bytes) => match String::from_utf8(bytes.clone()) {
-                Ok(topic) => topic,
-                Err(e) => anyhow::bail!("Error parsing topic: {e}"),
-            },
-            _ => {
-                anyhow::bail!("Invalid topic format: {stream_msg:?}");
-            }
-        };
-
-        let payload = match &stream_msg[3] {
-            redis::Value::BulkString(bytes) => Bytes::copy_from_slice(bytes),
-            _ => {
-                anyhow::bail!("Invalid payload format: {stream_msg:?}");
-            }
-        };
-
-        Ok(BusMessage::with_str_topic(topic, payload))
-    } else {
-        anyhow::bail!("Invalid stream message format: {stream_msg:?}")
+    if fields.len() < 4 || fields.len() % 2 != 0 {
+        anyhow::bail!("Invalid stream message format: {stream_msg:?}");
     }
+
+    let mut topic: Option<String> = None;
+    let mut payload_type = BusPayloadType::Custom(Ustr::default());
+    let mut encoding = SerializationEncoding::default();
+    let mut payload: Option<Bytes> = None;
+
+    for pair in fields.chunks_exact(2) {
+        let redis::Value::BulkString(key) = &pair[0] else {
+            anyhow::bail!("Invalid stream field key: {stream_msg:?}");
+        };
+
+        match key.as_slice() {
+            b"topic" => {
+                let redis::Value::BulkString(bytes) = &pair[1] else {
+                    anyhow::bail!("Invalid topic format: {stream_msg:?}");
+                };
+                topic = Some(
+                    String::from_utf8(bytes.clone())
+                        .map_err(|e| anyhow::anyhow!("Error parsing topic: {e}"))?,
+                );
+            }
+            b"type" => {
+                if let redis::Value::BulkString(bytes) = &pair[1] {
+                    let type_name = std::str::from_utf8(bytes)
+                        .map_err(|e| anyhow::anyhow!("Error parsing type: {e}"))?;
+                    payload_type = BusPayloadType::from_name(type_name);
+                }
+            }
+            b"encoding" => {
+                if let redis::Value::BulkString(bytes) = &pair[1] {
+                    let value = std::str::from_utf8(bytes)
+                        .map_err(|e| anyhow::anyhow!("Error parsing encoding: {e}"))?;
+                    encoding = value
+                        .parse()
+                        .map_err(|e| anyhow::anyhow!("Error parsing encoding: {e}"))?;
+                }
+            }
+            b"payload" => {
+                let redis::Value::BulkString(bytes) = &pair[1] else {
+                    anyhow::bail!("Invalid payload format: {stream_msg:?}");
+                };
+                payload = Some(Bytes::copy_from_slice(bytes));
+            }
+            _ => {}
+        }
+    }
+
+    let Some(topic) = topic else {
+        anyhow::bail!("Stream message missing topic: {stream_msg:?}");
+    };
+    let Some(payload) = payload else {
+        anyhow::bail!("Stream message missing payload: {stream_msg:?}");
+    };
+
+    Ok(BusMessage::with_str_topic(
+        topic,
+        encoding,
+        payload_type,
+        payload,
+    ))
 }
 
 async fn run_heartbeat(
@@ -863,7 +906,12 @@ async fn run_heartbeat(
 
 fn create_heartbeat_msg() -> BusMessage {
     let payload = Bytes::from(chrono::Utc::now().to_rfc3339().into_bytes());
-    BusMessage::with_str_topic(HEARTBEAT_TOPIC, payload)
+    BusMessage::with_str_topic(
+        HEARTBEAT_TOPIC,
+        SerializationEncoding::default(),
+        BusPayloadType::Custom(Ustr::default()),
+        payload,
+    )
 }
 
 #[cfg(test)]
@@ -937,9 +985,13 @@ mod tests {
     #[rstest]
     fn test_decode_bus_message_valid() {
         let stream_msg = Value::Array(vec![
-            Value::BulkString(b"0".to_vec()),
+            Value::BulkString(b"topic".to_vec()),
             Value::BulkString(b"topic1".to_vec()),
-            Value::BulkString(b"unused".to_vec()),
+            Value::BulkString(b"type".to_vec()),
+            Value::BulkString(b"QuoteTick".to_vec()),
+            Value::BulkString(b"encoding".to_vec()),
+            Value::BulkString(b"msgpack".to_vec()),
+            Value::BulkString(b"payload".to_vec()),
             Value::BulkString(b"data1".to_vec()),
         ]);
 
@@ -947,7 +999,48 @@ mod tests {
         assert!(result.is_ok());
         let msg = result.unwrap();
         assert_eq!(msg.topic, "topic1");
+        assert_eq!(msg.payload_type, BusPayloadType::QuoteTick);
+        assert_eq!(msg.encoding, SerializationEncoding::MsgPack);
         assert_eq!(msg.payload, Bytes::from("data1"));
+    }
+
+    #[rstest]
+    fn test_decode_bus_message_defaults_legacy_headers() {
+        let stream_msg = Value::Array(vec![
+            Value::BulkString(b"topic".to_vec()),
+            Value::BulkString(b"topic1".to_vec()),
+            Value::BulkString(b"payload".to_vec()),
+            Value::BulkString(b"data1".to_vec()),
+        ]);
+
+        let result = decode_bus_message(&stream_msg);
+        assert!(result.is_ok());
+        let msg = result.unwrap();
+        assert_eq!(msg.topic, "topic1");
+        assert_eq!(msg.payload_type, BusPayloadType::Custom(Ustr::default()));
+        assert_eq!(msg.encoding, SerializationEncoding::Json);
+        assert_eq!(msg.payload, Bytes::from("data1"));
+    }
+
+    #[rstest]
+    fn test_decode_bus_message_unknown_type_is_custom() {
+        let stream_msg = Value::Array(vec![
+            Value::BulkString(b"topic".to_vec()),
+            Value::BulkString(b"topic1".to_vec()),
+            Value::BulkString(b"type".to_vec()),
+            Value::BulkString(b"UnknownPayload".to_vec()),
+            Value::BulkString(b"payload".to_vec()),
+            Value::BulkString(b"data1".to_vec()),
+        ]);
+
+        let result = decode_bus_message(&stream_msg);
+        assert!(result.is_ok());
+        let msg = result.unwrap();
+        assert_eq!(
+            msg.payload_type,
+            BusPayloadType::Custom(Ustr::from("UnknownPayload"))
+        );
+        assert_eq!(msg.encoding, SerializationEncoding::Json);
     }
 
     #[rstest]
@@ -961,16 +1054,16 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             format!("{}", result.unwrap_err()),
-            "Invalid stream message format: [bulk-string('\"0\"'), bulk-string('\"topic1\"')]"
+            "Invalid stream message format: array([bulk-string('\"0\"'), bulk-string('\"topic1\"')])"
         );
     }
 
     #[rstest]
     fn test_decode_bus_message_invalid_topic_format() {
         let stream_msg = Value::Array(vec![
-            Value::BulkString(b"0".to_vec()),
-            Value::Int(42), // Invalid topic format
-            Value::BulkString(b"unused".to_vec()),
+            Value::BulkString(b"topic".to_vec()),
+            Value::Int(42),
+            Value::BulkString(b"payload".to_vec()),
             Value::BulkString(b"data1".to_vec()),
         ]);
 
@@ -978,24 +1071,24 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             format!("{}", result.unwrap_err()),
-            "Invalid topic format: [bulk-string('\"0\"'), int(42), bulk-string('\"unused\"'), bulk-string('\"data1\"')]"
+            "Invalid topic format: array([bulk-string('\"topic\"'), int(42), bulk-string('\"payload\"'), bulk-string('\"data1\"')])"
         );
     }
 
     #[rstest]
     fn test_decode_bus_message_invalid_payload_format() {
         let stream_msg = Value::Array(vec![
-            Value::BulkString(b"0".to_vec()),
+            Value::BulkString(b"topic".to_vec()),
             Value::BulkString(b"topic1".to_vec()),
-            Value::BulkString(b"unused".to_vec()),
-            Value::Int(42), // Invalid payload format
+            Value::BulkString(b"payload".to_vec()),
+            Value::Int(42),
         ]);
 
         let result = decode_bus_message(&stream_msg);
         assert!(result.is_err());
         assert_eq!(
             format!("{}", result.unwrap_err()),
-            "Invalid payload format: [bulk-string('\"0\"'), bulk-string('\"topic1\"'), bulk-string('\"unused\"'), int(42)]"
+            "Invalid payload format: array([bulk-string('\"topic\"'), bulk-string('\"topic1\"'), bulk-string('\"payload\"'), int(42)])"
         );
     }
 
@@ -1075,7 +1168,12 @@ mod tests {
     fn test_subscriber_take_receiver_delegates_to_stream_receiver() {
         let (stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
         let mut db = backing_with_stream_receiver(stream_rx);
-        let message = BusMessage::with_str_topic("events/data", Bytes::from_static(b"payload"));
+        let message = BusMessage::with_str_topic(
+            "events/data",
+            SerializationEncoding::Json,
+            BusPayloadType::QuoteTick,
+            Bytes::from_static(b"payload"),
+        );
 
         stream_tx.try_send(message.clone()).unwrap();
         let mut receiver = MessageBusSubscriber::take_receiver(&mut db).unwrap();
@@ -1427,7 +1525,12 @@ mod serial_tests {
         });
 
         // Send a test message
-        let msg = BusMessage::with_str_topic("test_topic", Bytes::from("test_payload"));
+        let msg = BusMessage::with_str_topic(
+            "test_topic",
+            SerializationEncoding::Json,
+            BusPayloadType::QuoteTick,
+            Bytes::from("test_payload"),
+        );
         tx.send(msg).unwrap();
 
         // Wait until the message is published to Redis

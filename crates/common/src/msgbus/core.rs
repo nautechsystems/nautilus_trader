@@ -113,8 +113,9 @@ use ustr::Ustr;
 
 use super::{
     HAS_PUBLISHER, ShareableMessageHandler,
-    backing::MessageBusPublisher,
+    backing::{MessageBusConfig, MessageBusPublisher},
     matching::is_matching_backtracking,
+    message::{BusPayloadCategory, BusPayloadType},
     mstr::{Endpoint, MStr, Pattern, Topic},
     set_message_bus,
     switchboard::MessagingSwitchboard,
@@ -281,6 +282,8 @@ pub struct MessageBus {
     pub_count: u64,
     publisher: Option<Box<dyn MessageBusPublisher>>,
     encoding: SerializationEncoding,
+    encoding_market_data: Option<SerializationEncoding>,
+    encoding_builtin: Option<SerializationEncoding>,
     types_filter: AHashSet<String>,
 }
 
@@ -373,6 +376,8 @@ impl MessageBus {
             pub_count: 0,
             publisher: None,
             encoding: SerializationEncoding::Json,
+            encoding_market_data: None,
+            encoding_builtin: None,
             types_filter: AHashSet::new(),
         }
     }
@@ -418,8 +423,32 @@ impl MessageBus {
     ) {
         self.publisher = Some(publisher);
         self.encoding = encoding;
+        self.encoding_market_data = None;
+        self.encoding_builtin = None;
         self.has_backing = true;
         HAS_PUBLISHER.with(|flag| flag.set(true));
+    }
+
+    /// Sets an external publisher and category encoding policy from a validated config.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`crate::config::ConfigError`] if the config selects an unsupported encoding.
+    pub fn set_publisher_config(
+        &mut self,
+        publisher: Box<dyn MessageBusPublisher>,
+        config: &MessageBusConfig,
+    ) -> crate::config::ConfigResult<()> {
+        config.validate()?;
+
+        self.publisher = Some(publisher);
+        self.encoding = config.encoding;
+        self.encoding_market_data = config.encoding_market_data;
+        self.encoding_builtin = config.encoding_builtin;
+        self.has_backing = true;
+        HAS_PUBLISHER.with(|flag| flag.set(true));
+
+        Ok(())
     }
 
     /// Sets the type names excluded from external publishing.
@@ -436,8 +465,12 @@ impl MessageBus {
         self.publisher.as_deref()
     }
 
-    pub(crate) fn encoding(&self) -> SerializationEncoding {
-        self.encoding
+    pub(crate) fn encoding_for(&self, payload_type: BusPayloadType) -> SerializationEncoding {
+        match payload_type.category() {
+            BusPayloadCategory::MarketData => self.encoding_market_data.unwrap_or(self.encoding),
+            BusPayloadCategory::BuiltIn => self.encoding_builtin.unwrap_or(self.encoding),
+            BusPayloadCategory::Other => self.encoding,
+        }
     }
 
     pub(crate) fn types_filter(&self) -> &AHashSet<String> {
@@ -754,6 +787,63 @@ mod tests {
 
         assert_eq!(msgbus.trader_id, trader_id);
         assert_eq!(msgbus.name, stringify!(MessageBus));
+    }
+
+    #[rstest]
+    fn encoding_for_uses_market_data_override() {
+        let msgbus = MessageBus {
+            encoding: SerializationEncoding::Json,
+            encoding_market_data: Some(SerializationEncoding::MsgPack),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            msgbus.encoding_for(BusPayloadType::QuoteTick),
+            SerializationEncoding::MsgPack
+        );
+        assert_eq!(
+            msgbus.encoding_for(BusPayloadType::Custom(Ustr::from("CustomPayload"))),
+            SerializationEncoding::Json
+        );
+    }
+
+    #[rstest]
+    fn encoding_for_uses_builtin_override() {
+        let msgbus = MessageBus {
+            encoding: SerializationEncoding::Json,
+            encoding_builtin: Some(SerializationEncoding::MsgPack),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            msgbus.encoding_for(BusPayloadType::OrderEvent),
+            SerializationEncoding::MsgPack
+        );
+        assert_eq!(
+            msgbus.encoding_for(BusPayloadType::Instrument),
+            SerializationEncoding::Json
+        );
+    }
+
+    #[rstest]
+    fn encoding_for_uses_default_without_category_override() {
+        let msgbus = MessageBus {
+            encoding: SerializationEncoding::MsgPack,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            msgbus.encoding_for(BusPayloadType::QuoteTick),
+            SerializationEncoding::MsgPack
+        );
+        assert_eq!(
+            msgbus.encoding_for(BusPayloadType::OrderEvent),
+            SerializationEncoding::MsgPack
+        );
+        assert_eq!(
+            msgbus.encoding_for(BusPayloadType::Custom(Ustr::from("CustomPayload"))),
+            SerializationEncoding::MsgPack
+        );
     }
 
     #[rstest]

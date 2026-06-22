@@ -302,16 +302,18 @@ subscribers, then serialized into the existing `BusMessage` wire record:
 
 - `topic`: the exact message bus topic used by the internal publish call, for example
   `data.quotes.BINANCE.BTCUSDT` or `events.order.S-001`.
-- `payload`: bytes encoded with `MessageBusConfig.encoding`, using JSON by default.
+- `type`: the canonical payload type name, for example `QuoteTick` or `OrderEventAny`.
+- `encoding`: the payload encoding selected from the message bus encoding policy.
+- `payload`: serialized bytes encoded with the selected encoding.
 
-The publisher receives that record as `publish(topic, payload)`. This outbound call must not block
-the node's bus thread. Bounded publishers drop on a full queue instead of applying back-pressure to
-the trading loop. Closing the message bus closes the configured publisher.
+The publisher receives that record as `publish(BusMessage)`. This outbound call must not block the
+node's bus thread. Bounded publishers drop on a full queue instead of applying back-pressure to the
+trading loop. Closing the message bus closes the configured publisher.
 
 Inbound external streams are exposed through the separate Rust `MessageBusSubscriber` trait. A
-subscriber yields the same `BusMessage { topic, payload }` shape, but the live-node bridge remains
-separate work: the node decodes the payload, checks the registered streaming type, and republishes
-internally without forwarding the message back out.
+subscriber yields the same `BusMessage { topic, type, encoding, payload }` shape. The available
+transport republish function currently decodes and republishes inbound `QuoteTick` messages without
+forwarding the message back out.
 
 For Redis, messages are transmitted via a Multiple-Producer Single-Consumer (MPSC) channel to a
 separate Rust task. That task writes the message to Redis streams.
@@ -366,6 +368,7 @@ use nautilus_infrastructure::redis::msgbus::RedisMessageBusConfig;
 
 let config = MessageBusConfig {
     encoding: SerializationEncoding::Json,
+    encoding_market_data: Some(SerializationEncoding::Sbe),
     timestamps_as_iso8601: true,
     buffer_interval_ms: Some(100),
     autotrim_mins: Some(30),
@@ -394,8 +397,8 @@ construct that publisher. The core message bus does not require a `RedisMessageB
 injected publishers.
 
 The Rust live runtime still rejects `external_streams`, so inbound stream configuration is not
-silently ignored. The subscriber trait exists, but the missing runtime piece is the Rust live bridge
-from inbound `BusMessage` sources to internal publish.
+silently ignored. The subscriber trait and transport republish function exist, but the missing
+runtime piece is the Rust live bridge from inbound `BusMessage` sources to internal publish.
 
 ### Encoding
 
@@ -407,6 +410,16 @@ The Rust-native message bus publisher supports these encoding names:
 - SBE (`sbe`, with the Rust `sbe` feature)
 
 Use the `encoding` config option to control the message writing encoding.
+Use `encoding_market_data` to override the encoding for market data payloads backed by the external
+bus binary codecs. Use `encoding_builtin` to override account state, portfolio snapshot, order
+event, and position event payloads. Custom and unmapped payload types always use `encoding`.
+
+`MessageBusConfig::validate` requires the default `encoding` to support custom payloads, so it must
+be JSON or MessagePack. Category overrides must be supported by every published payload type in
+that category. SBE and Cap'n Proto can currently be used only for `encoding_market_data`, and only
+when the matching Rust feature is enabled. `encoding_builtin = "sbe"` and
+`encoding_builtin = "capnp"` fail validation until those schema codecs cover the built-in event
+category.
 
 The legacy Python/Cython Redis serializer and the Redis cache payload path support MessagePack and
 JSON. SBE and Cap'n Proto are schema payload encodings for Rust-native message bus publishers, not

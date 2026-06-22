@@ -18,7 +18,7 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc, time::Duration};
 use nautilus_common::{
     cache::{CacheConfig, database::CacheDatabaseAdapter},
     clock::Clock,
-    enums::{Environment, SerializationEncoding},
+    enums::Environment,
     logging::logger::LoggerConfig,
     msgbus::MessageBusPublisher,
 };
@@ -311,13 +311,10 @@ impl NautilusKernelBuilder {
         )?;
 
         if let Some(publisher) = self.msgbus_publisher {
-            let encoding = kernel
-                .config
-                .msgbus()
-                .map_or(SerializationEncoding::Json, |config| config.encoding);
+            let config = kernel.config.msgbus().unwrap_or_default();
             nautilus_common::msgbus::get_message_bus()
                 .borrow_mut()
-                .set_publisher(publisher, encoding);
+                .set_publisher_config(publisher, &config)?;
         }
 
         Ok(kernel)
@@ -347,6 +344,7 @@ mod tests {
             database::{CacheDatabaseAdapter, CacheMap},
         },
         clock::Clock,
+        msgbus::BusMessage,
         signal::Signal,
     };
     use nautilus_core::UnixNanos;
@@ -594,10 +592,10 @@ mod tests {
             self.closed.get()
         }
 
-        fn publish(&self, topic: Ustr, payload: Bytes) {
+        fn publish(&self, message: BusMessage) {
             self.publications.borrow_mut().push(CapturedPublication {
-                topic: topic.to_string(),
-                payload,
+                topic: message.topic.to_string(),
+                payload: message.payload,
             });
         }
 

@@ -75,7 +75,7 @@ pub use self::{
     api::*,
     backing::MessageBusPublisher,
     core::{MessageBus, Subscription},
-    message::BusMessage,
+    message::{BusMessage, BusPayloadCategory, BusPayloadType},
     mstr::{Endpoint, MStr, Pattern, Topic},
     switchboard::MessagingSwitchboard,
     typed_endpoints::{EndpointMap, IntoEndpointMap},
