@@ -790,15 +790,22 @@ mod tests {
         );
     }
 
+    // `Replay` is the verdict the --skip-validation path reports, so the contract must surface it
+    // as "replay"; `OnChain` covers the validated path.
     #[rstest]
-    fn pool_analysis_success_json_matches_contract() {
+    #[case(SnapshotValidation::OnChain, "on_chain")]
+    #[case(SnapshotValidation::Replay, "replay")]
+    fn pool_analysis_success_json_matches_contract(
+        #[case] validation: SnapshotValidation,
+        #[case] expected_state: &str,
+    ) {
         let outcome = PoolAnalysisOutcome::Success(PoolAnalysisSuccessOutcome {
             pool_address: "0x1111111111111111111111111111111111111111".to_string(),
             target_block: 25_218_807,
             snapshot_block_position: BlockPosition::new(25_218_797, "0xabc".to_string(), 3, 4),
             positions: 2,
             ticks: 7,
-            validation: SnapshotValidation::OnChain,
+            validation,
             already_valid: false,
             liquidity_utilization_rate: 0.25,
         });
@@ -816,7 +823,7 @@ mod tests {
                 "snapshot_log_index": 4,
                 "positions": 2,
                 "ticks": 7,
-                "validation_state": "on_chain",
+                "validation_state": expected_state,
                 "already_valid": false,
                 "liquidity_utilization_rate": 0.25,
             })

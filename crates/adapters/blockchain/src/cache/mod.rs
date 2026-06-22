@@ -996,12 +996,12 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use alloy::primitives::address;
+    use alloy::primitives::{U160, address};
     use futures_util::TryStreamExt;
     use nautilus_core::UnixNanos;
     use nautilus_infrastructure::sql::pg::{PostgresConnectOptions, get_postgres_connect_options};
     use nautilus_model::defi::{
-        AmmType, Block, Blockchain, Chain, Dex, SharedChain, SharedDex, Token,
+        AmmType, Block, Blockchain, Chain, Dex, PoolProfiler, SharedChain, SharedDex, Token,
         data::{DexPoolData, block::BlockPosition},
         pool_analysis::snapshot::{PoolAnalytics, PoolState},
     };
@@ -1010,9 +1010,14 @@ mod tests {
         AssertSqlSafe, Error as SqlxError, PgPool,
         postgres::{PgConnectOptions, PgPoolOptions},
     };
+    use tokio_util::sync::CancellationToken;
     use ustr::Ustr;
 
     use super::*;
+    use crate::{
+        config::BlockchainDataClientConfig,
+        data::core::{BlockchainDataClientCore, SnapshotValidation},
+    };
 
     fn test_cache() -> BlockchainCache {
         BlockchainCache::new(Arc::new(Chain::new(Blockchain::Ethereum, 1)))
@@ -1476,6 +1481,119 @@ mod tests {
         if loaded_id != Some(pool_identifier) || !cached_after_load || absent_is_some {
             anyhow::bail!(
                 "unexpected load_pool result: loaded_id={loaded_id:?}, cached_after_load={cached_after_load}, absent_is_some={absent_is_some}"
+            );
+        }
+
+        Ok(())
+    }
+
+    // check_snapshot_validity lives on the data client but exercises the cache DB read path, so its
+    // RPC-unreachable test reuses this module's isolated-schema scaffolding. It runs fully only when
+    // both Postgres and an ENVIO_API_TOKEN are present (the live-smoke setup) and skips otherwise.
+    #[tokio::test]
+    async fn check_snapshot_validity_reports_stored_verdict_when_rpc_unreachable()
+    -> anyhow::Result<()> {
+        // BlockchainDataClientCore::new builds a HyperSyncClient, which requires a UUID token; the
+        // crate denies unsafe_code, so the test cannot inject one. Skip when it is absent (checked
+        // before opening a schema to avoid leaking it).
+        if std::env::var("ENVIO_API_TOKEN").is_err() {
+            return Ok(());
+        }
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        let chain = arbitrum();
+        let dex = uniswap_v3(&chain);
+        let token0 = weth(&chain);
+        let token1 = usdc(&chain);
+        let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
+        let pool_identifier = PoolIdentifier::from_address(pool_address);
+        let pool = Pool::new(
+            chain.clone(),
+            dex.clone(),
+            pool_address,
+            pool_identifier,
+            10,
+            token0.clone(),
+            token1.clone(),
+            Some(500),
+            Some(10),
+            UnixNanos::default(),
+        );
+        let instrument_id = pool.instrument_id;
+
+        // Unreachable RPC so the on-chain compare cannot fetch the block and must fall back to the
+        // stored verdict.
+        let config = BlockchainDataClientConfig::builder()
+            .chain(chain.clone())
+            .dex_ids(vec![DexType::UniswapV3])
+            .http_rpc_url("http://127.0.0.1:9".to_string())
+            .use_hypersync_for_live_data(true)
+            .build();
+        let mut core = BlockchainDataClientCore::new(config, None, None, CancellationToken::new());
+        core.cache.database = Some(database);
+        core.cache.add_dex(dex).await?;
+        core.cache.add_token(token0).await?;
+        core.cache.add_token(token1).await?;
+        core.cache.add_pool(pool.clone()).await?;
+
+        // Persist an `invalid` verdict at the watermark the profiler will report.
+        let ts = UnixNanos::from(1_700_000_000_000_000_000);
+        let block_position = BlockPosition::new(200, "0xabc".to_string(), 0, 0);
+        let snapshot = PoolSnapshot::new(
+            instrument_id,
+            PoolState::default(),
+            Vec::new(),
+            Vec::new(),
+            PoolAnalytics::default(),
+            block_position.clone(),
+            ts,
+            ts,
+        );
+        core.cache
+            .add_pool_snapshot(&DexType::UniswapV3, &pool_identifier, &snapshot)
+            .await?;
+        core.cache
+            .database
+            .as_ref()
+            .expect("cache database must be set")
+            .set_pool_snapshot_validation_state(
+                chain.chain_id,
+                &pool_identifier,
+                200,
+                0,
+                0,
+                "invalid",
+            )
+            .await?;
+
+        let mut profiler = PoolProfiler::new(Arc::new(pool));
+        profiler
+            .initialize(U160::from_str_radix("3cb0adde486484998be0b", 16).unwrap())
+            .expect("profiler should initialize from a known sqrt price");
+        profiler.last_processed_event = Some(block_position);
+        profiler.last_processed_ts = Some(ts);
+
+        let reported = core.check_snapshot_validity(&profiler, false).await;
+        let stored_after = core
+            .cache
+            .database
+            .as_ref()
+            .expect("cache database must be set")
+            .get_pool_snapshot_validation_state(chain.chain_id, &pool_identifier, 200, 0, 0)
+            .await;
+
+        core.cache.database = None;
+        schema.cleanup().await?;
+
+        // The RPC could not reach the block, so the reported verdict comes from the stored row, and
+        // the stored row is left untouched (a transient RPC failure must not clobber a definitive
+        // verdict).
+        let reported = reported?;
+        let stored_after = stored_after?;
+        if reported != SnapshotValidation::Invalid || stored_after.as_deref() != Some("invalid") {
+            anyhow::bail!(
+                "unexpected validity result: reported={reported:?}, stored_after={stored_after:?}"
             );
         }
 
