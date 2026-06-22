@@ -128,6 +128,7 @@ impl HyperSyncClient {
         config.url = hypersync_url.to_string();
         config.api_token = std::env::var("ENVIO_API_TOKEN")
             .expect("ENVIO_API_TOKEN environment variable must be set");
+
         let client = hypersync_client::Client::new(config)
             .expect("Failed to create HyperSync client - check ENVIO_API_TOKEN is a valid UUID");
 
@@ -149,6 +150,12 @@ impl HyperSyncClient {
 
     /// Processes DEX contract events for a specific block.
     ///
+    /// Spawns a short-lived task that streams the block's swap, mint, and burn events to the data
+    /// client. The query is bounded just past the requested block, so once its events are delivered
+    /// the stream reaches the end of its range (over-reaching the chain tip) and ends. An
+    /// end-of-stream error that arrives after a response is a clean drain (logged at debug); one
+    /// that arrives before any response means the events could not be fetched (logged at error).
+    ///
     /// # Panics
     ///
     /// Panics if the DEX extended configuration cannot be retrieved or if stream creation fails.
@@ -166,18 +173,21 @@ impl HyperSyncClient {
             &mint_event_encoded_signature.as_str(),
             &burn_event_encoded_signature.as_str(),
         ];
+
         let query = Self::construct_contract_events_query(
             block,
             Some(block + 1),
             contract_addresses,
             &topics,
         );
+
         let tx = if let Some(tx) = &self.tx {
             tx.clone()
         } else {
             log::error!("Hypersync client channel should have been initialized");
             return;
         };
+
         let client = self.client.clone();
         let dex_extended =
             get_dex_extended(self.chain.name, dex).expect("Failed to get dex extended");
@@ -191,6 +201,8 @@ impl HyperSyncClient {
                     return;
                 }
             };
+
+            let mut received_response = false;
 
             loop {
                 tokio::select! {
@@ -206,10 +218,16 @@ impl HyperSyncClient {
                         let response = match response {
                             Ok(resp) => resp,
                             Err(e) => {
-                                log::error!("Failed to receive DEX event stream response: {e}");
+                                if received_response {
+                                    log::debug!("DEX event stream drained for block {block}: {e}");
+                                } else {
+                                    log::error!("Failed to receive DEX event stream response: {e}");
+                                }
                                 break;
                             }
                         };
+
+                        received_response = true;
 
                         for batch in response.data.logs {
                             for log in batch {
@@ -274,9 +292,6 @@ impl HyperSyncClient {
                 }
             }
         });
-
-        // Fire-and-forget: task is short-lived (processes one block), errors are logged,
-        // and it responds to cancellation_token for graceful shutdown
     }
 
     /// Creates a stream of contract event logs matching the specified criteria.
