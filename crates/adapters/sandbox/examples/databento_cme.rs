@@ -142,7 +142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
-        .build();
+        .build()?;
 
     let tester = ExecTester::new(tester_config);
 

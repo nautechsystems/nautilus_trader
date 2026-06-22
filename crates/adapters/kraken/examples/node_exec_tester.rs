@@ -135,7 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .open_position_on_start_qty(order_qty.as_decimal())
         // .tob_offset_ticks(0)
         .log_data(false)
-        .build();
+        .build()?;
 
     let tester = ExecTester::new(tester_config);
 

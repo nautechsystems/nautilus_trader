@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // .subscribe_index_prices(true)
         // .subscribe_mark_prices(true)
         // .subscribe_funding_rates(true)
-        .build();
+        .build()?;
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

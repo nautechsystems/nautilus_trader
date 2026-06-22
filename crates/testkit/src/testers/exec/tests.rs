@@ -170,7 +170,8 @@ fn test_config_with_stop_orders(mut config: ExecTesterConfig) {
 fn test_config_with_batch_cancel() {
     let config = ExecTesterConfig::builder()
         .use_batch_cancel_on_stop(true)
-        .build();
+        .build()
+        .unwrap();
     assert!(config.use_batch_cancel_on_stop);
 }
 
@@ -214,7 +215,8 @@ fn test_config_with_position_opening(mut config: ExecTesterConfig) {
 fn test_config_with_close_positions_time_in_force_builder() {
     let config = ExecTesterConfig::builder()
         .close_positions_time_in_force(TimeInForce::Ioc)
-        .build();
+        .build()
+        .unwrap();
 
     assert_eq!(config.close_positions_time_in_force, Some(TimeInForce::Ioc));
 }
@@ -902,7 +904,10 @@ fn test_open_position_zero_quantity_returns_ok(
 
 #[rstest]
 fn test_config_with_enable_brackets() {
-    let config = ExecTesterConfig::builder().enable_brackets(true).build();
+    let config = ExecTesterConfig::builder()
+        .enable_brackets(true)
+        .build()
+        .unwrap();
     assert!(config.enable_brackets);
 }
 
@@ -910,7 +915,8 @@ fn test_config_with_enable_brackets() {
 fn test_config_with_bracket_offset_ticks() {
     let config = ExecTesterConfig::builder()
         .bracket_offset_ticks(1000)
-        .build();
+        .build()
+        .unwrap();
     assert_eq!(config.bracket_offset_ticks, 1000);
 }
 
@@ -918,7 +924,8 @@ fn test_config_with_bracket_offset_ticks() {
 fn test_config_with_test_reject_post_only() {
     let config = ExecTesterConfig::builder()
         .test_reject_post_only(true)
-        .build();
+        .build()
+        .unwrap();
     assert!(config.test_reject_post_only);
 }
 
@@ -926,7 +933,8 @@ fn test_config_with_test_reject_post_only() {
 fn test_config_with_test_reject_reduce_only() {
     let config = ExecTesterConfig::builder()
         .test_reject_reduce_only(true)
-        .build();
+        .build()
+        .unwrap();
     assert!(config.test_reject_reduce_only);
 }
 
@@ -934,13 +942,17 @@ fn test_config_with_test_reject_reduce_only() {
 fn test_config_with_emulation_trigger() {
     let config = ExecTesterConfig::builder()
         .emulation_trigger(TriggerType::LastPrice)
-        .build();
+        .build()
+        .unwrap();
     assert_eq!(config.emulation_trigger, Some(TriggerType::LastPrice));
 }
 
 #[rstest]
 fn test_config_with_use_quote_quantity() {
-    let config = ExecTesterConfig::builder().use_quote_quantity(true).build();
+    let config = ExecTesterConfig::builder()
+        .use_quote_quantity(true)
+        .build()
+        .unwrap();
     assert!(config.use_quote_quantity);
 }
 
@@ -951,7 +963,8 @@ fn test_config_with_order_params() {
     params.insert("key".to_string(), Value::String("value".to_string()));
     let config = ExecTesterConfig::builder()
         .order_params(params.clone())
-        .build();
+        .build()
+        .unwrap();
     assert_eq!(config.order_params, Some(params));
 }
 
@@ -1459,7 +1472,8 @@ fn test_config_new_fields_default_values(config: ExecTesterConfig) {
 fn test_config_with_limit_time_in_force_builder() {
     let config = ExecTesterConfig::builder()
         .limit_time_in_force(TimeInForce::Ioc)
-        .build();
+        .build()
+        .unwrap();
     assert_eq!(config.limit_time_in_force, Some(TimeInForce::Ioc));
 }
 
@@ -1467,7 +1481,8 @@ fn test_config_with_limit_time_in_force_builder() {
 fn test_config_with_stop_time_in_force_builder() {
     let config = ExecTesterConfig::builder()
         .stop_time_in_force(TimeInForce::Day)
-        .build();
+        .build()
+        .unwrap();
     assert_eq!(config.stop_time_in_force, Some(TimeInForce::Day));
 }
 
@@ -1560,7 +1575,10 @@ fn test_config_limit_aggressive_default() {
 
 #[rstest]
 fn test_config_limit_aggressive_builder() {
-    let config = ExecTesterConfig::builder().limit_aggressive(true).build();
+    let config = ExecTesterConfig::builder()
+        .limit_aggressive(true)
+        .build()
+        .unwrap();
     assert!(config.limit_aggressive);
 }
 
@@ -1574,7 +1592,8 @@ fn test_config_test_modify_rejected_default() {
 fn test_config_test_modify_rejected_builder() {
     let config = ExecTesterConfig::builder()
         .test_modify_rejected(true)
-        .build();
+        .build()
+        .unwrap();
     assert!(config.test_modify_rejected);
 }
 
@@ -2865,4 +2884,41 @@ fn test_clamp_passes_through_when_instrument_unbounded(mut config: ExecTesterCon
         buy_price < Price::from("0.0"),
         "expected negative pass-through price, was {buy_price}",
     );
+}
+
+#[rstest]
+fn test_on_start_rejects_bypassed_zero_book_interval_ms(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    // A config that reaches the actor without going through `build()`/`validate()`
+    // (serde or a struct-literal mutation) can carry a zero, which the subscribe
+    // path must reject rather than treat as a default depth/interval.
+    config.instrument_id = instrument.id();
+    config.subscribe_book = true;
+    config.book_interval_ms = 0;
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+
+    let result = DataActor::on_start(&mut tester);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("book_interval_ms"));
+}
+
+#[rstest]
+fn test_on_start_rejects_bypassed_zero_book_depth(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.instrument_id = instrument.id();
+    config.subscribe_book = true;
+    config.book_depth = Some(0);
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+
+    let result = DataActor::on_start(&mut tester);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("book_depth"));
 }

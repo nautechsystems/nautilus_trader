@@ -89,7 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .request_trades(true)
         .request_bars(true)
         .manage_book(true)
-        .build();
+        .build()?;
 
     let tester = DataTester::new(tester_config);
 

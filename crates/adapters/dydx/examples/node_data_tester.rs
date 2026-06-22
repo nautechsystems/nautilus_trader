@@ -19,8 +19,6 @@
 //!
 //! Run with: `cargo run --example dydx-data-tester --package nautilus-dydx --features examples`
 
-use std::num::NonZeroUsize;
-
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_dydx::{
@@ -72,9 +70,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // .subscribe_quotes(true)
         // .subscribe_trades(true)
         .subscribe_book_at_interval(true)
-        .book_interval_ms(NonZeroUsize::new(10).unwrap())
+        .book_interval_ms(10)
         .manage_book(true)
-        .build();
+        .build()?;
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

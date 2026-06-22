@@ -86,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
         .subscribe_instrument_status(true)
         .can_unsubscribe(false)
         .manage_book(true)
-        .build();
+        .build()?;
 
     let tester = DataTester::new(tester_config);
 

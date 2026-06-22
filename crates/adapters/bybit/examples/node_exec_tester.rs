@@ -108,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .log_data(false)
         .open_position_on_start_qty(order_qty.as_decimal())
         .use_post_only(true)
-        .build();
+        .build()?;
 
     let tester = ExecTester::new(tester_config);
 

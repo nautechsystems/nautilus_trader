@@ -147,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .stop_trigger_type(TriggerType::MarkPrice)
         .trailing_offset(Decimal::from(TRAILING_OFFSET_BPS))
         .trailing_offset_type(TrailingOffsetType::BasisPoints)
-        .build();
+        .build()?;
 
     node.add_strategy(ExecTester::new(tester_config))?;
 

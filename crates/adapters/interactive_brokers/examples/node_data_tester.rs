@@ -26,7 +26,7 @@
 //! a locally running TWS or IB Gateway, so no credential environment variables
 //! are required.
 
-use std::{collections::HashSet, num::NonZeroUsize, time::Duration};
+use std::{collections::HashSet, time::Duration};
 
 use nautilus_common::{enums::Environment, live::get_runtime};
 use nautilus_interactive_brokers::{
@@ -159,21 +159,24 @@ fn data_tester_config_for_profile(
             .request_quotes(true)
             .request_trades(true)
             .request_bars(true)
-            .build(),
+            .build()
+            .unwrap(),
         IbDataSpecProfile::UnsupportedSurfaces => builder
             .subscribe_book_depth(true)
             .subscribe_instrument_status(true)
             .subscribe_instrument_close(true)
             .request_book_snapshot(true)
-            .book_depth(NonZeroUsize::new(10).unwrap())
+            .book_depth(10)
             .stats_interval_secs(0)
-            .build(),
+            .build()
+            .unwrap(),
         IbDataSpecProfile::Options => builder
             .subscribe_quotes(true)
             .subscribe_option_greeks(true)
             .request_quotes(true)
             .stats_interval_secs(0)
-            .build(),
+            .build()
+            .unwrap(),
     }
 }
 
@@ -222,7 +225,7 @@ mod tests {
         assert!(config.subscribe_instrument_status);
         assert!(config.subscribe_instrument_close);
         assert!(config.request_book_snapshot);
-        assert_eq!(config.book_depth, NonZeroUsize::new(10));
+        assert_eq!(config.book_depth, Some(10));
     }
 
     #[rstest::rstest]

@@ -23,8 +23,6 @@
 //! - `KRAKEN_API_KEY`.
 //! - `KRAKEN_API_SECRET`.
 
-use std::num::NonZeroUsize;
-
 use nautilus_common::enums::Environment;
 use nautilus_kraken::{
     common::{consts::KRAKEN_CLIENT_ID, enums::KrakenProductType},
@@ -108,10 +106,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // .subscribe_index_prices(subscribe_index_prices)
         // .request_trades(true)
         // .request_bars(subscribe_bars)
-        .book_interval_ms(NonZeroUsize::new(BOOK_INTERVAL_MS).unwrap())
+        .book_interval_ms(BOOK_INTERVAL_MS)
         .subscribe_book_at_interval(true)
         .manage_book(true)
-        .build();
+        .build()?;
 
     let tester = DataTester::new(tester_config);
 

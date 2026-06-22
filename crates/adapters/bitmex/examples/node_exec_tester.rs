@@ -101,7 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .open_position_time_in_force(TimeInForce::Ioc)
         .close_positions_time_in_force(TimeInForce::Ioc)
         .log_data(false)
-        .build();
+        .build()?;
 
     let tester = ExecTester::new(tester_config);
 

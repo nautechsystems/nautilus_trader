@@ -109,7 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .order_qty(order_qty)
         .log_data(false)
         .use_post_only(true)
-        .build();
+        .build()?;
 
     let tester = ExecTester::new(tester_config);
 

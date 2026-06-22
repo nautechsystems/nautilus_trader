@@ -21,8 +21,6 @@
 //!
 //! Uses testnet by default for safety.
 
-use std::num::NonZeroUsize;
-
 use nautilus_binance::{
     common::{
         consts::BINANCE_CLIENT_ID,
@@ -74,10 +72,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .client_id(client_id)
         .instrument_ids(instrument_ids)
         .subscribe_book_at_interval(true)
-        .book_depth(NonZeroUsize::new(20).unwrap())
-        .book_interval_ms(NonZeroUsize::new(10).unwrap())
+        .book_depth(20)
+        .book_interval_ms(10)
         .manage_book(true)
-        .build();
+        .build()?;
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

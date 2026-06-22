@@ -202,25 +202,29 @@ fn exec_tester_config_for_profile(
             .enable_limit_buys(false)
             .enable_limit_sells(false)
             .close_positions_on_stop(true)
-            .build(),
+            .build()
+            .unwrap(),
         IbExecSpecProfile::CancelModify => builder
             .enable_limit_buys(true)
             .enable_limit_sells(true)
             .modify_orders_to_maintain_tob_offset(true)
             .modify_stop_orders_to_maintain_offset(true)
             .use_individual_cancels_on_stop(true)
-            .build(),
+            .build()
+            .unwrap(),
         IbExecSpecProfile::Rejection => builder
             .enable_limit_buys(true)
             .enable_limit_sells(true)
             .test_reject_post_only(true)
-            .build(),
+            .build()
+            .unwrap(),
         IbExecSpecProfile::Options => builder
             .open_position_on_start_qty(order_qty.as_decimal())
             .enable_limit_buys(false)
             .enable_limit_sells(false)
             .close_positions_on_stop(true)
-            .build(),
+            .build()
+            .unwrap(),
         IbExecSpecProfile::UnsupportedFlags => builder
             .open_position_on_start_qty(order_qty.as_decimal())
             .enable_limit_buys(true)
@@ -231,7 +235,8 @@ fn exec_tester_config_for_profile(
             .test_reject_reduce_only(true)
             .use_quote_quantity(true)
             .use_batch_cancel_on_stop(true)
-            .build(),
+            .build()
+            .unwrap(),
     }
 }
 

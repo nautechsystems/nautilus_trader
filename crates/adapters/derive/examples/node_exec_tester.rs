@@ -113,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .open_position_on_first_quote(true)
         .open_position_time_in_force(TimeInForce::Ioc)
         .use_post_only(true)
-        .build();
+        .build()?;
 
     let tester = ExecTester::new(tester_config);
 

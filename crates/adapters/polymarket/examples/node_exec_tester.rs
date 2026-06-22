@@ -129,7 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enable_stop_sells(false)
         .reduce_only_on_stop(false) // Polymarket does not support reduce-only orders
         .log_data(false)
-        .build();
+        .build()?;
 
     let tester = ExecTester::new(tester_config);
 

@@ -147,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .close_positions_on_stop(true)
         .reduce_only_on_stop(false)
         .log_data(false)
-        .build();
+        .build()?;
 
     let tester = ExecTester::new(tester_config);
 

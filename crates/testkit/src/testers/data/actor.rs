@@ -13,12 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::time::Duration;
+use std::{num::NonZeroUsize, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
 use chrono::Duration as ChronoDuration;
 use nautilus_common::{
     actor::{DataActor, DataActorCore},
+    config::ConfigError,
     enums::LogColor,
     log_info, nautilus_actor,
     timer::TimeEvent,
@@ -108,8 +109,17 @@ impl DataActor for DataTester {
                 self.subscribe_book_at_interval(
                     instrument_id,
                     self.config.book_type,
-                    self.config.book_depth,
-                    self.config.book_interval_ms,
+                    self.config
+                        .book_depth
+                        .map(|depth| {
+                            NonZeroUsize::new(depth).ok_or_else(|| {
+                                ConfigError::range("book_depth", "must be positive, was 0")
+                            })
+                        })
+                        .transpose()?,
+                    NonZeroUsize::new(self.config.book_interval_ms).ok_or_else(|| {
+                        ConfigError::range("book_interval_ms", "must be positive, was 0")
+                    })?,
                     client_id,
                     subscribe_params.clone(),
                 );
@@ -182,7 +192,14 @@ impl DataActor for DataTester {
             if self.config.request_book_snapshot {
                 let _ = self.request_book_snapshot(
                     instrument_id,
-                    self.config.book_depth,
+                    self.config
+                        .book_depth
+                        .map(|depth| {
+                            NonZeroUsize::new(depth).ok_or_else(|| {
+                                ConfigError::range("book_depth", "must be positive, was 0")
+                            })
+                        })
+                        .transpose()?,
                     client_id,
                     request_params.clone(),
                 );
@@ -285,7 +302,9 @@ impl DataActor for DataTester {
             if self.config.subscribe_book_at_interval {
                 self.unsubscribe_book_at_interval(
                     instrument_id,
-                    self.config.book_interval_ms,
+                    NonZeroUsize::new(self.config.book_interval_ms).ok_or_else(|| {
+                        ConfigError::range("book_interval_ms", "must be positive, was 0")
+                    })?,
                     client_id,
                     subscribe_params.clone(),
                 );

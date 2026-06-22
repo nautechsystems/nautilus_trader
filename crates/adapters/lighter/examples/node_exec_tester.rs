@@ -123,7 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .cancel_orders_on_stop(true)
         .close_positions_on_stop(true)
         .log_data(false)
-        .build();
+        .build()?;
 
     node.add_strategy(ExecTester::new(tester_config))?;
     node.run().await?;

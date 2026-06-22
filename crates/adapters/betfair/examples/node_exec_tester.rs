@@ -135,7 +135,7 @@ async fn main() -> anyhow::Result<()> {
         .close_positions_on_stop(false)
         .can_unsubscribe(false)
         .log_data(false)
-        .build();
+        .build()?;
 
     let tester = ExecTester::new(tester_config);
 

@@ -13,9 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::num::NonZeroUsize;
+
 use ahash::AHashSet;
 use nautilus_common::{
     actor::{DataActor, DataActorNative},
+    config::ConfigError,
     enums::LogColor,
     log_info, log_warn,
     timer::TimeEvent,
@@ -171,7 +174,9 @@ impl DataActor for ExecTester {
             if self.config.subscribe_book {
                 self.unsubscribe_book_at_interval(
                     instrument_id,
-                    self.config.book_interval_ms,
+                    NonZeroUsize::new(self.config.book_interval_ms).ok_or_else(|| {
+                        ConfigError::range("book_interval_ms", "must be positive, was 0")
+                    })?,
                     client_id,
                     None,
                 );
@@ -316,8 +321,17 @@ impl ExecTester {
             self.subscribe_book_at_interval(
                 instrument_id,
                 self.config.book_type,
-                self.config.book_depth,
-                self.config.book_interval_ms,
+                self.config
+                    .book_depth
+                    .map(|depth| {
+                        NonZeroUsize::new(depth).ok_or_else(|| {
+                            ConfigError::range("book_depth", "must be positive, was 0")
+                        })
+                    })
+                    .transpose()?,
+                NonZeroUsize::new(self.config.book_interval_ms).ok_or_else(|| {
+                    ConfigError::range("book_interval_ms", "must be positive, was 0")
+                })?,
                 client_id,
                 None,
             );

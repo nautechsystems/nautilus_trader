@@ -1380,29 +1380,10 @@ impl Cache {
         self.purge_position(position_id);
     }
 
-    /// Purges the instrument with the `instrument_id` from the cache (if found).
+    /// Purges the instrument with the `instrument_id` from the cache.
     ///
-    /// All cache-owned data keyed by the instrument is removed: the instrument record,
-    /// any synthetic with the same id, order book and own-order-book state, quote/trade
-    /// histories, mark/index/funding price histories, instrument status, bars for any
-    /// `BarType` referencing the instrument, and the `instrument_orders` /
-    /// `instrument_positions` index entries.
-    ///
-    /// For safety, an instrument is prevented from being purged while any associated
-    /// order is non-terminal (anything not in `orders_closed`, including
-    /// initialized, submitted, accepted, emulated, released, or inflight states) or
-    /// any associated position is non-closed.
-    ///
-    /// Active subscriptions and other live data-engine state are not touched here;
-    /// those belong to the data and execution engines.
-    ///
-    /// # Warning
-    ///
-    /// Intended for actors and strategies that have their own lifecycle logic for
-    /// deciding when an instrument is no longer needed. Purging an instrument that any
-    /// other actor, strategy, or engine still relies on may cause incorrect behavior
-    /// (missing instrument lookups, lost market-data history). The caller is
-    /// responsible for ensuring the instrument is no longer in use before purging.
+    /// This refuses to purge when associated orders or positions remain in
+    /// non-terminal state.
     #[pyo3(name = "purge_instrument")]
     fn py_purge_instrument(&mut self, instrument_id: InstrumentId) {
         self.purge_instrument(instrument_id);

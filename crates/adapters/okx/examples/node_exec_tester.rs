@@ -120,7 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // .trailing_offset(Decimal::from(100))
         // .trailing_offset_type(TrailingOffsetType::BasisPoints)
         // .stop_offset_ticks(50)
-        .build();
+        .build()?;
 
     let tester = ExecTester::new(tester_config);
 

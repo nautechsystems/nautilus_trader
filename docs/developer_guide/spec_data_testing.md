@@ -215,8 +215,8 @@ DataTesterConfig(
 DataTesterConfig::new(client_id, vec![instrument_id])
     .with_subscribe_book_at_interval(true)
     .with_book_type(BookType::L2_MBP)
-    .with_book_depth(Some(NonZeroUsize::new(10).unwrap()))
-    .with_book_interval_ms(NonZeroUsize::new(1000).unwrap())
+    .with_book_depth(Some(10))
+    .with_book_interval_ms(1000)
 ```
 
 ### TC-D12: Subscribe book depth
