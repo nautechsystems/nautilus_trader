@@ -115,7 +115,7 @@ use nautilus_model::{
 };
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
 use nautilus_trading::{
-    ExecutionAlgorithm,
+    ExecutionAlgorithm, ExecutionAlgorithmNative,
     strategy::{Strategy, StrategyNative},
 };
 use tabled::{Table, Tabled, settings::Style};
@@ -1709,7 +1709,7 @@ impl LiveNode {
     /// - An execution algorithm with the same ID is already registered.
     pub fn add_exec_algorithm<T>(&mut self, exec_algorithm: T) -> anyhow::Result<()>
     where
-        T: ExecutionAlgorithm + DataActorNative + Component + Debug + 'static,
+        T: ExecutionAlgorithm + ExecutionAlgorithmNative + Component + Debug + 'static,
     {
         if self.state() != NodeState::Idle {
             anyhow::bail!(

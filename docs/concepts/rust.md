@@ -216,17 +216,20 @@ The `OrderApi` (accessed via `self.order()`) builds orders and order lists:
 
 ### Core wiring macros
 
-Rust actors and strategies keep their runtime core as a struct field. The
-macros tell the traits where that field lives.
+Rust actors, strategies, and execution algorithms keep their runtime core as a
+struct field. The macros tell the traits where that field lives.
 
-| Macro                      | Core field      | Generates                             |
-|----------------------------|-----------------|---------------------------------------|
-| `nautilus_actor!(Type)`    | `DataActorCore` | Native runtime wiring.                |
-| `nautilus_strategy!(Type)` | `StrategyCore`  | Native runtime wiring and `Strategy`. |
+| Macro                                          | Core field               | Generates                       |
+|------------------------------------------------|--------------------------|---------------------------------|
+| `nautilus_actor!(Type)`                        | `DataActorCore`          | Runtime wiring.                 |
+| `nautilus_strategy!(Type)`                     | `StrategyCore`           | Runtime wiring and `Strategy`.  |
+| `nautilus_execution_algorithm!(Type, { ... })` | `ExecutionAlgorithmCore` | Runtime wiring and algorithm.   |
 
-Both macros expect a field named `core`; pass a field name as the second
+The macros expect a field named `core`; pass a field name as the second
 argument when needed. They do not make the actor, strategy, or `StrategyCore`
 deref to runtime internals.
+The execution algorithm macro takes an `on_order()` implementation block because
+that method defines the algorithm's required order handling.
 Normal code uses facade methods such as:
 
 - `actor_id()`
@@ -253,9 +256,10 @@ Use facade methods by default:
 - `order()`
 - `portfolio()`
 
-`DataActorNative` and `StrategyNative` are for native-only access below that
-facade. This section documents host integration and explicit latency-sensitive
-native Rust code, not the portable authoring path.
+`DataActorNative`, `StrategyNative`, and `ExecutionAlgorithmNative` are for
+native-only access below that facade. This section documents host integration
+and explicit latency-sensitive native Rust code, not the portable authoring
+path.
 
 | Authoring path            | Native traits?   | Normal API                          |
 |---------------------------|------------------|-------------------------------------|
@@ -268,10 +272,11 @@ Native traits expose borrowed core state, `Rc<RefCell<_>>`, and runtime
 references. Use them when native Rust code intentionally accepts those borrow
 rules for an explicit latency-sensitive path or host integration. Engine,
 runtime, registration, PyO3, testkit, and plug-in host code can import
-`DataActorNative` or `StrategyNative` when they need actor-core or
-strategy-core access. Do not use them in ordinary portable actor or strategy
-logic, Python-authored components, or plug-in-compatible code, because those
-types do not cross those boundaries.
+`DataActorNative`, `StrategyNative`, or `ExecutionAlgorithmNative` when they
+need actor-core, strategy-core, or execution-algorithm-core access. Do not use
+them in ordinary portable actor, strategy, or execution algorithm logic,
+Python-authored components, or plug-in-compatible code, because those types do
+not cross those boundaries.
 
 Choose the smallest native handle and keep each borrow scoped. Use `order()`
 for normal strategy order construction. Reach for
@@ -297,6 +302,13 @@ for normal strategy order construction. Reach for
 | `order_factory()`     | `RefMut<'_, OrderFactory>`   | Need raw mutable factory borrow.  |
 | `order_factory_rc()`  | `Rc<RefCell<OrderFactory>>`  | Store or pass the factory.        |
 | `portfolio_rc()`      | `Rc<RefCell<Portfolio>>`     | Store or pass the portfolio.      |
+
+#### `ExecutionAlgorithmNative` methods
+
+| Native method               | Return shape                   | Use when                              |
+|-----------------------------|--------------------------------|---------------------------------------|
+| `exec_algorithm_core()`     | `&ExecutionAlgorithmCore`      | Read execution algorithm internals.   |
+| `exec_algorithm_core_mut()` | `&mut ExecutionAlgorithmCore`  | Mutate execution algorithm internals. |
 
 For a step-by-step walkthrough, see the
 [Write a Strategy (Rust)](../how_to/write_rust_strategy.md) how-to guide.

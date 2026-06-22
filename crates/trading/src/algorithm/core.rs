@@ -58,8 +58,10 @@ pub struct StrategyEventHandlers {
 /// spawn ID tracking and strategy subscriptions. It wraps a [`DataActorCore`]
 /// to provide data actor capabilities.
 ///
-/// User algorithms should hold this as a member and use the `nautilus_actor!`
-/// macro to provide the data actor core accessors.
+/// User algorithms should hold this as a member and use the
+/// `nautilus_execution_algorithm!` macro to provide native runtime wiring.
+/// Direct access to this core is native runtime wiring and belongs behind
+/// [`ExecutionAlgorithmNative`].
 pub struct ExecutionAlgorithmCore {
     /// The underlying data actor core.
     pub actor: DataActorCore,
@@ -75,6 +77,24 @@ pub struct ExecutionAlgorithmCore {
     pending_spawn_reductions: AHashMap<ClientOrderId, Quantity>,
     /// Maps strategies to their event handlers for cleanup on reset.
     strategy_event_handlers: IndexMap<StrategyId, StrategyEventHandlers>,
+}
+
+/// Native-only access to internal execution algorithm runtime state.
+///
+/// Use this trait from engine, runtime, testkit, or opt-in native algorithm
+/// code when direct access to host runtime objects matters for an explicit
+/// latency-sensitive path, or when host integration code needs access below
+/// the facade API.
+///
+/// Do not import this trait in code intended to run through Python or the
+/// plug-in authoring surface. Native borrows, `Rc<RefCell<_>>`, and core
+/// references do not cross those boundaries.
+pub trait ExecutionAlgorithmNative: DataActorNative {
+    /// Returns the execution algorithm core.
+    fn exec_algorithm_core(&self) -> &ExecutionAlgorithmCore;
+
+    /// Returns the mutable execution algorithm core.
+    fn exec_algorithm_core_mut(&mut self) -> &mut ExecutionAlgorithmCore;
 }
 
 impl Debug for ExecutionAlgorithmCore {
@@ -260,6 +280,26 @@ impl Deref for ExecutionAlgorithmCore {
 impl DerefMut for ExecutionAlgorithmCore {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.actor
+    }
+}
+
+impl DataActorNative for ExecutionAlgorithmCore {
+    fn core(&self) -> &DataActorCore {
+        &self.actor
+    }
+
+    fn core_mut(&mut self) -> &mut DataActorCore {
+        &mut self.actor
+    }
+}
+
+impl ExecutionAlgorithmNative for ExecutionAlgorithmCore {
+    fn exec_algorithm_core(&self) -> &ExecutionAlgorithmCore {
+        self
+    }
+
+    fn exec_algorithm_core_mut(&mut self) -> &mut ExecutionAlgorithmCore {
+        self
     }
 }
 

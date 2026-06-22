@@ -28,6 +28,10 @@
 /// `actor_id()`, `trader_id()`, `config()`, `clock()`, `cache()`, and the
 /// subscription methods.
 ///
+/// This macro only wires the data actor core. Components with a wider native
+/// core, such as execution algorithms, keep their component-specific core
+/// access behind their own native trait.
+///
 /// # Examples
 ///
 /// ```ignore

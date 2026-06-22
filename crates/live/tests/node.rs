@@ -62,7 +62,8 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Price, Quantity},
 };
 use nautilus_trading::{
-    ExecutionAlgorithm, ExecutionAlgorithmConfig, ExecutionAlgorithmCore, nautilus_strategy,
+    ExecutionAlgorithmConfig, ExecutionAlgorithmCore, nautilus_execution_algorithm,
+    nautilus_strategy,
     strategy::{StrategyConfig, StrategyCore},
 };
 use rstest::rstest;
@@ -141,17 +142,11 @@ impl TestExecAlgorithm {
 
 impl DataActor for TestExecAlgorithm {}
 
-nautilus_actor!(TestExecAlgorithm);
-
-impl ExecutionAlgorithm for TestExecAlgorithm {
-    fn core_mut(&mut self) -> &mut ExecutionAlgorithmCore {
-        &mut self.core
-    }
-
+nautilus_execution_algorithm!(TestExecAlgorithm, {
     fn on_order(&mut self, _order: OrderAny) -> anyhow::Result<()> {
         Ok(())
     }
-}
+});
 
 #[rstest]
 fn test_handle_initial_state() {

@@ -59,7 +59,7 @@ use nautilus_model::{
 };
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
 use nautilus_trading::{
-    ExecutionAlgorithm,
+    ExecutionAlgorithm, ExecutionAlgorithmNative,
     strategy::{Strategy, StrategyNative},
 };
 
@@ -553,7 +553,7 @@ impl BacktestEngine {
     /// Returns an error if the algorithm is already registered or the trader is running.
     pub fn add_exec_algorithm<T>(&mut self, exec_algorithm: T) -> anyhow::Result<()>
     where
-        T: ExecutionAlgorithm + DataActorNative + Component + Debug + 'static,
+        T: ExecutionAlgorithm + ExecutionAlgorithmNative + Component + Debug + 'static,
     {
         self.kernel
             .trader
@@ -569,7 +569,7 @@ impl BacktestEngine {
     /// registered.
     pub fn add_exec_algorithms<T>(&mut self, exec_algorithms: Vec<T>) -> anyhow::Result<()>
     where
-        T: ExecutionAlgorithm + DataActorNative + Component + Debug + 'static,
+        T: ExecutionAlgorithm + ExecutionAlgorithmNative + Component + Debug + 'static,
     {
         for exec_algorithm in exec_algorithms {
             self.add_exec_algorithm(exec_algorithm)?;

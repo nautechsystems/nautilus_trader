@@ -109,7 +109,7 @@ pub mod strategy;
 pub mod examples;
 
 pub use algorithm::{
-    ExecutionAlgorithm, ExecutionAlgorithmConfig, ExecutionAlgorithmCore,
+    ExecutionAlgorithm, ExecutionAlgorithmConfig, ExecutionAlgorithmCore, ExecutionAlgorithmNative,
     ImportableExecAlgorithmConfig, TwapAlgorithm, TwapAlgorithmConfig,
 };
 pub use strategy::{

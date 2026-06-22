@@ -48,7 +48,7 @@ use nautilus_model::{
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_trading::{
-    ExecutionAlgorithm,
+    ExecutionAlgorithm, ExecutionAlgorithmNative,
     strategy::{Strategy, StrategyNative},
 };
 use ustr::Ustr;
@@ -660,7 +660,7 @@ impl Trader {
     /// - An execution algorithm with the same ID is already registered.
     pub fn add_exec_algorithm<T>(&mut self, mut exec_algorithm: T) -> anyhow::Result<()>
     where
-        T: ExecutionAlgorithm + DataActorNative + Component + Debug + 'static,
+        T: ExecutionAlgorithm + ExecutionAlgorithmNative + Component + Debug + 'static,
     {
         self.validate_exec_algorithm_registration()?;
 
@@ -1232,8 +1232,8 @@ mod tests {
     use nautilus_portfolio::portfolio::Portfolio;
     use nautilus_risk::engine::{RiskEngine, config::RiskEngineConfig};
     use nautilus_trading::{
-        ExecutionAlgorithm as ExecutionAlgorithmTrait, ExecutionAlgorithmConfig,
-        ExecutionAlgorithmCore, StrategyNative, nautilus_strategy,
+        ExecutionAlgorithmConfig, ExecutionAlgorithmCore, StrategyNative,
+        nautilus_execution_algorithm, nautilus_strategy,
         strategy::{config::StrategyConfig, core::StrategyCore},
     };
     use rstest::rstest;
@@ -1274,17 +1274,11 @@ mod tests {
 
     impl DataActor for TestExecAlgorithm {}
 
-    nautilus_actor!(TestExecAlgorithm);
-
-    impl ExecutionAlgorithmTrait for TestExecAlgorithm {
-        fn core_mut(&mut self) -> &mut ExecutionAlgorithmCore {
-            &mut self.core
-        }
-
+    nautilus_execution_algorithm!(TestExecAlgorithm, {
         fn on_order(&mut self, _order: OrderAny) -> anyhow::Result<()> {
             Ok(())
         }
-    }
+    });
 
     // Simple Strategy wrapper for testing
     #[derive(Debug)]

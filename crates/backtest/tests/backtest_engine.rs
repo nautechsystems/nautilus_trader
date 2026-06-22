@@ -65,8 +65,8 @@ use nautilus_model::{
 };
 use nautilus_system::trader::Trader;
 use nautilus_trading::{
-    ExecutionAlgorithm as ExecutionAlgorithmTrait, ExecutionAlgorithmConfig,
-    ExecutionAlgorithmCore, Strategy, StrategyConfig, StrategyCore, nautilus_strategy,
+    ExecutionAlgorithmConfig, ExecutionAlgorithmCore, Strategy, StrategyConfig, StrategyCore,
+    nautilus_execution_algorithm, nautilus_strategy,
 };
 use rstest::*;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
@@ -140,8 +140,6 @@ impl EmptyExecAlgorithm {
     }
 }
 
-nautilus_actor!(EmptyExecAlgorithm);
-
 impl Debug for EmptyExecAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(EmptyExecAlgorithm)).finish()
@@ -150,15 +148,11 @@ impl Debug for EmptyExecAlgorithm {
 
 impl DataActor for EmptyExecAlgorithm {}
 
-impl ExecutionAlgorithmTrait for EmptyExecAlgorithm {
-    fn core_mut(&mut self) -> &mut ExecutionAlgorithmCore {
-        &mut self.core
-    }
-
+nautilus_execution_algorithm!(EmptyExecAlgorithm, {
     fn on_order(&mut self, _order: OrderAny) -> anyhow::Result<()> {
         Ok(())
     }
-}
+});
 
 struct EmaCross {
     core: StrategyCore,

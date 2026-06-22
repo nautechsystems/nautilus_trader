@@ -39,7 +39,7 @@ pub mod config;
 pub mod core;
 pub mod twap;
 
-pub use core::{ExecutionAlgorithmCore, StrategyEventHandlers};
+pub use core::{ExecutionAlgorithmCore, ExecutionAlgorithmNative, StrategyEventHandlers};
 
 pub use config::{ExecutionAlgorithmConfig, ImportableExecAlgorithmConfig};
 use nautilus_common::{
@@ -82,16 +82,19 @@ use ustr::Ustr;
 ///
 /// # Implementation
 ///
-/// User algorithms should implement the required methods and hold an
-/// [`ExecutionAlgorithmCore`] member. Use the `nautilus_actor!` macro to
-/// provide the data actor core accessors.
+/// Use the `nautilus_execution_algorithm!` macro to generate the native runtime
+/// wiring and `ExecutionAlgorithm` implementation, including the required
+/// `on_order()` method. Normal execution algorithm logic should call facade
+/// methods such as `submit_order()`, `spawn_market()`, and
+/// `unsubscribe_all_strategy_events()`. Native runtime code that needs the
+/// internal core should use [`ExecutionAlgorithmNative`].
 pub trait ExecutionAlgorithm: DataActor {
-    /// Provides mutable access to the internal `ExecutionAlgorithmCore`.
-    fn core_mut(&mut self) -> &mut ExecutionAlgorithmCore;
-
     /// Returns the execution algorithm ID.
-    fn id(&mut self) -> ExecAlgorithmId {
-        ExecutionAlgorithm::core_mut(self).exec_algorithm_id
+    fn id(&self) -> ExecAlgorithmId
+    where
+        Self: ExecutionAlgorithmNative,
+    {
+        ExecutionAlgorithmNative::exec_algorithm_core(self).exec_algorithm_id
     }
 
     /// Executes a trading command.
@@ -106,10 +109,10 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Returns an error if command handling fails.
     fn execute(&mut self, command: TradingCommand) -> anyhow::Result<()>
     where
-        Self: DataActorNative,
+        Self: ExecutionAlgorithmNative,
         Self: 'static + std::fmt::Debug + Sized,
     {
-        let core = ExecutionAlgorithm::core_mut(self);
+        let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
         if core.config.log_commands {
             let id = &core.actor.actor_id;
             log::info!("{id} {RECV}{CMD} {command:?}");
@@ -122,13 +125,14 @@ pub trait ExecutionAlgorithm: DataActor {
         match command {
             TradingCommand::SubmitOrder(cmd) => {
                 self.subscribe_to_strategy_events(cmd.strategy_id);
-                let order = ExecutionAlgorithm::core_mut(self).get_order(&cmd.client_order_id)?;
+                let order = ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
+                    .get_order(&cmd.client_order_id)?;
                 self.on_order(order)
             }
             TradingCommand::SubmitOrderList(cmd) => {
                 self.subscribe_to_strategy_events(cmd.strategy_id);
-                let orders =
-                    ExecutionAlgorithm::core_mut(self).get_orders_for_list(&cmd.order_list)?;
+                let orders = ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
+                    .get_orders_for_list(&cmd.order_list)?;
                 self.on_order_list(cmd.order_list, orders)
             }
             TradingCommand::CancelOrder(cmd) => self.handle_cancel_order(cmd),
@@ -175,9 +179,12 @@ pub trait ExecutionAlgorithm: DataActor {
     /// # Errors
     ///
     /// Returns an error if cancellation fails.
-    fn handle_cancel_order(&mut self, command: CancelOrder) -> anyhow::Result<()> {
+    fn handle_cancel_order(&mut self, command: CancelOrder) -> anyhow::Result<()>
+    where
+        Self: ExecutionAlgorithmNative,
+    {
         let (order, is_pending_cancel) = {
-            let cache = ExecutionAlgorithm::core_mut(self).cache_ref();
+            let cache = ExecutionAlgorithmNative::exec_algorithm_core_mut(self).cache_ref();
 
             let Some(order) = cache.order(&command.client_order_id) else {
                 log::warn!(
@@ -203,7 +210,7 @@ pub trait ExecutionAlgorithm: DataActor {
         let event = OrderEventAny::Canceled(self.generate_order_canceled(&order));
 
         let order = {
-            let cache_rc = ExecutionAlgorithm::core_mut(self).cache_rc();
+            let cache_rc = ExecutionAlgorithmNative::exec_algorithm_core_mut(self).cache_rc();
             let mut cache = cache_rc.borrow_mut();
             match cache.update_order(&event) {
                 Ok(order) => order,
@@ -227,8 +234,11 @@ pub trait ExecutionAlgorithm: DataActor {
     }
 
     /// Generates an `OrderCanceled` event for an order.
-    fn generate_order_canceled(&mut self, order: &OrderAny) -> OrderCanceled {
-        let ts_now = ExecutionAlgorithm::core_mut(self)
+    fn generate_order_canceled(&mut self, order: &OrderAny) -> OrderCanceled
+    where
+        Self: ExecutionAlgorithmNative,
+    {
+        let ts_now = ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
             .clock_mut()
             .timestamp_ns();
 
@@ -247,8 +257,11 @@ pub trait ExecutionAlgorithm: DataActor {
     }
 
     /// Generates an `OrderPendingUpdate` event for an order.
-    fn generate_order_pending_update(&mut self, order: &OrderAny) -> OrderPendingUpdate {
-        let ts_now = ExecutionAlgorithm::core_mut(self)
+    fn generate_order_pending_update(&mut self, order: &OrderAny) -> OrderPendingUpdate
+    where
+        Self: ExecutionAlgorithmNative,
+    {
+        let ts_now = ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
             .clock_mut()
             .timestamp_ns();
 
@@ -269,8 +282,11 @@ pub trait ExecutionAlgorithm: DataActor {
     }
 
     /// Generates an `OrderPendingCancel` event for an order.
-    fn generate_order_pending_cancel(&mut self, order: &OrderAny) -> OrderPendingCancel {
-        let ts_now = ExecutionAlgorithm::core_mut(self)
+    fn generate_order_pending_cancel(&mut self, order: &OrderAny) -> OrderPendingCancel
+    where
+        Self: ExecutionAlgorithmNative,
+    {
+        let ts_now = ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
             .clock_mut()
             .timestamp_ns();
 
@@ -310,16 +326,19 @@ pub trait ExecutionAlgorithm: DataActor {
         reduce_only: bool,
         tags: Option<Vec<Ustr>>,
         reduce_primary: bool,
-    ) -> MarketOrder {
+    ) -> MarketOrder
+    where
+        Self: ExecutionAlgorithmNative,
+    {
         // Generate spawn ID first so we can track the reduction
-        let core = ExecutionAlgorithm::core_mut(self);
+        let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
         let client_order_id = core.spawn_client_order_id(&primary.client_order_id());
         let ts_init = core.clock_mut().timestamp_ns();
         let exec_algorithm_id = core.exec_algorithm_id;
 
         if reduce_primary {
             self.reduce_primary_order(primary, quantity);
-            ExecutionAlgorithm::core_mut(self)
+            ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
                 .track_pending_spawn_reduction(client_order_id, quantity);
         }
 
@@ -372,16 +391,19 @@ pub trait ExecutionAlgorithm: DataActor {
         emulation_trigger: Option<TriggerType>,
         tags: Option<Vec<Ustr>>,
         reduce_primary: bool,
-    ) -> LimitOrder {
+    ) -> LimitOrder
+    where
+        Self: ExecutionAlgorithmNative,
+    {
         // Generate spawn ID first so we can track the reduction
-        let core = ExecutionAlgorithm::core_mut(self);
+        let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
         let client_order_id = core.spawn_client_order_id(&primary.client_order_id());
         let ts_init = core.clock_mut().timestamp_ns();
         let exec_algorithm_id = core.exec_algorithm_id;
 
         if reduce_primary {
             self.reduce_primary_order(primary, quantity);
-            ExecutionAlgorithm::core_mut(self)
+            ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
                 .track_pending_spawn_reduction(client_order_id, quantity);
         }
 
@@ -438,16 +460,19 @@ pub trait ExecutionAlgorithm: DataActor {
         emulation_trigger: Option<TriggerType>,
         tags: Option<Vec<Ustr>>,
         reduce_primary: bool,
-    ) -> MarketToLimitOrder {
+    ) -> MarketToLimitOrder
+    where
+        Self: ExecutionAlgorithmNative,
+    {
         // Generate spawn ID first so we can track the reduction
-        let core = ExecutionAlgorithm::core_mut(self);
+        let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
         let client_order_id = core.spawn_client_order_id(&primary.client_order_id());
         let ts_init = core.clock_mut().timestamp_ns();
         let exec_algorithm_id = core.exec_algorithm_id;
 
         if reduce_primary {
             self.reduce_primary_order(primary, quantity);
-            ExecutionAlgorithm::core_mut(self)
+            ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
                 .track_pending_spawn_reduction(client_order_id, quantity);
         }
 
@@ -491,7 +516,10 @@ pub trait ExecutionAlgorithm: DataActor {
     /// # Panics
     ///
     /// Panics if `spawn_qty` exceeds the primary order's `leaves_qty`.
-    fn reduce_primary_order(&mut self, primary: &mut OrderAny, spawn_qty: Quantity) {
+    fn reduce_primary_order(&mut self, primary: &mut OrderAny, spawn_qty: Quantity)
+    where
+        Self: ExecutionAlgorithmNative,
+    {
         let leaves_qty = primary.leaves_qty();
         assert!(
             leaves_qty >= spawn_qty,
@@ -501,7 +529,7 @@ pub trait ExecutionAlgorithm: DataActor {
         let primary_qty = primary.quantity();
         let new_qty = Quantity::from_raw(primary_qty.raw - spawn_qty.raw, primary_qty.precision);
 
-        let core = ExecutionAlgorithm::core_mut(self);
+        let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
         let ts_now = core.clock_mut().timestamp_ns();
 
         let updated = OrderUpdated::new(
@@ -540,13 +568,16 @@ pub trait ExecutionAlgorithm: DataActor {
     /// This is called when a spawned order fails before acceptance. The quantity
     /// that was deducted from the primary order is restored (up to the spawned
     /// order's `leaves_qty` to handle partial fills).
-    fn restore_primary_order_quantity(&mut self, order: &OrderAny) {
+    fn restore_primary_order_quantity(&mut self, order: &OrderAny)
+    where
+        Self: ExecutionAlgorithmNative,
+    {
         let Some(exec_spawn_id) = order.exec_spawn_id() else {
             return;
         };
 
         let reduction_qty = {
-            let core = ExecutionAlgorithm::core_mut(self);
+            let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
             core.take_pending_spawn_reduction(&order.client_order_id())
         };
 
@@ -555,7 +586,7 @@ pub trait ExecutionAlgorithm: DataActor {
         };
 
         let primary = {
-            let cache = ExecutionAlgorithm::core_mut(self).cache_ref();
+            let cache = ExecutionAlgorithmNative::exec_algorithm_core_mut(self).cache_ref();
             cache.order(&exec_spawn_id).map(|o| o.clone())
         };
 
@@ -577,7 +608,7 @@ pub trait ExecutionAlgorithm: DataActor {
             primary.quantity().precision,
         );
 
-        let core = ExecutionAlgorithm::core_mut(self);
+        let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
         let ts_now = core.clock_mut().timestamp_ns();
 
         let updated = OrderUpdated::new(
@@ -632,8 +663,11 @@ pub trait ExecutionAlgorithm: DataActor {
         order: OrderAny,
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
-    ) -> anyhow::Result<()> {
-        let core = ExecutionAlgorithm::core_mut(self);
+    ) -> anyhow::Result<()>
+    where
+        Self: ExecutionAlgorithmNative,
+    {
+        let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
         let ts_init = core.clock_mut().timestamp_ns();
@@ -696,7 +730,10 @@ pub trait ExecutionAlgorithm: DataActor {
         price: Option<Price>,
         trigger_price: Option<Price>,
         client_id: Option<ClientId>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<()>
+    where
+        Self: ExecutionAlgorithmNative,
+    {
         let qty_changing = quantity.is_some_and(|q| q != order.quantity());
         let price_changing = price.is_some() && price != order.price();
         let trigger_changing = trigger_price.is_some() && trigger_price != order.trigger_price();
@@ -718,7 +755,7 @@ pub trait ExecutionAlgorithm: DataActor {
             return Ok(());
         }
 
-        let core = ExecutionAlgorithm::core_mut(self);
+        let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
         let trader_id = registered_trader_id(core)?;
         let strategy_id = order.strategy_id();
 
@@ -728,7 +765,7 @@ pub trait ExecutionAlgorithm: DataActor {
             let event = OrderEventAny::PendingUpdate(event);
 
             {
-                let cache_rc = ExecutionAlgorithm::core_mut(self).cache_rc();
+                let cache_rc = ExecutionAlgorithmNative::exec_algorithm_core_mut(self).cache_rc();
                 let mut cache = cache_rc.borrow_mut();
                 match cache.update_order(&event) {
                     Ok(updated) => *order = updated,
@@ -749,7 +786,7 @@ pub trait ExecutionAlgorithm: DataActor {
             msgbus::publish_order_event(topic.into(), &event);
         }
 
-        let ts_init = ExecutionAlgorithm::core_mut(self)
+        let ts_init = ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
             .clock_mut()
             .timestamp_ns();
         let command = ModifyOrder::new(
@@ -768,8 +805,13 @@ pub trait ExecutionAlgorithm: DataActor {
             None, // correlation_id
         );
 
-        if ExecutionAlgorithm::core_mut(self).config.log_commands {
-            let id = &ExecutionAlgorithm::core_mut(self).actor.actor_id;
+        if ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
+            .config
+            .log_commands
+        {
+            let id = &ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
+                .actor
+                .actor_id;
             log::info!("{id} {SEND}{CMD} {command:?}");
         }
 
@@ -809,7 +851,10 @@ pub trait ExecutionAlgorithm: DataActor {
         quantity: Option<Quantity>,
         price: Option<Price>,
         trigger_price: Option<Price>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<()>
+    where
+        Self: ExecutionAlgorithmNative,
+    {
         // Validate order status
         let status = order.status();
         if status != OrderStatus::Initialized && status != OrderStatus::Released {
@@ -842,7 +887,7 @@ pub trait ExecutionAlgorithm: DataActor {
             anyhow::bail!("Cannot modify order in place: no parameters differ from current values");
         }
 
-        let core = ExecutionAlgorithm::core_mut(self);
+        let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
         let ts_now = core.clock_mut().timestamp_ns();
 
         let updated = OrderUpdated::new(
@@ -885,7 +930,10 @@ pub trait ExecutionAlgorithm: DataActor {
         &mut self,
         order: &mut OrderAny,
         client_id: Option<ClientId>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<()>
+    where
+        Self: ExecutionAlgorithmNative,
+    {
         if order.is_closed() || order.is_pending_cancel() {
             log::warn!(
                 "Cannot cancel order: state is {:?}, {order:?}",
@@ -894,7 +942,7 @@ pub trait ExecutionAlgorithm: DataActor {
             return Ok(());
         }
 
-        let core = ExecutionAlgorithm::core_mut(self);
+        let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
         let trader_id = registered_trader_id(core)?;
         let strategy_id = order.strategy_id();
 
@@ -904,7 +952,7 @@ pub trait ExecutionAlgorithm: DataActor {
             let event = OrderEventAny::PendingCancel(event);
 
             {
-                let cache_rc = ExecutionAlgorithm::core_mut(self).cache_rc();
+                let cache_rc = ExecutionAlgorithmNative::exec_algorithm_core_mut(self).cache_rc();
                 let mut cache = cache_rc.borrow_mut();
                 match cache.update_order(&event) {
                     Ok(updated) => *order = updated,
@@ -925,7 +973,7 @@ pub trait ExecutionAlgorithm: DataActor {
             msgbus::publish_order_event(topic.into(), &event);
         }
 
-        let ts_init = ExecutionAlgorithm::core_mut(self)
+        let ts_init = ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
             .clock_mut()
             .timestamp_ns();
         let command = CancelOrder::new(
@@ -941,8 +989,13 @@ pub trait ExecutionAlgorithm: DataActor {
             None, // correlation_id
         );
 
-        if ExecutionAlgorithm::core_mut(self).config.log_commands {
-            let id = &ExecutionAlgorithm::core_mut(self).actor.actor_id;
+        if ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
+            .config
+            .log_commands
+        {
+            let id = &ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
+                .actor
+                .actor_id;
             log::info!("{id} {SEND}{CMD} {command:?}");
         }
 
@@ -970,10 +1023,10 @@ pub trait ExecutionAlgorithm: DataActor {
     /// This is called automatically when the first order is received from a strategy.
     fn subscribe_to_strategy_events(&mut self, strategy_id: StrategyId)
     where
-        Self: DataActorNative,
+        Self: ExecutionAlgorithmNative,
         Self: 'static + std::fmt::Debug + Sized,
     {
-        let core = ExecutionAlgorithm::core_mut(self);
+        let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
         if core.is_strategy_subscribed(&strategy_id) {
             return;
         }
@@ -1022,24 +1075,34 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Unsubscribes from all strategy event handlers.
     ///
     /// This should be called before reset to properly clean up msgbus subscriptions.
-    fn unsubscribe_all_strategy_events(&mut self) {
-        let handlers = ExecutionAlgorithm::core_mut(self).take_strategy_event_handlers();
+    fn unsubscribe_all_strategy_events(&mut self)
+    where
+        Self: ExecutionAlgorithmNative,
+    {
+        let handlers =
+            ExecutionAlgorithmNative::exec_algorithm_core_mut(self).take_strategy_event_handlers();
+
         for (strategy_id, h) in handlers {
             msgbus::unsubscribe_order_events(h.order_topic.into(), &h.order_handler);
             msgbus::unsubscribe_position_events(h.position_topic.into(), &h.position_handler);
             log::info!("Unsubscribed from events for strategy {strategy_id}");
         }
-        ExecutionAlgorithm::core_mut(self).clear_subscribed_strategies();
+        ExecutionAlgorithmNative::exec_algorithm_core_mut(self).clear_subscribed_strategies();
     }
 
     /// Handles an order event, filtering for algorithm-owned orders.
-    fn handle_order_event(&mut self, event: OrderEventAny) {
-        if ExecutionAlgorithm::core_mut(self).state() != ComponentState::Running {
+    fn handle_order_event(&mut self, event: OrderEventAny)
+    where
+        Self: ExecutionAlgorithmNative,
+    {
+        if ExecutionAlgorithmNative::exec_algorithm_core_mut(self).state()
+            != ComponentState::Running
+        {
             return;
         }
 
         let order = {
-            let cache = ExecutionAlgorithm::core_mut(self).cache_ref();
+            let cache = ExecutionAlgorithmNative::exec_algorithm_core_mut(self).cache_ref();
             cache.order(&event.client_order_id()).map(|o| o.clone())
         };
 
@@ -1056,7 +1119,7 @@ pub trait ExecutionAlgorithm: DataActor {
         }
 
         {
-            let core = ExecutionAlgorithm::core_mut(self);
+            let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
             if core.config.log_events {
                 let id = &core.actor.actor_id;
                 log::info!("{id} {RECV}{EVT} {event}");
@@ -1078,17 +1141,17 @@ pub trait ExecutionAlgorithm: DataActor {
             }
             OrderEventAny::Accepted(e) => {
                 // Commit reduction - order accepted by venue
-                ExecutionAlgorithm::core_mut(self)
+                ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
                     .take_pending_spawn_reduction(&order.client_order_id());
                 self.on_order_accepted(*e);
             }
             OrderEventAny::Canceled(e) => {
-                ExecutionAlgorithm::core_mut(self)
+                ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
                     .take_pending_spawn_reduction(&order.client_order_id());
                 self.on_algo_order_canceled(*e);
             }
             OrderEventAny::Expired(e) => {
-                ExecutionAlgorithm::core_mut(self)
+                ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
                     .take_pending_spawn_reduction(&order.client_order_id());
                 self.on_order_expired(*e);
             }
@@ -1105,13 +1168,18 @@ pub trait ExecutionAlgorithm: DataActor {
     }
 
     /// Handles a position event.
-    fn handle_position_event(&mut self, event: PositionEvent) {
-        if ExecutionAlgorithm::core_mut(self).state() != ComponentState::Running {
+    fn handle_position_event(&mut self, event: PositionEvent)
+    where
+        Self: ExecutionAlgorithmNative,
+    {
+        if ExecutionAlgorithmNative::exec_algorithm_core_mut(self).state()
+            != ComponentState::Running
+        {
             return;
         }
 
         {
-            let core = ExecutionAlgorithm::core_mut(self);
+            let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
             if core.config.log_events {
                 let id = &core.actor.actor_id;
                 log::info!("{id} {RECV}{EVT} {event:?}");
@@ -1135,7 +1203,10 @@ pub trait ExecutionAlgorithm: DataActor {
     /// # Errors
     ///
     /// Returns an error if start fails.
-    fn on_start(&mut self) -> anyhow::Result<()> {
+    fn on_start(&mut self) -> anyhow::Result<()>
+    where
+        Self: ExecutionAlgorithmNative,
+    {
         let id = self.id();
         log::info!("Starting {id}");
         Ok(())
@@ -1155,9 +1226,12 @@ pub trait ExecutionAlgorithm: DataActor {
     /// # Errors
     ///
     /// Returns an error if reset fails.
-    fn on_reset(&mut self) -> anyhow::Result<()> {
+    fn on_reset(&mut self) -> anyhow::Result<()>
+    where
+        Self: ExecutionAlgorithmNative,
+    {
         self.unsubscribe_all_strategy_events();
-        ExecutionAlgorithm::core_mut(self).reset();
+        ExecutionAlgorithmNative::exec_algorithm_core_mut(self).reset();
         Ok(())
     }
 
@@ -1286,11 +1360,16 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{
-        actor::DataActor, cache::Cache, clock::TestClock, component::Component,
-        enums::ComponentTrigger, msgbus, msgbus::TypedHandler, nautilus_actor,
+        actor::DataActor,
+        cache::Cache,
+        clock::{Clock, TestClock},
+        component::Component,
+        enums::ComponentTrigger,
+        msgbus,
+        msgbus::TypedHandler,
     };
     use nautilus_model::{
-        enums::OrderSide,
+        enums::{OrderSide, OrderType},
         events::{
             OrderAccepted, OrderCanceled, OrderDenied, OrderRejected,
             order::spec::{
@@ -1299,15 +1378,16 @@ mod tests {
             },
         },
         identifiers::{
-            AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
-            VenueOrderId,
+            AccountId, ActorId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
+            StrategyId, TraderId, VenueOrderId,
         },
-        orders::{LimitOrder, MarketOrder, OrderAny, stubs::TestOrderStubs},
+        orders::{LimitOrder, MarketOrder, OrderAny, OrderTestBuilder, stubs::TestOrderStubs},
         types::{Price, Quantity},
     };
     use rstest::rstest;
 
     use super::*;
+    use crate::nautilus_execution_algorithm;
 
     #[derive(Debug)]
     struct TestAlgorithm {
@@ -1315,6 +1395,58 @@ mod tests {
         on_order_called: bool,
         last_order_client_id: Option<ClientOrderId>,
     }
+
+    #[derive(Debug)]
+    struct CoreFreeExecutionAlgorithm {
+        state: ComponentState,
+        orders_seen: usize,
+    }
+
+    #[derive(Debug)]
+    struct MacroTestCustomField {
+        inner: ExecutionAlgorithmCore,
+    }
+
+    impl Component for CoreFreeExecutionAlgorithm {
+        fn component_id(&self) -> ComponentId {
+            ComponentId::new("CoreFreeExecutionAlgorithm")
+        }
+
+        fn state(&self) -> ComponentState {
+            self.state
+        }
+
+        fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
+            self.state = self.state.transition(&trigger)?;
+            Ok(())
+        }
+
+        fn register(
+            &mut self,
+            _trader_id: TraderId,
+            _clock: Rc<RefCell<dyn Clock>>,
+            _cache: Rc<RefCell<Cache>>,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl DataActor for CoreFreeExecutionAlgorithm {}
+
+    impl ExecutionAlgorithm for CoreFreeExecutionAlgorithm {
+        fn on_order(&mut self, _order: OrderAny) -> anyhow::Result<()> {
+            self.orders_seen += 1;
+            Ok(())
+        }
+    }
+
+    impl DataActor for MacroTestCustomField {}
+
+    nautilus_execution_algorithm!(MacroTestCustomField, inner, {
+        fn on_order(&mut self, _order: OrderAny) -> anyhow::Result<()> {
+            Ok(())
+        }
+    });
 
     impl TestAlgorithm {
         fn new(config: ExecutionAlgorithmConfig) -> Self {
@@ -1328,19 +1460,13 @@ mod tests {
 
     impl DataActor for TestAlgorithm {}
 
-    nautilus_actor!(TestAlgorithm);
-
-    impl ExecutionAlgorithm for TestAlgorithm {
-        fn core_mut(&mut self) -> &mut ExecutionAlgorithmCore {
-            &mut self.core
-        }
-
+    nautilus_execution_algorithm!(TestAlgorithm, {
         fn on_order(&mut self, order: OrderAny) -> anyhow::Result<()> {
             self.on_order_called = true;
             self.last_order_client_id = Some(order.client_order_id());
             Ok(())
         }
-    }
+    });
 
     fn create_test_algorithm() -> TestAlgorithm {
         // Use unique ID to avoid thread-local registry/msgbus conflicts in parallel tests
@@ -1473,8 +1599,42 @@ mod tests {
 
     #[rstest]
     fn test_algorithm_id() {
-        let mut algo = create_test_algorithm();
+        let algo = create_test_algorithm();
         assert!(algo.id().inner().starts_with("TEST-"));
+    }
+
+    #[rstest]
+    fn test_execution_algorithm_behavior_does_not_require_native_core_access() {
+        fn assert_execution_algorithm<T: ExecutionAlgorithm + DataActor + Component>() {}
+
+        assert_execution_algorithm::<CoreFreeExecutionAlgorithm>();
+
+        let mut algorithm = CoreFreeExecutionAlgorithm {
+            state: ComponentState::PreInitialized,
+            orders_seen: 0,
+        };
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(InstrumentId::from("BTC/USDT.BINANCE"))
+            .quantity(Quantity::from("1.0"))
+            .build();
+
+        algorithm.on_order(order).unwrap();
+
+        assert_eq!(algorithm.orders_seen, 1);
+    }
+
+    #[rstest]
+    fn test_nautilus_execution_algorithm_macro_custom_field() {
+        let exec_algorithm_id = ExecAlgorithmId::from("MACRO-001");
+        let algorithm = MacroTestCustomField {
+            inner: ExecutionAlgorithmCore::new(ExecutionAlgorithmConfig {
+                exec_algorithm_id: Some(exec_algorithm_id),
+                ..Default::default()
+            }),
+        };
+
+        assert_eq!(algorithm.id(), exec_algorithm_id);
+        assert_eq!(algorithm.actor_id(), ActorId::from("MACRO-001"));
     }
 
     #[rstest]
