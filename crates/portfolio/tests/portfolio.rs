@@ -2984,13 +2984,51 @@ fn test_position_records_account_currency_realized_pnl(
         .get(&Currency::USD())
         .and_then(|pnls| pnls.first())
         .unwrap();
-    assert_eq!(*usd_record, (position_id, 12.34));
+    assert_eq!(*usd_record, (position_id, UnixNanos::from(1), 12.34));
 
     let eur_record = recorded
         .get(&Currency::EUR())
         .and_then(|pnls| pnls.first())
         .unwrap();
-    assert_eq!(*eur_record, (position_id, 11.11));
+    assert_eq!(*eur_record, (position_id, UnixNanos::from(1), 11.11));
+
+    // A NETTING reopen reuses the position ID under a new `ts_opened`, so this is a
+    // distinct cycle whose close must record again rather than dedup against the first.
+    let reopened_closed_position = Position {
+        side: PositionSide::Flat,
+        signed_qty: 0.0,
+        quantity: Quantity::from("0"),
+        ts_opened: UnixNanos::from(2),
+        ts_last: UnixNanos::from(3),
+        ts_closed: Some(UnixNanos::from(3)),
+        realized_pnl: Some(Money::from("20.00 USD")),
+        ..position
+    };
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&reopened_closed_position)
+        .unwrap();
+    let reopened_closed =
+        PositionEvent::PositionClosed(get_closed_position(&reopened_closed_position));
+    portfolio.update_position(&reopened_closed);
+    portfolio.update_position(&reopened_closed);
+
+    let recorded = portfolio.recorded_realized_pnls();
+    assert_eq!(
+        recorded.get(&Currency::USD()).unwrap(),
+        &vec![
+            (position_id, UnixNanos::from(1), 12.34),
+            (position_id, UnixNanos::from(3), 20.00),
+        ],
+    );
+    assert_eq!(
+        recorded.get(&Currency::EUR()).unwrap(),
+        &vec![
+            (position_id, UnixNanos::from(1), 11.11),
+            (position_id, UnixNanos::from(3), 18.00),
+        ],
+    );
 }
 
 #[rstest]

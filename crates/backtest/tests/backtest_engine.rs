@@ -1623,9 +1623,9 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
         expected_pnls.retain(|(position_id, _)| {
             !recorded_pnls
                 .iter()
-                .any(|(recorded_position_id, _)| recorded_position_id == position_id)
+                .any(|(recorded_position_id, _, _)| recorded_position_id == position_id)
         });
-        expected_pnls.extend(recorded_pnls.iter().copied());
+        expected_pnls.extend(recorded_pnls.iter().map(|(id, _, pnl)| (*id, *pnl)));
     }
 
     let expected_expectancy =

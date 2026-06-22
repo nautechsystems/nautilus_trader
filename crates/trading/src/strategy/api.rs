@@ -919,11 +919,13 @@ impl<'a> PortfolioApi<'a> {
 
     /// Returns realized PnLs recorded during portfolio event processing.
     ///
+    /// Each record is `(position_id, ts_event, realized_pnl)`.
+    ///
     /// # Panics
     ///
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
-    pub fn recorded_realized_pnls(&self) -> AHashMap<Currency, Vec<(PositionId, f64)>> {
+    pub fn recorded_realized_pnls(&self) -> AHashMap<Currency, Vec<(PositionId, UnixNanos, f64)>> {
         self.portfolio.borrow().recorded_realized_pnls()
     }
 }

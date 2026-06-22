@@ -386,24 +386,24 @@ impl PortfolioAnalyzer {
         Ok(())
     }
 
-    /// Records a trade's PnL.
+    /// Records a trade's PnL realized at `ts_event`.
     #[pyo3(name = "add_trade")]
     #[allow(
         clippy::trivially_copy_pass_by_ref,
         reason = "matches underlying add_trade signature"
     )]
-    fn py_add_trade(&mut self, position_id: &PositionId, realized_pnl: &Money) {
-        self.add_trade(position_id, realized_pnl);
+    fn py_add_trade(&mut self, position_id: &PositionId, ts_event: u64, realized_pnl: &Money) {
+        self.add_trade(position_id, UnixNanos::from(ts_event), realized_pnl);
     }
 
-    /// Records a trade's PnL observed during portfolio processing.
+    /// Records a trade's PnL realized at `ts_event`, observed during portfolio processing.
     #[pyo3(name = "record_trade")]
     #[allow(
         clippy::trivially_copy_pass_by_ref,
         reason = "matches underlying record_trade signature"
     )]
-    fn py_record_trade(&mut self, position_id: &PositionId, realized_pnl: &Money) {
-        self.record_trade(position_id, realized_pnl);
+    fn py_record_trade(&mut self, position_id: &PositionId, ts_event: u64, realized_pnl: &Money) {
+        self.record_trade(position_id, UnixNanos::from(ts_event), realized_pnl);
     }
 
     // Note: calculate_statistics is not exposed to Python because it requires
@@ -451,18 +451,17 @@ impl PortfolioAnalyzer {
 
     /// Retrieves realized PnLs for a specific currency.
     ///
-    /// Returns `None` if no PnLs exist, or if multiple currencies exist
-    /// without an explicit currency specified.
+    /// Each record is `(position_id, ts_event, realized_pnl)`. Returns `None` if no PnLs
+    /// exist, or if multiple currencies exist without an explicit currency specified.
     #[pyo3(name = "realized_pnls")]
     fn py_realized_pnls(&self, py: Python, currency: Option<&Currency>) -> PyResult<Py<PyAny>> {
         match self.realized_pnls(currency) {
             Some(pnls) => {
-                // Convert Vec<(PositionId, f64)> to Python list of tuples or dict
-                let dict = pyo3::types::PyDict::new(py);
-                for (position_id, pnl) in pnls {
-                    dict.set_item(position_id.to_string(), pnl)?;
+                let list = pyo3::types::PyList::empty(py);
+                for (position_id, ts_event, pnl) in pnls {
+                    list.append((position_id.to_string(), ts_event.as_u64(), pnl))?;
                 }
-                Ok(dict.into())
+                Ok(list.into())
             }
             None => Ok(py.None()),
         }

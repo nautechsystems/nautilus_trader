@@ -1481,8 +1481,10 @@ impl Portfolio {
     }
 
     /// Returns realized PnLs recorded during portfolio event processing.
+    ///
+    /// Each record is `(position_id, ts_event, realized_pnl)`.
     #[must_use]
-    pub fn recorded_realized_pnls(&self) -> AHashMap<Currency, Vec<(PositionId, f64)>> {
+    pub fn recorded_realized_pnls(&self) -> AHashMap<Currency, Vec<(PositionId, UnixNanos, f64)>> {
         self.inner.borrow().analyzer.recorded_realized_pnls.clone()
     }
 
@@ -2632,12 +2634,15 @@ fn record_closed_position_pnl(
     let converted_pnl =
         converted_realized_pnl(&cache_ref, config, event, position_id, realized_pnl);
 
-    inner_ref.analyzer.record_trade(&position.id, &realized_pnl);
+    let ts_event = position.ts_last;
+    inner_ref
+        .analyzer
+        .record_trade(&position.id, ts_event, &realized_pnl);
 
     if let Some(converted_pnl) = converted_pnl {
         inner_ref
             .analyzer
-            .record_trade(&position.id, &converted_pnl);
+            .record_trade(&position.id, ts_event, &converted_pnl);
     }
 }
 
