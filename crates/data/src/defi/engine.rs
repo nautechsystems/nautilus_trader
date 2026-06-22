@@ -49,6 +49,7 @@ fn get_event_block_position(event: &DexPoolData) -> (u64, u32, u32) {
         DexPoolData::Swap(s) => (s.block, s.transaction_index, s.log_index),
         DexPoolData::LiquidityUpdate(u) => (u.block, u.transaction_index, u.log_index),
         DexPoolData::FeeCollect(c) => (c.block, c.transaction_index, c.log_index),
+        DexPoolData::FeeProtocolUpdate(u) => (u.block, u.transaction_index, u.log_index),
         DexPoolData::Flash(f) => (f.block, f.transaction_index, f.log_index),
     }
 }
@@ -61,6 +62,7 @@ fn convert_and_sort_buffered_events(buffered_events: Vec<DefiData>) -> Vec<DexPo
             DefiData::PoolSwap(swap) => Some(DexPoolData::Swap(swap)),
             DefiData::PoolLiquidityUpdate(update) => Some(DexPoolData::LiquidityUpdate(update)),
             DefiData::PoolFeeCollect(collect) => Some(DexPoolData::FeeCollect(collect)),
+            DefiData::PoolFeeProtocolUpdate(update) => Some(DexPoolData::FeeProtocolUpdate(update)),
             DefiData::PoolFlash(flash) => Some(DexPoolData::Flash(flash)),
             _ => None,
         })
@@ -399,6 +401,26 @@ impl DataEngine {
                     msgbus::publish_defi_collect(topic, &collect);
                 }
             }
+            DefiData::PoolFeeProtocolUpdate(update) => {
+                let instrument_id = update.instrument_id;
+                // A protocol-fee change is profiler infrastructure, not a subscriber data stream:
+                // it only needs to keep the profiler's `fee_protocol` consistent for swap and flash
+                // fee splitting. Buffer until the snapshot lands, otherwise apply in place.
+                if self.pool_snapshot_pending.contains(&instrument_id) {
+                    log::debug!(
+                        "Buffering fee protocol update for {instrument_id} (waiting for snapshot)"
+                    );
+                    self.pool_event_buffers
+                        .entry(instrument_id)
+                        .or_default()
+                        .push(DefiData::PoolFeeProtocolUpdate(update));
+                } else if let Some(profiler) =
+                    self.cache.borrow_mut().pool_profiler_mut(&instrument_id)
+                    && let Err(e) = profiler.process_fee_protocol_update(&update)
+                {
+                    log::error!("Failed to process pool fee protocol update: {e}");
+                }
+            }
             DefiData::PoolFlash(flash) => {
                 let instrument_id = flash.instrument_id;
                 // Buffer if waiting for snapshot, otherwise publish
@@ -564,8 +586,8 @@ mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         defi::{
-            Chain, DefiData, PoolFeeCollect, PoolFlash, PoolIdentifier, PoolLiquidityUpdate,
-            PoolLiquidityUpdateType, PoolSwap,
+            Chain, DefiData, PoolFeeCollect, PoolFeeProtocolUpdate, PoolFlash, PoolIdentifier,
+            PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap,
             chain::chains,
             data::DexPoolData,
             dex::{AmmType, Dex, DexType},
@@ -716,6 +738,30 @@ mod tests {
         )
     }
 
+    fn create_test_fee_protocol_update(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<Chain>,
+        test_dex: Arc<Dex>,
+        block: u64,
+        tx_index: u32,
+        log_index: u32,
+    ) -> PoolFeeProtocolUpdate {
+        PoolFeeProtocolUpdate::new(
+            test_chain,
+            test_dex,
+            test_instrument_id,
+            PoolIdentifier::from_address(Address::ZERO),
+            block,
+            format!("0x{block:064x}"),
+            tx_index,
+            log_index,
+            4,
+            4,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+    }
+
     #[rstest]
     fn test_get_event_block_position_swap(
         test_instrument_id: InstrumentId,
@@ -759,6 +805,18 @@ mod tests {
         let flash = create_test_flash(test_instrument_id, test_chain, test_dex, 400, 20, 8);
         let pos = get_event_block_position(&DexPoolData::Flash(flash));
         assert_eq!(pos, (400, 20, 8));
+    }
+
+    #[rstest]
+    fn test_get_event_block_position_fee_protocol_update(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<Chain>,
+        test_dex: Arc<Dex>,
+    ) {
+        let update =
+            create_test_fee_protocol_update(test_instrument_id, test_chain, test_dex, 500, 25, 4);
+        let pos = get_event_block_position(&DexPoolData::FeeProtocolUpdate(update));
+        assert_eq!(pos, (500, 25, 4));
     }
 
     #[rstest]
@@ -951,19 +1009,29 @@ mod tests {
             )),
             DefiData::PoolFlash(create_test_flash(
                 test_instrument_id,
-                test_chain,
-                test_dex,
+                test_chain.clone(),
+                test_dex.clone(),
                 100,
                 3,
                 0,
             )),
+            DefiData::PoolFeeProtocolUpdate(create_test_fee_protocol_update(
+                test_instrument_id,
+                test_chain,
+                test_dex,
+                100,
+                4,
+                0,
+            )),
         ];
         let sorted = convert_and_sort_buffered_events(events);
-        assert_eq!(sorted.len(), 4);
+        assert_eq!(sorted.len(), 5);
         assert_eq!(get_event_block_position(&sorted[0]), (100, 0, 0));
         assert_eq!(get_event_block_position(&sorted[1]), (100, 1, 0));
         assert_eq!(get_event_block_position(&sorted[2]), (100, 2, 0));
         assert_eq!(get_event_block_position(&sorted[3]), (100, 3, 0));
+        assert_eq!(get_event_block_position(&sorted[4]), (100, 4, 0));
+        assert!(matches!(sorted[4], DexPoolData::FeeProtocolUpdate(_)));
     }
 
     #[rstest]

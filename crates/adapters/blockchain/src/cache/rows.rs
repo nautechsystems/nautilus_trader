@@ -23,7 +23,7 @@ use nautilus_core::{
 use nautilus_model::{
     defi::{
         PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap, SharedChain, SharedDex,
-        data::{DexPoolData, PoolFeeCollect, PoolFlash},
+        data::{DexPoolData, PoolFeeCollect, PoolFeeProtocolUpdate, PoolFlash},
         validation::validate_address,
     },
     identifiers::InstrumentId,
@@ -456,6 +456,37 @@ pub fn transform_row_to_dex_pool_data(
             );
 
             Ok(DexPoolData::Flash(pool_flash))
+        }
+        "fee_protocol" => {
+            let fee_protocol0_new = row.try_get::<i16, _>("fee_protocol0_new")?;
+            let fee_protocol1_new = row.try_get::<i16, _>("fee_protocol1_new")?;
+            let fee_protocol0_new = u8::try_from(fee_protocol0_new).map_err(|e| {
+                sqlx::Error::Decode(
+                    format!("Invalid fee_protocol0_new '{fee_protocol0_new}': {e}").into(),
+                )
+            })?;
+            let fee_protocol1_new = u8::try_from(fee_protocol1_new).map_err(|e| {
+                sqlx::Error::Decode(
+                    format!("Invalid fee_protocol1_new '{fee_protocol1_new}': {e}").into(),
+                )
+            })?;
+
+            let pool_fee_protocol_update = PoolFeeProtocolUpdate::new(
+                chain,
+                dex,
+                instrument_id,
+                pool_identifier,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                fee_protocol0_new,
+                fee_protocol1_new,
+                timestamp, // ts_event
+                timestamp, // ts_init (same block timestamp)
+            );
+
+            Ok(DexPoolData::FeeProtocolUpdate(pool_fee_protocol_update))
         }
         _ => Err(sqlx::Error::Decode(
             format!("Unknown event type: {event_type}").into(),

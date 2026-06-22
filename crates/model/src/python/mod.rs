@@ -322,6 +322,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<crate::defi::data::PoolLiquidityUpdateType>()?;
         m.add_class::<crate::defi::data::PoolLiquidityUpdate>()?;
         m.add_class::<crate::defi::data::PoolFeeCollect>()?;
+        m.add_class::<crate::defi::data::PoolFeeProtocolUpdate>()?;
         m.add_class::<crate::defi::data::PoolFlash>()?;
         m.add_class::<crate::defi::data::Transaction>()?;
         m.add_class::<crate::defi::data::Block>()?;

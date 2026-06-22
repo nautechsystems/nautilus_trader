@@ -155,6 +155,8 @@ pub struct Dex {
     pub collect_created_event: Cow<'static, str>,
     // Optional Flash event signature emitted when flash loan occurs.
     pub flash_created_event: Option<Cow<'static, str>>,
+    // Optional SetFeeProtocol event signature emitted when the protocol-fee config changes.
+    pub fee_protocol_event: Option<Cow<'static, str>>,
     /// The type of automated market maker (AMM) algorithm used by this DEX.
     pub amm_type: AmmType,
     /// Collection of liquidity pools managed by this DEX.
@@ -209,6 +211,7 @@ impl Dex {
             burn_created_event: encoded_burn_event.into(),
             collect_created_event: encoded_collect_event.into(),
             flash_created_event: None,
+            fee_protocol_event: None,
             amm_type,
             pairs: vec![],
         }
@@ -228,6 +231,11 @@ impl Dex {
     /// Sets the flash loan event signature by hashing and encoding the provided event string.
     pub fn set_flash_event(&mut self, event: &str) {
         self.flash_created_event = Some(hex::encode_prefixed(keccak256(event.as_bytes())).into());
+    }
+
+    /// Sets the protocol-fee change event signature by hashing and encoding the provided event string.
+    pub fn set_fee_protocol_event(&mut self, event: &str) {
+        self.fee_protocol_event = Some(hex::encode_prefixed(keccak256(event.as_bytes())).into());
     }
 }
 

@@ -19,4 +19,5 @@ pub mod flash;
 pub mod initialize;
 pub mod mint;
 pub mod pool_created;
+pub mod set_fee_protocol;
 pub mod swap;

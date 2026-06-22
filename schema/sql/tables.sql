@@ -464,6 +464,24 @@ CREATE TABLE IF NOT EXISTS "pool_collect_event" (
 CREATE INDEX IF NOT EXISTS idx_pool_collect_event_lookup
     ON pool_collect_event(chain_id, pool_identifier, block, transaction_index, log_index);
 
+CREATE TABLE IF NOT EXISTS "pool_fee_protocol_event" (
+    id BIGSERIAL PRIMARY KEY,
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    pool_identifier TEXT NOT NULL,
+    dex_name TEXT NOT NULL,
+    block BIGINT NOT NULL,
+    transaction_hash TEXT NOT NULL,
+    transaction_index INTEGER NOT NULL,
+    log_index INTEGER NOT NULL,
+    fee_protocol0_new SMALLINT NOT NULL,
+    fee_protocol1_new SMALLINT NOT NULL,
+    FOREIGN KEY (chain_id, dex_name, pool_identifier) REFERENCES pool(chain_id, dex_name, pool_identifier),
+--     FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number),  // TODO temporarily disabled not to be blocked by full block sync
+    UNIQUE(chain_id, transaction_hash, log_index)
+);
+CREATE INDEX IF NOT EXISTS idx_pool_fee_protocol_event_lookup
+    ON pool_fee_protocol_event(chain_id, pool_identifier, block, transaction_index, log_index);
+
 CREATE TABLE IF NOT EXISTS "pool_flash_event" (
     id BIGSERIAL PRIMARY KEY,
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,

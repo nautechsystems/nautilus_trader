@@ -32,6 +32,14 @@ use ustr::Ustr;
 ///
 /// The type implements case-insensitive equality and hashing for address comparison,
 /// while preserving the original case for display purposes.
+///
+/// DeFi pool data carries both this `PoolIdentifier` and an `InstrumentId`, which key different
+/// layers. The chain and database layers key on the `PoolIdentifier`: the raw on-chain identity
+/// used for log filters and table lookups. The engine, message bus, and cache key on the
+/// `InstrumentId` (`Symbol(pool_identifier)` at `Venue(chain:dex)`), so pool events flow through
+/// the same instrument-keyed infrastructure as any other data. The `InstrumentId` flattens the
+/// identifier to a string and loses the `Address` versus `PoolId` variant, so it cannot
+/// reconstruct this type: both are stored rather than derived.
 #[derive(Clone, Copy, PartialOrd, Ord)]
 pub enum PoolIdentifier {
     /// V2/V3 pool identifier (checksummed Ethereum address)

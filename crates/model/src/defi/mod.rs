@@ -50,6 +50,7 @@ pub use data::{
     DefiData,
     block::Block,
     collect::PoolFeeCollect,
+    fee_protocol::PoolFeeProtocolUpdate,
     flash::PoolFlash,
     liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType},
     swap::PoolSwap,

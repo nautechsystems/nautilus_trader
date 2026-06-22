@@ -29,7 +29,7 @@ use rust_decimal::Decimal;
 
 use crate::defi::{
     Chain, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolLiquidityUpdateType, Token,
-    data::{DexPoolData, PoolFeeCollect, block::BlockPosition},
+    data::{DexPoolData, PoolFeeCollect, PoolFeeProtocolUpdate, PoolFlash, block::BlockPosition},
     pool_analysis::{
         compare::{PoolProfilerComparison, compare_pool_profiler, compare_pool_profiler_detailed},
         profiler::PoolProfiler,
@@ -205,6 +205,49 @@ fn create_collect_event(
         ticker_upper,
         UnixNanos::default(),
         UnixNanos::default(),
+    )
+}
+
+fn create_fee_protocol_update(
+    fee_protocol0_new: u8,
+    fee_protocol1_new: u8,
+) -> PoolFeeProtocolUpdate {
+    let pool_definition = pool_definition(None, None, None);
+    PoolFeeProtocolUpdate::new(
+        arbitrum(),
+        uniswap_v3(),
+        pool_definition.instrument_id,
+        pool_definition.pool_identifier,
+        100_000,
+        "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
+        0,
+        next_log_index(),
+        fee_protocol0_new,
+        fee_protocol1_new,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+fn create_flash_event(paid0: U256, paid1: U256) -> PoolFlash {
+    let pool_definition = pool_definition(None, None, None);
+    PoolFlash::new(
+        arbitrum(),
+        uniswap_v3(),
+        pool_definition.instrument_id,
+        pool_definition.pool_identifier,
+        100_000,
+        "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
+        0,
+        next_log_index(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        user_address(),
+        user_address(),
+        U256::ZERO, // amount0 borrowed (not used by fee-split state update)
+        U256::ZERO, // amount1 borrowed
+        paid0,
+        paid1,
     )
 }
 
@@ -760,6 +803,77 @@ fn test_process_swap_snaps_sqrt_price_to_event() {
     profiler.process(&DexPoolData::Swap(swap_event)).unwrap();
 
     assert_eq!(profiler.state.price_sqrt_ratio_x96, event_sqrt_price);
+}
+
+#[rstest]
+fn test_set_fee_protocol_applies_to_state_and_snapshot(mut profiler: PoolProfiler) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(create_mint_event(
+            lp_address(),
+            min_tick,
+            max_tick,
+            10_000,
+        )))
+        .unwrap();
+
+    assert_eq!(profiler.state.fee_protocol, 0);
+
+    // SetFeeProtocol(6, 6) packs to 6 | (6 << 4) = 102.
+    profiler
+        .process(&DexPoolData::FeeProtocolUpdate(create_fee_protocol_update(
+            6, 6,
+        )))
+        .unwrap();
+
+    let snapshot = profiler.extract_snapshot().unwrap();
+
+    assert_eq!(profiler.state.fee_protocol, 102);
+    assert_eq!(snapshot.state.fee_protocol, 102);
+}
+
+#[rstest]
+fn test_set_fee_protocol_changes_flash_fee_split(mut profiler: PoolProfiler) {
+    // Active liquidity spanning the current tick lets flash fees accrue.
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(create_mint_event(
+            lp_address(),
+            min_tick,
+            max_tick,
+            10_000,
+        )))
+        .unwrap();
+
+    // With fee_protocol unset (0), a flash accrues no protocol fees.
+    profiler
+        .process(&DexPoolData::Flash(create_flash_event(
+            U256::from(100u32),
+            U256::from(100u32),
+        )))
+        .unwrap();
+    assert_eq!(profiler.state.protocol_fees_token0, U256::ZERO);
+    assert_eq!(profiler.state.protocol_fees_token1, U256::ZERO);
+
+    // SetFeeProtocol(4, 4): packs to 68; per-token denominator becomes 4.
+    profiler
+        .process(&DexPoolData::FeeProtocolUpdate(create_fee_protocol_update(
+            4, 4,
+        )))
+        .unwrap();
+    assert_eq!(profiler.state.fee_protocol, 68);
+
+    // An identical flash now accrues paid/4 to each protocol-fee balance.
+    profiler
+        .process(&DexPoolData::Flash(create_flash_event(
+            U256::from(100u32),
+            U256::from(100u32),
+        )))
+        .unwrap();
+    assert_eq!(profiler.state.protocol_fees_token0, U256::from(25u32));
+    assert_eq!(profiler.state.protocol_fees_token1, U256::from(25u32));
 }
 
 #[rstest]

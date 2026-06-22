@@ -23,8 +23,9 @@ use nautilus_model::defi::{
 
 use crate::{
     events::{
-        burn::BurnEvent, collect::CollectEvent, flash::FlashEvent, initialize::InitializeEvent,
-        mint::MintEvent, pool_created::PoolCreatedEvent, swap::SwapEvent,
+        burn::BurnEvent, collect::CollectEvent, fee_protocol::FeeProtocolUpdateEvent,
+        flash::FlashEvent, initialize::InitializeEvent, mint::MintEvent,
+        pool_created::PoolCreatedEvent, swap::SwapEvent,
     },
     hypersync::HypersyncLog,
 };
@@ -56,6 +57,9 @@ pub struct DexExtended {
     /// Function to parse flash events from HyperSync logs.
     pub parse_flash_event_hypersync_fn:
         Option<fn(SharedDex, &HypersyncLog) -> anyhow::Result<FlashEvent>>,
+    /// Function to parse `SetFeeProtocol` events from HyperSync logs.
+    pub parse_fee_protocol_event_hypersync_fn:
+        Option<fn(SharedDex, &HypersyncLog) -> anyhow::Result<FeeProtocolUpdateEvent>>,
     // === RPC parsers (hex-decode, standard Ethereum format) ===
     /// Function to parse pool creation events from RPC logs.
     pub parse_pool_created_event_rpc_fn: Option<fn(&RpcLog) -> anyhow::Result<PoolCreatedEvent>>,
@@ -72,6 +76,9 @@ pub struct DexExtended {
     pub parse_collect_event_rpc_fn: Option<fn(SharedDex, &RpcLog) -> anyhow::Result<CollectEvent>>,
     /// Function to parse flash events from RPC logs.
     pub parse_flash_event_rpc_fn: Option<fn(SharedDex, &RpcLog) -> anyhow::Result<FlashEvent>>,
+    /// Function to parse `SetFeeProtocol` events from RPC logs.
+    pub parse_fee_protocol_event_rpc_fn:
+        Option<fn(SharedDex, &RpcLog) -> anyhow::Result<FeeProtocolUpdateEvent>>,
 }
 
 impl DexExtended {
@@ -88,6 +95,7 @@ impl DexExtended {
             parse_burn_event_hypersync_fn: None,
             parse_collect_event_hypersync_fn: None,
             parse_flash_event_hypersync_fn: None,
+            parse_fee_protocol_event_hypersync_fn: None,
             // RPC parsers
             parse_pool_created_event_rpc_fn: None,
             parse_initialize_event_rpc_fn: None,
@@ -96,6 +104,7 @@ impl DexExtended {
             parse_burn_event_rpc_fn: None,
             parse_collect_event_rpc_fn: None,
             parse_flash_event_rpc_fn: None,
+            parse_fee_protocol_event_rpc_fn: None,
         }
     }
 
@@ -155,6 +164,14 @@ impl DexExtended {
         self.parse_flash_event_hypersync_fn = Some(parse_fn);
     }
 
+    /// Sets the function used to parse `SetFeeProtocol` events from HyperSync logs.
+    pub fn set_fee_protocol_event_hypersync_parsing(
+        &mut self,
+        parse_fn: fn(SharedDex, &HypersyncLog) -> anyhow::Result<FeeProtocolUpdateEvent>,
+    ) {
+        self.parse_fee_protocol_event_hypersync_fn = Some(parse_fn);
+    }
+
     /// Sets the function used to parse pool creation events from RPC logs.
     pub fn set_pool_created_event_rpc_parsing(
         &mut self,
@@ -209,6 +226,14 @@ impl DexExtended {
         parse_fn: fn(SharedDex, &RpcLog) -> anyhow::Result<FlashEvent>,
     ) {
         self.parse_flash_event_rpc_fn = Some(parse_fn);
+    }
+
+    /// Sets the function used to parse `SetFeeProtocol` events from RPC logs.
+    pub fn set_fee_protocol_event_rpc_parsing(
+        &mut self,
+        parse_fn: fn(SharedDex, &RpcLog) -> anyhow::Result<FeeProtocolUpdateEvent>,
+    ) {
+        self.parse_fee_protocol_event_rpc_fn = Some(parse_fn);
     }
 
     /// Parses a pool creation event from a HyperSync log.
@@ -339,6 +364,26 @@ impl DexExtended {
         }
     }
 
+    /// Parses a `SetFeeProtocol` event from a HyperSync log.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the DEX does not have a HyperSync `SetFeeProtocol` event parser defined or if parsing fails.
+    pub fn parse_fee_protocol_event_hypersync(
+        &self,
+        log: &HypersyncLog,
+    ) -> anyhow::Result<FeeProtocolUpdateEvent> {
+        if let Some(parse_fn) = &self.parse_fee_protocol_event_hypersync_fn {
+            parse_fn(self.dex.clone(), log)
+        } else {
+            anyhow::bail!(
+                "HyperSync parsing of SetFeeProtocol event is not defined in this dex: {}:{}",
+                self.dex.chain,
+                self.dex.name
+            )
+        }
+    }
+
     /// Parses a pool creation event from an RPC log.
     ///
     /// # Errors
@@ -452,6 +497,26 @@ impl DexExtended {
         } else {
             anyhow::bail!(
                 "RPC parsing of flash event is not defined in this dex: {}:{}",
+                self.dex.chain,
+                self.dex.name
+            )
+        }
+    }
+
+    /// Parses a `SetFeeProtocol` event from an RPC log.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the DEX does not have an RPC `SetFeeProtocol` event parser defined or if parsing fails.
+    pub fn parse_fee_protocol_event_rpc(
+        &self,
+        log: &RpcLog,
+    ) -> anyhow::Result<FeeProtocolUpdateEvent> {
+        if let Some(parse_fn) = &self.parse_fee_protocol_event_rpc_fn {
+            parse_fn(self.dex.clone(), log)
+        } else {
+            anyhow::bail!(
+                "RPC parsing of SetFeeProtocol event is not defined in this dex: {}:{}",
                 self.dex.chain,
                 self.dex.name
             )

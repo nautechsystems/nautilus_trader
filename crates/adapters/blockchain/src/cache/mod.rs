@@ -29,7 +29,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
     Block, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex,
     SharedPool, Token,
-    data::{PoolFeeCollect, PoolFlash},
+    data::{PoolFeeCollect, PoolFeeProtocolUpdate, PoolFlash},
     pool_analysis::{position::PoolPosition, snapshot::PoolSnapshot},
     tick_map::tick::PoolTick,
 };
@@ -704,6 +704,24 @@ impl BlockchainCache {
         Ok(())
     }
 
+    /// Adds a batch of pool fee-protocol update events to the cache database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the fee-protocol update events to the database fails.
+    pub async fn add_pool_fee_protocol_updates_batch(
+        &self,
+        updates: &[PoolFeeProtocolUpdate],
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database
+                .add_pool_fee_protocol_updates_batch(self.chain.chain_id, updates)
+                .await?;
+        }
+
+        Ok(())
+    }
+
     /// Adds a pool snapshot to the cache database.
     ///
     /// This method saves the complete snapshot including:
@@ -1078,6 +1096,79 @@ mod tests {
             anyhow::bail!(
                 "unexpected stream timestamps: expected {expected_timestamps:?}, observed {observed_timestamps:?}"
             );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stream_pool_events_round_trips_fee_protocol_update_in_order() -> anyhow::Result<()> {
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        let chain = arbitrum();
+        let dex = uniswap_v3(&chain);
+        let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
+        let pool_identifier = PoolIdentifier::from_address(pool_address);
+        let instrument_id = Pool::create_instrument_id(chain.name, &dex, pool_identifier.as_str());
+        let ts = UnixNanos::from(1_700_000_000_000_000_000);
+
+        database
+            .add_pool_event_blocks_batch(chain.chain_id, &[test_block(12, ts), test_block(13, ts)])
+            .await?;
+        // Swap at block 12, SetFeeProtocol at block 13: stream must order swap before update.
+        insert_pool_swap_event(
+            &schema.admin_pool,
+            &schema.name,
+            chain.chain_id,
+            &pool_identifier,
+            12,
+        )
+        .await?;
+        // Asymmetric values (4, 6) catch a token0/token1 column swap.
+        let update = PoolFeeProtocolUpdate::new(
+            chain.clone(),
+            dex.clone(),
+            instrument_id,
+            pool_identifier,
+            13,
+            "0x00000000000000000000000000000000000000000000000000000000000000ab".to_string(),
+            0,
+            0,
+            4,
+            6,
+            ts,
+            ts,
+        );
+        database
+            .add_pool_fee_protocol_updates_batch(chain.chain_id, std::slice::from_ref(&update))
+            .await?;
+
+        let events_result = database
+            .stream_pool_events(chain, dex, instrument_id, pool_identifier, None, Some(13))
+            .try_collect::<Vec<_>>()
+            .await;
+
+        drop(database);
+        schema.cleanup().await?;
+
+        let events = events_result?;
+        match events.as_slice() {
+            [DexPoolData::Swap(swap), DexPoolData::FeeProtocolUpdate(fp)] => {
+                // Swap (block 12) must order before SetFeeProtocol (block 13); the asymmetric
+                // (4, 6) values catch a token0/token1 column swap, and ts confirms the timestamp.
+                let observed = (
+                    swap.block,
+                    fp.block,
+                    fp.fee_protocol0_new,
+                    fp.fee_protocol1_new,
+                    fp.ts_event,
+                );
+
+                if observed != (12, 13, 4, 6, ts) {
+                    anyhow::bail!("unexpected fee protocol round-trip: {observed:?}");
+                }
+            }
+            other => anyhow::bail!("unexpected stream events: {other:?}"),
         }
         Ok(())
     }
@@ -1674,6 +1765,22 @@ mod tests {
                     amount1 TEXT NOT NULL,
                     paid0 TEXT NOT NULL,
                     paid1 TEXT NOT NULL,
+                    UNIQUE(chain_id, transaction_hash, log_index)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."pool_fee_protocol_event" (
+                    chain_id INTEGER NOT NULL,
+                    pool_identifier TEXT NOT NULL,
+                    dex_name TEXT NOT NULL,
+                    block BIGINT NOT NULL,
+                    transaction_hash TEXT NOT NULL,
+                    transaction_index INTEGER NOT NULL,
+                    log_index INTEGER NOT NULL,
+                    fee_protocol0_new SMALLINT NOT NULL,
+                    fee_protocol1_new SMALLINT NOT NULL,
                     UNIQUE(chain_id, transaction_hash, log_index)
                 )
                 "#

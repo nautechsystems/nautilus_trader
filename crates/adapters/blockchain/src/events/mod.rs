@@ -21,6 +21,7 @@
 
 pub mod burn;
 pub mod collect;
+pub mod fee_protocol;
 pub mod flash;
 pub mod initialize;
 pub mod mint;

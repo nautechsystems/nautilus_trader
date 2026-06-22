@@ -22,7 +22,10 @@ use nautilus_core::{UnixNanos, hex, string::formatting::Separable};
 use nautilus_model::defi::{
     Block, Blockchain, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolProfiler, PoolSwap,
     SharedChain, SharedDex, SharedPool,
-    data::{DefiData, DexPoolData, PoolFeeCollect, PoolFlash, block::BlockPosition},
+    data::{
+        DefiData, DexPoolData, PoolFeeCollect, PoolFeeProtocolUpdate, PoolFlash,
+        block::BlockPosition,
+    },
     pool_analysis::{compare::compare_pool_profiler_detailed, snapshot::PoolSnapshot},
     reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
 };
@@ -34,7 +37,8 @@ use crate::{
     contracts::{erc20::Erc20Contract, uniswap_v3_pool::UniswapV3PoolContract},
     data::subscription::DefiDataSubscriptionManager,
     events::{
-        burn::BurnEvent, collect::CollectEvent, flash::FlashEvent, mint::MintEvent, swap::SwapEvent,
+        burn::BurnEvent, collect::CollectEvent, fee_protocol::FeeProtocolUpdateEvent,
+        flash::FlashEvent, mint::MintEvent, swap::SwapEvent,
     },
     exchanges::{extended::DexExtended, get_dex_extended},
     hypersync::{
@@ -517,6 +521,7 @@ impl BlockchainDataClientCore {
         let burn_event_signature = dex_extended.burn_created_event.as_ref();
         let collect_event_signature = dex_extended.collect_created_event.as_ref();
         let flash_event_signature = dex_extended.flash_created_event.as_ref();
+        let fee_protocol_event_signature = dex_extended.fee_protocol_event.as_ref();
         let initialize_event_signature: Option<&str> =
             dex_extended.initialize_event.as_ref().map(|s| s.as_ref());
 
@@ -543,6 +548,8 @@ impl BlockchainDataClientCore {
         )?;
         let flash_sig_bytes = flash_event_signature
             .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
+        let fee_protocol_sig_bytes = fee_protocol_event_signature
+            .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
         let initialize_sig_bytes = initialize_event_signature
             .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
 
@@ -560,6 +567,11 @@ impl BlockchainDataClientCore {
         if let Some(event) = dex_extended.flash_created_event.as_ref() {
             event_signatures.push(event);
         }
+
+        if let Some(event) = dex_extended.fee_protocol_event.as_ref() {
+            event_signatures.push(event);
+        }
+
         let pool_events_stream = self
             .hypersync_client
             .request_contract_events_stream(
@@ -574,11 +586,12 @@ impl BlockchainDataClientCore {
         let mut last_block_saved = effective_from_block;
         let mut blocks_processed = 0;
 
+        let mut block_batch: Vec<Block> = Vec::with_capacity(POOL_EVENT_BLOCK_BATCH_SIZE);
         let mut swap_batch: Vec<PoolSwap> = Vec::with_capacity(EVENT_BATCH_SIZE);
         let mut liquidity_batch: Vec<PoolLiquidityUpdate> = Vec::with_capacity(EVENT_BATCH_SIZE);
         let mut collect_batch: Vec<PoolFeeCollect> = Vec::with_capacity(EVENT_BATCH_SIZE);
+        let mut protocol_batch: Vec<PoolFeeProtocolUpdate> = Vec::with_capacity(EVENT_BATCH_SIZE);
         let mut flash_batch: Vec<PoolFlash> = Vec::with_capacity(EVENT_BATCH_SIZE);
-        let mut block_batch: Vec<Block> = Vec::with_capacity(POOL_EVENT_BLOCK_BATCH_SIZE);
 
         // Track when we've moved beyond stale data and can use COPY
         let mut beyond_stale_data = last_block_across_pool_events_table
@@ -656,6 +669,17 @@ impl BlockchainDataClientCore {
                         format!("failed to process flash event at block {}", flash_event.block_number)
                     })?;
                 flash_batch.push(flash);
+            } else if fee_protocol_sig_bytes.as_ref().is_some_and(|sig| sig.as_slice() == event_sig_bytes) {
+                let fee_protocol_event = dex_extended.parse_fee_protocol_event_hypersync(&log)?;
+                let update = self
+                    .process_pool_fee_protocol_event(&fee_protocol_event, &pool)
+                    .with_context(|| {
+                        format!(
+                            "failed to process SetFeeProtocol event at block {}",
+                            fee_protocol_event.block_number
+                        )
+                    })?;
+                protocol_batch.push(update);
             } else {
                 let event_signature = hex::encode(event_sig_bytes);
                 anyhow::bail!("unexpected event signature {event_signature} for log {log:?}");
@@ -677,6 +701,7 @@ impl BlockchainDataClientCore {
                     &mut swap_batch,
                     &mut liquidity_batch,
                     &mut collect_batch,
+                    &mut protocol_batch,
                     &mut flash_batch,
                     false,
                     true,
@@ -693,6 +718,7 @@ impl BlockchainDataClientCore {
                     &mut swap_batch,
                     &mut liquidity_batch,
                     &mut collect_batch,
+                    &mut protocol_batch,
                     &mut flash_batch,
                     false, // TODO temporary dont use copy command
                     false,
@@ -712,6 +738,7 @@ impl BlockchainDataClientCore {
                     &mut swap_batch,
                     &mut liquidity_batch,
                     &mut collect_batch,
+                    &mut protocol_batch,
                     &mut flash_batch,
                     false,
                     true,
@@ -734,6 +761,7 @@ impl BlockchainDataClientCore {
             &mut swap_batch,
             &mut liquidity_batch,
             &mut collect_batch,
+            &mut protocol_batch,
             &mut flash_batch,
             false,
             true,
@@ -766,6 +794,7 @@ impl BlockchainDataClientCore {
         swap_batch: &mut Vec<PoolSwap>,
         liquidity_batch: &mut Vec<PoolLiquidityUpdate>,
         collect_batch: &mut Vec<PoolFeeCollect>,
+        protocol_batch: &mut Vec<PoolFeeProtocolUpdate>,
         flash_batch: &mut Vec<PoolFlash>,
         use_copy_command: bool,
         force_flush_all: bool,
@@ -778,12 +807,16 @@ impl BlockchainDataClientCore {
             && !collect_batch.is_empty();
         let should_flush_flash =
             (force_flush_all || flash_batch.len() >= event_batch_size) && !flash_batch.is_empty();
+        let should_flush_fee_protocol = (force_flush_all
+            || protocol_batch.len() >= event_batch_size)
+            && !protocol_batch.is_empty();
 
         if force_flush_all
             || should_flush_swaps
             || should_flush_liquidity
             || should_flush_collects
             || should_flush_flash
+            || should_flush_fee_protocol
         {
             self.flush_pool_event_blocks(block_batch).await?;
         }
@@ -812,6 +845,13 @@ impl BlockchainDataClientCore {
         if should_flush_flash {
             self.cache.add_pool_flash_batch(flash_batch).await?;
             flash_batch.clear();
+        }
+
+        if should_flush_fee_protocol {
+            self.cache
+                .add_pool_fee_protocol_updates_batch(protocol_batch)
+                .await?;
+            protocol_batch.clear();
         }
         Ok(())
     }
@@ -994,6 +1034,31 @@ impl BlockchainDataClientCore {
         let flash = flash_event.to_pool_flash(self.chain.clone(), pool.instrument_id, timestamp);
 
         Ok(flash)
+    }
+
+    /// Processes a `SetFeeProtocol` event and converts it to a pool fee-protocol update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the event's block timestamp is missing from the cache.
+    pub fn process_pool_fee_protocol_event(
+        &self,
+        fee_protocol_event: &FeeProtocolUpdateEvent,
+        pool: &SharedPool,
+    ) -> anyhow::Result<PoolFeeProtocolUpdate> {
+        let timestamp = self
+            .cache
+            .get_block_timestamp(fee_protocol_event.block_number)
+            .copied()
+            .context("missing block timestamp for SetFeeProtocol event")?;
+
+        let update = fee_protocol_event.to_pool_fee_protocol_update(
+            self.chain.clone(),
+            pool.instrument_id,
+            timestamp,
+        );
+
+        Ok(update)
     }
 
     /// Synchronizes all pools and their tokens for a specific DEX within the given block range.
@@ -1300,6 +1365,9 @@ impl BlockchainDataClientCore {
                 .strip_prefix("0x")
                 .unwrap_or(initialize_event_signature),
         )?;
+        let fee_protocol_event_signature = dex_extended.fee_protocol_event.as_deref();
+        let fee_protocol_sig_bytes = fee_protocol_event_signature
+            .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
 
         let from_block = from_position.map_or(profiler.pool.creation_block, |block_position| {
             block_position.number
@@ -1317,17 +1385,23 @@ impl BlockchainDataClientCore {
         // Enable embedded profiler reporting
         profiler.enable_reporting(from_block, total_blocks, BLOCKS_PROCESS_IN_SYNC_REPORT);
 
+        let mut event_signatures = vec![
+            mint_event_signature,
+            burn_event_signature,
+            initialize_event_signature,
+        ];
+
+        if let Some(event) = fee_protocol_event_signature {
+            event_signatures.push(event);
+        }
+
         let pool_events_stream = self
             .hypersync_client
             .request_contract_events_stream(
                 from_block,
                 Some(to_block),
                 &profiler.pool.address,
-                vec![
-                    mint_event_signature,
-                    burn_event_signature,
-                    initialize_event_signature,
-                ],
+                event_signatures,
             )
             .await;
         tokio::pin!(pool_events_stream);
@@ -1385,6 +1459,20 @@ impl BlockchainDataClientCore {
                         )
                     })?;
                 profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;
+            } else if fee_protocol_sig_bytes
+                .as_ref()
+                .is_some_and(|sig| sig.as_slice() == event_sig_bytes)
+            {
+                let fee_protocol_event = dex_extended.parse_fee_protocol_event_hypersync(&log)?;
+                let update = self
+                    .process_pool_fee_protocol_event(&fee_protocol_event, &profiler.pool)
+                    .with_context(|| {
+                        format!(
+                            "failed to process SetFeeProtocol event at block {}",
+                            fee_protocol_event.block_number
+                        )
+                    })?;
+                profiler.process(&DexPoolData::FeeProtocolUpdate(update))?;
             } else {
                 let event_signature = hex::encode(event_sig_bytes);
                 anyhow::bail!(
@@ -1635,6 +1723,9 @@ impl BlockchainDataClientCore {
                             }
                             DexPoolData::FeeCollect(collect) => {
                                 DataEvent::DeFi(DefiData::PoolFeeCollect(collect))
+                            }
+                            DexPoolData::FeeProtocolUpdate(update) => {
+                                DataEvent::DeFi(DefiData::PoolFeeProtocolUpdate(update))
                             }
                             DexPoolData::Flash(flash) => {
                                 DataEvent::DeFi(DefiData::PoolFlash(flash))
@@ -1897,6 +1988,56 @@ mod tests {
             error_message.to_lowercase().contains(WETH_USDT_POOL),
             "hydration error should include pool address, was {error_message}"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "requires ENVIO_API_TOKEN and live HyperSync access"]
+    async fn live_hypersync_parses_real_set_fee_protocol_event() {
+        std::env::var("ENVIO_API_TOKEN").expect("ENVIO_API_TOKEN must be set");
+
+        // Arbitrum Uniswap V3 WETH/USDC.e 0.05% pool. Governance set the protocol fee to (4, 4)
+        // via SetFeeProtocol at block 438,989,951; slot0.feeProtocol reads 68.
+        let chain = Arc::new(
+            Chain::from_chain_id(42161)
+                .expect("Arbitrum chain should exist")
+                .clone(),
+        );
+        let dex_extended = get_dex_extended(chain.name, &DexType::UniswapV3)
+            .expect("Arbitrum UniswapV3 should be registered");
+        let pool_address = address!("c31e54c7a869b9fcbecc14363cf510d1c41fa443");
+        let signature = dex_extended
+            .dex
+            .fee_protocol_event
+            .as_deref()
+            .expect("UniswapV3 should advertise the SetFeeProtocol signature");
+
+        let client = HyperSyncClient::new(chain, None, CancellationToken::new());
+        let stream = client
+            .request_contract_events_stream(
+                438_989_951,
+                Some(438_989_951),
+                &pool_address,
+                vec![signature],
+            )
+            .await;
+        tokio::pin!(stream);
+
+        let mut events = Vec::new();
+
+        while let Some(item) = stream.next().await {
+            if let PoolEventStreamItem::Log(log) = item {
+                events.push(
+                    dex_extended
+                        .parse_fee_protocol_event_hypersync(&log)
+                        .expect("real SetFeeProtocol log should parse"),
+                );
+            }
+        }
+
+        assert_eq!(events.len(), 1, "expected exactly one SetFeeProtocol event");
+        assert_eq!(events[0].block_number, 438_989_951);
+        assert_eq!(events[0].fee_protocol0_new, 4);
+        assert_eq!(events[0].fee_protocol1_new, 4);
     }
 
     fn weth_usdt_pool() -> SharedPool {

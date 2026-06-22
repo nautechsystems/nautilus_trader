@@ -237,13 +237,15 @@ is not marked valid.
 Two fields are tolerated as non-blocking and logged as a warning rather than an error:
 
 - Sqrt price, which differs when replay is event-scoped but the RPC snapshot is block-scoped.
-- Fee protocol, which lags the on-chain value until `SetFeeProtocol` events are indexed and
-  replayed.
+- Fee protocol, retained as a non-blocking safety net. Uniswap V3 `SetFeeProtocol` events are indexed
+  and applied during replay, so the replayed `fee_protocol` matches the on-chain value for Uniswap V3
+  pools. The tolerance covers residual differences, such as an event not yet synced or a fork's
+  non-Uniswap-V3 fee-protocol semantics.
 
-A fee-protocol-only mismatch still accepts the snapshot, matching backtest replay behavior. The
-accepted snapshot carries the replayed `fee_protocol`, so a profiler restored from it splits protocol
-and LP fees with that lagging setting until `SetFeeProtocol` replay lands. The protocol-fee split on
-such a snapshot can diverge from on-chain until then.
+A fee-protocol-only mismatch still accepts the snapshot, matching backtest replay behavior. Because
+`SetFeeProtocol` is applied during both the analyze-pool bootstrap and backtest replay-forward, the
+accepted snapshot carries the replayed `fee_protocol` consistent with the events that produced it, so
+a profiler restored from it splits protocol and LP fees with that setting.
 
 ### Snapshot bootstrap guard
 
@@ -521,7 +523,9 @@ then analyze specific pools:
 ```
 
 Verify by counting rows in `pool_swap_event`, `pool_liquidity_event`, `pool_collect_event`,
-`pool_flash_event`, `pool_snapshot`, `pool_position`, and `pool_tick`.
+`pool_flash_event`, `pool_fee_protocol_event`, `pool_snapshot`, `pool_position`, and `pool_tick`.
+The `pool_fee_protocol_event` table stays small, since `SetFeeProtocol` fires rarely (often zero to
+two times per pool).
 
 ### Gotchas found running this
 

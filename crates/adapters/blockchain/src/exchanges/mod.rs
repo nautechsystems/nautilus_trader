@@ -158,6 +158,13 @@ mod tests {
                 dex_extended.parse_flash_event_hypersync_fn.is_some(),
             );
         }
+
+        if dex.fee_protocol_event.is_some() {
+            record(
+                "SetFeeProtocol",
+                dex_extended.parse_fee_protocol_event_hypersync_fn.is_some(),
+            );
+        }
     }
 
     #[rstest]
