@@ -187,7 +187,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Standardized Rust `OrderDenied` reason codes
 - Upgraded Interactive Brokers Rust adapter to `ibapi` 3.0.1 (#4209), thanks @faysou
 - Upgraded `capnp` and `capnpc` crates to v0.26.0
-- Upgraded `redis` crate to v1.2.3
+- Upgraded `redis` crate to v1.2.4
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.29.0
 
 ### Documentation Updates

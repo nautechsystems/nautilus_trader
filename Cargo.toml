@@ -183,7 +183,7 @@ implied-vol = { version = "2.0.0" }
 indexmap = { version = "2.14.0", features = ["serde"] }
 itchy = "0.3"
 libloading = "0.9.0"
-log = { version = "0.4.32", features = [
+log = { version = "0.4.33", features = [
   "std",
   "kv_unstable",
   "serde",
@@ -222,7 +222,7 @@ rand = { version = "0.10.1", default-features = false, features = [
   "thread_rng",
 ] }
 redb = { version = "4.1.0", default-features = false }
-redis = { version = "1.2.3", default-features = false, features = [
+redis = { version = "1.2.4", default-features = false, features = [
   "connection-manager",
   "sentinel",
   "streams",
@@ -278,7 +278,7 @@ sqlx = { version = "0.9.0", default-features = false, features = [
   "rust_decimal",
 ] }
 strum = { version = "0.28.0", features = ["derive"] }
-sysinfo = { version = "0.39.3", default-features = false, features = [
+sysinfo = { version = "0.39.4", default-features = false, features = [
   "system",
 ] }
 tabled = { version = "0.21.0", default-features = false, features = [

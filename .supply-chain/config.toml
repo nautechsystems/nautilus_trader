@@ -384,6 +384,10 @@ criteria = "safe-to-deploy"
 version = "0.5.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.arrayvec]]
+version = "0.7.7"
+criteria = "safe-to-deploy"
+
 [[exemptions.arrow]]
 version = "57.3.1"
 criteria = "safe-to-deploy"
@@ -593,15 +597,15 @@ version = "0.5.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.bitcoin-io]]
-version = "0.1.100"
+version = "0.1.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.bitcoin_hashes]]
-version = "0.14.100"
+version = "0.14.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.bitvec]]
-version = "1.0.1"
+version = "1.1.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.blake3]]
@@ -633,11 +637,11 @@ version = "3.9.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.borsh]]
-version = "1.6.0"
+version = "1.7.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.borsh-derive]]
-version = "1.6.0"
+version = "1.7.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.brotli]]
@@ -697,7 +701,7 @@ version = "0.29.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.cc]]
-version = "1.2.64"
+version = "1.2.65"
 criteria = "safe-to-deploy"
 
 [[exemptions.chrono]]
@@ -1280,10 +1284,6 @@ criteria = "safe-to-deploy"
 version = "0.14.7"
 criteria = "safe-to-deploy"
 
-[[exemptions.generic-array]]
-version = "0.14.9"
-criteria = "safe-to-deploy"
-
 [[exemptions.getopts]]
 version = "0.2.24"
 criteria = "safe-to-deploy"
@@ -1488,10 +1488,6 @@ criteria = "safe-to-deploy"
 version = "0.13.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.itertools]]
-version = "0.15.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.itoa]]
 version = "1.0.17"
 criteria = "safe-to-deploy"
@@ -1605,7 +1601,7 @@ version = "0.4.14"
 criteria = "safe-to-deploy"
 
 [[exemptions.log]]
-version = "0.4.30"
+version = "0.4.33"
 criteria = "safe-to-deploy"
 
 [[exemptions.lru]]
@@ -1634,10 +1630,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.madsim-macros]]
 version = "0.2.12"
-criteria = "safe-to-deploy"
-
-[[exemptions.maplit]]
-version = "1.0.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.matchit]]
@@ -2117,7 +2109,7 @@ version = "4.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.redis]]
-version = "1.2.3"
+version = "1.2.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.redox_syscall]]
@@ -2569,7 +2561,7 @@ version = "1.0.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.sysinfo]]
-version = "0.39.2"
+version = "0.39.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.tabled]]
@@ -3074,6 +3066,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.zerovec-derive]]
 version = "0.11.3"
+criteria = "safe-to-deploy"
+
+[[exemptions.zlib-rs]]
+version = "0.6.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.zmij]]
