@@ -494,7 +494,7 @@ pub fn decode_currency_pair_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let currency_pair = CurrencyPair::new(
+        let currency_pair = CurrencyPair::new_checked(
             id,
             raw_symbol,
             base_currency,
@@ -519,7 +519,8 @@ pub fn decode_currency_pair_batch(
             info,
             ts_event,
             ts_init,
-        );
+        )
+        .map_err(|e| super::instrument_validation_error::<CurrencyPair>(i, e))?;
 
         result.push(currency_pair);
     }

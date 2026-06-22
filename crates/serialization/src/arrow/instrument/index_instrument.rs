@@ -239,7 +239,7 @@ pub fn decode_index_instrument_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let index_instrument = IndexInstrument::new(
+        let index_instrument = IndexInstrument::new_checked(
             id,
             raw_symbol,
             currency,
@@ -251,7 +251,8 @@ pub fn decode_index_instrument_batch(
             info,
             ts_event,
             ts_init,
-        );
+        )
+        .map_err(|e| super::instrument_validation_error::<IndexInstrument>(i, e))?;
 
         result.push(index_instrument);
     }

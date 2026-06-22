@@ -343,13 +343,15 @@ pub fn decode_betting_instrument_batch(
         // Note: BettingInstrument requires price_increment and size_increment, but they're not in the Python schema
         // We'll need to use defaults or extract from price_precision/size_precision
         // For now, using minimal defaults based on precision
-        let price_increment = Price::new(0.01, price_prec);
-        let size_increment = Quantity::new(1.0, size_prec);
+        let price_increment = Price::new_checked(0.01, price_prec)
+            .map_err(|e| EncodingError::ParseError("price_increment", format!("row {i}: {e}")))?;
+        let size_increment = Quantity::new_checked(1.0, size_prec)
+            .map_err(|e| EncodingError::ParseError("size_increment", format!("row {i}: {e}")))?;
 
         // Extract raw_symbol from id's symbol component
         let raw_symbol = id.symbol;
 
-        let betting_instrument = BettingInstrument::new(
+        let betting_instrument = BettingInstrument::new_checked(
             id,
             raw_symbol,
             event_type_id,
@@ -387,10 +389,99 @@ pub fn decode_betting_instrument_batch(
             info,
             ts_event,
             ts_init,
-        );
+        )
+        .map_err(|e| super::instrument_validation_error::<BettingInstrument>(i, e))?;
 
         result.push(betting_instrument);
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, sync::Arc};
+
+    use arrow::{array::UInt8Array, record_batch::RecordBatch};
+    use nautilus_model::instruments::stubs::betting;
+    use rstest::rstest;
+
+    use super::*;
+    use crate::arrow::EncodeToRecordBatch;
+
+    const PRICE_PRECISION_COLUMN: usize = 19;
+    const SIZE_PRECISION_COLUMN: usize = 20;
+
+    fn betting_batch_with_precision(column_index: usize, precision: u8) -> RecordBatch {
+        betting_batch_with_precision_values(column_index, &[precision])
+    }
+
+    fn betting_batch_with_precision_values(column_index: usize, precisions: &[u8]) -> RecordBatch {
+        let instruments = vec![betting(); precisions.len()];
+        let batch = BettingInstrument::encode_batch(&HashMap::new(), &instruments).unwrap();
+        let mut columns = batch.columns().to_vec();
+        columns[column_index] = Arc::new(UInt8Array::from(precisions.to_vec()));
+        RecordBatch::try_new(batch.schema(), columns).unwrap()
+    }
+
+    #[rstest]
+    fn decode_betting_instrument_invalid_price_precision_returns_error() {
+        let batch = betting_batch_with_precision(PRICE_PRECISION_COLUMN, u8::MAX);
+        let error = decode_betting_instrument_batch(&HashMap::new(), &batch).unwrap_err();
+
+        match error {
+            EncodingError::ParseError(field, message) => {
+                assert_eq!(field, "price_increment");
+                assert!(message.starts_with("row 0:"));
+                assert!(message.contains("precision"));
+            }
+            _ => panic!("Expected price_increment parse error, was: {error}"),
+        }
+    }
+
+    #[rstest]
+    fn decode_betting_instrument_invalid_second_row_precision_reports_row_index() {
+        let batch = betting_batch_with_precision_values(PRICE_PRECISION_COLUMN, &[2, u8::MAX]);
+        let error = decode_betting_instrument_batch(&HashMap::new(), &batch).unwrap_err();
+
+        match error {
+            EncodingError::ParseError(field, message) => {
+                assert_eq!(field, "price_increment");
+                assert!(message.starts_with("row 1:"));
+                assert!(message.contains("precision"));
+            }
+            _ => panic!("Expected price_increment parse error, was: {error}"),
+        }
+    }
+
+    #[rstest]
+    fn decode_betting_instrument_invalid_size_precision_returns_error() {
+        let batch = betting_batch_with_precision(SIZE_PRECISION_COLUMN, u8::MAX);
+        let error = decode_betting_instrument_batch(&HashMap::new(), &batch).unwrap_err();
+
+        match error {
+            EncodingError::ParseError(field, message) => {
+                assert_eq!(field, "size_increment");
+                assert!(message.starts_with("row 0:"));
+                assert!(message.contains("precision"));
+            }
+            _ => panic!("Expected size_increment parse error, was: {error}"),
+        }
+    }
+
+    #[rstest]
+    fn decode_betting_instrument_invalid_default_price_increment_returns_error() {
+        let batch = betting_batch_with_precision(PRICE_PRECISION_COLUMN, 1);
+        let error = decode_betting_instrument_batch(&HashMap::new(), &batch).unwrap_err();
+
+        match error {
+            EncodingError::ParseError(field, message) => {
+                assert_eq!(field, super::super::INSTRUMENT_VALIDATION_FIELD);
+                assert!(message.starts_with("row 0:"));
+                assert!(message.contains("BettingInstrument"));
+                assert!(message.contains("price_increment"));
+            }
+            _ => panic!("Expected instrument parse error, was: {error}"),
+        }
+    }
 }

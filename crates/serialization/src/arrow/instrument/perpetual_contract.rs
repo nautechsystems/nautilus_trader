@@ -522,7 +522,7 @@ pub fn decode_perpetual_contract_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let perp = PerpetualContract::new(
+        let perp = PerpetualContract::new_checked(
             id,
             raw_symbol,
             underlying,
@@ -551,7 +551,8 @@ pub fn decode_perpetual_contract_batch(
             info,
             ts_event,
             ts_init,
-        );
+        )
+        .map_err(|e| super::instrument_validation_error::<PerpetualContract>(i, e))?;
 
         result.push(perp);
     }

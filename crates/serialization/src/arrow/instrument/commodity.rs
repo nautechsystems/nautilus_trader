@@ -476,7 +476,7 @@ pub fn decode_commodity_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let commodity = Commodity::new(
+        let commodity = Commodity::new_checked(
             id,
             raw_symbol,
             asset_class,
@@ -500,7 +500,8 @@ pub fn decode_commodity_batch(
             info,
             ts_event,
             ts_init,
-        );
+        )
+        .map_err(|e| super::instrument_validation_error::<Commodity>(i, e))?;
 
         result.push(commodity);
     }

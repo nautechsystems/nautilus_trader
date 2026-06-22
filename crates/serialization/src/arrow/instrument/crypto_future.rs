@@ -525,7 +525,7 @@ pub fn decode_crypto_future_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let crypto_future = CryptoFuture::new(
+        let crypto_future = CryptoFuture::new_checked(
             id,
             raw_symbol,
             underlying,
@@ -554,7 +554,8 @@ pub fn decode_crypto_future_batch(
             info,
             ts_event,
             ts_init,
-        );
+        )
+        .map_err(|e| super::instrument_validation_error::<CryptoFuture>(i, e))?;
 
         result.push(crypto_future);
     }

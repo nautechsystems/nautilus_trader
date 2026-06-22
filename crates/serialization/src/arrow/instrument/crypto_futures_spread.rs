@@ -507,7 +507,7 @@ pub fn decode_crypto_futures_spread_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let crypto_futures_spread = CryptoFuturesSpread::new(
+        let crypto_futures_spread = CryptoFuturesSpread::new_checked(
             id,
             raw_symbol,
             underlying,
@@ -537,7 +537,8 @@ pub fn decode_crypto_futures_spread_batch(
             info,
             ts_event,
             ts_init,
-        );
+        )
+        .map_err(|e| super::instrument_validation_error::<CryptoFuturesSpread>(i, e))?;
 
         result.push(crypto_futures_spread);
     }

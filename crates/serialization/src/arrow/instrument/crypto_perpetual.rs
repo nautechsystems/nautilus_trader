@@ -512,7 +512,7 @@ pub fn decode_crypto_perpetual_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let crypto_perp = CryptoPerpetual::new(
+        let crypto_perp = CryptoPerpetual::new_checked(
             id,
             raw_symbol,
             base_currency,
@@ -539,7 +539,8 @@ pub fn decode_crypto_perpetual_batch(
             info,
             ts_event,
             ts_init,
-        );
+        )
+        .map_err(|e| super::instrument_validation_error::<CryptoPerpetual>(i, e))?;
 
         result.push(crypto_perp);
     }

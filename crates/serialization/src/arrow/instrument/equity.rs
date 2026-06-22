@@ -417,7 +417,7 @@ pub fn decode_equity_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let equity = Equity::new(
+        let equity = Equity::new_checked(
             id,
             raw_symbol,
             isin,
@@ -437,7 +437,8 @@ pub fn decode_equity_batch(
             info,
             ts_event,
             ts_init,
-        );
+        )
+        .map_err(|e| super::instrument_validation_error::<Equity>(i, e))?;
 
         result.push(equity);
     }

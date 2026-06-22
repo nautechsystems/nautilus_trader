@@ -560,7 +560,7 @@ pub fn decode_crypto_option_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let crypto_option = CryptoOption::new(
+        let crypto_option = CryptoOption::new_checked(
             id,
             raw_symbol,
             underlying,
@@ -591,7 +591,8 @@ pub fn decode_crypto_option_batch(
             info,
             ts_event,
             ts_init,
-        );
+        )
+        .map_err(|e| super::instrument_validation_error::<CryptoOption>(i, e))?;
 
         result.push(crypto_option);
     }

@@ -494,7 +494,7 @@ pub fn decode_option_spread_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let option_spread = OptionSpread::new(
+        let option_spread = OptionSpread::new_checked(
             id,
             raw_symbol,
             asset_class,
@@ -520,7 +520,8 @@ pub fn decode_option_spread_batch(
             info,
             ts_event,
             ts_init,
-        );
+        )
+        .map_err(|e| super::instrument_validation_error::<OptionSpread>(i, e))?;
 
         result.push(option_spread);
     }

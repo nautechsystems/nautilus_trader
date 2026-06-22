@@ -19,7 +19,7 @@
 //! Arrow serialization implementation. Each concrete instrument type implements its own schema
 //! with all fields as columns (wide schema approach), matching the Python implementation.
 
-use std::collections::HashMap;
+use std::{any::type_name, collections::HashMap, fmt};
 
 use arrow::{datatypes::Schema, error::ArrowError, record_batch::RecordBatch};
 use nautilus_model::{
@@ -83,6 +83,21 @@ pub(crate) fn decode_currency(
         trimmed,
         Some(context),
     ))
+}
+
+const INSTRUMENT_VALIDATION_FIELD: &str = "instrument";
+
+pub(crate) fn instrument_validation_error<T>(
+    row: usize,
+    error: impl fmt::Display,
+) -> EncodingError {
+    let type_name = type_name::<T>();
+    let instrument_type = type_name.rsplit("::").next().unwrap_or(type_name);
+
+    EncodingError::ParseError(
+        INSTRUMENT_VALIDATION_FIELD,
+        format!("row {row}: invalid {instrument_type}: {error}"),
+    )
 }
 
 impl ArrowSchemaProvider for InstrumentAny {
@@ -610,12 +625,12 @@ pub fn decode_instrument_any_batch(
 mod tests {
     use std::sync::Arc;
 
-    use arrow::array::{ArrayRef, StringArray};
+    use arrow::array::{ArrayRef, StringArray, UInt8Array};
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         enums::CurrencyType,
         identifiers::{InstrumentId, Symbol},
-        instruments::{InstrumentAny, currency_pair::CurrencyPair},
+        instruments::{Instrument, InstrumentAny, currency_pair::CurrencyPair},
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
@@ -692,7 +707,6 @@ mod tests {
 
     #[rstest]
     fn test_encode_decode_round_trip() {
-        use nautilus_model::instruments::Instrument;
         let instrument_id = InstrumentId::from("EUR/USD.SIM");
         let currency_pair = CurrencyPair::new(
             instrument_id,
@@ -852,8 +866,6 @@ mod tests {
     }
 
     fn roundtrip_case(instrument: &InstrumentAny) {
-        use nautilus_model::instruments::Instrument;
-
         let metadata = instrument.metadata();
         let record_batch =
             InstrumentAny::encode_batch(&metadata, std::slice::from_ref(instrument)).unwrap();
@@ -922,6 +934,112 @@ mod tests {
         columns[column_index] = null_column;
 
         RecordBatch::try_new(schema, columns).unwrap()
+    }
+
+    fn batch_with_uint8_column(
+        record_batch: &RecordBatch,
+        column_name: &str,
+        values: Vec<u8>,
+    ) -> RecordBatch {
+        let schema = record_batch.schema();
+        let column_index = schema.index_of(column_name).unwrap();
+        let mut columns = record_batch.columns().to_vec();
+        columns[column_index] = Arc::new(UInt8Array::from(values));
+
+        RecordBatch::try_new(schema, columns).unwrap()
+    }
+
+    #[rstest]
+    #[case::binary_option(InstrumentAny::BinaryOption(
+        nautilus_model::instruments::stubs::binary_option()
+    ))]
+    #[case::cfd(InstrumentAny::Cfd(nautilus_model::instruments::stubs::cfd_gold()))]
+    #[case::commodity(InstrumentAny::Commodity(
+        nautilus_model::instruments::stubs::commodity_gold()
+    ))]
+    #[case::crypto_future(InstrumentAny::CryptoFuture(
+        nautilus_model::instruments::stubs::crypto_future_btcusdt(
+            2,
+            6,
+            Price::from("0.01"),
+            Quantity::from("0.000001"),
+        )
+    ))]
+    #[case::crypto_futures_spread(InstrumentAny::CryptoFuturesSpread(
+        nautilus_model::instruments::stubs::crypto_futures_spread_btc_deribit()
+    ))]
+    #[case::crypto_option(InstrumentAny::CryptoOption(
+        nautilus_model::instruments::stubs::crypto_option_btc_deribit(
+            3,
+            1,
+            Price::from("0.001"),
+            Quantity::from("0.1"),
+        )
+    ))]
+    #[case::crypto_option_spread(InstrumentAny::CryptoOptionSpread(
+        nautilus_model::instruments::stubs::crypto_option_spread_btc_deribit()
+    ))]
+    #[case::crypto_perpetual(InstrumentAny::CryptoPerpetual(
+        nautilus_model::instruments::stubs::crypto_perpetual_ethusdt()
+    ))]
+    #[case::currency_pair(InstrumentAny::CurrencyPair(
+        nautilus_model::instruments::stubs::currency_pair_btcusdt()
+    ))]
+    #[case::equity(InstrumentAny::Equity(nautilus_model::instruments::stubs::equity_aapl()))]
+    #[case::futures_contract(InstrumentAny::FuturesContract(
+        nautilus_model::instruments::stubs::futures_contract_es(None, None,)
+    ))]
+    #[case::futures_spread(InstrumentAny::FuturesSpread(
+        nautilus_model::instruments::stubs::futures_spread_es()
+    ))]
+    #[case::index_instrument(InstrumentAny::IndexInstrument(
+        nautilus_model::instruments::stubs::index_instrument_spx()
+    ))]
+    #[case::option_contract(InstrumentAny::OptionContract(
+        nautilus_model::instruments::stubs::option_contract_appl()
+    ))]
+    #[case::option_spread(InstrumentAny::OptionSpread(
+        nautilus_model::instruments::stubs::option_spread()
+    ))]
+    #[case::perpetual_contract(InstrumentAny::PerpetualContract(
+        nautilus_model::instruments::stubs::perpetual_contract_eurusd()
+    ))]
+    #[case::tokenized_asset(InstrumentAny::TokenizedAsset(
+        nautilus_model::instruments::stubs::tokenized_asset_aaplx()
+    ))]
+    fn test_decode_instrument_checked_constructor_error(#[case] instrument: InstrumentAny) {
+        let metadata = instrument.metadata();
+        let class = metadata.get("class").unwrap();
+        let first_row_price_precision = Instrument::price_precision(&instrument);
+        let instruments = vec![instrument.clone(), instrument];
+        let record_batch = InstrumentAny::encode_batch(&metadata, &instruments).unwrap();
+        let record_batch = batch_with_uint8_column(
+            &record_batch,
+            "price_precision",
+            vec![first_row_price_precision, u8::MAX],
+        );
+
+        let error = decode_instrument_any_batch(&metadata, &record_batch)
+            .expect_err("invalid precision must return EncodingError");
+
+        match error {
+            EncodingError::ParseError(field, message) => {
+                assert_eq!(field, INSTRUMENT_VALIDATION_FIELD);
+                assert!(
+                    message.contains(class),
+                    "message should include instrument class, found: {message}",
+                );
+                assert!(
+                    message.starts_with("row 1:"),
+                    "message should include row index, found: {message}",
+                );
+                assert!(
+                    message.contains("price_precision"),
+                    "message should include failed precision, found: {message}",
+                );
+            }
+            other => panic!("unexpected error variant: {other:?}"),
+        }
     }
 
     #[rstest]
