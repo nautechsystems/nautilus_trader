@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Debug;
+use std::{fmt::Debug, rc::Rc};
 
 use nautilus_model::{
     enums::LiquiditySide,
@@ -52,6 +52,72 @@ pub trait FeeModel {
         _underlying_px: Option<Price>,
     ) -> anyhow::Result<Money> {
         self.get_commission(order, fill_quantity, fill_px, instrument)
+    }
+}
+
+/// Shared runtime handle for a fee model.
+#[derive(Clone)]
+pub struct FeeModelHandle(Rc<dyn FeeModel>);
+
+impl FeeModelHandle {
+    /// Creates a new [`FeeModelHandle`] from a fee model.
+    #[must_use]
+    pub fn new<T>(model: T) -> Self
+    where
+        T: FeeModel + 'static,
+    {
+        Self(Rc::new(model))
+    }
+
+    /// Creates a new [`FeeModelHandle`] from an existing reference-counted model.
+    #[must_use]
+    pub fn from_rc(model: Rc<dyn FeeModel>) -> Self {
+        Self(model)
+    }
+}
+
+impl Debug for FeeModelHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple(stringify!(FeeModelHandle))
+            .field(&"<dyn FeeModel>")
+            .finish()
+    }
+}
+
+impl FeeModel for FeeModelHandle {
+    fn get_commission(
+        &self,
+        order: &OrderAny,
+        fill_quantity: Quantity,
+        fill_px: Price,
+        instrument: &InstrumentAny,
+    ) -> anyhow::Result<Money> {
+        self.0
+            .get_commission(order, fill_quantity, fill_px, instrument)
+    }
+
+    fn get_commission_with_context(
+        &self,
+        order: &OrderAny,
+        fill_quantity: Quantity,
+        fill_px: Price,
+        instrument: &InstrumentAny,
+        underlying_px: Option<Price>,
+    ) -> anyhow::Result<Money> {
+        self.0
+            .get_commission_with_context(order, fill_quantity, fill_px, instrument, underlying_px)
+    }
+}
+
+impl Default for FeeModelHandle {
+    fn default() -> Self {
+        FeeModelAny::default().into()
+    }
+}
+
+impl From<FeeModelAny> for FeeModelHandle {
+    fn from(model: FeeModelAny) -> Self {
+        Self::new(model)
     }
 }
 
@@ -535,6 +601,8 @@ fn commission_currency(instrument: &InstrumentAny) -> Currency {
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::Cell, rc::Rc};
+
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderType},
         instruments::{
@@ -553,8 +621,9 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::{
-        CappedOptionFeeModel, FeeModel, FeeModelAny, FixedFeeModel, MakerTakerFeeModel,
-        PerContractFeeModel, ProbabilityPriceFeeModel, TieredNotionalOptionFeeModel,
+        CappedOptionFeeModel, FeeModel, FeeModelAny, FeeModelHandle, FixedFeeModel,
+        MakerTakerFeeModel, PerContractFeeModel, ProbabilityPriceFeeModel,
+        TieredNotionalOptionFeeModel,
     };
 
     #[rstest]
@@ -818,6 +887,85 @@ mod tests {
             .unwrap();
 
         assert_eq!(commission, Money::from("0.00250 USDC"));
+    }
+
+    #[rstest]
+    fn test_fee_model_handle_calls_custom_model_without_model_clone() {
+        let calls = Rc::new(Cell::new(0));
+        let expected_commission = Money::from("1.23 USD");
+        let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(aud_usd.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+        let accepted_order = TestOrderStubs::make_accepted_order(&market_order);
+        let fee_model = FeeModelHandle::new(CountingFeeModel {
+            calls: Rc::clone(&calls),
+            commission: expected_commission,
+        });
+        let cloned_fee_model = fee_model.clone();
+        drop(fee_model);
+
+        let commission = cloned_fee_model
+            .get_commission(
+                &accepted_order,
+                Quantity::from(100_000),
+                Price::from("1.0"),
+                &aud_usd,
+            )
+            .unwrap();
+
+        assert_eq!(calls.get(), 1);
+        assert_eq!(commission, expected_commission);
+    }
+
+    #[rstest]
+    fn test_fee_model_handle_from_rc_calls_custom_model() {
+        let calls = Rc::new(Cell::new(0));
+        let expected_commission = Money::from("1.23 USD");
+        let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(aud_usd.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+        let accepted_order = TestOrderStubs::make_accepted_order(&market_order);
+        let model = Rc::new(CountingFeeModel {
+            calls: Rc::clone(&calls),
+            commission: expected_commission,
+        });
+        let fee_model = FeeModelHandle::from_rc(model);
+
+        let commission = fee_model
+            .get_commission(
+                &accepted_order,
+                Quantity::from(100_000),
+                Price::from("1.0"),
+                &aud_usd,
+            )
+            .unwrap();
+
+        assert_eq!(calls.get(), 1);
+        assert_eq!(commission, expected_commission);
+    }
+
+    struct CountingFeeModel {
+        calls: Rc<Cell<u32>>,
+        commission: Money,
+    }
+
+    impl FeeModel for CountingFeeModel {
+        fn get_commission(
+            &self,
+            _order: &OrderAny,
+            _fill_quantity: Quantity,
+            _fill_px: Price,
+            _instrument: &InstrumentAny,
+        ) -> anyhow::Result<Money> {
+            self.calls.set(self.calls.get() + 1);
+            Ok(self.commission)
+        }
     }
 
     #[rstest]

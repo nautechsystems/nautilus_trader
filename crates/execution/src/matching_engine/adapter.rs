@@ -26,7 +26,7 @@ use nautilus_model::{
 
 use crate::{
     matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
-    models::{fee::FeeModelAny, fill::FillModelAny},
+    models::{fee::FeeModelHandle, fill::FillModelAny},
 };
 
 #[derive(Debug)]
@@ -40,7 +40,7 @@ impl OrderEngineAdapter {
         instrument: InstrumentAny,
         raw_id: u32,
         fill_model: FillModelAny,
-        fee_model: FeeModelAny,
+        fee_model: FeeModelHandle,
         book_type: BookType,
         oms_type: OmsType,
         account_type: AccountType,

@@ -68,7 +68,7 @@ use crate::{
     matching_core::{MatchAction, OrderMatchingCore, RestingOrder},
     matching_engine::{config::OrderMatchingEngineConfig, ids_generator::IdsGenerator},
     models::{
-        fee::{FeeModel, FeeModelAny},
+        fee::{FeeModel, FeeModelHandle},
         fill::{FillModel, FillModelAny},
     },
     protection::protection_price_calculate,
@@ -98,7 +98,7 @@ pub struct OrderMatchingEngine {
     cache: Rc<RefCell<Cache>>,
     book: OrderBook,
     fill_model: FillModelAny,
-    fee_model: FeeModelAny,
+    fee_model: FeeModelHandle,
     event_handler: Option<Rc<dyn Fn(OrderEventAny)>>,
     target_bid: Option<Price>,
     target_ask: Option<Price>,
@@ -148,7 +148,7 @@ impl OrderMatchingEngine {
         instrument: InstrumentAny,
         raw_id: u32,
         fill_model: FillModelAny,
-        fee_model: FeeModelAny,
+        fee_model: FeeModelHandle,
         book_type: BookType,
         oms_type: OmsType,
         account_type: AccountType,
@@ -6291,7 +6291,10 @@ impl BarTickSizes {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+    };
 
     use nautilus_common::{cache::Cache, clock::TestClock};
     use nautilus_core::correctness::CorrectnessError;
@@ -6304,14 +6307,17 @@ mod tests {
             Instrument, InstrumentAny,
             stubs::{crypto_option_btc_deribit, crypto_perpetual_ethusdt},
         },
-        orders::{Order, OrderTestBuilder},
-        types::{Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
+        orders::{Order, OrderAny, OrderTestBuilder},
+        types::{Money, Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
 
     use super::{BarTickSizes, OrderMatchingEngine};
-    use crate::models::{fee::FeeModelAny, fill::FillModelAny};
+    use crate::models::{
+        fee::{FeeModel, FeeModelAny, FeeModelHandle},
+        fill::FillModelAny,
+    };
 
     fn assert_valid_bar_tick_sizes(volume: Quantity, size_increment: Quantity) {
         let sizes = BarTickSizes::from_volume(volume, size_increment);
@@ -6349,7 +6355,7 @@ mod tests {
             instrument.clone(),
             1,
             FillModelAny::default(),
-            FeeModelAny::default(),
+            FeeModelAny::default().into(),
             BookType::L1_MBP,
             OmsType::Netting,
             AccountType::Margin,
@@ -6399,6 +6405,85 @@ mod tests {
     }
 
     #[rstest]
+    fn test_custom_fee_model_handle_is_called_by_fill_order() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let calls = Rc::new(Cell::new(0));
+        let expected_commission = Money::from("1.23 USDT");
+        let fee_model = FeeModelHandle::new(RecordingFeeModel {
+            calls: Rc::clone(&calls),
+            commission: expected_commission,
+        });
+        let cloned_fee_model = fee_model.clone();
+        drop(fee_model);
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelAny::default(),
+            cloned_fee_model,
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            cache,
+            Default::default(),
+        );
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let events_handler = Rc::clone(&events);
+        engine.set_event_handler(Rc::new(move |event| {
+            events_handler.borrow_mut().push(event);
+        }));
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .submit(true)
+            .build();
+        engine
+            .account_ids
+            .insert(order.trader_id(), AccountId::from("ACCOUNT-001"));
+
+        engine.fill_order(
+            &order,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            LiquiditySide::Taker,
+            None,
+            None,
+        );
+
+        let events = events.borrow();
+        assert_eq!(events.len(), 1);
+        let fill = match &events[0] {
+            OrderEventAny::Filled(fill) => fill,
+            event => panic!("Expected OrderFilled, was {event:?}"),
+        };
+
+        assert_eq!(calls.get(), 1);
+        assert_eq!(fill.commission, Some(expected_commission));
+    }
+
+    struct RecordingFeeModel {
+        calls: Rc<Cell<u32>>,
+        commission: Money,
+    }
+
+    impl FeeModel for RecordingFeeModel {
+        fn get_commission(
+            &self,
+            _order: &OrderAny,
+            _fill_quantity: Quantity,
+            _fill_px: Price,
+            _instrument: &InstrumentAny,
+        ) -> anyhow::Result<Money> {
+            self.calls.set(self.calls.get() + 1);
+            Ok(self.commission)
+        }
+    }
+
+    #[rstest]
     fn test_fee_underlying_price_uses_valid_cached_greeks_price() {
         let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit(
             3,
@@ -6417,7 +6502,7 @@ mod tests {
             instrument,
             1,
             FillModelAny::default(),
-            FeeModelAny::default(),
+            FeeModelAny::default().into(),
             BookType::L1_MBP,
             OmsType::Netting,
             AccountType::Margin,
@@ -6454,7 +6539,7 @@ mod tests {
             instrument,
             1,
             FillModelAny::default(),
-            FeeModelAny::default(),
+            FeeModelAny::default().into(),
             BookType::L1_MBP,
             OmsType::Netting,
             AccountType::Margin,

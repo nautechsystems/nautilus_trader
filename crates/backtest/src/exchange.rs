@@ -38,7 +38,7 @@ use nautilus_core::{
 use nautilus_execution::{
     matching_core::RestingOrder,
     matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
-    models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModel},
+    models::{fee::FeeModelHandle, fill::FillModelAny, latency::LatencyModel},
 };
 use nautilus_model::{
     accounts::{Account, AccountAny, margin_model::MarginModelAny},
@@ -131,7 +131,7 @@ pub struct SimulatedExchange {
     book_type: BookType,
     default_leverage: Decimal,
     exec_client: Option<Rc<dyn ExecutionClient>>,
-    fee_model: FeeModelAny,
+    fee_model: FeeModelHandle,
     fill_model: FillModelAny,
     latency_model: Option<Box<dyn LatencyModel>>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
@@ -216,7 +216,7 @@ impl SimulatedExchange {
             book_type: config.book_type,
             default_leverage,
             exec_client: None,
-            fee_model: config.fee_model,
+            fee_model: config.fee_model.into(),
             fill_model: config.fill_model,
             latency_model: config.latency_model,
             instruments: AHashMap::new(),
