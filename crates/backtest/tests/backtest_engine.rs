@@ -65,8 +65,8 @@ use nautilus_model::{
 };
 use nautilus_system::trader::Trader;
 use nautilus_trading::{
-    ExecutionAlgorithmConfig, ExecutionAlgorithmCore, Strategy, StrategyConfig, StrategyCore,
-    nautilus_execution_algorithm, nautilus_strategy,
+    ExecutionAlgorithm, ExecutionAlgorithmConfig, ExecutionAlgorithmCore, Strategy, StrategyConfig,
+    StrategyCore, nautilus_execution_algorithm, nautilus_strategy,
 };
 use rstest::*;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
@@ -382,7 +382,7 @@ impl DataActor for OpenOptionOnQuote {
 fn test_add_actor_registers_actor_with_trader() {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     let actor = EmptyActor::new();
-    let actor_id = actor.core.actor_id();
+    let actor_id = actor.actor_id();
 
     engine.add_actor(actor).unwrap();
 
@@ -743,7 +743,7 @@ mod defi {
 fn test_add_exec_algorithm_registers_exec_algorithm_with_trader_and_endpoint() {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     let exec_algorithm = EmptyExecAlgorithm::new();
-    let exec_algorithm_id = ExecAlgorithmId::from(exec_algorithm.core.actor_id().inner().as_str());
+    let exec_algorithm_id = exec_algorithm.id();
     let endpoint = format!("{exec_algorithm_id}.execute");
 
     engine.add_exec_algorithm(exec_algorithm).unwrap();
@@ -785,7 +785,7 @@ fn test_add_exec_algorithm_while_running_returns_error() {
 fn test_add_actor_while_running_registers_actor_with_trader() {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     let actor = EmptyActor::new();
-    let actor_id = actor.core.actor_id();
+    let actor_id = actor.actor_id();
 
     engine
         .kernel_mut()

@@ -15,12 +15,7 @@
 
 //! Core component for execution algorithms.
 
-use std::{
-    cell::RefCell,
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-    rc::Rc,
-};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::{AHashMap, AHashSet};
 use indexmap::IndexMap;
@@ -270,19 +265,6 @@ impl ExecutionAlgorithmCore {
     }
 }
 
-impl Deref for ExecutionAlgorithmCore {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.actor
-    }
-}
-
-impl DerefMut for ExecutionAlgorithmCore {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.actor
-    }
-}
-
 impl DataActorNative for ExecutionAlgorithmCore {
     fn core(&self) -> &DataActorCore {
         &self.actor
@@ -422,11 +404,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_deref_to_data_actor_core() {
+    fn test_data_actor_core_available_through_native_trait() {
         let config = create_test_config();
         let core = ExecutionAlgorithmCore::new(config);
 
-        // Should be able to access DataActorCore methods via Deref
-        assert!(core.trader_id().is_none());
+        assert!(DataActorNative::core(&core).trader_id().is_none());
     }
 }

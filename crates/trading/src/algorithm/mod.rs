@@ -118,7 +118,7 @@ pub trait ExecutionAlgorithm: DataActor {
             log::info!("{id} {RECV}{CMD} {command:?}");
         }
 
-        if core.state() != ComponentState::Running {
+        if DataActorNative::core(core).state() != ComponentState::Running {
             return Ok(());
         }
 
@@ -1095,7 +1095,7 @@ pub trait ExecutionAlgorithm: DataActor {
     where
         Self: ExecutionAlgorithmNative,
     {
-        if ExecutionAlgorithmNative::exec_algorithm_core_mut(self).state()
+        if DataActorNative::core(ExecutionAlgorithmNative::exec_algorithm_core_mut(self)).state()
             != ComponentState::Running
         {
             return;
@@ -1172,7 +1172,7 @@ pub trait ExecutionAlgorithm: DataActor {
     where
         Self: ExecutionAlgorithmNative,
     {
-        if ExecutionAlgorithmNative::exec_algorithm_core_mut(self).state()
+        if DataActorNative::core(ExecutionAlgorithmNative::exec_algorithm_core_mut(self)).state()
             != ComponentState::Running
         {
             return;
@@ -1342,7 +1342,8 @@ fn publish_order_event(event: &OrderEventAny) {
 }
 
 fn registered_trader_id(core: &ExecutionAlgorithmCore) -> anyhow::Result<TraderId> {
-    core.trader_id()
+    DataActorNative::core(core)
+        .trader_id()
         .ok_or_else(|| anyhow::anyhow!("ExecutionAlgorithm not registered: trader_id is not set"))
 }
 
@@ -1513,7 +1514,7 @@ mod tests {
     #[rstest]
     fn test_algorithm_creation() {
         let algo = create_test_algorithm();
-        assert!(algo.core.exec_algorithm_id.inner().starts_with("TEST-"));
+        assert!(algo.id().inner().starts_with("TEST-"));
         assert!(!algo.on_order_called);
         assert!(algo.last_order_client_id.is_none());
     }
@@ -1523,8 +1524,7 @@ mod tests {
         let mut algo = create_test_algorithm();
         register_algorithm(&mut algo);
 
-        assert!(algo.core.trader_id().is_some());
-        assert_eq!(algo.core.trader_id(), Some(TraderId::from("TRADER-001")));
+        assert_eq!(algo.trader_id(), Some(TraderId::from("TRADER-001")));
     }
 
     #[rstest]
@@ -2455,13 +2455,7 @@ mod tests {
 
         algo.handle_order_event(OrderEventAny::Denied(denied));
 
-        let restored_primary = {
-            let cache = algo.core.cache_ref();
-            cache
-                .order(&ClientOrderId::from("O-001"))
-                .map(|o| o.clone())
-                .unwrap()
-        };
+        let restored_primary = algo.cache().order(&ClientOrderId::from("O-001")).unwrap();
         assert_eq!(restored_primary.quantity(), Quantity::from("1.0"));
     }
 
@@ -2540,13 +2534,7 @@ mod tests {
 
         algo.handle_order_event(OrderEventAny::Rejected(rejected));
 
-        let restored_primary = {
-            let cache = algo.core.cache_ref();
-            cache
-                .order(&ClientOrderId::from("O-001"))
-                .map(|o| o.clone())
-                .unwrap()
-        };
+        let restored_primary = algo.cache().order(&ClientOrderId::from("O-001")).unwrap();
         assert_eq!(restored_primary.quantity(), Quantity::from("1.0"));
     }
 
@@ -2622,13 +2610,7 @@ mod tests {
 
         algo.handle_order_event(OrderEventAny::Denied(denied));
 
-        let final_primary = {
-            let cache = algo.core.cache_ref();
-            cache
-                .order(&ClientOrderId::from("O-001"))
-                .map(|o| o.clone())
-                .unwrap()
-        };
+        let final_primary = algo.cache().order(&ClientOrderId::from("O-001")).unwrap();
         assert_eq!(final_primary.quantity(), Quantity::from("1.0"));
     }
 
@@ -2721,13 +2703,7 @@ mod tests {
         );
         let events = events.borrow();
 
-        let restored_primary = {
-            let cache = algo.core.cache_ref();
-            cache
-                .order(&ClientOrderId::from("O-001"))
-                .map(|o| o.clone())
-                .unwrap()
-        };
+        let restored_primary = algo.cache().order(&ClientOrderId::from("O-001")).unwrap();
         assert_eq!(restored_primary.quantity(), Quantity::from("0.7"));
         assert_eq!(events.len(), 1);
         assert!(matches!(
@@ -2811,13 +2787,7 @@ mod tests {
 
         algo.handle_order_event(OrderEventAny::Accepted(accepted));
 
-        let primary_after_accept = {
-            let cache = algo.core.cache_ref();
-            cache
-                .order(&ClientOrderId::from("O-001"))
-                .map(|o| o.clone())
-                .unwrap()
-        };
+        let primary_after_accept = algo.cache().order(&ClientOrderId::from("O-001")).unwrap();
         assert_eq!(primary_after_accept.quantity(), Quantity::from("0.5"));
 
         // Cancel after acceptance - no restoration should occur
@@ -2840,13 +2810,7 @@ mod tests {
 
         algo.handle_order_event(OrderEventAny::Canceled(canceled));
 
-        let final_primary = {
-            let cache = algo.core.cache_ref();
-            cache
-                .order(&ClientOrderId::from("O-001"))
-                .map(|o| o.clone())
-                .unwrap()
-        };
+        let final_primary = algo.cache().order(&ClientOrderId::from("O-001")).unwrap();
         assert_eq!(final_primary.quantity(), Quantity::from("0.5"));
     }
 

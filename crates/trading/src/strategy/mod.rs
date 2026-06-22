@@ -2720,9 +2720,9 @@ mod tests {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
 
-        assert!(strategy.core.order_manager.is_some());
-        assert!(strategy.core.order_factory.is_some());
-        assert!(strategy.core.portfolio.is_some());
+        assert!(strategy.is_registered());
+        let _ = strategy.order().generate_client_order_id();
+        let _ = strategy.portfolio().is_initialized();
     }
 
     #[rstest]

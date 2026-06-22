@@ -1433,7 +1433,7 @@ mod tests {
         );
 
         let actor = TestDataActor::new(DataActorConfig::default());
-        let actor_id = actor.core.actor_id();
+        let actor_id = actor.actor_id();
 
         let result = trader.add_actor(actor);
         assert!(result.is_ok());
@@ -1549,8 +1549,7 @@ mod tests {
         };
 
         assert_eq!(trader.strategy_ids(), vec![strategy_id]);
-        assert_eq!(registered.core.strategy_id(), Some(strategy_id));
-        assert_eq!(registered.core.order_id_tag(), Some("XNAS"));
+        assert_eq!(registered.strategy_id(), Some(strategy_id));
         assert!(client_order_id.as_str().ends_with("-001-XNAS-1"));
         assert!(order_list_id.as_str().ends_with("-001-XNAS-1"));
     }
@@ -1594,8 +1593,7 @@ mod tests {
         };
 
         assert_eq!(trader.strategy_ids(), vec![runtime_strategy_id]);
-        assert_eq!(registered.core.strategy_id(), Some(runtime_strategy_id));
-        assert_eq!(registered.core.order_id_tag(), Some("T01"));
+        assert_eq!(registered.strategy_id(), Some(runtime_strategy_id));
         assert!(client_order_id.as_str().ends_with("-001-T01-1"));
         assert!(order_list_id.as_str().ends_with("-001-T01-1"));
     }
@@ -1788,8 +1786,7 @@ mod tests {
             ..Default::default()
         };
         let exec_algorithm = TestExecAlgorithm::new(config);
-        let exec_algorithm_id =
-            ExecAlgorithmId::from(exec_algorithm.core.actor_id().inner().as_str());
+        let exec_algorithm_id = exec_algorithm.id();
 
         let result = trader.add_exec_algorithm(exec_algorithm);
         assert!(result.is_ok());

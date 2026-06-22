@@ -721,7 +721,7 @@ fn cdylib_strategy_submit_order_normalizes_identifiers() {
         risk_handler,
     );
 
-    let actor_id = ActorId::from(DataActorNative::core(&adapter).actor_id().inner().as_str());
+    let actor_id = adapter.actor_id();
     let registered = register_actor(adapter);
     // SAFETY: `registered` owns the adapter and this test holds the only
     // mutable access while invoking on_start.
@@ -1532,7 +1532,7 @@ fn cdylib_actor_quote_normalizes_identifiers_for_plugin() {
     }
     .expect("actor adapter construction succeeds");
     register_actor_adapter(&mut adapter);
-    let actor_id = ActorId::from(DataActorNative::core(&adapter).actor_id().inner().as_str());
+    let actor_id = adapter.actor_id();
     let _registered = register_actor(adapter);
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id,

@@ -49,7 +49,7 @@ fn lock_counters() -> MutexGuard<'static, ()> {
 }
 
 use nautilus_common::{
-    actor::{DataActor, DataActorNative, registry::register_actor},
+    actor::{DataActor, registry::register_actor},
     cache::Cache,
     clock::{Clock, TestClock},
     component::Component,
@@ -1595,7 +1595,7 @@ fn host_submit_order_routes_through_registered_strategy_adapter() {
     // The blanket `impl<T: DataActor + Debug + 'static> Actor for T` makes
     // the adapter registrable; we move it into the thread-local registry
     // so try_get_actor_unchecked can resolve it from inside the host thunk.
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     RISK_COMMAND_COUNT.store(0, Ordering::SeqCst);
@@ -1658,7 +1658,7 @@ fn host_submit_order_rejects_mismatched_trader_id() {
     let strategy_id = "PluginSubmitIdentity-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let order = make_initialized_market_order_with_identity(
@@ -1704,7 +1704,7 @@ fn host_cancel_order_rejects_missing_order() {
     let strategy_id = "PluginCancelOrder-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let handle = CancelOrderHandle::new(CancelOrderCommand::new(
@@ -1746,7 +1746,7 @@ fn host_modify_order_rejects_missing_order() {
     let strategy_id = "PluginModifyOrder-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let handle = ModifyOrderHandle::new(ModifyOrderCommand::new(
@@ -1823,7 +1823,7 @@ fn host_execution_slot_rejects_null_handle(
     let strategy_id = format!("PluginNullHandle-{slot}");
     let mut adapter = build_strategy_adapter(&strategy_id);
     register_strategy_adapter(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
@@ -1853,7 +1853,7 @@ fn host_cache_order_reads_registered_strategy_cache() {
     let strategy_id = "PluginPhaseTwoCache-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     let cache = register_strategy_adapter_with_cache(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
 
     let order = make_initialized_market_order("O-PHASE2-CACHE-1", strategy_id);
     cache
@@ -1892,7 +1892,7 @@ fn host_cache_order_reads_registered_strategy_cache() {
 fn host_cache_instrument_reads_registered_strategy_cache() {
     let mut adapter = build_strategy_adapter("PluginPhaseTwoInstrument-001");
     let cache = register_strategy_adapter_with_cache(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
 
     let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
     let instrument_id = instrument.id();
@@ -1934,7 +1934,7 @@ fn host_cache_instrument_reads_registered_strategy_cache() {
 fn host_cache_account_reads_registered_strategy_cache() {
     let mut adapter = build_strategy_adapter("PluginPhaseTwoAccount-001");
     let cache = register_strategy_adapter_with_cache(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let account_id = AccountId::from("BINANCE-001");
     cache
         .borrow_mut()
@@ -1974,7 +1974,7 @@ fn host_cache_position_reads_registered_strategy_cache() {
     let strategy_id = "PluginPhaseTwoPosition-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     let cache = register_strategy_adapter_with_cache(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let position = make_position_for_strategy("P-19700101-0000-000-000-2", strategy_id);
     let position_id = position.id;
     cache
@@ -2018,7 +2018,7 @@ fn host_cache_strategy_lists_default_to_calling_strategy() {
     let other_strategy_id = "PluginPhaseTwoLists-Other";
     let mut adapter = build_strategy_adapter(strategy_id);
     let cache = register_strategy_adapter_with_cache(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let order = make_initialized_market_order("O-PHASE2-LIST-1", strategy_id);
     let other_order = make_initialized_market_order("O-PHASE2-LIST-2", other_strategy_id);
     let position = make_position_for_strategy("P-19700101-0000-000-000-3", strategy_id);
@@ -2081,7 +2081,7 @@ fn host_identity_and_state_slots_return_registered_strategy_values() {
     let strategy_id = "PluginIdentity-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
@@ -2127,7 +2127,7 @@ fn host_identity_slots_support_actor_context_and_reject_strategy_only_calls() {
             Rc::new(RefCell::new(Cache::default())),
         )
         .expect("actor register");
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
@@ -2195,7 +2195,7 @@ fn host_order_factory_id_slots_generate_canonical_ids_from_strategy_factory() {
     let strategy_id = "PluginOrderIds-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
@@ -2239,8 +2239,8 @@ fn host_order_factory_id_slots_use_each_strategy_factory_context() {
     let mut adapter_b = build_strategy_adapter_with_order_id_tag("PluginOrderIdsB-001", "B02");
     register_strategy_adapter(&mut adapter_a);
     register_strategy_adapter(&mut adapter_b);
-    let actor_id_a = DataActorNative::core(&adapter_a).actor_id().inner();
-    let actor_id_b = DataActorNative::core(&adapter_b).actor_id().inner();
+    let actor_id_a = adapter_a.actor_id().inner();
+    let actor_id_b = adapter_b.actor_id().inner();
     let _registered_a = register_actor(adapter_a);
     let _registered_b = register_actor(adapter_b);
 
@@ -2282,7 +2282,7 @@ fn host_order_factory_id_slots_use_each_strategy_factory_context() {
 fn host_order_factory_id_slots_reject_unregistered_strategy() {
     let strategy_id = "PluginOrderIdsUnregistered-001";
     let adapter = build_strategy_adapter(strategy_id);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
@@ -2333,7 +2333,7 @@ fn host_subscribe_quotes_routes_msgbus_events_to_registered_strategy_adapter() {
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
     Component::start(&mut adapter).expect("strategy starts");
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
@@ -2388,7 +2388,7 @@ fn host_subscribe_trades_routes_msgbus_events_to_registered_strategy_adapter() {
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
     Component::start(&mut adapter).expect("strategy starts");
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
@@ -2443,7 +2443,7 @@ fn host_subscribe_bars_routes_msgbus_events_to_registered_strategy_adapter() {
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
     Component::start(&mut adapter).expect("strategy starts");
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
@@ -2504,7 +2504,7 @@ fn host_subscriptions_route_msgbus_events_to_registered_actor_adapter() {
         )
         .expect("actor register");
     Component::start(&mut adapter).expect("actor starts");
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
@@ -2612,7 +2612,7 @@ fn host_book_subscription_callbacks_emit_data_commands() {
     let strategy_id = "PluginPhaseTwoBookCmd-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let commands = Rc::new(RefCell::new(Vec::new()));
@@ -2740,7 +2740,7 @@ fn host_msgbus_publish_routes_bytes_to_any_subscribers() {
 
     let mut adapter = build_strategy_adapter("PluginPhaseTwoMsgbus-001");
     register_strategy_adapter(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
@@ -2804,7 +2804,7 @@ fn host_timer_callbacks_register_on_strategy_clock() {
     let strategy_id = "PluginPhaseTwoTimer-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     let (clock, _) = register_strategy_adapter_with_clock_and_cache(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
@@ -2840,7 +2840,7 @@ fn host_time_alert_callback_registers_on_strategy_clock() {
     let strategy_id = "PluginPhaseTwoAlert-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     let (clock, _) = register_strategy_adapter_with_clock_and_cache(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
@@ -3016,7 +3016,7 @@ fn host_submit_order_list_routes_through_registered_strategy_adapter() {
     let strategy_id = "PluginSubmitList-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     RISK_COMMAND_COUNT.store(0, Ordering::SeqCst);
@@ -3085,7 +3085,7 @@ fn host_submit_order_list_rejects_mismatched_strategy_id() {
     let strategy_id = "PluginSubmitListIdentity-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let handle = SubmitOrderListHandle::new(SubmitOrderListCommand::new(
@@ -3131,7 +3131,7 @@ fn host_submit_order_list_rejects_empty_orders() {
     let strategy_id = "PluginSubmitListEmpty-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let handle =
@@ -3172,7 +3172,7 @@ fn host_cancel_orders_dispatches_to_strategy_through_cache_lookup() {
     let strategy_id = "PluginCancelBatch-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     let cache = register_strategy_adapter_with_cache(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
 
     for id in ["O-PLUGIN-BATCH-1", "O-PLUGIN-BATCH-2"] {
         let order = make_initialized_market_order(id, strategy_id);
@@ -3226,7 +3226,7 @@ fn host_cancel_all_orders_dispatches_to_strategy_with_empty_cache_path() {
     let strategy_id = "PluginCancelAll-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let handle = CancelAllOrdersHandle::new(CancelAllOrdersCommand::new(
@@ -3261,7 +3261,7 @@ fn host_close_position_routes_through_registered_strategy_adapter() {
     let strategy_id = "PluginClosePos-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     let cache = register_strategy_adapter_with_cache(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
 
     let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
     cache
@@ -3351,7 +3351,7 @@ fn host_close_position_rejects_missing_position() {
     let strategy_id = "PluginClosePosMissing-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let handle = ClosePositionHandle::new(ClosePositionCommand::new(
@@ -3391,7 +3391,7 @@ fn host_close_all_positions_routes_through_registered_strategy_adapter() {
     let strategy_id = "PluginCloseAll-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     let cache = register_strategy_adapter_with_cache(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
 
     let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
     let target_instrument_id = instrument.id();
@@ -3473,7 +3473,7 @@ fn host_query_account_routes_through_registered_strategy_adapter() {
     let strategy_id = "PluginQueryAccount-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     RISK_COMMAND_COUNT.store(0, Ordering::SeqCst);
@@ -3539,7 +3539,7 @@ fn host_query_order_routes_through_registered_strategy_adapter() {
     let strategy_id = "PluginQueryOrder-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     let cache = register_strategy_adapter_with_cache(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
 
     let order = make_initialized_market_order("O-PLUGIN-QUERY-1", strategy_id);
     cache
@@ -3609,7 +3609,7 @@ fn host_query_order_rejects_missing_order() {
     let strategy_id = "PluginQueryOrderMissing-001";
     let mut adapter = build_strategy_adapter(strategy_id);
     register_strategy_adapter(&mut adapter);
-    let actor_id_ustr = DataActorNative::core(&adapter).actor_id().inner();
+    let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
     let handle = QueryOrderHandle::new(QueryOrderCommand::new(

@@ -488,7 +488,7 @@ fn register_data_actor(
     let mut actor = TestDataActor::new(config);
     actor.register(trader_id, clock, cache).unwrap();
 
-    let actor_id = actor.core.actor_id();
+    let actor_id = actor.actor_id();
 
     register_actor(actor);
     actor_id.inner()
@@ -3427,7 +3427,7 @@ fn test_on_save_and_on_load(
     // Prepare actor & register
     let mut actor = SaveLoadActor::new(config);
     actor.register(trader_id, clock, cache).unwrap();
-    let actor_id = actor.core.actor_id();
+    let actor_id = actor.actor_id();
     register_actor(actor);
 
     // Fetch back to mutate
@@ -3873,7 +3873,7 @@ fn test_subscribe_signal_dispatches_in_priority_order(
     actor_high
         .register(trader_id, clock.clone(), cache.clone())
         .unwrap();
-    let high_id = actor_high.core.actor_id().inner();
+    let high_id = actor_high.actor_id().inner();
     register_actor(actor_high);
 
     let mut actor_low = TestDataActor::new(DataActorConfig {
@@ -3881,7 +3881,7 @@ fn test_subscribe_signal_dispatches_in_priority_order(
         ..DataActorConfig::default()
     });
     actor_low.register(trader_id, clock, cache).unwrap();
-    let low_id = actor_low.core.actor_id().inner();
+    let low_id = actor_low.actor_id().inner();
     register_actor(actor_low);
 
     let mut high = get_actor_unchecked::<TestDataActor>(&high_id);

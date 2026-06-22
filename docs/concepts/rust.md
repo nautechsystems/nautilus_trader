@@ -278,6 +278,11 @@ them in ordinary portable actor, strategy, or execution algorithm logic,
 Python-authored components, or plug-in-compatible code, because those types do
 not cross those boundaries.
 
+`ExecutionAlgorithmCore` owns a `DataActorCore`, but it does not deref to one.
+Normal execution algorithm logic should use `id()`, `actor_id()`,
+`trader_id()`, `clock()`, and `cache()`. Reach for `ExecutionAlgorithmNative`
+only when the code needs native execution-algorithm state.
+
 Choose the smallest native handle and keep each borrow scoped. Use `order()`
 for normal strategy order construction. Reach for
 `order_factory()` only when native code needs the raw mutable factory borrow.

@@ -461,7 +461,7 @@ mod tests {
     #[rstest]
     fn test_twap_creation() {
         let algo = create_twap_algorithm();
-        assert!(algo.core.exec_algorithm_id.inner().starts_with("TWAP"));
+        assert!(algo.id().inner().starts_with("TWAP"));
         assert!(algo.scheduled_sizes.is_empty());
     }
 
@@ -470,7 +470,7 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
-        assert!(algo.core.trader_id().is_some());
+        assert_eq!(algo.trader_id(), Some(TraderId::from("TRADER-001")));
     }
 
     #[rstest]
@@ -645,15 +645,9 @@ mod tests {
 
         algo.on_order(order).unwrap();
 
-        let (primary, spawned) = {
-            let cache = algo.core.cache_ref();
-            let primary = cache.order(&primary_id).map(|o| o.clone()).unwrap();
-            let spawned = cache
-                .order(&ClientOrderId::from("O-001-E1"))
-                .map(|o| o.clone())
-                .unwrap();
-            (primary, spawned)
-        };
+        let cache = algo.cache();
+        let primary = cache.order(&primary_id).unwrap();
+        let spawned = cache.order(&ClientOrderId::from("O-001-E1")).unwrap();
 
         assert_eq!(primary.quantity(), Quantity::from("0.6"));
         assert_eq!(spawned.quantity(), Quantity::from("0.6"));
@@ -863,17 +857,17 @@ mod tests {
 
         // Verify timer is set
         assert!(
-            algo.core
-                .clock_mut()
+            algo.clock()
                 .timer_names()
-                .contains(&primary_id.as_str())
+                .iter()
+                .any(|name| name.as_str() == primary_id.as_str())
         );
 
         // Stop through the DataActor entry point the component lifecycle uses
         DataActor::on_stop(&mut algo).unwrap();
 
         // Timer should be canceled
-        assert!(algo.core.clock_mut().timer_names().is_empty());
+        assert!(algo.clock().timer_names().is_empty());
     }
 
     #[rstest]
