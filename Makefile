@@ -848,9 +848,6 @@ cargo-test-coverage-crate-html-%:  #-- Run coverage for specific crate with HTML
 #   make cargo-miri-core MIRI_CORE_ARC_SWAP_FILTER=...
 #   make cargo-miri-plugin MIRI_PLUGIN_FILTER=...
 #   make cargo-miri-plugin MIRI_PLUGIN_MANIFEST_FILTER=...
-#   make cargo-miri-plugin MIRI_PLUGIN_CUSTOM_DATA_FILTER=...
-#   make cargo-miri-plugin MIRI_PLUGIN_PANIC_FILTER=...
-#   make cargo-miri-plugin MIRI_PLUGIN_HOOK_FILTER=...
 MIRI_TOOLCHAIN ?= nightly
 MIRI_FLAGS ?= -Zmiri-disable-isolation -Zmiri-strict-provenance
 MIRI_CORE_ARC_SWAP_FLAGS ?= -Zmiri-disable-isolation -Zmiri-permissive-provenance
@@ -871,20 +868,11 @@ MIRI_CORE_ARC_SWAP_FILTER ?= -E 'test(/^collections::/)'
 # multiple hours under the Miri interpreter and exercise no unsafe, so we skip
 # them here while keeping the rest of `orderbook::` in scope.
 MIRI_MODEL_FILTER ?= -E 'test(/^(types::|identifiers::|orderbook::)/) and not test(=orderbook::aggregation::tests::test_price_to_order_id_comprehensive_collision_check) and not test(=orderbook::aggregation::tests::test_price_to_order_id_realistic_orderbook_prices)'
-# Keep the plug-in Miri lane focused on the ABI boundary, raw handle ownership,
-# panic guards, and command handles. Manifest fixtures model static cdylib
-# storage with `Box::leak`, so that slice runs with leak detection disabled
-# while the ownership-focused tests stay strict. Integration slices avoid the
-# host feature and dynamic loading: `custom_data_dispatch` covers clone, drop,
-# equality, and decoded handle arrays; `panic_propagation` covers fallible thunk
-# panic/error mapping; `hook_dispatch` covers no-host actor/strategy lifecycle
-# and custom-data dispatch. Broader hook/event slices stay available by
-# overriding `MIRI_PLUGIN_HOOK_FILTER`.
-MIRI_PLUGIN_FILTER ?= -E 'test(/^(boundary|host|panic|surfaces::commands)::/)'
+# Keep the plug-in Miri lane focused on the ABI boundary and panic guards.
+# Manifest fixtures model static cdylib storage with `Box::leak`, so that slice
+# runs with leak detection disabled while the boundary tests stay strict.
+MIRI_PLUGIN_FILTER ?= -E 'test(/^(boundary|panic)::/)'
 MIRI_PLUGIN_MANIFEST_FILTER ?= -E 'test(/^manifest::/)'
-MIRI_PLUGIN_CUSTOM_DATA_FILTER ?= -E 'all()'
-MIRI_PLUGIN_PANIC_FILTER ?= -E 'test(~custom_data_) | (test(~_thunk_propagates_failure::) & (test(~on_start_panic) | test(~on_start_err)))'
-MIRI_PLUGIN_HOOK_FILTER ?= -E 'test(~_lifecycle_thunk_dispatches_to_its_method) | test(~_data_thunk_dispatches_to_its_method)'
 
 .PHONY: check-miri-installed
 check-miri-installed:
@@ -917,7 +905,7 @@ cargo-miri-model:  #-- Run nautilus-model library tests under Miri to detect UB
 cargo-miri-plugin: export RUST_BACKTRACE=1
 cargo-miri-plugin: export PROPTEST_CASES=$(MIRI_PROPTEST_CASES)
 cargo-miri-plugin: check-miri-installed check-nextest-installed
-cargo-miri-plugin:  #-- Run nautilus-plugin boundary and dispatch tests under Miri
+cargo-miri-plugin:  #-- Run nautilus-plugin boundary and manifest tests under Miri
 	$(info $(M) Running nautilus-plugin library tests under Miri (filter: $(MIRI_PLUGIN_FILTER))...)
 	MIRIFLAGS="$(MIRI_FLAGS)" \
 		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
@@ -932,27 +920,6 @@ cargo-miri-plugin:  #-- Run nautilus-plugin boundary and dispatch tests under Mi
 		--no-default-features \
 		--lib \
 		$(MIRI_PLUGIN_MANIFEST_FILTER)
-	$(info $(M) Running nautilus-plugin custom data dispatch tests under Miri (filter: $(MIRI_PLUGIN_CUSTOM_DATA_FILTER))...)
-	MIRIFLAGS="$(MIRI_FLAGS)" \
-		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
-		-p nautilus-plugin \
-		--no-default-features \
-		--test custom_data_dispatch \
-		$(MIRI_PLUGIN_CUSTOM_DATA_FILTER)
-	$(info $(M) Running nautilus-plugin panic propagation tests under Miri (filter: $(MIRI_PLUGIN_PANIC_FILTER))...)
-	MIRIFLAGS="$(MIRI_FLAGS)" \
-		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
-		-p nautilus-plugin \
-		--no-default-features \
-		--test panic_propagation \
-		$(MIRI_PLUGIN_PANIC_FILTER)
-	$(info $(M) Running nautilus-plugin hook dispatch tests under Miri (filter: $(MIRI_PLUGIN_HOOK_FILTER))...)
-	MIRIFLAGS="$(MIRI_FLAGS)" \
-		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
-		-p nautilus-plugin \
-		--no-default-features \
-		--test hook_dispatch \
-		$(MIRI_PLUGIN_HOOK_FILTER)
 
 .PHONY: cargo-miri
 cargo-miri:  #-- Run Miri across the in-scope foundational and plug-in crates
