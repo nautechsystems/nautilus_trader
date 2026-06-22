@@ -59,6 +59,58 @@ pub fn get_supported_dexes_for_chain(blockchain: Blockchain) -> Vec<String> {
         .collect()
 }
 
+/// Chains with a registered DEX map, so `sync-dex` and `analyze-pool(s)` can operate on them.
+///
+/// Other chains (for example Polygon) are valid for block-level `sync-blocks` but have no DEX
+/// registrations, so DEX commands reject them.
+pub const DEX_SUPPORTED_CHAINS: [Blockchain; 4] = [
+    Blockchain::Ethereum,
+    Blockchain::Base,
+    Blockchain::Arbitrum,
+    Blockchain::Bsc,
+];
+
+/// The capability tiers a registered DEX reaches on a chain, derived from its parser presence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DexCapability {
+    /// The DEX type.
+    pub dex_type: DexType,
+    /// Whether `sync-dex` can discover pools (a HyperSync `PoolCreated` parser is registered).
+    pub discovery: bool,
+    /// Whether `analyze-pool(s)` can build snapshots (the full pool-event parser set is registered).
+    pub snapshots: bool,
+    /// Whether replay keeps `fee_protocol` correct (snapshot-capable plus a `SetFeeProtocol` parser).
+    pub replay_ready: bool,
+}
+
+/// Returns the capability tier of every DEX registered on `blockchain`, sorted by DEX name.
+///
+/// Returns an empty vector for chains without a DEX map (see [`DEX_SUPPORTED_CHAINS`]).
+#[must_use]
+pub fn dex_capabilities_for_chain(blockchain: Blockchain) -> Vec<DexCapability> {
+    let mut dex_types: Vec<DexType> = match blockchain {
+        Blockchain::Ethereum => ETHEREUM_DEX_EXTENDED_MAP.keys().copied().collect(),
+        Blockchain::Base => BASE_DEX_EXTENDED_MAP.keys().copied().collect(),
+        Blockchain::Arbitrum => ARBITRUM_DEX_EXTENDED_MAP.keys().copied().collect(),
+        Blockchain::Bsc => BSC_DEX_EXTENDED_MAP.keys().copied().collect(),
+        _ => return Vec::new(),
+    };
+    dex_types.sort_by_key(ToString::to_string);
+
+    dex_types
+        .into_iter()
+        .filter_map(|dex_type| {
+            let dex = get_dex_extended(blockchain, &dex_type)?;
+            Some(DexCapability {
+                dex_type,
+                discovery: dex.supports_pool_discovery(),
+                snapshots: dex.missing_pool_analysis_parsers().is_empty(),
+                replay_ready: dex.supports_fee_protocol_replay(),
+            })
+        })
+        .collect()
+}
+
 /// Attempts to match a DEX name in a case-insensitive manner.
 pub fn find_dex_type_case_insensitive(dex_name: &str, chain: &Chain) -> Option<DexType> {
     let supported_dexes = get_supported_dexes_for_chain(chain.name);
@@ -223,6 +275,47 @@ mod tests {
             "PancakeSwapV3 on {blockchain:?} is missing analysis parsers: {:?}",
             dex_extended.missing_pool_analysis_parsers()
         );
+    }
+
+    #[rstest]
+    #[case(Blockchain::Ethereum, DexType::UniswapV3, true, true, true)]
+    #[case(Blockchain::Base, DexType::UniswapV3, true, true, true)]
+    #[case(Blockchain::Bsc, DexType::PancakeSwapV3, true, true, false)]
+    #[case(Blockchain::Base, DexType::AerodromeSlipstream, false, true, false)]
+    #[case(Blockchain::Ethereum, DexType::UniswapV2, true, false, false)]
+    #[case(Blockchain::Arbitrum, DexType::SushiSwapV2, false, false, false)]
+    fn test_dex_capability_tiers(
+        #[case] blockchain: Blockchain,
+        #[case] dex_type: DexType,
+        #[case] discovery: bool,
+        #[case] snapshots: bool,
+        #[case] replay_ready: bool,
+    ) {
+        let capability = dex_capabilities_for_chain(blockchain)
+            .into_iter()
+            .find(|c| c.dex_type == dex_type)
+            .unwrap_or_else(|| panic!("{dex_type:?} should be registered on {blockchain:?}"));
+
+        assert_eq!(capability.discovery, discovery);
+        assert_eq!(capability.snapshots, snapshots);
+        assert_eq!(capability.replay_ready, replay_ready);
+    }
+
+    #[rstest]
+    fn test_dex_capabilities_empty_for_chain_without_map() {
+        assert!(dex_capabilities_for_chain(Blockchain::Polygon).is_empty());
+    }
+
+    #[rstest]
+    fn test_dex_capabilities_sorted_by_name() {
+        let names: Vec<String> = dex_capabilities_for_chain(Blockchain::Arbitrum)
+            .iter()
+            .map(|c| c.dex_type.to_string())
+            .collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+
+        assert_eq!(names, sorted);
     }
 
     #[rstest]

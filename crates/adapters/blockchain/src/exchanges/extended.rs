@@ -572,6 +572,17 @@ impl DexExtended {
         .filter_map(|(kind, present)| (!present).then_some(kind))
         .collect()
     }
+
+    /// Returns `true` if replay keeps this DEX's `fee_protocol` correct across replayed events.
+    ///
+    /// A snapshot-capable DEX that also parses `SetFeeProtocol` applies fee-protocol changes during
+    /// replay, so LP-versus-protocol fee splitting stays correct. A DEX without the parser still
+    /// produces usable snapshots but cannot track later `SetFeeProtocol` updates.
+    #[must_use]
+    pub fn supports_fee_protocol_replay(&self) -> bool {
+        self.missing_pool_analysis_parsers().is_empty()
+            && self.parse_fee_protocol_event_hypersync_fn.is_some()
+    }
 }
 
 impl Deref for DexExtended {

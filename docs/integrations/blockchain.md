@@ -449,7 +449,24 @@ A DEX can be registered for a chain yet lack the event parsers a command needs. 
 rejects such a DEX up front with `missing pool-event parser(s) for ...`, listing the absent families
 (analysis needs Initialize, Swap, Mint, Burn, and Collect parsers). `sync-dex` likewise rejects a DEX
 that cannot parse `PoolCreated` logs for discovery. This fails fast instead of syncing and erroring
-deep in profiling. PancakeSwap V3 is fully supported on BSC, Base, Arbitrum, and Ethereum.
+deep in profiling.
+
+The two commands need different parsers, so a DEX can support one and not the other:
+
+- `sync-dex` (discovery) needs a `PoolCreated` parser.
+- `analyze-pool(s)` (snapshots) need the Initialize, Swap, Mint, Burn, and Collect parsers, seeding
+  the starting price from Initialize.
+- Replay-ready DEXes additionally parse `SetFeeProtocol`, so replay keeps `fee_protocol` correct.
+
+Uniswap V3 is replay-ready on Ethereum, Base, Arbitrum, and BSC. PancakeSwap V3 is snapshot-capable on
+the same four chains, but has no `SetFeeProtocol` parser, so it is not replay-ready. Aerodrome
+Slipstream is snapshot-capable on Base, but has no `PoolCreated` parser, so `sync-dex` cannot discover
+its pools; register an Aerodrome Slipstream pool another way before `analyze-pool(s)`. Other
+registered DEXes (for example Uniswap V2/V4, Camelot, Fluid) support discovery only. Polygon is a
+valid chain for `sync-blocks`, but has no DEX registrations, so the DEX commands reject it.
+
+`blockchain analyze-pool --help` and `blockchain sync-dex --help` print the current supported chain
+and DEX combinations, derived from the registered parsers.
 
 #### Use checksummed pool addresses
 

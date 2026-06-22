@@ -103,10 +103,10 @@ pub enum BlockchainCommand {
     },
     /// Sync DEX pools.
     SyncDex {
-        /// The blockchain chain name (case-insensitive). Examples: ethereum, arbitrum, base, polygon, bsc
+        /// The blockchain chain name (case-insensitive). Supported chains are listed below.
         #[arg(long)]
         chain: String,
-        /// The DEX name (case-insensitive). Examples: `UniswapV3`, uniswapv3, `SushiSwapV2`, `PancakeSwapV3`
+        /// The DEX name (case-insensitive). Supported DEX names are listed below.
         #[arg(long)]
         dex: String,
         /// RPC HTTP URL for blockchain calls (optional, falls back to `RPC_HTTP_URL` env var)
@@ -124,14 +124,10 @@ pub enum BlockchainCommand {
     },
     /// Analyze a specific DEX pool.
     AnalyzePool {
-        /// The blockchain chain name (case-insensitive). Examples: ethereum, arbitrum, base, polygon, bsc
+        /// The blockchain chain name (case-insensitive). Supported chains are listed below.
         #[arg(long)]
         chain: String,
-        /// The DEX name (case-insensitive). Examples: UniswapV3, uniswapv3, SushiSwapV2, PancakeSwapV3
-        #[expect(
-            clippy::doc_markdown,
-            reason = "clap renders doc comments as plain help text"
-        )]
+        /// The DEX name (case-insensitive). Supported DEX names are listed below.
         #[arg(long)]
         dex: String,
         /// The pool contract address
@@ -175,14 +171,10 @@ pub enum BlockchainCommand {
     },
     /// Analyze several DEX pools in one runtime.
     AnalyzePools {
-        /// The blockchain chain name (case-insensitive). Examples: ethereum, arbitrum, base, polygon, bsc
+        /// The blockchain chain name (case-insensitive). Supported chains are listed below.
         #[arg(long)]
         chain: String,
-        /// The DEX name (case-insensitive). Examples: UniswapV3, uniswapv3, SushiSwapV2, PancakeSwapV3
-        #[expect(
-            clippy::doc_markdown,
-            reason = "clap renders doc comments as plain help text"
-        )]
+        /// The DEX name (case-insensitive). Supported DEX names are listed below.
         #[arg(long)]
         dex: String,
         /// Pool contract address. Can be repeated.
@@ -234,7 +226,7 @@ pub enum BlockchainCommand {
 
 #[cfg(all(test, feature = "defi"))]
 mod tests {
-    use clap::{CommandFactory, Parser};
+    use clap::Parser;
     use rstest::rstest;
 
     use super::*;
@@ -331,23 +323,41 @@ mod tests {
     #[rstest]
     #[case("analyze-pool")]
     #[case("analyze-pools")]
-    fn blockchain_analysis_help_renders_plain_text_examples(#[case] subcommand: &str) {
-        let mut command = NautilusCli::command();
+    fn blockchain_analysis_help_lists_capabilities_as_plain_text(#[case] subcommand: &str) {
+        let mut command = crate::cli_command();
         let help = command
             .find_subcommand_mut("blockchain")
             .and_then(|command| command.find_subcommand_mut(subcommand))
             .map(|command| command.render_long_help().to_string())
             .unwrap();
 
+        // Snapshot-capable DEXes are listed; the registered-but-unsupported SushiSwapV2 is not.
         assert!(help.contains("UniswapV3"));
-        assert!(help.contains("SushiSwapV2"));
         assert!(help.contains("PancakeSwapV3"));
+        assert!(help.contains("AerodromeSlipstream"));
+        assert!(!help.contains("SushiSwapV2"));
         assert!(help.contains("RPC_HTTP_URL"));
         assert!(help.contains("needs_bootstrap"));
+        // Help is rendered as plain text, so doc-markdown backticks must not survive.
         assert!(!help.contains("`UniswapV3`"));
-        assert!(!help.contains("`SushiSwapV2`"));
         assert!(!help.contains("`PancakeSwapV3`"));
         assert!(!help.contains("`RPC_HTTP_URL`"));
         assert!(!help.contains("`needs_bootstrap`"));
+    }
+
+    #[rstest]
+    fn blockchain_sync_dex_help_lists_discoverable_dexes() {
+        let mut command = crate::cli_command();
+        let help = command
+            .find_subcommand_mut("blockchain")
+            .and_then(|command| command.find_subcommand_mut("sync-dex"))
+            .map(|command| command.render_long_help().to_string())
+            .unwrap();
+
+        // sync-dex receives the discovery block, not the snapshot block.
+        assert!(help.contains("Discoverable DEXes"));
+        assert!(!help.contains("Snapshot-capable"));
+        // UniswapV2 is discovery-only, so it appears here but never in the snapshot listing.
+        assert!(help.contains("UniswapV2"));
     }
 }

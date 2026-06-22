@@ -17,7 +17,7 @@
 
 use std::process::ExitCode;
 
-use clap::Parser;
+use clap::FromArgMatches;
 use nautilus_cli::opt::NautilusCli;
 use nautilus_common::logging::ensure_logging_initialized;
 
@@ -26,7 +26,10 @@ async fn main() -> ExitCode {
     dotenvy::dotenv().ok();
     ensure_logging_initialized();
 
-    if let Err(e) = Box::pin(nautilus_cli::run(NautilusCli::parse())).await {
+    let matches = nautilus_cli::cli_command().get_matches();
+    let cli = NautilusCli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
+
+    if let Err(e) = Box::pin(nautilus_cli::run(cli)).await {
         log::error!("Error executing Nautilus CLI: {e}");
         return ExitCode::FAILURE;
     }

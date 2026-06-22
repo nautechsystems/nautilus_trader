@@ -11,6 +11,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added `Cache::try_order` with `OrderLookupError` for typed missing-order lookups (Rust)
 - Added external publish forwarding for Rust message bus publishers
 - Added capability-aware `analyze-pool(s)`/`sync-dex` validation that fails before sync for unsupported DEXes
+- Added capability-aware blockchain CLI help listing the discoverable and snapshot-capable DEXes per chain, derived from the registered parsers
 - Added Postgres cache position event-log persistence and restart recovery (Rust)
 - Added `ProbabilityPriceFeeModel` and configurable sandbox fee models (#4262), thanks @graceyangfan
 - Added PyO3 cache purge APIs (#4249), thanks @graceyangfan

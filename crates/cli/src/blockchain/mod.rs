@@ -24,7 +24,10 @@ use crate::{
 };
 
 pub(crate) mod analyze;
+mod help;
 pub(crate) mod sync;
+
+pub(crate) use help::augment_blockchain_help;
 
 /// Runs blockchain commands based on the provided options.
 ///
