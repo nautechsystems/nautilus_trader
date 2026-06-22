@@ -47,7 +47,7 @@ use nautilus_common::{
         RequestJoin, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
         SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
         SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-        SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeOptionChain,
+        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionChain,
         SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
         UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
         UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
@@ -56,7 +56,8 @@ use nautilus_common::{
         UnsubscribeTrades,
     },
     msgbus::{
-        self, BusTap, Endpoint, MStr, MessageBus, Topic, TypedHandler, TypedIntoHandler,
+        self, BusPayloadType, BusTap, Endpoint, MStr, MessageBus, Topic, TypedHandler,
+        TypedIntoHandler,
         stubs::{get_any_saving_handler, get_typed_message_saving_handler},
         switchboard::{self, MessagingSwitchboard},
     },
@@ -7261,6 +7262,332 @@ fn test_external_client_internal_bar_subscription_skips_local_aggregator(
 
     assert_eq!(msgbus::exact_subscriber_count_trades(trade_topic), 0);
     assert_eq!(recorder.borrow().as_slice(), &[]);
+}
+
+#[rstest]
+fn test_external_client_subscribe_registers_streamable_payload_types(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let config = DataEngineConfig {
+        external_clients: Some(vec![client_id]),
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache, Some(config));
+
+    for (name, cmd, expected) in streamable_subscribe_cases(audusd_sim.id, client_id, venue) {
+        stub_msgbus.borrow_mut().clear_streaming_types();
+        data_engine.execute(DataCommand::Subscribe(cmd));
+
+        assert_only_streaming_type(&stub_msgbus.borrow(), expected, name);
+    }
+}
+
+#[rstest]
+fn test_external_client_subscribe_keeps_non_streamable_payload_types_closed(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let config = DataEngineConfig {
+        external_clients: Some(vec![client_id]),
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache, Some(config));
+
+    for (name, cmd) in non_streamable_subscribe_cases(audusd_sim.id, client_id, venue) {
+        stub_msgbus.borrow_mut().clear_streaming_types();
+        data_engine.execute(DataCommand::Subscribe(cmd));
+
+        assert_no_streaming_types(&stub_msgbus.borrow(), name);
+    }
+}
+
+fn streamable_subscribe_cases(
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    venue: Venue,
+) -> Vec<(&'static str, SubscribeCommand, BusPayloadType)> {
+    let data_type = DataType::new("RustTestCustomData", None, None);
+    let bar_type = BarType::from(format!("{instrument_id}-1-MINUTE-LAST-EXTERNAL").as_str());
+    let interval_ms = NonZeroUsize::new(1_000).expect("interval must be non-zero");
+
+    vec![
+        (
+            "custom data",
+            SubscribeCommand::Data(SubscribeCustomData::new(
+                Some(client_id),
+                Some(venue),
+                data_type,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )),
+            BusPayloadType::Custom(Ustr::from("RustTestCustomData")),
+        ),
+        (
+            "instrument",
+            SubscribeCommand::Instrument(SubscribeInstrument::new(
+                instrument_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )),
+            BusPayloadType::Instrument,
+        ),
+        (
+            "instruments",
+            SubscribeCommand::Instruments(SubscribeInstruments::new(
+                Some(client_id),
+                venue,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )),
+            BusPayloadType::Instrument,
+        ),
+        (
+            "book deltas",
+            SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+                instrument_id,
+                BookType::L2_MBP,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                true,
+                None,
+                None,
+            )),
+            BusPayloadType::OrderBookDeltas,
+        ),
+        (
+            "book snapshots",
+            SubscribeCommand::BookSnapshots(SubscribeBookSnapshots::new(
+                instrument_id,
+                BookType::L2_MBP,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                interval_ms,
+                None,
+                None,
+            )),
+            BusPayloadType::OrderBookDeltas,
+        ),
+        (
+            "book depth10",
+            SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+                instrument_id,
+                BookType::L2_MBP,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                true,
+                None,
+                None,
+            )),
+            BusPayloadType::OrderBookDepth10,
+        ),
+        (
+            "quotes",
+            SubscribeCommand::Quotes(SubscribeQuotes::new(
+                instrument_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )),
+            BusPayloadType::QuoteTick,
+        ),
+        (
+            "trades",
+            SubscribeCommand::Trades(SubscribeTrades::new(
+                instrument_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )),
+            BusPayloadType::TradeTick,
+        ),
+        (
+            "bars",
+            SubscribeCommand::Bars(SubscribeBars::new(
+                bar_type,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )),
+            BusPayloadType::Bar,
+        ),
+        (
+            "mark prices",
+            SubscribeCommand::MarkPrices(SubscribeMarkPrices::new(
+                instrument_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )),
+            BusPayloadType::MarkPriceUpdate,
+        ),
+        (
+            "index prices",
+            SubscribeCommand::IndexPrices(SubscribeIndexPrices::new(
+                instrument_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )),
+            BusPayloadType::IndexPriceUpdate,
+        ),
+        (
+            "funding rates",
+            SubscribeCommand::FundingRates(SubscribeFundingRates::new(
+                instrument_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )),
+            BusPayloadType::FundingRateUpdate,
+        ),
+        (
+            "option greeks",
+            SubscribeCommand::OptionGreeks(SubscribeOptionGreeks::new(
+                instrument_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )),
+            BusPayloadType::OptionGreeks,
+        ),
+    ]
+}
+
+fn non_streamable_subscribe_cases(
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    venue: Venue,
+) -> Vec<(&'static str, SubscribeCommand)> {
+    let series_id = OptionSeriesId::new(
+        Venue::new("DERIBIT"),
+        Ustr::from("BTC"),
+        Ustr::from("BTC"),
+        UnixNanos::from(1_704_067_200_000_000_000u64),
+    );
+
+    vec![
+        (
+            "instrument status",
+            SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus::new(
+                instrument_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )),
+        ),
+        (
+            "instrument close",
+            SubscribeCommand::InstrumentClose(SubscribeInstrumentClose::new(
+                instrument_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )),
+        ),
+        (
+            "option chain",
+            SubscribeCommand::OptionChain(SubscribeOptionChain::new(
+                series_id,
+                StrikeRange::Fixed(vec![Price::from("50000")]),
+                Some(1_000),
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(client_id),
+                Some(venue),
+                None,
+            )),
+        ),
+    ]
+}
+
+fn assert_no_streaming_types(msgbus: &MessageBus, case_name: &str) {
+    for payload_type in data_streaming_payload_types() {
+        assert!(
+            !msgbus.is_streaming_type(payload_type),
+            "{case_name} should not register {}",
+            payload_type.as_str()
+        );
+    }
+}
+
+fn assert_only_streaming_type(msgbus: &MessageBus, expected: BusPayloadType, case_name: &str) {
+    for payload_type in data_streaming_payload_types() {
+        assert_eq!(
+            msgbus.is_streaming_type(payload_type),
+            payload_type == expected,
+            "{case_name} streaming registration mismatch for {}",
+            payload_type.as_str()
+        );
+    }
+}
+
+fn data_streaming_payload_types() -> Vec<BusPayloadType> {
+    vec![
+        BusPayloadType::Custom(Ustr::from("RustTestCustomData")),
+        BusPayloadType::Instrument,
+        BusPayloadType::OrderBookDeltas,
+        BusPayloadType::OrderBookDepth10,
+        BusPayloadType::QuoteTick,
+        BusPayloadType::TradeTick,
+        BusPayloadType::Bar,
+        BusPayloadType::MarkPriceUpdate,
+        BusPayloadType::IndexPriceUpdate,
+        BusPayloadType::FundingRateUpdate,
+        BusPayloadType::OptionGreeks,
+    ]
 }
 
 #[rstest]

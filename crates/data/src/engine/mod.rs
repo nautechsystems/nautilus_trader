@@ -82,7 +82,7 @@ use nautilus_common::{
         UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
     },
     msgbus::{
-        self, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
+        self, BusPayloadType, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
         switchboard::{self, MessagingSwitchboard},
     },
     runner::get_data_cmd_sender,
@@ -959,9 +959,12 @@ impl DataEngine {
         if let Some(client_id) = cmd.client_id()
             && self.external_clients.contains(client_id)
         {
+            register_external_streaming_type(&cmd);
+
             if self.config.debug {
                 log::debug!("Skipping subscribe command for external client {client_id}: {cmd:?}");
             }
+
             return Ok(());
         }
 
@@ -4982,6 +4985,39 @@ fn resolve_parent_components(
         );
     };
     Ok(Some((Ustr::from(root), class)))
+}
+
+fn register_external_streaming_type(cmd: &SubscribeCommand) {
+    if let Some(payload_type) = streaming_payload_type(cmd) {
+        msgbus::get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(payload_type);
+    }
+}
+
+fn streaming_payload_type(cmd: &SubscribeCommand) -> Option<BusPayloadType> {
+    match cmd {
+        SubscribeCommand::Data(cmd) => Some(BusPayloadType::Custom(Ustr::from(
+            cmd.data_type.type_name(),
+        ))),
+        SubscribeCommand::Instrument(_) | SubscribeCommand::Instruments(_) => {
+            Some(BusPayloadType::Instrument)
+        }
+        SubscribeCommand::BookDeltas(_) | SubscribeCommand::BookSnapshots(_) => {
+            Some(BusPayloadType::OrderBookDeltas)
+        }
+        SubscribeCommand::BookDepth10(_) => Some(BusPayloadType::OrderBookDepth10),
+        SubscribeCommand::Quotes(_) => Some(BusPayloadType::QuoteTick),
+        SubscribeCommand::Trades(_) => Some(BusPayloadType::TradeTick),
+        SubscribeCommand::Bars(_) => Some(BusPayloadType::Bar),
+        SubscribeCommand::MarkPrices(_) => Some(BusPayloadType::MarkPriceUpdate),
+        SubscribeCommand::IndexPrices(_) => Some(BusPayloadType::IndexPriceUpdate),
+        SubscribeCommand::FundingRates(_) => Some(BusPayloadType::FundingRateUpdate),
+        SubscribeCommand::OptionGreeks(_) => Some(BusPayloadType::OptionGreeks),
+        SubscribeCommand::InstrumentStatus(_)
+        | SubscribeCommand::InstrumentClose(_)
+        | SubscribeCommand::OptionChain(_) => None,
+    }
 }
 
 fn spread_quote_update_interval_seconds(params: Option<&Params>) -> Option<u64> {

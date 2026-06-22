@@ -284,7 +284,8 @@ pub struct MessageBus {
     encoding: SerializationEncoding,
     encoding_market_data: Option<SerializationEncoding>,
     encoding_builtin: Option<SerializationEncoding>,
-    types_filter: AHashSet<String>,
+    types_filter: AHashSet<BusPayloadType>,
+    streaming_types: AHashSet<BusPayloadType>,
 }
 
 impl Debug for MessageBus {
@@ -379,6 +380,7 @@ impl MessageBus {
             encoding_market_data: None,
             encoding_builtin: None,
             types_filter: AHashSet::new(),
+            streaming_types: AHashSet::new(),
         }
     }
 
@@ -453,7 +455,29 @@ impl MessageBus {
 
     /// Sets the type names excluded from external publishing.
     pub fn set_types_filter(&mut self, filter: Vec<String>) {
-        self.types_filter = filter.into_iter().collect();
+        self.types_filter = filter
+            .into_iter()
+            .map(|type_name| BusPayloadType::from_name(&type_name))
+            .filter(|payload_type| !payload_type.as_str().is_empty())
+            .collect();
+    }
+
+    /// Registers a payload type for external-to-internal streaming.
+    pub fn add_streaming_type(&mut self, payload_type: BusPayloadType) {
+        if !payload_type.as_str().is_empty() {
+            self.streaming_types.insert(payload_type);
+        }
+    }
+
+    /// Returns whether the payload type is registered for external-to-internal streaming.
+    #[must_use]
+    pub fn is_streaming_type(&self, payload_type: BusPayloadType) -> bool {
+        !payload_type.as_str().is_empty() && self.streaming_types.contains(&payload_type)
+    }
+
+    /// Clears all payload types registered for external-to-internal streaming.
+    pub fn clear_streaming_types(&mut self) {
+        self.streaming_types.clear();
     }
 
     #[must_use]
@@ -473,7 +497,7 @@ impl MessageBus {
         }
     }
 
-    pub(crate) fn types_filter(&self) -> &AHashSet<String> {
+    pub(crate) fn types_filter(&self) -> &AHashSet<BusPayloadType> {
         &self.types_filter
     }
 
@@ -529,6 +553,7 @@ impl MessageBus {
 
         self.routers_typed.clear();
         self.endpoints_typed.clear();
+        self.clear_streaming_types();
         self.sent_count = 0;
         self.req_count = 0;
         self.res_count = 0;
@@ -844,6 +869,54 @@ mod tests {
             msgbus.encoding_for(BusPayloadType::Custom(Ustr::from("CustomPayload"))),
             SerializationEncoding::MsgPack
         );
+    }
+
+    #[rstest]
+    fn streaming_type_registration_uses_canonical_payload_names() {
+        let mut msgbus = MessageBus::default();
+
+        msgbus.add_streaming_type(BusPayloadType::QuoteTick);
+        msgbus.add_streaming_type(BusPayloadType::Custom(Ustr::from("CustomPayload")));
+
+        assert!(msgbus.is_streaming_type(BusPayloadType::QuoteTick));
+        assert!(msgbus.is_streaming_type(BusPayloadType::Custom(Ustr::from("CustomPayload"))));
+        assert!(msgbus.streaming_types.contains(&BusPayloadType::QuoteTick));
+        assert!(
+            msgbus
+                .streaming_types
+                .contains(&BusPayloadType::Custom(Ustr::from("CustomPayload")))
+        );
+        assert!(!msgbus.is_streaming_type(BusPayloadType::TradeTick));
+    }
+
+    #[rstest]
+    fn streaming_type_registration_ignores_empty_custom_payload_type() {
+        let mut msgbus = MessageBus::default();
+
+        msgbus.add_streaming_type(BusPayloadType::Custom(Ustr::default()));
+
+        assert!(!msgbus.is_streaming_type(BusPayloadType::Custom(Ustr::default())));
+        assert!(msgbus.streaming_types.is_empty());
+    }
+
+    #[rstest]
+    fn clear_streaming_types_removes_registered_types() {
+        let mut msgbus = MessageBus::default();
+        msgbus.add_streaming_type(BusPayloadType::QuoteTick);
+
+        msgbus.clear_streaming_types();
+
+        assert!(!msgbus.is_streaming_type(BusPayloadType::QuoteTick));
+    }
+
+    #[rstest]
+    fn dispose_clears_streaming_types() {
+        let mut msgbus = MessageBus::default();
+        msgbus.add_streaming_type(BusPayloadType::QuoteTick);
+
+        msgbus.dispose();
+
+        assert!(!msgbus.is_streaming_type(BusPayloadType::QuoteTick));
     }
 
     #[rstest]

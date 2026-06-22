@@ -1326,8 +1326,7 @@ where
         return;
     };
 
-    let type_name = payload_type.as_str();
-    if bus.types_filter().contains(type_name) {
+    if bus.types_filter().contains(&payload_type) {
         return;
     }
 
@@ -1361,6 +1360,10 @@ where
 /// Returns an error if a supported payload cannot be decoded. Unsupported type/encoding pairs are
 /// skipped with a warning.
 pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
+    if !is_registered_streaming_type(message) {
+        return Ok(());
+    }
+
     let _guard = SuppressExternalGuard::new();
     let topic: MStr<Topic> = message.topic.into();
 
@@ -1563,6 +1566,30 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
 /// skipped with a warning.
 pub fn republish_transport_message(message: &BusMessage) -> anyhow::Result<()> {
     republish_external_message(message)
+}
+
+fn is_registered_streaming_type(message: &BusMessage) -> bool {
+    if get_message_bus()
+        .borrow()
+        .is_streaming_type(message.payload_type)
+    {
+        return true;
+    }
+
+    let type_name = message.payload_type.as_str();
+    if type_name.is_empty() {
+        log::debug!(
+            "Skipping external message on topic '{}' with no payload type for inbound republishing",
+            message.topic
+        );
+    } else {
+        log::debug!(
+            "Skipping external {type_name} message on topic '{}' because the type is not registered for streaming",
+            message.topic
+        );
+    }
+
+    false
 }
 
 fn handle_json_msgpack<T>(
@@ -2666,6 +2693,9 @@ mod tests {
         });
         subscribe_quotes("data.quotes.*".into(), handler, None);
 
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::QuoteTick);
         republish_external_message(&bus_message).unwrap();
 
         assert_eq!(*received.borrow(), vec![quote]);
@@ -2731,6 +2761,9 @@ mod tests {
         });
         subscribe(topic.into(), handler, None);
 
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(payload_type);
         republish_external_message(&bus_message).unwrap();
 
         let received = received.borrow();
@@ -3221,6 +3254,9 @@ mod tests {
             None,
         );
 
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::Custom(Ustr::from("StubCustomData")));
         republish_external_message(&bus_message).unwrap();
 
         assert_eq!(*received.borrow(), vec![custom]);
@@ -3272,6 +3308,9 @@ mod tests {
             Bytes::from(payload),
         );
 
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::Custom(Ustr::from("UnregisteredCustomData")));
         republish_external_message(&message).unwrap();
         reset_message_bus();
     }
@@ -3286,6 +3325,28 @@ mod tests {
         );
 
         republish_external_message(&message).unwrap();
+        reset_message_bus();
+    }
+
+    #[rstest]
+    fn republish_external_message_skips_unregistered_streaming_type_before_decode() {
+        let received = Rc::new(RefCell::new(Vec::<QuoteTick>::new()));
+        let received_handler = received.clone();
+        let handler = TypedHandler::from(move |quote: &QuoteTick| {
+            received_handler.borrow_mut().push(*quote);
+        });
+        subscribe_quotes("data.quotes.*".into(), handler, None);
+
+        let message = BusMessage::with_str_topic(
+            "data.quotes.AUDUSD.SIM",
+            SerializationEncoding::Json,
+            BusPayloadType::QuoteTick,
+            Bytes::from_static(b"not-json"),
+        );
+
+        republish_external_message(&message).unwrap();
+
+        assert!(received.borrow().is_empty());
         reset_message_bus();
     }
 
@@ -3412,6 +3473,9 @@ mod tests {
                 payload_type,
                 Bytes::from_static(b"malformed unsupported payload"),
             );
+            get_message_bus()
+                .borrow_mut()
+                .add_streaming_type(payload_type);
             republish_external_message(&message).unwrap();
         }
 
@@ -3428,6 +3492,9 @@ mod tests {
             Bytes::from_static(b"not-json"),
         );
 
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::QuoteTick);
         let error = republish_external_message(&message).unwrap_err();
 
         assert!(

@@ -313,7 +313,8 @@ trading loop. Closing the message bus closes the configured publisher.
 Inbound external streams are exposed through the separate Rust `MessageBusSubscriber` trait. A
 subscriber yields the same `BusMessage { topic, type, encoding, payload }` shape.
 `republish_external_message` decodes supported inbound messages and republishes them internally
-without forwarding the message back out.
+without forwarding the message back out. The inbound payload type must first be registered for
+streaming on the receiving message bus; unregistered types are skipped without decoding.
 
 For Redis, messages are transmitted via a Multiple-Producer Single-Consumer (MPSC) channel to a
 separate Rust task. That task writes the message to Redis streams.
@@ -533,6 +534,7 @@ flowchart TB
 :::tip
 Set the `LiveDataEngineConfig.external_clients` with the list of `client_id`s intended to represent the external streaming clients.
 The `DataEngine` will filter out subscription commands for these clients, ensuring that the external streaming provides the necessary data for any subscriptions to these clients.
+When the Rust `DataEngine` skips an external-client subscription, it registers the corresponding streaming payload type for inbound republishing on the message bus.
 :::
 
 ### Example configuration
