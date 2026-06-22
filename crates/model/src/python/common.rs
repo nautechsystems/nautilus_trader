@@ -178,10 +178,7 @@ pub fn commissions_from_indexmap<'py>(
 
 #[cfg(test)]
 mod tests {
-    use pyo3::{
-        prelude::*,
-        types::{PyBool, PyInt, PyString},
-    };
+    use pyo3::types::{PyBool, PyInt, PyString};
     use rstest::rstest;
     use serde_json::{Value, json};
 

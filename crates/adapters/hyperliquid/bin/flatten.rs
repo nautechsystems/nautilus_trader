@@ -110,8 +110,7 @@ async fn main() -> anyhow::Result<()> {
         .iter()
         .filter(|inst| {
             HyperliquidProductType::from_symbol(inst.id().symbol.as_str())
-                .ok()
-                .is_some_and(|pt| pt == HyperliquidProductType::Perp)
+                .is_ok_and(|pt| pt == HyperliquidProductType::Perp)
         })
         .map(|inst| (inst.raw_symbol().inner(), inst))
         .collect();

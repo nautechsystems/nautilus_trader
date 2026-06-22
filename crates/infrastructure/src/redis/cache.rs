@@ -633,9 +633,8 @@ impl RedisCacheDatabase {
 }
 
 fn blocking_recv<T>(rx: &mpsc::Receiver<T>) -> Result<T, mpsc::RecvError> {
-    let on_nautilus_runtime = tokio::runtime::Handle::try_current()
-        .ok()
-        .is_some_and(|h| h.id() == get_runtime().handle().id());
+    let on_nautilus_runtime =
+        tokio::runtime::Handle::try_current().is_ok_and(|h| h.id() == get_runtime().handle().id());
 
     if on_nautilus_runtime {
         tokio::task::block_in_place(|| rx.recv())

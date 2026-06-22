@@ -346,7 +346,7 @@ impl<'a, T> Hole<'a, T> {
     /// `index` must be within the data slice and not equal to pos.
     #[inline]
     unsafe fn get(&self, index: usize) -> &T {
-        debug_assert!(index != self.pos);
+        debug_assert_ne!(index, self.pos);
         debug_assert!(index < self.data.len());
         unsafe { self.data.get_unchecked(index) }
     }
@@ -358,7 +358,7 @@ impl<'a, T> Hole<'a, T> {
     /// `index` must be within the data slice and not equal to pos.
     #[inline]
     unsafe fn move_to(&mut self, index: usize) {
-        debug_assert!(index != self.pos);
+        debug_assert_ne!(index, self.pos);
         debug_assert!(index < self.data.len());
         // SAFETY: `index` and `pos` are bounds-checked by the debug assertions above.
         unsafe {
