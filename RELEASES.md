@@ -131,8 +131,12 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Fixed matching engine fill commission side in Rust
 - Fixed OKX instrument parsing for malformed venue payloads
 - Fixed OKX conditional and attached TP/SL algo amend fields (#4268), thanks @jhavie
+- Fixed Polymarket batch submit node panic on a venue-rejected leg (empty order ID); now emits `OrderRejected`
 - Fixed Polymarket instrument expiration precision for Gamma markets (#4278), thanks for reporting @OnlyC
 - Fixed Polymarket expired instruments re-entering live data paths (#4272), thanks @graceyangfan
+- Fixed Polymarket marketable BUY fills above nominal size dropped as overfills (Rust)
+- Fixed Polymarket marketable fills orphaning when a WS trade beats the submit response (Rust)
+- Fixed Polymarket post-only crossing rejections not setting `due_post_only`
 - Fixed portfolio account update scoping in Rust
 - Fixed PyO3 domain `from_raw` methods panicking on invalid input instead of raising `ValueError`
 - Fixed rate limiter arithmetic to saturate so extreme quotas deny instead of admitting every request (Rust)

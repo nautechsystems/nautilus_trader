@@ -138,7 +138,7 @@ pub(super) fn reject_submit_order(
     pending_cancels: &PendingCancelTracker,
 ) {
     let ts_now = clock.get_time_ns();
-    emitter.emit_order_rejected(order, reason, ts_now, false);
+    emitter.emit_order_rejected(order, reason, ts_now, is_post_only_crossing(reason));
     pending_cancels.remove(&order.client_order_id());
 }
 
@@ -474,7 +474,8 @@ pub(super) fn handle_order_response(
     match result {
         Ok(response) => {
             if response.success {
-                if let Some(order_id) = response.order_id {
+                // VenueOrderId panics on an empty string
+                if let Some(order_id) = response.order_id.filter(|s| !s.is_empty()) {
                     let venue_order_id = VenueOrderId::from(order_id.as_str());
                     let ts_now = clock.get_time_ns();
                     order_identities
@@ -530,6 +531,9 @@ pub(super) fn handle_order_response(
                         );
                         return Some((order_id, venue_order_id));
                     }
+                } else if let Some(reason) = response.error_msg.filter(|s| !s.is_empty()) {
+                    // Batch endpoint reports a rejected leg as success=true with an empty orderID; reason in error_msg
+                    reject_submit_order(order, &reason, emitter, clock, pending_cancels);
                 } else {
                     log::warn!(
                         "Order accepted but no order_id returned for {}",
@@ -540,18 +544,25 @@ pub(super) fn handle_order_response(
                 let reason = response
                     .error_msg
                     .unwrap_or_else(|| "unknown error".to_string());
-                let ts_now = clock.get_time_ns();
-                emitter.emit_order_rejected(order, &reason, ts_now, false);
-                pending_cancels.remove(&order.client_order_id());
+                reject_submit_order(order, &reason, emitter, clock, pending_cancels);
             }
         }
         Err(e) => {
-            let ts_now = clock.get_time_ns();
-            emitter.emit_order_rejected(order, &format!("HTTP request failed: {e}"), ts_now, false);
-            pending_cancels.remove(&order.client_order_id());
+            reject_submit_order(
+                order,
+                &format!("HTTP request failed: {e}"),
+                emitter,
+                clock,
+                pending_cancels,
+            );
         }
     }
     None
+}
+
+// Require both terms so only a post-only crossing matches, not any post-only reason
+fn is_post_only_crossing(reason: &str) -> bool {
+    reason.contains("post-only") && reason.contains("cross")
 }
 
 /// Emits an `OrderFilled` event for a drained own-order fill.
@@ -1480,5 +1491,176 @@ mod tests {
         order.apply(filled).unwrap();
         assert_eq!(order.quantity(), Quantity::new(12.0, size_precision));
         assert_eq!(order.status(), OrderStatus::Filled);
+    }
+
+    // An empty orderID with no reason is ambiguous: it must not panic constructing a VenueOrderId,
+    // and with nothing to report it stays on the warn branch (no event) for reconciliation.
+    #[rstest]
+    fn test_batch_leg_empty_order_id_no_reason_does_not_panic() {
+        let instrument = test_instrument();
+        let instrument_id = instrument.id();
+        let order = test_limit_order("O-BATCH-EMPTY", instrument_id);
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let pending_cancels = PendingCancelTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+
+        let response = OrderResponse {
+            success: true,
+            order_id: Some(String::new()),
+            error_msg: None,
+        };
+
+        assert!(
+            handle_order_response(
+                Ok(response),
+                &order,
+                &emitter,
+                nautilus_core::time::get_atomic_clock_realtime(),
+                &fill_tracker,
+                &order_identities,
+                &pending_cancels,
+                AccountId::from("POLY-001"),
+                instrument.size_precision(),
+                instrument.price_precision(),
+            )
+            .is_none()
+        );
+
+        // The empty id routes to the warn branch: no order events emitted
+        assert!(receiver.try_recv().is_err());
+    }
+
+    // The batch endpoint reports a rejected leg as success=true with an empty orderID and the reason
+    // in error_msg (live: a naked SELL rejected for no balance). Surface it as OrderRejected fast,
+    // carrying due_post_only when the reason is a post-only crossing.
+    #[rstest]
+    #[case("not enough balance / allowance: the balance is not enough", false)]
+    #[case("invalid post-only order: order crosses book", true)]
+    fn test_batch_leg_empty_order_id_with_reason_rejects(
+        #[case] reason: &str,
+        #[case] expected_post_only: bool,
+    ) {
+        let instrument = test_instrument();
+        let order = test_limit_order("O-BATCH-REJECT", instrument.id());
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let pending_cancels = PendingCancelTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+
+        let response = OrderResponse {
+            success: true,
+            order_id: Some(String::new()),
+            error_msg: Some(reason.to_string()),
+        };
+
+        assert!(
+            handle_order_response(
+                Ok(response),
+                &order,
+                &emitter,
+                nautilus_core::time::get_atomic_clock_realtime(),
+                &fill_tracker,
+                &order_identities,
+                &pending_cancels,
+                AccountId::from("POLY-001"),
+                instrument.size_precision(),
+                instrument.price_precision(),
+            )
+            .is_none()
+        );
+
+        match receiver.try_recv().expect("expected rejected event") {
+            ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+                assert_eq!(event.reason.as_str(), reason);
+                assert_eq!(event.due_post_only, expected_post_only);
+            }
+            other => panic!("expected rejected event, was {other:?}"),
+        }
+    }
+
+    // A post-only limit rejected for crossing the book must surface due_post_only=true so strategies
+    // can distinguish it from other venue rejections; any other reason stays false.
+    #[rstest]
+    #[case("invalid post-only order: order crosses book", true)]
+    #[case("not enough balance / allowance", false)]
+    fn test_submit_reject_flags_post_only_crossing(
+        #[case] reason: &str,
+        #[case] expected_post_only: bool,
+    ) {
+        let instrument = test_instrument();
+        let instrument_id = instrument.id();
+        let order = test_limit_order("O-REJECT", instrument_id);
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let pending_cancels = PendingCancelTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+
+        let response = OrderResponse {
+            success: false,
+            order_id: None,
+            error_msg: Some(reason.to_string()),
+        };
+
+        assert!(
+            handle_order_response(
+                Ok(response),
+                &order,
+                &emitter,
+                nautilus_core::time::get_atomic_clock_realtime(),
+                &fill_tracker,
+                &order_identities,
+                &pending_cancels,
+                AccountId::from("POLY-001"),
+                instrument.size_precision(),
+                instrument.price_precision(),
+            )
+            .is_none()
+        );
+
+        match receiver.try_recv().expect("expected rejected event") {
+            ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+                assert_eq!(event.reason.as_str(), reason);
+                assert_eq!(event.due_post_only, expected_post_only);
+            }
+            other => panic!("expected rejected event, was {other:?}"),
+        }
+    }
+
+    // Live path: a single-order post-only crossing rejection arrives as an HTTP 400 error and is
+    // emitted via reject_submit_order, not the success=false branch, so the flag must be set here
+    // too. The reason carries the venue message that the HTTP path wraps.
+    #[rstest]
+    #[case("invalid post-only order: order crosses book", true)]
+    #[case("invalid post-only order: unsupported tick size", false)]
+    #[case("not enough balance / allowance", false)]
+    fn test_reject_submit_order_flags_post_only_crossing(
+        #[case] reason: &str,
+        #[case] expected_post_only: bool,
+    ) {
+        let instrument = test_instrument();
+        let order = test_limit_order("O-REJECT-SUBMIT", instrument.id());
+        let (emitter, mut receiver) = test_emitter();
+        let pending_cancels = PendingCancelTracker::default();
+        pending_cancels.insert(order.client_order_id());
+
+        reject_submit_order(
+            &order,
+            reason,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            &pending_cancels,
+        );
+
+        match receiver.try_recv().expect("expected rejected event") {
+            ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+                assert_eq!(event.reason.as_str(), reason);
+                assert_eq!(event.due_post_only, expected_post_only);
+            }
+            other => panic!("expected rejected event, was {other:?}"),
+        }
+
+        // The reject funnel clears any tracked pending cancel for the order
+        assert!(!pending_cancels.contains(&order.client_order_id()));
     }
 }

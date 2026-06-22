@@ -153,8 +153,7 @@ impl PolymarketExecutionClient {
                     }
                 }
                 Err(e) => {
-                    let ts_now = clock.get_time_ns();
-                    emitter.emit_order_rejected(&order, &format!("{e}"), ts_now, false);
+                    reject_submit_order(&order, &format!("{e}"), &emitter, clock, &pending_cancels);
                 }
             }
             Ok(())

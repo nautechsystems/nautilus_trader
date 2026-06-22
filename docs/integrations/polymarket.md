@@ -359,7 +359,13 @@ venue rejections.
 The adapter rejects only when the response proves the order was not accepted, such as
 `success=false`, a documented order processing error, or another non-retryable client/API
 error. Transport failures, timeouts, ambiguous retry exhaustion, statusless `PolyApiException`,
-malformed responses, and server-side failures keep the order submitted.
+malformed responses, and server-side failures keep the order submitted. The batch endpoint reports
+a rejected leg as `success=true` with an empty `orderID` and the reason in `errorMsg` (for example a
+naked sell the venue cannot accept): the adapter rejects that leg with the venue reason. A leg with
+no `orderID` and no reason stays submitted for reconciliation.
+
+When a rejection reason reports a post-only order crossing the book, the `OrderRejected` event
+sets `due_post_only=true` so strategies can distinguish it from other venue rejections.
 
 For unknown outcomes, both adapters derive the expected Polymarket order hash from the signed
 EIP-712 order when possible and cache it as the `VenueOrderId`. Later WebSocket order events
