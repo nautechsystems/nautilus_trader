@@ -311,9 +311,9 @@ node's bus thread. Bounded publishers drop on a full queue instead of applying b
 trading loop. Closing the message bus closes the configured publisher.
 
 Inbound external streams are exposed through the separate Rust `MessageBusSubscriber` trait. A
-subscriber yields the same `BusMessage { topic, type, encoding, payload }` shape. The available
-transport republish function currently decodes and republishes inbound `QuoteTick` messages without
-forwarding the message back out.
+subscriber yields the same `BusMessage { topic, type, encoding, payload }` shape.
+`republish_external_message` decodes supported inbound messages and republishes them internally
+without forwarding the message back out.
 
 For Redis, messages are transmitted via a Multiple-Producer Single-Consumer (MPSC) channel to a
 separate Rust task. That task writes the message to Redis streams.
@@ -323,8 +323,9 @@ Offloading I/O to a separate thread keeps the main thread unblocked.
 With MessagePack or JSON, the Rust-native publisher forwards serializable typed publications. This
 includes instruments, quotes, trades, bars, book deltas, depth-10 snapshots, mark/index/funding
 updates, option greeks, account state, portfolio snapshots, order events, position events, and
-custom data. Full order book snapshots, greeks data, option chain slices, and DeFi pool swaps are
-not forwarded because those types do not implement Serde serialization.
+custom data. With the `defi` feature this also includes DeFi blocks, pools, liquidity updates, fee
+collects, and flash events. Full order book snapshots, greeks data, option chain slices, and DeFi
+pool swaps are not forwarded because those types do not implement Serde serialization.
 
 With SBE or Cap'n Proto, the Rust-native publisher forwards the built-in market data payloads with
 schema codecs: quotes, trades, bars, book deltas, depth-10 snapshots, mark price updates, index
@@ -397,7 +398,7 @@ construct that publisher. The core message bus does not require a `RedisMessageB
 injected publishers.
 
 The Rust live runtime still rejects `external_streams`, so inbound stream configuration is not
-silently ignored. The subscriber trait and transport republish function exist, but the missing
+silently ignored. The subscriber trait and external republish function exist, but the missing
 runtime piece is the Rust live bridge from inbound `BusMessage` sources to internal publish.
 
 ### Encoding

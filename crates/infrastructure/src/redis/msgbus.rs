@@ -1555,6 +1555,8 @@ mod serial_tests {
         let stream_msg_array = &stream_msgs[0].values().next().unwrap();
         let decoded_message = decode_bus_message(stream_msg_array).unwrap();
         assert_eq!(decoded_message.topic, "test_topic");
+        assert_eq!(decoded_message.payload_type, BusPayloadType::QuoteTick);
+        assert_eq!(decoded_message.encoding, SerializationEncoding::Json);
         assert_eq!(decoded_message.payload, Bytes::from("test_payload"));
 
         // Stop publishing task
