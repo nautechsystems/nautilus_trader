@@ -519,11 +519,7 @@ impl LiveNodeBuilder {
             exec_manager_config,
         );
 
-        #[cfg_attr(
-            not(feature = "plugin"),
-            expect(unused_mut, reason = "plugin builds need mutable node state")
-        )]
-        let mut node =
+        let node =
             LiveNode::new_from_builder(kernel, runner, self.config, exec_manager, exec_clients);
         node.load_configured_plugins()?;
 

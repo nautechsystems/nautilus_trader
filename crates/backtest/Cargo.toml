@@ -25,7 +25,7 @@ default = []
 examples = ["nautilus-trading/examples"]
 high-precision = ["nautilus-model/high-precision"]
 defi = ["nautilus-common/defi", "nautilus-data/defi", "nautilus-model/defi"]
-plugin = ["dep:nautilus-plugin"]
+plugin = []
 streaming = ["nautilus-persistence", "nautilus-system/streaming"]
 extension-module = [
   "nautilus-common/extension-module",
@@ -62,7 +62,6 @@ python = [
 [package.metadata.cargo-machete]
 ignored = [
   "cbindgen", # Used by build.rs when the `ffi` feature is enabled
-  "nautilus-plugin", # Optional dep behind the `plugin` feature; enables backtest engines to load plug-in cdylibs via `nautilus_plugin::bridge` once backtest-side callers land
 ]
 
 [package.metadata.docs.rs]
@@ -77,7 +76,6 @@ nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-persistence = { workspace = true, optional = true }
-nautilus-plugin = { workspace = true, features = ["host"], optional = true }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
 nautilus-system = { workspace = true }

@@ -301,7 +301,7 @@ impl LiveNode {
             exec_clients,
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
-            plugins: crate::plugin::NodePlugins::default(),
+            plugins: crate::plugin::NodePlugins,
             #[cfg(feature = "python")]
             python_actors: Vec::new(),
         }
@@ -361,11 +361,7 @@ impl LiveNode {
             exec_manager_config,
         );
 
-        #[cfg_attr(
-            not(feature = "plugin"),
-            expect(unused_mut, reason = "plugin builds need mutable node state")
-        )]
-        let mut node = Self {
+        let node = Self {
             kernel,
             runner: Some(runner),
             config,
@@ -374,7 +370,7 @@ impl LiveNode {
             exec_clients: Vec::new(),
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
-            plugins: crate::plugin::NodePlugins::default(),
+            plugins: crate::plugin::NodePlugins,
             #[cfg(feature = "python")]
             python_actors: Vec::new(),
         };
@@ -389,69 +385,57 @@ impl LiveNode {
     ///
     /// # Errors
     ///
-    /// Returns an error if any configured plug-in cannot be loaded, verified,
-    /// registered, or instantiated.
+    /// Returns an error when plug-ins are configured without `nautilus-plugin-host`.
     #[cfg(feature = "plugin")]
-    pub(crate) fn load_configured_plugins(&mut self) -> anyhow::Result<()> {
-        let configs = self.config.plugins.clone();
-        if configs.is_empty() {
+    pub(crate) fn load_configured_plugins(&self) -> anyhow::Result<()> {
+        if self.config.plugins.is_empty() {
             return Ok(());
         }
 
-        if self.state() != NodeState::Idle {
-            anyhow::bail!("Cannot load plug-ins after the node leaves Idle state");
-        }
-
-        let (loader, adapters) =
-            crate::plugin::load_configured_plugin_batch(&configs)?.into_parts();
-
-        for adapter in adapters {
-            self.install_plugin_adapter(adapter)?;
-        }
-
-        self.plugins.set_loader(loader);
-        Ok(())
+        anyhow::bail!(
+            "LiveNodeConfig.plugins requires nautilus-plugin-host; nautilus-plugin is the guest SDK only"
+        )
     }
 
     /// Loads and registers plug-ins declared on the node config.
     ///
     /// # Errors
     ///
-    /// Returns an error when plug-ins are configured without plug-in support.
+    /// Returns an error when plug-ins are configured without `nautilus-plugin-host`.
     #[cfg(not(feature = "plugin"))]
     pub(crate) fn load_configured_plugins(&self) -> anyhow::Result<()> {
         if self.config.plugins.is_empty() {
             return Ok(());
         }
 
-        anyhow::bail!("LiveNodeConfig.plugins requires the `plugin` feature")
+        anyhow::bail!(
+            "LiveNodeConfig.plugins requires nautilus-plugin-host; nautilus-plugin is the guest SDK only"
+        )
     }
 
     /// Loads and registers one plug-in instance.
     ///
     /// # Errors
     ///
-    /// Returns an error if the plug-in cannot be loaded, verified, resolved,
-    /// or registered.
+    /// Returns an error because dynamic plug-in hosting lives in `nautilus-plugin-host`.
     #[cfg(feature = "plugin")]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "signature mirrors the host-enabled API"
+    )]
     pub fn add_plugin(&mut self, config: PluginConfig) -> anyhow::Result<()> {
         config.validate_runtime_support(self.config.plugins.len())?;
 
-        if self.state() != NodeState::Idle {
-            anyhow::bail!("Cannot add plug-in after the node leaves Idle state");
-        }
-
-        let adapter = self.plugins.load_plugin(&config)?;
-        self.install_plugin_adapter(adapter)?;
-        self.config.plugins.push(config);
-        Ok(())
+        anyhow::bail!(
+            "LiveNode::add_plugin requires nautilus-plugin-host; nautilus-plugin is the guest SDK only"
+        )
     }
 
-    /// Rejects plug-in registration when the live crate is built without plug-in support.
+    /// Rejects plug-in registration when host support is not linked.
     ///
     /// # Errors
     ///
-    /// Always returns an error explaining that the `plugin` feature is required.
+    /// Always returns an error explaining that `nautilus-plugin-host` is required.
     #[cfg(not(feature = "plugin"))]
     #[expect(
         clippy::needless_pass_by_value,
@@ -459,22 +443,9 @@ impl LiveNode {
     )]
     pub fn add_plugin(&mut self, config: PluginConfig) -> anyhow::Result<()> {
         let _ = config;
-        anyhow::bail!("LiveNode::add_plugin requires the `plugin` feature")
-    }
-
-    #[cfg(feature = "plugin")]
-    fn install_plugin_adapter(
-        &mut self,
-        adapter: crate::plugin::NodePluginAdapter,
-    ) -> anyhow::Result<()> {
-        match adapter {
-            crate::plugin::NodePluginAdapter::Actor(adapter) => self.add_actor(*adapter),
-            crate::plugin::NodePluginAdapter::Strategy(adapter) => self.add_strategy(*adapter),
-            crate::plugin::NodePluginAdapter::Controller(adapter) => {
-                self.plugins.push_controller(adapter);
-                Ok(())
-            }
-        }
+        anyhow::bail!(
+            "LiveNode::add_plugin requires nautilus-plugin-host; nautilus-plugin is the guest SDK only"
+        )
     }
 
     /// Returns a thread-safe handle to control this node.

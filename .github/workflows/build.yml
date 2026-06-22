@@ -317,12 +317,6 @@ jobs:
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: make cargo-test-adapters EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
 
-      - name: Run plug-in cdylib smoke tests
-        if: >
-          needs.plan.outputs.run-rust-tests == 'true' &&
-          matrix.python-version == '3.13'
-        run: make cargo-test-plugin-cdylib-smoke NEXTEST_PROFILE=ci
-
       - name: Clean Rust test artifacts
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: |

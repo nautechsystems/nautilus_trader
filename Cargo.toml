@@ -84,7 +84,6 @@ nautilus-model = { path = "crates/model", version = "0.59.0" }
 nautilus-network = { path = "crates/network", version = "0.59.0" }
 nautilus-persistence = { path = "crates/persistence", version = "0.59.0" }
 nautilus-persistence-macros = { path = "crates/persistence/macros", version = "0.59.0" }
-nautilus-plugin = { path = "crates/plugin", version = "0.59.0", default-features = false }
 nautilus-portfolio = { path = "crates/portfolio", version = "0.59.0" }
 nautilus-pyo3 = { path = "crates/pyo3", version = "0.59.0" }
 nautilus-risk = { path = "crates/risk", version = "0.59.0" }
@@ -182,7 +181,6 @@ http = "1.4.2"
 implied-vol = { version = "2.0.0" }
 indexmap = { version = "2.14.0", features = ["serde"] }
 itchy = "0.3"
-libloading = "0.9.0"
 log = { version = "0.4.33", features = [
   "std",
   "kv_unstable",
