@@ -7288,6 +7288,45 @@ fn test_external_client_subscribe_registers_streamable_payload_types(
 }
 
 #[rstest]
+fn test_regular_client_subscribe_does_not_register_streaming_payload_type(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(
+        SubscribeQuotes::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    assert_no_streaming_types(&stub_msgbus.borrow(), "regular quote subscribe");
+    assert_eq!(recorder.borrow().len(), 1);
+}
+
+#[rstest]
 fn test_external_client_subscribe_keeps_non_streamable_payload_types_closed(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,

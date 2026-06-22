@@ -872,6 +872,23 @@ mod tests {
     }
 
     #[rstest]
+    fn set_types_filter_resolves_canonical_and_custom_names() {
+        let mut msgbus = MessageBus::default();
+
+        msgbus.set_types_filter(vec![
+            "QuoteTick".to_string(),
+            "ExternalCustomPayload".to_string(),
+            String::new(),
+        ]);
+
+        let filter = msgbus.types_filter();
+        assert_eq!(filter.len(), 2);
+        assert!(filter.contains(&BusPayloadType::QuoteTick));
+        assert!(filter.contains(&BusPayloadType::Custom(Ustr::from("ExternalCustomPayload"))));
+        assert!(!filter.contains(&BusPayloadType::Custom(Ustr::default())));
+    }
+
+    #[rstest]
     fn streaming_type_registration_uses_canonical_payload_names() {
         let mut msgbus = MessageBus::default();
 

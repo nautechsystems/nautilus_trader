@@ -826,20 +826,22 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
                 );
             }
             b"type" => {
-                if let redis::Value::BulkString(bytes) = &pair[1] {
-                    let type_name = std::str::from_utf8(bytes)
-                        .map_err(|e| anyhow::anyhow!("Error parsing type: {e}"))?;
-                    payload_type = BusPayloadType::from_name(type_name);
-                }
+                let redis::Value::BulkString(bytes) = &pair[1] else {
+                    anyhow::bail!("Invalid type format: {stream_msg:?}");
+                };
+                let type_name = std::str::from_utf8(bytes)
+                    .map_err(|e| anyhow::anyhow!("Error parsing type: {e}"))?;
+                payload_type = BusPayloadType::from_name(type_name);
             }
             b"encoding" => {
-                if let redis::Value::BulkString(bytes) = &pair[1] {
-                    let value = std::str::from_utf8(bytes)
-                        .map_err(|e| anyhow::anyhow!("Error parsing encoding: {e}"))?;
-                    encoding = value
-                        .parse()
-                        .map_err(|e| anyhow::anyhow!("Error parsing encoding: {e}"))?;
-                }
+                let redis::Value::BulkString(bytes) = &pair[1] else {
+                    anyhow::bail!("Invalid encoding format: {stream_msg:?}");
+                };
+                let value = std::str::from_utf8(bytes)
+                    .map_err(|e| anyhow::anyhow!("Error parsing encoding: {e}"))?;
+                encoding = value
+                    .parse()
+                    .map_err(|e| anyhow::anyhow!("Error parsing encoding: {e}"))?;
             }
             b"payload" => {
                 let redis::Value::BulkString(bytes) = &pair[1] else {
@@ -1044,6 +1046,46 @@ mod tests {
     }
 
     #[rstest]
+    fn test_decode_bus_message_accepts_unordered_metadata_fields() {
+        let stream_msg = Value::Array(vec![
+            Value::BulkString(b"payload".to_vec()),
+            Value::BulkString(b"data1".to_vec()),
+            Value::BulkString(b"encoding".to_vec()),
+            Value::BulkString(b"msgpack".to_vec()),
+            Value::BulkString(b"type".to_vec()),
+            Value::BulkString(b"TradeTick".to_vec()),
+            Value::BulkString(b"topic".to_vec()),
+            Value::BulkString(b"topic1".to_vec()),
+        ]);
+
+        let msg = decode_bus_message(&stream_msg).unwrap();
+
+        assert_eq!(msg.topic, "topic1");
+        assert_eq!(msg.payload_type, BusPayloadType::TradeTick);
+        assert_eq!(msg.encoding, SerializationEncoding::MsgPack);
+        assert_eq!(msg.payload, Bytes::from("data1"));
+    }
+
+    #[rstest]
+    fn test_decode_bus_message_rejects_invalid_encoding_header() {
+        let stream_msg = Value::Array(vec![
+            Value::BulkString(b"topic".to_vec()),
+            Value::BulkString(b"topic1".to_vec()),
+            Value::BulkString(b"encoding".to_vec()),
+            Value::BulkString(b"invalid".to_vec()),
+            Value::BulkString(b"payload".to_vec()),
+            Value::BulkString(b"data1".to_vec()),
+        ]);
+
+        let error = decode_bus_message(&stream_msg).unwrap_err();
+
+        assert!(
+            error.to_string().contains("Error parsing encoding"),
+            "{error:?}"
+        );
+    }
+
+    #[rstest]
     fn test_decode_bus_message_missing_fields() {
         let stream_msg = Value::Array(vec![
             Value::BulkString(b"0".to_vec()),
@@ -1072,6 +1114,44 @@ mod tests {
         assert_eq!(
             format!("{}", result.unwrap_err()),
             "Invalid topic format: array([bulk-string('\"topic\"'), int(42), bulk-string('\"payload\"'), bulk-string('\"data1\"')])"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_bus_message_invalid_type_format() {
+        let stream_msg = Value::Array(vec![
+            Value::BulkString(b"topic".to_vec()),
+            Value::BulkString(b"topic1".to_vec()),
+            Value::BulkString(b"type".to_vec()),
+            Value::Int(42),
+            Value::BulkString(b"payload".to_vec()),
+            Value::BulkString(b"data1".to_vec()),
+        ]);
+
+        let result = decode_bus_message(&stream_msg);
+        assert!(result.is_err());
+        assert_eq!(
+            format!("{}", result.unwrap_err()),
+            "Invalid type format: array([bulk-string('\"topic\"'), bulk-string('\"topic1\"'), bulk-string('\"type\"'), int(42), bulk-string('\"payload\"'), bulk-string('\"data1\"')])"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_bus_message_invalid_encoding_format() {
+        let stream_msg = Value::Array(vec![
+            Value::BulkString(b"topic".to_vec()),
+            Value::BulkString(b"topic1".to_vec()),
+            Value::BulkString(b"encoding".to_vec()),
+            Value::Int(42),
+            Value::BulkString(b"payload".to_vec()),
+            Value::BulkString(b"data1".to_vec()),
+        ]);
+
+        let result = decode_bus_message(&stream_msg);
+        assert!(result.is_err());
+        assert_eq!(
+            format!("{}", result.unwrap_err()),
+            "Invalid encoding format: array([bulk-string('\"topic\"'), bulk-string('\"topic1\"'), bulk-string('\"encoding\"'), int(42), bulk-string('\"payload\"'), bulk-string('\"data1\"')])"
         );
     }
 
