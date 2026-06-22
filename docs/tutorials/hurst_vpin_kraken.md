@@ -377,12 +377,12 @@ use nautilus_trading::examples::strategies::{
     HurstVpinDirectional, HurstVpinDirectionalConfig,
 };
 
-let config = HurstVpinDirectionalConfig::new(
-    instrument_id,
-    bar_type,
-    Quantity::from("0.0100"),  // match instrument size_precision
-)
-.with_max_holding_secs(1800);
+let config = HurstVpinDirectionalConfig::builder()
+    .instrument_id(instrument_id)
+    .bar_type(bar_type)
+    .trade_size(Quantity::from("0.0100")) // match instrument size_precision
+    .max_holding_secs(1800)
+    .build();
 
 engine.add_strategy(HurstVpinDirectional::new(config))?;
 ```

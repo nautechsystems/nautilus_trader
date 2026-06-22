@@ -88,13 +88,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let hedge_instrument_id = InstrumentId::from(HEDGE_INSTRUMENT_ID);
 
-    let strategy_config =
-        DeltaNeutralVolConfig::new(OPTION_FAMILY.to_string(), hedge_instrument_id, client_id)
-            .with_contracts(CONTRACTS)
-            .with_rehedge_delta_threshold(REHEDGE_DELTA_THRESHOLD)
-            .with_rehedge_interval_secs(REHEDGE_INTERVAL_SECS)
-            .with_enter_strangle(ENTER_STRANGLE)
-            .with_iv_param_key(IV_PARAM_KEY.to_string());
+    let strategy_config = DeltaNeutralVolConfig::builder()
+        .option_family(OPTION_FAMILY.to_string())
+        .hedge_instrument_id(hedge_instrument_id)
+        .client_id(client_id)
+        .contracts(CONTRACTS)
+        .rehedge_delta_threshold(REHEDGE_DELTA_THRESHOLD)
+        .rehedge_interval_secs(REHEDGE_INTERVAL_SECS)
+        .enter_strangle(ENTER_STRANGLE)
+        .iv_param_key(IV_PARAM_KEY.to_string())
+        .build();
 
     let strategy = DeltaNeutralVol::new(strategy_config);
 

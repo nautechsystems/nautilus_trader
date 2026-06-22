@@ -70,12 +70,14 @@ impl EmaCross {
         fast_period: usize,
         slow_period: usize,
     ) -> Self {
-        Self::from_config(EmaCrossConfig::new(
-            instrument_id,
-            trade_size,
-            fast_period,
-            slow_period,
-        ))
+        Self::from_config(
+            EmaCrossConfig::builder()
+                .instrument_id(instrument_id)
+                .trade_size(trade_size)
+                .fast_period(fast_period)
+                .slow_period(slow_period)
+                .build(),
+        )
     }
 
     fn enter(&mut self, side: OrderSide) -> anyhow::Result<()> {

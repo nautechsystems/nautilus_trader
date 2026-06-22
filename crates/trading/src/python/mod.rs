@@ -21,6 +21,8 @@
 )]
 
 pub mod algorithm;
+#[cfg(feature = "examples")]
+mod examples;
 pub mod sessions;
 pub mod strategy;
 

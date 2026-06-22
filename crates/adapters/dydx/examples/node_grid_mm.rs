@@ -94,13 +94,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let config = GridMarketMakerConfig::new(instrument_id, Quantity::from(MAX_POSITION))
-        .with_num_levels(NUM_LEVELS)
-        .with_grid_step_bps(GRID_STEP_BPS)
-        .with_skew_factor(SKEW_FACTOR)
-        .with_requote_threshold_bps(REQUOTE_THRESHOLD_BPS)
-        .with_expire_time_secs(EXPIRE_TIME_SECS)
-        .with_on_cancel_resubmit(ON_CANCEL_RESUBMIT);
+    let config = GridMarketMakerConfig::builder()
+        .instrument_id(instrument_id)
+        .max_position(Quantity::from(MAX_POSITION))
+        .num_levels(NUM_LEVELS)
+        .grid_step_bps(GRID_STEP_BPS)
+        .skew_factor(SKEW_FACTOR)
+        .requote_threshold_bps(REQUOTE_THRESHOLD_BPS)
+        .expire_time_secs(EXPIRE_TIME_SECS)
+        .on_cancel_resubmit(ON_CANCEL_RESUBMIT)
+        .build();
     let strategy = GridMarketMaker::new(config);
 
     node.add_strategy(strategy)?;

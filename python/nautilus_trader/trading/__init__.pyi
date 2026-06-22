@@ -9,8 +9,14 @@ from nautilus_trader import model
 from nautilus_trader import portfolio
 
 __all__ = [
+    "BookImbalanceActorConfig",
+    "CompositeMarketMakerConfig",
+    "DeltaNeutralVolConfig",
+    "EmaCrossConfig",
     "ExecutionAlgorithmConfig",
     "ForexSession",
+    "GridMarketMakerConfig",
+    "HurstVpinDirectionalConfig",
     "ImportableExecAlgorithmConfig",
     "ImportableStrategyConfig",
     "Strategy",
@@ -21,6 +27,130 @@ __all__ = [
     "fx_prev_end",
     "fx_prev_start",
 ]
+
+@typing.final
+class BookImbalanceActorConfig:
+    def __init__(
+        self,
+        instrument_ids: typing.Sequence[model.InstrumentId],
+        log_interval: int = 100,
+        actor_id: model.ActorId | None = None,
+    ) -> None: ...
+    @property
+    def instrument_ids(self) -> list[model.InstrumentId]: ...
+    @property
+    def log_interval(self) -> int: ...
+    @property
+    def actor_id(self) -> model.ActorId | None: ...
+
+@typing.final
+class CompositeMarketMakerConfig:
+    def __init__(
+        self,
+        instrument_id: model.InstrumentId,
+        signal_instrument_id: model.InstrumentId,
+        max_position: model.Quantity,
+        strategy_id: model.StrategyId | None = None,
+        order_id_tag: str | None = None,
+        trade_size: model.Quantity | None = None,
+        half_spread_bps: int = 5,
+        inventory_skew_factor: float = 0.0,
+        signal_skew_factor: float = 0.0,
+        signal_baseline: float | None = None,
+        requote_threshold_bps: int = 5,
+        expire_time_secs: int | None = None,
+        on_cancel_resubmit: bool = False,
+    ) -> None: ...
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def signal_instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def max_position(self) -> model.Quantity: ...
+    @property
+    def trade_size(self) -> model.Quantity | None: ...
+    @property
+    def half_spread_bps(self) -> int: ...
+    @property
+    def inventory_skew_factor(self) -> float: ...
+    @property
+    def signal_skew_factor(self) -> float: ...
+    @property
+    def signal_baseline(self) -> float | None: ...
+    @property
+    def requote_threshold_bps(self) -> int: ...
+    @property
+    def expire_time_secs(self) -> int | None: ...
+    @property
+    def on_cancel_resubmit(self) -> bool: ...
+
+@typing.final
+class DeltaNeutralVolConfig:
+    def __init__(
+        self,
+        option_family: str,
+        hedge_instrument_id: model.InstrumentId,
+        client_id: model.ClientId,
+        strategy_id: model.StrategyId | None = None,
+        order_id_tag: str | None = None,
+        target_call_delta: float = 0.20,
+        target_put_delta: float = -0.20,
+        contracts: int = 1,
+        rehedge_delta_threshold: float = 0.5,
+        rehedge_interval_secs: int = 30,
+        expiry_filter: str | None = None,
+        enter_strangle: bool = True,
+        entry_iv_offset: float = 0.0,
+        entry_time_in_force: model.TimeInForce = model.TimeInForce.GTC,
+        entry_premium_offset_ticks: int | None = None,
+        iv_param_key: str = "px_vol",
+    ) -> None: ...
+    @property
+    def option_family(self) -> str: ...
+    @property
+    def hedge_instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def client_id(self) -> model.ClientId: ...
+    @property
+    def target_call_delta(self) -> float: ...
+    @property
+    def target_put_delta(self) -> float: ...
+    @property
+    def contracts(self) -> int: ...
+    @property
+    def rehedge_delta_threshold(self) -> float: ...
+    @property
+    def rehedge_interval_secs(self) -> int: ...
+    @property
+    def expiry_filter(self) -> str | None: ...
+    @property
+    def enter_strangle(self) -> bool: ...
+    @property
+    def entry_iv_offset(self) -> float: ...
+    @property
+    def entry_time_in_force(self) -> model.TimeInForce: ...
+    @property
+    def entry_premium_offset_ticks(self) -> int | None: ...
+
+@typing.final
+class EmaCrossConfig:
+    def __init__(
+        self,
+        instrument_id: model.InstrumentId,
+        trade_size: model.Quantity,
+        fast_period: int = 10,
+        slow_period: int = 50,
+        strategy_id: model.StrategyId | None = None,
+        order_id_tag: str | None = None,
+    ) -> None: ...
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def trade_size(self) -> model.Quantity: ...
+    @property
+    def fast_period(self) -> int: ...
+    @property
+    def slow_period(self) -> int: ...
 
 @typing.final
 class ExecutionAlgorithmConfig:
@@ -36,6 +166,79 @@ class ExecutionAlgorithmConfig:
     def log_events(self) -> bool: ...
     @property
     def log_commands(self) -> bool: ...
+
+@typing.final
+class GridMarketMakerConfig:
+    def __init__(
+        self,
+        instrument_id: model.InstrumentId,
+        max_position: model.Quantity,
+        strategy_id: model.StrategyId | None = None,
+        order_id_tag: str | None = None,
+        trade_size: model.Quantity | None = None,
+        num_levels: int = 3,
+        grid_step_bps: int = 10,
+        skew_factor: float = 0.0,
+        requote_threshold_bps: int = 5,
+        expire_time_secs: int | None = None,
+        on_cancel_resubmit: bool = False,
+    ) -> None: ...
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def max_position(self) -> model.Quantity: ...
+    @property
+    def trade_size(self) -> model.Quantity | None: ...
+    @property
+    def num_levels(self) -> int: ...
+    @property
+    def grid_step_bps(self) -> int: ...
+    @property
+    def skew_factor(self) -> float: ...
+    @property
+    def requote_threshold_bps(self) -> int: ...
+    @property
+    def expire_time_secs(self) -> int | None: ...
+    @property
+    def on_cancel_resubmit(self) -> bool: ...
+
+@typing.final
+class HurstVpinDirectionalConfig:
+    def __init__(
+        self,
+        instrument_id: model.InstrumentId,
+        bar_type: model.BarType,
+        trade_size: model.Quantity,
+        strategy_id: model.StrategyId | None = None,
+        order_id_tag: str | None = None,
+        hurst_window: int = 128,
+        hurst_lags: typing.Sequence[int] | None = None,
+        hurst_enter: float = 0.55,
+        hurst_exit: float = 0.50,
+        vpin_window: int = 50,
+        vpin_threshold: float = 0.30,
+        max_holding_secs: int = 3600,
+    ) -> None: ...
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def bar_type(self) -> model.BarType: ...
+    @property
+    def trade_size(self) -> model.Quantity: ...
+    @property
+    def hurst_window(self) -> int: ...
+    @property
+    def hurst_lags(self) -> list[int]: ...
+    @property
+    def hurst_enter(self) -> float: ...
+    @property
+    def hurst_exit(self) -> float: ...
+    @property
+    def vpin_window(self) -> int: ...
+    @property
+    def vpin_threshold(self) -> float: ...
+    @property
+    def max_holding_secs(self) -> int: ...
 
 @typing.final
 class ImportableExecAlgorithmConfig:

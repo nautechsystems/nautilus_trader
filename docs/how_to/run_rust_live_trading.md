@@ -95,16 +95,16 @@ use nautilus_trading::examples::strategies::{
     GridMarketMaker, GridMarketMakerConfig,
 };
 
-let mut config = GridMarketMakerConfig::new(
-    InstrumentId::from("ETH-USDT-SWAP.OKX"),
-    Quantity::from("0.10"),
-)
-    .with_num_levels(3)
-    .with_grid_step_bps(100)
-    .with_skew_factor(0.5)
-    .with_requote_threshold_bps(10)
-    .with_expire_time_secs(8)
-    .with_on_cancel_resubmit(true);
+let mut config = GridMarketMakerConfig::builder()
+    .instrument_id(InstrumentId::from("ETH-USDT-SWAP.OKX"))
+    .max_position(Quantity::from("0.10"))
+    .num_levels(3)
+    .grid_step_bps(100)
+    .skew_factor(0.5)
+    .requote_threshold_bps(10)
+    .expire_time_secs(8)
+    .on_cancel_resubmit(true)
+    .build();
 
 // OKX rejects hyphens in client order IDs
 config.base.use_hyphens_in_client_order_ids = false;

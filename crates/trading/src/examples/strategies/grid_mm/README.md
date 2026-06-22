@@ -76,15 +76,15 @@ would breach `max_position` are skipped.
 ```rust
 use nautilus_trading::examples::strategies::{GridMarketMaker, GridMarketMakerConfig};
 
-let config = GridMarketMakerConfig::new(
-    InstrumentId::from("BTC-USDT-SWAP.OKX"),
-    Quantity::from("10.0"),
-)
-.with_trade_size(Quantity::from("0.1"))
-.with_num_levels(5)
-.with_grid_step_bps(15)
-.with_skew_factor(0.5)
-.with_requote_threshold_bps(5);
+let config = GridMarketMakerConfig::builder()
+    .instrument_id(InstrumentId::from("BTC-USDT-SWAP.OKX"))
+    .max_position(Quantity::from("10.0"))
+    .trade_size(Quantity::from("0.1"))
+    .num_levels(5)
+    .grid_step_bps(15)
+    .skew_factor(0.5)
+    .requote_threshold_bps(5)
+    .build();
 
 let strategy = GridMarketMaker::new(config);
 node.add_strategy(strategy)?;

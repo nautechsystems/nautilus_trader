@@ -115,24 +115,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let max_position = parse_quantity("MAX_POSITION", MAX_POSITION)?;
     let trade_size = parse_quantity("TRADE_SIZE", TRADE_SIZE)?;
 
-    let strategy_config =
-        CompositeMarketMakerConfig::new(instrument_id, signal_instrument_id, max_position)
-            .with_strategy_id(StrategyId::from("NVDA_COMPOSITE_MM-001"))
-            .with_order_id_tag("001".to_string())
-            .with_trade_size(trade_size)
-            .with_half_spread_bps(HALF_SPREAD_BPS)
-            .with_inventory_skew_factor(INVENTORY_SKEW_FACTOR)
-            .with_signal_skew_factor(SIGNAL_SKEW_FACTOR)
-            .with_requote_threshold_bps(REQUOTE_THRESHOLD_BPS)
-            .with_on_cancel_resubmit(ON_CANCEL_RESUBMIT);
-    let strategy_config = match SIGNAL_BASELINE {
-        Some(baseline) => strategy_config.with_signal_baseline(baseline),
-        None => strategy_config,
-    };
-    let strategy_config = match EXPIRE_TIME_SECS {
-        Some(secs) => strategy_config.with_expire_time_secs(secs),
-        None => strategy_config,
-    };
+    let mut strategy_config = CompositeMarketMakerConfig::builder()
+        .instrument_id(instrument_id)
+        .signal_instrument_id(signal_instrument_id)
+        .max_position(max_position)
+        .trade_size(trade_size)
+        .half_spread_bps(HALF_SPREAD_BPS)
+        .inventory_skew_factor(INVENTORY_SKEW_FACTOR)
+        .signal_skew_factor(SIGNAL_SKEW_FACTOR)
+        .requote_threshold_bps(REQUOTE_THRESHOLD_BPS)
+        .on_cancel_resubmit(ON_CANCEL_RESUBMIT)
+        .maybe_signal_baseline(SIGNAL_BASELINE)
+        .maybe_expire_time_secs(EXPIRE_TIME_SECS)
+        .build();
+    strategy_config.base.strategy_id = Some(StrategyId::from("NVDA_COMPOSITE_MM-001"));
+    strategy_config.base.order_id_tag = Some("001".to_string());
 
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name("LIGHTER-NVDA-COMPOSITE-MM-001".to_string())

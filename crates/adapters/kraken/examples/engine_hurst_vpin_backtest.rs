@@ -115,9 +115,12 @@ fn main() -> anyhow::Result<()> {
     engine.add_instrument(&InstrumentAny::CryptoPerpetual(instrument))?;
 
     let bar_type = BarType::from(BAR_TYPE);
-    let config =
-        HurstVpinDirectionalConfig::new(instrument_id, bar_type, Quantity::from(TRADE_SIZE))
-            .with_max_holding_secs(MAX_HOLDING_SECS);
+    let config = HurstVpinDirectionalConfig::builder()
+        .instrument_id(instrument_id)
+        .bar_type(bar_type)
+        .trade_size(Quantity::from(TRADE_SIZE))
+        .max_holding_secs(MAX_HOLDING_SECS)
+        .build();
     engine.add_strategy(HurstVpinDirectional::new(config))?;
 
     let mut data: Vec<Data> = trades.into_iter().map(Data::Trade).collect();

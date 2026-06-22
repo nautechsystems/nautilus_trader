@@ -66,12 +66,15 @@ fn test_generates_orders(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let instrument_id = instrument.id();
     engine.add_instrument(&instrument).unwrap();
 
-    let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("10.0"))
-        .with_trade_size(Quantity::from("0.100"))
-        .with_num_levels(3)
-        .with_grid_step_bps(10)
-        .with_skew_factor(0.01)
-        .with_requote_threshold_bps(5);
+    let config = GridMarketMakerConfig::builder()
+        .instrument_id(instrument_id)
+        .max_position(Quantity::from("10.0"))
+        .trade_size(Quantity::from("0.100"))
+        .num_levels(3)
+        .grid_step_bps(10)
+        .skew_factor(0.01)
+        .requote_threshold_bps(5)
+        .build();
     engine.add_strategy(GridMarketMaker::new(config)).unwrap();
 
     // Phase 1: Stable at 1000 (5 ticks, within threshold) — initial quote placed, rest skip
@@ -127,12 +130,15 @@ fn test_skips_requote_within_threshold(crypto_perpetual_ethusdt: CryptoPerpetual
     let instrument_id = instrument.id();
     engine.add_instrument(&instrument).unwrap();
 
-    let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("10.0"))
-        .with_trade_size(Quantity::from("0.100"))
-        .with_num_levels(3)
-        .with_grid_step_bps(10)
-        .with_skew_factor(0.01)
-        .with_requote_threshold_bps(50);
+    let config = GridMarketMakerConfig::builder()
+        .instrument_id(instrument_id)
+        .max_position(Quantity::from("10.0"))
+        .trade_size(Quantity::from("0.100"))
+        .num_levels(3)
+        .grid_step_bps(10)
+        .skew_factor(0.01)
+        .requote_threshold_bps(50)
+        .build();
     engine.add_strategy(GridMarketMaker::new(config)).unwrap();
 
     // All quotes within the 5.0 threshold — only the first triggers orders
@@ -168,11 +174,14 @@ fn test_enforces_max_position_across_levels(crypto_perpetual_ethusdt: CryptoPerp
     let instrument_id = instrument.id();
     engine.add_instrument(&instrument).unwrap();
 
-    let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("0.150"))
-        .with_trade_size(Quantity::from("0.100"))
-        .with_num_levels(3)
-        .with_grid_step_bps(10)
-        .with_requote_threshold_bps(5);
+    let config = GridMarketMakerConfig::builder()
+        .instrument_id(instrument_id)
+        .max_position(Quantity::from("0.150"))
+        .trade_size(Quantity::from("0.100"))
+        .num_levels(3)
+        .grid_step_bps(10)
+        .requote_threshold_bps(5)
+        .build();
     engine.add_strategy(GridMarketMaker::new(config)).unwrap();
 
     // Single quote to trigger one requote cycle

@@ -66,7 +66,12 @@ fn test_from_config_generates_orders(crypto_perpetual_ethusdt: CryptoPerpetual) 
     let instrument_id = instrument.id();
     engine.add_instrument(&instrument).unwrap();
 
-    let config = EmaCrossConfig::new(instrument_id, Quantity::from("0.100"), 10, 20);
+    let config = EmaCrossConfig::builder()
+        .instrument_id(instrument_id)
+        .trade_size(Quantity::from("0.100"))
+        .fast_period(10)
+        .slow_period(20)
+        .build();
     engine.add_strategy(EmaCross::from_config(config)).unwrap();
 
     // Phase 1: Flat at 1000 (25 ticks) — both EMAs initialize and converge
@@ -127,9 +132,14 @@ fn test_from_config_with_custom_strategy_id(crypto_perpetual_ethusdt: CryptoPerp
     let instrument_id = instrument.id();
     engine.add_instrument(&instrument).unwrap();
 
-    let config = EmaCrossConfig::new(instrument_id, Quantity::from("0.100"), 5, 15)
-        .with_strategy_id(StrategyId::from("MY_EMA-002"))
-        .with_order_id_tag("002".to_string());
+    let mut config = EmaCrossConfig::builder()
+        .instrument_id(instrument_id)
+        .trade_size(Quantity::from("0.100"))
+        .fast_period(5)
+        .slow_period(15)
+        .build();
+    config.base.strategy_id = Some(StrategyId::from("MY_EMA-002"));
+    config.base.order_id_tag = Some("002".to_string());
 
     engine.add_strategy(EmaCross::from_config(config)).unwrap();
 

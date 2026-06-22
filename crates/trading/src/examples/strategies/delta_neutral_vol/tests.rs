@@ -34,11 +34,11 @@ use super::{DeltaNeutralVol, DeltaNeutralVolConfig};
 use crate::strategy::Strategy;
 
 fn create_config() -> DeltaNeutralVolConfig {
-    DeltaNeutralVolConfig::new(
-        "BTC-USD".to_string(),
-        InstrumentId::from("BTC-USD-SWAP.OKX"),
-        ClientId::new("OKX"),
-    )
+    DeltaNeutralVolConfig::builder()
+        .option_family("BTC-USD".to_string())
+        .hedge_instrument_id(InstrumentId::from("BTC-USD-SWAP.OKX"))
+        .client_id(ClientId::new("OKX"))
+        .build()
 }
 
 fn create_strategy() -> DeltaNeutralVol {
@@ -119,15 +119,19 @@ fn test_config_defaults() {
 
 #[rstest]
 fn test_config_builder_methods() {
-    let config = create_config()
-        .with_target_call_delta(0.30)
-        .with_target_put_delta(-0.30)
-        .with_contracts(10)
-        .with_rehedge_delta_threshold(1.0)
-        .with_rehedge_interval_secs(60)
-        .with_expiry_filter("260327".to_string())
-        .with_strategy_id(StrategyId::from("CUSTOM-001"))
-        .with_order_id_tag("002".to_string());
+    let mut config = DeltaNeutralVolConfig::builder()
+        .option_family("BTC-USD".to_string())
+        .hedge_instrument_id(InstrumentId::from("BTC-USD-SWAP.OKX"))
+        .client_id(ClientId::new("OKX"))
+        .target_call_delta(0.30)
+        .target_put_delta(-0.30)
+        .contracts(10)
+        .rehedge_delta_threshold(1.0)
+        .rehedge_interval_secs(60)
+        .expiry_filter("260327".to_string())
+        .build();
+    config.base.strategy_id = Some(StrategyId::from("CUSTOM-001"));
+    config.base.order_id_tag = Some("002".to_string());
 
     assert_eq!(config.target_call_delta, 0.30);
     assert_eq!(config.target_put_delta, -0.30);
@@ -201,7 +205,8 @@ fn test_should_rehedge_false_at_zero() {
 
 #[rstest]
 fn test_should_rehedge_with_custom_threshold() {
-    let config = create_config().with_rehedge_delta_threshold(0.1);
+    let mut config = create_config();
+    config.rehedge_delta_threshold = 0.1;
     let mut strategy = DeltaNeutralVol::new(config);
     strategy.call_instrument_id = Some(InstrumentId::from("BTC-USD-260327-75000-C.OKX"));
     strategy.put_instrument_id = Some(InstrumentId::from("BTC-USD-260327-65000-P.OKX"));
@@ -215,7 +220,8 @@ fn test_should_rehedge_with_custom_threshold() {
 
 #[rstest]
 fn test_should_rehedge_false_with_only_one_ready_leg() {
-    let config = create_config().with_rehedge_delta_threshold(0.1);
+    let mut config = create_config();
+    config.rehedge_delta_threshold = 0.1;
     let mut strategy = DeltaNeutralVol::new(config);
     strategy.call_instrument_id = Some(InstrumentId::from("BTC-USD-260327-75000-C.OKX"));
     strategy.put_instrument_id = Some(InstrumentId::from("BTC-USD-260327-65000-P.OKX"));
@@ -556,7 +562,8 @@ fn test_should_enter_strangle_true_when_ready() {
 
 #[rstest]
 fn test_should_enter_strangle_false_when_config_disabled() {
-    let config = create_config().with_enter_strangle(false);
+    let mut config = create_config();
+    config.enter_strangle = false;
     let mut s = DeltaNeutralVol::new(config);
     s.call_instrument_id = Some(InstrumentId::from("BTC-USD-260327-75000-C.OKX"));
     s.put_instrument_id = Some(InstrumentId::from("BTC-USD-260327-65000-P.OKX"));
@@ -607,7 +614,8 @@ fn test_should_enter_strangle_false_without_greeks_initialized() {
 
 #[rstest]
 fn test_should_enter_strangle_with_premium_mode_waits_for_quotes() {
-    let config = create_config().with_entry_premium_offset_ticks(1);
+    let mut config = create_config();
+    config.entry_premium_offset_ticks = Some(1);
     let mut strategy = DeltaNeutralVol::new(config);
     let call_id = InstrumentId::from("BTC-USD-260327-75000-C.OKX");
     let put_id = InstrumentId::from("BTC-USD-260327-65000-P.OKX");
@@ -656,11 +664,15 @@ fn test_config_enter_strangle_default_true() {
 
 #[rstest]
 fn test_config_entry_builder_methods() {
-    let config = create_config()
-        .with_enter_strangle(false)
-        .with_entry_iv_offset(0.05)
-        .with_entry_time_in_force(TimeInForce::Ioc)
-        .with_entry_premium_offset_ticks(2);
+    let config = DeltaNeutralVolConfig::builder()
+        .option_family("BTC-USD".to_string())
+        .hedge_instrument_id(InstrumentId::from("BTC-USD-SWAP.OKX"))
+        .client_id(ClientId::new("OKX"))
+        .enter_strangle(false)
+        .entry_iv_offset(0.05)
+        .entry_time_in_force(TimeInForce::Ioc)
+        .entry_premium_offset_ticks(2)
+        .build();
 
     assert!(!config.enter_strangle);
     assert_eq!(config.entry_iv_offset, 0.05);

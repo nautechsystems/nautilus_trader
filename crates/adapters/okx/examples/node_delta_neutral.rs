@@ -107,14 +107,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_factory = OKXDataClientFactory::new();
     let exec_factory = OKXExecutionClientFactory::new();
 
-    let mut strategy_config =
-        DeltaNeutralVolConfig::new(OPTION_FAMILY.to_string(), hedge_instrument_id, client_id)
-            .with_target_call_delta(TARGET_CALL_DELTA)
-            .with_target_put_delta(TARGET_PUT_DELTA)
-            .with_contracts(CONTRACTS)
-            .with_rehedge_delta_threshold(REHEDGE_DELTA_THRESHOLD)
-            .with_rehedge_interval_secs(REHEDGE_INTERVAL_SECS)
-            .with_enter_strangle(ENTER_STRANGLE);
+    let mut strategy_config = DeltaNeutralVolConfig::builder()
+        .option_family(OPTION_FAMILY.to_string())
+        .hedge_instrument_id(hedge_instrument_id)
+        .client_id(client_id)
+        .target_call_delta(TARGET_CALL_DELTA)
+        .target_put_delta(TARGET_PUT_DELTA)
+        .contracts(CONTRACTS)
+        .rehedge_delta_threshold(REHEDGE_DELTA_THRESHOLD)
+        .rehedge_interval_secs(REHEDGE_INTERVAL_SECS)
+        .enter_strangle(ENTER_STRANGLE)
+        .build();
 
     // OKX forbids hyphens in client order IDs
     strategy_config.base.use_hyphens_in_client_order_ids = false;

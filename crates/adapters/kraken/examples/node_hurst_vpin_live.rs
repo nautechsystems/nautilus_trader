@@ -100,9 +100,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let config =
-        HurstVpinDirectionalConfig::new(instrument_id, bar_type, Quantity::from(TRADE_SIZE))
-            .with_max_holding_secs(MAX_HOLDING_SECS);
+    let config = HurstVpinDirectionalConfig::builder()
+        .instrument_id(instrument_id)
+        .bar_type(bar_type)
+        .trade_size(Quantity::from(TRADE_SIZE))
+        .max_holding_secs(MAX_HOLDING_SECS)
+        .build();
     let strategy = HurstVpinDirectional::new(config);
 
     node.add_strategy(strategy)?;

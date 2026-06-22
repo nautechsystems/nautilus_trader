@@ -109,19 +109,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_factory = DeriveDataClientFactory::new();
     let exec_factory = DeriveExecutionClientFactory::new();
 
-    let mut strategy_config =
-        DeltaNeutralVolConfig::new(option_family, hedge_instrument_id, client_id)
-            .with_target_call_delta(TARGET_CALL_DELTA)
-            .with_target_put_delta(TARGET_PUT_DELTA)
-            .with_contracts(CONTRACTS)
-            .with_rehedge_delta_threshold(rehedge_delta_threshold)
-            .with_rehedge_interval_secs(REHEDGE_INTERVAL_SECS)
-            .with_enter_strangle(ENTER_STRANGLE)
-            .with_entry_iv_offset(ENTRY_IV_OFFSET)
-            .with_entry_premium_offset_ticks(ENTRY_PREMIUM_OFFSET_TICKS);
+    let mut strategy_config = DeltaNeutralVolConfig::builder()
+        .option_family(option_family)
+        .hedge_instrument_id(hedge_instrument_id)
+        .client_id(client_id)
+        .target_call_delta(TARGET_CALL_DELTA)
+        .target_put_delta(TARGET_PUT_DELTA)
+        .contracts(CONTRACTS)
+        .rehedge_delta_threshold(rehedge_delta_threshold)
+        .rehedge_interval_secs(REHEDGE_INTERVAL_SECS)
+        .enter_strangle(ENTER_STRANGLE)
+        .entry_iv_offset(ENTRY_IV_OFFSET)
+        .entry_premium_offset_ticks(ENTRY_PREMIUM_OFFSET_TICKS)
+        .build();
 
     if let Some(expiry) = EXPIRY_FILTER {
-        strategy_config = strategy_config.with_expiry_filter(expiry.to_string());
+        strategy_config.expiry_filter = Some(expiry.to_string());
     }
 
     let strategy = DeltaNeutralVol::new(strategy_config);

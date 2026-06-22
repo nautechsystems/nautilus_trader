@@ -116,16 +116,16 @@ use nautilus_trading::examples::strategies::{
     CompositeMarketMaker, CompositeMarketMakerConfig,
 };
 
-let config = CompositeMarketMakerConfig::new(
-    InstrumentId::from("OCPI-H100-PERP.AX"),
-    InstrumentId::from("SEMI-COMPOSITE.SYNTH"),
-    Quantity::from("100"),
-)
-.with_trade_size(Quantity::from("100"))
-.with_half_spread_bps(25)
-.with_inventory_skew_factor(0.0005)
-.with_signal_skew_factor(0.5)
-.with_requote_threshold_bps(10);
+let config = CompositeMarketMakerConfig::builder()
+    .instrument_id(InstrumentId::from("OCPI-H100-PERP.AX"))
+    .signal_instrument_id(InstrumentId::from("SEMI-COMPOSITE.SYNTH"))
+    .max_position(Quantity::from("100"))
+    .trade_size(Quantity::from("100"))
+    .half_spread_bps(25)
+    .inventory_skew_factor(0.0005)
+    .signal_skew_factor(0.5)
+    .requote_threshold_bps(10)
+    .build();
 
 let strategy = CompositeMarketMaker::new(config);
 node.add_strategy(strategy)?;

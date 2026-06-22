@@ -208,16 +208,19 @@ let lighter_exec_config = LighterExecClientConfig::builder()
     .environment(lighter_environment)
     .build();
 
-let strategy_config =
-    CompositeMarketMakerConfig::new(instrument_id, signal_instrument_id, max_position)
-        .with_strategy_id(StrategyId::from("NVDA_COMPOSITE_MM-001"))
-        .with_order_id_tag("001".to_string())
-        .with_trade_size(trade_size)
-        .with_half_spread_bps(HALF_SPREAD_BPS)
-        .with_inventory_skew_factor(INVENTORY_SKEW_FACTOR)
-        .with_signal_skew_factor(SIGNAL_SKEW_FACTOR)
-        .with_requote_threshold_bps(REQUOTE_THRESHOLD_BPS)
-        .with_on_cancel_resubmit(ON_CANCEL_RESUBMIT);
+let mut strategy_config = CompositeMarketMakerConfig::builder()
+    .instrument_id(instrument_id)
+    .signal_instrument_id(signal_instrument_id)
+    .max_position(max_position)
+    .trade_size(trade_size)
+    .half_spread_bps(HALF_SPREAD_BPS)
+    .inventory_skew_factor(INVENTORY_SKEW_FACTOR)
+    .signal_skew_factor(SIGNAL_SKEW_FACTOR)
+    .requote_threshold_bps(REQUOTE_THRESHOLD_BPS)
+    .on_cancel_resubmit(ON_CANCEL_RESUBMIT)
+    .build();
+strategy_config.base.strategy_id = Some(StrategyId::from("NVDA_COMPOSITE_MM-001"));
+strategy_config.base.order_id_tag = Some("001".to_string());
 
 let mut node = LiveNode::builder(trader_id, Environment::Live)?
     .with_name("LIGHTER-NVDA-COMPOSITE-MM-001".to_string())

@@ -5,25 +5,12 @@ Released on TBD (UTC).
 This release includes many breaking changes across the user-facing Rust v2 APIs.
 
 ### Enhancements
-- Added Binance Futures `bnfcr_currency` config for Credits Trading Mode
-- Added Binance Futures funding-rate history support in Rust
-- Added Binance Futures `MIN_NOTIONAL` parsing for `min_notional` (#4280), thanks @filipmacek
-- Added Binance Futures ticker data support in Rust
-- Added Binance order-list submission in Rust
-- Added `BitmexInstrumentState::Unknown` to tolerate unrecognized venue states without bootstrap failure
-- Added BitMEX legacy futures, spreads, and reference basket instrument parsing
 - Added cache order index crash-recovery restore for Redis and Postgres adapters (Rust)
 - Added `Cache::try_currency` with `CurrencyLookupError` for typed missing-currency lookups (Rust)
 - Added `Cache::try_instrument` with `InstrumentLookupError` for typed missing-instrument lookups (Rust)
 - Added `Cache::try_order` with `OrderLookupError` for typed missing-order lookups (Rust)
 - Added external publish forwarding for Rust message bus publishers
-- Added Hyperliquid builder attribution opt-out
-- Added Hyperliquid historical trade requests
-- Added Hyperliquid minimum notional handling
 - Added capability-aware `analyze-pool(s)`/`sync-dex` validation that fails before sync for unsupported DEXes
-- Added PancakeSwap V3 on-chain snapshot validation via the Uniswap V3 pool reads
-- Added PancakeSwap V3 pool-event parsers on BSC, Base, Arbitrum, and Ethereum
-- Added Polymarket RTDS custom data subscriptions (#4214), thanks @graceyangfan
 - Added Postgres cache position event-log persistence and restart recovery (Rust)
 - Added `ProbabilityPriceFeeModel` and configurable sandbox fee models (#4262), thanks @graceyangfan
 - Added PyO3 cache purge APIs (#4249), thanks @graceyangfan
@@ -32,8 +19,6 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added `RedisCacheConfig`, `PostgresCacheConfig`, and `RedisMessageBusConfig` for Rust factories
 - Added SEC1 EC private key support to socket TLS configuration (Rust)
 - Added SBE and Cap'n Proto encodings for Rust-native message bus publishers
-- Added Tardis Lighter venue mapping
-- Added Tardis `options_chain` CSV loading, streaming, and catalog conversion
 - Added `order_position_index` Postgres table for the order-position index; run `make init-db` to migrate
 - Added negative price support for `Commodity` instruments in risk checks (#2330), thanks for reporting @fabz1
 - Added `add_native_exec_algorithm` and `ExecutionAlgorithmConfig` bindings to the Python v2 backtest engine
@@ -41,12 +26,28 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added `Order::to_order_status_report` conversion in Rust
 - Added `with_msgbus_publisher` for Rust live-node and kernel builders
 - Added benchmark-relative portfolio stats (#4251), thanks @mahimn01
+- Added Binance Futures `bnfcr_currency` config for Credits Trading Mode
+- Added Binance Futures funding-rate history support in Rust
+- Added Binance Futures `MIN_NOTIONAL` parsing for `min_notional` (#4280), thanks @filipmacek
+- Added Binance Futures ticker data support in Rust
+- Added Binance order-list submission in Rust
+- Added `BitmexInstrumentState::Unknown` to tolerate unrecognized venue states without bootstrap failure
+- Added BitMEX legacy futures, spreads, and reference basket instrument parsing
+- Added Hyperliquid builder attribution opt-out
+- Added Hyperliquid historical trade requests
+- Added Hyperliquid minimum notional handling
+- Added Lighter NVDA composite market maker Python v2 example
+- Added PancakeSwap V3 on-chain snapshot validation via the Uniswap V3 pool reads
+- Added PancakeSwap V3 pool-event parsers on BSC, Base, Arbitrum, and Ethereum
+- Added Polymarket RTDS custom data subscriptions (#4214), thanks @graceyangfan
+- Added Tardis Lighter venue mapping
+- Added Tardis `options_chain` CSV loading, streaming, and catalog conversion
 
 ### Breaking Changes
 - Changed backtest config builders to validate on `build()` and return `ConfigResult` (Rust)
 - Changed `BacktestDataConfig` to require an `instrument_id`, `instrument_ids`, or `bar_types` target
+- Changed example strategy and actor configs to use bon `builder()` instead of `new()`/`with_*` (Rust)
 - Changed plug-in loader to reject build mismatches by default; opt out with `set_allow_build_mismatch` (Rust)
-- Changed Bybit `BybitHttpClient::submit_order` to take a trailing native TP/SL params argument; the PyO3 binding defaults it to `None` (Rust)
 - Changed `CacheDatabaseAdapter::load_index_order_position` to return position IDs instead of positions (Rust)
 - Changed default message bus/cache encoding to JSON; set `encoding="msgpack"` for MessagePack
 - Changed `Currency::from_str` and `Currency::is_*` to return `CurrencyLookupError` instead of `anyhow::Error` (Rust)
@@ -57,23 +58,22 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Changed Rust actor `self.clock()` to return `ClockApi`; call methods directly instead of borrowing
 - Changed Rust actor/strategy core access; use macros or native traits instead of `Deref`
 - Changed `SerializationEncoding` repr order to `Json=0`, `MsgPack=1`, `Capnp=2`, `Sbe=3`
-- Changed `InstrumentId` and `OptionSeriesId` string constructors to return typed invalid-value
-  errors instead of `anyhow::Error` (Rust)
+- Changed `InstrumentId` and `OptionSeriesId` string constructors to return typed invalid-value errors instead of `anyhow::Error` (Rust)
 - Changed `OrderAny::from_events` to return `OrderReplayError` instead of `anyhow::Error` (Rust)
 - Changed `OrderList::validate` to return `OrderListValidationError` instead of `anyhow::Error` (Rust)
 - Changed Rust message bus subscriber-count and presence queries to return invalid-topic errors instead of panicking
 - Changed `SyntheticInstrument` fallible methods to return `SyntheticInstrumentError` instead of `anyhow::Error` (Rust)
 - Changed tick scheme constructors and parsing to return `TickSchemeError` instead of `anyhow::Error` (Rust)
 - Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)
+- Changed Bybit `BybitHttpClient::submit_order` to take a trailing native TP/SL params argument; the PyO3 binding defaults it to `None` (Rust)
 - Removed `CacheConfig.database` and `MessageBusConfig.backing`; pass adapters separately
 - Removed common `DatabaseConfig` and `MessageBusBackingConfig`; use Redis/Postgres configs
-- Renamed `BitmexInstrumentType::StockPerpetual` to `TradFiPerpetual` (covers equities, FX, and commodities)
 - Renamed message bus database terminology to backing in Rust message bus APIs
 - Renamed Rust/PyO3 instrument `tick_scheme_name` to `tick_scheme`; Cython keeps `tick_scheme_name`
+- Renamed `BitmexInstrumentType::StockPerpetual` to `TradFiPerpetual` (covers equities, FX, and commodities)
 
 ### Security
 - Hardened Docker toolchain pins
-- Fixed Interactive Brokers disconnect reconciliation corrupting position state (#4230), thanks @HKOWL
 - Fixed instrument base quantity calculation panic on zero last price (Rust)
 - Fixed tick scheme navigation panics on NaN, infinite, and out-of-range prices (Rust)
 - Fixed domain value conversions to reject invalid numeric inputs instead of panicking (Rust)
@@ -82,63 +82,28 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Fixed plug-in host thunks to validate UTF-8 on plug-in strings instead of assuming it (Rust)
 - Fixed plug-in loader rejection paths to cap diagnostic reads and never `dlclose` initialized cdylibs (Rust)
 - Fixed event-store replay panic on captured fills carrying an invalid order side (Rust)
+- Fixed Interactive Brokers disconnect reconciliation corrupting position state (#4230), thanks @HKOWL
 
 ### Fixes
 - Fixed account-currency trade PnL stats for foreign-currency instruments (#4211), thanks @faysou
-- Fixed Binance Futures empty algo order IDs
-- Fixed Binance Futures hedge reduce-only orders in Rust
-- Fixed Binance Futures node panic on `BNFCR` Credits Trading Mode balances
-- Fixed Binance Spot expired order handling
-- Fixed Binance Spot/Futures WebSocket connection pool race (#4244), thanks @filipmacek
-- Fixed BitMEX instrument bootstrap aborting on any row deserialize failure (#4283), thanks for reporting @seungpyoson
 - Fixed blocking Python HTTP functions holding the GIL for the full request duration
-- Fixed Blockchain snapshot bootstrap checks
-- Fixed Blockchain pool-event replay to require durable timestamps before checkpoints
-- Fixed Blockchain pool sync aborting on swaps with an unrepresentable spot price
-- Fixed Blockchain pool profiler logging self-correcting tick and liquidity mismatches at error severity (now warn)
-- Fixed Blockchain snapshot validation rejecting fee-protocol-only mismatches
-- Fixed Bybit demo native TP/SL and option params being denied instead of routed through the create-order endpoint (Rust and Python)
 - Fixed custom `DataType` metadata ordering and shared custom-data unsubscribes (Rust)
 - Fixed data option-chain delta warmup
 - Fixed `DataEngine` synthetic bar subscriptions with multiple venue clients (#4279), thanks for reporting @HSGartley
 - Fixed DeFi replay bootstrap gaps in `PoolSwap` payload exposure, block timestamp units, and actor IDs (Rust)
-- Fixed Deribit chart bar volume for inverse perpetuals (#4245), thanks @filipmacek
 - Fixed `DonchianChannel` period window (#4239), thanks @KaizynX
-- Fixed dYdX to share one REST rate-limit bucket across data and execution clients (#4265), thanks @filipmacek
 - Fixed event-store boot recovery to repair hard-crashed run files and skip damaged ones instead of failing (Rust)
 - Fixed event-store capture duplicating order events, commands, and account states across dispatch hops (Rust)
 - Fixed event-store snapshot-anchor validation across the verifier, retention, and restore paths (Rust)
 - Fixed event-store replay, scan, marker, and halt-signal edge cases around skipped events, gaps, and reruns (Rust)
 - Fixed HTTP client errors discarding the underlying cause from the reqwest source chain (Rust)
 - Fixed `HttpClient` rejecting invalid response header keys instead of silently dropping them (Rust)
-- Fixed Hyperliquid bracket trigger-child statuses and atomic market fills orphaning orders at submission (#4160), thanks @sonnymai
-- Fixed Hyperliquid cancel-replace fill stranding on a dropped `ACCEPTED` (#4270), thanks for reporting @AlphaTraderK
-- Fixed Hyperliquid order status queries surfacing a stale cancel closing a live order mid-modify (Rust)
 - Fixed `Instrument` rejecting negative `min_price`, preventing spread instruments from loading in Python
-- Fixed Interactive Brokers reconnect startup handling (#4210), thanks @faysou
-- Fixed Interactive Brokers PERM cancel/modify routing and pending commission parsing (#4281), thanks @faysou
-- Fixed Interactive Brokers to use `permId` for stable order identity (#4276), thanks @faysou
-- Fixed Kraken spot WebSocket dead-connection detection with an idle timeout (#4275), thanks @folknor
-- Fixed Kraken count-only bar requests returning oldest bars instead of latest (#4274), thanks @folknor
-- Fixed Lighter AccountState to include perp-side margin balance (#4246), thanks @filipmacek
-- Fixed Lighter cancel and modify rejections for local, venue, and acked no-op failures
-- Fixed Lighter concurrent batch nonce-ordering race (#4263), thanks @filipmacek
-- Fixed Lighter maker-only key lookup authentication (#4234), thanks @filipmacek
-- Fixed Lighter positions falsely flattening on malformed snapshots
-- Fixed Lighter WebSocket clients exceeding shared venue rate limits (#4282), thanks @filipmacek
 - Fixed live external order claim registration in Rust
 - Fixed live reconciliation logging below-cached fill mismatches as errors, halting `shutdown_on_error` nodes (Rust)
 - Fixed live reconciliation logging transient venue report-query failures as errors (Rust)
 - Fixed local catalog queries and backtests for non-ASCII instrument IDs (#4259), thanks for reporting @seungpyoson
 - Fixed matching engine fill commission side in Rust
-- Fixed OKX instrument parsing for malformed venue payloads
-- Fixed OKX conditional and attached TP/SL algo amend fields (#4268), thanks @jhavie
-- Fixed Polymarket batch submit node panic on a venue-rejected leg (empty order ID); now emits `OrderRejected`
-- Fixed Polymarket instrument expiration precision for Gamma markets (#4278), thanks for reporting @OnlyC
-- Fixed Polymarket expired instruments re-entering live data paths (#4272), thanks @graceyangfan
-- Fixed Polymarket marketable BUY fills above nominal size dropped as overfills (Rust)
-- Fixed Polymarket marketable fills orphaning when a WS trade beats the submit response (Rust)
-- Fixed Polymarket post-only crossing rejections not setting `due_post_only`
 - Fixed portfolio account update scoping in Rust
 - Fixed PyO3 domain `from_raw` methods panicking on invalid input instead of raising `ValueError`
 - Fixed rate limiter arithmetic to saturate so extreme quotas deny instead of admitting every request (Rust)
@@ -163,10 +128,46 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Fixed WebSocket auth and connection-state waiters missing wakeups from unregistered `Notify` futures (Rust)
 - Fixed WebSocket idle timeout starvation under control-frame floods faster than the check interval (Rust)
 - Fixed Architect AX to deny invalid submits locally and defer ambiguous command failures to reconciliation
+- Fixed Binance Futures empty algo order IDs
+- Fixed Binance Futures hedge reduce-only orders in Rust
+- Fixed Binance Futures node panic on `BNFCR` Credits Trading Mode balances
+- Fixed Binance Spot expired order handling
+- Fixed Binance Spot/Futures WebSocket connection pool race (#4244), thanks @filipmacek
+- Fixed BitMEX instrument bootstrap aborting on any row deserialize failure (#4283), thanks for reporting @seungpyoson
+- Fixed Blockchain snapshot bootstrap checks
+- Fixed Blockchain pool-event replay to require durable timestamps before checkpoints
+- Fixed Blockchain pool sync aborting on swaps with an unrepresentable spot price
+- Fixed Blockchain pool profiler logging self-correcting tick and liquidity mismatches at error severity (now warn)
+- Fixed Blockchain snapshot validation rejecting fee-protocol-only mismatches
+- Fixed Bybit demo native TP/SL and option params being denied instead of routed through the create-order endpoint (Rust and Python)
+- Fixed Deribit chart bar volume for inverse perpetuals (#4245), thanks @filipmacek
+- Fixed dYdX to share one REST rate-limit bucket across data and execution clients (#4265), thanks @filipmacek
 - Fixed dYdX to deny unsupported submits locally and emit rejections only for definitive CheckTx refusals
+- Fixed Hyperliquid bracket trigger-child statuses and atomic market fills orphaning orders at submission (#4160), thanks @sonnymai
+- Fixed Hyperliquid cancel-replace fill stranding on a dropped `ACCEPTED` (#4270), thanks for reporting @AlphaTraderK
+- Fixed Hyperliquid order status queries surfacing a stale cancel closing a live order mid-modify (Rust)
+- Fixed Interactive Brokers reconnect startup handling (#4210), thanks @faysou
+- Fixed Interactive Brokers PERM cancel/modify routing and pending commission parsing (#4281), thanks @faysou
+- Fixed Interactive Brokers to use `permId` for stable order identity (#4276), thanks @faysou
 - Fixed Interactive Brokers to deny not-ready submits locally and drop synthetic cancel/modify rejections
+- Fixed Kraken spot WebSocket dead-connection detection with an idle timeout (#4275), thanks @folknor
+- Fixed Kraken count-only bar requests returning oldest bars instead of latest (#4274), thanks @folknor
+- Fixed Lighter AccountState to include perp-side margin balance (#4246), thanks @filipmacek
+- Fixed Lighter cancel and modify rejections for local, venue, and acked no-op failures
+- Fixed Lighter concurrent batch nonce-ordering race (#4263), thanks @filipmacek
+- Fixed Lighter maker-only key lookup authentication (#4234), thanks @filipmacek
+- Fixed Lighter positions falsely flattening on malformed snapshots
+- Fixed Lighter WebSocket clients exceeding shared venue rate limits (#4282), thanks @filipmacek
 - Fixed Lighter nonce exhaustion halting order flow after 16 transactions per connection
 - Fixed Lighter nonce recovery after venue rejections wedging subsequent transactions
+- Fixed OKX instrument parsing for malformed venue payloads
+- Fixed OKX conditional and attached TP/SL algo amend fields (#4268), thanks @jhavie
+- Fixed Polymarket batch submit node panic on a venue-rejected leg (empty order ID); now emits `OrderRejected`
+- Fixed Polymarket instrument expiration precision for Gamma markets (#4278), thanks for reporting @OnlyC
+- Fixed Polymarket expired instruments re-entering live data paths (#4272), thanks @graceyangfan
+- Fixed Polymarket marketable BUY fills above nominal size dropped as overfills (Rust)
+- Fixed Polymarket marketable fills orphaning when a WS trade beats the submit response (Rust)
+- Fixed Polymarket post-only crossing rejections not setting `due_post_only`
 
 ### Internal Improvements
 - Added Cargo publish dry-run and nightly publish plan checks
@@ -187,15 +188,15 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Improved Polymarket data client module structure (#4260), thanks @graceyangfan
 - Improved Polymarket execution module structure (#4271), thanks @graceyangfan
 - Improved Polymarket resolution module structure (#4269), thanks @graceyangfan
+- Standardized Polymarket adapter to emit order events for own orders and reports for external orders only (Rust)
 - Optimized `Cache` query filtering to scale with open orders and positions (#4242), thanks for reporting @magnified103
 - Standardized Betfair adapter to emit order events for own orders and reports for external orders only (Rust)
-- Standardized Polymarket adapter to emit order events for own orders and reports for external orders only (Rust)
 - Standardized Rust `OrderDenied` reason codes
 - Upgraded Interactive Brokers Rust adapter to `ibapi` 3.0.1 (#4209), thanks @faysou
+- Upgraded `pandas` to v3.0 and widened the supported range to `<4.0.0`
 - Upgraded `capnp` and `capnpc` crates to v0.26.0
 - Upgraded `redis` crate to v1.2.4
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.29.0
-- Upgraded `pandas` to v3.0 and widened the supported range to `<4.0.0`
 
 ### Documentation Updates
 - Added developer-guide rate-limiting policy distinguishing data and execution paths
