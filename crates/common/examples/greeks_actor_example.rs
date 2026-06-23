@@ -87,7 +87,7 @@ impl GreeksActor {
     }
 
     /// Subscribes to greeks data for a specific underlying.
-    pub(crate) fn subscribe_to_greeks(&mut self, underlying: &str) -> anyhow::Result<()> {
+    pub(crate) fn subscribe_to_greeks(&self, underlying: &str) -> anyhow::Result<()> {
         self.calculator()?
             .subscribe_greeks(underlying, Some(Self::handle_greeks as fn(&GreeksData)));
         Ok(())
