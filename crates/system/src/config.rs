@@ -16,7 +16,10 @@
 use std::{fmt::Debug, time::Duration};
 
 use nautilus_common::{
-    cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
+    cache::CacheConfig,
+    config::{ConfigError, ConfigErrorCollector, ConfigResult},
+    enums::Environment,
+    logging::logger::LoggerConfig,
     msgbus::backing::MessageBusConfig,
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -247,6 +250,7 @@ pub enum RotationConfig {
 
 /// Configuration for streaming live or backtest runs to the catalog in feather format.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[builder(finish_fn(name = build_inner, vis = ""))]
 #[serde(deny_unknown_fields)]
 pub struct StreamingConfig {
     /// The path to the data catalog.
@@ -259,6 +263,20 @@ pub struct StreamingConfig {
     pub replace_existing: bool,
     /// Rotation configuration.
     pub rotation_config: RotationConfig,
+}
+
+impl<S: streaming_config_builder::IsComplete> StreamingConfigBuilder<S> {
+    /// Validates and builds the [`StreamingConfig`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] if any field fails validation
+    /// (see [`StreamingConfig::validate`]).
+    pub fn build(self) -> ConfigResult<StreamingConfig> {
+        let config = self.build_inner();
+        config.validate()?;
+        Ok(config)
+    }
 }
 
 impl StreamingConfig {
@@ -279,6 +297,36 @@ impl StreamingConfig {
             rotation_config,
         }
     }
+
+    /// Validates the streaming configuration, collecting every field violation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
+    /// invalid) if any field fails validation.
+    pub fn validate(&self) -> ConfigResult<()> {
+        let mut errors = ConfigErrorCollector::new();
+
+        errors.check(
+            !self.catalog_path.trim().is_empty(),
+            ConfigError::empty_field("catalog_path"),
+        );
+        errors.check(
+            !self.fs_protocol.trim().is_empty(),
+            ConfigError::empty_field("fs_protocol"),
+        );
+
+        let flush_interval_ms = self.flush_interval_ms;
+        errors.check(
+            flush_interval_ms > 0,
+            ConfigError::range(
+                "flush_interval_ms",
+                format!("must be a positive number of milliseconds, was {flush_interval_ms}"),
+            ),
+        );
+
+        errors.into_result()
+    }
 }
 
 #[cfg(test)]
@@ -292,6 +340,49 @@ mod tests {
         let config = KernelConfig::default();
 
         assert_eq!(config.timeout_connection, Duration::from_mins(1));
+    }
+
+    #[rstest]
+    fn test_streaming_config_builder_valid() {
+        let config = StreamingConfig::builder()
+            .catalog_path("/data/catalog".to_string())
+            .fs_protocol("file".to_string())
+            .flush_interval_ms(1_000)
+            .replace_existing(false)
+            .rotation_config(RotationConfig::NoRotation)
+            .build();
+
+        assert!(config.is_ok());
+    }
+
+    #[rstest]
+    fn test_streaming_config_zero_flush_interval_rejected() {
+        let result = StreamingConfig::builder()
+            .catalog_path("/data/catalog".to_string())
+            .fs_protocol("file".to_string())
+            .flush_interval_ms(0)
+            .replace_existing(false)
+            .rotation_config(RotationConfig::NoRotation)
+            .build();
+
+        assert!(
+            matches!(result, Err(ConfigError::Range { field, .. }) if field == "flush_interval_ms")
+        );
+    }
+
+    #[rstest]
+    fn test_streaming_config_empty_catalog_path_rejected() {
+        let result = StreamingConfig::builder()
+            .catalog_path(String::new())
+            .fs_protocol("file".to_string())
+            .flush_interval_ms(1_000)
+            .replace_existing(false)
+            .rotation_config(RotationConfig::NoRotation)
+            .build();
+
+        assert!(
+            matches!(result, Err(ConfigError::EmptyField { field }) if field == "catalog_path")
+        );
     }
 
     #[rstest]

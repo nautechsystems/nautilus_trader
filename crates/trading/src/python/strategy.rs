@@ -40,6 +40,7 @@ use nautilus_common::{
     python::{
         cache::PyCache,
         clock::PyClock,
+        config_error_to_pyvalue_err,
         indicators::{registered_python_indicators, wrap_python_indicator},
         logging::PyLogger,
         order_factory::PyOrderFactory,
@@ -139,8 +140,8 @@ impl StrategyConfig {
         log_commands: bool,
         log_rejected_due_post_only_as_warning: bool,
         _kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> Self {
-        Self {
+    ) -> PyResult<Self> {
+        let config = Self {
             strategy_id,
             order_id_tag,
             use_uuid_client_order_ids,
@@ -157,7 +158,9 @@ impl StrategyConfig {
             log_events,
             log_commands,
             log_rejected_due_post_only_as_warning,
-        }
+        };
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]

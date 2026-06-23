@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 
+use nautilus_common::config::{ConfigError, ConfigErrorCollector, ConfigResult};
 use nautilus_core::serialization::{default_false, default_true};
 use nautilus_model::{
     enums::{OmsType, TimeInForce},
@@ -31,6 +32,7 @@ use serde::{Deserialize, Serialize};
     )
 )]
 #[derive(Clone, Debug, Deserialize, Serialize, bon::Builder)]
+#[builder(finish_fn(name = build_inner, vis = ""))]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -127,6 +129,52 @@ const fn default_market_exit_time_in_force() -> TimeInForce {
     TimeInForce::Gtc
 }
 
+impl<S: strategy_config_builder::IsComplete> StrategyConfigBuilder<S> {
+    /// Validates and builds the [`StrategyConfig`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] if any field fails validation
+    /// (see [`StrategyConfig::validate`]).
+    pub fn build(self) -> ConfigResult<StrategyConfig> {
+        let config = self.build_inner();
+        config.validate()?;
+        Ok(config)
+    }
+}
+
+impl StrategyConfig {
+    /// Validates the strategy configuration, collecting every field violation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
+    /// invalid) if any field fails validation.
+    pub fn validate(&self) -> ConfigResult<()> {
+        let mut errors = ConfigErrorCollector::new();
+
+        let interval_ms = self.market_exit_interval_ms;
+        errors.check(
+            interval_ms > 0,
+            ConfigError::range(
+                "market_exit_interval_ms",
+                format!("must be a positive number of milliseconds, was {interval_ms}"),
+            ),
+        );
+
+        let max_attempts = self.market_exit_max_attempts;
+        errors.check(
+            max_attempts > 0,
+            ConfigError::range(
+                "market_exit_max_attempts",
+                format!("must be a positive number of attempts, was {max_attempts}"),
+            ),
+        );
+
+        errors.into_result()
+    }
+}
+
 /// Configuration for creating strategies from importable paths.
 #[cfg_attr(
     feature = "python",
@@ -156,7 +204,9 @@ pub struct ImportableStrategyConfig {
 
 impl Default for StrategyConfig {
     fn default() -> Self {
-        Self::builder().build()
+        Self::builder()
+            .build()
+            .expect("default `StrategyConfig` should be valid")
     }
 }
 
@@ -165,6 +215,41 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_default_config_is_valid() {
+        assert!(StrategyConfig::builder().build().is_ok());
+    }
+
+    #[rstest]
+    fn test_zero_market_exit_interval_rejected() {
+        let result = StrategyConfig::builder().market_exit_interval_ms(0).build();
+        assert!(
+            matches!(result, Err(ConfigError::Range { field, .. }) if field == "market_exit_interval_ms")
+        );
+    }
+
+    #[rstest]
+    fn test_zero_market_exit_max_attempts_rejected() {
+        let result = StrategyConfig::builder()
+            .market_exit_max_attempts(0)
+            .build();
+        assert!(
+            matches!(result, Err(ConfigError::Range { field, .. }) if field == "market_exit_max_attempts")
+        );
+    }
+
+    #[rstest]
+    fn test_multiple_violations_collected() {
+        let result = StrategyConfig::builder()
+            .market_exit_interval_ms(0)
+            .market_exit_max_attempts(0)
+            .build();
+        let ConfigError::Multiple { errors } = result.unwrap_err() else {
+            panic!("expected ConfigError::Multiple");
+        };
+        assert_eq!(errors.len(), 2);
+    }
 
     #[rstest]
     fn test_strategy_config_default() {

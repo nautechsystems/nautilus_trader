@@ -34,10 +34,11 @@ use crate::strategy::StrategyConfig;
 )]
 pub struct CompositeMarketMakerConfig {
     /// Base strategy configuration.
-    #[builder(default = StrategyConfig::builder()
-        .strategy_id(StrategyId::from("COMPOSITE_MM-001"))
-        .order_id_tag("001".to_string())
-        .build())]
+    #[builder(default = StrategyConfig {
+        strategy_id: Some(StrategyId::from("COMPOSITE_MM-001")),
+        order_id_tag: Some("001".to_string()),
+        ..Default::default()
+    })]
     pub base: StrategyConfig,
     /// Target instrument the strategy quotes on.
     pub instrument_id: InstrumentId,
