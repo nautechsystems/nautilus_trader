@@ -104,8 +104,8 @@ impl WebSocketConfig {
         reconnect_max_attempts: Option<u32>,
         idle_timeout_ms: Option<u64>,
         proxy_url: Option<String>,
-    ) -> Self {
-        Self {
+    ) -> PyResult<Self> {
+        let config = Self {
             url,
             headers,
             heartbeat,
@@ -119,7 +119,9 @@ impl WebSocketConfig {
             idle_timeout_ms,
             backend: TransportBackend::default(),
             proxy_url,
-        }
+        };
+        config.validate().map_err(to_pyvalue_err)?;
+        Ok(config)
     }
 }
 
@@ -454,6 +456,33 @@ mod control_filter_tests {
 }
 
 #[cfg(test)]
+mod py_new_tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_py_new_rejects_empty_url() {
+        let result = WebSocketConfig::py_new(
+            String::new(),
+            vec![],
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert!(result.is_err());
+    }
+}
+
+#[cfg(test)]
 #[cfg(not(feature = "turmoil"))]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
@@ -637,7 +666,8 @@ counter = Counter()
             None,
             None,
             None,
-        );
+        )
+        .unwrap();
 
         let handler_clone = Python::attach(|py| handler.clone_ref(py));
 
@@ -727,7 +757,8 @@ counter = Counter()
             None,
             None,
             None,
-        );
+        )
+        .unwrap();
 
         let handler_clone = Python::attach(|py| handler.clone_ref(py));
 

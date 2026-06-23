@@ -15,7 +15,7 @@
 
 use std::{sync::atomic::Ordering, time::Duration};
 
-use nautilus_core::python::{clone_py_object, to_pyruntime_err};
+use nautilus_core::python::{clone_py_object, to_pyruntime_err, to_pyvalue_err};
 use pyo3::{Py, prelude::*};
 use tokio_tungstenite::tungstenite::stream::Mode;
 
@@ -46,7 +46,7 @@ impl SocketConfig {
         reconnect_max_attempts: Option<u32>,
         idle_timeout_ms: Option<u64>,
         certs_dir: Option<String>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let mode = if ssl { Mode::Tls } else { Mode::Plain };
 
         // Create function pointer that calls Python handler
@@ -59,7 +59,7 @@ impl SocketConfig {
             });
         });
 
-        Self {
+        let config = Self {
             url,
             mode,
             suffix,
@@ -74,7 +74,9 @@ impl SocketConfig {
             reconnect_max_attempts,
             idle_timeout_ms,
             certs_dir,
-        }
+        };
+        config.validate().map_err(to_pyvalue_err)?;
+        Ok(config)
     }
 }
 
