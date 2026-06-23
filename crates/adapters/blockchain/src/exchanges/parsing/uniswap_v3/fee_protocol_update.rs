@@ -18,7 +18,7 @@ use nautilus_model::defi::{PoolIdentifier, SharedDex, rpc::RpcLog};
 use ustr::Ustr;
 
 use crate::{
-    events::fee_protocol::FeeProtocolUpdateEvent,
+    events::fee_protocol_update::FeeProtocolUpdateEvent,
     hypersync::{
         HypersyncLog,
         helpers::{
@@ -29,7 +29,7 @@ use crate::{
     rpc::helpers as rpc_helpers,
 };
 
-const SET_FEE_PROTOCOL_EVENT_SIGNATURE_HASH: &str =
+const FEE_PROTOCOL_UPDATE_EVENT_SIGNATURE_HASH: &str =
     "973d8d92bb299f4af6ce49b52a8adb85ae46b9f214c4c4fc06ac77401237b133";
 
 // Define sol macro for easier parsing of SetFeeProtocol event data.
@@ -53,13 +53,13 @@ sol! {
 /// # Panics
 ///
 /// Panics if the contract address is not set in the log.
-pub fn parse_fee_protocol_event_hypersync(
+pub fn parse_fee_protocol_update_event_hypersync(
     dex: SharedDex,
     log: &HypersyncLog,
 ) -> anyhow::Result<FeeProtocolUpdateEvent> {
     validate_event_signature_hash(
         "SetFeeProtocolEvent",
-        SET_FEE_PROTOCOL_EVENT_SIGNATURE_HASH,
+        FEE_PROTOCOL_UPDATE_EVENT_SIGNATURE_HASH,
         log,
     )?;
 
@@ -104,13 +104,13 @@ pub fn parse_fee_protocol_event_hypersync(
 /// # Errors
 ///
 /// Returns an error if the log parsing fails or if the event data is invalid.
-pub fn parse_fee_protocol_event_rpc(
+pub fn parse_fee_protocol_update_event_rpc(
     dex: SharedDex,
     log: &RpcLog,
 ) -> anyhow::Result<FeeProtocolUpdateEvent> {
     rpc_helpers::validate_event_signature(
         log,
-        SET_FEE_PROTOCOL_EVENT_SIGNATURE_HASH,
+        FEE_PROTOCOL_UPDATE_EVENT_SIGNATURE_HASH,
         "SetFeeProtocol",
     )?;
 
@@ -166,9 +166,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_fee_protocol_event_hypersync(hypersync_log: HypersyncLog) {
+    fn test_parse_fee_protocol_update_event_hypersync(hypersync_log: HypersyncLog) {
         let dex = arbitrum::UNISWAP_V3.dex.clone();
-        let event = parse_fee_protocol_event_hypersync(dex, &hypersync_log).unwrap();
+        let event = parse_fee_protocol_update_event_hypersync(dex, &hypersync_log).unwrap();
 
         assert_eq!(
             event.pool_identifier.to_string(),
@@ -182,9 +182,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_fee_protocol_event_rpc(rpc_log: RpcLog) {
+    fn test_parse_fee_protocol_update_event_rpc(rpc_log: RpcLog) {
         let dex = arbitrum::UNISWAP_V3.dex.clone();
-        let event = parse_fee_protocol_event_rpc(dex, &rpc_log).unwrap();
+        let event = parse_fee_protocol_update_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(
             event.pool_identifier.to_string(),
@@ -199,8 +199,8 @@ mod tests {
     fn test_hypersync_rpc_match(hypersync_log: HypersyncLog, rpc_log: RpcLog) {
         let dex = arbitrum::UNISWAP_V3.dex.clone();
         let event_hypersync =
-            parse_fee_protocol_event_hypersync(dex.clone(), &hypersync_log).unwrap();
-        let event_rpc = parse_fee_protocol_event_rpc(dex, &rpc_log).unwrap();
+            parse_fee_protocol_update_event_hypersync(dex.clone(), &hypersync_log).unwrap();
+        let event_rpc = parse_fee_protocol_update_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(event_hypersync.pool_identifier, event_rpc.pool_identifier);
         assert_eq!(

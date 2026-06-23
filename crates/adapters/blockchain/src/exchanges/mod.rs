@@ -211,10 +211,21 @@ mod tests {
             );
         }
 
-        if dex.fee_protocol_event.is_some() {
+        if dex.fee_protocol_update_event.is_some() {
             record(
                 "SetFeeProtocol",
-                dex_extended.parse_fee_protocol_event_hypersync_fn.is_some(),
+                dex_extended
+                    .parse_fee_protocol_update_event_hypersync_fn
+                    .is_some(),
+            );
+        }
+
+        if dex.fee_protocol_collect_event.is_some() {
+            record(
+                "CollectProtocol",
+                dex_extended
+                    .parse_fee_protocol_collect_event_hypersync_fn
+                    .is_some(),
             );
         }
     }

@@ -29,7 +29,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
     Block, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex,
     SharedPool, Token,
-    data::{PoolFeeCollect, PoolFeeProtocolUpdate, PoolFlash},
+    data::{PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate, PoolFlash},
     pool_analysis::{position::PoolPosition, snapshot::PoolSnapshot},
     tick_map::tick::PoolTick,
 };
@@ -722,6 +722,24 @@ impl BlockchainCache {
         Ok(())
     }
 
+    /// Adds a batch of pool protocol-fee withdrawal events to the cache database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the protocol-fee withdrawal events to the database fails.
+    pub async fn add_pool_fee_protocol_collect_batch(
+        &self,
+        collects: &[PoolFeeProtocolCollect],
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database
+                .add_pool_fee_protocol_collect_batch(self.chain.chain_id, collects)
+                .await?;
+        }
+
+        Ok(())
+    }
+
     /// Adds a pool snapshot to the cache database.
     ///
     /// This method saves the complete snapshot including:
@@ -1171,6 +1189,84 @@ mod tests {
 
                 if observed != (12, 13, 4, 6, ts) {
                     anyhow::bail!("unexpected fee protocol round-trip: {observed:?}");
+                }
+            }
+            other => anyhow::bail!("unexpected stream events: {other:?}"),
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stream_pool_events_round_trips_fee_protocol_collect_in_order() -> anyhow::Result<()> {
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        let chain = arbitrum();
+        let dex = uniswap_v3(&chain);
+        let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
+        let pool_identifier = PoolIdentifier::from_address(pool_address);
+        let instrument_id = Pool::create_instrument_id(chain.name, &dex, pool_identifier.as_str());
+        let ts = UnixNanos::from(1_700_000_000_000_000_000);
+
+        database
+            .add_pool_event_blocks_batch(chain.chain_id, &[test_block(12, ts), test_block(13, ts)])
+            .await?;
+        // Swap at block 12, CollectProtocol at block 13: stream must order swap before withdrawal.
+        insert_pool_swap_event(
+            &schema.admin_pool,
+            &schema.name,
+            chain.chain_id,
+            &pool_identifier,
+            12,
+        )
+        .await?;
+        // Asymmetric amounts (111, 222) catch a token0/token1 column swap.
+        let collect = PoolFeeProtocolCollect::new(
+            chain.clone(),
+            dex.clone(),
+            instrument_id,
+            pool_identifier,
+            13,
+            "0x00000000000000000000000000000000000000000000000000000000000000cd".to_string(),
+            0,
+            0,
+            address!("0xc36442b4a4522e871399cd717abdd847ab11fe88"),
+            address!("0xa61da382c18d9d5beb905ea192bae25e4c15d512"),
+            111,
+            222,
+            ts,
+            ts,
+        );
+        database
+            .add_pool_fee_protocol_collect_batch(chain.chain_id, std::slice::from_ref(&collect))
+            .await?;
+
+        let events_result = database
+            .stream_pool_events(chain, dex, instrument_id, pool_identifier, None, Some(13))
+            .try_collect::<Vec<_>>()
+            .await;
+
+        drop(database);
+        schema.cleanup().await?;
+
+        let events = events_result?;
+        match events.as_slice() {
+            [DexPoolData::Swap(swap), DexPoolData::FeeProtocolCollect(cp)] => {
+                // Swap (block 12) must order before CollectProtocol (block 13); the asymmetric
+                // (111, 222) amounts catch a token0/token1 column swap, and ts confirms the timestamp.
+                let observed = (swap.block, cp.block, cp.amount0, cp.amount1, cp.ts_event);
+                if observed != (12, 13, 111, 222, ts) {
+                    anyhow::bail!("unexpected fee protocol collect round-trip: {observed:?}");
+                }
+
+                if cp.sender != address!("0xc36442b4a4522e871399cd717abdd847ab11fe88")
+                    || cp.recipient != address!("0xa61da382c18d9d5beb905ea192bae25e4c15d512")
+                {
+                    anyhow::bail!(
+                        "unexpected fee protocol collect addresses: sender={}, recipient={}",
+                        cp.sender,
+                        cp.recipient
+                    );
                 }
             }
             other => anyhow::bail!("unexpected stream events: {other:?}"),
@@ -1889,7 +1985,7 @@ mod tests {
             ),
             format!(
                 r#"
-                CREATE TABLE {schema}."pool_fee_protocol_event" (
+                CREATE TABLE {schema}."pool_fee_protocol_update_event" (
                     chain_id INTEGER NOT NULL,
                     pool_identifier TEXT NOT NULL,
                     dex_name TEXT NOT NULL,
@@ -1899,6 +1995,24 @@ mod tests {
                     log_index INTEGER NOT NULL,
                     fee_protocol0_new SMALLINT NOT NULL,
                     fee_protocol1_new SMALLINT NOT NULL,
+                    UNIQUE(chain_id, transaction_hash, log_index)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."pool_fee_protocol_collect_event" (
+                    chain_id INTEGER NOT NULL,
+                    pool_identifier TEXT NOT NULL,
+                    dex_name TEXT NOT NULL,
+                    block BIGINT NOT NULL,
+                    transaction_hash TEXT NOT NULL,
+                    transaction_index INTEGER NOT NULL,
+                    log_index INTEGER NOT NULL,
+                    sender TEXT NOT NULL,
+                    recipient TEXT NOT NULL,
+                    amount0 TEXT NOT NULL,
+                    amount1 TEXT NOT NULL,
                     UNIQUE(chain_id, transaction_hash, log_index)
                 )
                 "#

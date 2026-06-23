@@ -22,8 +22,8 @@ use nautilus_core::UnixNanos;
 use crate::defi::{
     PoolLiquidityUpdate, PoolSwap, SharedPool,
     data::{
-        DexPoolData, PoolFeeCollect, PoolFeeProtocolUpdate, PoolLiquidityUpdateType,
-        block::BlockPosition, flash::PoolFlash,
+        DexPoolData, PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate,
+        PoolLiquidityUpdateType, block::BlockPosition, flash::PoolFlash,
     },
     pool_analysis::{
         error::{
@@ -221,6 +221,9 @@ impl PoolProfiler {
             },
             DexPoolData::FeeCollect(collect) => self.process_collect(collect)?,
             DexPoolData::FeeProtocolUpdate(update) => self.process_fee_protocol_update(update)?,
+            DexPoolData::FeeProtocolCollect(collect) => {
+                self.process_fee_protocol_collect(collect)?;
+            }
             DexPoolData::Flash(flash) => self.process_flash(flash)?,
         }
         self.update_reporter_if_enabled(event.block_number());
@@ -1160,6 +1163,50 @@ impl PoolProfiler {
         ));
         self.last_processed_ts = Some(update.ts_event);
         self.update_reporter_if_enabled(update.block);
+
+        Ok(())
+    }
+
+    /// Applies a protocol-fee withdrawal from a `CollectProtocol` event.
+    ///
+    /// Decrements the accrued protocol-fee balances by the withdrawn amounts, leaving the on-chain
+    /// remainder (Uniswap V3 keeps one wei in each slot to save gas). Saturating subtraction guards
+    /// against replay accrual lagging behind the on-chain balance. Not gated on pool initialization,
+    /// since the protocol-fee balances are independent of the pool's price/liquidity state.
+    ///
+    /// # Errors
+    ///
+    /// This function does not currently return an error; the `Result` keeps the signature uniform
+    /// with the other `process_*` event handlers.
+    pub fn process_fee_protocol_collect(
+        &mut self,
+        collect: &PoolFeeProtocolCollect,
+    ) -> anyhow::Result<()> {
+        if self.check_if_already_processed(
+            collect.block,
+            collect.transaction_index,
+            collect.log_index,
+        ) {
+            return Ok(());
+        }
+
+        self.state.protocol_fees_token0 = self
+            .state
+            .protocol_fees_token0
+            .saturating_sub(U256::from(collect.amount0));
+        self.state.protocol_fees_token1 = self
+            .state
+            .protocol_fees_token1
+            .saturating_sub(U256::from(collect.amount1));
+
+        self.last_processed_event = Some(BlockPosition::new(
+            collect.block,
+            collect.transaction_hash.clone(),
+            collect.transaction_index,
+            collect.log_index,
+        ));
+        self.last_processed_ts = Some(collect.ts_event);
+        self.update_reporter_if_enabled(collect.block);
 
         Ok(())
     }

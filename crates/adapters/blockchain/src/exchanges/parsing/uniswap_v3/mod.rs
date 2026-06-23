@@ -15,9 +15,10 @@
 
 pub mod burn;
 pub mod collect;
+pub mod fee_protocol_collect;
+pub mod fee_protocol_update;
 pub mod flash;
 pub mod initialize;
 pub mod mint;
 pub mod pool_created;
-pub mod set_fee_protocol;
 pub mod swap;

@@ -29,7 +29,10 @@ use rust_decimal::Decimal;
 
 use crate::defi::{
     Chain, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolLiquidityUpdateType, Token,
-    data::{DexPoolData, PoolFeeCollect, PoolFeeProtocolUpdate, PoolFlash, block::BlockPosition},
+    data::{
+        DexPoolData, PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate, PoolFlash,
+        block::BlockPosition,
+    },
     pool_analysis::{
         compare::{PoolProfilerComparison, compare_pool_profiler, compare_pool_profiler_detailed},
         profiler::PoolProfiler,
@@ -248,6 +251,26 @@ fn create_flash_event(paid0: U256, paid1: U256) -> PoolFlash {
         U256::ZERO, // amount1 borrowed
         paid0,
         paid1,
+    )
+}
+
+fn create_fee_protocol_collect(amount0: u128, amount1: u128) -> PoolFeeProtocolCollect {
+    let pool_definition = pool_definition(None, None, None);
+    PoolFeeProtocolCollect::new(
+        arbitrum(),
+        uniswap_v3(),
+        pool_definition.instrument_id,
+        pool_definition.pool_identifier,
+        100_000,
+        "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
+        0,
+        next_log_index(),
+        user_address(),
+        other_address(),
+        amount0,
+        amount1,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -877,6 +900,54 @@ fn test_set_fee_protocol_changes_flash_fee_split(mut profiler: PoolProfiler) {
 }
 
 #[rstest]
+fn test_fee_protocol_collect_decrements_accrued_balances(mut profiler: PoolProfiler) {
+    // Seed protocol fees: mint for active liquidity, SetFeeProtocol(4, 4), then a flash that
+    // accrues paid/4 = 25 to each balance (matching test_set_fee_protocol_changes_flash_fee_split).
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(create_mint_event(
+            lp_address(),
+            min_tick,
+            max_tick,
+            10_000,
+        )))
+        .unwrap();
+    profiler
+        .process(&DexPoolData::FeeProtocolUpdate(create_fee_protocol_update(
+            4, 4,
+        )))
+        .unwrap();
+    profiler
+        .process(&DexPoolData::Flash(create_flash_event(
+            U256::from(100u32),
+            U256::from(100u32),
+        )))
+        .unwrap();
+    assert_eq!(profiler.state.protocol_fees_token0, U256::from(25u32));
+    assert_eq!(profiler.state.protocol_fees_token1, U256::from(25u32));
+
+    // A CollectProtocol withdrawal decrements each balance by the withdrawn amount, leaving the
+    // on-chain remainder. Asymmetric amounts catch a token0/token1 swap.
+    profiler
+        .process(&DexPoolData::FeeProtocolCollect(
+            create_fee_protocol_collect(20, 24),
+        ))
+        .unwrap();
+    assert_eq!(profiler.state.protocol_fees_token0, U256::from(5u32));
+    assert_eq!(profiler.state.protocol_fees_token1, U256::from(1u32));
+
+    // A withdrawal larger than the tracked balance saturates to zero rather than underflowing.
+    profiler
+        .process(&DexPoolData::FeeProtocolCollect(
+            create_fee_protocol_collect(1_000, 1_000),
+        ))
+        .unwrap();
+    assert_eq!(profiler.state.protocol_fees_token0, U256::ZERO);
+    assert_eq!(profiler.state.protocol_fees_token1, U256::ZERO);
+}
+
+#[rstest]
 fn test_compare_pool_profiler_reports_exact_match(mut profiler: PoolProfiler) {
     let min_tick = PoolTick::get_min_tick(TICK_SPACING);
     let max_tick = PoolTick::get_max_tick(TICK_SPACING);
@@ -938,6 +1009,42 @@ fn test_compare_pool_profiler_reports_fee_protocol_only_mismatch(mut profiler: P
     );
     assert!(PoolProfilerComparison::FeeProtocolMismatch.is_valid_for_snapshot());
     assert!(!PoolProfilerComparison::FeeProtocolMismatch.is_exact_match());
+    assert!(!compare_pool_profiler(&profiler, &snapshot));
+}
+
+#[rstest]
+#[case(true, false)]
+#[case(false, true)]
+#[case(true, true)]
+fn test_compare_pool_profiler_reports_protocol_fees_only_mismatch(
+    mut profiler: PoolProfiler,
+    #[case] bump_token0: bool,
+    #[case] bump_token1: bool,
+) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    let mint_event = create_mint_event(lp_address(), min_tick, max_tick, 10000);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+
+    // Accrued protocol-fee balances can diverge from the on-chain snapshot through per-step
+    // rounding during replay accrual, while all structural state still matches.
+    let mut snapshot = profiler.extract_snapshot().unwrap();
+    if bump_token0 {
+        snapshot.state.protocol_fees_token0 += U256::from(1u8);
+    }
+
+    if bump_token1 {
+        snapshot.state.protocol_fees_token1 += U256::from(1u8);
+    }
+
+    assert_eq!(
+        compare_pool_profiler_detailed(&profiler, &snapshot),
+        PoolProfilerComparison::ProtocolFeesMismatch
+    );
+    assert!(PoolProfilerComparison::ProtocolFeesMismatch.is_valid_for_snapshot());
+    assert!(!PoolProfilerComparison::ProtocolFeesMismatch.is_exact_match());
     assert!(!compare_pool_profiler(&profiler, &snapshot));
 }
 

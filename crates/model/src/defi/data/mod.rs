@@ -30,7 +30,8 @@ use crate::{
 
 pub mod block;
 pub mod collect;
-pub mod fee_protocol;
+pub mod fee_protocol_collect;
+pub mod fee_protocol_update;
 pub mod flash;
 pub mod liquidity;
 pub mod swap;
@@ -40,7 +41,8 @@ pub mod transaction;
 // Re-exports
 pub use block::Block;
 pub use collect::PoolFeeCollect;
-pub use fee_protocol::PoolFeeProtocolUpdate;
+pub use fee_protocol_collect::PoolFeeProtocolCollect;
+pub use fee_protocol_update::PoolFeeProtocolUpdate;
 pub use flash::PoolFlash;
 pub use liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType};
 pub use swap::PoolSwap;
@@ -52,6 +54,7 @@ pub enum DexPoolData {
     LiquidityUpdate(PoolLiquidityUpdate),
     FeeCollect(PoolFeeCollect),
     FeeProtocolUpdate(PoolFeeProtocolUpdate),
+    FeeProtocolCollect(PoolFeeProtocolCollect),
     Flash(PoolFlash),
 }
 
@@ -64,6 +67,7 @@ impl DexPoolData {
             Self::LiquidityUpdate(u) => u.block,
             Self::FeeCollect(c) => c.block,
             Self::FeeProtocolUpdate(u) => u.block,
+            Self::FeeProtocolCollect(c) => c.block,
             Self::Flash(f) => f.block,
         }
     }
@@ -76,6 +80,7 @@ impl DexPoolData {
             Self::LiquidityUpdate(u) => u.transaction_index,
             Self::FeeCollect(c) => c.transaction_index,
             Self::FeeProtocolUpdate(u) => u.transaction_index,
+            Self::FeeProtocolCollect(c) => c.transaction_index,
             Self::Flash(f) => f.transaction_index,
         }
     }
@@ -88,6 +93,7 @@ impl DexPoolData {
             Self::LiquidityUpdate(u) => u.log_index,
             Self::FeeCollect(c) => c.log_index,
             Self::FeeProtocolUpdate(u) => u.log_index,
+            Self::FeeProtocolCollect(c) => c.log_index,
             Self::Flash(f) => f.log_index,
         }
     }
@@ -118,6 +124,8 @@ pub enum DefiData {
     PoolFeeCollect(PoolFeeCollect),
     /// A protocol-fee configuration change in a DEX pool.
     PoolFeeProtocolUpdate(PoolFeeProtocolUpdate),
+    /// A protocol-fee withdrawal from a DEX pool.
+    PoolFeeProtocolCollect(PoolFeeProtocolCollect),
     /// A flash event
     PoolFlash(PoolFlash),
 }
@@ -143,6 +151,9 @@ impl DefiData {
             }
             Self::PoolFeeProtocolUpdate(update) => {
                 (update.block, update.transaction_index, update.log_index)
+            }
+            Self::PoolFeeProtocolCollect(collect) => {
+                (collect.block, collect.transaction_index, collect.log_index)
             }
             Self::PoolFlash(flash) => (flash.block, flash.transaction_index, flash.log_index),
         }
@@ -177,6 +188,7 @@ impl DefiData {
             Self::PoolLiquidityUpdate(update) => update.ts_event,
             Self::PoolFeeCollect(collect) => collect.ts_event,
             Self::PoolFeeProtocolUpdate(update) => update.ts_event,
+            Self::PoolFeeProtocolCollect(collect) => collect.ts_event,
             Self::PoolFlash(flash) => flash.ts_event,
         }
     }
@@ -198,6 +210,7 @@ impl DefiData {
             Self::PoolLiquidityUpdate(update) => update.ts_init,
             Self::PoolFeeCollect(collect) => collect.ts_init,
             Self::PoolFeeProtocolUpdate(update) => update.ts_init,
+            Self::PoolFeeProtocolCollect(collect) => collect.ts_init,
             Self::PoolFlash(flash) => flash.ts_init,
         }
     }
@@ -216,6 +229,7 @@ impl DefiData {
             Self::PoolLiquidityUpdate(update) => update.instrument_id,
             Self::PoolFeeCollect(collect) => collect.instrument_id,
             Self::PoolFeeProtocolUpdate(update) => update.instrument_id,
+            Self::PoolFeeProtocolCollect(collect) => collect.instrument_id,
             Self::Pool(pool) => pool.instrument_id,
             Self::PoolFlash(flash) => flash.instrument_id,
         }
@@ -264,6 +278,12 @@ impl HasTsInit for PoolFeeProtocolUpdate {
     }
 }
 
+impl HasTsInit for PoolFeeProtocolCollect {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
 impl HasTsInit for PoolFlash {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
@@ -280,6 +300,7 @@ impl Display for DefiData {
             Self::PoolLiquidityUpdate(u) => write!(f, "{u}"),
             Self::PoolFeeCollect(c) => write!(f, "{c}"),
             Self::PoolFeeProtocolUpdate(u) => write!(f, "{u}"),
+            Self::PoolFeeProtocolCollect(c) => write!(f, "{c}"),
             Self::PoolFlash(p) => write!(f, "{p}"),
         }
     }
@@ -312,6 +333,12 @@ impl From<PoolFeeCollect> for DefiData {
 impl From<PoolFeeProtocolUpdate> for DefiData {
     fn from(value: PoolFeeProtocolUpdate) -> Self {
         Self::PoolFeeProtocolUpdate(value)
+    }
+}
+
+impl From<PoolFeeProtocolCollect> for DefiData {
+    fn from(value: PoolFeeProtocolCollect) -> Self {
+        Self::PoolFeeProtocolCollect(value)
     }
 }
 

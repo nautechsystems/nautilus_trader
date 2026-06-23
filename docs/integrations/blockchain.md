@@ -32,12 +32,12 @@ The DeFi domain model lives in `nautilus_model::defi`.
 Chains can be loaded by numeric ID with `Chain::from_chain_id` or by name with
 `Chain::from_chain_name`.
 
-| Chain family                                    | Code | Name         | Decimals |
-|-------------------------------------------------|------|--------------|----------|
-| Ethereum and L2s                                | ETH  | Ethereum     | 18       |
-| Polygon                                         | POL  | Polygon      | 18       |
-| Avalanche                                       | AVAX | Avalanche    | 18       |
-| BSC                                             | BNB  | Binance Coin | 18       |
+| Chain family                | Code | Name         | Decimals |
+|-----------------------------|------|--------------|----------|
+| Ethereum and L2s            | ETH  | Ethereum     | 18       |
+| Polygon                     | POL  | Polygon      | 18       |
+| Avalanche                   | AVAX | Avalanche    | 18       |
+| BSC                         | BNB  | Binance Coin | 18       |
 
 ### DEX and pools
 
@@ -234,15 +234,20 @@ state. Structural state must match exactly: the current tick, active liquidity, 
 gross liquidity, and position liquidity. A mismatch in any of these fails closed, and the snapshot
 is not marked valid.
 
-Two fields are tolerated as non-blocking and logged as a warning rather than an error:
+Three kinds of mismatch are tolerated as non-blocking and logged as a warning rather than an error:
 
 - Sqrt price, which differs when replay is event-scoped but the RPC snapshot is block-scoped.
 - Fee protocol, retained as a non-blocking safety net. Uniswap V3 `SetFeeProtocol` events are indexed
   and applied during replay, so the replayed `fee_protocol` matches the on-chain value for Uniswap V3
   pools. The tolerance covers residual differences, such as an event not yet synced or a fork's
   non-Uniswap-V3 fee-protocol semantics.
+- Protocol-fee balances (`protocol_fees_token0` and `protocol_fees_token1`), which can diverge when
+  per-step rounding during replay accrual differs from the on-chain accumulator. The on-chain
+  snapshot reads `protocolFees()` directly, and Uniswap V3 `CollectProtocol` withdrawals are indexed
+  and applied during replay (each withdrawal decrements the tracked balances), so the replayed
+  balances track the on-chain ones.
 
-A fee-protocol-only mismatch still accepts the snapshot, matching backtest replay behavior. Because
+A non-structural-only mismatch still accepts the snapshot, matching backtest replay behavior. Because
 `SetFeeProtocol` is applied during both the analyze-pool bootstrap and backtest replay-forward, the
 accepted snapshot carries the replayed `fee_protocol` consistent with the events that produced it, so
 a profiler restored from it splits protocol and LP fees with that setting.
@@ -539,10 +544,20 @@ then analyze specific pools:
     --concurrency 1
 ```
 
-Verify by counting rows in `pool_swap_event`, `pool_liquidity_event`, `pool_collect_event`,
-`pool_flash_event`, `pool_fee_protocol_event`, `pool_snapshot`, `pool_position`, and `pool_tick`.
-The `pool_fee_protocol_event` table stays small, since `SetFeeProtocol` fires rarely (often zero to
-two times per pool).
+Verify by counting rows in these tables:
+
+- `pool_swap_event`
+- `pool_liquidity_event`
+- `pool_collect_event`
+- `pool_flash_event`
+- `pool_fee_protocol_update_event`
+- `pool_fee_protocol_collect_event`
+- `pool_snapshot`
+- `pool_position`
+- `pool_tick`
+
+The `pool_fee_protocol_update_event` and `pool_fee_protocol_collect_event` tables stay small, since
+`SetFeeProtocol` and `CollectProtocol` fire rarely (often zero to a handful of times per pool).
 
 ### Gotchas found running this
 
@@ -568,6 +583,52 @@ two times per pool).
 - The capability guard fails an unregistered combination before any sync: `sync-dex` needs a
   `PoolCreated` parser, and `analyze-pool(s)` need `Initialize`, `Swap`, `Mint`, `Burn`, and `Collect`
   parsers (see [Unsupported DEX combinations fail before sync](#unsupported-dex-combinations-fail-before-sync)).
+
+## Extending the adapter
+
+The event model targets Uniswap V3 concentrated-liquidity pools. `DexPoolData` and its structs encode
+V3 semantics directly: `PoolSwap` carries `sqrt_price_x96` and `tick`, `PoolLiquidityUpdate` carries
+`tick_lower` and `tick_upper`. The `DexType` and `AmmType` enums name other families (Uniswap V2,
+Uniswap V4, Curve, Balancer, Maverick), but only Uniswap V2 (pool discovery) and Uniswap V4
+(`Initialize`) are wired at all.
+
+### Adding an event or protocol family
+
+Design the taxonomy before writing a parser. Most families do not fit the V3 structs: Uniswap V2
+emits `Sync`, Uniswap V4 replaces mint and burn with `ModifyLiquidity` plus `Donate`, and Curve and
+Balancer pools hold more than two tokens. Adding events piecemeal forces optional fields, duplicate
+variants, and renames.
+
+The design pass should:
+
+- Map the protocol's events and decide, per event, whether each reuses, extends, or adds a
+  `DexPoolData` variant.
+- Decide whether the family needs a new taxonomy axis. Singleton or `poolId` protocols (Uniswap V4,
+  Balancer) and multi-token pools (Curve) break the per-pool-address, token-pair assumptions.
+- Name events with the `<concept>_<verb>` convention, such as `fee_protocol_update`. Reserve the
+  literal on-chain event name for signatures and error labels.
+
+Then wire each event through the full path, mirroring an existing one such as `fee_protocol_collect`:
+
+- Event struct
+- HyperSync and RPC parsers
+- `DexExtended` parser slot
+- `DexPoolData` and `DefiData` variants
+- Profiler apply method
+- Event table and its insert
+- `stream_pool_events` UNION arm and row mapper
+- PyO3 binding
+
+Cover it with a parser round-trip test, a profiler apply test, and the parser-parity test.
+
+Incremental sync resumes from each pool's last-synced block, so adding an event type does not
+backfill pools already synced past those blocks: the new event tables stay empty for historical
+ranges. Re-sync a pool from its creation block (a reset sync) to populate them.
+
+### Adding a chain
+
+A new chain is registration only, provided its DEXes reuse modeled events: add the `Chain`, its RPC
+client, and the per-DEX registrations. A chain that brings a new family needs the design pass above.
 
 ## Current limitations
 

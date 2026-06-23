@@ -36,6 +36,7 @@ const fn replay_phase(data: &DefiData) -> u8 {
         | DefiData::PoolLiquidityUpdate(_)
         | DefiData::PoolFeeCollect(_)
         | DefiData::PoolFeeProtocolUpdate(_)
+        | DefiData::PoolFeeProtocolCollect(_)
         | DefiData::PoolFlash(_) => 3,
     }
 }

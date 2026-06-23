@@ -22,7 +22,8 @@ use nautilus_model::{
         Block, Chain, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolSwap, SharedChain,
         SharedDex, Token,
         data::{
-            DexPoolData, PoolFeeCollect, PoolFeeProtocolUpdate, PoolFlash, block::BlockPosition,
+            DexPoolData, PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate, PoolFlash,
+            block::BlockPosition,
         },
         pool_analysis::{
             position::PoolPosition,
@@ -1525,7 +1526,7 @@ impl BlockchainCacheDatabase {
         // Execute batch insert with UNNEST
         sqlx::query(
             "
-            INSERT INTO pool_fee_protocol_event (
+            INSERT INTO pool_fee_protocol_update_event (
                 chain_id, dex_name, pool_identifier, block, transaction_hash, transaction_index,
                 log_index, fee_protocol0_new, fee_protocol1_new
             )
@@ -1553,7 +1554,89 @@ impl BlockchainCacheDatabase {
         .await
         .map(|_| ())
         .map_err(|e| {
-            anyhow::anyhow!("Failed to batch insert into pool_fee_protocol_event table: {e}")
+            anyhow::anyhow!("Failed to batch insert into pool_fee_protocol_update_event table: {e}")
+        })
+    }
+
+    /// Inserts multiple pool protocol-fee withdrawal events in a single database operation using UNNEST.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn add_pool_fee_protocol_collect_batch(
+        &self,
+        chain_id: u32,
+        collects: &[PoolFeeProtocolCollect],
+    ) -> anyhow::Result<()> {
+        if collects.is_empty() {
+            return Ok(());
+        }
+
+        // Prepare vectors for each column
+        let len = collects.len();
+        let mut chain_ids: Vec<i32> = Vec::with_capacity(len);
+        let mut dex_names: Vec<String> = Vec::with_capacity(len);
+        let mut pool_identifiers: Vec<String> = Vec::with_capacity(len);
+        let mut blocks: Vec<i64> = Vec::with_capacity(len);
+        let mut transaction_hashes: Vec<String> = Vec::with_capacity(len);
+        let mut transaction_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut log_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut senders: Vec<String> = Vec::with_capacity(len);
+        let mut recipients: Vec<String> = Vec::with_capacity(len);
+        let mut amount0s: Vec<String> = Vec::with_capacity(len);
+        let mut amount1s: Vec<String> = Vec::with_capacity(len);
+
+        // Fill vectors from collects
+        for collect in collects {
+            chain_ids.push(chain_id as i32);
+            dex_names.push(collect.dex.name.to_string());
+            pool_identifiers.push(collect.pool_identifier.to_string());
+            blocks.push(collect.block as i64);
+            transaction_hashes.push(collect.transaction_hash.clone());
+            transaction_indices.push(collect.transaction_index as i32);
+            log_indices.push(collect.log_index as i32);
+            senders.push(collect.sender.to_string());
+            recipients.push(collect.recipient.to_string());
+            amount0s.push(collect.amount0.to_string());
+            amount1s.push(collect.amount1.to_string());
+        }
+
+        // Execute batch insert with UNNEST
+        sqlx::query(
+            "
+            INSERT INTO pool_fee_protocol_collect_event (
+                chain_id, dex_name, pool_identifier, block, transaction_hash, transaction_index,
+                log_index, sender, recipient, amount0, amount1
+            )
+            SELECT
+                chain_id, dex_name, pool_identifier, block, transaction_hash, transaction_index,
+                log_index, sender, recipient, amount0::U256, amount1::U256
+            FROM UNNEST(
+                $1::INT[], $2::TEXT[], $3::TEXT[], $4::INT[], $5::TEXT[], $6::INT[],
+                $7::INT[], $8::TEXT[], $9::TEXT[], $10::TEXT[], $11::TEXT[]
+            ) AS t(chain_id, dex_name, pool_identifier, block, transaction_hash, transaction_index,
+                   log_index, sender, recipient, amount0, amount1)
+            ON CONFLICT (chain_id, transaction_hash, log_index) DO NOTHING
+           ",
+        )
+        .bind(&chain_ids[..])
+        .bind(&dex_names[..])
+        .bind(&pool_identifiers[..])
+        .bind(&blocks[..])
+        .bind(&transaction_hashes[..])
+        .bind(&transaction_indices[..])
+        .bind(&log_indices[..])
+        .bind(&senders[..])
+        .bind(&recipients[..])
+        .bind(&amount0s[..])
+        .bind(&amount1s[..])
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to batch insert into pool_fee_protocol_collect_event table: {e}"
+            )
         })
     }
 
@@ -2342,6 +2425,78 @@ impl BlockchainCacheDatabase {
             AND ($3::BIGINT IS NULL OR block <= $3))
             UNION ALL
             (SELECT
+                'fee_protocol_update' as event_type,
+                chain_id,
+                pool_identifier,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                COALESCE(
+                    (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool_fee_protocol_update_event.chain_id AND block.number = pool_fee_protocol_update_event.block),
+                    (SELECT timestamp::TEXT FROM pool_event_block WHERE pool_event_block.chain_id = pool_fee_protocol_update_event.chain_id AND pool_event_block.number = pool_fee_protocol_update_event.block)
+                ) as block_timestamp,
+                NULL::TEXT as sender,
+                NULL::TEXT as recipient,
+                NULL::TEXT as owner,
+                NULL::TEXT as sqrt_price_x96,
+                NULL::TEXT as swap_liquidity,
+                NULL::INT AS swap_tick,
+                NULL::TEXT as swap_amount0,
+                NULL::TEXT as swap_amount1,
+                NULL::TEXT as position_liquidity,
+                NULL::TEXT as amount0,
+                NULL::TEXT as amount1,
+                NULL::INT as tick_lower,
+                NULL::INT as tick_upper,
+                NULL::TEXT as liquidity_event_type,
+                NULL::TEXT as flash_amount0,
+                NULL::TEXT as flash_amount1,
+                NULL::TEXT as flash_paid0,
+                NULL::TEXT as flash_paid1,
+                fee_protocol0_new::SMALLINT,
+                fee_protocol1_new::SMALLINT
+            FROM pool_fee_protocol_update_event
+            WHERE chain_id = $1 AND pool_identifier = $2
+            AND ($3::BIGINT IS NULL OR block <= $3))
+            UNION ALL
+            (SELECT
+                'fee_protocol_collect' as event_type,
+                chain_id,
+                pool_identifier,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                COALESCE(
+                    (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool_fee_protocol_collect_event.chain_id AND block.number = pool_fee_protocol_collect_event.block),
+                    (SELECT timestamp::TEXT FROM pool_event_block WHERE pool_event_block.chain_id = pool_fee_protocol_collect_event.chain_id AND pool_event_block.number = pool_fee_protocol_collect_event.block)
+                ) as block_timestamp,
+                sender,
+                recipient,
+                NULL::TEXT as owner,
+                NULL::TEXT as sqrt_price_x96,
+                NULL::TEXT as swap_liquidity,
+                NULL::INT AS swap_tick,
+                NULL::TEXT as swap_amount0,
+                NULL::TEXT as swap_amount1,
+                NULL::TEXT as position_liquidity,
+                amount0::TEXT,
+                amount1::TEXT,
+                NULL::INT as tick_lower,
+                NULL::INT as tick_upper,
+                NULL::TEXT as liquidity_event_type,
+                NULL::TEXT as flash_amount0,
+                NULL::TEXT as flash_amount1,
+                NULL::TEXT as flash_paid0,
+                NULL::TEXT as flash_paid1,
+                NULL::SMALLINT as fee_protocol0_new,
+                NULL::SMALLINT as fee_protocol1_new
+            FROM pool_fee_protocol_collect_event
+            WHERE chain_id = $1 AND pool_identifier = $2
+            AND ($3::BIGINT IS NULL OR block <= $3))
+            UNION ALL
+            (SELECT
                 'flash' as event_type,
                 chain_id,
                 pool_identifier,
@@ -2374,42 +2529,6 @@ impl BlockchainCacheDatabase {
                 NULL::SMALLINT as fee_protocol0_new,
                 NULL::SMALLINT as fee_protocol1_new
             FROM pool_flash_event
-            WHERE chain_id = $1 AND pool_identifier = $2
-            AND ($3::BIGINT IS NULL OR block <= $3))
-            UNION ALL
-            (SELECT
-                'fee_protocol' as event_type,
-                chain_id,
-                pool_identifier,
-                block,
-                transaction_hash,
-                transaction_index,
-                log_index,
-                COALESCE(
-                    (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool_fee_protocol_event.chain_id AND block.number = pool_fee_protocol_event.block),
-                    (SELECT timestamp::TEXT FROM pool_event_block WHERE pool_event_block.chain_id = pool_fee_protocol_event.chain_id AND pool_event_block.number = pool_fee_protocol_event.block)
-                ) as block_timestamp,
-                NULL::TEXT as sender,
-                NULL::TEXT as recipient,
-                NULL::TEXT as owner,
-                NULL::TEXT as sqrt_price_x96,
-                NULL::TEXT as swap_liquidity,
-                NULL::INT AS swap_tick,
-                NULL::TEXT as swap_amount0,
-                NULL::TEXT as swap_amount1,
-                NULL::TEXT as position_liquidity,
-                NULL::TEXT as amount0,
-                NULL::TEXT as amount1,
-                NULL::INT as tick_lower,
-                NULL::INT as tick_upper,
-                NULL::TEXT as liquidity_event_type,
-                NULL::TEXT as flash_amount0,
-                NULL::TEXT as flash_amount1,
-                NULL::TEXT as flash_paid0,
-                NULL::TEXT as flash_paid1,
-                fee_protocol0_new::SMALLINT,
-                fee_protocol1_new::SMALLINT
-            FROM pool_fee_protocol_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND ($3::BIGINT IS NULL OR block <= $3))
             ORDER BY block, transaction_index, log_index";
@@ -2527,6 +2646,80 @@ impl BlockchainCacheDatabase {
             AND ($6::BIGINT IS NULL OR block <= $6))
             UNION ALL
             (SELECT
+                'fee_protocol_update' as event_type,
+                chain_id,
+                pool_identifier,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                COALESCE(
+                    (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool_fee_protocol_update_event.chain_id AND block.number = pool_fee_protocol_update_event.block),
+                    (SELECT timestamp::TEXT FROM pool_event_block WHERE pool_event_block.chain_id = pool_fee_protocol_update_event.chain_id AND pool_event_block.number = pool_fee_protocol_update_event.block)
+                ) as block_timestamp,
+                NULL::TEXT as sender,
+                NULL::TEXT as recipient,
+                NULL::TEXT as owner,
+                NULL::TEXT as sqrt_price_x96,
+                NULL::TEXT as swap_liquidity,
+                NULL::INT AS swap_tick,
+                NULL::TEXT as swap_amount0,
+                NULL::TEXT as swap_amount1,
+                NULL::TEXT as position_liquidity,
+                NULL::TEXT as amount0,
+                NULL::TEXT as amount1,
+                NULL::INT as tick_lower,
+                NULL::INT as tick_upper,
+                NULL::TEXT as liquidity_event_type,
+                NULL::TEXT as flash_amount0,
+                NULL::TEXT as flash_amount1,
+                NULL::TEXT as flash_paid0,
+                NULL::TEXT as flash_paid1,
+                fee_protocol0_new::SMALLINT,
+                fee_protocol1_new::SMALLINT
+            FROM pool_fee_protocol_update_event
+            WHERE chain_id = $1 AND pool_identifier = $2
+            AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5))
+            AND ($6::BIGINT IS NULL OR block <= $6))
+            UNION ALL
+            (SELECT
+                'fee_protocol_collect' as event_type,
+                chain_id,
+                pool_identifier,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                COALESCE(
+                    (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool_fee_protocol_collect_event.chain_id AND block.number = pool_fee_protocol_collect_event.block),
+                    (SELECT timestamp::TEXT FROM pool_event_block WHERE pool_event_block.chain_id = pool_fee_protocol_collect_event.chain_id AND pool_event_block.number = pool_fee_protocol_collect_event.block)
+                ) as block_timestamp,
+                sender,
+                recipient,
+                NULL::TEXT as owner,
+                NULL::TEXT as sqrt_price_x96,
+                NULL::TEXT as swap_liquidity,
+                NULL::INT AS swap_tick,
+                NULL::TEXT as swap_amount0,
+                NULL::TEXT as swap_amount1,
+                NULL::TEXT as position_liquidity,
+                amount0::TEXT,
+                amount1::TEXT,
+                NULL::INT as tick_lower,
+                NULL::INT as tick_upper,
+                NULL::TEXT as liquidity_event_type,
+                NULL::TEXT as flash_amount0,
+                NULL::TEXT as flash_amount1,
+                NULL::TEXT as flash_paid0,
+                NULL::TEXT as flash_paid1,
+                NULL::SMALLINT as fee_protocol0_new,
+                NULL::SMALLINT as fee_protocol1_new
+            FROM pool_fee_protocol_collect_event
+            WHERE chain_id = $1 AND pool_identifier = $2
+            AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5))
+            AND ($6::BIGINT IS NULL OR block <= $6))
+            UNION ALL
+            (SELECT
                 'flash' as event_type,
                 chain_id,
                 pool_identifier,
@@ -2559,43 +2752,6 @@ impl BlockchainCacheDatabase {
                 NULL::SMALLINT as fee_protocol0_new,
                 NULL::SMALLINT as fee_protocol1_new
             FROM pool_flash_event
-            WHERE chain_id = $1 AND pool_identifier = $2
-            AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5))
-            AND ($6::BIGINT IS NULL OR block <= $6))
-            UNION ALL
-            (SELECT
-                'fee_protocol' as event_type,
-                chain_id,
-                pool_identifier,
-                block,
-                transaction_hash,
-                transaction_index,
-                log_index,
-                COALESCE(
-                    (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool_fee_protocol_event.chain_id AND block.number = pool_fee_protocol_event.block),
-                    (SELECT timestamp::TEXT FROM pool_event_block WHERE pool_event_block.chain_id = pool_fee_protocol_event.chain_id AND pool_event_block.number = pool_fee_protocol_event.block)
-                ) as block_timestamp,
-                NULL::TEXT as sender,
-                NULL::TEXT as recipient,
-                NULL::TEXT as owner,
-                NULL::TEXT as sqrt_price_x96,
-                NULL::TEXT as swap_liquidity,
-                NULL::INT AS swap_tick,
-                NULL::TEXT as swap_amount0,
-                NULL::TEXT as swap_amount1,
-                NULL::TEXT as position_liquidity,
-                NULL::TEXT as amount0,
-                NULL::TEXT as amount1,
-                NULL::INT as tick_lower,
-                NULL::INT as tick_upper,
-                NULL::TEXT as liquidity_event_type,
-                NULL::TEXT as flash_amount0,
-                NULL::TEXT as flash_amount1,
-                NULL::TEXT as flash_paid0,
-                NULL::TEXT as flash_paid1,
-                fee_protocol0_new::SMALLINT,
-                fee_protocol1_new::SMALLINT
-            FROM pool_fee_protocol_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5))
             AND ($6::BIGINT IS NULL OR block <= $6))

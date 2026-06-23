@@ -45,7 +45,8 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added Polymarket RTDS custom data subscriptions (#4214), thanks @graceyangfan
 - Added Tardis Lighter venue mapping
 - Added Tardis `options_chain` CSV loading, streaming, and catalog conversion
-- Added Uniswap V3 `SetFeeProtocol` indexing and replay so replay-derived pool snapshots carry the correct `fee_protocol`; run `make init-db` to create the `pool_fee_protocol_event` table
+- Added Uniswap V3 `SetFeeProtocol` indexing so replayed snapshots carry the correct `fee_protocol`; run `make init-db`
+- Added Uniswap V3 `CollectProtocol` indexing so pool snapshots track protocol-fee balances; run `make init-db`
 
 ### Breaking Changes
 - Changed backtest config builders to validate on `build()` and return `ConfigResult` (Rust)

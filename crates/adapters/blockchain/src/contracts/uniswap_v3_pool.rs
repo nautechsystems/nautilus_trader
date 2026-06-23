@@ -77,6 +77,7 @@ sol! {
         function liquidity() external view returns (uint128);
         function feeGrowthGlobal0X128() external view returns (uint256);
         function feeGrowthGlobal1X128() external view returns (uint256);
+        function protocolFees() external view returns (uint128 token0, uint128 token1);
 
         // Tick and position getters
         function ticks(int24 tick) external view returns (TickInfo memory);
@@ -157,15 +158,20 @@ impl UniswapV3PoolContract {
                 allow_failure: false,
                 call_data: UniswapV3Pool::feeGrowthGlobal1X128Call {}.abi_encode(),
             },
+            ContractCall {
+                target: *pool_address,
+                allow_failure: false,
+                call_data: UniswapV3Pool::protocolFeesCall {}.abi_encode(),
+            },
         ];
 
         let results = self.base.execute_multicall(calls, block).await?;
 
-        if results.len() != 4 {
+        if results.len() != 5 {
             return Err(UniswapV3PoolError::CallFailed {
                 field: "global_state_multicall".to_string(),
                 pool: *pool_address,
-                reason: format!("Expected 4 results, received {}", results.len()),
+                reason: format!("Expected 5 results, received {}", results.len()),
             });
         }
 
@@ -209,12 +215,23 @@ impl UniswapV3PoolContract {
                     raw_data: hex::encode(&results[3].returnData),
                 })?;
 
+        // Decode protocolFees
+        let protocol_fees = UniswapV3Pool::protocolFeesCall::abi_decode_returns(
+            &results[4].returnData,
+        )
+        .map_err(|e| UniswapV3PoolError::DecodingError {
+            field: "protocolFees".to_string(),
+            pool: *pool_address,
+            reason: e.to_string(),
+            raw_data: hex::encode(&results[4].returnData),
+        })?;
+
         Ok(PoolState {
             current_tick: slot0.tick.as_i32(),
             price_sqrt_ratio_x96: slot0.sqrtPriceX96,
             liquidity,
-            protocol_fees_token0: U256::ZERO,
-            protocol_fees_token1: U256::ZERO,
+            protocol_fees_token0: U256::from(protocol_fees.token0),
+            protocol_fees_token1: U256::from(protocol_fees.token1),
             fee_protocol: slot0.feeProtocol,
             fee_growth_global_0: fee_growth_0,
             fee_growth_global_1: fee_growth_1,

@@ -23,7 +23,9 @@ use nautilus_core::{
 use nautilus_model::{
     defi::{
         PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap, SharedChain, SharedDex,
-        data::{DexPoolData, PoolFeeCollect, PoolFeeProtocolUpdate, PoolFlash},
+        data::{
+            DexPoolData, PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate, PoolFlash,
+        },
         validation::validate_address,
     },
     identifiers::InstrumentId,
@@ -398,6 +400,84 @@ pub fn transform_row_to_dex_pool_data(
 
             Ok(DexPoolData::FeeCollect(pool_fee_collect))
         }
+        "fee_protocol_update" => {
+            let fee_protocol0_new = row.try_get::<i16, _>("fee_protocol0_new")?;
+            let fee_protocol1_new = row.try_get::<i16, _>("fee_protocol1_new")?;
+            let fee_protocol0_new = u8::try_from(fee_protocol0_new).map_err(|e| {
+                sqlx::Error::Decode(
+                    format!("Invalid fee_protocol0_new '{fee_protocol0_new}': {e}").into(),
+                )
+            })?;
+            let fee_protocol1_new = u8::try_from(fee_protocol1_new).map_err(|e| {
+                sqlx::Error::Decode(
+                    format!("Invalid fee_protocol1_new '{fee_protocol1_new}': {e}").into(),
+                )
+            })?;
+
+            let pool_fee_protocol_update = PoolFeeProtocolUpdate::new(
+                chain,
+                dex,
+                instrument_id,
+                pool_identifier,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                fee_protocol0_new,
+                fee_protocol1_new,
+                timestamp, // ts_event
+                timestamp, // ts_init (same block timestamp)
+            );
+
+            Ok(DexPoolData::FeeProtocolUpdate(pool_fee_protocol_update))
+        }
+        "fee_protocol_collect" => {
+            let sender_str = row.try_get::<Option<String>, _>("sender")?.ok_or_else(|| {
+                sqlx::Error::Decode("Missing sender for fee_protocol_collect event".into())
+            })?;
+            let sender = validate_address(&sender_str)
+                .map_err(|e| sqlx::Error::Decode(e.to_string().into()))?;
+
+            let recipient_str =
+                row.try_get::<Option<String>, _>("recipient")?
+                    .ok_or_else(|| {
+                        sqlx::Error::Decode(
+                            "Missing recipient for fee_protocol_collect event".into(),
+                        )
+                    })?;
+            let recipient = validate_address(&recipient_str)
+                .map_err(|e| sqlx::Error::Decode(e.to_string().into()))?;
+
+            // UNION queries return NUMERIC type, not domain types, so we need to read as strings
+            let amount0_str = row.try_get::<String, _>("amount0")?;
+            let amount0 = amount0_str.parse::<u128>().map_err(|e| {
+                sqlx::Error::Decode(format!("Invalid amount0 '{amount0_str}': {e}").into())
+            })?;
+
+            let amount1_str = row.try_get::<String, _>("amount1")?;
+            let amount1 = amount1_str.parse::<u128>().map_err(|e| {
+                sqlx::Error::Decode(format!("Invalid amount1 '{amount1_str}': {e}").into())
+            })?;
+
+            let pool_fee_protocol_collect = PoolFeeProtocolCollect::new(
+                chain,
+                dex,
+                instrument_id,
+                pool_identifier,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                sender,
+                recipient,
+                amount0,
+                amount1,
+                timestamp, // ts_event
+                timestamp, // ts_init (same block timestamp)
+            );
+
+            Ok(DexPoolData::FeeProtocolCollect(pool_fee_protocol_collect))
+        }
         "flash" => {
             let sender_str = row
                 .try_get::<Option<String>, _>("sender")?
@@ -456,37 +536,6 @@ pub fn transform_row_to_dex_pool_data(
             );
 
             Ok(DexPoolData::Flash(pool_flash))
-        }
-        "fee_protocol" => {
-            let fee_protocol0_new = row.try_get::<i16, _>("fee_protocol0_new")?;
-            let fee_protocol1_new = row.try_get::<i16, _>("fee_protocol1_new")?;
-            let fee_protocol0_new = u8::try_from(fee_protocol0_new).map_err(|e| {
-                sqlx::Error::Decode(
-                    format!("Invalid fee_protocol0_new '{fee_protocol0_new}': {e}").into(),
-                )
-            })?;
-            let fee_protocol1_new = u8::try_from(fee_protocol1_new).map_err(|e| {
-                sqlx::Error::Decode(
-                    format!("Invalid fee_protocol1_new '{fee_protocol1_new}': {e}").into(),
-                )
-            })?;
-
-            let pool_fee_protocol_update = PoolFeeProtocolUpdate::new(
-                chain,
-                dex,
-                instrument_id,
-                pool_identifier,
-                block,
-                transaction_hash,
-                transaction_index,
-                log_index,
-                fee_protocol0_new,
-                fee_protocol1_new,
-                timestamp, // ts_event
-                timestamp, // ts_init (same block timestamp)
-            );
-
-            Ok(DexPoolData::FeeProtocolUpdate(pool_fee_protocol_update))
         }
         _ => Err(sqlx::Error::Decode(
             format!("Unknown event type: {event_type}").into(),

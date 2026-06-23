@@ -50,6 +50,7 @@ fn get_event_block_position(event: &DexPoolData) -> (u64, u32, u32) {
         DexPoolData::LiquidityUpdate(u) => (u.block, u.transaction_index, u.log_index),
         DexPoolData::FeeCollect(c) => (c.block, c.transaction_index, c.log_index),
         DexPoolData::FeeProtocolUpdate(u) => (u.block, u.transaction_index, u.log_index),
+        DexPoolData::FeeProtocolCollect(c) => (c.block, c.transaction_index, c.log_index),
         DexPoolData::Flash(f) => (f.block, f.transaction_index, f.log_index),
     }
 }
@@ -63,6 +64,9 @@ fn convert_and_sort_buffered_events(buffered_events: Vec<DefiData>) -> Vec<DexPo
             DefiData::PoolLiquidityUpdate(update) => Some(DexPoolData::LiquidityUpdate(update)),
             DefiData::PoolFeeCollect(collect) => Some(DexPoolData::FeeCollect(collect)),
             DefiData::PoolFeeProtocolUpdate(update) => Some(DexPoolData::FeeProtocolUpdate(update)),
+            DefiData::PoolFeeProtocolCollect(collect) => {
+                Some(DexPoolData::FeeProtocolCollect(collect))
+            }
             DefiData::PoolFlash(flash) => Some(DexPoolData::Flash(flash)),
             _ => None,
         })
@@ -419,6 +423,26 @@ impl DataEngine {
                     && let Err(e) = profiler.process_fee_protocol_update(&update)
                 {
                     log::error!("Failed to process pool fee protocol update: {e}");
+                }
+            }
+            DefiData::PoolFeeProtocolCollect(collect) => {
+                let instrument_id = collect.instrument_id;
+                // A protocol-fee withdrawal is profiler infrastructure, not a subscriber data
+                // stream: it only decrements the profiler's accrued protocol-fee balances. Buffer
+                // until the snapshot lands, otherwise apply in place.
+                if self.pool_snapshot_pending.contains(&instrument_id) {
+                    log::debug!(
+                        "Buffering fee protocol collect event for {instrument_id} (waiting for snapshot)"
+                    );
+                    self.pool_event_buffers
+                        .entry(instrument_id)
+                        .or_default()
+                        .push(DefiData::PoolFeeProtocolCollect(collect));
+                } else if let Some(profiler) =
+                    self.cache.borrow_mut().pool_profiler_mut(&instrument_id)
+                    && let Err(e) = profiler.process_fee_protocol_collect(&collect)
+                {
+                    log::error!("Failed to process pool fee protocol collect event: {e}");
                 }
             }
             DefiData::PoolFlash(flash) => {

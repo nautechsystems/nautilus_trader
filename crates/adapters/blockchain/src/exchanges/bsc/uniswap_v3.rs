@@ -39,7 +39,8 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     );
     dex.set_initialize_event("Initialize(uint160,int24)");
     dex.set_flash_event("Flash(address,address,uint256,uint256,uint256,uint256)");
-    dex.set_fee_protocol_event("SetFeeProtocol(uint8,uint8,uint8,uint8)");
+    dex.set_fee_protocol_update_event("SetFeeProtocol(uint8,uint8,uint8,uint8)");
+    dex.set_fee_protocol_collect_event("CollectProtocol(address,address,uint128,uint128)");
     let mut dex_extended = DexExtended::new(dex);
 
     // HyperSync parsers
@@ -55,8 +56,11 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     dex_extended
         .set_collect_event_hypersync_parsing(uniswap_v3::collect::parse_collect_event_hypersync);
     dex_extended.set_flash_event_hypersync_parsing(uniswap_v3::flash::parse_flash_event_hypersync);
-    dex_extended.set_fee_protocol_event_hypersync_parsing(
-        uniswap_v3::set_fee_protocol::parse_fee_protocol_event_hypersync,
+    dex_extended.set_fee_protocol_update_event_hypersync_parsing(
+        uniswap_v3::fee_protocol_update::parse_fee_protocol_update_event_hypersync,
+    );
+    dex_extended.set_fee_protocol_collect_event_hypersync_parsing(
+        uniswap_v3::fee_protocol_collect::parse_fee_protocol_collect_event_hypersync,
     );
 
     // RPC parsers
@@ -69,8 +73,11 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     dex_extended.set_burn_event_rpc_parsing(uniswap_v3::burn::parse_burn_event_rpc);
     dex_extended.set_collect_event_rpc_parsing(uniswap_v3::collect::parse_collect_event_rpc);
     dex_extended.set_flash_event_rpc_parsing(uniswap_v3::flash::parse_flash_event_rpc);
-    dex_extended.set_fee_protocol_event_rpc_parsing(
-        uniswap_v3::set_fee_protocol::parse_fee_protocol_event_rpc,
+    dex_extended.set_fee_protocol_update_event_rpc_parsing(
+        uniswap_v3::fee_protocol_update::parse_fee_protocol_update_event_rpc,
+    );
+    dex_extended.set_fee_protocol_collect_event_rpc_parsing(
+        uniswap_v3::fee_protocol_collect::parse_fee_protocol_collect_event_rpc,
     );
 
     dex_extended

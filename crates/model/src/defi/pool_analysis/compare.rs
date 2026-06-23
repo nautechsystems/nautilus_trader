@@ -27,6 +27,8 @@ pub enum PoolProfilerComparison {
     SqrtPriceMismatch,
     /// Only the fee protocol differs; structural pool state still matches.
     FeeProtocolMismatch,
+    /// Only the accrued protocol-fee balances differ; structural pool state still matches.
+    ProtocolFeesMismatch,
     /// One or more structural fields differ.
     Mismatch,
 }
@@ -43,7 +45,10 @@ impl PoolProfilerComparison {
     pub const fn is_valid_for_snapshot(self) -> bool {
         matches!(
             self,
-            Self::Match | Self::SqrtPriceMismatch | Self::FeeProtocolMismatch
+            Self::Match
+                | Self::SqrtPriceMismatch
+                | Self::FeeProtocolMismatch
+                | Self::ProtocolFeesMismatch
         )
     }
 }
@@ -76,8 +81,9 @@ pub fn compare_pool_profiler(profiler: &PoolProfiler, snapshot: &PoolSnapshot) -
 ///
 /// Sqrt price can differ when replay is event-scoped but the RPC snapshot is block-scoped. Fee
 /// protocol can differ until `SetFeeProtocol` events are indexed and applied during replay, leaving
-/// the profiler value lagging the on-chain one. Both mismatches are non-blocking when tick,
-/// liquidity, ticks, and positions all match.
+/// the profiler value lagging the on-chain one. Accrued protocol-fee balances can differ when
+/// per-step rounding during replay accrual diverges from the on-chain accumulator. These mismatches
+/// are non-blocking when tick, liquidity, ticks, and positions all match.
 ///
 /// # Panics
 ///
@@ -92,6 +98,7 @@ pub fn compare_pool_profiler_detailed(
     let mut structural_match = true;
     let mut sqrt_price_matches = true;
     let mut fee_protocol_matches = true;
+    let mut protocol_fees_match = true;
     let total_ticks = snapshot.ticks.len();
     let total_positions = snapshot.positions.len();
 
@@ -129,6 +136,25 @@ pub fn compare_pool_profiler_detailed(
             snapshot.state.fee_protocol
         );
         fee_protocol_matches = false;
+    }
+
+    if snapshot.state.protocol_fees_token0 == profiler.state.protocol_fees_token0
+        && snapshot.state.protocol_fees_token1 == profiler.state.protocol_fees_token1
+    {
+        log::info!(
+            "✓ protocol_fees match: token0={}, token1={}",
+            snapshot.state.protocol_fees_token0,
+            snapshot.state.protocol_fees_token1
+        );
+    } else {
+        log::warn!(
+            "Protocol fees mismatch: profiler=(token0={}, token1={}), compared=(token0={}, token1={})",
+            profiler.state.protocol_fees_token0,
+            profiler.state.protocol_fees_token1,
+            snapshot.state.protocol_fees_token0,
+            snapshot.state.protocol_fees_token1
+        );
+        protocol_fees_match = false;
     }
 
     if snapshot.state.liquidity == profiler.tick_map.liquidity {
@@ -235,6 +261,9 @@ pub fn compare_pool_profiler_detailed(
     } else if !fee_protocol_matches {
         log::warn!("Pool profiler fee protocol differs, but all structural state matches");
         PoolProfilerComparison::FeeProtocolMismatch
+    } else if !protocol_fees_match {
+        log::warn!("Pool profiler protocol fees differ, but all structural state matches");
+        PoolProfilerComparison::ProtocolFeesMismatch
     } else {
         PoolProfilerComparison::Match
     }

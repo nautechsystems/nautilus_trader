@@ -29,8 +29,8 @@ use crate::{
         Chain, Dex,
         chain::Blockchain,
         data::{
-            Block, DefiData, PoolFeeCollect, PoolFeeProtocolUpdate, PoolFlash, PoolLiquidityUpdate,
-            PoolLiquidityUpdateType, PoolSwap, Transaction,
+            Block, DefiData, PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate,
+            PoolFlash, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap, Transaction,
         },
     },
     identifiers::InstrumentId,
@@ -898,6 +898,169 @@ impl PoolFeeProtocolUpdate {
     #[pyo3(name = "fee_protocol1_new")]
     fn py_fee_protocol1_new(&self) -> u8 {
         self.fee_protocol1_new
+    }
+
+    #[getter]
+    #[pyo3(name = "timestamp")]
+    fn py_timestamp(&self) -> u64 {
+        self.ts_event.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl PoolFeeProtocolCollect {
+    /// Represents a protocol-fee withdrawal from a Uniswap V3-style pool.
+    ///
+    /// Emitted by `CollectProtocol`, this carries the protocol-fee amounts withdrawn to the recipient.
+    /// The amounts decrement the pool's accrued protocol-fee balances, leaving the on-chain remainder
+    /// (Uniswap V3 keeps one wei in each slot to save gas).
+    #[new]
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    fn py_new(
+        chain: Chain,
+        dex: Dex,
+        pool_identifier: String,
+        instrument_id: InstrumentId,
+        block: u64,
+        transaction_hash: String,
+        transaction_index: u32,
+        log_index: u32,
+        sender: String,
+        recipient: String,
+        amount0: String,
+        amount1: String,
+        timestamp: u64,
+    ) -> PyResult<Self> {
+        let sender = sender.parse().map_err(to_pyvalue_err)?;
+        let recipient = recipient.parse().map_err(to_pyvalue_err)?;
+        let amount0 = amount0.parse().map_err(to_pyvalue_err)?;
+        let amount1 = amount1.parse().map_err(to_pyvalue_err)?;
+        let pool_identifier = pool_identifier.parse().map_err(to_pyvalue_err)?;
+        Ok(Self::new(
+            Arc::new(chain),
+            Arc::new(dex),
+            instrument_id,
+            pool_identifier,
+            block,
+            transaction_hash,
+            transaction_index,
+            log_index,
+            sender,
+            recipient,
+            amount0,
+            amount1,
+            timestamp.into(), // ts_event
+            timestamp.into(), // ts_init (single Python timestamp)
+        ))
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    fn __hash__(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.chain.chain_id.hash(&mut hasher);
+        self.transaction_hash.hash(&mut hasher);
+        self.log_index.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
+        match op {
+            CompareOp::Eq => self == other,
+            CompareOp::Ne => self != other,
+            _ => panic!("Unsupported comparison for PoolFeeProtocolCollect"),
+        }
+    }
+
+    #[getter]
+    #[pyo3(name = "chain")]
+    fn py_chain(&self) -> Chain {
+        self.chain.as_ref().clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "dex")]
+    fn py_dex(&self) -> Dex {
+        self.dex.as_ref().clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "pool_identifier")]
+    fn py_pool_identifier(&self) -> String {
+        self.pool_identifier.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "block")]
+    fn py_block(&self) -> u64 {
+        self.block
+    }
+
+    #[getter]
+    #[pyo3(name = "transaction_hash")]
+    fn py_transaction_hash(&self) -> &str {
+        &self.transaction_hash
+    }
+
+    #[getter]
+    #[pyo3(name = "transaction_index")]
+    fn py_transaction_index(&self) -> u32 {
+        self.transaction_index
+    }
+
+    #[getter]
+    #[pyo3(name = "log_index")]
+    fn py_log_index(&self) -> u32 {
+        self.log_index
+    }
+
+    #[getter]
+    #[pyo3(name = "sender")]
+    fn py_sender(&self) -> String {
+        self.sender.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "recipient")]
+    fn py_recipient(&self) -> String {
+        self.recipient.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "amount0")]
+    fn py_amount0(&self) -> String {
+        self.amount0.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "amount1")]
+    fn py_amount1(&self) -> String {
+        self.amount1.to_string()
     }
 
     #[getter]
