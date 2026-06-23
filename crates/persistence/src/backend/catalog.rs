@@ -395,8 +395,8 @@ impl ParquetDataCatalog {
         let mut mark_prices: Vec<MarkPriceUpdate> = Vec::new();
         let mut index_prices: Vec<IndexPriceUpdate> = Vec::new();
         let mut funding_rates: Vec<FundingRateUpdate> = Vec::new();
-        let mut statuses: Vec<InstrumentStatus> = Vec::new();
         let mut option_greeks: Vec<OptionGreeks> = Vec::new();
+        let mut statuses: Vec<InstrumentStatus> = Vec::new();
         let mut closes: Vec<InstrumentClose> = Vec::new();
         // Group custom data by full DataType identity (type_name + identifier + metadata)
         // so each batch is written to the correct path with consistent schema/metadata.
@@ -437,11 +437,11 @@ impl ParquetDataCatalog {
                 Data::FundingRateUpdate(p) => {
                     funding_rates.push(p);
                 }
-                Data::InstrumentStatus(s) => {
-                    statuses.push(s);
-                }
                 Data::OptionGreeks(g) => {
                     option_greeks.push(g);
+                }
+                Data::InstrumentStatus(s) => {
+                    statuses.push(s);
                 }
                 Data::InstrumentClose(c) => {
                     closes.push(c);
@@ -466,8 +466,8 @@ impl ParquetDataCatalog {
         self.write_to_parquet(&mark_prices, start, end, skip_disjoint_check)?;
         self.write_to_parquet(&index_prices, start, end, skip_disjoint_check)?;
         self.write_to_parquet(&funding_rates, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(&statuses, start, end, skip_disjoint_check)?;
         self.write_to_parquet(&option_greeks, start, end, skip_disjoint_check)?;
+        self.write_to_parquet(&statuses, start, end, skip_disjoint_check)?;
         self.write_to_parquet(&closes, start, end, skip_disjoint_check)?;
 
         for (_, items) in custom_data {
@@ -2200,20 +2200,6 @@ impl ParquetDataCatalog {
         self.query_typed::<FundingRateUpdate>(instrument_ids, start, end, None, None, true)
     }
 
-    /// Queries instrument close data for the specified instrument(s) and time range.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if file discovery, query execution, or decoding fails.
-    pub fn instrument_closes(
-        &mut self,
-        instrument_ids: Option<Vec<String>>,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-    ) -> anyhow::Result<Vec<InstrumentClose>> {
-        self.query_typed_data::<InstrumentClose>(instrument_ids, start, end, None, None, true)
-    }
-
     /// Queries option greeks data for the specified instrument(s) and time range.
     ///
     /// # Errors
@@ -2226,6 +2212,20 @@ impl ParquetDataCatalog {
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<OptionGreeks>> {
         self.query_typed_data::<OptionGreeks>(instrument_ids, start, end, None, None, true)
+    }
+
+    /// Queries instrument close data for the specified instrument(s) and time range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file discovery, query execution, or decoding fails.
+    pub fn instrument_closes(
+        &mut self,
+        instrument_ids: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<InstrumentClose>> {
+        self.query_typed_data::<InstrumentClose>(instrument_ids, start, end, None, None, true)
     }
 
     /// Queries any instrument data for the specified instrument(s) and time range.
@@ -4251,8 +4251,8 @@ impl_catalog_path_prefix!(Bar, "bars");
 impl_catalog_path_prefix!(IndexPriceUpdate, "index_prices");
 impl_catalog_path_prefix!(MarkPriceUpdate, "mark_prices");
 impl_catalog_path_prefix!(FundingRateUpdate, "funding_rate_update");
-impl_catalog_path_prefix!(InstrumentStatus, "instrument_status");
 impl_catalog_path_prefix!(OptionGreeks, "option_greeks");
+impl_catalog_path_prefix!(InstrumentStatus, "instrument_status");
 impl_catalog_path_prefix!(InstrumentClose, "instrument_closes");
 impl_catalog_path_prefix!(InstrumentAny, "instruments");
 impl_catalog_path_prefix!(AccountState, "account_state");

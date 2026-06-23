@@ -105,6 +105,29 @@ struct FundingRateUpdate {
     hasInterval @6 :Bool;  # Presence flag for interval
 }
 
+# Option greeks and implied volatility for a single instrument
+struct OptionGreeks {
+    instrumentId @0 :Identifiers.InstrumentId;
+    convention @1 :Enums.GreeksConvention;
+    delta @2 :Float64;
+    gamma @3 :Float64;
+    vega @4 :Float64;
+    theta @5 :Float64;
+    rho @6 :Float64;
+    markIv @7 :Float64;  # Valid when hasMarkIv is true
+    bidIv @8 :Float64;  # Valid when hasBidIv is true
+    askIv @9 :Float64;  # Valid when hasAskIv is true
+    underlyingPrice @10 :Float64;  # Valid when hasUnderlyingPrice is true
+    openInterest @11 :Float64;  # Valid when hasOpenInterest is true
+    hasMarkIv @12 :Bool;
+    hasBidIv @13 :Bool;
+    hasAskIv @14 :Bool;
+    hasUnderlyingPrice @15 :Bool;
+    hasOpenInterest @16 :Bool;
+    tsEvent @17 :Base.UnixNanos;
+    tsInit @18 :Base.UnixNanos;
+}
+
 # Market data enum union
 struct DataAny {
     union {
@@ -113,12 +136,13 @@ struct DataAny {
         bar @2 :Bar;
         markPrice @3 :MarkPriceUpdate;
         indexPrice @4 :IndexPriceUpdate;
-        instrumentClose @5 :InstrumentClose;
-        instrumentStatus @6 :InstrumentStatus;
-        fundingRate @7 :FundingRateUpdate;
-        orderBookDelta @8 :OrderBookDelta;
-        orderBookDeltas @9 :OrderBookDeltas;
-        orderBookDepth10 @10 :OrderBookDepth10;
+        fundingRate @5 :FundingRateUpdate;
+        optionGreeks @6 :OptionGreeks;
+        instrumentStatus @7 :InstrumentStatus;
+        instrumentClose @8 :InstrumentClose;
+        orderBookDelta @9 :OrderBookDelta;
+        orderBookDeltas @10 :OrderBookDeltas;
+        orderBookDepth10 @11 :OrderBookDepth10;
     }
 }
 

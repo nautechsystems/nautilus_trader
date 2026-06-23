@@ -20,6 +20,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added `RedisCacheConfig`, `PostgresCacheConfig`, and `RedisMessageBusConfig` for Rust factories
 - Added SEC1 EC private key support to socket TLS configuration (Rust)
 - Added SBE and Cap'n Proto encodings for Rust-native message bus publishers
+- Added SBE and Cap'n Proto external msgbus payload support for `OptionGreeks`
 - Added `order_position_index` Postgres table for the order-position index; run `make init-db` to migrate
 - Added negative price support for `Commodity` instruments in risk checks (#2330), thanks for reporting @fabz1
 - Added `add_native_exec_algorithm` and `ExecutionAlgorithmConfig` bindings to the Python v2 backtest engine
@@ -59,6 +60,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Changed Parquet catalog write APIs to take borrowed slices instead of owned `Vec` (Rust) (#4296), thanks @sunlei
 - Changed `PoolProfiler.price_sqrt_ratio_x96` to return `int` instead of `str`
 - Changed PyO3 `DataActor`/`Strategy` historical request `start`/`end` to require UTC datetimes
+- Changed Python `NautilusDataType` enum order to put `OptionGreeks` before `InstrumentStatus`
 - Changed Redis cache account/order/position storage to event logs; clear old typed state (Rust)
 - Changed cache database and message bus backing construction to use factory-owned config structs (Rust)
 - Changed Rust actor `self.clock()` to return `ClockApi`; call methods directly instead of borrowing
@@ -68,6 +70,8 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Changed `OrderAny::from_events` to return `OrderReplayError` instead of `anyhow::Error` (Rust)
 - Changed `OrderList::validate` to return `OrderListValidationError` instead of `anyhow::Error` (Rust)
 - Changed Rust message bus subscriber-count and presence queries to return invalid-topic errors instead of panicking
+- Changed Cap'n Proto `DataAny` ordinals to put `OptionGreeks` before instrument schemas
+- Changed SBE `DataAny` variants and template IDs to put `OptionGreeks` before instrument schemas
 - Changed `SyntheticInstrument` fallible methods to return `SyntheticInstrumentError` instead of `anyhow::Error` (Rust)
 - Changed tick scheme constructors and parsing to return `TickSchemeError` instead of `anyhow::Error` (Rust)
 - Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)

@@ -17,8 +17,8 @@ use std::any::Any;
 
 use bytes::Bytes;
 use nautilus_model::data::{
-    Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10,
-    QuoteTick, TradeTick,
+    Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OptionGreeks, OrderBookDeltas,
+    OrderBookDepth10, QuoteTick, TradeTick,
 };
 use nautilus_serialization::sbe::{FromSbe, ToSbe};
 
@@ -64,6 +64,7 @@ define_deserializer!(
     FundingRateUpdate,
     "FundingRateUpdate"
 );
+define_deserializer!(deserialize_option_greeks, OptionGreeks, "OptionGreeks");
 
 pub(super) fn serialize_payload(
     payload_type: BusPayloadType,
@@ -89,6 +90,7 @@ pub(super) fn serialize_payload(
         BusPayloadType::FundingRateUpdate => {
             serialize_payload_as::<FundingRateUpdate>(type_name, message)
         }
+        BusPayloadType::OptionGreeks => serialize_payload_as::<OptionGreeks>(type_name, message),
         _ => Err(PayloadCodecError::Dropped(format!(
             "SBE serialization is not supported for {type_name}"
         ))),

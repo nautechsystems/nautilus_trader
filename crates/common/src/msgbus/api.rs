@@ -1616,6 +1616,8 @@ mod tests {
     use nautilus_model::defi::{
         AmmType, Chain, Dex, DexType, PoolIdentifier, PoolLiquidityUpdateType, Token,
     };
+    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    use nautilus_model::{data::OptionGreekValues, enums::GreeksConvention};
     use nautilus_model::{
         data::{
             Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OptionGreeks,
@@ -1947,6 +1949,28 @@ mod tests {
             UnixNanos::from(6),
             UnixNanos::from(7),
         )
+    }
+
+    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    fn option_greeks() -> OptionGreeks {
+        OptionGreeks {
+            instrument_id: InstrumentId::from("BTC-30JUN23-40000-C.DERIBIT"),
+            convention: GreeksConvention::PriceAdjusted,
+            greeks: OptionGreekValues {
+                delta: 0.525,
+                gamma: 0.00032,
+                vega: 12.25,
+                theta: -0.72,
+                rho: 0.18,
+            },
+            mark_iv: Some(0.0),
+            bid_iv: None,
+            ask_iv: Some(0.54),
+            underlying_price: Some(41_500.25),
+            open_interest: Some(0.0),
+            ts_event: UnixNanos::from(20),
+            ts_init: UnixNanos::from(21),
+        }
     }
 
     fn portfolio_snapshot() -> PortfolioSnapshot {
@@ -2529,6 +2553,15 @@ mod tests {
             subscribe_funding_rates,
             assert_eq_ref,
         );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::OptionGreeks,
+            "data.option_greeks.BTC-30JUN23-40000-C.DERIBIT",
+            option_greeks(),
+            publish_option_greeks,
+            subscribe_option_greeks,
+            assert_eq_ref,
+        );
     }
 
     #[cfg(feature = "sbe")]
@@ -2545,7 +2578,6 @@ mod tests {
 
     #[rstest]
     #[case(BusPayloadType::AccountState)]
-    #[case(BusPayloadType::OptionGreeks)]
     fn republish_external_message_skips_unsupported_binary_payload(
         #[case] payload_type: BusPayloadType,
     ) {
@@ -2557,16 +2589,6 @@ mod tests {
                 account_received
                     .borrow_mut()
                     .push(serde_json::to_value(state).unwrap());
-            }),
-            None,
-        );
-        let greeks_received = received.clone();
-        subscribe_option_greeks(
-            "events.unsupported.*".into(),
-            TypedHandler::from(move |greeks: &OptionGreeks| {
-                greeks_received
-                    .borrow_mut()
-                    .push(serde_json::to_value(greeks).unwrap());
             }),
             None,
         );
@@ -2631,6 +2653,26 @@ mod tests {
         reset_message_bus();
     }
 
+    #[cfg(feature = "sbe")]
+    #[rstest]
+    fn publish_option_greeks_sbe_forwards_decodable_payload_to_external_egress() {
+        let publications = install_capturing_external_egress(SerializationEncoding::Sbe);
+        let greeks = option_greeks();
+
+        publish_option_greeks("data.option_greeks.TEST".into(), &greeks);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.option_greeks.TEST");
+        assert_eq!(
+            OptionGreeks::from_sbe(&publications[0].payload)
+                .expect("SBE payload must decode as OptionGreeks"),
+            greeks
+        );
+        drop(publications);
+        reset_message_bus();
+    }
+
     #[cfg(not(feature = "sbe"))]
     #[rstest]
     fn publish_quote_sbe_without_feature_drops_payload() {
@@ -2665,6 +2707,32 @@ mod tests {
         let decoded =
             QuoteTick::from_capnp(root).expect("Cap'n Proto payload must decode as QuoteTick");
         assert_eq!(decoded, quote);
+        drop(publications);
+        reset_message_bus();
+    }
+
+    #[cfg(feature = "capnp")]
+    #[rstest]
+    fn publish_option_greeks_capnp_forwards_decodable_payload_to_external_egress() {
+        let publications = install_capturing_external_egress(SerializationEncoding::Capnp);
+        let greeks = option_greeks();
+
+        publish_option_greeks("data.option_greeks.TEST".into(), &greeks);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.option_greeks.TEST");
+        let reader = capnp::serialize::read_message(
+            &mut &publications[0].payload[..],
+            capnp::message::ReaderOptions::new(),
+        )
+        .expect("Cap'n Proto payload must be readable");
+        let root = reader
+            .get_root::<market_capnp::option_greeks::Reader>()
+            .expect("Cap'n Proto payload must have an OptionGreeks root");
+        let decoded = OptionGreeks::from_capnp(root)
+            .expect("Cap'n Proto payload must decode as OptionGreeks");
+        assert_eq!(decoded, greeks);
         drop(publications);
         reset_message_bus();
     }

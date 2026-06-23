@@ -15,7 +15,7 @@
 
 use nautilus_model::data::{
     Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
-    OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+    OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
 };
 
 use super::{
@@ -65,6 +65,10 @@ impl MarketSbeMessage for DataAny {
                 writer.write_u16_le(data_any_variant::FUNDING_RATE);
                 <FundingRateUpdate as MarketSbeMessage>::encode_body(value, writer)
             }
+            Self::OptionGreeks(value) => {
+                writer.write_u16_le(data_any_variant::OPTION_GREEKS);
+                <OptionGreeks as MarketSbeMessage>::encode_body(value, writer)
+            }
             Self::InstrumentStatus(value) => {
                 writer.write_u16_le(data_any_variant::INSTRUMENT_STATUS);
                 <InstrumentStatus as MarketSbeMessage>::encode_body(value, writer)
@@ -105,6 +109,9 @@ impl MarketSbeMessage for DataAny {
             data_any_variant::FUNDING_RATE => Ok(Self::FundingRate(
                 <FundingRateUpdate as MarketSbeMessage>::decode_body(cursor)?,
             )),
+            data_any_variant::OPTION_GREEKS => Ok(Self::OptionGreeks(
+                <OptionGreeks as MarketSbeMessage>::decode_body(cursor)?,
+            )),
             data_any_variant::INSTRUMENT_STATUS => Ok(Self::InstrumentStatus(
                 <InstrumentStatus as MarketSbeMessage>::decode_body(cursor)?,
             )),
@@ -130,6 +137,7 @@ impl MarketSbeMessage for DataAny {
                 Self::MarkPrice(value) => value.encoded_body_size(),
                 Self::IndexPrice(value) => value.encoded_body_size(),
                 Self::FundingRate(value) => value.encoded_body_size(),
+                Self::OptionGreeks(value) => value.encoded_body_size(),
                 Self::InstrumentStatus(value) => value.encoded_body_size(),
                 Self::InstrumentClose(value) => value.encoded_body_size(),
             }
@@ -187,6 +195,12 @@ impl From<IndexPriceUpdate> for DataAny {
 impl From<FundingRateUpdate> for DataAny {
     fn from(value: FundingRateUpdate) -> Self {
         Self::FundingRate(value)
+    }
+}
+
+impl From<OptionGreeks> for DataAny {
+    fn from(value: OptionGreeks) -> Self {
+        Self::OptionGreeks(value)
     }
 }
 

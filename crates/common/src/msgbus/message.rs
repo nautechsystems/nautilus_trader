@@ -196,6 +196,7 @@ impl BusPayloadType {
                 | Self::MarkPriceUpdate
                 | Self::IndexPriceUpdate
                 | Self::FundingRateUpdate
+                | Self::OptionGreeks
         )
     }
 }
@@ -357,7 +358,7 @@ mod tests {
     #[case(BusPayloadType::AccountState, BusPayloadCategory::BuiltIn)]
     #[case(BusPayloadType::OrderEvent, BusPayloadCategory::BuiltIn)]
     #[case(BusPayloadType::Instrument, BusPayloadCategory::Other)]
-    #[case(BusPayloadType::OptionGreeks, BusPayloadCategory::Other)]
+    #[case(BusPayloadType::OptionGreeks, BusPayloadCategory::MarketData)]
     #[case(
         BusPayloadType::Custom(Ustr::from("CustomPayload")),
         BusPayloadCategory::Other
@@ -391,7 +392,22 @@ mod tests {
     #[case(BusPayloadType::AccountState, SerializationEncoding::Json, true)]
     #[case(BusPayloadType::AccountState, SerializationEncoding::Capnp, false)]
     #[case(BusPayloadType::Instrument, SerializationEncoding::Sbe, false)]
-    #[case(BusPayloadType::OptionGreeks, SerializationEncoding::Capnp, false)]
+    #[cfg_attr(
+        feature = "sbe",
+        case(BusPayloadType::OptionGreeks, SerializationEncoding::Sbe, true)
+    )]
+    #[cfg_attr(
+        not(feature = "sbe"),
+        case(BusPayloadType::OptionGreeks, SerializationEncoding::Sbe, false)
+    )]
+    #[cfg_attr(
+        feature = "capnp",
+        case(BusPayloadType::OptionGreeks, SerializationEncoding::Capnp, true)
+    )]
+    #[cfg_attr(
+        not(feature = "capnp"),
+        case(BusPayloadType::OptionGreeks, SerializationEncoding::Capnp, false)
+    )]
     #[case(
         BusPayloadType::Custom(Ustr::from("CustomPayload")),
         SerializationEncoding::MsgPack,

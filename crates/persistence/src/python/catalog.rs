@@ -43,8 +43,8 @@ fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
         Data::IndexPriceUpdate(price) => Py::new(py, price).map(pyo3::Py::into_any),
         Data::MarkPriceUpdate(price) => Py::new(py, price).map(pyo3::Py::into_any),
         Data::FundingRateUpdate(funding) => Py::new(py, funding).map(pyo3::Py::into_any),
-        Data::InstrumentStatus(status) => Py::new(py, status).map(pyo3::Py::into_any),
         Data::OptionGreeks(greeks) => Py::new(py, greeks).map(pyo3::Py::into_any),
+        Data::InstrumentStatus(status) => Py::new(py, status).map(pyo3::Py::into_any),
         Data::InstrumentClose(close) => Py::new(py, close).map(pyo3::Py::into_any),
         Data::Custom(custom) => Py::new(py, custom).map(pyo3::Py::into_any),
         #[cfg(feature = "defi")]
@@ -1027,20 +1027,6 @@ impl PyParquetDataCatalog {
                     .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
                 prices.into_iter().map(Data::from).collect()
             }
-            "instrument_status" => {
-                let statuses = self
-                    .inner
-                    .query_typed_data::<InstrumentStatus>(
-                        identifiers,
-                        start_nanos,
-                        end_nanos,
-                        where_clause,
-                        files,
-                        optimize_file_loading,
-                    )
-                    .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
-                statuses.into_iter().map(Data::from).collect()
-            }
             "option_greeks" => {
                 let greeks = self
                     .inner
@@ -1054,6 +1040,20 @@ impl PyParquetDataCatalog {
                     )
                     .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
                 greeks.into_iter().map(Data::from).collect()
+            }
+            "instrument_status" => {
+                let statuses = self
+                    .inner
+                    .query_typed_data::<InstrumentStatus>(
+                        identifiers,
+                        start_nanos,
+                        end_nanos,
+                        where_clause,
+                        files,
+                        optimize_file_loading,
+                    )
+                    .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+                statuses.into_iter().map(Data::from).collect()
             }
             "instrument_closes" => {
                 let closes = self

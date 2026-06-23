@@ -783,8 +783,8 @@ impl FeatherWriter {
             Data::IndexPriceUpdate(price) => self.write(price).await,
             Data::MarkPriceUpdate(price) => self.write(price).await,
             Data::FundingRateUpdate(funding) => self.write(funding).await,
-            Data::InstrumentStatus(status) => self.write(status).await,
             Data::OptionGreeks(greeks) => self.write(greeks).await,
+            Data::InstrumentStatus(status) => self.write(status).await,
             Data::InstrumentClose(close) => self.write(close).await,
             Data::Custom(custom) => self.write_custom_data(&custom).await,
             Data::Deltas(deltas_api) => {
@@ -896,10 +896,10 @@ impl FeatherWriter {
             try_write!(message, OrderBookDepth10, "OrderBookDepth10");
             try_write!(message, IndexPriceUpdate, "IndexPriceUpdate");
             try_write!(message, MarkPriceUpdate, "MarkPriceUpdate");
-            try_write!(message, InstrumentStatus, "InstrumentStatus");
-            try_write!(message, OptionGreeks, "OptionGreeks");
-            try_write!(message, InstrumentClose, "InstrumentClose");
             try_write!(message, FundingRateUpdate, "FundingRateUpdate");
+            try_write!(message, OptionGreeks, "OptionGreeks");
+            try_write!(message, InstrumentStatus, "InstrumentStatus");
+            try_write!(message, InstrumentClose, "InstrumentClose");
             try_write!(message, AccountState, "AccountState");
             try_write!(message, OrderInitialized, "OrderInitialized");
             try_write!(message, OrderDenied, "OrderDenied");

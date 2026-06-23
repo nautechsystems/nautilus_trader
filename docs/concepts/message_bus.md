@@ -330,8 +330,8 @@ pool swaps are not forwarded because those types do not implement Serde serializ
 
 With SBE or Cap'n Proto, Rust-native external egress forwards the built-in market data payloads with
 schema codecs: quotes, trades, bars, book deltas, depth-10 snapshots, mark price updates, index
-price updates, and funding rate updates. Other payload types are dropped with a debug log when
-those schema encodings are selected.
+price updates, funding rate updates, and option greeks. Other payload types are dropped with a
+debug log when those schema encodings are selected.
 
 ### Serialization
 

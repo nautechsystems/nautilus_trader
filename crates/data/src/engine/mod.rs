@@ -1641,25 +1641,25 @@ impl DataEngine {
 
     /// Processes a dynamically-typed data message.
     ///
-    /// Currently supports `InstrumentAny`, funding rates, instrument status, option greeks, and
+    /// Currently supports `InstrumentAny`, funding rates, option greeks, instrument status, and
     /// custom data; unrecognized types are logged as errors.
     pub fn process(&mut self, data: &dyn Any) {
         self.data_count += 1;
-        // Dynamically-typed entry point: `FundingRateUpdate`, `InstrumentStatus`, `OptionGreeks`,
+        // Dynamically-typed entry point: `FundingRateUpdate`, `OptionGreeks`, `InstrumentStatus`,
         // and custom data are also `Data` enum variants handled in `process_data`, but can arrive
         // here as typed data, whereas `InstrumentAny` is not a `Data` variant.
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument);
         } else if let Some(funding_rate) = data.downcast_ref::<FundingRateUpdate>() {
             self.handle_funding_rate(*funding_rate);
-        } else if let Some(status) = data.downcast_ref::<InstrumentStatus>() {
-            self.handle_instrument_status(*status);
         } else if let Some(option_greeks) = data.downcast_ref::<OptionGreeks>() {
             self.cache.borrow_mut().add_option_greeks(*option_greeks);
             self.feed_option_greeks_to_pre_bootstrap_chain(option_greeks);
             let topic = switchboard::get_option_greeks_topic(option_greeks.instrument_id);
             msgbus::publish_option_greeks(topic, option_greeks);
             self.drain_deferred_commands();
+        } else if let Some(status) = data.downcast_ref::<InstrumentStatus>() {
+            self.handle_instrument_status(*status);
         } else if let Some(custom) = data.downcast_ref::<CustomData>() {
             self.handle_custom_data(custom);
         } else {
@@ -1702,15 +1702,15 @@ impl DataEngine {
                 self.handle_funding_rate(funding_rate);
                 self.drain_deferred_commands();
             }
-            Data::InstrumentStatus(status) => {
-                self.handle_instrument_status(status);
-                self.drain_deferred_commands();
-            }
             Data::OptionGreeks(greeks) => {
                 self.cache.borrow_mut().add_option_greeks(greeks);
                 self.feed_option_greeks_to_pre_bootstrap_chain(&greeks);
                 let topic = switchboard::get_option_greeks_topic(greeks.instrument_id);
                 msgbus::publish_option_greeks(topic, &greeks);
+                self.drain_deferred_commands();
+            }
+            Data::InstrumentStatus(status) => {
+                self.handle_instrument_status(status);
                 self.drain_deferred_commands();
             }
             Data::InstrumentClose(close) => self.handle_instrument_close(close),
@@ -1768,8 +1768,8 @@ impl DataEngine {
             Data::FundingRateUpdate(funding_rate) => {
                 self.handle_funding_rate_pipeline(funding_rate);
             }
-            Data::InstrumentStatus(status) => self.handle_instrument_status_pipeline(status),
             Data::OptionGreeks(greeks) => self.handle_option_greeks_pipeline(greeks),
+            Data::InstrumentStatus(status) => self.handle_instrument_status_pipeline(status),
             Data::InstrumentClose(close) => self.handle_instrument_close_pipeline(close),
             Data::Custom(custom) => self.handle_custom_data_pipeline(&custom),
             #[cfg(feature = "defi")]

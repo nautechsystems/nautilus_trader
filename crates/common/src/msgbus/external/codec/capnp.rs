@@ -18,8 +18,8 @@ use std::any::Any;
 use anyhow::Context;
 use bytes::Bytes;
 use nautilus_model::data::{
-    Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10,
-    QuoteTick, TradeTick,
+    Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OptionGreeks, OrderBookDeltas,
+    OrderBookDepth10, QuoteTick, TradeTick,
 };
 use nautilus_serialization::{
     capnp::{FromCapnp, ToCapnp},
@@ -94,6 +94,12 @@ define_deserializer!(
     FundingRateUpdate,
     "FundingRateUpdate",
     market_capnp::funding_rate_update::Reader
+);
+define_deserializer!(
+    deserialize_option_greeks,
+    OptionGreeks,
+    "OptionGreeks",
+    market_capnp::option_greeks::Reader
 );
 
 macro_rules! serialize_payload_as {
@@ -170,6 +176,12 @@ pub(super) fn serialize_payload(
             type_name,
             FundingRateUpdate,
             market_capnp::funding_rate_update::Builder
+        ),
+        BusPayloadType::OptionGreeks => serialize_payload_as!(
+            message,
+            type_name,
+            OptionGreeks,
+            market_capnp::option_greeks::Builder
         ),
         _ => Err(PayloadCodecError::Dropped(format!(
             "Cap'n Proto serialization is not supported for {type_name}"

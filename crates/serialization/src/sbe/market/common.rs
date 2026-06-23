@@ -19,7 +19,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, FromU8, FromU16,
-        InstrumentCloseType, MarketStatusAction, OrderSide, PriceType,
+        GreeksConvention, InstrumentCloseType, MarketStatusAction, OrderSide, PriceType,
     },
     identifiers::{InstrumentId, Symbol, Venue},
     types::{Price, Quantity, fixed::FIXED_PRECISION, price::PriceRaw, quantity::QuantityRaw},
@@ -377,6 +377,16 @@ pub(super) fn decode_instrument_close_type(
     let value = cursor.read_u8()?;
     InstrumentCloseType::from_u8(value).ok_or(SbeDecodeError::InvalidEnumValue {
         type_name: "InstrumentCloseType",
+        value: u16::from(value),
+    })
+}
+
+pub(super) fn decode_greeks_convention(
+    cursor: &mut SbeCursor<'_>,
+) -> Result<GreeksConvention, SbeDecodeError> {
+    let value = cursor.read_u8()?;
+    GreeksConvention::from_repr(value as usize).ok_or(SbeDecodeError::InvalidEnumValue {
+        type_name: "GreeksConvention",
         value: u16::from(value),
     })
 }

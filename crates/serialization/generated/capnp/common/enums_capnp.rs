@@ -455,6 +455,75 @@ pub(crate) static ARENA: ::capnp::private::arena::GeneratedCodeArena = ::capnp::
 
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GreeksConvention {
+    BlackScholes = 0,
+    PriceAdjusted = 1,
+}
+
+impl ::capnp::introspect::Introspect for GreeksConvention {
+    fn introspect() -> ::capnp::introspect::Type { ::capnp::introspect::TypeVariant::Enum(::capnp::introspect::RawEnumSchema::new(&greeks_convention::ARENA, greeks_convention::get_annotation_types)).into() }
+}
+impl ::core::convert::From<GreeksConvention> for ::capnp::dynamic_value::Reader<'_> {
+    fn from(e: GreeksConvention) -> Self { ::capnp::dynamic_value::Enum::new(e.into(), ::capnp::introspect::RawEnumSchema::new(&greeks_convention::ARENA, greeks_convention::get_annotation_types).into()).into() }
+}
+impl ::core::convert::TryFrom<u16> for GreeksConvention {
+    type Error = ::capnp::NotInSchema;
+    fn try_from(value: u16) -> ::core::result::Result<Self, <GreeksConvention as ::core::convert::TryFrom<u16>>::Error> {
+        match value {
+            0 => ::core::result::Result::Ok(Self::BlackScholes),
+            1 => ::core::result::Result::Ok(Self::PriceAdjusted),
+            n => ::core::result::Result::Err(::capnp::NotInSchema(n)),
+        }
+    }
+}
+impl From<GreeksConvention> for u16 {
+    #[inline]
+    fn from(x: GreeksConvention) -> u16 { x as u16 }
+}
+impl ::capnp::traits::HasTypeId for GreeksConvention {
+    const TYPE_ID: u64 = 0xd844_7a05_6773_4e0bu64;
+}
+mod greeks_convention {
+pub(crate) static ENCODED_NODE: [::capnp::Word; 30] = [
+    ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
+    ::capnp::word(11, 78, 115, 103, 5, 122, 68, 216),
+    ::capnp::word(19, 0, 0, 0, 2, 0, 0, 0),
+    ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
+    ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+    ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+    ::capnp::word(34, 3, 0, 0, 102, 3, 0, 0),
+    ::capnp::word(21, 0, 0, 0, 34, 1, 0, 0),
+    ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
+    ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+    ::capnp::word(33, 0, 0, 0, 55, 0, 0, 0),
+    ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+    ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+    ::capnp::word(99, 111, 109, 109, 111, 110, 47, 101),
+    ::capnp::word(110, 117, 109, 115, 46, 99, 97, 112),
+    ::capnp::word(110, 112, 58, 71, 114, 101, 101, 107),
+    ::capnp::word(115, 67, 111, 110, 118, 101, 110, 116),
+    ::capnp::word(105, 111, 110, 0, 0, 0, 0, 0),
+    ::capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
+    ::capnp::word(8, 0, 0, 0, 1, 0, 2, 0),
+    ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+    ::capnp::word(17, 0, 0, 0, 106, 0, 0, 0),
+    ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+    ::capnp::word(1, 0, 0, 0, 0, 0, 0, 0),
+    ::capnp::word(13, 0, 0, 0, 114, 0, 0, 0),
+    ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+    ::capnp::word(98, 108, 97, 99, 107, 83, 99, 104),
+    ::capnp::word(111, 108, 101, 115, 0, 0, 0, 0),
+    ::capnp::word(112, 114, 105, 99, 101, 65, 100, 106),
+    ::capnp::word(117, 115, 116, 101, 100, 0, 0, 0),
+];
+pub(crate) fn get_annotation_types(child_index: Option<u16>, index: u32) -> ::capnp::introspect::Type {
+    ::capnp::introspect::panic_invalid_annotation_indices(child_index, index)
+}
+pub(crate) static ARENA: ::capnp::private::arena::GeneratedCodeArena = ::capnp::private::arena::GeneratedCodeArena::new(&ENCODED_NODE);
+}
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OrderSide {
     NoOrderSide = 0,
     Buy = 1,
@@ -493,7 +562,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 32] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(34, 3, 0, 0, 97, 3, 0, 0),
+    ::capnp::word(104, 3, 0, 0, 167, 3, 0, 0),
     ::capnp::word(21, 0, 0, 0, 234, 0, 0, 0),
     ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -578,7 +647,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 64] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(99, 3, 0, 0, 49, 4, 0, 0),
+    ::capnp::word(169, 3, 0, 0, 119, 4, 0, 0),
     ::capnp::word(21, 0, 0, 0, 234, 0, 0, 0),
     ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -705,7 +774,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 86] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(51, 4, 0, 0, 74, 5, 0, 0),
+    ::capnp::word(121, 4, 0, 0, 144, 5, 0, 0),
     ::capnp::word(21, 0, 0, 0, 250, 0, 0, 0),
     ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -840,7 +909,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 49] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(76, 5, 0, 0, 21, 6, 0, 0),
+    ::capnp::word(146, 5, 0, 0, 91, 6, 0, 0),
     ::capnp::word(21, 0, 0, 0, 250, 0, 0, 0),
     ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -944,7 +1013,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 67] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(23, 6, 0, 0, 225, 6, 0, 0),
+    ::capnp::word(93, 6, 0, 0, 39, 7, 0, 0),
     ::capnp::word(21, 0, 0, 0, 250, 0, 0, 0),
     ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1054,7 +1123,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 37] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(227, 6, 0, 0, 129, 7, 0, 0),
+    ::capnp::word(41, 7, 0, 0, 199, 7, 0, 0),
     ::capnp::word(21, 0, 0, 0, 26, 1, 0, 0),
     ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1134,7 +1203,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 36] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(131, 7, 0, 0, 215, 7, 0, 0),
+    ::capnp::word(201, 7, 0, 0, 29, 8, 0, 0),
     ::capnp::word(21, 0, 0, 0, 2, 1, 0, 0),
     ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1211,7 +1280,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 33] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(217, 7, 0, 0, 35, 8, 0, 0),
+    ::capnp::word(31, 8, 0, 0, 105, 8, 0, 0),
     ::capnp::word(21, 0, 0, 0, 10, 1, 0, 0),
     ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1287,7 +1356,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 35] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(37, 8, 0, 0, 112, 8, 0, 0),
+    ::capnp::word(107, 8, 0, 0, 182, 8, 0, 0),
     ::capnp::word(21, 0, 0, 0, 242, 0, 0, 0),
     ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1363,7 +1432,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 35] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(114, 8, 0, 0, 46, 9, 0, 0),
+    ::capnp::word(184, 8, 0, 0, 116, 9, 0, 0),
     ::capnp::word(21, 0, 0, 0, 226, 0, 0, 0),
     ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1441,7 +1510,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 36] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(48, 9, 0, 0, 131, 9, 0, 0),
+    ::capnp::word(118, 9, 0, 0, 201, 9, 0, 0),
     ::capnp::word(21, 0, 0, 0, 50, 1, 0, 0),
     ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1524,7 +1593,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 46] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(133, 9, 0, 0, 253, 10, 0, 0),
+    ::capnp::word(203, 9, 0, 0, 67, 11, 0, 0),
     ::capnp::word(21, 0, 0, 0, 242, 0, 0, 0),
     ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1609,7 +1678,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 30] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(255, 10, 0, 0, 59, 11, 0, 0),
+    ::capnp::word(69, 11, 0, 0, 129, 11, 0, 0),
     ::capnp::word(21, 0, 0, 0, 42, 1, 0, 0),
     ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1684,7 +1753,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 39] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(61, 11, 0, 0, 141, 11, 0, 0),
+    ::capnp::word(131, 11, 0, 0, 211, 11, 0, 0),
     ::capnp::word(21, 0, 0, 0, 234, 0, 0, 0),
     ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1794,7 +1863,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 99] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(143, 11, 0, 0, 212, 12, 0, 0),
+    ::capnp::word(213, 11, 0, 0, 26, 13, 0, 0),
     ::capnp::word(21, 0, 0, 0, 18, 1, 0, 0),
     ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1938,7 +2007,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 44] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(214, 12, 0, 0, 76, 13, 0, 0),
+    ::capnp::word(28, 13, 0, 0, 146, 13, 0, 0),
     ::capnp::word(21, 0, 0, 0, 50, 1, 0, 0),
     ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -2023,7 +2092,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 32] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(78, 13, 0, 0, 146, 13, 0, 0),
+    ::capnp::word(148, 13, 0, 0, 216, 13, 0, 0),
     ::capnp::word(21, 0, 0, 0, 218, 0, 0, 0),
     ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -2096,7 +2165,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 32] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(148, 13, 0, 0, 221, 13, 0, 0),
+    ::capnp::word(218, 13, 0, 0, 35, 14, 0, 0),
     ::capnp::word(21, 0, 0, 0, 2, 1, 0, 0),
     ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -2167,7 +2236,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 30] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(223, 13, 0, 0, 40, 14, 0, 0),
+    ::capnp::word(37, 14, 0, 0, 110, 14, 0, 0),
     ::capnp::word(21, 0, 0, 0, 58, 1, 0, 0),
     ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -2238,7 +2307,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 31] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(42, 14, 0, 0, 106, 14, 0, 0),
+    ::capnp::word(112, 14, 0, 0, 176, 14, 0, 0),
     ::capnp::word(21, 0, 0, 0, 2, 1, 0, 0),
     ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -2336,7 +2405,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 95] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(108, 14, 0, 0, 179, 15, 0, 0),
+    ::capnp::word(178, 14, 0, 0, 249, 15, 0, 0),
     ::capnp::word(21, 0, 0, 0, 50, 1, 0, 0),
     ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -2470,7 +2539,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 30] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(181, 15, 0, 0, 247, 15, 0, 0),
+    ::capnp::word(251, 15, 0, 0, 61, 16, 0, 0),
     ::capnp::word(21, 0, 0, 0, 82, 1, 0, 0),
     ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -2563,7 +2632,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 86] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(249, 15, 0, 0, 5, 17, 0, 0),
+    ::capnp::word(63, 16, 0, 0, 75, 17, 0, 0),
     ::capnp::word(21, 0, 0, 0, 18, 1, 0, 0),
     ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -2690,7 +2759,7 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 32] = [
     ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(7, 17, 0, 0, 75, 17, 0, 0),
+    ::capnp::word(77, 17, 0, 0, 145, 17, 0, 0),
     ::capnp::word(21, 0, 0, 0, 2, 1, 0, 0),
     ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),

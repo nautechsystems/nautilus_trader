@@ -1191,12 +1191,12 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
         return Ok(Data::FundingRateUpdate(funding_rate));
     }
 
-    if let Ok(status) = obj.extract::<InstrumentStatus>() {
-        return Ok(Data::InstrumentStatus(status));
-    }
-
     if let Ok(greeks) = obj.extract::<OptionGreeks>() {
         return Ok(Data::OptionGreeks(greeks));
+    }
+
+    if let Ok(status) = obj.extract::<InstrumentStatus>() {
+        return Ok(Data::InstrumentStatus(status));
     }
 
     if let Ok(close) = obj.extract::<InstrumentClose>() {
@@ -1237,12 +1237,12 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
         return Ok(Data::FundingRateUpdate(funding_rate));
     }
 
-    if let Ok(status) = InstrumentStatus::from_pyobject(obj) {
-        return Ok(Data::InstrumentStatus(status));
-    }
-
     if let Ok(greeks) = OptionGreeks::from_pyobject(obj) {
         return Ok(Data::OptionGreeks(greeks));
+    }
+
+    if let Ok(status) = InstrumentStatus::from_pyobject(obj) {
+        return Ok(Data::InstrumentStatus(status));
     }
 
     if let Ok(close) = InstrumentClose::from_pyobject(obj) {

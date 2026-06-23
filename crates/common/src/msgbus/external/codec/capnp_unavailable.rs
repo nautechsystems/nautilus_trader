@@ -17,8 +17,8 @@ use std::any::Any;
 
 use bytes::Bytes;
 use nautilus_model::data::{
-    Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10,
-    QuoteTick, TradeTick,
+    Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OptionGreeks, OrderBookDeltas,
+    OrderBookDepth10, QuoteTick, TradeTick,
 };
 
 use super::PayloadCodecError;
@@ -40,6 +40,7 @@ define_deserializer!(deserialize_bar, Bar);
 define_deserializer!(deserialize_mark_price, MarkPriceUpdate);
 define_deserializer!(deserialize_index_price, IndexPriceUpdate);
 define_deserializer!(deserialize_funding_rate, FundingRateUpdate);
+define_deserializer!(deserialize_option_greeks, OptionGreeks);
 
 pub(super) fn serialize_payload(
     payload_type: BusPayloadType,

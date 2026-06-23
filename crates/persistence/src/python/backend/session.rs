@@ -50,8 +50,8 @@ fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
         Data::IndexPriceUpdate(price) => Py::new(py, price).map(pyo3::Py::into_any),
         Data::MarkPriceUpdate(price) => Py::new(py, price).map(pyo3::Py::into_any),
         Data::FundingRateUpdate(funding_rate) => Py::new(py, funding_rate).map(pyo3::Py::into_any),
-        Data::InstrumentStatus(status) => Py::new(py, status).map(pyo3::Py::into_any),
         Data::OptionGreeks(greeks) => Py::new(py, greeks).map(pyo3::Py::into_any),
+        Data::InstrumentStatus(status) => Py::new(py, status).map(pyo3::Py::into_any),
         Data::InstrumentClose(close) => Py::new(py, close).map(pyo3::Py::into_any),
         Data::Custom(custom) => Py::new(py, custom).map(pyo3::Py::into_any),
         #[cfg(feature = "defi")]
@@ -73,8 +73,8 @@ pub enum NautilusDataType {
     TradeTick = 4,
     Bar = 5,
     MarkPriceUpdate = 6,
-    InstrumentStatus = 7,
-    OptionGreeks = 8,
+    OptionGreeks = 7,
+    InstrumentStatus = 8,
 }
 
 #[pymethods]
@@ -140,11 +140,11 @@ impl DataBackendSession {
             NautilusDataType::MarkPriceUpdate => slf
                 .add_file::<MarkPriceUpdate>(table_name, file_path, sql_query, None)
                 .map_err(to_pyruntime_err),
-            NautilusDataType::InstrumentStatus => slf
-                .add_file::<InstrumentStatus>(table_name, file_path, sql_query, None)
-                .map_err(to_pyruntime_err),
             NautilusDataType::OptionGreeks => slf
                 .add_file::<OptionGreeks>(table_name, file_path, sql_query, None)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::InstrumentStatus => slf
+                .add_file::<InstrumentStatus>(table_name, file_path, sql_query, None)
                 .map_err(to_pyruntime_err),
         }
     }
@@ -252,8 +252,8 @@ impl DataQueryResult {
                         d,
                         Data::Custom(_)
                             | Data::FundingRateUpdate(_)
-                            | Data::InstrumentStatus(_)
                             | Data::OptionGreeks(_)
+                            | Data::InstrumentStatus(_)
                     )
                 });
 

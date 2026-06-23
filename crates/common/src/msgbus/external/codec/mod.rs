@@ -19,8 +19,8 @@ use std::any::Any;
 
 use bytes::Bytes;
 use nautilus_model::data::{
-    Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10,
-    QuoteTick, TradeTick,
+    Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OptionGreeks, OrderBookDeltas,
+    OrderBookDepth10, QuoteTick, TradeTick,
 };
 use serde::de::DeserializeOwned;
 
@@ -127,6 +127,7 @@ define_market_data_deserializer!(
     FundingRateUpdate,
     FundingRateUpdate
 );
+define_market_data_deserializer!(deserialize_option_greeks, OptionGreeks, OptionGreeks);
 
 fn deserialize_market_data_payload<T>(
     payload_type: BusPayloadType,

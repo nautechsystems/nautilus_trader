@@ -190,11 +190,11 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
             publish_funding_rate,
         )?,
         BusPayloadType::OptionGreeks => {
-            handle_json_msgpack(
+            handle_market_data(
                 topic,
-                message.payload_type,
                 message.encoding,
                 &message.payload,
+                codec::deserialize_option_greeks,
                 publish_option_greeks,
             )?;
         }

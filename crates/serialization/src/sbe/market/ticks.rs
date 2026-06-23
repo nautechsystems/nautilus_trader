@@ -16,7 +16,7 @@
 use nautilus_model::{
     data::{
         FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
-        QuoteTick, TradeTick,
+        OptionGreekValues, OptionGreeks, QuoteTick, TradeTick,
     },
     identifiers::TradeId,
 };
@@ -26,11 +26,11 @@ use super::{
     MarketSbeMessage,
     common::{
         DECIMAL_BLOCK_LENGTH, PRICE_BLOCK_LENGTH, QUANTITY_BLOCK_LENGTH, decode_aggressor_side,
-        decode_decimal, decode_instrument_close_type, decode_instrument_id,
-        decode_market_status_action, decode_optional_bool, decode_optional_ustr, decode_price,
-        decode_quantity, decode_unix_nanos, encode_decimal, encode_instrument_id,
-        encode_optional_bool, encode_optional_ustr, encode_price, encode_quantity,
-        encode_unix_nanos, encode_var_string16, encoded_instrument_id_size,
+        decode_decimal, decode_greeks_convention, decode_instrument_close_type,
+        decode_instrument_id, decode_market_status_action, decode_optional_bool,
+        decode_optional_ustr, decode_price, decode_quantity, decode_unix_nanos, encode_decimal,
+        encode_instrument_id, encode_optional_bool, encode_optional_ustr, encode_price,
+        encode_quantity, encode_unix_nanos, encode_var_string16, encoded_instrument_id_size,
         encoded_optional_ustr_size, encoded_var_string16_size,
     },
     template_id,
@@ -212,29 +212,59 @@ impl MarketSbeMessage for FundingRateUpdate {
     }
 }
 
-impl MarketSbeMessage for InstrumentClose {
-    const TEMPLATE_ID: u16 = template_id::INSTRUMENT_CLOSE;
-    const BLOCK_LENGTH: u16 = PRICE_BLOCK_LENGTH + 17;
+impl MarketSbeMessage for OptionGreeks {
+    const TEMPLATE_ID: u16 = template_id::OPTION_GREEKS;
+    const BLOCK_LENGTH: u16 = 98;
 
     fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
-        encode_price(writer, &self.close_price);
-        writer.write_u8(self.close_type as u8);
+        writer.write_u8(self.convention as u8);
+        writer.write_u8(option_greeks_optional_mask(self));
+        encode_float64(writer, self.greeks.delta);
+        encode_float64(writer, self.greeks.gamma);
+        encode_float64(writer, self.greeks.vega);
+        encode_float64(writer, self.greeks.theta);
+        encode_float64(writer, self.greeks.rho);
+        encode_optional_float64(writer, self.mark_iv);
+        encode_optional_float64(writer, self.bid_iv);
+        encode_optional_float64(writer, self.ask_iv);
+        encode_optional_float64(writer, self.underlying_price);
+        encode_optional_float64(writer, self.open_interest);
         encode_unix_nanos(writer, self.ts_event);
         encode_unix_nanos(writer, self.ts_init);
         encode_instrument_id(writer, &self.instrument_id)
     }
 
     fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
-        let close_price = decode_price(cursor)?;
-        let close_type = decode_instrument_close_type(cursor)?;
+        let convention = decode_greeks_convention(cursor)?;
+        let optional_mask = cursor.read_u8()?;
+        validate_option_greeks_optional_mask(optional_mask)?;
+        let greeks = OptionGreekValues {
+            delta: decode_float64(cursor)?,
+            gamma: decode_float64(cursor)?,
+            vega: decode_float64(cursor)?,
+            theta: decode_float64(cursor)?,
+            rho: decode_float64(cursor)?,
+        };
+        let mark_iv = decode_optional_float64(cursor, optional_mask, OPTION_GREEKS_HAS_MARK_IV)?;
+        let bid_iv = decode_optional_float64(cursor, optional_mask, OPTION_GREEKS_HAS_BID_IV)?;
+        let ask_iv = decode_optional_float64(cursor, optional_mask, OPTION_GREEKS_HAS_ASK_IV)?;
+        let underlying_price =
+            decode_optional_float64(cursor, optional_mask, OPTION_GREEKS_HAS_UNDERLYING_PRICE)?;
+        let open_interest =
+            decode_optional_float64(cursor, optional_mask, OPTION_GREEKS_HAS_OPEN_INTEREST)?;
         let ts_event = decode_unix_nanos(cursor)?;
         let ts_init = decode_unix_nanos(cursor)?;
         let instrument_id = decode_instrument_id(cursor)?;
 
         Ok(Self {
             instrument_id,
-            close_price,
-            close_type,
+            convention,
+            greeks,
+            mark_iv,
+            bid_iv,
+            ask_iv,
+            underlying_price,
+            open_interest,
             ts_event,
             ts_init,
         })
@@ -292,4 +322,106 @@ impl MarketSbeMessage for InstrumentStatus {
             + encoded_optional_ustr_size(self.reason)
             + encoded_optional_ustr_size(self.trading_event)
     }
+}
+
+impl MarketSbeMessage for InstrumentClose {
+    const TEMPLATE_ID: u16 = template_id::INSTRUMENT_CLOSE;
+    const BLOCK_LENGTH: u16 = PRICE_BLOCK_LENGTH + 17;
+
+    fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
+        encode_price(writer, &self.close_price);
+        writer.write_u8(self.close_type as u8);
+        encode_unix_nanos(writer, self.ts_event);
+        encode_unix_nanos(writer, self.ts_init);
+        encode_instrument_id(writer, &self.instrument_id)
+    }
+
+    fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
+        let close_price = decode_price(cursor)?;
+        let close_type = decode_instrument_close_type(cursor)?;
+        let ts_event = decode_unix_nanos(cursor)?;
+        let ts_init = decode_unix_nanos(cursor)?;
+        let instrument_id = decode_instrument_id(cursor)?;
+
+        Ok(Self {
+            instrument_id,
+            close_price,
+            close_type,
+            ts_event,
+            ts_init,
+        })
+    }
+
+    fn encoded_body_size(&self) -> usize {
+        usize::from(Self::BLOCK_LENGTH) + encoded_instrument_id_size(&self.instrument_id)
+    }
+}
+
+const OPTION_GREEKS_HAS_MARK_IV: u8 = 1 << 0;
+const OPTION_GREEKS_HAS_BID_IV: u8 = 1 << 1;
+const OPTION_GREEKS_HAS_ASK_IV: u8 = 1 << 2;
+const OPTION_GREEKS_HAS_UNDERLYING_PRICE: u8 = 1 << 3;
+const OPTION_GREEKS_HAS_OPEN_INTEREST: u8 = 1 << 4;
+const OPTION_GREEKS_KNOWN_OPTIONAL_MASK: u8 = OPTION_GREEKS_HAS_MARK_IV
+    | OPTION_GREEKS_HAS_BID_IV
+    | OPTION_GREEKS_HAS_ASK_IV
+    | OPTION_GREEKS_HAS_UNDERLYING_PRICE
+    | OPTION_GREEKS_HAS_OPEN_INTEREST;
+
+#[inline]
+fn option_greeks_optional_mask(value: &OptionGreeks) -> u8 {
+    let mut mask = 0;
+    if value.mark_iv.is_some() {
+        mask |= OPTION_GREEKS_HAS_MARK_IV;
+    }
+
+    if value.bid_iv.is_some() {
+        mask |= OPTION_GREEKS_HAS_BID_IV;
+    }
+
+    if value.ask_iv.is_some() {
+        mask |= OPTION_GREEKS_HAS_ASK_IV;
+    }
+
+    if value.underlying_price.is_some() {
+        mask |= OPTION_GREEKS_HAS_UNDERLYING_PRICE;
+    }
+
+    if value.open_interest.is_some() {
+        mask |= OPTION_GREEKS_HAS_OPEN_INTEREST;
+    }
+    mask
+}
+
+fn validate_option_greeks_optional_mask(mask: u8) -> Result<(), SbeDecodeError> {
+    if mask & !OPTION_GREEKS_KNOWN_OPTIONAL_MASK != 0 {
+        return Err(SbeDecodeError::InvalidValue {
+            field: "OptionGreeks.optional_mask",
+        });
+    }
+    Ok(())
+}
+
+#[inline]
+fn encode_float64(writer: &mut SbeWriter<'_>, value: f64) {
+    writer.write_u64_le(value.to_bits());
+}
+
+#[inline]
+fn encode_optional_float64(writer: &mut SbeWriter<'_>, value: Option<f64>) {
+    encode_float64(writer, value.unwrap_or(0.0));
+}
+
+#[inline]
+fn decode_float64(cursor: &mut SbeCursor<'_>) -> Result<f64, SbeDecodeError> {
+    Ok(f64::from_bits(cursor.read_u64_le()?))
+}
+
+fn decode_optional_float64(
+    cursor: &mut SbeCursor<'_>,
+    mask: u8,
+    flag: u8,
+) -> Result<Option<f64>, SbeDecodeError> {
+    let value = decode_float64(cursor)?;
+    Ok((mask & flag != 0).then_some(value))
 }
