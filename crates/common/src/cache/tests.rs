@@ -269,7 +269,8 @@ fn test_reset_honors_drop_instruments_on_reset(
 ) {
     let config = CacheConfig::builder()
         .drop_instruments_on_reset(drop_on_reset)
-        .build();
+        .build()
+        .unwrap();
     let mut cache = Cache::new(Some(config), None);
 
     let instrument = InstrumentAny::CurrencyPair(audusd_sim.clone());
@@ -302,7 +303,8 @@ fn test_get_xrate_after_reset_follows_instrument_lifecycle(
 ) {
     let config = CacheConfig::builder()
         .drop_instruments_on_reset(drop_on_reset)
-        .build();
+        .build()
+        .unwrap();
     let mut cache = Cache::new(Some(config), None);
 
     cache
@@ -339,7 +341,8 @@ fn test_get_xrate_after_reset_follows_instrument_lifecycle(
 fn test_reset_clears_mark_xrate_even_when_instruments_retained(audusd_sim: CurrencyPair) {
     let config = CacheConfig::builder()
         .drop_instruments_on_reset(false)
-        .build();
+        .build()
+        .unwrap();
     let mut cache = Cache::new(Some(config), None);
 
     cache
@@ -2793,7 +2796,8 @@ fn cache_with_data_capacity(tick_capacity: usize, bar_capacity: usize) -> Cache 
     let config = CacheConfig::builder()
         .tick_capacity(tick_capacity)
         .bar_capacity(bar_capacity)
-        .build();
+        .build()
+        .unwrap();
 
     Cache::new(Some(config), None)
 }
@@ -3003,7 +3007,7 @@ fn test_add_instrument_statuses_enforces_tick_capacity() {
 }
 
 #[rstest]
-#[should_panic(expected = "invalid usize for 'tick_capacity' not positive")]
+#[should_panic(expected = "tick_capacity")]
 fn test_new_rejects_zero_tick_capacity() {
     let config = CacheConfig {
         tick_capacity: 0,
@@ -3014,7 +3018,7 @@ fn test_new_rejects_zero_tick_capacity() {
 }
 
 #[rstest]
-#[should_panic(expected = "invalid usize for 'bar_capacity' not positive")]
+#[should_panic(expected = "bar_capacity")]
 fn test_new_rejects_zero_bar_capacity() {
     let config = CacheConfig {
         bar_capacity: 0,

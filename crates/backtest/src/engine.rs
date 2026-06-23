@@ -2053,7 +2053,8 @@ mod tests {
                 .cache(
                     CacheConfig::builder()
                         .drop_instruments_on_reset(value)
-                        .build(),
+                        .build()
+                        .unwrap(),
                 )
                 .build(),
         };

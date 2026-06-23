@@ -48,6 +48,7 @@ use rust_decimal::prelude::ToPrimitive;
 use crate::{
     cache::{Cache, CacheConfig},
     enums::SerializationEncoding,
+    python::config_error_to_pyvalue_err,
 };
 
 /// Wrapper providing shared access to [`Cache`] from Python.
@@ -1232,21 +1233,23 @@ impl CacheConfig {
         bar_capacity: Option<usize>,
         save_market_data: Option<bool>,
         persist_account_events: Option<bool>,
-    ) -> Self {
-        Self::new(
-            encoding.unwrap_or_default(),
-            timestamps_as_iso8601.unwrap_or(false),
+    ) -> PyResult<Self> {
+        let config = Self {
+            encoding: encoding.unwrap_or_default(),
+            timestamps_as_iso8601: timestamps_as_iso8601.unwrap_or(false),
             buffer_interval_ms,
             bulk_read_batch_size,
-            use_trader_prefix.unwrap_or(true),
-            use_instance_id.unwrap_or(false),
-            flush_on_start.unwrap_or(false),
-            drop_instruments_on_reset.unwrap_or(true),
-            tick_capacity.unwrap_or(10_000),
-            bar_capacity.unwrap_or(10_000),
-            persist_account_events.unwrap_or(true),
-            save_market_data.unwrap_or(false),
-        )
+            use_trader_prefix: use_trader_prefix.unwrap_or(true),
+            use_instance_id: use_instance_id.unwrap_or(false),
+            flush_on_start: flush_on_start.unwrap_or(false),
+            drop_instruments_on_reset: drop_instruments_on_reset.unwrap_or(true),
+            tick_capacity: tick_capacity.unwrap_or(10_000),
+            bar_capacity: bar_capacity.unwrap_or(10_000),
+            persist_account_events: persist_account_events.unwrap_or(true),
+            save_market_data: save_market_data.unwrap_or(false),
+        };
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     fn __str__(&self) -> String {
