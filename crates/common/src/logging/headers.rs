@@ -102,8 +102,11 @@ fn log_python_versioning(c: Ustr) {
     header_line(c, &format!("{package}: {}", python_package_version(package)));
     header_line(c, &format!("python: {}", python_version()));
 
+    // Transitional: these optional-package lines will be removed once v1 support is dropped.
     for package in ["numpy", "pandas", "msgspec", "pyarrow", "pytz", "uvloop"] {
-        header_line(c, &format!("{package}: {}", python_package_version(package)));
+        if let Some(version) = python_package_version_opt(package) {
+            header_line(c, &format!("{package}: {version}"));
+        }
     }
 
     header_sepr(c, "=================================================================");
@@ -167,6 +170,11 @@ fn bytes_to_gib(b: u64) -> f64 {
 #[cfg(feature = "python")]
 fn python_package_version(package: &str) -> String {
     nautilus_core::python::version::get_python_package_version(package)
+}
+
+#[cfg(feature = "python")]
+fn python_package_version_opt(package: &str) -> Option<String> {
+    nautilus_core::python::version::get_python_package_version_opt(package)
 }
 
 #[cfg(feature = "python")]

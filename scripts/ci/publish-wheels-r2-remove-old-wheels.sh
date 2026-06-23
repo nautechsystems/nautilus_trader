@@ -77,14 +77,17 @@ if [[ "$branch_name" == "develop" ]]; then
   fi
 fi
 
-# Clean up alpha (.a) wheels on the nightly branch
+# Clean up nightly wheels on the nightly branch. Matches the legacy `aYYYYMMDD` form and, when
+# the base is a pre-release (e.g. 2.0.0rc1), the `.devYYYYMMDD` form. Develop's
+# `.devYYYYMMDD+run` wheels live in the same index but are excluded because the date marker is
+# matched only when it directly precedes the platform tag (no `+run` local segment).
 if [[ "$branch_name" == "nightly" ]]; then
-  echo "Cleaning up alpha wheels for the nightly branch..."
+  echo "Cleaning up nightly wheels for the nightly branch..."
   echo "All files before filtering:"
   echo "$files"
 
   # First find unique platform suffixes
-  platform_tags=$(echo "$files" | grep -E "a[0-9]{8}" | sed -E 's/.*-(cp[^.]+).whl$/\1/' | sort -u)
+  platform_tags=$(echo "$files" | grep -E "(a[0-9]{8}|\.dev[0-9]{8})-" | sed -E 's/.*-(cp[^.]+).whl$/\1/' | sort -u)
   echo "Found platform tags:"
   echo "$platform_tags"
 
@@ -92,14 +95,17 @@ if [[ "$branch_name" == "nightly" ]]; then
   for platform_tag in $platform_tags; do
     echo "Processing platform: $platform_tag"
 
-    # Get all alpha wheels for this platform
-    matching_files=$(echo "$files" | grep -E "a[0-9]{8}.*-${platform_tag}\.whl$" | sort -t'a' -k2 -V)
+    # Get all nightly wheels for this platform; the date marker must directly precede the
+    # platform tag, which excludes develop's `.dev...+run` wheels
+    matching_files=$(echo "$files" | grep -E "(a[0-9]{8}|\.dev[0-9]{8})-.*-${platform_tag}\.whl$" | sort -V)
 
     echo "Matching files:"
     echo "$matching_files"
 
     # Extract unique versions (dates) from matching files
-    versions=$(echo "$matching_files" | sed -E "s/^.+-[0-9]+\.[0-9]+\.[0-9]+a([0-9]{8})-.+\.whl$/\1/" | sort -n)
+    # Dedupe by date so the lookback counts distinct dates (a transition day may carry both an
+    # alpha and a .dev wheel for the same date).
+    versions=$(echo "$matching_files" | sed -E "s/.*(a|\.dev)([0-9]{8})-.+\.whl$/\2/" | sort -n -u)
     echo "Unique versions (dates) for platform: $versions"
 
     # Retain only the wheels in the lookback
@@ -108,11 +114,11 @@ if [[ "$branch_name" == "nightly" ]]; then
 
     # Delete files outside lookback
     for file in $matching_files; do
-      file_version=$(echo "$file" | sed -E "s/^.+-[0-9]+\.[0-9]+\.[0-9]+a([0-9]{8})-.+\.whl$/\1/")
+      file_version=$(echo "$file" | sed -E "s/.*(a|\.dev)([0-9]{8})-.+\.whl$/\2/")
       if echo "$versions_to_keep" | grep -qx "$file_version"; then
         echo "Keeping wheel: $file"
       else
-        echo "Deleting old .a wheel: $file"
+        echo "Deleting old nightly wheel: $file"
         success=false
         for i in {1..5}; do
           if aws s3 rm "s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX:-simple/nautilus-trader}/$file" \
@@ -131,7 +137,7 @@ if [[ "$branch_name" == "nightly" ]]; then
       fi
     done
   done
-  echo "Finished cleaning up .a wheels"
+  echo "Finished cleaning up nightly wheels"
   if [ "$had_failures" = true ]; then
     echo "Prune completed with failures on nightly branch"
     exit 1
