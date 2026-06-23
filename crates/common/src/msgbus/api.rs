@@ -1650,9 +1650,8 @@ mod tests {
             execution::{CancelAllOrders, TradingCommand},
         },
         msgbus::{
-            BusMessage, BusTap, MessageBusExternalEgress, SuppressExternalGuard,
-            backing::MessageBusConfig, clear_bus_tap, set_bus_tap, set_message_bus,
-            stubs::get_call_check_handler,
+            BusMessage, BusTap, MessageBusConfig, MessageBusExternalEgress, SuppressExternalGuard,
+            clear_bus_tap, set_bus_tap, set_message_bus, stubs::get_call_check_handler,
         },
     };
 

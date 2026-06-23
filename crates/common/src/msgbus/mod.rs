@@ -37,7 +37,7 @@
 //! See [`core`] module documentation for design decisions and performance details.
 
 mod api;
-pub mod backing;
+mod backing;
 pub mod config;
 pub mod core;
 pub mod matching;
@@ -73,10 +73,15 @@ use nautilus_model::{
 use smallvec::SmallVec;
 
 #[cfg(feature = "live")]
-pub use self::backing::MessageBusExternalIngress;
+pub use self::backing::{
+    MessageBusExternalIngress, MessageBusExternalReceiver, external_io_from_backing,
+};
 pub use self::{
     api::*,
-    backing::MessageBusExternalEgress,
+    backing::{
+        MessageBusBacking, MessageBusBackingFactory, MessageBusExternalEgress,
+        external_egress_from_backing,
+    },
     config::MessageBusConfig,
     core::{MessageBus, Subscription},
     message::{BusMessage, BusPayloadCategory, BusPayloadType},

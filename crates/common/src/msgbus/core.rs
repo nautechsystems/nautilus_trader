@@ -113,7 +113,8 @@ use ustr::Ustr;
 
 use super::{
     HAS_EXTERNAL_EGRESS, ShareableMessageHandler,
-    backing::{MessageBusConfig, MessageBusExternalEgress},
+    backing::MessageBusExternalEgress,
+    config::MessageBusConfig,
     matching::is_matching_backtracking,
     message::{BusPayloadCategory, BusPayloadType},
     mstr::{Endpoint, MStr, Pattern, Topic},

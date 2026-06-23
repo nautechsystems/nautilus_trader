@@ -25,7 +25,10 @@ use nautilus_common::{
         ClientConfig, DataClientFactory, ExecutionClientFactory, SimulatedExecutionClientFactory,
     },
     logging::logger::LoggerConfig,
-    msgbus::{BusMessage, MessageBusConfig, MessageBusExternalEgress, MessageBusExternalIngress},
+    msgbus::{
+        BusMessage, MessageBusBackingFactory, MessageBusConfig, MessageBusExternalEgress,
+        MessageBusExternalIngress, external_egress_from_backing, external_io_from_backing,
+    },
 };
 use nautilus_core::UUID4;
 use nautilus_data::client::DataClientAdapter;
@@ -78,6 +81,7 @@ pub struct LiveNodeBuilder {
     data_client_configs: HashMap<String, Box<dyn ClientConfig>>,
     exec_client_configs: HashMap<String, Box<dyn ClientConfig>>,
     event_store_factory: Option<EventStoreFactory>,
+    external_msgbus_factory: Option<Box<dyn MessageBusBackingFactory>>,
     external_msgbus_egress: Option<Box<dyn MessageBusExternalEgress>>,
     external_msgbus_ingress: Option<ExternalMessageBusIngress>,
 }
@@ -92,6 +96,10 @@ impl Debug for LiveNodeBuilder {
             .field("data_client_configs", &self.data_client_configs.keys())
             .field("exec_client_configs", &self.exec_client_configs.keys())
             .field("event_store_factory", &self.event_store_factory.is_some())
+            .field(
+                "external_msgbus_factory",
+                &self.external_msgbus_factory.is_some(),
+            )
             .field(
                 "external_msgbus_egress",
                 &self.external_msgbus_egress.is_some(),
@@ -132,6 +140,7 @@ impl LiveNodeBuilder {
             data_client_configs: HashMap::new(),
             exec_client_configs: HashMap::new(),
             event_store_factory: None,
+            external_msgbus_factory: None,
             external_msgbus_egress: None,
             external_msgbus_ingress: None,
         })
@@ -158,6 +167,7 @@ impl LiveNodeBuilder {
             data_client_configs: HashMap::new(),
             exec_client_configs: HashMap::new(),
             event_store_factory: None,
+            external_msgbus_factory: None,
             external_msgbus_egress: None,
             external_msgbus_ingress: None,
         })
@@ -263,7 +273,7 @@ impl LiveNodeBuilder {
     /// Set the message bus configuration.
     ///
     /// External streams are consumed when an ingress implementation is injected with
-    /// [`Self::with_external_ingress`].
+    /// [`Self::with_external_ingress`] or built from [`Self::with_external_msgbus_factory`].
     #[must_use]
     pub fn with_msgbus_config(mut self, config: MessageBusConfig) -> Self {
         self.config.msgbus = Some(config);
@@ -342,6 +352,16 @@ impl LiveNodeBuilder {
         external_egress: Box<dyn MessageBusExternalEgress>,
     ) -> Self {
         self.external_msgbus_egress = Some(external_egress);
+        self
+    }
+
+    /// Build and inject external message bus egress and configured ingress from a factory.
+    #[must_use]
+    pub fn with_external_msgbus_factory(
+        mut self,
+        factory: Box<dyn MessageBusBackingFactory>,
+    ) -> Self {
+        self.external_msgbus_factory = Some(factory);
         self
     }
 
@@ -461,6 +481,14 @@ impl LiveNodeBuilder {
             );
         }
 
+        if self.external_msgbus_factory.is_some()
+            && (self.external_msgbus_egress.is_some() || self.external_msgbus_ingress.is_some())
+        {
+            anyhow::bail!(
+                "external message bus factory cannot be combined with injected egress or ingress"
+            );
+        }
+
         let runner = AsyncRunner::new();
         runner.bind_senders();
 
@@ -471,7 +499,9 @@ impl LiveNodeBuilder {
             self.event_store_factory.take(),
         )?;
 
-        if let Some(external_egress) = self.external_msgbus_egress {
+        self.install_external_msgbus_factory(&kernel)?;
+
+        if let Some(external_egress) = self.external_msgbus_egress.take() {
             let config = self.config.msgbus.clone().unwrap_or_default();
             nautilus_common::msgbus::get_message_bus()
                 .borrow_mut()
@@ -560,6 +590,30 @@ impl LiveNodeBuilder {
         log::info!("Built successfully");
 
         Ok(node)
+    }
+
+    fn install_external_msgbus_factory(&mut self, kernel: &NautilusKernel) -> anyhow::Result<()> {
+        let Some(factory) = self.external_msgbus_factory.take() else {
+            return Ok(());
+        };
+
+        let config = self.config.msgbus.clone().unwrap_or_default();
+        let has_external_streams = config
+            .external_streams
+            .as_ref()
+            .is_some_and(|streams| !streams.is_empty());
+        config.validate()?;
+        let backing = factory.create(self.config.trader_id, kernel.instance_id, config)?;
+
+        if has_external_streams {
+            let (external_egress, external_ingress) = external_io_from_backing(backing);
+            self.external_msgbus_egress = Some(external_egress);
+            self.external_msgbus_ingress = Some(ExternalMessageBusIngress(external_ingress));
+        } else {
+            self.external_msgbus_egress = Some(external_egress_from_backing(backing));
+        }
+
+        Ok(())
     }
 }
 

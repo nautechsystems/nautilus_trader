@@ -2243,11 +2243,14 @@ impl PendingEvents {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "python")]
-    use std::sync::Arc;
     use std::{
         cell::{Cell, RefCell},
+        fmt::Debug,
         rc::Rc,
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicBool, Ordering},
+        },
     };
 
     use bytes::Bytes;
@@ -2261,8 +2264,9 @@ mod tests {
         clock::Clock,
         enums::SerializationEncoding,
         msgbus::{
-            self, BusMessage, BusPayloadType, MessageBusConfig, MessageBusExternalEgress,
-            MessageBusExternalIngress, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
+            self, BusMessage, BusPayloadType, MessageBusBacking, MessageBusBackingFactory,
+            MessageBusConfig, MessageBusExternalEgress, MessageBusExternalIngress,
+            MessagingSwitchboard, TypedHandler, TypedIntoHandler,
         },
     };
     use nautilus_core::{UUID4, UnixNanos};
@@ -2811,6 +2815,226 @@ mod tests {
         msgbus::get_message_bus().borrow_mut().dispose();
         assert!(closed.get());
         drop(node);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_builder_with_external_msgbus_factory_installs_egress_and_ingress() {
+        let quote = QuoteTick::default();
+        let (tx, rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
+        let publications = Arc::new(Mutex::new(Vec::new()));
+        let closed = Arc::new(AtomicBool::new(false));
+        let factory = CapturingBackingFactory::new(publications.clone(), closed.clone(), Some(rx));
+        let msgbus_config = MessageBusConfig {
+            external_streams: Some(vec!["stream".to_string()]),
+            ..Default::default()
+        };
+        let config = LiveNodeConfig {
+            environment: Environment::Sandbox,
+            msgbus: Some(msgbus_config),
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::from_millis(500),
+            timeout_disconnection: Duration::from_millis(500),
+            ..Default::default()
+        };
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_external_msgbus_factory(Box::new(factory))
+            .build()
+            .expect("node builds with external message bus factory");
+
+        msgbus::publish_quote("data.quotes.TEST".into(), &quote);
+        {
+            let publications = publications.lock().unwrap();
+            assert_eq!(publications.len(), 1);
+            assert_eq!(publications[0].topic, "data.quotes.TEST");
+            assert_eq!(
+                serde_json::from_slice::<QuoteTick>(&publications[0].payload)
+                    .expect("JSON payload must decode as QuoteTick"),
+                quote
+            );
+        }
+
+        let received = Rc::new(RefCell::new(Vec::<QuoteTick>::new()));
+        let handle = node.handle();
+        let handler = TypedHandler::from({
+            let received = received.clone();
+            let handle = handle.clone();
+            move |quote: &QuoteTick| {
+                received.borrow_mut().push(*quote);
+                handle.stop();
+            }
+        });
+        msgbus::subscribe_quotes("data.quotes.*".into(), handler, None);
+        msgbus::get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::QuoteTick);
+
+        let payload =
+            Bytes::from(serde_json::to_vec(&quote).expect("QuoteTick should serialize as JSON"));
+        let message = BusMessage::with_str_topic(
+            "data.quotes.TEST",
+            BusPayloadType::QuoteTick,
+            payload,
+            SerializationEncoding::Json,
+        );
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let run = node.run();
+            tokio::pin!(run);
+
+            let drive = async {
+                for _ in 0..100 {
+                    if handle.is_running() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                assert!(handle.is_running(), "node should reach running state");
+
+                tx.send(message)
+                    .await
+                    .expect("external ingress receiver should be open");
+
+                for _ in 0..100 {
+                    if received.borrow().len() == 1 {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                assert_eq!(*received.borrow(), vec![quote]);
+            };
+
+            tokio::select! {
+                biased;
+
+                () = drive => {}
+                result = &mut run => {
+                    panic!("node stopped before factory ingress was republished: {result:?}");
+                }
+            }
+
+            run.await.expect("node should stop cleanly");
+        })
+        .await
+        .expect("live node should republish factory ingress and stop before timeout");
+
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(closed.load(Ordering::Relaxed));
+        msgbus::get_message_bus().borrow_mut().dispose();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_builder_with_external_msgbus_factory_without_streams_runs_without_ingress() {
+        let quote = QuoteTick::default();
+        let publications = Arc::new(Mutex::new(Vec::new()));
+        let closed = Arc::new(AtomicBool::new(false));
+        let factory = CapturingBackingFactory::new(publications.clone(), closed.clone(), None);
+        let config = LiveNodeConfig {
+            environment: Environment::Sandbox,
+            msgbus: Some(MessageBusConfig::default()),
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::from_millis(500),
+            timeout_disconnection: Duration::from_millis(500),
+            ..Default::default()
+        };
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_external_msgbus_factory(Box::new(factory))
+            .build()
+            .expect("node builds with egress-only message bus factory");
+        let handle = node.handle();
+
+        msgbus::publish_quote("data.quotes.TEST".into(), &quote);
+        {
+            let publications = publications.lock().unwrap();
+            assert_eq!(publications.len(), 1);
+            assert_eq!(publications[0].topic, "data.quotes.TEST");
+        }
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let run = node.run();
+            tokio::pin!(run);
+
+            let drive = async {
+                for _ in 0..100 {
+                    if handle.is_running() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                assert!(handle.is_running(), "node should reach running state");
+                handle.stop();
+            };
+
+            tokio::select! {
+                biased;
+
+                () = drive => {}
+                result = &mut run => {
+                    panic!("node stopped before egress-only factory run was observed: {result:?}");
+                }
+            }
+
+            run.await.expect("node should stop cleanly");
+        })
+        .await
+        .expect("live node should run without external ingress before timeout");
+
+        assert_eq!(handle.state(), NodeState::Stopped);
+        msgbus::get_message_bus().borrow_mut().dispose();
+        assert!(closed.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    fn test_builder_with_external_msgbus_factory_rejects_injected_surfaces() {
+        let (external_egress, _publications, _closed) = CapturingExternalEgress::new();
+        let egress_factory = CapturingBackingFactory::new(
+            Arc::new(Mutex::new(Vec::new())),
+            Arc::new(AtomicBool::new(false)),
+            None,
+        );
+        let egress_error = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_external_msgbus_factory(Box::new(egress_factory))
+            .with_external_msgbus_egress(Box::new(external_egress))
+            .build()
+            .expect_err("builder should reject factory plus injected egress");
+
+        assert!(
+            egress_error
+                .to_string()
+                .contains("cannot be combined with injected egress or ingress")
+        );
+
+        let (_tx, rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
+        let ingress_factory = CapturingBackingFactory::new(
+            Arc::new(Mutex::new(Vec::new())),
+            Arc::new(AtomicBool::new(false)),
+            None,
+        );
+        let ingress = CapturingExternalIngress::new(rx, Rc::new(Cell::new(false)));
+        let ingress_error = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_external_msgbus_factory(Box::new(ingress_factory))
+            .with_external_ingress(Box::new(ingress))
+            .build()
+            .expect_err("builder should reject factory plus injected ingress");
+
+        assert!(
+            ingress_error
+                .to_string()
+                .contains("cannot be combined with injected egress or ingress")
+        );
     }
 
     #[rstest]
@@ -3636,6 +3860,81 @@ mod tests {
 
         fn close(&mut self) {
             self.closed.set(true);
+        }
+    }
+
+    struct CapturingBackingFactory {
+        publications: Arc<Mutex<Vec<CapturedEgressMessage>>>,
+        closed: Arc<AtomicBool>,
+        rx: Mutex<Option<tokio::sync::mpsc::Receiver<BusMessage>>>,
+    }
+
+    impl CapturingBackingFactory {
+        fn new(
+            publications: Arc<Mutex<Vec<CapturedEgressMessage>>>,
+            closed: Arc<AtomicBool>,
+            rx: Option<tokio::sync::mpsc::Receiver<BusMessage>>,
+        ) -> Self {
+            Self {
+                publications,
+                closed,
+                rx: Mutex::new(rx),
+            }
+        }
+    }
+
+    impl Debug for CapturingBackingFactory {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct(stringify!(CapturingBackingFactory))
+                .finish_non_exhaustive()
+        }
+    }
+
+    impl MessageBusBackingFactory for CapturingBackingFactory {
+        fn create(
+            &self,
+            _trader_id: TraderId,
+            _instance_id: UUID4,
+            _config: MessageBusConfig,
+        ) -> anyhow::Result<Box<dyn MessageBusBacking>> {
+            let rx = self.rx.lock().unwrap().take();
+            Ok(Box::new(CapturingBacking {
+                publications: self.publications.clone(),
+                closed: self.closed.clone(),
+                rx,
+            }))
+        }
+    }
+
+    struct CapturingBacking {
+        publications: Arc<Mutex<Vec<CapturedEgressMessage>>>,
+        closed: Arc<AtomicBool>,
+        rx: Option<tokio::sync::mpsc::Receiver<BusMessage>>,
+    }
+
+    impl MessageBusBacking for CapturingBacking {
+        fn is_closed(&self) -> bool {
+            self.closed.load(Ordering::Relaxed)
+        }
+
+        fn publish(&self, message: BusMessage) {
+            self.publications
+                .lock()
+                .unwrap()
+                .push(CapturedEgressMessage {
+                    topic: message.topic.to_string(),
+                    payload: message.payload,
+                });
+        }
+
+        fn take_receiver(&mut self) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {
+            self.rx
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("external ingress receiver unavailable"))
+        }
+
+        fn close(&mut self) {
+            self.closed.store(true, Ordering::Relaxed);
         }
     }
 }

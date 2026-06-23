@@ -73,6 +73,7 @@ redis = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-live = { workspace = true, features = ["node"] }
 nautilus-persistence = { workspace = true }
 nautilus-serialization = { workspace = true }
 

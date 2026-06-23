@@ -20,7 +20,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added `RedisCacheConfig`, `PostgresCacheConfig`, and `RedisMessageBusConfig` for Rust factories
 - Added SEC1 EC private key support to socket TLS configuration (Rust)
 - Added SBE and Cap'n Proto encodings for Rust-native message bus publishers
-- Added SBE and Cap'n Proto external msgbus payload support for `OptionGreeks`
+- Added SBE and Cap'n Proto support for `OptionGreeks`
 - Added `order_position_index` Postgres table for the order-position index; run `make init-db` to migrate
 - Added negative price support for `Commodity` instruments in risk checks (#2330), thanks for reporting @fabz1
 - Added `add_native_exec_algorithm` and `ExecutionAlgorithmConfig` bindings to the Python v2 backtest engine
