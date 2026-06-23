@@ -17,6 +17,7 @@
 
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
+use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache, clock::TestClock, live::runner::replace_data_event_sender, messages::DataEvent,
 };
@@ -123,17 +124,17 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
     let factory = Py::new(py, DatabentoDataClientFactory::new())
         .expect("factory should convert to Python object")
         .into_any();
-    let config = Py::new(
-        py,
-        DatabentoLiveClientConfig::new(
-            "00000000000000000000000000000000",
-            publishers_filepath.clone(),
-            false,
-            true,
-        ),
-    )
-    .expect("config should convert to Python object")
-    .into_any();
+    let mut config_inner = DatabentoLiveClientConfig::new(
+        "00000000000000000000000000000000",
+        publishers_filepath.clone(),
+        false,
+        true,
+    );
+    config_inner.venue_dataset_map =
+        IndexMap::from([("EQUS".to_string(), "EQUS.PLUS".to_string())]);
+    let config = Py::new(py, config_inner)
+        .expect("config should convert to Python object")
+        .into_any();
     let registry = get_global_pyo3_registry();
 
     let extracted_factory = registry
@@ -160,6 +161,10 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
     assert_eq!(extracted_factory.name(), DATABENTO);
     assert_eq!(extracted_factory.config_type(), "DatabentoLiveClientConfig");
     assert_eq!(databento_config.publishers_filepath, publishers_filepath);
+    assert_eq!(
+        databento_config.venue_dataset_map.get("EQUS"),
+        Some(&"EQUS.PLUS".to_string()),
+    );
     assert_eq!(
         client.client_id(),
         ClientId::from("DATABENTO-DATA-EXTRACTED")

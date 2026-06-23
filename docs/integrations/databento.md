@@ -888,7 +888,7 @@ node.build()
 | `mbo_subscriptions_delay` | `3.0`   | Seconds to buffer before enabling MBO/L3 streams so initial snapshots replay in order.                                       |
 | `bars_timestamp_on_close` | `True`  | Timestamp bar `ts_event` on close. `False` timestamps bar `ts_event` on open.                                                |
 | `reconnect_timeout_mins`  | `10`    | Minutes to retry before giving up. `None` retries indefinitely. See [Connection stability](#connection-stability).           |
-| `venue_dataset_map`       | `None`  | Optional Nautilus venue to Databento dataset code mapping.                                                                   |
+| `venue_dataset_map`       | `None`  | Override the venue‑to‑dataset mappings from the canonical `publishers.json` (e.g., `{"EQUS": "EQUS.PLUS"}`).                 |
 | `parent_symbols`          | `None`  | Optional `{dataset: {parent symbols}}` to preload definition trees (e.g., `{"GLBX.MDP3": {"ES.FUT", "ES.OPT"}}`).            |
 | `instrument_ids`          | `None`  | Nautilus `InstrumentId` values to preload definitions for at startup.                                                        |
 

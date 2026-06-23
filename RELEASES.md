@@ -34,6 +34,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added Binance order-list submission in Rust
 - Added `BitmexInstrumentState::Unknown` to tolerate unrecognized venue states without bootstrap failure
 - Added BitMEX legacy futures, spreads, and reference basket instrument parsing
+- Added Databento `venue_dataset_map` to override the default venue-to-dataset mappings
 - Added Hyperliquid builder attribution opt-out
 - Added Hyperliquid historical trade requests
 - Added Hyperliquid minimum notional handling

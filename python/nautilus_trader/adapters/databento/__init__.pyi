@@ -360,6 +360,7 @@ class DatabentoLiveClientConfig:
         publishers_filepath: str | os.PathLike | pathlib.Path,
         use_exchange_as_venue: bool = False,
         bars_timestamp_on_close: bool = True,
+        venue_dataset_map: typing.Mapping[str, str] | None = None,
     ) -> None: ...
 
 @typing.final

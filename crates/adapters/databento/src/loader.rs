@@ -869,7 +869,8 @@ impl DatabentoDataLoader {
 }
 
 /// Applies default venue-to-dataset mappings for consolidated Databento feeds.
-/// GLBX.MDP3 covers CME Globex exchange MICs; OPRA.PILLAR covers OPRA option venues.
+/// GLBX.MDP3 covers CME Globex exchange MICs; OPRA.PILLAR covers OPRA option venues;
+/// EQUS.MINI is the consolidated US equities default.
 fn apply_default_venue_dataset_mappings(venue_dataset_map: &mut IndexMap<Venue, Dataset>) {
     let glbx = Dataset::from("GLBX.MDP3");
 
@@ -885,6 +886,10 @@ fn apply_default_venue_dataset_mappings(venue_dataset_map: &mut IndexMap<Venue, 
     ] {
         _ = venue_dataset_map.insert(venue, glbx);
     }
+
+    // publishers.json seeds the consolidated EQUS venue with the unreleased EQUS.PLUS,
+    // so pin it to EQUS.MINI, the cheapest released US equities feed.
+    _ = venue_dataset_map.insert(Venue::from("EQUS"), Dataset::from("EQUS.MINI"));
 
     let opra = Dataset::from("OPRA.PILLAR");
     for venue_code in [
@@ -945,6 +950,10 @@ mod tests {
         let xcbo = Venue::from("XCBO");
         let result = loader.get_dataset_for_venue(&xcbo).unwrap();
         assert_eq!(*result, Ustr::from("OPRA.PILLAR"));
+
+        let equs = Venue::from("EQUS");
+        let result = loader.get_dataset_for_venue(&equs).unwrap();
+        assert_eq!(*result, Ustr::from("EQUS.MINI"));
     }
 
     #[rstest]

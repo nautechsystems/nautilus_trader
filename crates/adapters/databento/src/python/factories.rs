@@ -17,6 +17,7 @@
 
 use std::path::PathBuf;
 
+use indexmap::IndexMap;
 use nautilus_core::{python::to_pyruntime_err, time::get_atomic_clock_realtime};
 use nautilus_model::identifiers::ClientId;
 use pyo3::prelude::*;
@@ -31,19 +32,26 @@ use crate::{
 impl DatabentoLiveClientConfig {
     /// Configuration for Databento data clients used with `LiveNode`.
     #[new]
-    #[pyo3(signature = (api_key, publishers_filepath, use_exchange_as_venue=false, bars_timestamp_on_close=true))]
+    #[pyo3(signature = (api_key, publishers_filepath, use_exchange_as_venue=false, bars_timestamp_on_close=true, venue_dataset_map=None))]
     fn py_new(
         api_key: String,
-        publishers_filepath: std::path::PathBuf,
+        publishers_filepath: PathBuf,
         use_exchange_as_venue: bool,
         bars_timestamp_on_close: bool,
+        venue_dataset_map: Option<IndexMap<String, String>>,
     ) -> Self {
-        Self::new(
+        let mut config = Self::new(
             api_key,
             publishers_filepath,
             use_exchange_as_venue,
             bars_timestamp_on_close,
-        )
+        );
+
+        if let Some(venue_dataset_map) = venue_dataset_map {
+            config.venue_dataset_map = venue_dataset_map;
+        }
+
+        config
     }
 
     fn __repr__(&self) -> String {

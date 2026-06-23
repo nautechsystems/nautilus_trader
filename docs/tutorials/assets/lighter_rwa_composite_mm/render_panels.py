@@ -337,7 +337,7 @@ def panel_d_session_clock(df: pd.DataFrame) -> go.Figure:
             x=df["ts"],
             y=df["databento_active"],
             mode="lines",
-            name="Databento EQUS.PLUS feed",
+            name="Databento EQUS.MINI feed",
             line={"color": POSITIVE, "width": 1.5, "shape": "hv"},
         ),
         secondary_y=False,

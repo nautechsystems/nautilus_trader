@@ -37,7 +37,7 @@ quote center up or down through the normalized residual.
 ```mermaid
 flowchart LR
     subgraph Databento ["Databento data client"]
-        DQ["NVDA.EQUS QuoteTick<br/>dataset = EQUS.PLUS<br/>schema = mbp-1"]
+        DQ["NVDA.EQUS QuoteTick<br/>dataset = EQUS.MINI<br/>schema = mbp-1"]
         DS["signal_mid = (bid + ask) / 2"]
         DR["residual = signal_mid / baseline - 1"]
     end
@@ -72,8 +72,10 @@ inside the same event-driven runtime.
 - A Cargo project with the Nautilus, Lighter, and Databento crates as
   dependencies (see [Project setup](#project-setup)).
 - Python 3.12+ to regenerate the rendered panels.
-- A Databento API key with live access to Databento US Equities Plus
-  (`EQUS.PLUS`) for the bundled `NVDA.EQUS` route.
+- A Databento API key with live access to Databento US Equities Mini
+  (`EQUS.MINI`), the default dataset for the bundled `NVDA.EQUS` route. Higher
+  tiers such as `EQUS.PLUS` need a separate Databento license; select one with
+  `venue_dataset_map` when your account is entitled.
 - Lighter API credentials (numeric account index, API key index, and API secret)
   for the configured environment (testnet by default), required only to connect
   and submit orders.
@@ -135,14 +137,17 @@ Lighter traded market:
 
 | Role              | Instrument ID       | Source    | Notes                                      |
 | ----------------- | ------------------- | --------- | ------------------------------------------ |
-| Signal instrument | `NVDA.EQUS`         | Databento | EQUS.PLUS top‑of‑book quote updates.       |
+| Signal instrument | `NVDA.EQUS`         | Databento | EQUS.MINI top‑of‑book quote updates.       |
 | Target instrument | `NVDA-PERP.LIGHTER` | Lighter   | RWA perpetual traded through Lighter.      |
 
 Subscribing to `NVDA.EQUS` requests top-of-book (`mbp-1`) quotes for `NVDA` from
-Databento's `EQUS.PLUS` dataset by default, delivered as a single `QuoteTick`
-stream. The adapter resolves the `EQUS` venue from a publishers file: the
-example points `DatabentoLiveClientConfig` at the `publishers.json` bundled with
-the Databento adapter. See [Instrument IDs and symbology][databento-symbology]
+Databento's `EQUS.MINI` dataset by default, delivered as a single `QuoteTick`
+stream. `EQUS.MINI` is the lowest-cost consolidated US equities tier; richer
+tiers such as `EQUS.PLUS` need a separate Databento license and can be selected
+with the client's `venue_dataset_map` (for example `{"EQUS": "EQUS.PLUS"}`) once
+your account is entitled. The adapter resolves the `EQUS` venue from a publishers
+file: the example points `DatabentoLiveClientConfig` at the `publishers.json`
+bundled with the Databento adapter. See [Instrument IDs and symbology][databento-symbology]
 for the mapping rules.
 
 The older Databento Equities Basic (`DBEQ.BASIC`) dataset name appears in some

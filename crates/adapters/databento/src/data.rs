@@ -65,7 +65,7 @@ use crate::{
     live::{DatabentoFeedHandler, DatabentoMessage, HandlerCommand},
     loader::DatabentoDataLoader,
     symbology::instrument_id_to_symbol_string,
-    types::PublisherId,
+    types::{Dataset, PublisherId},
 };
 
 const PRICE_PRECISION_PARAM: &str = "price_precision";
@@ -95,6 +95,8 @@ pub struct DatabentoDataClientConfig {
     pub(crate) credential: Credential,
     /// Path to publishers.json file.
     pub publishers_filepath: PathBuf,
+    /// Venue-to-dataset overrides applied on top of the publishers.json mappings.
+    pub venue_dataset_map: IndexMap<String, String>,
     /// Whether to use exchange as venue for GLBX instruments.
     pub use_exchange_as_venue: bool,
     /// Whether to timestamp bars on close.
@@ -108,6 +110,7 @@ impl Debug for DatabentoDataClientConfig {
         f.debug_struct(stringify!(DatabentoDataClientConfig))
             .field("credential", &REDACTED)
             .field("publishers_filepath", &self.publishers_filepath)
+            .field("venue_dataset_map", &self.venue_dataset_map)
             .field("use_exchange_as_venue", &self.use_exchange_as_venue)
             .field("bars_timestamp_on_close", &self.bars_timestamp_on_close)
             .field("reconnect_timeout_mins", &self.reconnect_timeout_mins)
@@ -127,6 +130,7 @@ impl DatabentoDataClientConfig {
         Self {
             credential: Credential::new(api_key),
             publishers_filepath,
+            venue_dataset_map: IndexMap::new(),
             use_exchange_as_venue,
             bars_timestamp_on_close,
             reconnect_timeout_mins: Some(10), // Default: 10 minutes
@@ -201,7 +205,13 @@ impl DatabentoDataClient {
         )?;
 
         // Create data loader for venue-to-dataset mapping
-        let loader = DatabentoDataLoader::new(Some(config.publishers_filepath.clone()))?;
+        let mut loader = DatabentoDataLoader::new(Some(config.publishers_filepath.clone()))?;
+        for (venue, dataset) in &config.venue_dataset_map {
+            loader.set_dataset_for_venue(
+                Dataset::from(dataset.as_str()),
+                Venue::from(venue.as_str()),
+            );
+        }
 
         // Load publisher configuration
         let file_content = std::fs::read_to_string(&config.publishers_filepath)?;
@@ -1160,6 +1170,40 @@ mod tests {
             get_atomic_clock_realtime(),
         )
         .expect("test client should initialize")
+    }
+
+    #[rstest]
+    #[case("EQUS", "EQUS.PLUS")] // overrides the apply_default EQUS -> EQUS.MINI mapping
+    #[case("GLBX", "EQUS.MINI")] // overrides the apply_default GLBX -> GLBX.MDP3 mapping
+    fn test_venue_dataset_map_overrides_default(#[case] venue: &str, #[case] dataset: &str) {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        replace_data_event_sender(sender);
+
+        let mut config = DatabentoDataClientConfig::new(
+            "32-character-with-lots-of-filler",
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json"),
+            true,
+            true,
+        );
+        config.venue_dataset_map = IndexMap::from([(venue.to_string(), dataset.to_string())]);
+
+        let client = DatabentoDataClient::new(
+            ClientId::from("DATABENTO-TEST"),
+            config,
+            get_atomic_clock_realtime(),
+        )
+        .expect("test client should initialize");
+
+        assert_eq!(
+            client.get_dataset_for_venue(Venue::from(venue)).unwrap(),
+            dataset
+        );
+
+        // The override is targeted: an unrelated venue keeps its default.
+        assert_eq!(
+            client.get_dataset_for_venue(Venue::from("XCBO")).unwrap(),
+            "OPRA.PILLAR"
+        );
     }
 
     fn subscribe_quotes_cmd(params: Option<Params>) -> SubscribeQuotes {
