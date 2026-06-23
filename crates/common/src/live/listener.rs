@@ -76,12 +76,12 @@ impl MessageBusListener {
     pub fn publish<T: Into<MStr<Topic>>>(&self, topic: T, payload: Bytes) {
         let topic = topic.into();
 
-        // Listener messages are untyped, so they use default transport headers
+        // Listener messages are untyped, so they use default bus headers.
         let msg = BusMessage::new(
             *topic,
-            SerializationEncoding::default(),
             BusPayloadType::Custom(Ustr::default()),
             payload,
+            SerializationEncoding::default(),
         );
 
         if let Err(e) = self.tx.send(msg) {

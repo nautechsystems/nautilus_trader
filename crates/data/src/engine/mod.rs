@@ -1137,7 +1137,7 @@ impl DataEngine {
     fn topic_has_remaining_subscribers(cmd: &UnsubscribeCommand) -> bool {
         // Exact match only; wildcard observers must not block venue detach.
         // BookDeltas/Depth10 excluded: binary engine state cannot distinguish
-        // the internal BookUpdater handler from external subscribers
+        // the internal BookUpdater handler from external-client subscriptions
         match cmd {
             UnsubscribeCommand::Quotes(c) => {
                 let topic = switchboard::get_quotes_topic(c.instrument_id);

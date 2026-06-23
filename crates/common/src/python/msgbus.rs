@@ -28,8 +28,7 @@ use ustr::Ustr;
 use crate::{
     enums::SerializationEncoding,
     msgbus::{
-        self as msgbus_api, BusMessage, MessageBus,
-        backing::MessageBusConfig,
+        self as msgbus_api, BusMessage, MessageBus, MessageBusConfig,
         core::Subscription,
         get_message_bus,
         matching::is_matching,
@@ -55,15 +54,15 @@ impl BusMessage {
     }
 
     #[getter]
-    #[pyo3(name = "encoding")]
-    fn py_encoding(&self) -> SerializationEncoding {
-        self.encoding
-    }
-
-    #[getter]
     #[pyo3(name = "payload")]
     fn py_payload(&self, py: Python<'_>) -> Py<PyBytes> {
         PyBytes::new(py, self.payload.as_ref()).into()
+    }
+
+    #[getter]
+    #[pyo3(name = "encoding")]
+    fn py_encoding(&self) -> SerializationEncoding {
+        self.encoding
     }
 
     fn __repr__(&self) -> String {

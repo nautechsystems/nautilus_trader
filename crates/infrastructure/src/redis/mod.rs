@@ -21,7 +21,7 @@ pub mod queries;
 
 use std::{fmt::Write as _, time::Duration};
 
-use nautilus_common::{logging::log_task_awaiting, msgbus::backing::MessageBusConfig};
+use nautilus_common::{logging::log_task_awaiting, msgbus::MessageBusConfig};
 use nautilus_core::{UUID4, string::semver::SemVer};
 use nautilus_model::identifiers::TraderId;
 use redis::RedisError;

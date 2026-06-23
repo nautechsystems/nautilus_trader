@@ -122,7 +122,7 @@ Message bus behavior stays in `MessageBusConfig`. Redis connection settings live
 ```rust
 use nautilus_common::{
     enums::SerializationEncoding,
-    msgbus::backing::{MessageBusBackingFactory, MessageBusConfig},
+    msgbus::{backing::MessageBusBackingFactory, config::MessageBusConfig},
 };
 use nautilus_infrastructure::redis::msgbus::RedisMessageBusConfig;
 

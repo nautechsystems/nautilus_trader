@@ -112,8 +112,8 @@ use smallvec::SmallVec;
 use ustr::Ustr;
 
 use super::{
-    HAS_PUBLISHER, ShareableMessageHandler,
-    backing::{MessageBusConfig, MessageBusPublisher},
+    HAS_EXTERNAL_EGRESS, ShareableMessageHandler,
+    backing::{MessageBusConfig, MessageBusExternalEgress},
     matching::is_matching_backtracking,
     message::{BusPayloadCategory, BusPayloadType},
     mstr::{Endpoint, MStr, Pattern, Topic},
@@ -280,7 +280,7 @@ pub struct MessageBus {
     req_count: u64,
     res_count: u64,
     pub_count: u64,
-    publisher: Option<Box<dyn MessageBusPublisher>>,
+    external_egress: Option<Box<dyn MessageBusExternalEgress>>,
     encoding: SerializationEncoding,
     encoding_market_data: Option<SerializationEncoding>,
     encoding_builtin: Option<SerializationEncoding>,
@@ -295,7 +295,7 @@ impl Debug for MessageBus {
             .field("instance_id", &self.instance_id)
             .field("name", &self.name)
             .field("has_backing", &self.has_backing)
-            .field("publisher", &self.publisher.is_some())
+            .field("external_egress", &self.external_egress.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -375,7 +375,7 @@ impl MessageBus {
             req_count: 0,
             res_count: 0,
             pub_count: 0,
-            publisher: None,
+            external_egress: None,
             encoding: SerializationEncoding::Json,
             encoding_market_data: None,
             encoding_builtin: None,
@@ -417,38 +417,38 @@ impl MessageBus {
             .expect("EndpointMap type mismatch - this is a bug")
     }
 
-    /// Sets an external publisher for serialized published messages.
-    pub fn set_publisher(
+    /// Sets external egress for serialized published messages.
+    pub fn set_external_egress(
         &mut self,
-        publisher: Box<dyn MessageBusPublisher>,
+        external_egress: Box<dyn MessageBusExternalEgress>,
         encoding: SerializationEncoding,
     ) {
-        self.publisher = Some(publisher);
+        self.external_egress = Some(external_egress);
         self.encoding = encoding;
         self.encoding_market_data = None;
         self.encoding_builtin = None;
         self.has_backing = true;
-        HAS_PUBLISHER.with(|flag| flag.set(true));
+        HAS_EXTERNAL_EGRESS.with(|flag| flag.set(true));
     }
 
-    /// Sets an external publisher and category encoding policy from a validated config.
+    /// Sets external egress and category encoding policy from a validated config.
     ///
     /// # Errors
     ///
     /// Returns a [`crate::config::ConfigError`] if the config selects an unsupported encoding.
-    pub fn set_publisher_config(
+    pub fn set_external_egress_config(
         &mut self,
-        publisher: Box<dyn MessageBusPublisher>,
+        external_egress: Box<dyn MessageBusExternalEgress>,
         config: &MessageBusConfig,
     ) -> crate::config::ConfigResult<()> {
         config.validate()?;
 
-        self.publisher = Some(publisher);
+        self.external_egress = Some(external_egress);
         self.encoding = config.encoding;
         self.encoding_market_data = config.encoding_market_data;
         self.encoding_builtin = config.encoding_builtin;
         self.has_backing = true;
-        HAS_PUBLISHER.with(|flag| flag.set(true));
+        HAS_EXTERNAL_EGRESS.with(|flag| flag.set(true));
 
         Ok(())
     }
@@ -481,12 +481,12 @@ impl MessageBus {
     }
 
     #[must_use]
-    pub(crate) fn has_publisher(&self) -> bool {
-        self.publisher.is_some()
+    pub(crate) fn has_external_egress(&self) -> bool {
+        self.external_egress.is_some()
     }
 
-    pub(crate) fn publisher(&self) -> Option<&dyn MessageBusPublisher> {
-        self.publisher.as_deref()
+    pub(crate) fn external_egress(&self) -> Option<&dyn MessageBusExternalEgress> {
+        self.external_egress.as_deref()
     }
 
     pub(crate) fn encoding_for(&self, payload_type: BusPayloadType) -> SerializationEncoding {
@@ -559,11 +559,11 @@ impl MessageBus {
         self.res_count = 0;
         self.pub_count = 0;
 
-        if let Some(mut publisher) = self.publisher.take() {
-            publisher.close();
+        if let Some(mut external_egress) = self.external_egress.take() {
+            external_egress.close();
         }
         self.has_backing = false;
-        HAS_PUBLISHER.with(|flag| flag.set(false));
+        HAS_EXTERNAL_EGRESS.with(|flag| flag.set(false));
     }
 
     /// Returns the memory address of this instance as a hexadecimal string.
@@ -699,11 +699,11 @@ impl MessageBus {
     ///
     /// This function never returns an error (TBD once backing database added).
     pub fn close(&mut self) -> anyhow::Result<()> {
-        if let Some(mut publisher) = self.publisher.take() {
-            publisher.close();
+        if let Some(mut external_egress) = self.external_egress.take() {
+            external_egress.close();
         }
         self.has_backing = false;
-        HAS_PUBLISHER.with(|flag| flag.set(false));
+        HAS_EXTERNAL_EGRESS.with(|flag| flag.set(false));
         Ok(())
     }
 

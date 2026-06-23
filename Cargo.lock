@@ -6172,7 +6172,6 @@ dependencies = [
  "nautilus-persistence",
  "nautilus-serialization",
  "pyo3",
- "pyo3-async-runtimes",
  "pyo3-stub-gen",
  "redis",
  "regex",

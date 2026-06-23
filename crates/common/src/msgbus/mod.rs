@@ -38,6 +38,7 @@
 
 mod api;
 pub mod backing;
+pub mod config;
 pub mod core;
 pub mod matching;
 pub mod message;
@@ -70,10 +71,11 @@ use nautilus_model::{
 use smallvec::SmallVec;
 
 #[cfg(feature = "live")]
-pub use self::backing::MessageBusSubscriber;
+pub use self::backing::MessageBusExternalIngress;
 pub use self::{
     api::*,
-    backing::MessageBusPublisher,
+    backing::MessageBusExternalEgress,
+    config::MessageBusConfig,
     core::{MessageBus, Subscription},
     message::{BusMessage, BusPayloadCategory, BusPayloadType},
     mstr::{Endpoint, MStr, Pattern, Topic},
@@ -100,7 +102,7 @@ pub(super) const HANDLER_BUFFER_CAP: usize = 64;
 // during handler calls (enabling re-entrant publishes).
 thread_local! {
     pub(super) static MESSAGE_BUS: RefCell<Option<Rc<RefCell<MessageBus>>>> = const { RefCell::new(None) };
-    pub(super) static HAS_PUBLISHER: Cell<bool> = const { Cell::new(false) };
+    pub(super) static HAS_EXTERNAL_EGRESS: Cell<bool> = const { Cell::new(false) };
     pub(super) static SUPPRESS_EXTERNAL_DEPTH: Cell<u32> = const { Cell::new(0) };
 
     pub(super) static ANY_HANDLERS: RefCell<SmallVec<[ShareableMessageHandler; HANDLER_BUFFER_CAP]>> =
@@ -187,7 +189,7 @@ impl Drop for SuppressExternalGuard {
 
 /// Sets the thread-local message bus, replacing any existing one.
 pub fn set_message_bus(msgbus: Rc<RefCell<MessageBus>>) {
-    HAS_PUBLISHER.with(|flag| flag.set(msgbus.borrow().has_publisher()));
+    HAS_EXTERNAL_EGRESS.with(|flag| flag.set(msgbus.borrow().has_external_egress()));
     MESSAGE_BUS.with(|bus| {
         *bus.borrow_mut() = Some(msgbus);
     });

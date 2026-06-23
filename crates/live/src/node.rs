@@ -2177,8 +2177,8 @@ mod tests {
         clock::Clock,
         enums::SerializationEncoding,
         msgbus::{
-            self, BusMessage, MessageBusPublisher, MessagingSwitchboard, TypedIntoHandler,
-            backing::MessageBusConfig,
+            self, BusMessage, MessageBusConfig, MessageBusExternalEgress, MessagingSwitchboard,
+            TypedIntoHandler,
         },
     };
     use nautilus_core::{UUID4, UnixNanos};
@@ -2698,8 +2698,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_builder_with_msgbus_publisher_uses_configured_encoding() {
-        let (publisher, publications, closed) = CapturingPublisher::new();
+    fn test_builder_with_external_msgbus_egress_uses_configured_encoding() {
+        let (external_egress, publications, closed) = CapturingExternalEgress::new();
         let msgbus_config = MessageBusConfig {
             encoding: SerializationEncoding::Json,
             ..Default::default()
@@ -2707,9 +2707,9 @@ mod tests {
         let node = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
             .unwrap()
             .with_msgbus_config(msgbus_config)
-            .with_msgbus_publisher(Box::new(publisher))
+            .with_external_msgbus_egress(Box::new(external_egress))
             .build()
-            .expect("node builds with msgbus publisher");
+            .expect("node builds with external message bus egress");
         let quote = QuoteTick::default();
 
         msgbus::publish_quote("data.quotes.TEST".into(), &quote);
@@ -3261,21 +3261,21 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct CapturedPublication {
+    struct CapturedEgressMessage {
         topic: String,
         payload: Bytes,
     }
 
-    type CapturedPublications = Rc<RefCell<Vec<CapturedPublication>>>;
+    type CapturedEgressMessages = Rc<RefCell<Vec<CapturedEgressMessage>>>;
     type SharedClosed = Rc<Cell<bool>>;
 
-    struct CapturingPublisher {
-        publications: CapturedPublications,
+    struct CapturingExternalEgress {
+        publications: CapturedEgressMessages,
         closed: SharedClosed,
     }
 
-    impl CapturingPublisher {
-        fn new() -> (Self, CapturedPublications, SharedClosed) {
+    impl CapturingExternalEgress {
+        fn new() -> (Self, CapturedEgressMessages, SharedClosed) {
             let publications = Rc::new(RefCell::new(Vec::new()));
             let closed = Rc::new(Cell::new(false));
             (
@@ -3289,13 +3289,13 @@ mod tests {
         }
     }
 
-    impl MessageBusPublisher for CapturingPublisher {
+    impl MessageBusExternalEgress for CapturingExternalEgress {
         fn is_closed(&self) -> bool {
             self.closed.get()
         }
 
         fn publish(&self, message: BusMessage) {
-            self.publications.borrow_mut().push(CapturedPublication {
+            self.publications.borrow_mut().push(CapturedEgressMessage {
                 topic: message.topic.to_string(),
                 payload: message.payload,
             });

@@ -235,30 +235,30 @@ impl<'de> Deserialize<'de> for BusPayloadType {
 pub struct BusMessage {
     /// The topic to publish the message on.
     pub topic: Ustr,
-    /// The encoding the `payload` is serialized with, so the receiver can decode it without
-    /// relying on its own configuration (mirrors a transport `content-type`).
-    pub encoding: SerializationEncoding,
     /// The payload type, carried out-of-band so the receiver can dispatch the serialized payload
     /// without parsing the topic or inspecting the bytes.
     pub payload_type: BusPayloadType,
     /// The serialized payload for the message.
     pub payload: Bytes,
+    /// The encoding the `payload` is serialized with, so the receiver can decode it without
+    /// relying on its own configuration (mirrors a wire `content-type`).
+    pub encoding: SerializationEncoding,
 }
 
 impl BusMessage {
     /// Creates a new [`BusMessage`] instance.
     pub fn new(
         topic: Ustr,
-        encoding: SerializationEncoding,
         payload_type: BusPayloadType,
         payload: Bytes,
+        encoding: SerializationEncoding,
     ) -> Self {
         debug_assert!(!topic.is_empty());
         Self {
             topic,
-            encoding,
             payload_type,
             payload,
+            encoding,
         }
     }
 
@@ -268,20 +268,20 @@ impl BusMessage {
     /// (implementing `AsRef<str>`) into the required `Ustr` type.
     pub fn with_str_topic<T: AsRef<str>>(
         topic: T,
-        encoding: SerializationEncoding,
         payload_type: BusPayloadType,
         payload: Bytes,
+        encoding: SerializationEncoding,
     ) -> Self {
-        Self::new(Ustr::from(topic.as_ref()), encoding, payload_type, payload)
+        Self::new(Ustr::from(topic.as_ref()), payload_type, payload, encoding)
     }
 
     /// Creates a new [`BusMessage`] instance with the `CLOSE` topic and empty payload.
     pub fn new_close() -> Self {
         Self::with_str_topic(
             CLOSE_TOPIC,
-            SerializationEncoding::default(),
             BusPayloadType::Custom(Ustr::default()),
             Bytes::new(),
+            SerializationEncoding::default(),
         )
     }
 }
@@ -293,8 +293,8 @@ impl Display for BusMessage {
             "[{}] {} {} {}",
             self.topic,
             self.payload_type.as_str(),
-            self.encoding,
-            String::from_utf8_lossy(&self.payload)
+            String::from_utf8_lossy(&self.payload),
+            self.encoding
         )
     }
 }
@@ -314,9 +314,9 @@ mod tests {
 
         let message = BusMessage::with_str_topic(
             topic,
-            SerializationEncoding::Json,
             BusPayloadType::QuoteTick,
             payload.clone(),
+            SerializationEncoding::Json,
         );
 
         assert_eq!(message.topic.as_str(), topic);
@@ -332,9 +332,9 @@ mod tests {
 
         let message = BusMessage::with_str_topic(
             topic_string.clone(),
-            SerializationEncoding::MsgPack,
             BusPayloadType::OrderEvent,
             payload.clone(),
+            SerializationEncoding::MsgPack,
         );
 
         assert_eq!(message.topic.as_str(), topic_string);

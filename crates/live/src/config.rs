@@ -26,7 +26,7 @@ use nautilus_common::{
     },
     enums::Environment,
     logging::logger::LoggerConfig,
-    msgbus::backing::MessageBusConfig,
+    msgbus::MessageBusConfig,
     throttler::RateLimit,
 };
 use nautilus_core::{UUID4, datetime::NANOSECONDS_IN_SECOND};

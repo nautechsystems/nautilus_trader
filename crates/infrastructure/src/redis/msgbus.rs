@@ -45,7 +45,7 @@ use nautilus_common::{
     live::get_runtime,
     logging::{log_task_error, log_task_started, log_task_stopped},
     msgbus::{
-        BusMessage, BusPayloadType, MessageBusPublisher, MessageBusSubscriber,
+        BusMessage, BusPayloadType, MessageBusExternalEgress, MessageBusExternalIngress,
         backing::{MessageBusBacking, MessageBusBackingFactory, MessageBusConfig},
         switchboard::CLOSE_TOPIC,
     },
@@ -328,16 +328,9 @@ impl MessageBusBacking for RedisMessageBusBacking {
         self.pub_tx.is_closed()
     }
 
-    /// Publishes a message with the given `topic` and `payload`.
-    fn publish(&self, topic: Ustr, payload: Bytes) {
-        let msg = BusMessage::new(
-            topic,
-            SerializationEncoding::default(),
-            BusPayloadType::Custom(Ustr::default()),
-            payload,
-        );
-
-        if let Err(e) = self.pub_tx.send(msg) {
+    /// Queues a serialized bus message for external publication.
+    fn publish(&self, message: BusMessage) {
+        if let Err(e) = self.pub_tx.send(message) {
             log::error!("Failed to send message: {e}");
         }
     }
@@ -368,7 +361,7 @@ impl MessageBusBacking for RedisMessageBusBacking {
     }
 }
 
-impl MessageBusPublisher for RedisMessageBusBacking {
+impl MessageBusExternalEgress for RedisMessageBusBacking {
     fn is_closed(&self) -> bool {
         self.pub_tx.is_closed()
     }
@@ -384,7 +377,7 @@ impl MessageBusPublisher for RedisMessageBusBacking {
     }
 }
 
-impl MessageBusSubscriber for RedisMessageBusBacking {
+impl MessageBusExternalIngress for RedisMessageBusBacking {
     fn is_closed(&self) -> bool {
         self.stream_handle
             .as_ref()
@@ -560,8 +553,8 @@ async fn drain_buffer(
         let items: Vec<(&str, &[u8])> = vec![
             ("topic", msg.topic.as_ref()),
             ("type", msg.payload_type.as_str().as_bytes()),
-            ("encoding", encoding.as_bytes()),
             ("payload", msg.payload.as_ref()),
+            ("encoding", encoding.as_bytes()),
         ];
         let stream_key = if stream_per_topic {
             format!("{stream_key}:{}", msg.topic)
@@ -862,9 +855,9 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
 
     Ok(BusMessage::with_str_topic(
         topic,
-        encoding,
         payload_type,
         payload,
+        encoding,
     ))
 }
 
@@ -910,9 +903,9 @@ fn create_heartbeat_msg() -> BusMessage {
     let payload = Bytes::from(chrono::Utc::now().to_rfc3339().into_bytes());
     BusMessage::with_str_topic(
         HEARTBEAT_TOPIC,
-        SerializationEncoding::default(),
         BusPayloadType::Custom(Ustr::default()),
         payload,
+        SerializationEncoding::default(),
     )
 }
 
@@ -991,10 +984,10 @@ mod tests {
             Value::BulkString(b"topic1".to_vec()),
             Value::BulkString(b"type".to_vec()),
             Value::BulkString(b"QuoteTick".to_vec()),
-            Value::BulkString(b"encoding".to_vec()),
-            Value::BulkString(b"msgpack".to_vec()),
             Value::BulkString(b"payload".to_vec()),
             Value::BulkString(b"data1".to_vec()),
+            Value::BulkString(b"encoding".to_vec()),
+            Value::BulkString(b"msgpack".to_vec()),
         ]);
 
         let result = decode_bus_message(&stream_msg);
@@ -1245,42 +1238,42 @@ mod tests {
     }
 
     #[rstest]
-    fn test_subscriber_take_receiver_delegates_to_stream_receiver() {
+    fn test_external_ingress_take_receiver_delegates_to_stream_receiver() {
         let (stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
         let mut db = backing_with_stream_receiver(stream_rx);
         let message = BusMessage::with_str_topic(
             "events/data",
-            SerializationEncoding::Json,
             BusPayloadType::QuoteTick,
             Bytes::from_static(b"payload"),
+            SerializationEncoding::Json,
         );
 
         stream_tx.try_send(message.clone()).unwrap();
-        let mut receiver = MessageBusSubscriber::take_receiver(&mut db).unwrap();
+        let mut receiver = MessageBusExternalIngress::take_receiver(&mut db).unwrap();
         let received = receiver.try_recv().unwrap();
 
         assert_eq!(received.topic, message.topic);
         assert_eq!(received.payload, message.payload);
-        assert!(MessageBusSubscriber::take_receiver(&mut db).is_err());
+        assert!(MessageBusExternalIngress::take_receiver(&mut db).is_err());
     }
 
     #[rstest]
-    fn test_subscriber_is_closed_without_stream_handle() {
+    fn test_external_ingress_is_closed_without_stream_handle() {
         let (_stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
         let db = backing_with_stream_receiver(stream_rx);
 
-        assert!(MessageBusSubscriber::is_closed(&db));
+        assert!(MessageBusExternalIngress::is_closed(&db));
     }
 
     #[tokio::test]
-    async fn test_subscriber_is_open_with_running_stream_handle() {
+    async fn test_external_ingress_is_open_with_running_stream_handle() {
         let (_stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
         let mut db = backing_with_stream_receiver(stream_rx);
         db.stream_handle = Some(tokio::spawn(async {
             std::future::pending::<()>().await;
         }));
 
-        assert!(!MessageBusSubscriber::is_closed(&db));
+        assert!(!MessageBusExternalIngress::is_closed(&db));
 
         let handle = db.stream_handle.take().unwrap();
         handle.abort();
@@ -1607,9 +1600,9 @@ mod serial_tests {
         // Send a test message
         let msg = BusMessage::with_str_topic(
             "test_topic",
-            SerializationEncoding::Json,
             BusPayloadType::QuoteTick,
             Bytes::from("test_payload"),
+            SerializationEncoding::Json,
         );
         tx.send(msg).unwrap();
 

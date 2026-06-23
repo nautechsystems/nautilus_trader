@@ -64,7 +64,7 @@ use ustr::Ustr;
 use super::{
     ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BOOK_HANDLERS, BusMessage, BusPayloadType,
     DELTAS_HANDLERS, DEPTH10_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP,
-    HAS_PUBLISHER, INDEX_PRICE_HANDLERS, INSTRUMENT_HANDLERS, MARK_PRICE_HANDLERS,
+    HAS_EXTERNAL_EGRESS, INDEX_PRICE_HANDLERS, INSTRUMENT_HANDLERS, MARK_PRICE_HANDLERS,
     OPTION_CHAIN_HANDLERS, OPTION_GREEKS_HANDLERS, ORDER_EVENT_HANDLERS,
     PORTFOLIO_SNAPSHOT_HANDLERS, POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, SUPPRESS_EXTERNAL_DEPTH,
     SuppressExternalGuard, TRADE_HANDLERS,
@@ -981,7 +981,7 @@ pub fn publish_any(topic: MStr<Topic>, message: &dyn Any) {
         return;
     };
 
-    forward_to_publisher(
+    forward_to_external_egress(
         topic,
         BusPayloadType::Custom(Ustr::from(custom.data.type_name())),
         custom,
@@ -1031,7 +1031,7 @@ pub fn publish_instrument(topic: MStr<Topic>, instrument: &InstrumentAny) {
         instrument,
     );
 
-    forward_to_publisher(topic, BusPayloadType::Instrument, instrument);
+    forward_to_external_egress(topic, BusPayloadType::Instrument, instrument);
 }
 
 /// Publishes order book deltas to subscribers on a topic.
@@ -1043,7 +1043,7 @@ pub fn publish_deltas(topic: MStr<Topic>, deltas: &OrderBookDeltas) {
         deltas,
     );
 
-    forward_to_publisher(topic, BusPayloadType::OrderBookDeltas, deltas);
+    forward_to_external_egress(topic, BusPayloadType::OrderBookDeltas, deltas);
 }
 
 /// Publishes order book depth10 to subscribers on a topic.
@@ -1055,7 +1055,7 @@ pub fn publish_depth10(topic: MStr<Topic>, depth: &OrderBookDepth10) {
         depth,
     );
 
-    forward_to_publisher(topic, BusPayloadType::OrderBookDepth10, depth);
+    forward_to_external_egress(topic, BusPayloadType::OrderBookDepth10, depth);
 }
 
 /// Publishes an order book snapshot to subscribers on a topic.
@@ -1077,7 +1077,7 @@ pub fn publish_quote(topic: MStr<Topic>, quote: &QuoteTick) {
         quote,
     );
 
-    forward_to_publisher(topic, BusPayloadType::QuoteTick, quote);
+    forward_to_external_egress(topic, BusPayloadType::QuoteTick, quote);
 }
 
 /// Publishes a trade tick to subscribers on a topic.
@@ -1089,7 +1089,7 @@ pub fn publish_trade(topic: MStr<Topic>, trade: &TradeTick) {
         trade,
     );
 
-    forward_to_publisher(topic, BusPayloadType::TradeTick, trade);
+    forward_to_external_egress(topic, BusPayloadType::TradeTick, trade);
 }
 
 /// Publishes a bar to subscribers on a topic.
@@ -1101,7 +1101,7 @@ pub fn publish_bar(topic: MStr<Topic>, bar: &Bar) {
         bar,
     );
 
-    forward_to_publisher(topic, BusPayloadType::Bar, bar);
+    forward_to_external_egress(topic, BusPayloadType::Bar, bar);
 }
 
 /// Publishes a mark price update to subscribers on a topic.
@@ -1113,7 +1113,7 @@ pub fn publish_mark_price(topic: MStr<Topic>, mark_price: &MarkPriceUpdate) {
         mark_price,
     );
 
-    forward_to_publisher(topic, BusPayloadType::MarkPriceUpdate, mark_price);
+    forward_to_external_egress(topic, BusPayloadType::MarkPriceUpdate, mark_price);
 }
 
 /// Publishes an index price update to subscribers on a topic.
@@ -1125,7 +1125,7 @@ pub fn publish_index_price(topic: MStr<Topic>, index_price: &IndexPriceUpdate) {
         index_price,
     );
 
-    forward_to_publisher(topic, BusPayloadType::IndexPriceUpdate, index_price);
+    forward_to_external_egress(topic, BusPayloadType::IndexPriceUpdate, index_price);
 }
 
 /// Publishes a funding rate update to subscribers on a topic.
@@ -1137,7 +1137,7 @@ pub fn publish_funding_rate(topic: MStr<Topic>, funding_rate: &FundingRateUpdate
         funding_rate,
     );
 
-    forward_to_publisher(topic, BusPayloadType::FundingRateUpdate, funding_rate);
+    forward_to_external_egress(topic, BusPayloadType::FundingRateUpdate, funding_rate);
 }
 
 /// Publishes greeks data to subscribers on a topic.
@@ -1159,7 +1159,7 @@ pub fn publish_option_greeks(topic: MStr<Topic>, option_greeks: &OptionGreeks) {
         option_greeks,
     );
 
-    forward_to_publisher(topic, BusPayloadType::OptionGreeks, option_greeks);
+    forward_to_external_egress(topic, BusPayloadType::OptionGreeks, option_greeks);
 }
 
 /// Publishes an option chain slice to subscribers on a topic.
@@ -1181,7 +1181,7 @@ pub fn publish_account_state(topic: MStr<Topic>, state: &AccountState) {
         state,
     );
 
-    forward_to_publisher(topic, BusPayloadType::AccountState, state);
+    forward_to_external_egress(topic, BusPayloadType::AccountState, state);
 }
 
 /// Publishes a portfolio snapshot to subscribers on a topic.
@@ -1195,7 +1195,7 @@ pub fn publish_portfolio_snapshot(topic: MStr<Topic>, snapshot: &PortfolioSnapsh
         snapshot,
     );
 
-    forward_to_publisher(topic, BusPayloadType::PortfolioSnapshot, snapshot);
+    forward_to_external_egress(topic, BusPayloadType::PortfolioSnapshot, snapshot);
 }
 
 /// Publishes an order event to subscribers on a topic.
@@ -1207,7 +1207,7 @@ pub fn publish_order_event(topic: MStr<Topic>, event: &OrderEventAny) {
         event,
     );
 
-    forward_to_publisher(topic, BusPayloadType::OrderEvent, event);
+    forward_to_external_egress(topic, BusPayloadType::OrderEvent, event);
 }
 
 /// Publishes a position event to subscribers on a topic.
@@ -1219,7 +1219,7 @@ pub fn publish_position_event(topic: MStr<Topic>, event: &PositionEvent) {
         event,
     );
 
-    forward_to_publisher(topic, BusPayloadType::PositionEvent, event);
+    forward_to_external_egress(topic, BusPayloadType::PositionEvent, event);
 }
 
 /// Publishes a DeFi block to subscribers on a topic.
@@ -1232,7 +1232,7 @@ pub fn publish_defi_block(topic: MStr<Topic>, block: &Block) {
         block,
     );
 
-    forward_to_publisher(topic, BusPayloadType::Block, block);
+    forward_to_external_egress(topic, BusPayloadType::Block, block);
 }
 
 /// Publishes a DeFi pool to subscribers on a topic.
@@ -1245,7 +1245,7 @@ pub fn publish_defi_pool(topic: MStr<Topic>, pool: &Pool) {
         pool,
     );
 
-    forward_to_publisher(topic, BusPayloadType::Pool, pool);
+    forward_to_external_egress(topic, BusPayloadType::Pool, pool);
 }
 
 /// Publishes a DeFi pool swap to subscribers on a topic.
@@ -1269,7 +1269,7 @@ pub fn publish_defi_liquidity(topic: MStr<Topic>, update: &PoolLiquidityUpdate) 
         update,
     );
 
-    forward_to_publisher(topic, BusPayloadType::PoolLiquidityUpdate, update);
+    forward_to_external_egress(topic, BusPayloadType::PoolLiquidityUpdate, update);
 }
 
 /// Publishes a DeFi fee collect to subscribers on a topic.
@@ -1282,7 +1282,7 @@ pub fn publish_defi_collect(topic: MStr<Topic>, collect: &PoolFeeCollect) {
         collect,
     );
 
-    forward_to_publisher(topic, BusPayloadType::PoolFeeCollect, collect);
+    forward_to_external_egress(topic, BusPayloadType::PoolFeeCollect, collect);
 }
 
 /// Publishes a DeFi flash loan to subscribers on a topic.
@@ -1295,15 +1295,15 @@ pub fn publish_defi_flash(topic: MStr<Topic>, flash: &PoolFlash) {
         flash,
     );
 
-    forward_to_publisher(topic, BusPayloadType::PoolFlash, flash);
+    forward_to_external_egress(topic, BusPayloadType::PoolFlash, flash);
 }
 
 #[inline(always)]
-fn forward_to_publisher<T>(topic: MStr<Topic>, payload_type: BusPayloadType, message: &T)
+fn forward_to_external_egress<T>(topic: MStr<Topic>, payload_type: BusPayloadType, message: &T)
 where
     T: serde::Serialize + Any,
 {
-    if !HAS_PUBLISHER.with(Cell::get) {
+    if !HAS_EXTERNAL_EGRESS.with(Cell::get) {
         return;
     }
 
@@ -1322,7 +1322,10 @@ where
 
     let bus_rc = get_message_bus();
     let bus = bus_rc.borrow();
-    let Some(publisher) = bus.publisher().filter(|publisher| !publisher.is_closed()) else {
+    let Some(external_egress) = bus
+        .external_egress()
+        .filter(|external_egress| !external_egress.is_closed())
+    else {
         return;
     };
 
@@ -1331,20 +1334,21 @@ where
     }
 
     let encoding = bus.encoding_for(payload_type);
-    let payload = match encode_publisher_payload(encoding, payload_type, message) {
+
+    let payload = match encode_external_egress_payload(encoding, payload_type, message) {
         Ok(payload) => payload,
-        Err(PublisherPayloadError::Dropped(e)) => {
+        Err(ExternalEgressPayloadError::Dropped(e)) => {
             log::debug!("{e}");
             return;
         }
-        Err(PublisherPayloadError::Failed(e)) => {
+        Err(ExternalEgressPayloadError::Failed(e)) => {
             log::error!("{e}");
             return;
         }
     };
 
     // Build after drop checks to avoid allocating discarded external messages
-    publisher.publish(BusMessage::new(*topic, encoding, payload_type, payload));
+    external_egress.publish(BusMessage::new(*topic, payload_type, payload, encoding));
 }
 
 /// Decodes an externally-received [`BusMessage`] and republishes it onto the internal bus.
@@ -1352,8 +1356,8 @@ where
 /// The message `payload_type` header selects the concrete type and the message `encoding` selects
 /// the wire codec, so the message is decoded with the producer's encoding rather than the local
 /// configuration. Republishing runs under a [`SuppressExternalGuard`] so the message is not
-/// forwarded straight back out to the external publisher, which would create an echo loop on a
-/// node that both publishes and subscribes externally.
+/// forwarded straight back out through external egress, which would create an echo loop on a node
+/// that has both external ingress and egress.
 ///
 /// # Errors
 ///
@@ -1554,18 +1558,6 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-/// Decodes an externally-received [`BusMessage`] and republishes it onto the internal bus.
-///
-/// Prefer [`republish_external_message`].
-///
-/// # Errors
-///
-/// Returns an error if a supported payload cannot be decoded. Unsupported type/encoding pairs are
-/// skipped with a warning.
-pub fn republish_transport_message(message: &BusMessage) -> anyhow::Result<()> {
-    republish_external_message(message)
 }
 
 fn is_registered_streaming_type(message: &BusMessage) -> bool {
@@ -1991,16 +1983,16 @@ define_capnp_decoder!(
 );
 
 #[derive(Debug)]
-enum PublisherPayloadError {
+enum ExternalEgressPayloadError {
     Dropped(String),
     Failed(String),
 }
 
-fn encode_publisher_payload<T>(
+fn encode_external_egress_payload<T>(
     encoding: SerializationEncoding,
     payload_type: BusPayloadType,
     message: &T,
-) -> Result<Bytes, PublisherPayloadError>
+) -> Result<Bytes, ExternalEgressPayloadError>
 where
     T: serde::Serialize + Any,
 {
@@ -2008,12 +2000,14 @@ where
 
     match encoding {
         SerializationEncoding::Json => serde_json::to_vec(message).map(Bytes::from).map_err(|e| {
-            PublisherPayloadError::Failed(format!("JSON serialization failed for {type_name}: {e}"))
+            ExternalEgressPayloadError::Failed(format!(
+                "JSON serialization failed for {type_name}: {e}"
+            ))
         }),
         SerializationEncoding::MsgPack => rmp_serde::to_vec_named(message)
             .map(Bytes::from)
             .map_err(|e| {
-                PublisherPayloadError::Failed(format!(
+                ExternalEgressPayloadError::Failed(format!(
                     "MsgPack serialization failed for {type_name}: {e}"
                 ))
             }),
@@ -2026,7 +2020,7 @@ where
 macro_rules! encode_capnp_payload_as {
     ($message:expr, $type_name:expr, $ty:ty, $root:ty) => {{
         let Some(value) = $message.downcast_ref::<$ty>() else {
-            return Err(PublisherPayloadError::Failed(format!(
+            return Err(ExternalEgressPayloadError::Failed(format!(
                 "Cap'n Proto payload type mismatch for {}",
                 $type_name
             )));
@@ -2038,7 +2032,7 @@ macro_rules! encode_capnp_payload_as {
 
         let mut bytes = Vec::new();
         capnp::serialize::write_message(&mut bytes, &capnp_message).map_err(|e| {
-            PublisherPayloadError::Failed(format!(
+            ExternalEgressPayloadError::Failed(format!(
                 "Cap'n Proto serialization failed for {}: {}",
                 $type_name, e
             ))
@@ -2051,7 +2045,7 @@ macro_rules! encode_capnp_payload_as {
 fn encode_capnp_payload(
     payload_type: BusPayloadType,
     message: &dyn Any,
-) -> Result<Bytes, PublisherPayloadError> {
+) -> Result<Bytes, ExternalEgressPayloadError> {
     let type_name = payload_type.as_str();
     match payload_type {
         BusPayloadType::OrderBookDeltas => encode_capnp_payload_as!(
@@ -2099,7 +2093,7 @@ fn encode_capnp_payload(
             FundingRateUpdate,
             market_capnp::funding_rate_update::Builder
         ),
-        _ => Err(PublisherPayloadError::Dropped(format!(
+        _ => Err(ExternalEgressPayloadError::Dropped(format!(
             "Cap'n Proto serialization is not supported for {type_name}"
         ))),
     }
@@ -2109,9 +2103,9 @@ fn encode_capnp_payload(
 fn encode_capnp_payload(
     payload_type: BusPayloadType,
     _message: &dyn Any,
-) -> Result<Bytes, PublisherPayloadError> {
+) -> Result<Bytes, ExternalEgressPayloadError> {
     let type_name = payload_type.as_str();
-    Err(PublisherPayloadError::Dropped(format!(
+    Err(ExternalEgressPayloadError::Dropped(format!(
         "Cap'n Proto serialization for {type_name} requires the `capnp` feature"
     )))
 }
@@ -2120,7 +2114,7 @@ fn encode_capnp_payload(
 fn encode_sbe_payload(
     payload_type: BusPayloadType,
     message: &dyn Any,
-) -> Result<Bytes, PublisherPayloadError> {
+) -> Result<Bytes, ExternalEgressPayloadError> {
     let type_name = payload_type.as_str();
     match payload_type {
         BusPayloadType::OrderBookDeltas => {
@@ -2141,7 +2135,7 @@ fn encode_sbe_payload(
         BusPayloadType::FundingRateUpdate => {
             encode_sbe_payload_as::<FundingRateUpdate>(type_name, message)
         }
-        _ => Err(PublisherPayloadError::Dropped(format!(
+        _ => Err(ExternalEgressPayloadError::Dropped(format!(
             "SBE serialization is not supported for {type_name}"
         ))),
     }
@@ -2151,18 +2145,18 @@ fn encode_sbe_payload(
 fn encode_sbe_payload_as<T>(
     type_name: &str,
     message: &dyn Any,
-) -> Result<Bytes, PublisherPayloadError>
+) -> Result<Bytes, ExternalEgressPayloadError>
 where
     T: Any + ToSbe,
 {
     let Some(value) = message.downcast_ref::<T>() else {
-        return Err(PublisherPayloadError::Failed(format!(
+        return Err(ExternalEgressPayloadError::Failed(format!(
             "SBE payload type mismatch for {type_name}"
         )));
     };
 
     value.to_sbe().map(Bytes::from).map_err(|e| {
-        PublisherPayloadError::Failed(format!("SBE serialization failed for {type_name}: {e}"))
+        ExternalEgressPayloadError::Failed(format!("SBE serialization failed for {type_name}: {e}"))
     })
 }
 
@@ -2170,9 +2164,9 @@ where
 fn encode_sbe_payload(
     payload_type: BusPayloadType,
     _message: &dyn Any,
-) -> Result<Bytes, PublisherPayloadError> {
+) -> Result<Bytes, ExternalEgressPayloadError> {
     let type_name = payload_type.as_str();
-    Err(PublisherPayloadError::Dropped(format!(
+    Err(ExternalEgressPayloadError::Dropped(format!(
         "SBE serialization for {type_name} requires the `sbe` feature"
     )))
 }
@@ -2544,26 +2538,26 @@ mod tests {
             execution::{CancelAllOrders, TradingCommand},
         },
         msgbus::{
-            BusTap, MessageBusPublisher, SuppressExternalGuard, backing::MessageBusConfig,
+            BusTap, MessageBusExternalEgress, SuppressExternalGuard, backing::MessageBusConfig,
             clear_bus_tap, set_bus_tap, set_message_bus, stubs::get_call_check_handler,
         },
     };
 
     #[derive(Debug)]
-    struct CapturedPublication {
+    struct CapturedEgressMessage {
         topic: String,
         encoding: SerializationEncoding,
         payload_type: BusPayloadType,
         payload: Bytes,
     }
 
-    struct CapturingPublisher {
-        publications: Rc<RefCell<Vec<CapturedPublication>>>,
+    struct CapturingExternalEgress {
+        publications: Rc<RefCell<Vec<CapturedEgressMessage>>>,
         closed: Cell<bool>,
     }
 
-    impl CapturingPublisher {
-        fn new() -> (Self, Rc<RefCell<Vec<CapturedPublication>>>) {
+    impl CapturingExternalEgress {
+        fn new() -> (Self, Rc<RefCell<Vec<CapturedEgressMessage>>>) {
             let publications = Rc::new(RefCell::new(Vec::new()));
             (
                 Self {
@@ -2575,13 +2569,13 @@ mod tests {
         }
     }
 
-    impl MessageBusPublisher for CapturingPublisher {
+    impl MessageBusExternalEgress for CapturingExternalEgress {
         fn is_closed(&self) -> bool {
             self.closed.get()
         }
 
         fn publish(&self, message: BusMessage) {
-            self.publications.borrow_mut().push(CapturedPublication {
+            self.publications.borrow_mut().push(CapturedEgressMessage {
                 topic: message.topic.to_string(),
                 encoding: message.encoding,
                 payload_type: message.payload_type,
@@ -2594,27 +2588,27 @@ mod tests {
         }
     }
 
-    fn install_capturing_publisher(
+    fn install_capturing_external_egress(
         encoding: SerializationEncoding,
-    ) -> Rc<RefCell<Vec<CapturedPublication>>> {
+    ) -> Rc<RefCell<Vec<CapturedEgressMessage>>> {
         let msgbus = Rc::new(RefCell::new(MessageBus::default()));
         set_message_bus(msgbus.clone());
-        let (publisher, publications) = CapturingPublisher::new();
+        let (external_egress, publications) = CapturingExternalEgress::new();
         msgbus
             .borrow_mut()
-            .set_publisher(Box::new(publisher), encoding);
+            .set_external_egress(Box::new(external_egress), encoding);
         publications
     }
 
-    fn install_capturing_publisher_config(
+    fn install_capturing_external_egress_config(
         config: &MessageBusConfig,
-    ) -> Rc<RefCell<Vec<CapturedPublication>>> {
+    ) -> Rc<RefCell<Vec<CapturedEgressMessage>>> {
         let msgbus = Rc::new(RefCell::new(MessageBus::default()));
         set_message_bus(msgbus.clone());
-        let (publisher, publications) = CapturingPublisher::new();
+        let (external_egress, publications) = CapturingExternalEgress::new();
         msgbus
             .borrow_mut()
-            .set_publisher_config(Box::new(publisher), config)
+            .set_external_egress_config(Box::new(external_egress), config)
             .expect("message bus config must be valid");
         publications
     }
@@ -2627,10 +2621,10 @@ mod tests {
     #[rstest]
     #[case(SerializationEncoding::MsgPack)]
     #[case(SerializationEncoding::Json)]
-    fn publish_quote_forwards_decodable_payload_to_publisher(
+    fn publish_quote_forwards_decodable_payload_to_external_egress(
         #[case] encoding: SerializationEncoding,
     ) {
-        let publications = install_capturing_publisher(encoding);
+        let publications = install_capturing_external_egress(encoding);
         let quote = QuoteTick::default();
 
         publish_quote("data.quotes.TEST".into(), &quote);
@@ -2667,7 +2661,7 @@ mod tests {
     }
 
     fn assert_quote_round_trips(encoding: SerializationEncoding) {
-        let publications = install_capturing_publisher(encoding);
+        let publications = install_capturing_external_egress(encoding);
         let quote = QuoteTick::default();
 
         publish_quote("data.quotes.TEST".into(), &quote);
@@ -2679,9 +2673,9 @@ mod tests {
             assert_eq!(publications[0].encoding, encoding);
             BusMessage::with_str_topic(
                 publications[0].topic.clone(),
-                publications[0].encoding,
                 publications[0].payload_type,
                 publications[0].payload.clone(),
+                publications[0].encoding,
             )
         };
         publications.borrow_mut().clear();
@@ -2736,7 +2730,7 @@ mod tests {
     ) where
         T: Clone + 'static,
     {
-        let publications = install_capturing_publisher(encoding);
+        let publications = install_capturing_external_egress(encoding);
 
         publish(topic.into(), &value);
 
@@ -2747,9 +2741,9 @@ mod tests {
             assert_eq!(publications[0].encoding, encoding);
             BusMessage::with_str_topic(
                 publications[0].topic.clone(),
-                publications[0].encoding,
                 publications[0].payload_type,
                 publications[0].payload.clone(),
+                publications[0].encoding,
             )
         };
         publications.borrow_mut().clear();
@@ -3222,7 +3216,7 @@ mod tests {
     }
 
     fn assert_custom_data_round_trips(encoding: SerializationEncoding) {
-        let publications = install_capturing_publisher(encoding);
+        let publications = install_capturing_external_egress(encoding);
         let custom = stub_custom_data(100, 42, None, Some("stub-id".to_string()));
 
         publish_any("data.custom.StubCustomData".into(), &custom);
@@ -3237,9 +3231,9 @@ mod tests {
             assert_eq!(publications[0].encoding, encoding);
             BusMessage::with_str_topic(
                 publications[0].topic.clone(),
-                publications[0].encoding,
                 publications[0].payload_type,
                 publications[0].payload.clone(),
+                publications[0].encoding,
             )
         };
         publications.borrow_mut().clear();
@@ -3303,9 +3297,9 @@ mod tests {
         };
         let message = BusMessage::with_str_topic(
             "data.custom.UnregisteredCustomData",
-            encoding,
             BusPayloadType::Custom(Ustr::from("UnregisteredCustomData")),
             Bytes::from(payload),
+            encoding,
         );
 
         get_message_bus()
@@ -3319,9 +3313,9 @@ mod tests {
     fn republish_external_message_skips_untyped_custom_payload() {
         let message = BusMessage::with_str_topic(
             "events/control",
-            SerializationEncoding::Json,
             BusPayloadType::Custom(Ustr::default()),
             Bytes::new(),
+            SerializationEncoding::Json,
         );
 
         republish_external_message(&message).unwrap();
@@ -3339,9 +3333,9 @@ mod tests {
 
         let message = BusMessage::with_str_topic(
             "data.quotes.AUDUSD.SIM",
-            SerializationEncoding::Json,
             BusPayloadType::QuoteTick,
             Bytes::from_static(b"not-json"),
+            SerializationEncoding::Json,
         );
 
         republish_external_message(&message).unwrap();
@@ -3469,9 +3463,9 @@ mod tests {
         for encoding in [SerializationEncoding::Sbe, SerializationEncoding::Capnp] {
             let message = BusMessage::with_str_topic(
                 "events.unsupported.payload",
-                encoding,
                 payload_type,
                 Bytes::from_static(b"malformed unsupported payload"),
+                encoding,
             );
             get_message_bus()
                 .borrow_mut()
@@ -3487,9 +3481,9 @@ mod tests {
     fn republish_external_message_errors_for_malformed_supported_payload() {
         let message = BusMessage::with_str_topic(
             "data.quotes.AUDUSD.SIM",
-            SerializationEncoding::Json,
             BusPayloadType::QuoteTick,
             Bytes::from_static(b"not-json"),
+            SerializationEncoding::Json,
         );
 
         get_message_bus()
@@ -3508,8 +3502,8 @@ mod tests {
 
     #[cfg(feature = "sbe")]
     #[rstest]
-    fn publish_quote_sbe_forwards_decodable_payload_to_publisher() {
-        let publications = install_capturing_publisher(SerializationEncoding::Sbe);
+    fn publish_quote_sbe_forwards_decodable_payload_to_external_egress() {
+        let publications = install_capturing_external_egress(SerializationEncoding::Sbe);
         let quote = QuoteTick::default();
 
         publish_quote("data.quotes.TEST".into(), &quote);
@@ -3529,7 +3523,7 @@ mod tests {
     #[cfg(not(feature = "sbe"))]
     #[rstest]
     fn publish_quote_sbe_without_feature_drops_payload() {
-        let publications = install_capturing_publisher(SerializationEncoding::Sbe);
+        let publications = install_capturing_external_egress(SerializationEncoding::Sbe);
         let quote = QuoteTick::default();
 
         publish_quote("data.quotes.TEST".into(), &quote);
@@ -3540,8 +3534,8 @@ mod tests {
 
     #[cfg(feature = "capnp")]
     #[rstest]
-    fn publish_quote_capnp_forwards_decodable_payload_to_publisher() {
-        let publications = install_capturing_publisher(SerializationEncoding::Capnp);
+    fn publish_quote_capnp_forwards_decodable_payload_to_external_egress() {
+        let publications = install_capturing_external_egress(SerializationEncoding::Capnp);
         let quote = QuoteTick::default();
 
         publish_quote("data.quotes.TEST".into(), &quote);
@@ -3567,7 +3561,7 @@ mod tests {
     #[cfg(not(feature = "capnp"))]
     #[rstest]
     fn publish_quote_capnp_without_feature_drops_payload() {
-        let publications = install_capturing_publisher(SerializationEncoding::Capnp);
+        let publications = install_capturing_external_egress(SerializationEncoding::Capnp);
         let quote = QuoteTick::default();
 
         publish_quote("data.quotes.TEST".into(), &quote);
@@ -3581,14 +3575,14 @@ mod tests {
     fn unsupported_payload_under_sbe_is_classified_as_dropped() {
         let custom = stub_custom_data(100, 42, None, Some("stub-id".to_string()));
 
-        let error = encode_publisher_payload(
+        let error = encode_external_egress_payload(
             SerializationEncoding::Sbe,
             BusPayloadType::Custom(Ustr::from("StubCustomData")),
             &custom,
         )
         .expect_err("unsupported SBE payload must be dropped");
 
-        assert!(matches!(error, PublisherPayloadError::Dropped(_)));
+        assert!(matches!(error, ExternalEgressPayloadError::Dropped(_)));
     }
 
     #[cfg(not(feature = "sbe"))]
@@ -3596,14 +3590,14 @@ mod tests {
     fn sbe_without_feature_is_classified_as_dropped() {
         let quote = QuoteTick::default();
 
-        let error = encode_publisher_payload(
+        let error = encode_external_egress_payload(
             SerializationEncoding::Sbe,
             BusPayloadType::QuoteTick,
             &quote,
         )
         .expect_err("SBE without feature must be dropped");
 
-        assert!(matches!(error, PublisherPayloadError::Dropped(_)));
+        assert!(matches!(error, ExternalEgressPayloadError::Dropped(_)));
     }
 
     #[cfg(feature = "capnp")]
@@ -3611,14 +3605,14 @@ mod tests {
     fn unsupported_payload_under_capnp_is_classified_as_dropped() {
         let custom = stub_custom_data(100, 42, None, Some("stub-id".to_string()));
 
-        let error = encode_publisher_payload(
+        let error = encode_external_egress_payload(
             SerializationEncoding::Capnp,
             BusPayloadType::Custom(Ustr::from("StubCustomData")),
             &custom,
         )
         .expect_err("unsupported Cap'n Proto payload must be dropped");
 
-        assert!(matches!(error, PublisherPayloadError::Dropped(_)));
+        assert!(matches!(error, ExternalEgressPayloadError::Dropped(_)));
     }
 
     #[cfg(not(feature = "capnp"))]
@@ -3626,19 +3620,19 @@ mod tests {
     fn capnp_without_feature_is_classified_as_dropped() {
         let quote = QuoteTick::default();
 
-        let error = encode_publisher_payload(
+        let error = encode_external_egress_payload(
             SerializationEncoding::Capnp,
             BusPayloadType::QuoteTick,
             &quote,
         )
         .expect_err("Cap'n Proto without feature must be dropped");
 
-        assert!(matches!(error, PublisherPayloadError::Dropped(_)));
+        assert!(matches!(error, ExternalEgressPayloadError::Dropped(_)));
     }
 
     #[rstest]
-    fn publish_quote_publisher_respects_filter_and_suppress_guard() {
-        let publications = install_capturing_publisher(SerializationEncoding::MsgPack);
+    fn publish_quote_external_egress_respects_filter_and_suppress_guard() {
+        let publications = install_capturing_external_egress(SerializationEncoding::MsgPack);
         let quote = QuoteTick::default();
 
         get_message_bus()
@@ -3662,7 +3656,7 @@ mod tests {
 
     #[rstest]
     fn publish_quote_uses_market_data_encoding_override() {
-        let publications = install_capturing_publisher_config(&MessageBusConfig {
+        let publications = install_capturing_external_egress_config(&MessageBusConfig {
             encoding: SerializationEncoding::Json,
             encoding_market_data: Some(SerializationEncoding::MsgPack),
             ..Default::default()
@@ -3684,8 +3678,8 @@ mod tests {
     }
 
     #[rstest]
-    fn publish_custom_data_forwards_envelope_to_publisher_and_respects_filter() {
-        let publications = install_capturing_publisher(SerializationEncoding::Json);
+    fn publish_custom_data_forwards_envelope_to_external_egress_and_respects_filter() {
+        let publications = install_capturing_external_egress(SerializationEncoding::Json);
         let custom = stub_custom_data(100, 42, None, Some("stub-id".to_string()));
 
         publish_any("data.custom.StubCustomData".into(), &custom);

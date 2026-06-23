@@ -78,7 +78,7 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::actor::data_actor::DataActorConfig>()?;
     m.add_class::<crate::actor::data_actor::ImportableActorConfig>()?;
     m.add_class::<crate::msgbus::BusMessage>()?;
-    m.add_class::<crate::msgbus::backing::MessageBusConfig>()?;
+    m.add_class::<crate::msgbus::config::MessageBusConfig>()?;
     m.add_class::<crate::python::msgbus::PyMessageBus>()?;
     m.add_class::<crate::enums::ComponentState>()?;
     m.add_class::<crate::enums::ComponentTrigger>()?;

@@ -58,7 +58,11 @@ class BusMessage:
     @property
     def topic(self) -> str: ...
     @property
+    def payload_type(self) -> str: ...
+    @property
     def payload(self) -> bytes: ...
+    @property
+    def encoding(self) -> SerializationEncoding: ...
 
 @typing.final
 class CacheConfig:
@@ -173,6 +177,8 @@ class MessageBusConfig:
     def __init__(
         self,
         encoding: SerializationEncoding | None = None,
+        encoding_market_data: SerializationEncoding | None = None,
+        encoding_builtin: SerializationEncoding | None = None,
         timestamps_as_iso8601: bool | None = None,
         buffer_interval_ms: int | None = None,
         autotrim_mins: int | None = None,
@@ -187,6 +193,10 @@ class MessageBusConfig:
     ) -> None: ...
     @property
     def encoding(self) -> SerializationEncoding: ...
+    @property
+    def encoding_market_data(self) -> SerializationEncoding | None: ...
+    @property
+    def encoding_builtin(self) -> SerializationEncoding | None: ...
     @property
     def timestamps_as_iso8601(self) -> bool: ...
     @property

@@ -20,7 +20,7 @@ use nautilus_common::{
     config::{ConfigError, ConfigErrorCollector, ConfigResult},
     enums::Environment,
     logging::logger::LoggerConfig,
-    msgbus::backing::MessageBusConfig,
+    msgbus::MessageBusConfig,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::config::DataEngineConfig;

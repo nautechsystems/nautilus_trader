@@ -284,20 +284,20 @@ Here's a quick reference to help you decide which messaging style to use:
 | Structured trading data                     | `Actor` + Pub/Sub Data + optional `@customdataclass` if serialization is needed | New class definition inheriting from `Data` (handler `on_data` is predefined) |
 | Simple alerts/notifications                 | `Actor` + Pub/Sub Signal                                                        | Signal name only |
 
-## External publishing
+## External egress and ingress
 
-The `MessageBus` can publish serialized messages to an external publisher. This section describes
-the outbound side of the external bus. Rust-native live nodes use an injected
-`MessageBusPublisher`, so the core node does not depend on Redis, a broker, shared-memory
-implementation, or socket protocol.
+The `MessageBus` can write serialized messages to external streams. This section describes the
+external egress and ingress sides of the external bus. Rust-native live nodes use injected
+`MessageBusExternalEgress` and `MessageBusExternalIngress` surfaces, so the core node does not
+depend on Redis, a broker, shared-memory implementation, or socket protocol.
 
 :::info
-Redis is currently supported as one external publisher for serializable messages.
-The minimum supported Redis version is 6.2, required for
+Redis is currently supported as one external backing for serializable messages. The minimum
+supported Redis version is 6.2, required for
 [streams](https://redis.io/docs/latest/develop/data-types/streams/) functionality.
 :::
 
-When a publisher is configured, outgoing publish messages are first dispatched to in-process
+When external egress is configured, outgoing publish messages are first dispatched to in-process
 subscribers, then serialized into the existing `BusMessage` wire record:
 
 - `topic`: the exact message bus topic used by the internal publish call, for example
@@ -306,12 +306,12 @@ subscribers, then serialized into the existing `BusMessage` wire record:
 - `encoding`: the payload encoding selected from the message bus encoding policy.
 - `payload`: serialized bytes encoded with the selected encoding.
 
-The publisher receives that record as `publish(BusMessage)`. This outbound call must not block the
-node's bus thread. Bounded publishers drop on a full queue instead of applying back-pressure to the
-trading loop. Closing the message bus closes the configured publisher.
+External egress receives that record as `publish(BusMessage)`. This outbound call must not block the
+node's bus thread. Bounded egress implementations drop on a full queue instead of applying
+back-pressure to the trading loop. Closing the message bus closes the configured egress.
 
-Inbound external streams are exposed through the separate Rust `MessageBusSubscriber` trait. A
-subscriber yields the same `BusMessage { topic, type, encoding, payload }` shape.
+Inbound external streams are exposed through the separate Rust `MessageBusExternalIngress` trait.
+Ingress yields the same `BusMessage { topic, type, encoding, payload }` shape.
 `republish_external_message` decodes supported inbound messages and republishes them internally
 without forwarding the message back out. The inbound payload type must first be registered for
 streaming on the receiving message bus; unregistered types are skipped without decoding.
@@ -321,14 +321,14 @@ separate Rust task. That task writes the message to Redis streams.
 
 Offloading I/O to a separate thread keeps the main thread unblocked.
 
-With MessagePack or JSON, the Rust-native publisher forwards serializable typed publications. This
+With MessagePack or JSON, Rust-native external egress forwards serializable typed publications. This
 includes instruments, quotes, trades, bars, book deltas, depth-10 snapshots, mark/index/funding
 updates, option greeks, account state, portfolio snapshots, order events, position events, and
 custom data. With the `defi` feature this also includes DeFi blocks, pools, liquidity updates, fee
 collects, and flash events. Full order book snapshots, greeks data, option chain slices, and DeFi
 pool swaps are not forwarded because those types do not implement Serde serialization.
 
-With SBE or Cap'n Proto, the Rust-native publisher forwards the built-in market data payloads with
+With SBE or Cap'n Proto, Rust-native external egress forwards the built-in market data payloads with
 schema codecs: quotes, trades, bars, book deltas, depth-10 snapshots, mark price updates, index
 price updates, and funding rate updates. Other payload types are dropped with a debug log when
 those schema encodings are selected.
@@ -364,7 +364,7 @@ connection settings and implements `MessageBusBackingFactory`.
 ```rust
 use nautilus_common::{
     enums::SerializationEncoding,
-    msgbus::backing::{MessageBusBackingFactory, MessageBusConfig},
+    msgbus::{backing::MessageBusBackingFactory, config::MessageBusConfig},
 };
 use nautilus_infrastructure::redis::msgbus::RedisMessageBusConfig;
 
@@ -394,17 +394,17 @@ setup on the local loopback you can pass `RedisMessageBusConfig::default()`.
 Redis selection is explicit in the Rust type. The config does not use a user-facing selector such
 as `type = "redis"` or `backing_type = "redis"`.
 
-Rust-native callers that inject a `MessageBusPublisher` pass concrete connection details when they
-construct that publisher. The core message bus does not require a `RedisMessageBusConfig` for
-injected publishers.
+Rust-native callers that inject `MessageBusExternalEgress` pass concrete connection details when
+they construct that egress surface. The core message bus does not require a `RedisMessageBusConfig`
+for injected egress.
 
 The Rust live runtime still rejects `external_streams`, so inbound stream configuration is not
-silently ignored. The subscriber trait and external republish function exist, but the missing
+silently ignored. The ingress trait and external republish function exist, but the missing
 runtime piece is the Rust live bridge from inbound `BusMessage` sources to internal publish.
 
 ### Encoding
 
-The Rust-native message bus publisher supports these encoding names:
+Rust-native external message bus egress supports these encoding names:
 
 - JSON (`json`)
 - MessagePack (`msgpack`)
@@ -424,8 +424,8 @@ when the matching Rust feature is enabled. `encoding_builtin = "sbe"` and
 category.
 
 The legacy Python/Cython Redis serializer and the Redis cache payload path support MessagePack and
-JSON. SBE and Cap'n Proto are schema payload encodings for Rust-native message bus publishers, not
-Redis cache encodings.
+JSON. SBE and Cap'n Proto are schema payload encodings for Rust-native external message bus egress,
+not Redis cache encodings.
 
 :::tip
 The `json` encoding is used by default for human readability and interoperability.
@@ -447,8 +447,8 @@ trader:{trader_id}:{instance_id}:{streams_prefix}
 ```
 
 These options control Redis stream keys. They do not rewrite the `topic` passed to an injected
-`MessageBusPublisher`; that topic remains the internal message bus publish topic. When
-`stream_per_topic` is `True`, the Redis publisher appends the topic to the stream key. When it is
+`MessageBusExternalEgress`; that topic remains the internal message bus publish topic. When
+`stream_per_topic` is `True`, Redis egress appends the topic to the stream key. When it is
 `False`, Redis stores all messages on the base stream key and keeps the topic as a message field.
 
 The following options are available for configuring message stream keys:
@@ -516,7 +516,7 @@ Rather than a maximum lookback window based on the current wall clock time.
 ## External streams
 
 The message bus within a `TradingNode` (node) is referred to as the "internal message bus".
-A producer node is one which publishes messages onto an external stream (see [external publishing](#external-publishing)).
+A producer node is one which publishes messages onto an external stream (see [external egress and ingress](#external-egress-and-ingress)).
 The consumer node listens to external streams to receive and publish deserialized message payloads on its internal message bus.
 
 ```mermaid

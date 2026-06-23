@@ -20,7 +20,7 @@ use nautilus_common::{
     clock::Clock,
     enums::Environment,
     logging::logger::LoggerConfig,
-    msgbus::MessageBusPublisher,
+    msgbus::MessageBusExternalEgress,
 };
 use nautilus_core::UUID4;
 use nautilus_data::engine::config::DataEngineConfig;
@@ -61,7 +61,7 @@ pub struct NautilusKernelBuilder {
     exec_engine: Option<ExecutionEngineConfig>,
     portfolio: Option<PortfolioConfig>,
     event_store_factory: Option<EventStoreFactory>,
-    msgbus_publisher: Option<Box<dyn MessageBusPublisher>>,
+    external_msgbus_egress: Option<Box<dyn MessageBusExternalEgress>>,
 }
 
 impl Debug for NautilusKernelBuilder {
@@ -88,7 +88,10 @@ impl Debug for NautilusKernelBuilder {
             .field("exec_engine", &self.exec_engine)
             .field("portfolio", &self.portfolio)
             .field("event_store_factory", &self.event_store_factory.is_some())
-            .field("msgbus_publisher", &self.msgbus_publisher.is_some())
+            .field(
+                "external_msgbus_egress",
+                &self.external_msgbus_egress.is_some(),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -119,7 +122,7 @@ impl NautilusKernelBuilder {
             exec_engine: None,
             portfolio: None,
             event_store_factory: None,
-            msgbus_publisher: None,
+            external_msgbus_egress: None,
         }
     }
 
@@ -267,10 +270,13 @@ impl NautilusKernelBuilder {
         self
     }
 
-    /// Inject an external publisher for serialized message bus publications.
+    /// Inject external message bus egress for serialized message bus publications.
     #[must_use]
-    pub fn with_msgbus_publisher(mut self, publisher: Box<dyn MessageBusPublisher>) -> Self {
-        self.msgbus_publisher = Some(publisher);
+    pub fn with_external_msgbus_egress(
+        mut self,
+        external_egress: Box<dyn MessageBusExternalEgress>,
+    ) -> Self {
+        self.external_msgbus_egress = Some(external_egress);
         self
     }
 
@@ -310,11 +316,11 @@ impl NautilusKernelBuilder {
             self.event_store_factory,
         )?;
 
-        if let Some(publisher) = self.msgbus_publisher {
+        if let Some(external_egress) = self.external_msgbus_egress {
             let config = kernel.config.msgbus().unwrap_or_default();
             nautilus_common::msgbus::get_message_bus()
                 .borrow_mut()
-                .set_publisher_config(publisher, &config)?;
+                .set_external_egress_config(external_egress, &config)?;
         }
 
         Ok(kernel)
@@ -434,12 +440,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_builder_with_msgbus_publisher_forwards_published_quote() {
-        let (publisher, publications, closed) = CapturingPublisher::new();
+    fn test_builder_with_external_msgbus_egress_forwards_published_quote() {
+        let (external_egress, publications, closed) = CapturingExternalEgress::new();
         let kernel = NautilusKernelBuilder::default()
-            .with_msgbus_publisher(Box::new(publisher))
+            .with_external_msgbus_egress(Box::new(external_egress))
             .build()
-            .expect("kernel builds with msgbus publisher");
+            .expect("kernel builds with external message bus egress");
         let quote = QuoteTick::default();
 
         nautilus_common::msgbus::publish_quote("data.quotes.TEST".into(), &quote);
@@ -559,21 +565,21 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct CapturedPublication {
+    struct CapturedEgressMessage {
         topic: String,
         payload: Bytes,
     }
 
-    type CapturedPublications = Rc<RefCell<Vec<CapturedPublication>>>;
+    type CapturedEgressMessages = Rc<RefCell<Vec<CapturedEgressMessage>>>;
     type SharedClosed = Rc<Cell<bool>>;
 
-    struct CapturingPublisher {
-        publications: CapturedPublications,
+    struct CapturingExternalEgress {
+        publications: CapturedEgressMessages,
         closed: SharedClosed,
     }
 
-    impl CapturingPublisher {
-        fn new() -> (Self, CapturedPublications, SharedClosed) {
+    impl CapturingExternalEgress {
+        fn new() -> (Self, CapturedEgressMessages, SharedClosed) {
             let publications = Rc::new(RefCell::new(Vec::new()));
             let closed = Rc::new(Cell::new(false));
             (
@@ -587,13 +593,13 @@ mod tests {
         }
     }
 
-    impl MessageBusPublisher for CapturingPublisher {
+    impl MessageBusExternalEgress for CapturingExternalEgress {
         fn is_closed(&self) -> bool {
             self.closed.get()
         }
 
         fn publish(&self, message: BusMessage) {
-            self.publications.borrow_mut().push(CapturedPublication {
+            self.publications.borrow_mut().push(CapturedEgressMessage {
                 topic: message.topic.to_string(),
                 payload: message.payload,
             });
