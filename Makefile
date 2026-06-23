@@ -114,6 +114,19 @@ endif
 # CARGO_CI_PROFILE selects the Cargo compile profile used by nextest.
 CARGO_CI_PROFILE ?= nextest
 
+PYTHON_CPU_COUNT_LIMIT ?= 32
+LOCAL_PYTHON_CPU_COUNT_LIMIT := $(shell \
+	n='$(HOST_CPU_COUNT)'; limit='$(PYTHON_CPU_COUNT_LIMIT)'; \
+	if [ "$$n" -gt "$$limit" ]; then printf '%s' "$$limit"; fi)
+
+ifneq ($(origin PYTHON_CPU_COUNT),undefined)
+export PYTHON_CPU_COUNT
+else
+ifneq ($(strip $(LOCAL_PYTHON_CPU_COUNT_LIMIT)),)
+export PYTHON_CPU_COUNT := $(LOCAL_PYTHON_CPU_COUNT_LIMIT)
+endif
+endif
+
 # Select the appropriate flag for `cargo nextest` depending on FAIL_FAST.
 ifeq ($(FAIL_FAST),true)
 FAIL_FAST_FLAG :=
@@ -1002,7 +1015,7 @@ init-db:  #-- Initialize PostgreSQL database schema
 
 #== Python Testing
 
-PYTEST_WORKERS ?= $(shell python3 -c "import os; print(min(64, os.cpu_count() or 64))")
+PYTEST_WORKERS ?= $(shell python3 -c "import os; print(min($(PYTHON_CPU_COUNT_LIMIT), os.cpu_count() or $(PYTHON_CPU_COUNT_LIMIT)))")
 
 .PHONY: pytest
 pytest:  #-- Run Python tests with pytest in parallel with immediate failure reporting
