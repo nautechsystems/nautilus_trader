@@ -3255,7 +3255,7 @@ fn test_profilers_replay_independently_across_threads() {
     let mut handles = Vec::new();
 
     for i in 0u8..4 {
-        handles.push(std::thread::spawn(move || replay(i))); // dst-ok: cross-thread test
+        handles.push(std::thread::spawn(move || replay(i)));
     }
 
     let parallel: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();

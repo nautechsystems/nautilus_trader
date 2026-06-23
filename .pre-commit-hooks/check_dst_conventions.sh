@@ -70,6 +70,7 @@ is_test_path() {
   local file
   file=$(normalize_path "$1")
   [[ "$file" =~ /tests/ ]] && return 0
+  [[ "$file" =~ /tests\.rs$ ]] && return 0
   [[ "$file" =~ _test\.rs$ ]] && return 0
   [[ "$file" =~ _tests\.rs$ ]] && return 0
   [[ "$file" =~ /python/ ]] && return 0
