@@ -13,29 +13,26 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! DeFi (Decentralized Finance) integration for NautilusTrader.
-//!
-//! This module provides centralized access to DeFi functionality throughout the common crate.
-//! DeFi support includes:
-//!
-//! # Feature Flag
-//!
-//! All DeFi functionality requires the `defi` feature flag to be enabled:
-//! ```toml
-//! nautilus-common = { version = "0.x", features = ["defi"] }
-//! ```
+use anyhow::Context;
+use bytes::Bytes;
+use serde::{Serialize, de::DeserializeOwned};
 
-pub mod cache;
-pub mod data_actor;
-pub mod switchboard;
+use super::PayloadCodecError;
 
-pub(crate) mod msgbus;
+pub(super) fn deserialize<T>(payload: &[u8], type_name: &str) -> anyhow::Result<T>
+where
+    T: DeserializeOwned,
+{
+    rmp_serde::from_slice(payload).with_context(|| format!("failed to decode MsgPack {type_name}"))
+}
 
-// Re-exports
-// Re-exports
-pub use switchboard::{
-    get_defi_blocks_topic, get_defi_collect_topic, get_defi_flash_topic, get_defi_liquidity_topic,
-    get_defi_pool_swaps_topic, get_defi_pool_topic,
-};
-
-pub use crate::messages::defi::*;
+pub(super) fn serialize<T>(message: &T, type_name: &str) -> Result<Bytes, PayloadCodecError>
+where
+    T: Serialize,
+{
+    rmp_serde::to_vec_named(message)
+        .map(Bytes::from)
+        .map_err(|e| {
+            PayloadCodecError::Failed(format!("MsgPack serialization failed for {type_name}: {e}"))
+        })
+}

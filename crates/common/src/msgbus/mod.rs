@@ -49,6 +49,8 @@ pub mod typed_endpoints;
 pub mod typed_handler;
 pub mod typed_router;
 
+pub(crate) mod external;
+
 use std::{
     any::Any,
     cell::{Cell, RefCell},
