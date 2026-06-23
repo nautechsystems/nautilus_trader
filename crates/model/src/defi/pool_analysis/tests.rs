@@ -28,7 +28,7 @@ use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 
 use crate::defi::{
-    Chain, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolLiquidityUpdateType, Token,
+    Chain, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap, Token,
     data::{
         DexPoolData, PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate, PoolFlash,
         block::BlockPosition,
@@ -819,7 +819,7 @@ fn test_process_swap_snaps_sqrt_price_to_event() {
         swap_event.amount1
     };
     let simulated_quote = profiler
-        .simulate_swap_through_ticks(amount_specified, zero_for_one, event_sqrt_price)
+        .simulate_swap_through_ticks(amount_specified, zero_for_one, event_sqrt_price, false)
         .unwrap();
     assert_ne!(simulated_quote.sqrt_price_after_x96, event_sqrt_price);
 
@@ -2940,4 +2940,162 @@ fn test_wrap_liquidity_error_passes_through_unrelated_anyhow() {
 
     assert!(wrapped.downcast_ref::<PoolProfilerError>().is_none());
     assert!(wrapped.to_string().contains("totally unrelated failure"));
+}
+
+// Boundary-swap replay regressions from real swaps on the Arbitrum WBTC/USD₮0 pool
+// 0x5969...97203. The event records only the consumed amount, which is spent before the empty range
+// to the boundary, so replay must keep walking to the recorded price. Pre-state and tick map are
+// reconstructed from the pool's on-chain event history.
+
+// Pre-state for the block 25008018 MIN-boundary swap.
+fn min_boundary_profiler() -> PoolProfiler {
+    let sqrt_pre = U160::from_str("1752296436575853995018143129341").unwrap();
+    let pool_def = pool_definition(Some(500), Some(10), Some(sqrt_pre));
+    let mut profiler = PoolProfiler::new(Arc::new(pool_def));
+    profiler.initialize(sqrt_pre).unwrap();
+    profiler
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            61930,
+            61950,
+            102_930_446,
+        )
+        .unwrap();
+    profiler
+}
+
+// Pre-state for the block 105298972 (logIndex 22) MAX-boundary swap.
+fn max_boundary_profiler() -> PoolProfiler {
+    let sqrt_pre = U160::from_str("1336959986410146511145142826940").unwrap();
+    let pool_def = pool_definition(Some(500), Some(10), Some(sqrt_pre));
+    let mut profiler = PoolProfiler::new(Arc::new(pool_def));
+    profiler.initialize(sqrt_pre).unwrap();
+    profiler
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            56220,
+            56520,
+            730_321_654,
+        )
+        .unwrap();
+    profiler
+}
+
+#[rstest]
+fn test_simulate_replays_min_boundary_swap_through_empty_range() {
+    // block 25008018: amount0=27, amount1=-12402, sqrt_after=MIN_SQRT_RATIO+1, tick=-887272, liq=0.
+    let profiler = min_boundary_profiler();
+    assert_eq!(profiler.state.current_tick, 61930);
+    assert_eq!(profiler.get_active_liquidity(), 102_930_446);
+
+    let event_sqrt_price = U160::from(4_295_128_740u64); // MIN_SQRT_RATIO + 1
+    let quote = profiler
+        .simulate_swap_through_ticks(I256::from_str("27").unwrap(), true, event_sqrt_price, true)
+        .unwrap();
+
+    assert_eq!(quote.sqrt_price_after_x96, event_sqrt_price);
+    assert_eq!(quote.tick_after, -887_272);
+    assert_eq!(quote.liquidity_after, 0);
+    assert_eq!(quote.amount0, I256::from_str("27").unwrap());
+    assert_eq!(quote.amount1, I256::from_str("-12402").unwrap());
+}
+
+#[rstest]
+fn test_simulate_replays_max_boundary_swap_through_empty_range() {
+    // block 105298972 li22: amount0=-1596, amount1=454791, sqrt_after=MAX_SQRT_RATIO-1,
+    // tick=887271, liq=0.
+    let profiler = max_boundary_profiler();
+    assert_eq!(profiler.state.current_tick, 56519);
+    assert_eq!(profiler.get_active_liquidity(), 730_321_654);
+
+    let event_sqrt_price =
+        U160::from_str("1461446703485210103287273052203988822378723970341").unwrap();
+    let quote = profiler
+        .simulate_swap_through_ticks(
+            I256::from_str("454791").unwrap(),
+            false,
+            event_sqrt_price,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(quote.sqrt_price_after_x96, event_sqrt_price);
+    assert_eq!(quote.tick_after, 887_271);
+    assert_eq!(quote.liquidity_after, 0);
+    assert_eq!(quote.amount0, I256::from_str("-1596").unwrap());
+    assert_eq!(quote.amount1, I256::from_str("454791").unwrap());
+}
+
+#[rstest]
+fn test_simulate_forward_stops_at_empty_range_boundary() {
+    // Forward simulation stops where the input is spent, not at the boundary price.
+    let profiler = min_boundary_profiler();
+    let event_sqrt_price = U160::from(4_295_128_740u64);
+    let quote = profiler
+        .simulate_swap_through_ticks(I256::from_str("27").unwrap(), true, event_sqrt_price, false)
+        .unwrap();
+
+    assert_ne!(quote.sqrt_price_after_x96, event_sqrt_price);
+    assert!(quote.sqrt_price_after_x96 > event_sqrt_price);
+    assert_eq!(quote.tick_after, 61_929);
+    assert_eq!(quote.liquidity_after, 0);
+}
+
+#[rstest]
+fn test_simulate_traverse_is_noop_when_swap_stays_liquid(low_fee_pool_profiler: PoolProfiler) {
+    // When liquidity never reaches zero at exhaustion, traversal is a no-op: replay equals forward.
+    let amount = I256::from_str("1000").unwrap();
+    let far_limit = U160::from(4_295_128_740u64); // MIN_SQRT_RATIO + 1, far below the stop price
+
+    let forward = low_fee_pool_profiler
+        .simulate_swap_through_ticks(amount, true, far_limit, false)
+        .unwrap();
+    let replay = low_fee_pool_profiler
+        .simulate_swap_through_ticks(amount, true, far_limit, true)
+        .unwrap();
+
+    assert!(replay.sqrt_price_after_x96 > far_limit);
+    assert_eq!(replay.sqrt_price_after_x96, forward.sqrt_price_after_x96);
+    assert_eq!(replay.tick_after, forward.tick_after);
+    assert_eq!(replay.liquidity_after, forward.liquidity_after);
+    assert_eq!(replay.amount0, forward.amount0);
+    assert_eq!(replay.amount1, forward.amount1);
+}
+
+#[rstest]
+fn test_process_swap_replays_min_boundary_to_event_state() {
+    // End-to-end replay of the block 25008018 MIN-boundary swap: process the recorded event and
+    // confirm the applied state matches on-chain. The matching simulate-level test proves the
+    // simulation already reaches these values, so the self-correction branches do not fire here.
+    let mut profiler = min_boundary_profiler();
+    let pool = profiler.pool.clone();
+    let min_plus_1 = U160::from(4_295_128_740u64);
+
+    let swap = PoolSwap::new(
+        arbitrum(),
+        uniswap_v3(),
+        pool.instrument_id,
+        pool.pool_identifier,
+        25_008_018,
+        "0x95df7f94dd10".to_string(),
+        0,
+        7,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        user_address(),
+        user_address(),
+        I256::from_str("27").unwrap(),
+        I256::from_str("-12402").unwrap(),
+        min_plus_1,
+        0,
+        -887_272,
+    );
+
+    profiler.process(&DexPoolData::Swap(swap)).unwrap();
+
+    assert_eq!(profiler.state.current_tick, -887_272);
+    assert_eq!(profiler.state.price_sqrt_ratio_x96, min_plus_1);
+    assert_eq!(profiler.tick_map.liquidity, 0);
 }

@@ -226,6 +226,7 @@ impl PoolProfiler {
             }
             DexPoolData::Flash(flash) => self.process_flash(flash)?,
         }
+
         self.update_reporter_if_enabled(event.block_number());
 
         Ok(())
@@ -300,6 +301,7 @@ impl PoolProfiler {
         } else {
             swap.amount1
         };
+
         // For price limit use the final sqrt price from swap, which is a
         // good proxy to price limit
         let sqrt_price_limit_x96 = swap.sqrt_price_x96;
@@ -310,8 +312,9 @@ impl PoolProfiler {
             swap.log_index,
         );
         let swap_quote = self
-            .simulate_swap_through_ticks(amount_specified, zero_for_one, sqrt_price_limit_x96)
+            .simulate_swap_through_ticks(amount_specified, zero_for_one, sqrt_price_limit_x96, true)
             .map_err(|e| Self::wrap_liquidity_error(e, location))?;
+
         self.apply_swap_quote(&swap_quote);
 
         // Verify simulation against event data - correct with event values if mismatch detected
@@ -380,8 +383,14 @@ impl PoolProfiler {
         sqrt_price_limit_x96: U160,
     ) -> anyhow::Result<PoolSwap> {
         self.check_if_initialized(PoolEventKind::Swap)?;
-        let swap_quote =
-            self.simulate_swap_through_ticks(amount_specified, zero_for_one, sqrt_price_limit_x96)?;
+
+        let swap_quote = self.simulate_swap_through_ticks(
+            amount_specified,
+            zero_for_one,
+            sqrt_price_limit_x96,
+            false,
+        )?;
+
         self.apply_swap_quote(&swap_quote);
 
         let swap_event = PoolSwap::new(
@@ -425,6 +434,12 @@ impl PoolProfiler {
     /// 4. **Fee calculation**: Splits fees between LPs and protocol, accumulates in local variables
     /// 5. **Quote assembly**: Returns [`SwapQuote`] with amounts, prices, fees, and crossed tick data
     ///
+    /// When `traverse_empty_ranges` is set, the walk continues across zero-liquidity ranges
+    /// to `sqrt_price_limit_x96` even after the amount is exhausted. This reproduces a
+    /// historical swap whose recorded amount (the on-chain consumed amount) runs out at the
+    /// last liquid tick before an empty range to the boundary; forward simulation leaves it
+    /// unset so the swap stops where the amount is spent, matching `UniswapV3`.
+    ///
     /// # Errors
     ///
     /// Returns error if:
@@ -440,17 +455,20 @@ impl PoolProfiler {
         amount_specified: I256,
         zero_for_one: bool,
         sqrt_price_limit_x96: U160,
+        traverse_empty_ranges: bool,
     ) -> anyhow::Result<SwapQuote> {
+        let exact_input = amount_specified.is_positive();
+        let fee_tier = self.pool.fee.expect("Pool fee should be initialized");
+
         let mut current_sqrt_price = self.state.price_sqrt_ratio_x96;
         let mut current_tick = self.state.current_tick;
         let mut current_active_liquidity = self.tick_map.liquidity;
-        let exact_input = amount_specified.is_positive();
         let mut amount_specified_remaining = amount_specified;
         let mut amount_calculated = I256::ZERO;
         let mut protocol_fee = U256::ZERO;
         let mut lp_fee = U256::ZERO;
         let mut crossed_ticks = Vec::new();
-        let fee_tier = self.pool.fee.expect("Pool fee should be initialized");
+
         // Swapping cache variables
         let fee_protocol = if zero_for_one {
             // Extract lower 4 bits for token0 protocol fee
@@ -467,8 +485,10 @@ impl PoolProfiler {
             self.state.fee_growth_global_1
         };
 
-        // Continue swapping as long as we haven't used the entire input/output or haven't reached the price limit
-        while amount_specified_remaining != I256::ZERO && sqrt_price_limit_x96 != current_sqrt_price
+        // The replay clause keeps crossing empty ranges to the limit after the amount runs out
+        while (amount_specified_remaining != I256::ZERO
+            || (traverse_empty_ranges && current_active_liquidity == 0))
+            && sqrt_price_limit_x96 != current_sqrt_price
         {
             let sqrt_price_start_x96 = current_sqrt_price;
 
@@ -698,7 +718,7 @@ impl PoolProfiler {
             }
         });
 
-        self.simulate_swap_through_ticks(amount_specified, zero_for_one, limit)
+        self.simulate_swap_through_ticks(amount_specified, zero_for_one, limit, false)
     }
 
     /// Simulates an exact input swap (know input amount, calculate output amount).
@@ -927,6 +947,7 @@ impl PoolProfiler {
         liquidity: u128,
     ) -> anyhow::Result<PoolLiquidityUpdate> {
         self.check_if_initialized(PoolEventKind::Mint)?;
+
         self.validate_ticks(tick_lower, tick_upper)?;
         let (amount0, amount1) = get_amounts_for_liquidity(
             self.state.price_sqrt_ratio_x96,
@@ -940,6 +961,7 @@ impl PoolProfiler {
         )?;
 
         self.analytics.total_mints += 1;
+
         let event = PoolLiquidityUpdate::new(
             self.pool.chain.clone(),
             self.pool.dex.clone(),
@@ -982,6 +1004,7 @@ impl PoolProfiler {
         {
             return Ok(());
         }
+
         self.validate_ticks(update.tick_lower, update.tick_upper)?;
 
         // Update the position with a negative liquidity delta for the burn
@@ -994,6 +1017,7 @@ impl PoolProfiler {
             update.transaction_index,
             update.log_index,
         );
+
         self.update_position(
             &update.owner,
             update.tick_lower,
@@ -1039,6 +1063,7 @@ impl PoolProfiler {
         liquidity: u128,
     ) -> anyhow::Result<PoolLiquidityUpdate> {
         self.check_if_initialized(PoolEventKind::Burn)?;
+
         self.validate_ticks(tick_lower, tick_upper)?;
         let (amount0, amount1) = get_amounts_for_liquidity(
             self.state.price_sqrt_ratio_x96,
@@ -1061,6 +1086,7 @@ impl PoolProfiler {
         )?;
 
         self.analytics.total_burns += 1;
+
         let event = PoolLiquidityUpdate::new(
             self.pool.chain.clone(),
             self.pool.dex.clone(),
@@ -1262,6 +1288,7 @@ impl PoolProfiler {
         amount1: U256,
     ) -> anyhow::Result<PoolFlash> {
         self.check_if_initialized(PoolEventKind::Flash)?;
+
         let fee_tier = self.pool.fee.expect("Pool fee should be initialized");
 
         // Calculate fees or paid0/paid1

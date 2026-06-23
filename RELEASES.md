@@ -97,6 +97,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Fixed custom `DataType` metadata ordering and shared custom-data unsubscribes (Rust)
 - Fixed data option-chain delta warmup
 - Fixed `DataEngine` synthetic bar subscriptions with multiple venue clients (#4279), thanks for reporting @HSGartley
+- Fixed DeFi pool profiler swap replay diverging from on-chain state at MIN/MAX-tick boundary swaps (Rust)
 - Fixed DeFi replay bootstrap gaps in `PoolSwap` payload exposure, block timestamp units, and actor IDs (Rust)
 - Fixed `DonchianChannel` period window (#4239), thanks @KaizynX
 - Fixed event-store boot recovery to repair hard-crashed run files and skip damaged ones instead of failing (Rust)
