@@ -398,9 +398,11 @@ Rust-native callers that inject `MessageBusExternalEgress` pass concrete connect
 they construct that egress surface. The core message bus does not require a `RedisMessageBusConfig`
 for injected egress.
 
-The Rust live runtime still rejects `external_streams`, so inbound stream configuration is not
-silently ignored. The ingress trait and external republish function exist, but the missing
-runtime piece is the Rust live bridge from inbound `BusMessage` sources to internal publish.
+The Rust live runtime accepts `external_streams` in `MessageBusConfig`, and consumes inbound
+`BusMessage`s when callers inject a `MessageBusExternalIngress` with
+`LiveNodeBuilder::with_external_ingress`. The config names the external stream keys; the injected
+ingress is the concrete runtime source. Rust-native factory wiring from config to a backing remains
+the caller's responsibility.
 
 ### Encoding
 
@@ -569,9 +571,10 @@ let backing = RedisMessageBusConfig {
 #### Consumer node
 
 We configure the `MessageBus` of the consumer node to receive messages from the same `"binance"`
-stream. The node listens to the external stream keys to publish these messages onto its internal
-message bus. We declare the client ID `"BINANCE_EXT"` as an external client so the `DataEngine`
-does not attempt to send data commands to this client ID.
+stream. The node listens to the external stream keys when a `MessageBusExternalIngress` is injected
+into the `LiveNodeBuilder`, then publishes these messages onto its internal message bus. We declare
+the client ID `"BINANCE_EXT"` as an external client so the `DataEngine` does not attempt to send
+data commands to this client ID.
 
 ```rust
 let data_engine = LiveDataEngineConfig {

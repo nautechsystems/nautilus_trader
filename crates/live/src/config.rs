@@ -746,13 +746,6 @@ impl LiveNodeConfig {
     pub(crate) fn validate_runtime_support(&self) -> ConfigResult<()> {
         let mut collector = ConfigErrorCollector::new();
 
-        if let Some(config) = &self.msgbus {
-            collector.collect(check_supported_field(
-                "LiveNodeConfig.msgbus.external_streams",
-                config.external_streams.is_none(),
-                RUST_RUNTIME_UNSUPPORTED,
-            ));
-        }
         collector.collect(check_supported_field(
             "LiveNodeConfig.streaming",
             self.streaming.is_none(),
@@ -1061,7 +1054,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_validate_runtime_support_rejects_msgbus_external_streams() {
+    fn test_validate_runtime_support_accepts_msgbus_external_streams() {
         let config = LiveNodeConfig {
             msgbus: Some(MessageBusConfig {
                 external_streams: Some(vec!["stream".to_string()]),
@@ -1070,18 +1063,7 @@ mod tests {
             ..Default::default()
         };
 
-        let error = config.validate_runtime_support().unwrap_err();
-        assert_eq!(
-            error,
-            ConfigError::UnsupportedField {
-                field: "LiveNodeConfig.msgbus.external_streams".to_string(),
-                reason: RUST_RUNTIME_UNSUPPORTED.to_string(),
-            },
-        );
-        assert_eq!(
-            error.to_string(),
-            "LiveNodeConfig.msgbus.external_streams is not supported by the Rust live runtime yet"
-        );
+        assert!(config.validate_runtime_support().is_ok());
     }
 
     #[rstest]
@@ -1111,6 +1093,13 @@ mod tests {
                 external_streams: Some(vec!["stream".to_string()]),
                 ..Default::default()
             }),
+            streaming: Some(StreamingConfig::new(
+                "catalog".to_string(),
+                "file".to_string(),
+                1_000,
+                false,
+                RotationConfig::NoRotation,
+            )),
             loop_debug: true,
             ..Default::default()
         };
@@ -1123,7 +1112,7 @@ mod tests {
                 assert_eq!(
                     errors[0],
                     ConfigError::UnsupportedField {
-                        field: "LiveNodeConfig.msgbus.external_streams".to_string(),
+                        field: "LiveNodeConfig.streaming".to_string(),
                         reason: RUST_RUNTIME_UNSUPPORTED.to_string(),
                     },
                 );

@@ -101,6 +101,7 @@ use nautilus_common::{
         data::DataCommand,
         execution::{GenerateOrderStatusReports, GeneratePositionStatusReports, TradingCommand},
     },
+    msgbus::{self, BusMessage},
     timer::TimeEventHandler,
 };
 use nautilus_core::{
@@ -121,7 +122,7 @@ use nautilus_trading::{
 use tabled::{Table, Tabled, settings::Style};
 
 use crate::{
-    builder::LiveNodeBuilder,
+    builder::{ExternalMessageBusIngress, LiveNodeBuilder},
     config::{LiveNodeConfig, PluginConfig},
     execution::LiveExecutionClient,
     manager::{
@@ -272,6 +273,7 @@ pub struct LiveNode {
     handle: LiveNodeHandle,
     exec_manager: ExecutionManager,
     exec_clients: Vec<LiveExecutionClient>,
+    external_msgbus: Option<ExternalMessageBusIngress>,
     shutdown_deadline: Option<dst::time::Instant>,
     #[cfg(feature = "plugin")]
     plugins: crate::plugin::NodePlugins,
@@ -291,6 +293,7 @@ impl LiveNode {
         config: LiveNodeConfig,
         exec_manager: ExecutionManager,
         exec_clients: Vec<LiveExecutionClient>,
+        external_msgbus: Option<ExternalMessageBusIngress>,
     ) -> Self {
         Self {
             kernel,
@@ -299,6 +302,7 @@ impl LiveNode {
             handle: LiveNodeHandle::new(),
             exec_manager,
             exec_clients,
+            external_msgbus,
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
             plugins: crate::plugin::NodePlugins,
@@ -368,6 +372,7 @@ impl LiveNode {
             handle: LiveNodeHandle::new(),
             exec_manager,
             exec_clients: Vec::new(),
+            external_msgbus: None,
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
             plugins: crate::plugin::NodePlugins,
@@ -863,6 +868,31 @@ impl LiveNode {
             return Ok(());
         }
 
+        let mut external_msgbus_rx = match self.take_external_ingress_receiver() {
+            Ok(rx) => rx,
+            Err(e) => {
+                let result = self
+                    .abort_startup("External message bus ingress failed to start")
+                    .await;
+                Self::drain_channels(
+                    &mut time_evt_rx,
+                    &mut data_evt_rx,
+                    &mut data_cmd_rx,
+                    &mut exec_evt_rx,
+                    &mut exec_cmd_rx,
+                );
+                log::info!("Event loop stopped");
+
+                if let Err(finalize_err) = result {
+                    anyhow::bail!(
+                        "failed to start external message bus ingress: {e}; failed to finalize startup abort: {finalize_err}"
+                    );
+                }
+
+                return Err(e);
+            }
+        };
+
         let stop_handle = self.handle.clone();
         let mut pending = PendingEvents::default();
 
@@ -1321,6 +1351,22 @@ impl LiveNode {
                     }
                     AsyncRunner::handle_exec_command(cmd);
                 }
+                message = recv_external_msgbus_message(&mut external_msgbus_rx) => {
+                    match message {
+                        Some(message) => {
+                            if is_shutting_down {
+                                log::debug!("Residual external message bus message: {message}");
+                                residual_events += 1;
+                            }
+                            Self::republish_external_msgbus_message(&message);
+                        }
+                        None => {
+                            log::info!("External message bus ingress closed");
+                            external_msgbus_rx = None;
+                            self.close_external_ingress();
+                        }
+                    }
+                }
                 Some(evt) = data_evt_rx.recv() => {
                     if is_shutting_down {
                         log::debug!("Residual data event: {evt:?}");
@@ -1344,6 +1390,7 @@ impl LiveNode {
 
         drop(open_order_report_task.take());
         drop(position_report_task.take());
+        drop(external_msgbus_rx.take());
         let _ = self.kernel.cache().borrow().check_residuals();
 
         self.finalize_stop().await?;
@@ -1360,6 +1407,32 @@ impl LiveNode {
         log::info!("Event loop stopped");
 
         Ok(())
+    }
+
+    fn take_external_ingress_receiver(
+        &mut self,
+    ) -> anyhow::Result<Option<tokio::sync::mpsc::Receiver<BusMessage>>> {
+        let Some(external_ingress) = self.external_msgbus.as_mut() else {
+            return Ok(None);
+        };
+
+        let receiver = external_ingress.take_receiver()?;
+        log::info!("External message bus ingress started");
+        Ok(Some(receiver))
+    }
+
+    fn republish_external_msgbus_message(message: &BusMessage) {
+        if let Err(e) = msgbus::republish_external_message(message) {
+            log::error!("Failed to republish external message bus message: {e}");
+        }
+    }
+
+    fn close_external_ingress(&mut self) {
+        if let Some(external_ingress) = self.external_msgbus.as_mut()
+            && !external_ingress.is_closed()
+        {
+            external_ingress.close();
+        }
     }
 
     fn process_reconciliation_events(&mut self, events: &[OrderEventAny]) {
@@ -1444,6 +1517,8 @@ impl LiveNode {
     }
 
     async fn finalize_stop(&mut self) -> anyhow::Result<()> {
+        self.close_external_ingress();
+
         let disconnect_result = self.kernel.disconnect_clients().await;
         if let Err(ref e) = disconnect_result {
             log::error!("Error disconnecting clients: {e}");
@@ -1805,6 +1880,15 @@ impl LiveNode {
                 }
             }),
         })
+    }
+}
+
+async fn recv_external_msgbus_message(
+    rx: &mut Option<tokio::sync::mpsc::Receiver<BusMessage>>,
+) -> Option<BusMessage> {
+    match rx {
+        Some(rx) => rx.recv().await,
+        None => std::future::pending::<Option<BusMessage>>().await,
     }
 }
 
@@ -2177,8 +2261,8 @@ mod tests {
         clock::Clock,
         enums::SerializationEncoding,
         msgbus::{
-            self, BusMessage, MessageBusConfig, MessageBusExternalEgress, MessagingSwitchboard,
-            TypedIntoHandler,
+            self, BusMessage, BusPayloadType, MessageBusConfig, MessageBusExternalEgress,
+            MessageBusExternalIngress, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
         },
     };
     use nautilus_core::{UUID4, UnixNanos};
@@ -2729,6 +2813,199 @@ mod tests {
         drop(node);
     }
 
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_run_republishes_external_ingress_on_local_msgbus() {
+        let quote = QuoteTick::default();
+        let received = Rc::new(RefCell::new(Vec::<QuoteTick>::new()));
+        let payload =
+            Bytes::from(serde_json::to_vec(&quote).expect("QuoteTick should serialize as JSON"));
+        let message = BusMessage::with_str_topic(
+            "data.quotes.TEST",
+            BusPayloadType::QuoteTick,
+            payload,
+            SerializationEncoding::Json,
+        );
+        let (tx, rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
+        let closed = Rc::new(Cell::new(false));
+        let ingress = CapturingExternalIngress::new(rx, closed.clone());
+        let config = LiveNodeConfig {
+            environment: Environment::Sandbox,
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::from_millis(500),
+            timeout_disconnection: Duration::from_millis(500),
+            ..Default::default()
+        };
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_external_ingress(Box::new(ingress))
+            .build()
+            .expect("node builds with external message bus ingress");
+        let handle = node.handle();
+        let handler = TypedHandler::from({
+            let received = received.clone();
+            move |quote: &QuoteTick| {
+                received.borrow_mut().push(*quote);
+            }
+        });
+        msgbus::subscribe_quotes("data.quotes.*".into(), handler, None);
+        msgbus::get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::QuoteTick);
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let run = node.run();
+            tokio::pin!(run);
+
+            let drive = async {
+                for _ in 0..100 {
+                    if handle.is_running() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                assert!(handle.is_running(), "node should reach running state");
+
+                tx.send(message)
+                    .await
+                    .expect("external ingress receiver should be open");
+
+                for _ in 0..100 {
+                    if received.borrow().len() == 1 {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                assert_eq!(*received.borrow(), vec![quote]);
+                handle.stop();
+            };
+
+            tokio::select! {
+                biased;
+
+                () = drive => {}
+                result = &mut run => {
+                    panic!("node stopped before external message was republished: {result:?}");
+                }
+            }
+
+            run.await.expect("node should stop cleanly");
+        })
+        .await
+        .expect("live node should republish ingress and stop before timeout");
+
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(closed.get());
+        msgbus::get_message_bus().borrow_mut().dispose();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_run_closes_external_ingress_when_receiver_closes() {
+        let (tx, rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
+        let closed = Rc::new(Cell::new(false));
+        let ingress = CapturingExternalIngress::new(rx, closed.clone());
+        let config = LiveNodeConfig {
+            environment: Environment::Sandbox,
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::from_millis(500),
+            timeout_disconnection: Duration::from_millis(500),
+            ..Default::default()
+        };
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_external_ingress(Box::new(ingress))
+            .build()
+            .expect("node builds with external message bus ingress");
+        let handle = node.handle();
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let run = node.run();
+            tokio::pin!(run);
+
+            let drive = async {
+                for _ in 0..100 {
+                    if handle.is_running() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                assert!(handle.is_running(), "node should reach running state");
+
+                drop(tx);
+
+                for _ in 0..100 {
+                    if closed.get() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                assert!(closed.get(), "external ingress should close");
+                assert!(
+                    handle.is_running(),
+                    "node should keep running after ingress closes"
+                );
+                handle.stop();
+            };
+
+            tokio::select! {
+                biased;
+
+                () = drive => {}
+                result = &mut run => {
+                    panic!("node stopped before ingress close was observed: {result:?}");
+                }
+            }
+
+            run.await.expect("node should stop cleanly");
+        })
+        .await
+        .expect("live node should close ingress and stop before timeout");
+
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_run_aborts_startup_when_external_ingress_receiver_unavailable() {
+        let closed = Rc::new(Cell::new(false));
+        let ingress = FailingExternalIngress::new(closed.clone());
+        let config = LiveNodeConfig {
+            environment: Environment::Sandbox,
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::from_millis(500),
+            timeout_disconnection: Duration::from_millis(500),
+            ..Default::default()
+        };
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_external_ingress(Box::new(ingress))
+            .build()
+            .expect("node builds with external message bus ingress");
+        let handle = node.handle();
+
+        let err = node.run().await.expect_err("run should fail");
+
+        assert!(
+            err.to_string()
+                .contains("external ingress receiver unavailable")
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(closed.get());
+    }
+
     #[cfg(feature = "python")]
     #[rstest]
     fn test_node_build_and_initial_state() {
@@ -3268,6 +3545,62 @@ mod tests {
 
     type CapturedEgressMessages = Rc<RefCell<Vec<CapturedEgressMessage>>>;
     type SharedClosed = Rc<Cell<bool>>;
+
+    #[derive(Debug)]
+    struct CapturingExternalIngress {
+        rx: Option<tokio::sync::mpsc::Receiver<BusMessage>>,
+        closed: SharedClosed,
+    }
+
+    impl CapturingExternalIngress {
+        fn new(rx: tokio::sync::mpsc::Receiver<BusMessage>, closed: SharedClosed) -> Self {
+            Self {
+                rx: Some(rx),
+                closed,
+            }
+        }
+    }
+
+    impl MessageBusExternalIngress for CapturingExternalIngress {
+        fn is_closed(&self) -> bool {
+            self.closed.get()
+        }
+
+        fn take_receiver(&mut self) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {
+            self.rx
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("external ingress receiver already taken"))
+        }
+
+        fn close(&mut self) {
+            self.closed.set(true);
+        }
+    }
+
+    #[derive(Debug)]
+    struct FailingExternalIngress {
+        closed: SharedClosed,
+    }
+
+    impl FailingExternalIngress {
+        fn new(closed: SharedClosed) -> Self {
+            Self { closed }
+        }
+    }
+
+    impl MessageBusExternalIngress for FailingExternalIngress {
+        fn is_closed(&self) -> bool {
+            self.closed.get()
+        }
+
+        fn take_receiver(&mut self) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {
+            anyhow::bail!("external ingress receiver unavailable")
+        }
+
+        fn close(&mut self) {
+            self.closed.set(true);
+        }
+    }
 
     struct CapturingExternalEgress {
         publications: CapturedEgressMessages,
