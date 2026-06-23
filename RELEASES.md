@@ -37,6 +37,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added Hyperliquid builder attribution opt-out
 - Added Hyperliquid historical trade requests
 - Added Hyperliquid minimum notional handling
+- Added Interactive Brokers trailing stop basis-point offset support (#4292), thanks @faysou
 - Added Lighter NVDA composite market maker Python v2 example
 - Added PancakeSwap V3 on-chain snapshot validation via the Uniswap V3 pool reads
 - Added PancakeSwap V3 pool-event parsers on BSC, Base, Arbitrum, and Ethereum
@@ -53,6 +54,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Changed `CacheDatabaseAdapter::load_index_order_position` to return position IDs instead of positions (Rust)
 - Changed default message bus/cache encoding to JSON; set `encoding="msgpack"` for MessagePack
 - Changed `Currency::from_str` and `Currency::is_*` to return `CurrencyLookupError` instead of `anyhow::Error` (Rust)
+- Changed Parquet catalog write APIs to take borrowed slices instead of owned `Vec` (Rust) (#4296), thanks @sunlei
 - Changed `PoolProfiler.price_sqrt_ratio_x96` to return `int` instead of `str`
 - Changed PyO3 `DataActor`/`Strategy` historical request `start`/`end` to require UTC datetimes
 - Changed Redis cache account/order/position storage to event logs; clear old typed state (Rust)
@@ -87,6 +89,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Fixed Interactive Brokers disconnect reconciliation corrupting position state (#4230), thanks @HKOWL
 
 ### Fixes
+- Fixed account-currency PnL stats for NETTING accounts reusing a `PositionId` across cycles (#4294), thanks @faysou
 - Fixed account-currency trade PnL stats for foreign-currency instruments (#4211), thanks @faysou
 - Fixed blocking Python HTTP functions holding the GIL for the full request duration
 - Fixed custom `DataType` metadata ordering and shared custom-data unsubscribes (Rust)
@@ -104,6 +107,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Fixed live external order claim registration in Rust
 - Fixed live reconciliation logging below-cached fill mismatches as errors, halting `shutdown_on_error` nodes (Rust)
 - Fixed live reconciliation logging transient venue report-query failures as errors (Rust)
+- Fixed live reconciliation synthesizing phantom cancels on cancel-replace venues (#4288), thanks @filipmacek
 - Fixed local catalog queries and backtests for non-ASCII instrument IDs (#4259), thanks for reporting @seungpyoson
 - Fixed matching engine fill commission side in Rust
 - Fixed portfolio account update scoping in Rust
@@ -132,6 +136,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Fixed Architect AX to deny invalid submits locally and defer ambiguous command failures to reconciliation
 - Fixed Binance Futures empty algo order IDs
 - Fixed Binance Futures hedge reduce-only orders in Rust
+- Fixed Binance Futures leverage initialization aborting execution client connect (#4289), thanks @YeeTsai
 - Fixed Binance Futures node panic on `BNFCR` Credits Trading Mode balances
 - Fixed Binance Spot expired order handling
 - Fixed Binance Spot/Futures WebSocket connection pool race (#4244), thanks @filipmacek
@@ -143,6 +148,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Fixed Blockchain snapshot validation rejecting fee-protocol-only mismatches
 - Fixed Bybit demo native TP/SL and option params being denied instead of routed through the create-order endpoint (Rust and Python)
 - Fixed Deribit chart bar volume for inverse perpetuals (#4245), thanks @filipmacek
+- Fixed dYdX Indexer WebSocket dropping subscriptions beyond the 32-per-channel cap (#4290), thanks @filipmacek
 - Fixed dYdX to share one REST rate-limit bucket across data and execution clients (#4265), thanks @filipmacek
 - Fixed dYdX to deny unsupported submits locally and emit rejections only for definitive CheckTx refusals
 - Fixed Hyperliquid bracket trigger-child statuses and atomic market fills orphaning orders at submission (#4160), thanks @sonnymai
@@ -187,7 +193,9 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Improved event-store marker writer and capture diagnostics with logged fail-stop errors (Rust)
 - Improved Postgres order-client index restore to pick the latest client ID per order (Rust)
 - Improved OTO contingency position ID recovery to persist re-indexed assignments (Rust)
+- Improved sandbox expired-instrument retention to prune after open positions settle (#4293), thanks @graceyangfan
 - Improved Polymarket data client module structure (#4260), thanks @graceyangfan
+- Improved Polymarket execution lookup retention for expired instruments (#4287), thanks @graceyangfan
 - Improved Polymarket execution module structure (#4271), thanks @graceyangfan
 - Improved Polymarket resolution module structure (#4269), thanks @graceyangfan
 - Standardized Polymarket adapter to emit order events for own orders and reports for external orders only (Rust)

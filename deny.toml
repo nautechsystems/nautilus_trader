@@ -35,14 +35,6 @@ ignore = [
   { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
 
-  # pyo3 list/tuple iterator nth/nth_back out-of-bounds read. Local Python bindings do not use
-  # nth/nth_back on PyList/PyTuple iterators; upgrade to >=0.29.0 once pyo3 ecosystem pins align.
-  { id = "RUSTSEC-2026-0176", reason = "pyo3 list/tuple iterator OOB read; no local affected API use" },
-
-  # pyo3 PyCFunction closures lack a Sync bound. Local wrappers compile-check Sync on each
-  # PyCFunction::new_closure call site; upgrade to >=0.29.0 once pyo3 ecosystem pins align.
-  { id = "RUSTSEC-2026-0177", reason = "pyo3 PyCFunction Sync bound; local wrappers enforce Sync" },
-
   # bincode 1.3.3 unmaintained, transitive via hypersync-client. Not a vulnerability.
   # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for migration
   { id = "RUSTSEC-2025-0141", reason = "bincode unmaintained, transitive via hypersync-client (not a vulnerability)" },
@@ -221,9 +213,6 @@ skip = [
   # Protobuf runtime - dYdX/cosmos/tonic use 0.13, ibapi uses 0.14
   { crate = "prost" },
   { crate = "prost-derive" },
-
-  # WASI bindings - getrandom pulls distinct wit-bindgen generations via wasip2/wasip3
-  { crate = "wit-bindgen" },
 
   # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.25.0
   { crate = "capnp" },

@@ -400,7 +400,7 @@ repos:
         additional_dependencies: [msgspec, types-frozendict, types-pytz, types-redis, types-requests, types-toml]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.21 # Must match [tool.uv] required-version in pyproject.toml
+    rev: 0.11.23 # Must match [tool.uv] required-version in pyproject.toml
     hooks:
       - id: uv-lock
         files: ^(uv\.lock|python/uv\.lock)$

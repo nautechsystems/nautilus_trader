@@ -55,7 +55,7 @@ strip = false
 include = ["**/*.pyi"]
 
 [tool.uv]
-required-version = "==0.11.21"
+required-version = "==0.11.23"
 exclude-newer = "3 days"
 # Block sdist builds for every third-party package in python/uv.lock so
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
@@ -88,7 +88,7 @@ no-build-package = [
 [dependency-groups]
 dev = ["maturin==1.14.0", "mypy>=1.20.2,<2.0.0", "ruff>=0.15.18"]
 test = [
-  "pytest>=9.0.3",
+  "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
   "pytest-cov>=7.1.0",
   "pytest-xdist[psutil]>=3.8.0",

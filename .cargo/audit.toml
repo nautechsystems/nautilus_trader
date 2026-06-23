@@ -20,10 +20,6 @@ ignore = [
   "RUSTSEC-2025-0090",
   "RUSTSEC-2025-0098",
   "RUSTSEC-2025-0100",
-  # pyo3 PyList/PyTuple iterator nth/nth_back OOB read; no local affected API use
-  "RUSTSEC-2026-0176",
-  # pyo3 PyCFunction closures missing Sync bound; local wrappers enforce Sync
-  "RUSTSEC-2026-0177",
   # bincode unmaintained, transitive via hypersync-client
   "RUSTSEC-2025-0141",
   # capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix
