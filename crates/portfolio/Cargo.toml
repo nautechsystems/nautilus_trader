@@ -23,7 +23,12 @@ crate-type = ["rlib"]
 [features]
 default = []
 extension-module = ["python", "pyo3/extension-module"]
-python = ["nautilus-model/python", "pyo3", "pyo3-stub-gen"]
+python = [
+  "nautilus-common/python",
+  "nautilus-model/python",
+  "pyo3",
+  "pyo3-stub-gen",
+]
 
 [package.metadata.docs.rs]
 all-features = true

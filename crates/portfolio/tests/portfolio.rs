@@ -2919,7 +2919,10 @@ fn test_position_records_account_currency_realized_pnl(
         .unwrap();
     simple_cache.set_mark_xrate(Currency::USD(), Currency::EUR(), 0.9);
 
-    let config = PortfolioConfig::builder().use_mark_xrates(true).build();
+    let config = PortfolioConfig::builder()
+        .use_mark_xrates(true)
+        .build()
+        .unwrap();
     let mut portfolio = Portfolio::new(
         Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
@@ -4313,7 +4316,8 @@ fn test_snapshot_timer_arms_and_disarms_on_position_lifecycle(
 
     let config = PortfolioConfig::builder()
         .snapshot_interval_ms(1_000)
-        .build();
+        .build()
+        .unwrap();
 
     let mut portfolio = Portfolio::new(
         Rc::new(RefCell::new(simple_cache)),
@@ -4751,7 +4755,10 @@ fn test_equity_cash_account_foreign_settlement_converts(
         .unwrap();
     simple_cache.set_mark_xrate(Currency::USD(), Currency::EUR(), 0.9);
 
-    let config = PortfolioConfig::builder().use_mark_xrates(true).build();
+    let config = PortfolioConfig::builder()
+        .use_mark_xrates(true)
+        .build()
+        .unwrap();
 
     let mut portfolio = Portfolio::new(
         Rc::new(RefCell::new(simple_cache)),
@@ -4829,7 +4836,10 @@ fn test_equity_rounds_once_across_small_foreign_positions(
         .unwrap();
     simple_cache.set_mark_xrate(Currency::USD(), Currency::EUR(), 0.004);
 
-    let config = PortfolioConfig::builder().use_mark_xrates(true).build();
+    let config = PortfolioConfig::builder()
+        .use_mark_xrates(true)
+        .build()
+        .unwrap();
 
     let mut portfolio = Portfolio::new(
         Rc::new(RefCell::new(simple_cache)),
@@ -4905,7 +4915,10 @@ fn test_missing_xrate_flags_instrument(
         .add_instrument(instrument_audusd.clone())
         .unwrap();
 
-    let config = PortfolioConfig::builder().use_mark_xrates(true).build();
+    let config = PortfolioConfig::builder()
+        .use_mark_xrates(true)
+        .build()
+        .unwrap();
 
     let mut portfolio = Portfolio::new(
         Rc::new(RefCell::new(simple_cache)),
@@ -5156,7 +5169,8 @@ fn test_initialize_positions_arms_snapshot_timer_for_reconciled_venues(
 
     let config = PortfolioConfig::builder()
         .snapshot_interval_ms(1_000)
-        .build();
+        .build()
+        .unwrap();
 
     // Pre-populate the cache with an open position BEFORE the Portfolio exists,
     // mimicking live-node state after startup reconciliation.
@@ -5221,7 +5235,8 @@ fn test_emit_snapshot_publishes_and_appends_to_ring(instrument_audusd: Instrumen
 
     let config = PortfolioConfig::builder()
         .snapshot_interval_ms(1_000)
-        .build();
+        .build()
+        .unwrap();
     let mut portfolio = Portfolio::new(cache, clock, Some(config));
 
     // Capture published snapshots
@@ -5298,7 +5313,8 @@ fn test_reset_cancels_snapshot_timers(
 
     let config = PortfolioConfig::builder()
         .snapshot_interval_ms(1_000)
-        .build();
+        .build()
+        .unwrap();
 
     let mut portfolio = Portfolio::new(
         Rc::new(RefCell::new(simple_cache)),

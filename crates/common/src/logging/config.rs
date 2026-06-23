@@ -65,6 +65,7 @@ use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::writer::FileWriterConfig;
+use crate::config::ConfigResult;
 
 /// Configuration for the Nautilus logger.
 #[cfg_attr(
@@ -76,6 +77,7 @@ use super::writer::FileWriterConfig;
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
 )]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[builder(finish_fn(name = build_inner, vis = ""))]
 #[serde(default, deny_unknown_fields)]
 pub struct LoggerConfig {
     /// Maximum log level for stdout output.
@@ -118,9 +120,25 @@ pub struct LoggerConfig {
     pub buffered_stdout: bool,
 }
 
+impl<S: logger_config_builder::IsComplete> LoggerConfigBuilder<S> {
+    /// Validates and builds the [`LoggerConfig`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`](crate::config::ConfigError) if any field fails validation
+    /// (see [`LoggerConfig::validate`]).
+    pub fn build(self) -> ConfigResult<LoggerConfig> {
+        let config = self.build_inner();
+        config.validate()?;
+        Ok(config)
+    }
+}
+
 impl Default for LoggerConfig {
     fn default() -> Self {
-        Self::builder().build()
+        Self::builder()
+            .build()
+            .expect("default `LoggerConfig` should be valid")
     }
 }
 
@@ -156,6 +174,20 @@ impl LoggerConfig {
             fileout_sync_on_flush: true,
             buffered_stdout: false,
         }
+    }
+
+    /// Validates the logger configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`](crate::config::ConfigError) if the file writer configuration
+    /// is invalid (see [`FileWriterConfig::validate`]).
+    pub fn validate(&self) -> ConfigResult<()> {
+        if let Some(file_config) = &self.file_config {
+            file_config.validate()?;
+        }
+
+        Ok(())
     }
 
     /// Parses a configuration from a spec string.
@@ -276,6 +308,23 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::config::ConfigError;
+
+    #[rstest]
+    fn test_zero_rotation_max_file_size_rejected() {
+        let file_config = FileWriterConfig::new(None, None, None, Some((0, 5)));
+        let result = LoggerConfig::builder().file_config(file_config).build();
+        assert!(
+            matches!(result, Err(ConfigError::Range { field, .. }) if field == "file_config.file_rotate.max_file_size")
+        );
+    }
+
+    #[rstest]
+    fn test_positive_rotation_max_file_size_accepted() {
+        let file_config = FileWriterConfig::new(None, None, None, Some((1_048_576, 5)));
+        let result = LoggerConfig::builder().file_config(file_config).build();
+        assert!(result.is_ok());
+    }
 
     #[rstest]
     fn test_default_config() {
