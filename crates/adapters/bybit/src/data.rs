@@ -36,10 +36,11 @@ use nautilus_common::{
             InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
             RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
             RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeInstrumentStatus, SubscribeMarkPrices,
-            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse,
-            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeFundingRates,
-            UnsubscribeIndexPrices, UnsubscribeInstrumentStatus, UnsubscribeMarkPrices,
+            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentStatus,
+            SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
+            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
             UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
@@ -65,8 +66,9 @@ use crate::{
     common::{
         consts::{BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_VENUE},
         enums::BybitProductType,
+        instruments::diff_and_emit_instruments,
         parse::{extract_raw_symbol, make_bybit_symbol},
-        status::diff_and_emit_statuses,
+        status::{diff_and_emit_statuses, emit_status},
         symbol::BybitSymbol,
     },
     config::BybitDataClientConfig,
@@ -103,6 +105,9 @@ pub struct BybitDataClient {
     option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
     instrument_status_subs: Arc<AtomicSet<InstrumentId>>,
     status_cache: Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
+    instrument_subs: Arc<AtomicSet<InstrumentId>>,
+    /// Venue-wide subscription: when set, definition updates are emitted for all instruments.
+    subscribe_all_instruments: Arc<AtomicBool>,
     clock: &'static AtomicTime,
 }
 
@@ -180,6 +185,8 @@ impl BybitDataClient {
             option_greeks_subs: Arc::new(AtomicSet::new()),
             instrument_status_subs: Arc::new(AtomicSet::new()),
             status_cache: Arc::new(AtomicMap::new()),
+            instrument_subs: Arc::new(AtomicSet::new()),
+            subscribe_all_instruments: Arc::new(AtomicBool::new(false)),
             clock,
         })
     }
@@ -218,16 +225,14 @@ impl BybitDataClient {
         });
     }
 
-    fn spawn_instrument_status_polling(
-        &mut self,
-        product_types: &[BybitProductType],
-        poll_secs: u64,
-    ) {
+    fn spawn_instrument_polling(&mut self, product_types: &[BybitProductType], poll_secs: u64) {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instruments = self.instruments.clone();
         let status_cache = self.status_cache.clone();
         let status_subs = self.instrument_status_subs.clone();
+        let instrument_subs = self.instrument_subs.clone();
+        let subscribe_all_instruments = self.subscribe_all_instruments.clone();
         let cancel = self.cancellation_token.clone();
         let clock = self.clock;
         let product_types = product_types.to_vec();
@@ -239,46 +244,79 @@ impl BybitDataClient {
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
-                        if status_subs.is_empty() {
+                        let all_flag = subscribe_all_instruments.load(Ordering::Relaxed);
+                        let want_instruments = all_flag || !instrument_subs.is_empty();
+                        let want_statuses = !status_subs.is_empty();
+                        if !want_instruments && !want_statuses {
                             continue;
                         }
 
-                        // Accumulate statuses from all product types before diffing
                         let mut all_statuses = AHashMap::new();
 
-                        for &pt in &product_types {
-                            match http.request_instrument_statuses(pt).await {
-                                Ok(new_statuses) => {
-                                    let inst_guard = instruments.load();
-                                    for (id, action) in new_statuses {
-                                        if inst_guard.contains_key(&id) {
-                                            all_statuses.insert(id, action);
+                        if want_instruments {
+                            let subs: Option<AHashSet<InstrumentId>> = if all_flag {
+                                None
+                            } else {
+                                Some((**instrument_subs.load()).clone())
+                            };
+                            let mut inst_cache = (**instruments.load()).clone();
+
+                            for &pt in &product_types {
+                                match http.request_instruments_with_statuses(pt).await {
+                                    Ok((fetched, statuses)) => {
+                                        diff_and_emit_instruments(
+                                            &fetched, &mut inst_cache, subs.as_ref(), &sender,
+                                        );
+                                        for (id, action) in statuses {
+                                            if inst_cache.contains_key(&id) {
+                                                all_statuses.insert(id, action);
+                                            }
                                         }
                                     }
+                                    Err(e) => {
+                                        log::warn!("Bybit instrument poll failed for {pt:?}: {e}");
+                                    }
                                 }
-                                Err(e) => {
-                                    log::warn!("Bybit instrument status poll failed for {pt:?}: {e}");
+                            }
+
+                            instruments.store(inst_cache);
+                        } else {
+                            for &pt in &product_types {
+                                match http.request_instrument_statuses(pt).await {
+                                    Ok(new_statuses) => {
+                                        let inst_guard = instruments.load();
+                                        for (id, action) in new_statuses {
+                                            if inst_guard.contains_key(&id) {
+                                                all_statuses.insert(id, action);
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::warn!("Bybit instrument status poll failed for {pt:?}: {e}");
+                                    }
                                 }
                             }
                         }
 
-                        let ts = clock.get_time_ns();
-                        let mut cache = (**status_cache.load()).clone();
-                        let subs_guard = status_subs.load();
-                        diff_and_emit_statuses(
-                            &all_statuses, &mut cache, Some(&subs_guard), &sender, ts, ts,
-                        );
-                        status_cache.store(cache);
+                        if want_statuses {
+                            let ts = clock.get_time_ns();
+                            let mut cache = (**status_cache.load()).clone();
+                            let subs_guard = status_subs.load();
+                            diff_and_emit_statuses(
+                                &all_statuses, &mut cache, Some(&subs_guard), &sender, ts, ts,
+                            );
+                            status_cache.store(cache);
+                        }
                     }
                     () = cancel.cancelled() => {
-                        log::debug!("Bybit instrument status polling task cancelled");
+                        log::debug!("Bybit instrument polling task cancelled");
                         break;
                     }
                 }
             }
         });
         self.tasks.push(handle);
-        log::info!("Instrument status polling started: interval={poll_secs}s");
+        log::info!("Instrument polling started: interval={poll_secs}s");
     }
 }
 
@@ -653,7 +691,7 @@ impl DataClient for BybitDataClient {
         // Seed instrument status cache from initial fetch
         if self
             .config
-            .instrument_status_poll_secs
+            .instrument_poll_interval_secs
             .is_some_and(|s| s > 0)
         {
             // Collect all statuses first (without holding the lock across await)
@@ -765,11 +803,11 @@ impl DataClient for BybitDataClient {
             self.tasks.push(handle);
         }
 
-        // Spawn instrument status polling task
-        if let Some(poll_secs) = self.config.instrument_status_poll_secs
+        // Spawn the instrument/status polling task (serves both definition and status subs).
+        if let Some(poll_secs) = self.config.instrument_poll_interval_secs
             && poll_secs > 0
         {
-            self.spawn_instrument_status_polling(&product_types, poll_secs);
+            self.spawn_instrument_polling(&product_types, poll_secs);
         }
 
         self.is_connected.store(true, Ordering::Release);
@@ -1417,6 +1455,38 @@ impl DataClient for BybitDataClient {
         Ok(())
     }
 
+    fn subscribe_instruments(&mut self, cmd: SubscribeInstruments) -> anyhow::Result<()> {
+        log::debug!(
+            "subscribe_instruments: {venue} (definition updates detected via periodic instrument info polling)",
+            venue = cmd.venue,
+        );
+        self.subscribe_all_instruments
+            .store(true, Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
+        log::debug!(
+            "subscribe_instrument: {id} (definition updates detected via periodic instrument info polling)",
+            id = cmd.instrument_id,
+        );
+        self.instrument_subs.insert(cmd.instrument_id);
+        Ok(())
+    }
+
+    fn unsubscribe_instruments(&mut self, cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
+        log::debug!("unsubscribe_instruments: {venue}", venue = cmd.venue);
+        self.subscribe_all_instruments
+            .store(false, Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
+        log::debug!("unsubscribe_instrument: {id}", id = cmd.instrument_id);
+        self.instrument_subs.remove(&cmd.instrument_id);
+        Ok(())
+    }
+
     fn subscribe_instrument_status(
         &mut self,
         cmd: SubscribeInstrumentStatus,
@@ -1426,6 +1496,12 @@ impl DataClient for BybitDataClient {
             id = cmd.instrument_id,
         );
         self.instrument_status_subs.insert(cmd.instrument_id);
+
+        if let Some(action) = self.status_cache.load().get(&cmd.instrument_id).copied() {
+            let ts = self.clock.get_time_ns();
+            emit_status(&self.data_sender, cmd.instrument_id, action, ts, ts);
+        }
+
         Ok(())
     }
 
