@@ -77,16 +77,7 @@
 //! maintenance below 100ms (defaults are seconds to minutes). Cadence drifts
 //! by at most one body duration per fire.
 
-use std::{
-    fmt::Debug,
-    future::Future,
-    pin::Pin,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU8, Ordering},
-    },
-    time::Duration,
-};
+use std::{fmt::Debug, future::Future, pin::Pin, time::Duration};
 
 use indexmap::IndexSet;
 use nautilus_common::{
@@ -122,136 +113,26 @@ use nautilus_trading::{
 use tabled::{Table, Tabled, settings::Style};
 
 use crate::{
-    builder::{ExternalMessageBusIngress, LiveNodeBuilder},
-    config::{LiveNodeConfig, PluginConfig},
-    execution::LiveExecutionClient,
-    manager::{
-        ExecutionManager, ExecutionManagerConfig, OpenOrderReportCheck, PositionReportCheck,
+    execution::{
+        client::LiveExecutionClient,
+        manager::{
+            ExecutionManager, ExecutionManagerConfig, OpenOrderReportCheck, PositionReportCheck,
+        },
     },
     runner::{AsyncRunner, AsyncRunnerChannels},
 };
 
-/// Lifecycle state of the `LiveNode` runner.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[repr(u8)]
-pub enum NodeState {
-    #[default]
-    Idle = 0,
-    Starting = 1,
-    Running = 2,
-    ShuttingDown = 3,
-    Stopped = 4,
-}
+pub mod builder;
+pub mod config;
+#[cfg(feature = "plugin")]
+pub mod plugin;
+mod state;
 
-impl NodeState {
-    /// Creates a `NodeState` from its `u8` representation.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the value is not a valid `NodeState` discriminant (0-4).
-    #[must_use]
-    pub const fn from_u8(value: u8) -> Self {
-        match value {
-            0 => Self::Idle,
-            1 => Self::Starting,
-            2 => Self::Running,
-            3 => Self::ShuttingDown,
-            4 => Self::Stopped,
-            _ => panic!("Invalid NodeState value"),
-        }
-    }
-
-    /// Returns the `u8` representation of this state.
-    #[must_use]
-    pub const fn as_u8(self) -> u8 {
-        self as u8
-    }
-
-    /// Returns whether the state is `Running`.
-    #[must_use]
-    pub const fn is_running(&self) -> bool {
-        matches!(self, Self::Running)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum EngineConnectionStatus {
-    Connected,
-    TimedOut,
-    StopRequested,
-    ShutdownRequested,
-}
-
-impl EngineConnectionStatus {
-    const fn abort_reason(self) -> Option<&'static str> {
-        match self {
-            Self::Connected | Self::TimedOut => None,
-            Self::StopRequested => Some("Stop signal received during startup"),
-            Self::ShutdownRequested => Some("Shutdown signal received during startup"),
-        }
-    }
-}
-
-/// A thread-safe handle to control a `LiveNode` from other threads.
-///
-/// This allows stopping and querying the node's state without requiring the
-/// node itself to be Send + Sync.
-#[derive(Clone, Debug)]
-pub struct LiveNodeHandle {
-    /// Atomic flag indicating if the node should stop.
-    pub(crate) stop_flag: Arc<AtomicBool>,
-    /// Atomic state as `NodeState::as_u8()`.
-    pub(crate) state: Arc<AtomicU8>,
-}
-
-impl Default for LiveNodeHandle {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl LiveNodeHandle {
-    /// Creates a new handle with default (`Idle`) state.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            stop_flag: Arc::new(AtomicBool::new(false)),
-            state: Arc::new(AtomicU8::new(NodeState::Idle.as_u8())),
-        }
-    }
-
-    /// Sets the node state (internal use).
-    pub(crate) fn set_state(&self, state: NodeState) {
-        self.state.store(state.as_u8(), Ordering::Relaxed);
-        if state == NodeState::Running {
-            // Clear stop flag when entering running state
-            self.stop_flag.store(false, Ordering::Relaxed);
-        }
-    }
-
-    /// Returns the current node state.
-    #[must_use]
-    pub fn state(&self) -> NodeState {
-        NodeState::from_u8(self.state.load(Ordering::Relaxed))
-    }
-
-    /// Returns whether the node should stop.
-    #[must_use]
-    pub fn should_stop(&self) -> bool {
-        self.stop_flag.load(Ordering::Relaxed)
-    }
-
-    /// Returns whether the node is currently running.
-    #[must_use]
-    pub fn is_running(&self) -> bool {
-        self.state().is_running()
-    }
-
-    /// Signals the node to stop.
-    pub fn stop(&self) {
-        self.stop_flag.store(true, Ordering::Relaxed);
-    }
-}
+use builder::ExternalMessageBusIngress;
+pub use builder::LiveNodeBuilder;
+use config::{LiveNodeConfig, PluginConfig};
+use state::EngineConnectionStatus;
+pub use state::{LiveNodeHandle, NodeState};
 
 /// High-level abstraction for a live Nautilus system node.
 ///
@@ -276,7 +157,7 @@ pub struct LiveNode {
     external_msgbus: Option<ExternalMessageBusIngress>,
     shutdown_deadline: Option<dst::time::Instant>,
     #[cfg(feature = "plugin")]
-    plugins: crate::plugin::NodePlugins,
+    plugins: plugin::NodePlugins,
     #[cfg(feature = "python")]
     #[allow(dead_code)] // TODO: Under development
     python_actors: Vec<pyo3::Py<pyo3::PyAny>>,
@@ -305,7 +186,7 @@ impl LiveNode {
             external_msgbus,
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
-            plugins: crate::plugin::NodePlugins,
+            plugins: plugin::NodePlugins,
             #[cfg(feature = "python")]
             python_actors: Vec::new(),
         }
@@ -375,7 +256,7 @@ impl LiveNode {
             external_msgbus: None,
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
-            plugins: crate::plugin::NodePlugins,
+            plugins: plugin::NodePlugins,
             #[cfg(feature = "python")]
             python_actors: Vec::new(),
         };

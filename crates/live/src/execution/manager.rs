@@ -69,8 +69,6 @@ use nautilus_model::{
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use ustr::Ustr;
 
-use crate::config::LiveExecEngineConfig;
-
 /// Tag for orders originating from venue (external orders).
 static TAG_VENUE: LazyLock<Ustr> = LazyLock::new(|| Ustr::from("VENUE"));
 
@@ -217,60 +215,6 @@ impl Default for ExecutionManagerConfig {
             purge_closed_positions_buffer_mins: None,
             purge_account_events_lookback_mins: None,
             purge_from_database: false,
-        }
-    }
-}
-
-impl From<&LiveExecEngineConfig> for ExecutionManagerConfig {
-    fn from(config: &LiveExecEngineConfig) -> Self {
-        let filtered_client_order_ids: IndexSet<ClientOrderId> = config
-            .filtered_client_order_ids
-            .clone()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|value| ClientOrderId::from(value.as_str()))
-            .collect();
-
-        let reconciliation_instrument_ids: IndexSet<InstrumentId> = config
-            .reconciliation_instrument_ids
-            .clone()
-            .unwrap_or_default()
-            .into_iter()
-            .map(InstrumentId::from)
-            .collect();
-
-        let open_check_threshold_ns =
-            u64::from(config.open_check_threshold_ms) * NANOSECONDS_IN_MILLISECOND;
-        let position_check_threshold_ns =
-            u64::from(config.position_check_threshold_ms) * NANOSECONDS_IN_MILLISECOND;
-
-        Self {
-            trader_id: TraderId::default(), // Must be set separately via with_trader_id
-            reconciliation: config.reconciliation,
-            lookback_mins: config.reconciliation_lookback_mins.map(u64::from),
-            reconciliation_instrument_ids,
-            filter_unclaimed_external: config.filter_unclaimed_external_orders,
-            filter_position_reports: config.filter_position_reports,
-            filtered_client_order_ids,
-            generate_missing_orders: config.generate_missing_orders,
-            inflight_check_interval_ms: config.inflight_check_interval_ms,
-            inflight_threshold_ms: u64::from(config.inflight_check_threshold_ms),
-            inflight_max_retries: config.inflight_check_retries,
-            open_check_interval_secs: config.open_check_interval_secs,
-            open_check_lookback_mins: config.open_check_lookback_mins.map(u64::from),
-            open_check_threshold_ns,
-            open_check_missing_retries: config.open_check_missing_retries,
-            open_check_open_only: config.open_check_open_only,
-            max_single_order_queries_per_cycle: config.max_single_order_queries_per_cycle,
-            single_order_query_delay_ms: config.single_order_query_delay_ms,
-            position_check_interval_secs: config.position_check_interval_secs,
-            position_check_lookback_mins: u64::from(config.position_check_lookback_mins),
-            position_check_threshold_ns,
-            position_check_retries: config.position_check_retries,
-            purge_closed_orders_buffer_mins: config.purge_closed_orders_buffer_mins,
-            purge_closed_positions_buffer_mins: config.purge_closed_positions_buffer_mins,
-            purge_account_events_lookback_mins: config.purge_account_events_lookback_mins,
-            purge_from_database: config.purge_from_database,
         }
     }
 }

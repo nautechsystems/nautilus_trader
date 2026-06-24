@@ -106,31 +106,21 @@
     reason = "config types deserialize plain field values; unsafe in unrelated impls is sound"
 )]
 
-pub mod emitter;
+pub mod execution;
 pub mod runner;
 
 #[cfg(feature = "node")]
-pub mod builder;
-
-#[cfg(feature = "node")]
-pub mod config;
-
-#[cfg(feature = "node")]
-pub mod manager;
-
-#[cfg(feature = "node")]
 pub mod node;
-
-#[cfg(feature = "node")]
-mod execution;
-
-#[cfg(feature = "plugin")]
-pub mod plugin;
 
 #[cfg(feature = "python")]
 pub mod python;
 
 // Re-exports for adapters
-pub use emitter::ExecutionEventEmitter;
+pub use execution::manager;
+pub use execution::{emitter, emitter::ExecutionEventEmitter};
 pub use nautilus_common::factories::OrderEventFactory;
 pub use nautilus_execution::client::core::ExecutionClientCore;
+#[cfg(feature = "plugin")]
+pub use node::plugin;
+#[cfg(feature = "node")]
+pub use node::{builder, config};

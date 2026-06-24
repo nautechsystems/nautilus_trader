@@ -18,6 +18,7 @@
 use std::{collections::HashMap, str::FromStr, time::Duration};
 
 use ahash::AHashMap;
+use indexmap::IndexSet;
 use nautilus_common::{
     cache::CacheConfig,
     config::{
@@ -29,7 +30,10 @@ use nautilus_common::{
     msgbus::MessageBusConfig,
     throttler::RateLimit,
 };
-use nautilus_core::{UUID4, datetime::NANOSECONDS_IN_SECOND};
+use nautilus_core::{
+    UUID4,
+    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
+};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
     engine::config::ExecutionEngineConfig, order_emulator::config::OrderEmulatorConfig,
@@ -47,42 +51,12 @@ use nautilus_system::{
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use crate::execution::manager::ExecutionManagerConfig;
+
 /// The default rate limit string used for order submission and modification.
 const DEFAULT_ORDER_RATE_LIMIT: &str = "100/00:00:01";
 const RUST_RUNTIME_UNSUPPORTED: &str = "not supported by the Rust live runtime yet";
 const RATE_LIMIT_FORMAT: &str = "expected 'limit/HH:MM:SS'";
-
-/// Configuration for one Rust-native plug-in instance loaded by a live node.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
-)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, bon::Builder)]
-#[serde(default, deny_unknown_fields)]
-pub struct PluginConfig {
-    /// Path to the plug-in cdylib. Relative paths resolve from the process working directory.
-    pub path: String,
-    /// Type name from the plug-in manifest to instantiate.
-    pub type_name: String,
-    /// Per-instance JSON configuration passed to the plug-in `create` thunk.
-    #[builder(default)]
-    pub config: HashMap<String, serde_json::Value>,
-    /// Optional SHA-256 hex digest of the cdylib before loading.
-    pub sha256: Option<String>,
-}
-
-impl Default for PluginConfig {
-    fn default() -> Self {
-        Self::builder()
-            .path(String::new())
-            .type_name(String::new())
-            .build()
-    }
-}
 
 /// Configuration for live data engines.
 #[cfg_attr(
@@ -539,6 +513,60 @@ impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
     }
 }
 
+impl From<&LiveExecEngineConfig> for ExecutionManagerConfig {
+    fn from(config: &LiveExecEngineConfig) -> Self {
+        let filtered_client_order_ids: IndexSet<ClientOrderId> = config
+            .filtered_client_order_ids
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|value| ClientOrderId::from(value.as_str()))
+            .collect();
+
+        let reconciliation_instrument_ids: IndexSet<InstrumentId> = config
+            .reconciliation_instrument_ids
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .map(InstrumentId::from)
+            .collect();
+
+        let open_check_threshold_ns =
+            u64::from(config.open_check_threshold_ms) * NANOSECONDS_IN_MILLISECOND;
+        let position_check_threshold_ns =
+            u64::from(config.position_check_threshold_ms) * NANOSECONDS_IN_MILLISECOND;
+
+        Self {
+            trader_id: TraderId::default(),
+            reconciliation: config.reconciliation,
+            lookback_mins: config.reconciliation_lookback_mins.map(u64::from),
+            reconciliation_instrument_ids,
+            filter_unclaimed_external: config.filter_unclaimed_external_orders,
+            filter_position_reports: config.filter_position_reports,
+            filtered_client_order_ids,
+            generate_missing_orders: config.generate_missing_orders,
+            inflight_check_interval_ms: config.inflight_check_interval_ms,
+            inflight_threshold_ms: u64::from(config.inflight_check_threshold_ms),
+            inflight_max_retries: config.inflight_check_retries,
+            open_check_interval_secs: config.open_check_interval_secs,
+            open_check_lookback_mins: config.open_check_lookback_mins.map(u64::from),
+            open_check_threshold_ns,
+            open_check_missing_retries: config.open_check_missing_retries,
+            open_check_open_only: config.open_check_open_only,
+            max_single_order_queries_per_cycle: config.max_single_order_queries_per_cycle,
+            single_order_query_delay_ms: config.single_order_query_delay_ms,
+            position_check_interval_secs: config.position_check_interval_secs,
+            position_check_lookback_mins: u64::from(config.position_check_lookback_mins),
+            position_check_threshold_ns,
+            position_check_retries: config.position_check_retries,
+            purge_closed_orders_buffer_mins: config.purge_closed_orders_buffer_mins,
+            purge_closed_positions_buffer_mins: config.purge_closed_positions_buffer_mins,
+            purge_account_events_lookback_mins: config.purge_account_events_lookback_mins,
+            purge_from_database: config.purge_from_database,
+        }
+    }
+}
+
 /// Configuration for live client message routing.
 #[cfg_attr(
     feature = "python",
@@ -632,6 +660,38 @@ pub struct LiveExecClientConfig {
     /// The client's message routing configuration.
     #[builder(default)]
     pub routing: RoutingConfig,
+}
+
+/// Configuration for one Rust-native plug-in instance loaded by a live node.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
+pub struct PluginConfig {
+    /// Path to the plug-in cdylib. Relative paths resolve from the process working directory.
+    pub path: String,
+    /// Type name from the plug-in manifest to instantiate.
+    pub type_name: String,
+    /// Per-instance JSON configuration passed to the plug-in `create` thunk.
+    #[builder(default)]
+    pub config: HashMap<String, serde_json::Value>,
+    /// Optional SHA-256 hex digest of the cdylib before loading.
+    pub sha256: Option<String>,
+}
+
+impl Default for PluginConfig {
+    fn default() -> Self {
+        Self::builder()
+            .path(String::new())
+            .type_name(String::new())
+            .build()
+    }
 }
 
 /// Configuration for live Nautilus system nodes.

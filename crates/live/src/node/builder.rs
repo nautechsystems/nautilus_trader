@@ -41,11 +41,15 @@ use nautilus_system::{
     kernel::NautilusKernel,
 };
 
-use crate::{
+use super::{
+    LiveNode,
     config::{LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig},
-    execution::LiveExecutionClient,
-    manager::{ExecutionManager, ExecutionManagerConfig},
-    node::LiveNode,
+};
+use crate::{
+    execution::{
+        client::LiveExecutionClient,
+        manager::{ExecutionManager, ExecutionManagerConfig},
+    },
     runner::AsyncRunner,
 };
 
