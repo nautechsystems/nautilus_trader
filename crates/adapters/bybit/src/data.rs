@@ -647,6 +647,9 @@ impl DataClient for BybitDataClient {
         self.option_greeks_subs.store(AHashSet::new());
         self.instrument_status_subs.store(AHashSet::new());
         self.status_cache.store(AHashMap::new());
+        self.instrument_subs.store(AHashSet::new());
+        self.subscribe_all_instruments
+            .store(false, Ordering::Relaxed);
         Ok(())
     }
 
@@ -848,6 +851,9 @@ impl DataClient for BybitDataClient {
         self.option_greeks_subs.store(AHashSet::new());
         self.instrument_status_subs.store(AHashSet::new());
         self.status_cache.store(AHashMap::new());
+        self.instrument_subs.store(AHashSet::new());
+        self.subscribe_all_instruments
+            .store(false, Ordering::Relaxed);
         self.is_connected.store(false, Ordering::Release);
         log::info!("Disconnected: client_id={}", self.client_id);
         Ok(())

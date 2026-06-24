@@ -30,10 +30,20 @@ use nautilus_model::{
 fn economics_differ(a: &InstrumentAny, b: &InstrumentAny) -> bool {
     a.maker_fee() != b.maker_fee()
         || a.taker_fee() != b.taker_fee()
+        || a.margin_init() != b.margin_init()
+        || a.margin_maint() != b.margin_maint()
+        || a.price_precision() != b.price_precision()
+        || a.size_precision() != b.size_precision()
         || a.price_increment() != b.price_increment()
         || a.size_increment() != b.size_increment()
+        || a.multiplier() != b.multiplier()
+        || a.lot_size() != b.lot_size()
         || a.min_quantity() != b.min_quantity()
+        || a.max_quantity() != b.max_quantity()
         || a.min_notional() != b.min_notional()
+        || a.max_notional() != b.max_notional()
+        || a.min_price() != b.min_price()
+        || a.max_price() != b.max_price()
 }
 
 /// Compares a fresh instrument snapshot against cached definitions, emitting [`DataEvent::Instrument`]
@@ -75,6 +85,7 @@ mod tests {
         instruments::{CryptoPerpetual, InstrumentAny},
         types::{Currency, Money, Price, Quantity},
     };
+    use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
@@ -122,7 +133,7 @@ mod tests {
         perp(dec!(0.0001), dec!(0.00055), Quantity::from("0.001"), None)
     }
 
-    #[test]
+    #[rstest]
     fn test_emits_for_new_instrument() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let instrument = default_perp();
@@ -137,7 +148,7 @@ mod tests {
         assert!(cached.contains_key(&instrument.id()));
     }
 
-    #[test]
+    #[rstest]
     fn test_no_emit_when_unchanged() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let instrument = default_perp();
@@ -149,7 +160,7 @@ mod tests {
         assert!(rx.try_recv().is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_emits_on_fee_change() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let id = default_perp().id();
@@ -170,7 +181,7 @@ mod tests {
         assert_eq!(cached.get(&id).unwrap().taker_fee(), dec!(0.0008));
     }
 
-    #[test]
+    #[rstest]
     fn test_emits_on_size_increment_and_min_notional_change() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let id = default_perp().id();
@@ -195,7 +206,7 @@ mod tests {
         assert!(rx.try_recv().is_ok(), "min_notional change should emit");
     }
 
-    #[test]
+    #[rstest]
     fn test_subscription_gating_updates_cache_but_only_emits_for_subscribed() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let id = default_perp().id();
