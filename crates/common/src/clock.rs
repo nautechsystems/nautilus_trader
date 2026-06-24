@@ -15,6 +15,8 @@
 
 //! Real-time and static `Clock` implementations.
 
+#![warn(clippy::clone_on_ref_ptr)]
+
 use std::{any::Any, cell::RefCell, collections::BTreeMap, fmt::Debug, ops::Deref, time::Duration};
 
 use ahash::AHashMap;
@@ -2219,10 +2221,10 @@ mod tests {
         let cancellations = Arc::new(Mutex::new(Vec::new()));
         let cancel_all = Arc::new(Mutex::new(false));
 
-        let alerts_for_handler = alerts.clone();
-        let timers_for_handler = timers.clone();
-        let cancellations_for_handler = cancellations.clone();
-        let cancel_all_for_handler = cancel_all.clone();
+        let alerts_for_handler = Arc::clone(&alerts);
+        let timers_for_handler = Arc::clone(&timers);
+        let cancellations_for_handler = Arc::clone(&cancellations);
+        let cancel_all_for_handler = Arc::clone(&cancel_all);
         let api = ClockApi::from_handlers(
             || UnixNanos::from(1_700_000_000_123_456_789),
             move |name, alert_time_ns, _callback, allow_past| {
