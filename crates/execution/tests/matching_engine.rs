@@ -43,8 +43,8 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggressorSide, AssetClass, BookAction, BookType, ContingencyType,
-        InstrumentCloseType, LiquiditySide, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
-        TimeInForce, TrailingOffsetType, TriggerType,
+        InstrumentCloseType, LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OptionKind,
+        OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
         OrderEmulated, OrderEventAny, OrderEventType, OrderFilled, OrderRejected, OrderReleased,
@@ -596,6 +596,126 @@ fn test_process_order_when_invalid_reduce_only(
             "Reduce-only order O-19700101-000000-001-001-1 (MARKET-BUY) would have increased position"
         )
     );
+}
+
+#[rstest]
+#[case::paused(MarketStatusAction::Pause, MarketStatus::Paused)]
+#[case::suspended(MarketStatusAction::Suspend, MarketStatus::Suspended)]
+#[case::closed(MarketStatusAction::Close, MarketStatus::Closed)]
+fn test_process_order_rejects_when_market_not_open_and_accepts_after_reopen(
+    #[case] close_action: MarketStatusAction,
+    #[case] expected_status: MarketStatus,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let mut engine =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+    engine.process_status(close_action);
+    assert_eq!(engine.market_status, expected_status);
+
+    let rejected_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut rejected_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(rejected_client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut rejected_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+    let rejected = match saved_messages.first().unwrap() {
+        OrderEventAny::Rejected(rejected) => rejected,
+        event => panic!("Expected OrderRejected event, was {event:?}"),
+    };
+    assert_eq!(rejected.client_order_id, rejected_client_order_id);
+    assert!(rejected.reason.as_str().contains(expected_status.as_ref()));
+    assert!(!engine.order_exists(rejected_client_order_id));
+
+    clear_order_event_handler_messages(&order_event_handler);
+    engine.process_status(MarketStatusAction::Trading);
+    assert_eq!(engine.market_status, MarketStatus::Open);
+
+    let accepted_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut accepted_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(accepted_client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut accepted_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+    let accepted = match saved_messages.first().unwrap() {
+        OrderEventAny::Accepted(accepted) => accepted,
+        event => panic!("Expected OrderAccepted event, was {event:?}"),
+    };
+    assert_eq!(accepted.client_order_id, accepted_client_order_id);
+    assert!(engine.order_exists(accepted_client_order_id));
+}
+
+#[rstest]
+fn test_market_status_pause_blocks_matching_until_trading_resumes(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let resting_bid_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut resting_bid = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1499.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(resting_bid_id)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut resting_bid, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    engine_l2.process_status(MarketStatusAction::Pause);
+    assert_eq!(engine_l2.market_status, MarketStatus::Paused);
+
+    let matching_ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1498.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&matching_ask).unwrap();
+
+    let paused_messages = get_order_event_handler_messages(&order_event_handler);
+    assert!(
+        paused_messages
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Filled(_))),
+        "paused market must not fill resting orders, was {paused_messages:?}",
+    );
+    assert!(engine_l2.order_exists(resting_bid_id));
+
+    engine_l2.process_status(MarketStatusAction::Trading);
+    engine_l2.iterate(UnixNanos::from(2_u64), AggressorSide::NoAggressor);
+
+    let resumed_messages = get_order_event_handler_messages(&order_event_handler);
+    let fill = resumed_messages
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .expect("resting order should fill after market reopens");
+    assert_eq!(fill.client_order_id, resting_bid_id);
 }
 
 #[rstest]
@@ -1771,6 +1891,37 @@ fn test_process_stop_limit_order_triggered_not_filled(
     assert_eq!(saved_messages.len(), 2);
     assert_eq!(accepted.client_order_id, client_order_id);
     assert_eq!(triggered.client_order_id, client_order_id);
+
+    let resting = engine_l2
+        .get_core()
+        .get_order(client_order_id)
+        .copied()
+        .expect("triggered stop-limit should rest in the core");
+    assert_eq!(resting.trigger_price, None);
+    assert_eq!(resting.limit_price, Some(Price::from("1490.00")));
+
+    clear_order_event_handler_messages(&order_event_handler);
+    let matching_ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1489.00"),
+            Quantity::from("1.000"),
+            2,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&matching_ask).unwrap();
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fill = saved_messages
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .expect("triggered stop-limit should fill as a limit after the ask crosses");
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
 }
 
 #[rstest]
@@ -1964,6 +2115,70 @@ fn test_passive_post_only_stop_limit_rejected_when_triggered_as_taker(
         other => panic!("Expected OrderRejected event second, was {other:?}"),
     };
 
+    assert_eq!(triggered.client_order_id, client_order_id);
+    assert_eq!(rejected.client_order_id, client_order_id);
+    assert!(rejected.due_post_only);
+    assert!(!engine_l2.order_exists(client_order_id));
+}
+
+#[rstest]
+#[case::stop_limit(OrderType::StopLimit, "1495.00")]
+#[case::limit_if_touched(OrderType::LimitIfTouched, "1500.00")]
+fn test_immediate_post_only_limit_style_trigger_rejected_as_taker(
+    #[case] order_type: OrderType,
+    #[case] trigger_price: &str,
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let config = OrderMatchingEngineConfig {
+        reject_stop_orders: false,
+        ..Default::default()
+    };
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("2.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&ask).unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut order = OrderTestBuilder::new(order_type)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from(trigger_price))
+        .price(Price::from("1505.00"))
+        .quantity(Quantity::from("1.000"))
+        .post_only(true)
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert_eq!(saved_messages.len(), 3);
+
+    let accepted = match saved_messages.first().unwrap() {
+        OrderEventAny::Accepted(accepted) => accepted,
+        event => panic!("Expected OrderAccepted event first, was {event:?}"),
+    };
+    let triggered = match saved_messages.get(1).unwrap() {
+        OrderEventAny::Triggered(triggered) => triggered,
+        event => panic!("Expected OrderTriggered event second, was {event:?}"),
+    };
+    let rejected = match saved_messages.get(2).unwrap() {
+        OrderEventAny::Rejected(rejected) => rejected,
+        event => panic!("Expected OrderRejected event third, was {event:?}"),
+    };
+
+    assert_eq!(accepted.client_order_id, client_order_id);
     assert_eq!(triggered.client_order_id, client_order_id);
     assert_eq!(rejected.client_order_id, client_order_id);
     assert!(rejected.due_post_only);

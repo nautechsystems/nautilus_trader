@@ -132,13 +132,14 @@ impl IdsGenerator {
         } else {
             // Netting OMS (position id will be derived from instrument and strategy)
             let cache = self.cache.as_ref().borrow();
-            let positions_open =
-                cache.positions_open(None, Some(&order.instrument_id()), None, None, None);
-            if positions_open.is_empty() {
-                None
-            } else {
-                Some(positions_open[0].id)
-            }
+            let positions_open = cache.positions_open(
+                None,
+                Some(&order.instrument_id()),
+                Some(&order.strategy_id()),
+                None,
+                None,
+            );
+            positions_open.first().map(|position| position.id)
         }
     }
 
@@ -212,7 +213,8 @@ mod tests {
         enums::{OmsType, OrderSide, OrderType},
         events::{OrderFilled, order::spec::OrderFilledSpec},
         identifiers::{
-            AccountId, ClientOrderId, PositionId, Venue, VenueOrderId, stubs::account_id,
+            AccountId, ClientOrderId, PositionId, StrategyId, Venue, VenueOrderId,
+            stubs::account_id,
         },
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
@@ -341,6 +343,33 @@ mod tests {
         // position id should be returned for the existing position
         let position_id = ids_generator.get_position_id(&market_order_buy, None);
         assert_eq!(position_id, Some(position.id));
+    }
+
+    #[rstest]
+    fn test_get_position_id_netting_filters_by_strategy(
+        instrument_eth_usdt: InstrumentAny,
+        market_order_fill: OrderFilled,
+    ) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut ids_generator = get_ids_generator(cache.clone(), false, OmsType::Netting);
+        let position = Position::new(&instrument_eth_usdt, market_order_fill);
+        cache
+            .as_ref()
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+
+        let order_for_other_strategy = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_eth_usdt.id())
+            .strategy_id(StrategyId::from("S-002"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-9"))
+            .submit(true)
+            .build();
+
+        let position_id = ids_generator.get_position_id(&order_for_other_strategy, None);
+        assert_eq!(position_id, None);
     }
 
     #[rstest]
