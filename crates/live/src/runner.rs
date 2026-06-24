@@ -109,15 +109,6 @@ impl AsyncTimeEventSender {
     pub const fn new(time_tx: tokio::sync::mpsc::UnboundedSender<TimeEventHandler>) -> Self {
         Self { time_tx }
     }
-
-    /// Gets a clone of the underlying channel sender for async use.
-    ///
-    /// This allows async contexts to get a direct channel sender that
-    /// can be moved into async tasks without `RefCell` borrowing issues.
-    #[must_use]
-    pub fn get_channel_sender(&self) -> tokio::sync::mpsc::UnboundedSender<TimeEventHandler> {
-        self.time_tx.clone()
-    }
 }
 
 impl TimeEventSender for AsyncTimeEventSender {
@@ -560,25 +551,6 @@ mod tests {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let sender = AsyncTimeEventSender::new(tx);
         assert!(format!("{sender:?}").contains("AsyncTimeEventSender"));
-    }
-
-    #[rstest]
-    fn test_async_time_event_sender_get_channel() {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let sender = AsyncTimeEventSender::new(tx);
-        let channel = sender.get_channel_sender();
-
-        // Verify the channel is functional
-        let event = TimeEvent::new(
-            Ustr::from("test"),
-            UUID4::new(),
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-        );
-        let callback = TimeEventCallback::from(|_: TimeEvent| {});
-        let handler = TimeEventHandler::new(event, callback);
-
-        assert!(channel.send(handler).is_ok());
     }
 
     #[tokio::test]

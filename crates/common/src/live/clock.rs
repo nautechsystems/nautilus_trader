@@ -15,15 +15,8 @@
 
 //! Live clock implementation using Tokio for real-time operations.
 
-use std::{
-    collections::{BTreeMap, BinaryHeap},
-    ops::Deref,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::{collections::BTreeMap, ops::Deref, sync::Arc};
 
-use futures::Stream;
 use nautilus_core::{
     AtomicTime, UnixNanos, correctness::check_predicate_true, time::get_atomic_clock_realtime,
 };
@@ -36,9 +29,7 @@ use crate::{
         validate_and_prepare_timer,
     },
     runner::{TimeEventSender, try_get_time_event_sender},
-    timer::{
-        ScheduledTimeEvent, TimeEvent, TimeEventCallback, TimeEventHandler, create_valid_interval,
-    },
+    timer::{TimeEvent, TimeEventCallback, TimeEventHandler, create_valid_interval},
 };
 
 /// A real-time clock which uses system time.
@@ -285,36 +276,6 @@ impl Clock for LiveClock {
     fn reset(&mut self) {
         self.cancel_timers();
         self.callbacks.clear();
-    }
-}
-
-// Helper struct to stream events from the heap
-#[derive(Debug)]
-pub struct TimeEventStream {
-    heap: Arc<tokio::sync::Mutex<BinaryHeap<ScheduledTimeEvent>>>,
-}
-
-impl TimeEventStream {
-    pub const fn new(heap: Arc<tokio::sync::Mutex<BinaryHeap<ScheduledTimeEvent>>>) -> Self {
-        Self { heap }
-    }
-}
-
-impl Stream for TimeEventStream {
-    type Item = TimeEvent;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let Ok(mut heap) = self.heap.try_lock() else {
-            cx.waker().wake_by_ref();
-            return Poll::Pending;
-        };
-
-        if let Some(event) = heap.pop() {
-            Poll::Ready(Some(event.into_inner()))
-        } else {
-            cx.waker().wake_by_ref();
-            Poll::Pending
-        }
     }
 }
 
