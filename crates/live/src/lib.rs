@@ -116,8 +116,7 @@ pub mod node;
 pub mod python;
 
 // Re-exports for adapters
-pub use execution::manager;
-pub use execution::{emitter, emitter::ExecutionEventEmitter};
+pub use execution::{emitter, emitter::ExecutionEventEmitter, manager};
 pub use nautilus_common::factories::OrderEventFactory;
 pub use nautilus_execution::client::core::ExecutionClientCore;
 #[cfg(feature = "plugin")]

@@ -123,6 +123,8 @@ def get_cached_binance_http_client(
         ]
     else:
         # Futures
+        # UM and CM share a server-side rate-limit pool; this factory
+        # creates separate local limiters per account type
         global_quota = Quota.rate_per_minute(2400)
         ratelimiter_default_quota = global_quota
         ratelimiter_quotas = [

@@ -33,6 +33,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Added Binance Futures `MIN_NOTIONAL` parsing for `min_notional` (#4280), thanks @filipmacek
 - Added Binance Futures ticker data support in Rust
 - Added Binance order-list submission in Rust
+- Added Binance market-data WebSocket forward-compatibility test fixtures with CM-UM integration `st` and `ps` fields (Python and Rust)
 - Added `BitmexInstrumentState::Unknown` to tolerate unrecognized venue states without bootstrap failure
 - Added BitMEX legacy futures, spreads, and reference basket instrument parsing
 - Added Databento `venue_dataset_map` to override the default venue-to-dataset mappings
@@ -75,6 +76,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Changed `SyntheticInstrument` fallible methods to return `SyntheticInstrumentError` instead of `anyhow::Error` (Rust)
 - Changed tick scheme constructors and parsing to return `TickSchemeError` instead of `anyhow::Error` (Rust)
 - Changed WebSocket and socket `reconnect_timeout_ms` to bound only connection establishment (Rust)
+- Changed Binance Spot SBE WebSocket API schema version from 3:3 to 3:4, aligning with REST API and generated codecs (Rust)
 - Changed Bybit `BybitHttpClient::submit_order` to take a trailing native TP/SL params argument; the PyO3 binding defaults it to `None` (Rust)
 - Removed `CacheConfig.database` and `MessageBusConfig.backing`; pass adapters separately
 - Removed common `DatabaseConfig` and `MessageBusBackingConfig`; use Redis/Postgres configs
@@ -147,6 +149,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Fixed Binance Futures node panic on `BNFCR` Credits Trading Mode balances
 - Fixed Binance Spot expired order handling
 - Fixed Binance Spot/Futures WebSocket connection pool race (#4244), thanks @filipmacek
+- Fixed Binance HTTP client not detecting non-JSON responses with success status codes, causing unhandled `DecodeError` during reconciliation on demo/testnet environments
 - Fixed BitMEX instrument bootstrap aborting on any row deserialize failure (#4283), thanks for reporting @seungpyoson
 - Fixed Blockchain snapshot bootstrap checks
 - Fixed Blockchain pool-event replay to require durable timestamps before checkpoints
@@ -224,6 +227,7 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Updated cache and message bus docs for technology-owned config factories
 - Updated commodity instrument and execution concept guides for negative price support
 - Updated OKX integration docs with EEA endpoint override guidance (#4250), thanks for reporting @msnatm-code
+- Added Binance COIN-M / USD-M architecture integration section covering WebSocket stream changes, REST API changes, rate-limit pool sharing, and dualSidePosition unification
 
 ### Deprecations
 

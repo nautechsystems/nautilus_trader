@@ -1219,6 +1219,58 @@ To use hedge mode:
             self.submit_order(order, position_id)
     ```
 
+### COIN-M / USD-M architecture
+
+Binance COIN-M Futures (CM / DAPI) and USD-M Futures (UM / FAPI) share a
+unified architecture. This section covers the implications for the adapter.
+
+See the [Important CM-UM Integration Notice](https://developers.binance.com/docs/derivatives/coin-margined-futures/Important-CM-UM-Integration-Notice)
+for the full details.
+
+#### WebSocket streams
+
+Market-data stream payloads include `st` (symbol type: `1` = UM, `2` = CM) on
+`<symbol>@aggTrade`, `<symbol>@ticker`, `<symbol>@bookTicker`,
+`<symbol>@depth<levels>`, `<symbol>@miniTicker`, and all `!*@arr` streams.
+UM-side single-symbol streams also include `ps` (pair symbol) on
+`<symbol>@bookTicker`, `<symbol>@depth<levels>`, `<symbol>@miniTicker`, and
+`<symbol>@rpiDepth`.
+
+The adapter uses `msgspec` (Python) and `serde` (Rust) for JSON decoding, both
+of which ignore unknown fields by default. These fields are silently dropped.
+
+All-market array streams (`!ticker@arr`, `!miniTicker@arr`, `!bookTicker`,
+`!forceOrder@arr`, `!contractInfo`) deliver merged UM + CM content on both
+`fstream` and `dstream`.
+
+#### REST and WebSocket API
+
+- Order placement and modification acknowledgement responses do not include
+  `avgPrice` / `cumQuote` / `cumBase`. The adapter sources fills from the user
+  data stream. Query endpoints (`GET /{f,d}api/v1/order`, `userTrades`) still
+  return these fields.
+- `PUT /dapi/v1/order` (COIN-M modify) requires both `price` and `quantity`.
+  The adapter's `_modify_order` sends both fields, falling back to the cached
+  order's values.
+- COIN-M conditional orders (STOP, TAKE_PROFIT, etc.) use the
+  `/dapi/v1/algoOrder` endpoint. The adapter routes all futures conditional
+  orders through the algo order API.
+- `GET /dapi/v1/openOrders` with an invalid symbol returns error `-1121`.
+
+#### Rate-limit pools
+
+UM and CM share a single rate-limit pool per IP (2400 weight/min,
+1200 orders/min, 300 orders/10s). The adapter creates separate HTTP client
+instances for UM and CM, each with its own rate limiter. If a node drives both
+UM and CM clients simultaneously, the combined traffic may exceed the shared
+server-side budget.
+
+#### dualSidePosition
+
+UM and CM share the same `dualSidePosition` setting. Changing it on either
+side affects both. Ensure both UM and CM have no open orders or positions
+before flipping the setting.
+
 ## Contributing
 
 :::info
