@@ -17,6 +17,8 @@
 
 use std::fmt;
 
+use crate::common::consts::should_retry_error_code;
+
 /// Represents HTTP client errors for the Deribit adapter.
 #[derive(Debug, Clone)]
 pub enum DeribitHttpError {
@@ -73,6 +75,17 @@ impl From<anyhow::Error> for DeribitHttpError {
 }
 
 impl DeribitHttpError {
+    /// Returns whether this error is retryable.
+    #[must_use]
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::NetworkError(_) => true,
+            Self::UnexpectedStatus { status, .. } => *status >= 500 || *status == 429,
+            Self::DeribitError { error_code, .. } => should_retry_error_code(*error_code),
+            _ => false,
+        }
+    }
+
     /// Maps a JSON-RPC error to the appropriate error variant.
     ///
     /// Standard JSON-RPC error codes (-32xxx) are mapped to `ValidationError`,
@@ -112,5 +125,30 @@ impl DeribitHttpError {
                 message,
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(DeribitHttpError::NetworkError("timeout".to_string()), true)]
+    #[case(DeribitHttpError::Timeout("read".to_string()), false)]
+    #[case(DeribitHttpError::UnexpectedStatus { status: 500, body: String::new() }, true)]
+    #[case(DeribitHttpError::UnexpectedStatus { status: 502, body: String::new() }, true)]
+    #[case(DeribitHttpError::UnexpectedStatus { status: 429, body: String::new() }, true)]
+    #[case(DeribitHttpError::UnexpectedStatus { status: 403, body: String::new() }, false)]
+    #[case(DeribitHttpError::DeribitError { error_code: 10028, message: String::new() }, true)]
+    #[case(DeribitHttpError::DeribitError { error_code: 13888, message: String::new() }, true)]
+    #[case(DeribitHttpError::DeribitError { error_code: -32600, message: String::new() }, false)]
+    #[case(DeribitHttpError::JsonError("bad".to_string()), false)]
+    #[case(DeribitHttpError::ValidationError("bad".to_string()), false)]
+    #[case(DeribitHttpError::MissingCredentials, false)]
+    #[case(DeribitHttpError::Canceled("shutdown".to_string()), false)]
+    fn test_is_retryable(#[case] error: DeribitHttpError, #[case] expected: bool) {
+        assert_eq!(error.is_retryable(), expected);
     }
 }

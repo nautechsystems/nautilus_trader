@@ -850,7 +850,7 @@ impl DataClient for BetfairDataClient {
                 .subscribe_markets(market_filter, data_filter, None, conflate_ms)
                 .await
             {
-                log::error!("Failed to subscribe to market data: {e}");
+                log::warn!("Failed to subscribe to market data: {e}");
             }
         });
 

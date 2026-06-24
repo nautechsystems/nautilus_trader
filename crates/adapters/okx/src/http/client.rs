@@ -112,7 +112,7 @@ use crate::{
     common::{
         consts::{
             OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID,
-            OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE, should_retry_error_code,
+            OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE,
         },
         credential::Credential,
         enums::{
@@ -763,7 +763,7 @@ impl OKXRawHttpClient {
                 if resp.status.is_success() {
                     let okx_response: OKXResponse<T> = deserialize_okx_response(&resp.body)
                         .map_err(|e| {
-                            log::error!("Failed to deserialize OKXResponse: {e}");
+                            log::warn!("Failed to deserialize OKXResponse: {e}");
                             OKXHttpError::JsonError(e.to_string())
                         })?;
 
@@ -780,7 +780,7 @@ impl OKXRawHttpClient {
                     if resp.status.as_u16() == StatusCode::NOT_FOUND.as_u16() {
                         log::debug!("HTTP 404 with body: {error_body}");
                     } else {
-                        log::error!(
+                        log::warn!(
                             "HTTP error {} with body: {error_body}",
                             resp.status.as_str()
                         );
@@ -812,16 +812,7 @@ impl OKXRawHttpClient {
         //
         // Note: OKX returns many permanent errors which should NOT be retried
         // (e.g., "Invalid instrument", "Insufficient balance", "Invalid API Key")
-        let should_retry = |error: &OKXHttpError| -> bool {
-            match error {
-                OKXHttpError::HttpClientError(_) => true,
-                OKXHttpError::UnexpectedStatus { status, .. } => {
-                    status.as_u16() >= 500 || status.as_u16() == 429
-                }
-                OKXHttpError::OkxError { error_code, .. } => should_retry_error_code(error_code),
-                _ => false,
-            }
-        };
+        let should_retry = |error: &OKXHttpError| -> bool { error.is_retryable() };
 
         let create_error = |msg: String| -> OKXHttpError {
             if msg == "canceled" {
@@ -831,7 +822,8 @@ impl OKXRawHttpClient {
             }
         };
 
-        self.retry_manager
+        let result = self
+            .retry_manager
             .execute_with_retry_with_cancel(
                 path,
                 operation,
@@ -839,7 +831,15 @@ impl OKXRawHttpClient {
                 create_error,
                 &self.cancellation_token,
             )
-            .await
+            .await;
+
+        if let Err(ref e) = result
+            && e.is_retryable()
+        {
+            log::error!("Request exhausted retries: path={path}, error={e}");
+        }
+
+        result
     }
 
     /// Sets the position mode for an account.

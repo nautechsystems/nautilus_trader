@@ -216,7 +216,7 @@ impl TxBroadcaster {
                 // Broadcast
                 let mut grpc = grpc_client;
                 let tx_hash = grpc.broadcast_tx(prepared.tx_bytes).await.map_err(|e| {
-                    log::error!("gRPC broadcast failed for {op_name}: {e}");
+                    log::warn!("gRPC broadcast failed for {op_name}: {e}");
                     DydxError::Nautilus(e)
                 })?;
 
@@ -246,9 +246,18 @@ impl TxBroadcaster {
         let create_error = |msg: String| -> DydxError { DydxError::Nautilus(anyhow::anyhow!(msg)) };
 
         // Permit is held throughout retry loop, released when _permit drops
-        self.retry_manager
+        let result = self
+            .retry_manager
             .execute_with_retry(operation_name, operation, should_retry, create_error)
-            .await
+            .await;
+
+        if let Err(ref e) = result
+            && (e.is_transient() || e.is_sequence_mismatch())
+        {
+            log::error!("Broadcast exhausted retries: operation={operation_name}, error={e}");
+        }
+
+        result
     }
 
     /// Broadcasts a short-term order transaction without sequence management.

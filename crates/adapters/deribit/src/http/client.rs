@@ -73,7 +73,7 @@ use crate::{
         consts::{
             DERIBIT_ACCOUNT_RATE_KEY, DERIBIT_API_PATH, DERIBIT_GLOBAL_RATE_KEY,
             DERIBIT_HTTP_ACCOUNT_QUOTA, DERIBIT_HTTP_ORDER_QUOTA, DERIBIT_HTTP_REST_QUOTA,
-            DERIBIT_ORDER_RATE_KEY, DERIBIT_VENUE, JSONRPC_VERSION, should_retry_error_code,
+            DERIBIT_ORDER_RATE_KEY, DERIBIT_VENUE, JSONRPC_VERSION,
         },
         credential::{Credential, credential_env_vars},
         enums::DeribitEnvironment,
@@ -498,7 +498,7 @@ impl DeribitRawHttpClient {
                     Err(_) => {
                         // Not valid JSON - treat as HTTP error
                         let error_body = String::from_utf8_lossy(&resp.body);
-                        log::error!(
+                        log::warn!(
                             "Non-JSON response: method={method}, status={}, body={error_body}",
                             resp.status.as_u16()
                         );
@@ -512,7 +512,7 @@ impl DeribitRawHttpClient {
                 // Try to parse as JSON-RPC response
                 let json_rpc_response: DeribitJsonRpcResponse<T> =
                     serde_json::from_value(json_value.clone()).map_err(|e| {
-                        log::error!(
+                        log::warn!(
                             "Failed to deserialize Deribit JSON-RPC response: method={method}, status={}, error={e}",
                             resp.status.as_u16()
                         );
@@ -547,7 +547,7 @@ impl DeribitRawHttpClient {
                         error.data.as_ref(),
                     ))
                 } else {
-                    log::error!(
+                    log::warn!(
                         "Response contains neither result nor error field: method={method}, status={}, request_id={:?}",
                         resp.status.as_u16(),
                         json_rpc_response.id
@@ -567,18 +567,7 @@ impl DeribitRawHttpClient {
         //
         // Note: Deribit returns many permanent errors which should NOT be retried
         // (e.g., "invalid_credentials", "not_enough_funds", "order_not_found")
-        let should_retry = |error: &DeribitHttpError| -> bool {
-            match error {
-                DeribitHttpError::NetworkError(_) => true,
-                DeribitHttpError::UnexpectedStatus { status, .. } => {
-                    *status >= 500 || *status == 429
-                }
-                DeribitHttpError::DeribitError { error_code, .. } => {
-                    should_retry_error_code(*error_code)
-                }
-                _ => false,
-            }
-        };
+        let should_retry = |error: &DeribitHttpError| -> bool { error.is_retryable() };
 
         let create_error = |msg: String| -> DeribitHttpError {
             if msg == "canceled" {
@@ -588,7 +577,8 @@ impl DeribitRawHttpClient {
             }
         };
 
-        self.retry_manager
+        let result = self
+            .retry_manager
             .execute_with_retry_with_cancel(
                 &operation_id,
                 operation,
@@ -596,7 +586,15 @@ impl DeribitRawHttpClient {
                 create_error,
                 &self.cancellation_token,
             )
-            .await
+            .await;
+
+        if let Err(ref e) = result
+            && e.is_retryable()
+        {
+            log::error!("Request exhausted retries: method={method}, error={e}");
+        }
+
+        result
     }
 
     /// Gets available trading instruments.
