@@ -1,0 +1,2 @@
+timestamp,strategy,reason,fill_side,quantity,price,trade_price,trade_size,trade_side,inventory_after,cash_after,transaction_hash
+2026-06-08T04:52:05.346000Z,buy_hold_first_ask,first_valid_ask,BUY,10.0,0.23,,,,10.0,-2.3000000000000003,

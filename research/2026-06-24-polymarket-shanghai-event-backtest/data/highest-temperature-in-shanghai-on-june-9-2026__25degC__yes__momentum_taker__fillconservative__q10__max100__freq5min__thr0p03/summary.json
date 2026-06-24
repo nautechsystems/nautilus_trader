@@ -1,0 +1,69 @@
+{
+  "selection": {
+    "event_slug": "highest-temperature-in-shanghai-on-june-9-2026",
+    "event_title": "Highest temperature in Shanghai on June 9?",
+    "market_label": "25°C",
+    "market_id": "2459857",
+    "condition_id": "0x715ee73ffee65801adb9f51098cf61a14fb4262ae2b20eeb1d68528bdde59c41",
+    "question": "Will the highest temperature in Shanghai be 25°C on June 9?",
+    "token_side": "YES",
+    "token_id": "93683348120137447419301462197228170067558545967622008841151707439369216600718",
+    "settlement_value": 1.0
+  },
+  "inputs": {
+    "event_dir": "EXTERNAL_CURATED_ROOT/highest-temperature-in-shanghai-on-june-9-2026",
+    "parquet_path": "EXTERNAL_CURATED_ROOT/highest-temperature-in-shanghai-on-june-9-2026/orderbook.parquet",
+    "curated_root_mode": "external_curated_root",
+    "rows_for_token": 334501,
+    "quote_size": 10.0,
+    "max_inventory": 100.0,
+    "strategy": "momentum_taker",
+    "run_id": "highest-temperature-in-shanghai-on-june-9-2026__25degC__yes__momentum_taker__fillconservative__q10__max100__freq5min__thr0p03",
+    "fill_model": "conservative",
+    "decision_frequency": "5min",
+    "signal_threshold": 0.03
+  },
+  "replay_quality": {
+    "book_events": 1275,
+    "price_change_events": 332608,
+    "trade_events": 617,
+    "tick_size_change_events": 1,
+    "replay_events_after_initial_book": 333359,
+    "skipped_before_initial_book": 525,
+    "bbo_row_mismatch_count": 41350,
+    "bbo_group_compared": 150787,
+    "bbo_group_mismatch_count": 11891,
+    "bbo_group_mismatch_rate": 0.07885958338583565,
+    "bbo_mismatch_warn_threshold": 0.01,
+    "results_validated": false,
+    "result_label": "smoke_test_unvalidated"
+  },
+  "backtest": {
+    "fills": 32,
+    "buy_fills": 17,
+    "sell_fills": 15,
+    "buy_qty": 170.0,
+    "sell_qty": 150.0,
+    "gross_notional": 108.76,
+    "ending_inventory": 20.0,
+    "ending_cash": -32.84,
+    "final_best_bid": 0.999,
+    "final_best_ask": null,
+    "final_mid": null,
+    "mtm_pnl": -32.84,
+    "settlement_pnl": -12.840000000000003,
+    "return_on_gross_notional": -0.11805810959911735
+  },
+  "outputs": {
+    "fills_csv": "research/2026-06-24-polymarket-shanghai-event-backtest/data/highest-temperature-in-shanghai-on-june-9-2026__25degC__yes__momentum_taker__fillconservative__q10__max100__freq5min__thr0p03/fills.csv",
+    "bbo_csv": "research/2026-06-24-polymarket-shanghai-event-backtest/data/highest-temperature-in-shanghai-on-june-9-2026__25degC__yes__momentum_taker__fillconservative__q10__max100__freq5min__thr0p03/bbo_5min.csv",
+    "summary_json": "research/2026-06-24-polymarket-shanghai-event-backtest/data/highest-temperature-in-shanghai-on-june-9-2026__25degC__yes__momentum_taker__fillconservative__q10__max100__freq5min__thr0p03/summary.json"
+  },
+  "assumptions": [
+    "Single-token research harness; not a full event-level negRisk/combo model.",
+    "maker_bbo uses PMXT last_trade_price events and fills only at our standing best bid/ask when trade side is compatible.",
+    "Taker strategies assume immediate top-of-book execution at sampled BBO and do not model taker delay or slippage beyond top level.",
+    "No latency, queue priority, fees, rebates, rewards, or partial queue-ahead model yet.",
+    "L2 book is reconstructed from PMXT book snapshots plus price_change rows for the selected asset_id."
+  ]
+}

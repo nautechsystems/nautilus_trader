@@ -1,0 +1,27 @@
+{
+  "description": "Baseline Polymarket Shanghai temperature strategy suite over curated PMXT event parquet.",
+  "defaults": {
+    "quote_size": 10.0,
+    "max_inventory": 100.0,
+    "decision_frequency": "5min",
+    "signal_threshold": 0.03
+  },
+  "cases": [
+    {
+      "event_slug": "highest-temperature-in-shanghai-on-june-9-2026",
+      "market_label": "25°C",
+      "token_side": "YES"
+    },
+    {
+      "event_slug": "highest-temperature-in-shanghai-on-june-10-2026",
+      "market_label": "28°C",
+      "token_side": "YES"
+    }
+  ],
+  "strategies": [
+    "maker_bbo",
+    "buy_hold_first_ask",
+    "momentum_taker",
+    "contrarian_taker"
+  ]
+}
