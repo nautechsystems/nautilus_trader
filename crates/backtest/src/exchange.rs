@@ -1183,7 +1183,7 @@ impl SimulatedExchange {
             let PositionEvent::PositionAdjusted(adjustment) = &event else {
                 continue;
             };
-            let topic = switchboard::get_event_positions_topic(adjustment.strategy_id);
+            let topic = switchboard::get_event_position_topic(adjustment.strategy_id);
             msgbus::publish_position_event(topic, &event);
         }
     }

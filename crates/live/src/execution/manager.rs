@@ -2785,7 +2785,7 @@ impl ExecutionManager {
     }
 
     fn publish_order_event(event: &OrderEventAny) {
-        let topic = switchboard::get_event_orders_topic(event.strategy_id());
+        let topic = switchboard::get_event_order_topic(event.strategy_id());
         msgbus::publish_order_event(topic, event);
     }
 

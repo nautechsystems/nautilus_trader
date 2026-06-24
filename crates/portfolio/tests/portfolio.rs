@@ -613,7 +613,7 @@ fn test_order_topic_republishes_last_account_state_without_order_update(
         .price(Price::new(50000.0, 0))
         .build();
     let accepted = OrderEventAny::Accepted(accept_order(&order));
-    let topic = switchboard::get_event_orders_topic(order.strategy_id());
+    let topic = switchboard::get_event_order_topic(order.strategy_id());
 
     msgbus::publish_order_event(topic, &accepted);
 
@@ -696,7 +696,7 @@ fn test_order_endpoint_then_topic_publishes_account_state_once(
         MessagingSwitchboard::portfolio_update_order(),
         accepted_event.clone(),
     );
-    let topic = switchboard::get_event_orders_topic(order.strategy_id());
+    let topic = switchboard::get_event_order_topic(order.strategy_id());
     msgbus::publish_order_event(topic, &accepted_event);
 
     let captured = captured.borrow();
@@ -1305,7 +1305,7 @@ fn test_rejected_endpoint_then_topic_republishes_existing_account_state_once(
         MessagingSwitchboard::portfolio_update_order(),
         rejected_event.clone(),
     );
-    let topic = switchboard::get_event_orders_topic(order.strategy_id());
+    let topic = switchboard::get_event_order_topic(order.strategy_id());
     msgbus::publish_order_event(topic, &rejected_event);
 
     let captured = captured.borrow();

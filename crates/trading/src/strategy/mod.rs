@@ -830,6 +830,10 @@ pub trait Strategy: DataActor {
 
         let topic = format!("events.order.{strategy_id}");
         msgbus::publish_order_event(topic.into(), &event);
+        msgbus::publish_order_event(
+            msgbus::switchboard::get_order_pending_update_topic(order.instrument_id()),
+            &event,
+        );
 
         Ok(true)
     }
@@ -880,6 +884,10 @@ pub trait Strategy: DataActor {
 
         let topic = format!("events.order.{strategy_id}");
         msgbus::publish_order_event(topic.into(), &event);
+        msgbus::publish_order_event(
+            msgbus::switchboard::get_order_pending_cancel_topic(order.instrument_id()),
+            &event,
+        );
 
         Ok(true)
     }

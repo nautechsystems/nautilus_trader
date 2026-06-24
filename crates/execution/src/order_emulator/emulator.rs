@@ -33,7 +33,7 @@ use nautilus_common::{
     msgbus::{
         self, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
         switchboard::{
-            get_event_orders_topic, get_order_cancels_topic, get_quotes_topic, get_trades_topic,
+            get_event_order_topic, get_order_canceled_topic, get_quotes_topic, get_trades_topic,
         },
     },
 };
@@ -1591,10 +1591,10 @@ impl OrderEmulator {
 }
 
 fn publish_order_event(event: &OrderEventAny) {
-    msgbus::publish_order_event(get_event_orders_topic(event.strategy_id()), event);
+    msgbus::publish_order_event(get_event_order_topic(event.strategy_id()), event);
 
     if let OrderEventAny::Canceled(_) = event {
-        msgbus::publish_order_event(get_order_cancels_topic(event.instrument_id()), event);
+        msgbus::publish_order_event(get_order_canceled_topic(event.instrument_id()), event);
     }
 }
 
@@ -1807,7 +1807,7 @@ mod tests {
             }
         });
         msgbus::subscribe_order_events(
-            get_order_cancels_topic(instrument_id).into(),
+            get_order_canceled_topic(instrument_id).into(),
             handler.clone(),
             None,
         );
@@ -1985,12 +1985,9 @@ mod tests {
         emulator
             .borrow_mut()
             .dispatch_manager_action(OrderManagerAction::CancelLocal(order));
+        msgbus::unsubscribe_order_events(get_event_order_topic(strategy_id).into(), &order_handler);
         msgbus::unsubscribe_order_events(
-            get_event_orders_topic(strategy_id).into(),
-            &order_handler,
-        );
-        msgbus::unsubscribe_order_events(
-            get_order_cancels_topic(instrument_id).into(),
+            get_order_canceled_topic(instrument_id).into(),
             &cancel_handler,
         );
         let cached_order = cache

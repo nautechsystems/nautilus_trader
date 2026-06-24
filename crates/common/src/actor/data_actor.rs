@@ -90,8 +90,8 @@ use crate::{
             get_book_snapshots_topic, get_custom_topic, get_funding_rate_topic,
             get_index_price_topic, get_instrument_close_topic, get_instrument_status_topic,
             get_instrument_topic, get_instruments_pattern, get_mark_price_topic,
-            get_option_chain_topic, get_option_greeks_topic, get_order_cancels_topic,
-            get_order_fills_topic, get_quotes_topic, get_signal_pattern, get_trades_topic,
+            get_option_chain_topic, get_option_greeks_topic, get_order_canceled_topic,
+            get_order_filled_topic, get_quotes_topic, get_signal_pattern, get_trades_topic,
         },
     },
     signal::Signal,
@@ -1802,7 +1802,7 @@ pub trait DataActor: Component {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let topic = get_order_fills_topic(instrument_id);
+        let topic = get_order_filled_topic(instrument_id);
 
         let handler = TypedHandler::from(move |event: &OrderEventAny| {
             if let OrderEventAny::Filled(filled) = event {
@@ -1820,7 +1820,7 @@ pub trait DataActor: Component {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let topic = get_order_cancels_topic(instrument_id);
+        let topic = get_order_canceled_topic(instrument_id);
 
         let handler = TypedHandler::from(move |event: &OrderEventAny| {
             if let OrderEventAny::Canceled(canceled) = event {
@@ -4588,7 +4588,7 @@ impl DataActorCore {
     pub fn unsubscribe_order_fills(&mut self, instrument_id: InstrumentId) {
         self.check_registered();
 
-        let topic = get_order_fills_topic(instrument_id);
+        let topic = get_order_filled_topic(instrument_id);
         self.remove_order_event_subscription(topic);
     }
 
@@ -4596,7 +4596,7 @@ impl DataActorCore {
     pub fn unsubscribe_order_cancels(&mut self, instrument_id: InstrumentId) {
         self.check_registered();
 
-        let topic = get_order_cancels_topic(instrument_id);
+        let topic = get_order_canceled_topic(instrument_id);
         self.remove_order_event_subscription(topic);
     }
 

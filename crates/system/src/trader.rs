@@ -35,7 +35,7 @@ use nautilus_common::{
     msgbus,
     msgbus::{
         ShareableMessageHandler, TypedHandler, get_message_bus,
-        switchboard::{get_event_orders_topic, get_event_positions_topic},
+        switchboard::{get_event_order_topic, get_event_position_topic},
     },
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -421,7 +421,7 @@ impl Trader {
         let actor_id = Ustr::from(strategy_id.inner().as_str());
 
         // Subscribe to order events for this strategy
-        let order_topic = get_event_orders_topic(strategy_id);
+        let order_topic = get_event_order_topic(strategy_id);
         let order_actor_id = actor_id;
         let order_handler = TypedHandler::from(move |event: &OrderEventAny| {
             if let Some(mut strategy) = try_get_actor_unchecked::<T>(&order_actor_id) {
@@ -434,7 +434,7 @@ impl Trader {
         msgbus::subscribe_order_events(order_topic.into(), order_handler, None);
 
         // Subscribe to position events for this strategy
-        let position_topic = get_event_positions_topic(strategy_id);
+        let position_topic = get_event_position_topic(strategy_id);
         let position_handler = TypedHandler::from(move |event: &PositionEvent| {
             if let Some(mut strategy) = try_get_actor_unchecked::<T>(&actor_id) {
                 strategy.handle_position_event(event.clone());
@@ -581,7 +581,7 @@ impl Trader {
         // Register in both component and actor registries
         register_component_actor(strategy);
 
-        let order_topic = get_event_orders_topic(strategy_id);
+        let order_topic = get_event_order_topic(strategy_id);
         let order_actor_id = actor_id;
         let order_handler = TypedHandler::from(move |event: &OrderEventAny| {
             if let Some(mut strategy) = try_get_actor_unchecked::<T>(&order_actor_id) {
@@ -593,7 +593,7 @@ impl Trader {
         let order_handler_id = order_handler.id();
         msgbus::subscribe_order_events(order_topic.into(), order_handler, None);
 
-        let position_topic = get_event_positions_topic(strategy_id);
+        let position_topic = get_event_position_topic(strategy_id);
         let position_handler = TypedHandler::from(move |event: &PositionEvent| {
             if let Some(mut strategy) = try_get_actor_unchecked::<T>(&actor_id) {
                 strategy.handle_position_event(event.clone());
@@ -870,8 +870,8 @@ impl Trader {
 
             // Remove only this strategy's own msgbus handlers
             if let Some((order_hid, position_hid)) = self.strategy_handler_ids.get(strategy_id) {
-                let order_topic = get_event_orders_topic(*strategy_id);
-                let position_topic = get_event_positions_topic(*strategy_id);
+                let order_topic = get_event_order_topic(*strategy_id);
+                let position_topic = get_event_position_topic(*strategy_id);
                 msgbus::remove_order_event_handler(order_topic.into(), *order_hid);
                 msgbus::remove_position_event_handler(position_topic.into(), *position_hid);
             }
@@ -1086,8 +1086,8 @@ impl Trader {
 
         // Clean up event subscriptions
         if let Some((order_hid, position_hid)) = self.strategy_handler_ids.remove(strategy_id) {
-            let order_topic = get_event_orders_topic(*strategy_id);
-            let position_topic = get_event_positions_topic(*strategy_id);
+            let order_topic = get_event_order_topic(*strategy_id);
+            let position_topic = get_event_position_topic(*strategy_id);
             msgbus::remove_order_event_handler(order_topic.into(), order_hid);
             msgbus::remove_position_event_handler(position_topic.into(), position_hid);
         }
@@ -1217,7 +1217,7 @@ mod tests {
         clock::TestClock,
         enums::{ComponentState, Environment},
         msgbus,
-        msgbus::{MessageBus, TypedHandler, switchboard::get_event_orders_topic},
+        msgbus::{MessageBus, TypedHandler, switchboard::get_event_order_topic},
         nautilus_actor,
     };
     use nautilus_core::UUID4;
@@ -2135,7 +2135,7 @@ mod tests {
             TypedHandler::from_with_id("exec-algo-handler", move |_: &OrderEventAny| {
                 *ext_clone.borrow_mut() += 1;
             });
-        let order_topic = get_event_orders_topic(strategy_id);
+        let order_topic = get_event_order_topic(strategy_id);
         msgbus::subscribe_order_events(order_topic.into(), ext_handler, None);
 
         trader.clear_strategies().unwrap();

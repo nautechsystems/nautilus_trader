@@ -509,7 +509,7 @@ fn test_reconcile_order_status_report_publishes_external_order_initialized() {
         .register_external_order_claims(strategy_id, &HashSet::from([instrument_id]))
         .unwrap();
 
-    let topic = switchboard::get_event_orders_topic(strategy_id);
+    let topic = switchboard::get_event_order_topic(strategy_id);
     let (handler, event_messages): (_, TypedMessageSavingHandler<OrderEventAny>) =
         get_typed_message_saving_handler(None);
     msgbus::subscribe_order_events(topic.into(), handler.clone(), None);
@@ -557,7 +557,7 @@ async fn test_reconcile_mass_status_publishes_external_order_initialized() {
         .claim_external_orders(instrument_id, strategy_id)
         .unwrap();
 
-    let topic = switchboard::get_event_orders_topic(strategy_id);
+    let topic = switchboard::get_event_order_topic(strategy_id);
     let (handler, event_messages): (_, TypedMessageSavingHandler<OrderEventAny>) =
         get_typed_message_saving_handler(None);
     msgbus::subscribe_order_events(topic.into(), handler.clone(), None);

@@ -97,7 +97,7 @@ const TIMER_PURGE_CLOSED_ORDERS: &str = "ExecEngine_PURGE_CLOSED_ORDERS";
 const TIMER_PURGE_CLOSED_POSITIONS: &str = "ExecEngine_PURGE_CLOSED_POSITIONS";
 const TIMER_PURGE_ACCOUNT_EVENTS: &str = "ExecEngine_PURGE_ACCOUNT_EVENTS";
 
-/// Position state snapshot published to the `snapshots.positions.{position_id}` topic.
+/// Position state snapshot published to the `snapshots.position.{position_id}` topic.
 #[derive(Debug, Clone)]
 pub struct PositionStateSnapshot {
     /// The position state at the time of the snapshot.
@@ -2426,8 +2426,8 @@ impl ExecutionEngine {
             ts_snapshot,
         };
 
-        let topic = format!("snapshots.positions.{}", position.id);
-        msgbus::publish_any(topic.into(), &snapshot);
+        let topic = switchboard::get_snapshot_position_topic(position.id);
+        msgbus::publish_any(topic, &snapshot);
 
         let has_backing = cache.borrow().has_backing();
         if has_backing
@@ -3022,13 +3022,37 @@ impl ExecutionEngine {
     }
 
     fn publish_order_event(&self, event: &OrderEventAny) {
-        let topic = switchboard::get_event_orders_topic(event.strategy_id());
+        let topic = switchboard::get_event_order_topic(event.strategy_id());
         msgbus::publish_order_event(topic, event);
 
-        if let OrderEventAny::Canceled(_) = event {
-            let cancels_topic = switchboard::get_order_cancels_topic(event.instrument_id());
-            msgbus::publish_order_event(cancels_topic, event);
-        }
+        let topic = match event {
+            OrderEventAny::Submitted(_) => {
+                switchboard::get_order_submitted_topic(event.instrument_id())
+            }
+            OrderEventAny::Rejected(_) => {
+                switchboard::get_order_rejected_topic(event.instrument_id())
+            }
+            OrderEventAny::PendingUpdate(_) => {
+                switchboard::get_order_pending_update_topic(event.instrument_id())
+            }
+            OrderEventAny::PendingCancel(_) => {
+                switchboard::get_order_pending_cancel_topic(event.instrument_id())
+            }
+            OrderEventAny::ModifyRejected(_) => {
+                switchboard::get_order_modify_rejected_topic(event.instrument_id())
+            }
+            OrderEventAny::CancelRejected(_) => {
+                switchboard::get_order_cancel_rejected_topic(event.instrument_id())
+            }
+            OrderEventAny::Canceled(_) => {
+                switchboard::get_order_canceled_topic(event.instrument_id())
+            }
+            // Keep Filled out of this generic fanout: handle_order_fill publishes the instrument
+            // topic, while leg fills stay on the strategy topic.
+            _ => return,
+        };
+
+        msgbus::publish_order_event(topic, event);
     }
 
     fn publish_position_events(&self, events: Vec<PositionEvent>) {
@@ -3039,7 +3063,7 @@ impl ExecutionEngine {
                 PositionEvent::PositionClosed(event) => event.strategy_id,
                 PositionEvent::PositionAdjusted(event) => event.strategy_id,
             };
-            let topic = switchboard::get_event_positions_topic(strategy_id);
+            let topic = switchboard::get_event_position_topic(strategy_id);
             msgbus::publish_position_event(topic, &event);
         }
     }
@@ -3168,8 +3192,8 @@ impl ExecutionEngine {
         }
 
         let event = OrderEventAny::Filled(fill);
-        let fills_topic = switchboard::get_order_fills_topic(fill.instrument_id);
-        msgbus::publish_order_event(fills_topic, &event);
+        let topic = switchboard::get_order_filled_topic(fill.instrument_id);
+        msgbus::publish_order_event(topic, &event);
 
         position_events
     }
@@ -3577,7 +3601,7 @@ impl ExecutionEngine {
             }
         };
 
-        let topic = switchboard::get_event_orders_topic(order.strategy_id());
+        let topic = switchboard::get_event_order_topic(order.strategy_id());
         msgbus::publish_order_event(topic, &event);
 
         if self.config.snapshot_orders {
