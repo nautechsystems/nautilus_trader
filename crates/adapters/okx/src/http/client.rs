@@ -5879,15 +5879,9 @@ impl OKXHttpClient {
                 return Ok(reports);
             }
 
-            // OKX's `/orders-algo-history` endpoint rejects calls that
-            // carry neither a `state` nor an `algoId` / `algoClOrdId`
-            // narrowing with code 50015. The reconciliation path wants
-            // only currently-live algo orders (those already appear in
-            // the pending response above), so skip the history leg when
-            // the caller supplied no narrowing. Specific-lookup callers
-            // still hit history because `has_specific_lookup` implies
-            // `algoId` or `algoClOrdId`, which the endpoint accepts.
-            if state.is_some() || has_specific_lookup {
+            // `/orders-algo-history` rejects anything but `state`/`algoId`
+            // with 50015; `algoClOrdId` alone is not accepted.
+            if state.is_some() || algo_id.is_some() {
                 let remaining = limit.map(|l| (l as usize).saturating_sub(reports.len()));
                 let history = self.paginate_algo_history(&params, remaining).await?;
                 self.collect_algo_reports(

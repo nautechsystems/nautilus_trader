@@ -3770,6 +3770,13 @@ async fn test_http_request_algo_order_status_report_queries_attached_oco_with_or
             .any(|query| query.get("ordType").map(String::as_str) == Some("oco")),
         "expected at least one pending algo query with ordType=oco, found {pending_queries:?}",
     );
+
+    // algoClOrdId-only lookup must skip history: OKX rejects it with 50015.
+    let history_queries = state.algo_history_queries.lock().await.clone();
+    assert!(
+        history_queries.is_empty(),
+        "expected no algo history queries for an algoClOrdId-only lookup, found {history_queries:?}",
+    );
 }
 
 #[rstest]

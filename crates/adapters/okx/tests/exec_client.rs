@@ -954,6 +954,35 @@ fn test_dispatch_full_lifecycle_stale_accepted_skipped() {
 }
 
 #[rstest]
+fn test_dispatch_status_report_accepted_skipped_when_canceled() {
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+
+    dispatch_execution_reports(
+        vec![ExecutionReport::Order(make_order_status_report(
+            "O-001",
+            OrderStatus::Canceled,
+        ))],
+        &emitter,
+        &state,
+    );
+
+    // Stale Accepted replayed after cancel must be dropped, not forwarded.
+    dispatch_execution_reports(
+        vec![ExecutionReport::Order(make_order_status_report(
+            "O-001",
+            OrderStatus::Accepted,
+        ))],
+        &emitter,
+        &state,
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    assert!(state.terminal_orders.contains(&ClientOrderId::new("O-001")));
+}
+
+#[rstest]
 fn test_dispatch_spread_order_accept_then_cancel() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();

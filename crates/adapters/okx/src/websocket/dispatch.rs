@@ -178,6 +178,7 @@ pub struct WsDispatchState {
     pub emitted_accepted: BoundedDedup<ClientOrderId>,
     pub triggered_orders: BoundedDedup<ClientOrderId>,
     pub filled_orders: BoundedDedup<ClientOrderId>,
+    pub terminal_orders: BoundedDedup<ClientOrderId>,
     pub emitted_trades: BoundedDedup<TradeId>,
     pub(crate) pending_orders: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_cancels: Arc<DashMap<String, PendingOrderInfo>>,
@@ -191,6 +192,7 @@ impl Default for WsDispatchState {
             emitted_accepted: BoundedDedup::new(DEDUP_CAPACITY),
             triggered_orders: BoundedDedup::new(DEDUP_CAPACITY),
             filled_orders: BoundedDedup::new(DEDUP_CAPACITY),
+            terminal_orders: BoundedDedup::new(DEDUP_CAPACITY),
             emitted_trades: BoundedDedup::new(DEDUP_CAPACITY),
             pending_orders: Arc::new(DashMap::new()),
             pending_cancels: Arc::new(DashMap::new()),
@@ -221,12 +223,16 @@ impl WsDispatchState {
         self.emitted_accepted.insert(cid);
     }
 
+    pub(crate) fn insert_triggered(&self, cid: ClientOrderId) {
+        self.triggered_orders.insert(cid);
+    }
+
     pub(crate) fn insert_filled(&self, cid: ClientOrderId) {
         self.filled_orders.insert(cid);
     }
 
-    pub(crate) fn insert_triggered(&self, cid: ClientOrderId) {
-        self.triggered_orders.insert(cid);
+    pub(crate) fn insert_terminal(&self, cid: ClientOrderId) {
+        self.terminal_orders.insert(cid);
     }
 
     /// Returns `true` if this trade was already emitted (duplicate).
@@ -835,6 +841,7 @@ fn dispatch_parsed_order_event(
             if state.emitted_accepted.contains(&client_order_id)
                 || state.filled_orders.contains(&client_order_id)
                 || state.triggered_orders.contains(&client_order_id)
+                || state.terminal_orders.contains(&client_order_id)
             {
                 log::debug!("Skipping duplicate Accepted for {client_order_id}");
                 return;
@@ -955,6 +962,7 @@ fn dispatch_parsed_order_event(
     }
 
     if is_terminal {
+        state.insert_terminal(client_order_id);
         state.order_identities.remove(&client_order_id);
         state.emitted_accepted.remove(&client_order_id);
         order_state_cache.remove(&client_order_id);
@@ -1165,12 +1173,13 @@ pub fn dispatch_execution_reports(
                         // Guard form reformats awkwardly across multiple lines
                         #[allow(clippy::collapsible_match)]
                         OrderStatus::Accepted => {
-                            if state.filled_orders.contains(&cid)
+                            if state.terminal_orders.contains(&cid)
+                                || state.filled_orders.contains(&cid)
                                 || state.triggered_orders.contains(&cid)
                             {
                                 log::debug!(
                                     "Skipping stale OrderStatusReport(Accepted) \
-                                     for {cid} (already triggered/filled)"
+                                     for {cid} (order already terminal)"
                                 );
                                 continue;
                             }
@@ -1187,9 +1196,11 @@ pub fn dispatch_execution_reports(
                         }
                         OrderStatus::Filled => {
                             state.insert_filled(cid);
+                            state.insert_terminal(cid);
                             state.triggered_orders.remove(&cid);
                         }
                         OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Rejected => {
+                            state.insert_terminal(cid);
                             state.triggered_orders.remove(&cid);
                             state.filled_orders.remove(&cid);
                         }
