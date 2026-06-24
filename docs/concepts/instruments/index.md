@@ -182,13 +182,13 @@ When the `DataEngine` receives an instrument update, it passes the object to the
 
 ## Precision
 
-Precision defines the number of decimal places allowed for prices and quantities on an
-instrument. NautilusTrader enforces this strictly because exchanges validate the same
-constraints, and backtests should not fill orders at prices or sizes that cannot exist
-in production.
+Precision defines the canonical number of decimal places for prices and quantities on an
+instrument. NautilusTrader enforces the resulting price and size grids strictly because
+trading venues validate the same constraints, and backtests should not fill orders at
+prices or sizes that cannot exist in production.
 
-| Field             | Constrains                           | Example          |
-|-------------------|--------------------------------------|------------------|
+| Field             | Constrains                           | Example           |
+|-------------------|--------------------------------------|-------------------|
 | `price_precision` | Order prices, trigger prices, fills. | `2` -> `50000.01` |
 | `size_precision`  | Order quantities and fill sizes.     | `5` -> `1.00001`  |
 

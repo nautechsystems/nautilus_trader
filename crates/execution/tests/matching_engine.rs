@@ -451,6 +451,36 @@ fn test_process_order_when_invalid_quantity_precision(
 }
 
 #[rstest]
+fn test_process_order_when_invalid_display_qty_precision(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1490.00"))
+        .quantity(Quantity::from("1.000"))
+        .display_qty(Quantity::from("0.0001"))
+        .submit(true)
+        .build();
+    let mut engine = get_order_matching_engine(instrument_eth_usdt, None, None, None, None);
+
+    engine.process_order(&mut limit_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+    let first_message = saved_messages.first().unwrap();
+    assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+    assert_eq!(
+        first_message.message().unwrap(),
+        Ustr::from(
+            "Invalid order display quantity precision for order O-19700101-000000-001-001-1, was 4 when ETHUSDT-PERP.BINANCE size precision is 3"
+        )
+    );
+}
+
+#[rstest]
 fn test_process_order_when_invalid_price_precision(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,

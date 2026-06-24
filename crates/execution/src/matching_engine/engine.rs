@@ -2950,6 +2950,22 @@ impl OrderMatchingEngine {
                 );
             }
 
+            // Check for valid order display quantity precision
+            if let Some(display_qty) = order.display_qty()
+                && display_qty.precision != self.instrument.size_precision()
+            {
+                break 'validate Some(
+                    format!(
+                        "Invalid order display quantity precision for order {}, was {} when {} size precision is {}",
+                        order.client_order_id(),
+                        display_qty.precision,
+                        self.instrument.id(),
+                        self.instrument.size_precision()
+                    )
+                    .into(),
+                );
+            }
+
             // Check for valid order price precision
             if let Some(price) = order.price()
                 && price.precision != self.instrument.price_precision()
