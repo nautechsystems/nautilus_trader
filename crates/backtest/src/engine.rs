@@ -1386,9 +1386,6 @@ impl BacktestEngine {
             }
         });
         let mut clock = self.kernel.clock.borrow_mut();
-        if clock.timer_exists(&timer_key) {
-            clock.cancel_timer(&timer_name);
-        }
 
         clock.set_time_alert_ns(
             &timer_name,
