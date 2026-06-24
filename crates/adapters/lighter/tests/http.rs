@@ -287,7 +287,7 @@ async fn raw_client_get_account_orders_sends_auth_queries_and_parses_response() 
         .account_index(712_440)
         .market_id(0)
         .ask_filter(1)
-        .between_timestamps("1700000000000,1700000001000")
+        .between_timestamps("1700000000-1700003600")
         .cursor("cursor-1")
         .limit(50)
         .build()
@@ -1640,7 +1640,7 @@ async fn handle_account_inactive_orders(
     assert_eq!(query.ask_filter, Some(1));
     assert_eq!(
         query.between_timestamps.as_deref(),
-        Some("1700000000000,1700000001000"),
+        Some("1700000000-1700003600"),
     );
     assert_eq!(query.cursor.as_deref(), Some("cursor-1"));
     assert_eq!(query.limit, 50);

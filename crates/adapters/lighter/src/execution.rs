@@ -248,11 +248,6 @@ impl LighterExecutionClient {
             AccountType::Margin,
             None,
         );
-        let dispatch = WsDispatchState::new();
-        for market_index in &config.active_markets {
-            dispatch.note_active_market(*market_index);
-        }
-
         Ok(Self {
             core,
             clock,
@@ -267,7 +262,7 @@ impl LighterExecutionClient {
             pending_tasks: Mutex::new(Vec::new()),
             ws_stream_handle: Mutex::new(None),
             cancellation_token: CancellationToken::new(),
-            dispatch,
+            dispatch: WsDispatchState::new(),
             nonce_recovery_inflight: Arc::new(AtomicBool::new(false)),
         })
     }
@@ -2800,7 +2795,7 @@ fn integrator_attributes() -> L2TxAttributes {
     }
 }
 
-/// Format a `start_ms,end_ms` window for Lighter's `between_timestamps`
+/// Format a `start_secs-end_secs` window for Lighter's `between_timestamps`
 /// query parameter. Returns `None` when neither bound is set; an unset end
 /// defaults to the current time so the venue scopes pagination to the
 /// half-open window.
@@ -2815,9 +2810,9 @@ fn format_between_timestamps(
         (Some(s), None) => (s, ts_now),
         (None, Some(e)) => (UnixNanos::from(0), e),
     };
-    let start_ms = start.as_u64() / 1_000_000;
-    let end_ms = end.as_u64() / 1_000_000;
-    Some(format!("{start_ms},{end_ms}"))
+    let start_secs = start.as_u64() / 1_000_000_000;
+    let end_secs = end.as_u64() / 1_000_000_000;
+    Some(format!("{start_secs}-{end_secs}"))
 }
 
 #[async_trait(?Send)]
@@ -4602,12 +4597,32 @@ mod tests {
             environment: LighterEnvironment::Testnet,
             http_timeout_secs: 1,
             ws_timeout_secs: 1,
-            active_markets: Vec::new(),
             market_order_slippage_bps: 50,
             rest_quota_per_min: None,
             sendtx_quota_per_min: None,
             transport_backend: Default::default(),
         }
+    }
+
+    #[rstest]
+    fn format_between_timestamps_uses_lighter_seconds_range() {
+        let start = UnixNanos::from(1_700_000_000_123_456_789);
+        let end = UnixNanos::from(1_700_003_600_987_654_321);
+        let now = UnixNanos::from(1_700_007_200_000_000_000);
+
+        assert_eq!(
+            format_between_timestamps(Some(start), Some(end), now),
+            Some("1700000000-1700003600".to_string()),
+        );
+        assert_eq!(
+            format_between_timestamps(Some(start), None, now),
+            Some("1700000000-1700007200".to_string()),
+        );
+        assert_eq!(
+            format_between_timestamps(None, Some(end), now),
+            Some("0-1700003600".to_string()),
+        );
+        assert_eq!(format_between_timestamps(None, None, now), None);
     }
 
     fn create_execution_client() -> (

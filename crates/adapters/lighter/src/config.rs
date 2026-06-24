@@ -194,8 +194,9 @@ pub struct LighterExecClientConfig {
     /// to `LIGHTER_ACCOUNT_INDEX` / `LIGHTER_TESTNET_ACCOUNT_INDEX` when
     /// resolved through `common::credential`.
     pub account_index: Option<u64>,
-    /// API key index (0-254; indices 0-3 are reserved for desktop/mobile
-    /// clients). Falls back to `LIGHTER_API_KEY_INDEX` /
+    /// API key index for a user-created Lighter key. Low indexes are reserved
+    /// for Lighter clients; 255 is the `apikeys` all-keys sentinel. Falls back
+    /// to `LIGHTER_API_KEY_INDEX` /
     /// `LIGHTER_TESTNET_API_KEY_INDEX` when resolved through
     /// `common::credential`.
     pub api_key_index: Option<u8>,
@@ -218,9 +219,6 @@ pub struct LighterExecClientConfig {
     /// WebSocket connect timeout in seconds.
     #[builder(default = 30)]
     pub ws_timeout_secs: u64,
-    /// Venue market IDs to poll during unscoped reconciliation.
-    #[builder(default)]
-    pub active_markets: Vec<i16>,
     /// Slippage buffer in basis points for market-style orders.
     #[builder(default = 50)]
     pub market_order_slippage_bps: u32,
@@ -255,7 +253,6 @@ impl Debug for LighterExecClientConfig {
             .field("environment", &self.environment)
             .field("http_timeout_secs", &self.http_timeout_secs)
             .field("ws_timeout_secs", &self.ws_timeout_secs)
-            .field("active_markets", &self.active_markets)
             .field("market_order_slippage_bps", &self.market_order_slippage_bps)
             .field("rest_quota_per_min", &self.rest_quota_per_min)
             .field("sendtx_quota_per_min", &self.sendtx_quota_per_min)
@@ -393,7 +390,6 @@ mod tests {
             environment: LighterEnvironment::Mainnet,
             http_timeout_secs: 60,
             ws_timeout_secs: 30,
-            active_markets: Vec::new(),
             market_order_slippage_bps: 50,
             rest_quota_per_min: None,
             sendtx_quota_per_min: None,

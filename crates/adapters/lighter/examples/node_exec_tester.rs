@@ -46,8 +46,8 @@ const ACCOUNT_ID: &str = "LIGHTER-001";
 const NODE_NAME: &str = "LIGHTER-EXEC-TESTER-001";
 const CLIENT_ID: &str = "LIGHTER";
 const STRATEGY_ID: &str = "EXEC_TESTER-001";
-const INSTRUMENT_ID: &str = "ETH-PERP.LIGHTER";
-const ORDER_QTY: &str = "0.01";
+const INSTRUMENT_ID: &str = "BTC-PERP.LIGHTER";
+const ORDER_QTY: &str = "0.001";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -79,13 +79,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
     let exec_engine_config = LiveExecEngineConfig {
+        reconciliation_lookback_mins: Some(60),
+        reconciliation_instrument_ids: Some(vec![INSTRUMENT_ID.to_string()]),
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
-        // Example client order ID filtering for historical rows
-        filtered_client_order_ids: Some(vec![
-            "1793664468".to_string(),
-            "1062637805503".to_string(),
-        ]),
         ..Default::default()
     };
 

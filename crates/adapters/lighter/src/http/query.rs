@@ -443,7 +443,7 @@ mod tests {
             .account_index(123)
             .market_id(0)
             .ask_filter(1)
-            .between_timestamps("1700000000000,1700000001000")
+            .between_timestamps("1700000000-1700003600")
             .cursor("cursor-1")
             .limit(50)
             .build()
@@ -455,7 +455,7 @@ mod tests {
         assert_eq!(value["account_index"], 123);
         assert_eq!(value["market_id"], 0);
         assert_eq!(value["ask_filter"], 1);
-        assert_eq!(value["between_timestamps"], "1700000000000,1700000001000",);
+        assert_eq!(value["between_timestamps"], "1700000000-1700003600",);
         assert_eq!(value["cursor"], "cursor-1");
         assert_eq!(value["limit"], 50);
         assert!(value.get("auth").is_none());

@@ -690,7 +690,6 @@ fn build_config(addr: SocketAddr) -> LighterExecClientConfig {
         environment: LighterEnvironment::Testnet,
         http_timeout_secs: 5,
         ws_timeout_secs: 5,
-        active_markets: Vec::new(),
         market_order_slippage_bps: 50,
         rest_quota_per_min: None,
         sendtx_quota_per_min: None,
@@ -3097,9 +3096,9 @@ async fn test_generate_mass_status_fans_out_active_inactive_position_and_trades(
     client.connect().await.expect("connect");
     await_subscribe_count(&state, 4).await;
 
-    // Drive `active_markets` so the fan-out actually hits the active /
-    // inactive endpoints. The consumption loop notes a market whenever an
-    // account_all_* frame mentions it; the position fixture exists in
+    // Drive the account-active market set so the fan-out actually hits the
+    // active / inactive endpoints. The consumption loop notes a market whenever
+    // an account_all_* frame mentions it; the position fixture exists in
     // test_data and carries market_id=0, matching our test instrument.
     state.push_frame(&load_json("ws_account_all_positions_update.json"));
 
@@ -3194,56 +3193,7 @@ async fn test_generate_mass_status_fans_out_active_inactive_position_and_trades(
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_mass_status_uses_configured_active_markets_on_cold_start() {
-    let (addr, state) = start_server().await;
-    let mut config = build_config(addr);
-    config.active_markets = vec![TEST_MARKET_INDEX];
-    let (mut client, _rx, _cache) = build_client_with(config);
-    client.connect().await.expect("connect");
-    await_subscribe_count(&state, 4).await;
-
-    *state.active_orders_response.lock().await = Some(http_orders_payload(
-        &[http_order_fixture(
-            "281476929510200",
-            "1001",
-            "open",
-            "0.0000",
-        )],
-        None,
-    ));
-    *state.trades_response.lock().await = Some(json!({"code":200,"trades":[]}));
-
-    let mass = client
-        .generate_mass_status(None)
-        .await
-        .expect("mass status")
-        .expect("Some(mass_status)");
-
-    assert_eq!(
-        state.active_orders_calls.load(Ordering::Relaxed),
-        1,
-        "configured active market should drive one active-orders fetch",
-    );
-    assert_eq!(
-        state.inactive_orders_calls.load(Ordering::Relaxed),
-        1,
-        "configured active market should skip inactive seeding and run one per-market fetch",
-    );
-
-    let order_reports = mass.order_reports();
-    assert!(
-        order_reports
-            .values()
-            .any(|r| r.order_status == OrderStatus::Accepted),
-        "configured active market should surface open orders in mass status: {order_reports:?}",
-    );
-
-    client.disconnect().await.expect("disconnect");
-}
-
-#[rstest]
-#[tokio::test(flavor = "multi_thread")]
-async fn test_generate_mass_status_seeds_active_markets_from_inactive_orders() {
+async fn test_generate_mass_status_seeds_market_fanout_from_inactive_orders() {
     let (addr, state) = start_server().await;
     let (mut client, _rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");

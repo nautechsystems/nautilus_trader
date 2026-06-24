@@ -100,7 +100,6 @@ impl LighterExecClientConfig {
         environment = None,
         http_timeout_secs = None,
         ws_timeout_secs = None,
-        active_markets = None,
         market_order_slippage_bps = None,
         rest_quota_per_min = None,
         sendtx_quota_per_min = None,
@@ -118,7 +117,6 @@ impl LighterExecClientConfig {
         environment: Option<LighterEnvironment>,
         http_timeout_secs: Option<u64>,
         ws_timeout_secs: Option<u64>,
-        active_markets: Option<Vec<i16>>,
         market_order_slippage_bps: Option<u32>,
         rest_quota_per_min: Option<u32>,
         sendtx_quota_per_min: Option<u32>,
@@ -139,7 +137,6 @@ impl LighterExecClientConfig {
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
-            active_markets: active_markets.unwrap_or(defaults.active_markets),
             market_order_slippage_bps: market_order_slippage_bps
                 .unwrap_or(defaults.market_order_slippage_bps),
             rest_quota_per_min,

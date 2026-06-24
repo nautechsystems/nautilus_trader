@@ -101,13 +101,13 @@ The current adapter scope is deliberately narrower than the venue's full transac
 Lighter identifies markets by numeric `market_index` values. The adapter bootstraps the mapping from
 `GET /api/v1/orderBookDetails`, then converts the raw venue symbol into a Nautilus `InstrumentId`.
 
-| Venue product      | Nautilus symbol format | Example            | Notes                   |
-|--------------------|------------------------|--------------------|-------------------------|
-| Perpetual futures  | `{BASE}-PERP.LIGHTER`  | `BTC-PERP.LIGHTER` | Raw venue symbol `BTC`. |
-| Spot               | `{BASE}-SPOT.LIGHTER`  | `ETH-SPOT.LIGHTER` | Raw venue symbol `ETH`. |
+| Venue product      | Nautilus symbol format        | Example                 | Notes                        |
+|--------------------|-------------------------------|-------------------------|------------------------------|
+| Perpetual futures  | `{BASE}-PERP.LIGHTER`         | `BTC-PERP.LIGHTER`      | Raw venue symbol `BTC`.      |
+| Spot               | `{BASE}/{QUOTE}-SPOT.LIGHTER` | `ETH/USDC-SPOT.LIGHTER` | Raw venue symbol `ETH/USDC`. |
 
-The suffix disambiguates spot and perpetual listings that share the same venue symbol. Outbound
-requests strip the suffix and use the cached `market_index`.
+The suffix disambiguates spot and perpetual listings. Spot symbols keep the quoted venue pair, while
+outbound requests strip the suffix and use the cached `market_index`.
 
 ## Environments
 
@@ -136,10 +136,10 @@ Use revocation as cleanup when leaving the adapter. It sends the same `ApproveIn
 `approval_expiry = 0` and every max fee set to zero; the next execution-client startup records a
 fresh zero-fee approval.
 
-```bash
-export LIGHTER_API_KEY_INDEX=0
-export LIGHTER_API_SECRET=REPLACE_ME
-export LIGHTER_ACCOUNT_INDEX=123456
+```fish
+set -x LIGHTER_API_KEY_INDEX 5
+set -x LIGHTER_API_SECRET REPLACE_ME
+set -x LIGHTER_ACCOUNT_INDEX 123456
 cargo run -p nautilus-lighter --bin lighter-integrator-revoke           # mainnet
 cargo run -p nautilus-lighter --bin lighter-integrator-revoke testnet   # testnet
 ```
@@ -314,9 +314,9 @@ after the trigger fires.
 
 When no explicit GTD expiry is supplied, limit-style `GTC`, `DAY`, and `GTD` orders default to
 the current time plus 28 days. Conditional `GTC`, `DAY`, and limit-style `IOC` orders use the
-same default expiry. The venue rejects `-1` as an invalid expiry for these TIFs. Live testing has
-also shown that very short GTD expiries can be rejected by the sequencer with
-`21711 invalid expiry`; use a venue-accepted expiry horizon for live GTD tests.
+same default expiry. The venue rejects `-1` as an invalid expiry for these TIFs. Lighter requires
+order expiry timestamps to be at least 5 minutes and at most 30 days from submission, so live GTD
+tests must stay inside that venue window.
 
 ### Execution instructions
 
@@ -594,8 +594,8 @@ replacement rules.
 Lighter signing requires all three credential values:
 
 - Account index: numeric Lighter account identifier.
-- API key index: numeric API key slot, `0..=254`. Indices `0..=3` are reserved for Lighter
-  desktop/mobile clients.
+- API key index: numeric API key slot. Use the user-created key index assigned by Lighter, avoid
+  reserved low indexes, and do not use `255`; it is an `apikeys` query sentinel, not a signing key.
 - API private key: 40-byte hex private key, with or without a `0x` prefix.
 
 Config values take precedence. A missing config field, or a blank API private key (empty or
@@ -645,7 +645,6 @@ endpoints.
 | `environment`               | `Mainnet`     | `LighterEnvironment::Mainnet` or `Testnet`.                |
 | `http_timeout_secs`         | `60`          | HTTP request timeout in seconds.                           |
 | `ws_timeout_secs`           | `30`          | WebSocket connect timeout in seconds.                      |
-| `active_markets`            | `[]`          | Lighter market IDs to poll during unscoped reconciliation. |
 | `market_order_slippage_bps` | `50`          | Slippage cap (bps) for `MARKET` / `STOP_MARKET` / `MIT`.   |
 | `rest_quota_per_min`        | `None`        | REST quota override; unset keeps 60 req/min.               |
 | `sendtx_quota_per_min`      | `None`        | Transaction quota override; unset keeps 60 req/min.        |
@@ -668,17 +667,18 @@ let exec_config = LighterExecClientConfig::builder()
     .trader_id(trader_id)
     .account_id(account_id)
     .environment(LighterEnvironment::Testnet)
-    .active_markets(vec![0])
     .build();
 ```
 
 The execution config above resolves credentials from the matching testnet environment variables.
 Set `account_index`, `api_key_index`, and `private_key` directly to override environment lookup.
-Set `active_markets` to the venue market IDs that should be checked for open orders during
-cold-start reconciliation.
+Use `LiveExecEngineConfig.reconciliation_instrument_ids` to scope reconciliation to specific
+Nautilus instruments. On accounts with long history, also set `reconciliation_lookback_mins` on
+`LiveExecEngineConfig` to bound inactive order and fill replay to the window your strategy needs.
 
 ## Official documentation
 
+- Get started: <https://apidocs.lighter.xyz/docs/get-started>
 - Trading and signing: <https://apidocs.lighter.xyz/docs/trading>
 - API keys: <https://apidocs.lighter.xyz/docs/api-keys>
 - Rate limits: <https://apidocs.lighter.xyz/docs/rate-limits>
