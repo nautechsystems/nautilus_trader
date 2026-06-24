@@ -17,12 +17,19 @@
 
 #![warn(clippy::clone_on_ref_ptr)]
 
-use std::{any::Any, cell::RefCell, collections::BTreeMap, fmt::Debug, ops::Deref, time::Duration};
+use std::{
+    any::Any,
+    cell::RefCell,
+    collections::{BTreeMap, BinaryHeap},
+    fmt::Debug,
+    ops::Deref,
+    time::Duration,
+};
 
 use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use nautilus_core::{
-    AtomicTime, UnixNanos,
+    AtomicTime, UUID4, UnixNanos,
     correctness::{check_positive_u64, check_predicate_true, check_valid_string_utf8},
     datetime::NANOSECONDS_IN_SECOND,
     string::formatting::Separable,
@@ -30,7 +37,8 @@ use nautilus_core::{
 use ustr::Ustr;
 
 use crate::timer::{
-    TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler, Timer, create_valid_interval,
+    ScheduledTimeEvent, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler, Timer,
+    create_valid_interval,
 };
 
 /// Represents a type of clock.
@@ -837,8 +845,8 @@ pub fn validate_and_prepare_timer(
 #[derive(Debug)]
 pub struct TestClock {
     time: AtomicTime,
-    // Use btree map to ensure stable ordering when scanning for timers in `advance_time`
     timers: BTreeMap<Ustr, TestTimer>,
+    timer_queue: BinaryHeap<ScheduledTimeEvent>,
     callbacks: CallbackRegistry,
 }
 
@@ -849,6 +857,7 @@ impl TestClock {
         Self {
             time: AtomicTime::new(false, UnixNanos::default()),
             timers: BTreeMap::new(),
+            timer_queue: BinaryHeap::new(),
             callbacks: CallbackRegistry::new(),
         }
     }
@@ -889,15 +898,29 @@ impl TestClock {
             self.time.set_time(to_time_ns);
         }
 
-        // Iterate and advance timers and collect events, only retain alive timers
         let mut events: Vec<TimeEvent> = Vec::new();
-        self.timers.retain(|_, timer| {
-            timer.advance(to_time_ns).for_each(|event| {
-                events.push(event);
-            });
 
-            !timer.is_expired()
-        });
+        while self
+            .timer_queue
+            .peek()
+            .is_some_and(|entry| entry.0.ts_event <= to_time_ns)
+        {
+            let entry = self
+                .timer_queue
+                .pop()
+                .expect("timer queue peeked Some but pop returned None");
+
+            let Some((event, next_event)) = self.advance_timer_from_entry(&entry.0) else {
+                continue;
+            };
+
+            events.push(event);
+            if let Some(next_event) = next_event {
+                self.timer_queue.push(next_event);
+            }
+        }
+
+        self.compact_timer_queue_if_needed();
 
         if events.len() >= WARN_TIME_EVENTS_THRESHOLD {
             log::warn!(
@@ -909,7 +932,11 @@ impl TestClock {
             );
         }
 
-        events.sort_by_key(|a| a.ts_event);
+        events.sort_by(|a, b| {
+            a.ts_event
+                .cmp(&b.ts_event)
+                .then_with(|| a.name.cmp(&b.name))
+        });
         events
     }
 
@@ -932,6 +959,56 @@ impl TestClock {
 
     fn replace_existing_timer_if_needed(&mut self, name: &Ustr) {
         replace_existing_timer(&mut self.timers, name);
+        self.compact_timer_queue_if_needed();
+    }
+
+    fn insert_timer(&mut self, timer: TestTimer) {
+        self.timer_queue.push(Self::scheduled_event(&timer));
+        self.timers.insert(timer.name, timer);
+        self.compact_timer_queue_if_needed();
+    }
+
+    fn advance_timer_from_entry(
+        &mut self,
+        entry: &TimeEvent,
+    ) -> Option<(TimeEvent, Option<ScheduledTimeEvent>)> {
+        let timer = self.timers.get_mut(&entry.name)?;
+        if timer.next_time_ns() != entry.ts_event {
+            return None;
+        }
+
+        let Some((event, _)) = timer.next() else {
+            self.timers.remove(&entry.name);
+            return None;
+        };
+
+        let next_entry = if timer.is_expired() {
+            self.timers.remove(&entry.name);
+            None
+        } else {
+            Some(Self::scheduled_event(timer))
+        };
+
+        Some((event, next_entry))
+    }
+
+    fn compact_timer_queue_if_needed(&mut self) {
+        if self.timer_queue.len() > self.timers.len().saturating_mul(2) {
+            self.compact_timer_queue();
+        }
+    }
+
+    fn compact_timer_queue(&mut self) {
+        self.timer_queue = self.timers.values().map(Self::scheduled_event).collect();
+    }
+
+    fn scheduled_event(timer: &TestTimer) -> ScheduledTimeEvent {
+        ScheduledTimeEvent::new(TimeEvent::new(
+            timer.name,
+            UUID4::new(),
+            timer.next_time_ns(),
+            timer.next_time_ns(),
+        ))
     }
 }
 
@@ -1040,7 +1117,7 @@ impl Clock for TestClock {
             Some(alert_time_ns),
             fire_immediately,
         );
-        self.timers.insert(name, timer);
+        self.insert_timer(timer);
 
         Ok(())
     }
@@ -1087,7 +1164,7 @@ impl Clock for TestClock {
             stop_time_ns,
             fire_immediately,
         );
-        self.timers.insert(name, timer);
+        self.insert_timer(timer);
 
         Ok(())
     }
@@ -1103,6 +1180,7 @@ impl Clock for TestClock {
         if let Some(mut timer) = timer {
             timer.cancel();
         }
+        self.compact_timer_queue_if_needed();
     }
 
     fn cancel_timers(&mut self) {
@@ -1111,11 +1189,13 @@ impl Clock for TestClock {
         }
 
         self.timers.clear();
+        self.timer_queue.clear();
     }
 
     fn reset(&mut self) {
         self.time = AtomicTime::new(false, UnixNanos::default());
         self.timers = BTreeMap::new();
+        self.timer_queue = BinaryHeap::new();
         self.callbacks.clear();
     }
 }
@@ -1820,6 +1900,50 @@ mod tests {
         // Advance time - should get no events from cancelled timer
         let events = test_clock.advance_time(start_time + 2000, true);
         assert_eq!(events.len(), 0);
+    }
+
+    #[rstest]
+    fn test_cancelled_timer_queue_entry_is_skipped(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+        test_clock
+            .set_time_alert_ns("cancelled", start_time + 1000, None, None)
+            .unwrap();
+        test_clock
+            .set_time_alert_ns("active", start_time + 2000, None, None)
+            .unwrap();
+
+        test_clock.cancel_timer("cancelled");
+        assert_eq!(test_clock.timer_count(), 1);
+        assert_eq!(test_clock.timer_queue.len(), 2);
+
+        let events = test_clock.advance_time(start_time + 1000, true);
+        assert!(events.is_empty());
+        assert_eq!(test_clock.timer_names(), vec!["active"]);
+
+        let events = test_clock.advance_time(start_time + 2000, true);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].name.as_str(), "active");
+    }
+
+    #[rstest]
+    fn test_timer_queue_compacts_stale_entries(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+        test_clock
+            .set_time_alert_ns("active", start_time + 1000, None, None)
+            .unwrap();
+        test_clock
+            .set_time_alert_ns("cancelled-1", start_time + 2000, None, None)
+            .unwrap();
+        test_clock
+            .set_time_alert_ns("cancelled-2", start_time + 3000, None, None)
+            .unwrap();
+
+        test_clock.cancel_timer("cancelled-1");
+        assert_eq!(test_clock.timer_queue.len(), 3);
+
+        test_clock.cancel_timer("cancelled-2");
+        assert_eq!(test_clock.timer_count(), 1);
+        assert_eq!(test_clock.timer_queue.len(), 1);
     }
 
     #[rstest]

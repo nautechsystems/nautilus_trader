@@ -3711,9 +3711,12 @@ cdef class SimulatedExchange:
         if expiration_ns == 0:
             return
 
-        cdef str timer_name = self._instrument_expiration_timer_name(matching_engine.instrument.id)
+        cdef str timer_name = self._instrument_expiration_timer_name(
+            matching_engine.instrument.id.venue,
+            expiration_ns,
+        )
         if timer_name in self._clock.timer_names:
-            self._clock.cancel_timer(timer_name)
+            return
 
         self._clock.set_time_alert_ns(
             name=timer_name,
@@ -3726,8 +3729,8 @@ cdef class SimulatedExchange:
         for matching_engine in self._matching_engines.values():
             self._set_instrument_expiration_timer(matching_engine)
 
-    cdef str _instrument_expiration_timer_name(self, InstrumentId instrument_id):
-        return f"INSTRUMENT-EXPIRATION:{instrument_id.value}"
+    cdef str _instrument_expiration_timer_name(self, Venue venue, uint64_t expiration_ns):
+        return f"INSTRUMENT-EXPIRATION:{venue.value}:{expiration_ns}"
 
     cpdef void reset(self):
         """

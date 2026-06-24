@@ -3763,6 +3763,51 @@ fn test_option_expiry_timer_runs_when_end_equals_expiration() {
     );
 }
 
+#[rstest]
+fn test_instruments_with_same_expiration_share_expiry_timer() {
+    let venue = Venue::from("OPRA");
+    let expiration_ns = UnixNanos::from(2_000_000_000u64);
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USD")])
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+
+    let option = option_contract(venue, expiration_ns);
+    let mut other_option = option_contract(venue, expiration_ns);
+    if let InstrumentAny::OptionContract(option) = &mut other_option {
+        option.id = InstrumentId::from(format!("AAPL240315C00155000.{venue}").as_str());
+        option.raw_symbol = Symbol::from("AAPL240315C00155000");
+        option.strike_price = Price::from("155.00");
+    }
+
+    engine.add_instrument(&option).unwrap();
+    engine.add_instrument(&other_option).unwrap();
+
+    let expiry_timer_names: Vec<String> = engine
+        .kernel()
+        .clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .filter(|name| name.starts_with("INSTRUMENT-EXPIRATION:"))
+        .map(ToString::to_string)
+        .collect();
+
+    assert_eq!(
+        expiry_timer_names,
+        vec![format!("INSTRUMENT-EXPIRATION:{venue}:{expiration_ns}")],
+    );
+}
+
 fn run_call_option_expiry_timer(
     underlying_price: &str,
     end_ns: UnixNanos,
