@@ -7042,6 +7042,15 @@ impl Cache {
             .collect()
     }
 
+    /// Returns owned copies of every account in the cache.
+    #[must_use]
+    pub fn accounts_all_owned(&self) -> Vec<AccountAny> {
+        self.accounts
+            .values()
+            .map(|account_cell| account_cell.borrow().clone())
+            .collect()
+    }
+
     /// Updates the own order book with an order.
     ///
     /// This method adds, updates, or removes an order from the own order book

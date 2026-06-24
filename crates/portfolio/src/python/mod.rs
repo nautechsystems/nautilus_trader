@@ -18,6 +18,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use indexmap::{IndexMap, IndexSet};
+use nautilus_analysis::snapshot::PortfolioStatistics;
 use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::python::{to_pynotimplemented_err, to_pyvalue_err};
 use nautilus_model::{
@@ -425,6 +426,11 @@ impl PyPortfolio {
     #[pyo3(name = "is_completely_flat", signature = (account_id=None))]
     fn py_is_completely_flat(&self, account_id: Option<AccountId>) -> bool {
         self.is_completely_flat_for_account(account_id.as_ref())
+    }
+
+    #[pyo3(name = "statistics")]
+    fn py_statistics(&self) -> PortfolioStatistics {
+        self.0.borrow().statistics()
     }
 }
 

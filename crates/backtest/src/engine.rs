@@ -86,9 +86,9 @@ use crate::{
 /// - Strategy and portfolio performance analysis.
 /// - Transition from backtesting to live trading.
 pub struct BacktestEngine {
+    kernel: NautilusKernel,
     instance_id: UUID4,
     config: BacktestEngineConfig,
-    kernel: NautilusKernel,
     accumulator: TimeEventAccumulator,
     run_config_id: Option<String>,
     run_id: Option<UUID4>,
@@ -137,11 +137,13 @@ impl BacktestEngine {
         cache_config.drop_instruments_on_reset = false;
         config.cache = Some(cache_config);
         let kernel = NautilusKernel::new("BacktestEngine".to_string(), config.clone())?;
+        let instance_id = kernel.instance_id;
+
         Ok(Self {
-            instance_id: kernel.instance_id,
+            kernel,
+            instance_id,
             config,
             accumulator: TimeEventAccumulator::new(),
-            kernel,
             run_config_id: None,
             run_id: None,
             venues: AHashMap::new(),
@@ -1011,18 +1013,10 @@ impl BacktestEngine {
             snapshot_positions,
         );
 
-        let mut analyzer = self.build_analyzer(&cache, &positions);
-        analyzer.recorded_realized_pnls = self.kernel.portfolio.borrow().recorded_realized_pnls();
-        let mut stats_pnls = AHashMap::new();
-
-        for currency in analyzer.currencies() {
-            if let Ok(pnls) = analyzer.get_performance_stats_pnls(Some(currency), None) {
-                stats_pnls.insert(currency.code.to_string(), pnls);
-            }
-        }
-
-        let stats_returns = analyzer.get_performance_stats_returns();
-        let stats_general = analyzer.get_performance_stats_general();
+        let stats = self.kernel.portfolio.borrow().statistics();
+        let stats_pnls = stats.pnls;
+        let stats_returns = stats.returns;
+        let stats_general = stats.general;
 
         BacktestResult {
             trader_id: self.config.trader_id().to_string(),
@@ -1146,46 +1140,6 @@ impl BacktestEngine {
         }
 
         summary
-    }
-
-    fn build_analyzer(&self, cache: &Cache, positions: &[Position]) -> PortfolioAnalyzer {
-        let mut analyzer = PortfolioAnalyzer::default();
-        let mut snapshot_positions = Vec::new();
-
-        for position in positions {
-            snapshot_positions.extend(cache.position_snapshots(Some(&position.id), None));
-        }
-
-        // Aggregate starting and current balances across all venue accounts
-        for venue in self.venues.keys() {
-            if let Some(account) = cache.account_for_venue(venue) {
-                let account_ref: &dyn Account = match &*account {
-                    AccountAny::Margin(margin) => margin,
-                    AccountAny::Cash(cash) => cash,
-                    AccountAny::Betting(betting) => betting,
-                };
-
-                for (currency, money) in account_ref.starting_balances() {
-                    analyzer
-                        .account_balances_starting
-                        .entry(currency)
-                        .and_modify(|existing| *existing = *existing + money)
-                        .or_insert(money);
-                }
-
-                for (currency, money) in account_ref.balances_total() {
-                    analyzer
-                        .account_balances
-                        .entry(currency)
-                        .and_modify(|existing| *existing = *existing + money)
-                        .or_insert(money);
-                }
-            }
-        }
-
-        analyzer.add_positions(positions);
-        analyzer.add_positions(&snapshot_positions);
-        analyzer
     }
 
     fn route_data_to_exchange(&self, data: &Data) {
@@ -1715,8 +1669,13 @@ impl BacktestEngine {
             return;
         }
 
-        let mut analyzer = self.build_analyzer(&cache, &positions);
-        analyzer.recorded_realized_pnls = self.kernel.portfolio.borrow().recorded_realized_pnls();
+        let accounts = cache.accounts_all_owned();
+        let mut snapshots = Vec::new();
+        for position in &positions {
+            snapshots.extend(cache.position_snapshots(Some(&position.id), None));
+        }
+        let recorded = self.kernel.portfolio.borrow().recorded_realized_pnls();
+        let analyzer = PortfolioAnalyzer::from_accounts(&accounts, &positions, &snapshots, recorded);
         log_portfolio_performance(&analyzer);
     }
 

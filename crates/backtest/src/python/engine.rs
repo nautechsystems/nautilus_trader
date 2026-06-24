@@ -48,10 +48,13 @@ use nautilus_model::{
         OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
-    identifiers::{ActorId, ClientId, ComponentId, InstrumentId, StrategyId, TraderId, Venue},
+    identifiers::{
+        AccountId, ActorId, ClientId, ComponentId, InstrumentId, StrategyId, TraderId, Venue,
+    },
     python::instruments::pyobject_to_instrument_any,
     types::{Currency, Money, Price},
 };
+use nautilus_portfolio::python::PyPortfolio;
 #[cfg(feature = "examples")]
 use nautilus_trading::examples::{
     actors::{BookImbalanceActor, BookImbalanceActorConfig},
@@ -866,12 +869,106 @@ impl PyBacktestEngine {
         PyCache::from_rc(self.0.kernel().cache.clone())
     }
 
+    /// Returns the portfolio shared with the kernel and registered components.
+    #[getter]
+    #[pyo3(name = "portfolio")]
+    fn py_portfolio(&self) -> PyPortfolio {
+        PyPortfolio::from_rc(self.0.kernel().portfolio.clone())
+    }
+
+    /// Generates an orders report as a pandas `DataFrame`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the Python `ReportProvider` import or call fails.
+    #[pyo3(name = "generate_orders_report")]
+    fn py_generate_orders_report<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let orders = self.cache_bound(py)?.call_method0("orders")?;
+        Self::report_provider(py)?.call_method1("generate_orders_report", (orders,))
+    }
+
+    /// Generates an order fills report as a pandas `DataFrame`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the Python `ReportProvider` import or call fails.
+    #[pyo3(name = "generate_order_fills_report")]
+    fn py_generate_order_fills_report<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let orders = self.cache_bound(py)?.call_method0("orders")?;
+        Self::report_provider(py)?.call_method1("generate_order_fills_report", (orders,))
+    }
+
+    /// Generates a fills report as a pandas `DataFrame`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the Python `ReportProvider` import or call fails.
+    #[pyo3(name = "generate_fills_report")]
+    fn py_generate_fills_report<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let orders = self.cache_bound(py)?.call_method0("orders")?;
+        Self::report_provider(py)?.call_method1("generate_fills_report", (orders,))
+    }
+
+    /// Generates a positions report as a pandas `DataFrame`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the Python `ReportProvider` import or call fails.
+    #[pyo3(name = "generate_positions_report")]
+    fn py_generate_positions_report<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let cache = self.cache_bound(py)?;
+        let positions = cache.call_method0("positions")?;
+        let snapshots = cache.call_method0("position_snapshots")?;
+        Self::report_provider(py)?.call_method1("generate_positions_report", (positions, snapshots))
+    }
+
+    /// Generates an account report as a pandas `DataFrame`.
+    ///
+    /// At least one of `venue` or `account_id` must be provided.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if neither `venue` nor `account_id` is provided, or if the Python
+    /// `ReportProvider` import or call fails.
+    #[pyo3(name = "generate_account_report", signature = (venue=None, account_id=None))]
+    fn py_generate_account_report<'py>(
+        &self,
+        py: Python<'py>,
+        venue: Option<Venue>,
+        account_id: Option<AccountId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let cache = self.cache_bound(py)?;
+        let account = match (account_id, venue) {
+            (Some(aid), _) => cache.call_method1("account", (aid,))?,
+            (None, Some(v)) => cache.call_method1("account_for_venue", (v,))?,
+            (None, None) => {
+                return Err(to_pyvalue_err(
+                    "At least one of 'venue' or 'account_id' must be provided",
+                ));
+            }
+        };
+
+        if account.is_none() {
+            return py.import("pandas")?.call_method0("DataFrame");
+        }
+        Self::report_provider(py)?.call_method1("generate_account_report", (account,))
+    }
+
     fn __repr__(&self) -> String {
         format!("{:?}", self.0)
     }
 }
 
 impl PyBacktestEngine {
+    fn cache_bound<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyCache>> {
+        Ok(Py::new(py, self.py_cache())?.into_bound(py))
+    }
+
+    fn report_provider(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+        py.import("nautilus_trader.analysis.reporter")?
+            .getattr("ReportProvider")
+    }
+
     /// Provides access to the inner [`BacktestEngine`].
     #[must_use]
     pub fn inner(&self) -> &BacktestEngine {

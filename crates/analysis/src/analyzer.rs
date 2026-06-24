@@ -19,7 +19,7 @@ use ahash::AHashMap;
 use indexmap::{IndexMap, IndexSet};
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_DAY};
 use nautilus_model::{
-    accounts::Account,
+    accounts::{Account, AccountAny},
     identifiers::PositionId,
     position::Position,
     types::{Currency, Money},
@@ -28,6 +28,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     Returns,
+    snapshot::PortfolioStatistics,
     statistic::PortfolioStatistic,
     statistics::{
         expectancy::Expectancy, long_ratio::LongRatio, loser_avg::AvgLoser, loser_max::MaxLoser,
@@ -194,6 +195,66 @@ impl PortfolioAnalyzer {
         if let Some(account_returns) = Self::calculate_account_returns(account) {
             self.portfolio_returns = account_returns;
             self.sync_returns_alias();
+        }
+    }
+
+    /// Builds a populated analyzer from venue accounts and positions.
+    ///
+    /// Aggregates starting and total balances across all `accounts`, adds `positions` and
+    /// `snapshots`, and seeds `recorded_realized_pnls` (close-time PnLs observed during the run).
+    #[must_use]
+    pub fn from_accounts(
+        accounts: &[AccountAny],
+        positions: &[Position],
+        snapshots: &[Position],
+        recorded_realized_pnls: AHashMap<Currency, Vec<(PositionId, UnixNanos, f64)>>,
+    ) -> Self {
+        let mut analyzer = Self::default();
+
+        for account in accounts {
+            let account_ref: &dyn Account = match account {
+                AccountAny::Margin(margin) => margin,
+                AccountAny::Cash(cash) => cash,
+                AccountAny::Betting(betting) => betting,
+            };
+
+            for (currency, money) in account_ref.starting_balances() {
+                analyzer
+                    .account_balances_starting
+                    .entry(currency)
+                    .and_modify(|existing| *existing = *existing + money)
+                    .or_insert(money);
+            }
+
+            for (currency, money) in account_ref.balances_total() {
+                analyzer
+                    .account_balances
+                    .entry(currency)
+                    .and_modify(|existing| *existing = *existing + money)
+                    .or_insert(money);
+            }
+        }
+
+        analyzer.add_positions(positions);
+        analyzer.add_positions(snapshots);
+        analyzer.recorded_realized_pnls = recorded_realized_pnls;
+        analyzer
+    }
+
+    /// Collects an owned [`PortfolioStatistics`] snapshot from the current analyzer state.
+    #[must_use]
+    pub fn statistics(&self) -> PortfolioStatistics {
+        let mut pnls = AHashMap::new();
+
+        for currency in self.currencies() {
+            if let Ok(stats) = self.get_performance_stats_pnls(Some(currency), None) {
+                pnls.insert(currency.code.to_string(), stats);
+            }
+        }
+        PortfolioStatistics {
+            pnls,
+            returns: self.get_performance_stats_returns(),
+            general: self.get_performance_stats_general(),
         }
     }
 
@@ -728,6 +789,7 @@ mod tests {
     use indexmap::IndexMap;
     use nautilus_core::{UUID4, approx_eq};
     use nautilus_model::{
+        accounts::{AccountAny, CashAccount},
         enums::{AccountType, InstrumentClass, LiquiditySide, OrderSide, PositionSide},
         events::{AccountState, OrderFilled},
         identifiers::{
@@ -1564,6 +1626,106 @@ mod tests {
             epsilon = 1e-9
         ));
         assert_eq!(returns_stats, portfolio_stats);
+    }
+
+    #[rstest]
+    fn test_from_accounts_aggregates_balances_and_positions() {
+        let currency = Currency::USD();
+        let positions = vec![
+            create_mock_position("pos1", 100.0, 0.1, currency),
+            create_mock_position("pos2", 200.0, 0.2, currency),
+        ];
+
+        let analyzer = PortfolioAnalyzer::from_accounts(
+            &[AccountAny::Cash(CashAccount::default())],
+            &positions,
+            &[],
+            AHashMap::new(),
+        );
+
+        assert_eq!(analyzer.positions.len(), positions.len());
+        assert!(!analyzer.account_balances.is_empty());
+    }
+
+    #[rstest]
+    fn test_from_accounts_sums_balances_across_accounts() {
+        let usd = Currency::USD();
+        let one = PortfolioAnalyzer::from_accounts(
+            &[AccountAny::Cash(CashAccount::default())],
+            &[],
+            &[],
+            AHashMap::new(),
+        );
+        let two = PortfolioAnalyzer::from_accounts(
+            &[
+                AccountAny::Cash(CashAccount::default()),
+                AccountAny::Cash(CashAccount::default()),
+            ],
+            &[],
+            &[],
+            AHashMap::new(),
+        );
+
+        let single = one.account_balances.get(&usd).unwrap().as_decimal();
+        let summed = two.account_balances.get(&usd).unwrap().as_decimal();
+        let single_start = one
+            .account_balances_starting
+            .get(&usd)
+            .unwrap()
+            .as_decimal();
+        let summed_start = two
+            .account_balances_starting
+            .get(&usd)
+            .unwrap()
+            .as_decimal();
+
+        assert_eq!(summed, single + single);
+        assert_eq!(summed_start, single_start + single_start);
+        assert_ne!(summed, single);
+    }
+
+    #[rstest]
+    fn test_statistics_snapshot_matches_getters() {
+        let currency = Currency::USD();
+        let positions = vec![
+            create_mock_position("pos1", 100.0, 0.1, currency),
+            create_mock_position("pos2", 200.0, 0.2, currency),
+        ];
+
+        let analyzer = PortfolioAnalyzer::from_accounts(
+            &[AccountAny::Cash(CashAccount::default())],
+            &positions,
+            &[],
+            AHashMap::new(),
+        );
+
+        let snapshot = analyzer.statistics();
+        assert!(maps_equal_nan_aware(
+            &snapshot.returns,
+            &analyzer.get_performance_stats_returns()
+        ));
+        assert!(maps_equal_nan_aware(
+            &snapshot.general,
+            &analyzer.get_performance_stats_general()
+        ));
+
+        for currency in analyzer.currencies() {
+            let expected = analyzer
+                .get_performance_stats_pnls(Some(currency), None)
+                .unwrap();
+            let actual = snapshot.pnls.get(&currency.code.to_string()).unwrap();
+            assert!(maps_equal_nan_aware(actual, &expected));
+        }
+    }
+
+    fn maps_equal_nan_aware(a: &AHashMap<String, f64>, b: &AHashMap<String, f64>) -> bool {
+        if a.len() != b.len() {
+            return false;
+        }
+        a.iter().all(|(k, v)| {
+            b.get(k)
+                .is_some_and(|bv| (v.is_nan() && bv.is_nan()) || (v == bv))
+        })
     }
 
     #[rstest]

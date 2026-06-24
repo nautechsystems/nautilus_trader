@@ -19,6 +19,7 @@ use std::cell::RefCell;
 
 use ahash::AHashMap;
 use indexmap::IndexMap;
+use nautilus_analysis::snapshot::PortfolioStatistics;
 use nautilus_common::factories::OrderFactory;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -829,6 +830,16 @@ impl<'a> PortfolioApi<'a> {
     #[must_use]
     pub fn build_snapshot(&self, account_id: &AccountId) -> Option<PortfolioSnapshot> {
         self.portfolio.borrow_mut().build_snapshot(account_id)
+    }
+
+    /// Returns an owned snapshot of computed portfolio performance statistics.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the portfolio is already mutably borrowed.
+    #[must_use]
+    pub fn statistics(&self) -> PortfolioStatistics {
+        self.portfolio.borrow().statistics()
     }
 
     /// Returns the recorded portfolio snapshots for the given account.

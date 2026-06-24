@@ -21,6 +21,7 @@
 )]
 
 pub mod analyzer;
+pub mod snapshot;
 pub mod statistics;
 
 use pyo3::{prelude::*, pymodule};
@@ -35,6 +36,7 @@ use pyo3::{prelude::*, pymodule};
 #[pymodule]
 pub fn analysis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::analyzer::PortfolioAnalyzer>()?;
+    m.add_class::<crate::snapshot::PortfolioStatistics>()?;
 
     // Statistics - Returns-based
     m.add_class::<crate::statistics::cagr::CAGR>()?;

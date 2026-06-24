@@ -3371,6 +3371,14 @@ fn test_cache_accounts_filters_by_id(mut cache: Cache, #[case] matching: bool) {
 }
 
 #[rstest]
+fn test_accounts_all_owned_returns_every_account(mut cache: Cache) {
+    let account = AccountAny::default();
+    cache.add_account(account).unwrap();
+    let all = cache.accounts_all_owned();
+    assert_eq!(all.len(), 1);
+}
+
+#[rstest]
 fn test_get_mark_xrate_returns_none(cache: Cache) {
     // When no mark xrate is set for (USD, EUR), it should return None
     assert!(

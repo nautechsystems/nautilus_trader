@@ -19,7 +19,7 @@ use std::{cell::RefCell, collections::VecDeque, fmt::Debug, rc::Rc};
 
 use ahash::{AHashMap, AHashSet};
 use indexmap::{IndexMap, IndexSet};
-use nautilus_analysis::analyzer::PortfolioAnalyzer;
+use nautilus_analysis::{analyzer::PortfolioAnalyzer, snapshot::PortfolioStatistics};
 use nautilus_common::{
     cache::{AccountLookupError, Cache},
     clock::Clock,
@@ -1486,6 +1486,28 @@ impl Portfolio {
     #[must_use]
     pub fn recorded_realized_pnls(&self) -> AHashMap<Currency, Vec<(PositionId, UnixNanos, f64)>> {
         self.inner.borrow().analyzer.recorded_realized_pnls.clone()
+    }
+
+    /// Computes an owned [`PortfolioStatistics`] snapshot from the portfolio's current cache state.
+    ///
+    /// Aggregates balances across every account, includes cached positions and their snapshots, and
+    /// merges close-time PnLs recorded during processing. Recomputes on each call; callers on hot paths
+    /// should invoke it sparingly.
+    #[must_use]
+    pub fn statistics(&self) -> PortfolioStatistics {
+        let cache = self.cache.borrow();
+        let accounts = cache.accounts_all_owned();
+        let positions: Vec<Position> = cache
+            .positions(None, None, None, None, None)
+            .into_iter()
+            .map(|p| p.cloned())
+            .collect();
+        let mut snapshots = Vec::new();
+        for position in &positions {
+            snapshots.extend(cache.position_snapshots(Some(&position.id), None));
+        }
+        let recorded = self.inner.borrow().analyzer.recorded_realized_pnls.clone();
+        PortfolioAnalyzer::from_accounts(&accounts, &positions, &snapshots, recorded).statistics()
     }
 
     /// Updates portfolio calculations based on a position event.

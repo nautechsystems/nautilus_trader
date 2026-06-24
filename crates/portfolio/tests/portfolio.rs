@@ -5367,3 +5367,68 @@ fn test_reset_cancels_snapshot_timers(
         "reset() should cancel any armed portfolio snapshot timer"
     );
 }
+
+#[rstest]
+fn test_portfolio_statistics_returns_snapshot(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("SIM-001");
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(simple_cache)),
+        Rc::new(RefCell::new(clock)),
+        None,
+    );
+
+    let account_state = get_cash_account(Some(account_id.as_str()));
+    portfolio.update_account(&account_state);
+
+    let position_id = PositionId::new("P-STATS-1");
+    let fill_open = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100000"),
+        Price::new(0.80000, instrument_audusd.price_precision()),
+        position_id,
+    );
+    let mut position = Position::new(&instrument_audusd, fill_open);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+
+    let fill_close = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Sell,
+        Quantity::from("100000"),
+        Price::new(0.80100, instrument_audusd.price_precision()),
+        position_id,
+    );
+    position.apply(&fill_close);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&position)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionClosed(get_close_position(
+        &position,
+    )));
+
+    let snapshot = portfolio.statistics();
+
+    assert!(!snapshot.pnls.is_empty());
+    assert!(
+        snapshot
+            .pnls
+            .values()
+            .all(|m| m.contains_key("PnL (total)"))
+    );
+}

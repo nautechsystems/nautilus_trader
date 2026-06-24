@@ -24,6 +24,7 @@ crate-type = ["rlib"]
 default = []
 extension-module = ["python", "pyo3/extension-module"]
 python = [
+  "nautilus-analysis/python",
   "nautilus-common/python",
   "nautilus-model/python",
   "pyo3",

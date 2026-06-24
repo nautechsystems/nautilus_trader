@@ -3,6 +3,7 @@
 import typing
 
 from nautilus_trader import model
+from nautilus_trader.analysis.reporter import ReportProvider as ReportProvider
 
 __all__ = [
     "CAGR",
@@ -20,6 +21,7 @@ __all__ = [
     "MinLoser",
     "MinWinner",
     "PortfolioAnalyzer",
+    "PortfolioStatistics",
     "ProfitFactor",
     "ReturnsAverage",
     "ReturnsAverageLoss",
@@ -241,6 +243,15 @@ class PortfolioAnalyzer:
     def get_stats_position_returns_formatted(self) -> list[str]: ...
     def get_stats_portfolio_returns_formatted(self) -> list[str]: ...
     def get_stats_general_formatted(self) -> list[str]: ...
+
+@typing.final
+class PortfolioStatistics:
+    @property
+    def pnls(self) -> dict[str, dict[str, float]]: ...
+    @property
+    def returns(self) -> dict[str, float]: ...
+    @property
+    def general(self) -> dict[str, float]: ...
 
 @typing.final
 class ProfitFactor:

@@ -87,5 +87,8 @@ fn test_from_config_registers_and_runs(crypto_perpetual_ethusdt: CryptoPerpetual
     engine.add_data(quotes, None, true, true).unwrap();
 
     engine.run(None, None, None, false).unwrap();
-    assert_eq!(engine.get_result().iterations, 10);
+    let result = engine.get_result();
+    assert_eq!(result.iterations, 10);
+    // statistics sourced from the portfolio via the rewired path
+    assert!(!result.stats_general.is_empty() || !result.stats_pnls.is_empty());
 }
