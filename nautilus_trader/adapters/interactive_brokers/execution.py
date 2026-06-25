@@ -1227,11 +1227,18 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 else:
                     setattr(ib_order, field, fn(value))
 
-        # IBKR accepts a cash quantity (`cashQty`) only for BUY orders on these instruments (e.g.
-        # PAXOS crypto); a SELL must use the base/coin quantity (`totalQuantity`). Previously this
-        # converted every inverse order to cashQty and truncated a fractional coin quantity with
-        # int() (e.g. 0.031 -> 0), which made IBKR reject SELLs ("size value cannot be zero").
-        if is_inverse and order.side == OrderSide.BUY:
+        # IBKR accepts a cash quantity (`cashQty`) only when an inverse instrument's order (e.g.
+        # PAXOS crypto) is sized in the quote currency, and only for BUY orders; a SELL must use
+        # the base/coin quantity (`totalQuantity`). Previously this converted every inverse order
+        # to cashQty and truncated a fractional coin quantity with int() (e.g. 0.031 -> 0), which
+        # made SELLs collapse to zero and IBKR reject them ("size value cannot be zero").
+        # Matches the Rust IB transform predicate (`is_inverse && is_quote_quantity`).
+        if is_inverse and order.is_quote_quantity:
+            if order.side != OrderSide.BUY:
+                raise ValueError(
+                    "Interactive Brokers only accepts a quote quantity (`cashQty`) for BUY "
+                    "orders; a SELL must use the base quantity",
+                )
             ib_order.cashQty = float(ib_order.totalQuantity)
             ib_order.totalQuantity = 0
 
