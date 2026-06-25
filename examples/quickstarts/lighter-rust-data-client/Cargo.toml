@@ -1,0 +1,38 @@
+[package]
+name = "lighter-rust-data-client"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96.0"
+publish = false
+
+[workspace]
+
+[dependencies]
+dotenvy = "0.15"
+log = "0.4"
+tokio = { version = "1", features = ["full"] }
+
+[dependencies.nautilus-common]
+git = "https://github.com/nautechsystems/nautilus_trader.git"
+branch = "develop"
+features = ["live"]
+
+[dependencies.nautilus-lighter]
+git = "https://github.com/nautechsystems/nautilus_trader.git"
+branch = "develop"
+features = ["high-precision"]
+
+[dependencies.nautilus-live]
+git = "https://github.com/nautechsystems/nautilus_trader.git"
+branch = "develop"
+features = ["node"]
+
+[dependencies.nautilus-model]
+git = "https://github.com/nautechsystems/nautilus_trader.git"
+branch = "develop"
+features = ["high-precision"]
+
+[dependencies.nautilus-testkit]
+git = "https://github.com/nautechsystems/nautilus_trader.git"
+branch = "develop"
+features = ["high-precision"]

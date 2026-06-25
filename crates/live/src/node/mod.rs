@@ -703,7 +703,7 @@ impl LiveNode {
     ///
     /// # Shutdown Sequence
     ///
-    /// 1. Signal received (SIGINT or handle stop).
+    /// 1. Signal received (SIGINT, SIGTERM, or handle stop).
     /// 2. Trader components stopped (triggers order cancellations, etc.).
     /// 3. Event loop continues processing residual events for the configured grace period.
     /// 4. Kernel finalized, clients disconnected, remaining events drained.
@@ -991,7 +991,9 @@ impl LiveNode {
         let mut open_order_report_task: Option<OpenOrderReportTask> = None;
         let mut position_report_task: Option<PositionReportTask> = None;
         let ctrl_c = dst::signal::ctrl_c();
+        let terminate = dst::signal::terminate();
         tokio::pin!(ctrl_c);
+        tokio::pin!(terminate);
 
         loop {
             let shutdown_deadline = self.shutdown_deadline;
@@ -1006,6 +1008,13 @@ impl LiveNode {
                     match result {
                         Ok(()) => log::info!("Received SIGINT, shutting down"),
                         Err(e) => log::error!("Failed to listen for SIGINT: {e}"),
+                    }
+                    self.initiate_shutdown();
+                }
+                result = &mut terminate, if is_running => {
+                    match result {
+                        Ok(()) => log::info!("Received SIGTERM, shutting down"),
+                        Err(e) => log::error!("Failed to listen for SIGTERM: {e}"),
                     }
                     self.initiate_shutdown();
                 }

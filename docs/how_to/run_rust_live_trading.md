@@ -46,17 +46,15 @@ use nautilus_okx::{
 let trader_id = TraderId::from("TESTER-001");
 let account_id = AccountId::from("OKX-001");
 
-let data_config = OKXDataClientConfig {
-    instrument_types: vec![OKXInstrumentType::Swap],
-    ..Default::default()
-};
+let data_config = OKXDataClientConfig::builder()
+    .instrument_types(vec![OKXInstrumentType::Swap])
+    .build();
 
-let exec_config = OKXExecClientConfig {
-    trader_id,
-    account_id,
-    instrument_types: vec![OKXInstrumentType::Swap],
-    ..Default::default()
-};
+let exec_config = OKXExecClientConfig::builder()
+    .trader_id(trader_id)
+    .account_id(account_id)
+    .instrument_types(vec![OKXInstrumentType::Swap])
+    .build();
 
 let log_config = LoggerConfig {
     stdout_level: LevelFilter::Info,
@@ -128,7 +126,7 @@ export OKX_API_SECRET="your_api_secret"
 export OKX_API_PASSPHRASE="your_passphrase"
 ```
 
-For demo trading, set `environment: OKXEnvironment::Demo` in both config structs and use demo
+For demo trading, set `.environment(OKXEnvironment::Demo)` on both config builders and use demo
 API credentials from OKX.
 
 Each adapter documents its required variables in the

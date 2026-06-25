@@ -119,6 +119,26 @@ To install a specific development wheel (e.g., `1.221.0a20250912` for September 
 uv pip install nautilus_trader==1.221.0a20250912 --index-url=https://packages.nautechsystems.io/simple
 ```
 
+### Python v2 development wheels
+
+Python v2 is the PyO3 package under `python/`. It is published to a separate v2 index while the
+main package remains in transition.
+
+```bash
+uv pip install --pre --index-url=https://packages.nautechsystems.io/v2/simple/ nautilus-trader
+```
+
+The `--pre` flag is required because these wheels are pre-release builds. The installed import name
+is still `nautilus_trader`.
+
+Run this command outside a NautilusTrader source checkout. The repository root uses an
+`exclude-newer` uv policy for reproducible development, which can filter out newly published v2
+wheels. Inside a source checkout, use [Build Python v2 from source](#8-build-python-v2-from-source)
+instead.
+
+Current v2 development wheels target Python 3.12-3.14. Build from source when you need local Rust
+changes, a debug build, or a platform wheel that is not available on the v2 index.
+
 ### Available versions
 
 You can view all available versions of `nautilus_trader` on the [package index](https://packages.nautechsystems.io/simple/nautilus-trader/index.html).
@@ -276,6 +296,33 @@ The `LD_LIBRARY_PATH` export is Linux-specific and not needed on macOS.
 The `PYTHONHOME` variable is required when running `make cargo-test` with a `uv`-installed Python.
 Without it, tests that depend on PyO3 may fail to locate the Python runtime.
 :::
+
+### 8. Build Python v2 from source
+
+This path builds the PyO3 package from the `python/` directory and installs it into `python/.venv`.
+Use it from a NautilusTrader source checkout, when a v2 development wheel is not available for your
+platform, or when you need local Rust changes.
+
+From the repository root:
+
+```bash
+make build-debug-v2
+```
+
+This target syncs `python/.venv`, builds the Rust extension with maturin, and regenerates Python
+type stubs. It uses `target-v2/` for Cargo artifacts so it does not conflict with the legacy Python
+build in `target/`.
+
+Run a Python v2 example with the v2 environment:
+
+```bash
+cd python
+.venv/bin/python examples/lighter/data_tester.py --lighter-environment testnet
+```
+
+For direct commands and test targets, see the [Python v2 README][python-v2-readme].
+
+[python-v2-readme]: https://github.com/nautechsystems/nautilus_trader/blob/develop/python/README.md
 
 ## From GitHub release
 

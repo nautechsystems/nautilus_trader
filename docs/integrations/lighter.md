@@ -32,7 +32,7 @@ The adapter includes Python v2 and Rust live-node examples. The Python examples 
 and default to a dry build: they build the node, register the tester, and exit unless `--run` is
 passed.
 
-```fish
+```bash
 cd python
 .venv/bin/python examples/lighter/data_tester.py --lighter-environment testnet
 .venv/bin/python examples/lighter/exec_tester.py --lighter-environment testnet
@@ -41,7 +41,7 @@ cd python
 Pass `--run` to connect to Lighter. The execution tester remains in `dry_run` mode unless
 `--live-orders` is also passed.
 
-```fish
+```bash
 cd python
 .venv/bin/python examples/lighter/data_tester.py \
     --lighter-environment mainnet \
@@ -53,9 +53,11 @@ cd python
     --run
 ```
 
-Rust examples live under `crates/adapters/lighter/examples/` and run immediately:
+Rust examples live under `crates/adapters/lighter/examples/`. The data tester connects when run.
+The execution tester also connects when run, but defaults to `DRY_RUN = true`; set it to `false` in
+the source only when you intend to submit real orders:
 
-```fish
+```bash
 cargo run --example lighter-data-tester --package nautilus-lighter --features examples
 cargo run --example lighter-exec-tester --package nautilus-lighter --features examples
 ```
@@ -65,6 +67,11 @@ Examples can connect to live venues. Execution examples with live order flow ena
 orders when pointed at a funded mainnet account. Review the selected instrument, quantity, and
 environment before running them.
 :::
+
+For emergency account cleanup, `cargo run --bin lighter-flatten -p nautilus-lighter` cancels open
+orders and closes positions for the configured Lighter account. It scans all registered markets, so
+the standard 60 req/min REST quota can make the run take several minutes. Review the active account
+and positions first because it is account-wide, not strategy-scoped.
 
 ## Product support
 
@@ -136,10 +143,10 @@ Use revocation as cleanup when leaving the adapter. It sends the same `ApproveIn
 `approval_expiry = 0` and every max fee set to zero; the next execution-client startup records a
 fresh zero-fee approval.
 
-```fish
-set -x LIGHTER_API_KEY_INDEX 5
-set -x LIGHTER_API_SECRET REPLACE_ME
-set -x LIGHTER_ACCOUNT_INDEX 123456
+```bash
+export LIGHTER_API_KEY_INDEX=5
+export LIGHTER_API_SECRET=REPLACE_ME
+export LIGHTER_ACCOUNT_INDEX=123456
 cargo run -p nautilus-lighter --bin lighter-integrator-revoke           # mainnet
 cargo run -p nautilus-lighter --bin lighter-integrator-revoke testnet   # testnet
 ```
@@ -658,10 +665,9 @@ use nautilus_lighter::{
     config::{LighterDataClientConfig, LighterExecClientConfig},
 };
 
-let data_config = LighterDataClientConfig {
-    environment: LighterEnvironment::Testnet,
-    ..Default::default()
-};
+let data_config = LighterDataClientConfig::builder()
+    .environment(LighterEnvironment::Testnet)
+    .build();
 
 let exec_config = LighterExecClientConfig::builder()
     .trader_id(trader_id)

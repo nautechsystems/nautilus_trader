@@ -345,8 +345,9 @@ The "inflight check loop task still pending" message appears because the normal 
 shutdown path is not triggered. This is tracked as
 [#2785](https://github.com/nautechsystems/nautilus_trader/issues/2785).
 
-The v2 `LiveNode` already handles Ctrl+C via `tokio::signal::ctrl_c()` and a Python SIGINT
-bridge, so runner and tasks shut down cleanly.
+The v2 `LiveNode` handles Ctrl+C (SIGINT) and, on Unix, SIGTERM in its Rust run loop.
+The Python v2 bridge also routes SIGINT into the same shutdown path, so runner and tasks shut down
+cleanly.
 
 Example pattern for Windows:
 
