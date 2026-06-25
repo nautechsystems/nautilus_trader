@@ -940,3 +940,154 @@ impl<'a> PortfolioApi<'a> {
         self.portfolio.borrow().recorded_realized_pnls()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{cache::Cache, clock::TestClock, factories::OrderFactory};
+    use nautilus_model::{
+        enums::{OrderSide, OrderType},
+        identifiers::{AccountId, InstrumentId, StrategyId, TraderId, Venue},
+        orders::Order,
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_order_api_creates_market_order() {
+        let trader_id = TraderId::from("TRADER-001");
+        let strategy_id = StrategyId::from("S-001");
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let order_factory = RefCell::new(OrderFactory::new(
+            trader_id,
+            strategy_id,
+            None,
+            None,
+            clock,
+            false,
+            true,
+        ));
+        let api = OrderApi::new(&order_factory);
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+
+        let order = api.market(
+            instrument_id,
+            OrderSide::Buy,
+            Quantity::from("100000"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(order.order_type(), OrderType::Market);
+        assert_eq!(order.instrument_id(), instrument_id);
+        assert_eq!(order.order_side(), OrderSide::Buy);
+        assert_eq!(order.quantity(), Quantity::from("100000"));
+        assert_eq!(order.trader_id(), trader_id);
+        assert_eq!(order.strategy_id(), strategy_id);
+    }
+
+    #[rstest]
+    fn test_order_api_creates_bracket_orders() {
+        let trader_id = TraderId::from("TRADER-001");
+        let strategy_id = StrategyId::from("S-001");
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let order_factory = RefCell::new(OrderFactory::new(
+            trader_id,
+            strategy_id,
+            None,
+            None,
+            clock,
+            false,
+            true,
+        ));
+        let api = OrderApi::new(&order_factory);
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+
+        let orders = api
+            .bracket()
+            .instrument_id(instrument_id)
+            .order_side(OrderSide::Buy)
+            .quantity(Quantity::from("100000"))
+            .tp_price(Price::from("1.10000"))
+            .sl_trigger_price(Price::from("0.90000"))
+            .call();
+
+        assert_eq!(orders.len(), 3);
+        assert!(
+            orders
+                .iter()
+                .all(|order| order.instrument_id() == instrument_id)
+        );
+        assert!(orders.iter().all(|order| order.trader_id() == trader_id));
+        assert!(
+            orders
+                .iter()
+                .all(|order| order.strategy_id() == strategy_id)
+        );
+        assert_eq!(orders[0].order_type(), OrderType::Market);
+        assert_eq!(orders[0].order_side(), OrderSide::Buy);
+        assert_eq!(orders[0].quantity(), Quantity::from("100000"));
+        assert_eq!(orders[1].order_type(), OrderType::StopMarket);
+        assert_eq!(orders[1].order_side(), OrderSide::Sell);
+        assert_eq!(orders[1].trigger_price(), Some(Price::from("0.90000")));
+        assert_eq!(orders[2].order_type(), OrderType::Limit);
+        assert_eq!(orders[2].order_side(), OrderSide::Sell);
+        assert_eq!(orders[2].price(), Some(Price::from("1.10000")));
+    }
+
+    #[rstest]
+    fn test_portfolio_api_empty_reads_return_empty_values() {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let portfolio = RefCell::new(Portfolio::new(cache, clock, None));
+        let api = PortfolioApi::new(&portfolio);
+        let venue = Venue::from("SIM");
+        let account_id = AccountId::from("SIM-001");
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+
+        assert!(!api.is_initialized());
+        assert!(api.balances_locked(&venue).is_empty());
+        assert!(api.margins_init(&venue).is_empty());
+        assert!(api.margins_maint(&venue).is_empty());
+        assert!(api.unrealized_pnls(&venue, None).is_empty());
+        assert!(api.realized_pnls(&venue, None).is_empty());
+        assert_eq!(api.net_exposures(&venue, None), None);
+        assert_eq!(api.unrealized_pnl(&instrument_id), None);
+        assert_eq!(
+            api.unrealized_pnl_for_account(&instrument_id, Some(&account_id)),
+            None
+        );
+        assert_eq!(api.realized_pnl(&instrument_id), None);
+        assert_eq!(
+            api.realized_pnl_for_account(&instrument_id, Some(&account_id)),
+            None
+        );
+        assert_eq!(api.total_pnl(&instrument_id), None);
+        assert_eq!(
+            api.total_pnl_for_account(&instrument_id, Some(&account_id)),
+            None
+        );
+        assert!(api.total_pnls(&venue, None).is_empty());
+        assert!(api.mark_values(&venue, None).is_empty());
+        assert!(api.equity(&venue, None).is_empty());
+        assert_eq!(api.build_snapshot(&account_id), None);
+        assert!(api.snapshots(&account_id).is_empty());
+        assert!(api.missing_price_instruments(&venue).is_empty());
+        assert_eq!(api.net_exposure(&instrument_id, None), None);
+        assert_eq!(api.net_position(&instrument_id), Decimal::ZERO);
+        assert!(!api.is_net_long(&instrument_id));
+        assert!(!api.is_net_short(&instrument_id));
+        assert!(api.is_flat(&instrument_id));
+        assert!(api.is_completely_flat());
+        assert!(api.recorded_realized_pnls().is_empty());
+
+        let _statistics = api.statistics();
+    }
+}

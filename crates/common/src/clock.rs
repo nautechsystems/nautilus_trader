@@ -1219,6 +1219,7 @@ pub(crate) fn replace_existing_timer<T: Timer>(timers: &mut BTreeMap<Ustr, T>, n
 #[cfg(test)]
 mod tests {
     use std::{
+        cell::RefCell,
         sync::{Arc, Mutex},
         time::Duration,
     };
@@ -2339,6 +2340,30 @@ mod tests {
     }
 
     #[rstest]
+    fn test_clock_api_new_uses_native_backing(test_clock: TestClock) {
+        let clock = RefCell::new(test_clock);
+        let api = ClockApi::new(&clock);
+
+        api.set_timer_ns(
+            "native-timer",
+            1_000,
+            None,
+            None,
+            None,
+            Some(true),
+            Some(false),
+        )
+        .unwrap();
+
+        assert_eq!(api.timer_count(), 1);
+        assert_eq!(api.timer_names(), vec!["native-timer".to_string()]);
+        assert_eq!(
+            api.next_time_ns("native-timer"),
+            Some(UnixNanos::from(1_000))
+        );
+    }
+
+    #[rstest]
     fn test_clock_api_handlers_back_full_surface() {
         let alerts = Arc::new(Mutex::new(Vec::new()));
         let timers = Arc::new(Mutex::new(Vec::new()));
@@ -2399,6 +2424,14 @@ mod tests {
             .set_time_alert("alert", alert_time, None, Some(false))
             .unwrap();
         clock
+            .set_time_alert_ns(
+                "alert-ns",
+                UnixNanos::from(1_700_000_000_555_000_000),
+                None,
+                Some(true),
+            )
+            .unwrap();
+        clock
             .set_timer(
                 "timer",
                 Duration::from_millis(250),
@@ -2407,6 +2440,17 @@ mod tests {
                 None,
                 Some(true),
                 Some(false),
+            )
+            .unwrap();
+        clock
+            .set_timer_ns(
+                "timer-ns",
+                500_000_000,
+                Some(UnixNanos::from(1_700_000_000_666_000_000)),
+                Some(UnixNanos::from(1_700_000_001_666_000_000)),
+                None,
+                Some(false),
+                Some(true),
             )
             .unwrap();
         clock.cancel_timer("alpha");
@@ -2433,22 +2477,39 @@ mod tests {
         );
         assert_eq!(
             alerts.lock().expect(MUTEX_POISONED).as_slice(),
-            &[(
-                "alert".to_string(),
-                UnixNanos::from(1_700_000_000_333_000_000),
-                Some(false)
-            )]
+            &[
+                (
+                    "alert".to_string(),
+                    UnixNanos::from(1_700_000_000_333_000_000),
+                    Some(false)
+                ),
+                (
+                    "alert-ns".to_string(),
+                    UnixNanos::from(1_700_000_000_555_000_000),
+                    Some(true)
+                )
+            ]
         );
         assert_eq!(
             timers.lock().expect(MUTEX_POISONED).as_slice(),
-            &[(
-                "timer".to_string(),
-                250_000_000,
-                Some(UnixNanos::from(1_700_000_000_444_000_000)),
-                Some(UnixNanos::from(1_700_000_001_444_000_000)),
-                Some(true),
-                Some(false)
-            )]
+            &[
+                (
+                    "timer".to_string(),
+                    250_000_000,
+                    Some(UnixNanos::from(1_700_000_000_444_000_000)),
+                    Some(UnixNanos::from(1_700_000_001_444_000_000)),
+                    Some(true),
+                    Some(false)
+                ),
+                (
+                    "timer-ns".to_string(),
+                    500_000_000,
+                    Some(UnixNanos::from(1_700_000_000_666_000_000)),
+                    Some(UnixNanos::from(1_700_000_001_666_000_000)),
+                    Some(false),
+                    Some(true)
+                )
+            ]
         );
         assert_eq!(
             cancellations.lock().expect(MUTEX_POISONED).as_slice(),
