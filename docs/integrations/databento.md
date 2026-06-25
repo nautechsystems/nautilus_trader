@@ -152,6 +152,62 @@ multiple venues. Useful for cross-venue analysis.
 See also the Databento [Schemas and data formats](https://databento.com/docs/schemas-and-data-formats) guide.
 :::
 
+## Dataset availability and selection
+
+Databento dataset IDs are separate from Nautilus venue identifiers. The adapter
+supports the schemas listed above, but each Databento dataset exposes its own
+subset. Check the metadata endpoints before adding a new dataset or schema to a
+live configuration:
+
+```bash
+databento_auth="$(printf '%s:' "$DATABENTO_API_KEY" | base64 | tr -d '\n')"
+
+curl --header "Authorization: Basic ${databento_auth}" \
+  "https://hist.databento.com/v0/metadata.list_schemas?dataset=EQUS.MINI"
+
+curl --header "Authorization: Basic ${databento_auth}" \
+  "https://hist.databento.com/v0/metadata.list_unit_prices?dataset=EQUS.MINI"
+
+curl --header "Authorization: Basic ${databento_auth}" \
+  "https://hist.databento.com/v0/metadata.get_cost" \
+  --data-urlencode "dataset=EQUS.MINI" \
+  --data-urlencode "symbols=AAPL" \
+  --data-urlencode "stype_in=raw_symbol" \
+  --data-urlencode "schema=bbo-1s" \
+  --data-urlencode "start=2026-06-24T14:30:00Z" \
+  --data-urlencode "end=2026-06-24T14:31:00Z"
+```
+
+For the two common evaluation datasets:
+
+- `GLBX.MDP3` is the CME Globex MDP 3.0 dataset for CME, CBOT, NYMEX, and
+  COMEX futures, options on futures, and spreads. It supports MBO, MBP-1,
+  MBP-10, TBBO, trades, BBO intervals, OHLCV, definitions, statistics, and
+  status. It does not expose the consolidated equity schemas (`cmbp-1`,
+  `cbbo-*`, or `tcbbo`).
+- `EQUS.MINI` is Databento US Equities Mini. It is a derived aggregated
+  top-of-book dataset with anonymized component venues. It supports MBP-1,
+  TBBO, trades, BBO intervals, OHLCV, and definitions. It does not support
+  MBO, MBP-10, imbalance, statistics, status, or consolidated schemas.
+
+Use `EQUS` as the Nautilus venue for US Equities Mini instruments:
+`AAPL.EQUS`, `MSFT.EQUS`, and so on. The built-in venue-to-dataset map routes
+`EQUS` to `EQUS.MINI`. Venue codes such as `XNAS` and `XNYS` refer to
+venue-specific datasets unless you override them with `venue_dataset_map`.
+
+:::warning
+If you override a venue such as `XNAS` to `EQUS.MINI`, keep downstream
+instrument IDs consistent. Mini records carry the consolidated `EQUS` publisher,
+and file or historical decoding without an explicit `instrument_id` emits
+`*.EQUS` identifiers.
+:::
+
+Cost depends on the schema, symbols, and time range. For exploration, start with
+tight ranges, `definition`, `bbo-1s`, `bbo-1m`, or `trades`, and call
+`metadata.get_cost` before pulling historical time series data. Avoid duplicate
+quote and trade subscriptions when a combined schema such as `mbp-1` or `tbbo`
+already carries the data needed by the strategy.
+
 ## Schema selection for live subscriptions
 
 Nautilus subscription methods map to Databento schemas as follows:
@@ -163,6 +219,13 @@ Nautilus subscription methods map to Databento schemas as follows:
 | `subscribe_order_book_depth()`  | `mbp-10`       | `mbp-10`                                                                     | `OrderBookDepth10` |
 | `subscribe_order_book_deltas()` | `mbo`          | `mbo`                                                                        | `OrderBookDeltas`  |
 | `subscribe_bars()`              | varies         | `ohlcv-1s`, `ohlcv-1m`, `ohlcv-1h`, `ohlcv-1d`                               | `Bar`              |
+
+:::warning
+The "Available Databento schemas" column lists adapter-supported choices for
+that Nautilus subscription method. The selected dataset must also support the
+schema. For example, `EQUS.MINI` cannot serve `mbo`, `mbp-10`, `statistics`, or
+`status`.
+:::
 
 :::note
 The examples below assume a `Strategy` or `Actor` context where `self` has
@@ -331,6 +394,22 @@ arrives.
 Databento identifies datasets with a *dataset ID*, separate from venue identifiers.
 See [Databento dataset naming conventions](https://databento.com/docs/api-reference-historical/basics/datasets)
 for details.
+
+For historical requests and live subscriptions, the adapter sends the Nautilus
+symbol portion of each `InstrumentId` as the Databento symbol and infers
+`stype_in` from that string:
+
+- Symbols ending in `.FUT` or `.OPT` use Databento parent symbology, for example
+  `ES.FUT.XCME`.
+- Three-part symbols whose last part is numeric use continuous symbology, for
+  example `ES.c.0.GLBX`.
+- All-numeric symbols use Databento `instrument_id` symbology.
+- All other symbols use raw symbol symbology, for example `ESZ6.XCME` or
+  `AAPL.EQUS`.
+
+All symbols in one request or subscription must use the same symbology type.
+Batch `AAPL.EQUS` with `MSFT.EQUS`, or `ES.FUT.XCME` with `NQ.FUT.XCME`, but do
+not mix raw and parent symbols in one Databento request.
 
 For CME Globex MDP 3.0 (`GLBX.MDP3`), publisher defaults map to the `GLBX`
 venue. When `use_exchange_as_venue=True`, definition messages can override
@@ -840,11 +919,20 @@ and `DatabentoDataClient` for historical requests.
 
 ## Configuration
 
-Add a `DATABENTO` section to your `TradingNode` client configuration:
+Add a `DATABENTO` section to your `TradingNode` client configuration. Load
+specific instruments; the adapter does not support `load_all=True` for
+Databento datasets because a dataset can contain millions of definitions.
 
 ```python
 from nautilus_trader.adapters.databento import DATABENTO
-from nautilus_trader.live.node import TradingNode
+from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.model.identifiers import InstrumentId
+
+instrument_ids = [
+    InstrumentId.from_str("ESZ6.XCME"),  # GLBX.MDP3
+    # InstrumentId.from_str("AAPL.EQUS"),  # EQUS.MINI
+]
 
 config = TradingNodeConfig(
     data_clients={
@@ -852,9 +940,11 @@ config = TradingNodeConfig(
             "api_key": None,  # 'DATABENTO_API_KEY' env var
             "http_gateway": None,  # Override for the default HTTP historical gateway
             "live_gateway": None,  # Override for the default raw TCP real-time gateway
-            "instrument_provider": InstrumentProviderConfig(load_all=True),
-            "instrument_ids": None,  # Nautilus instrument IDs to load on start
-            "parent_symbols": None,  # Databento parent symbols to load on start
+            "instrument_provider": InstrumentProviderConfig(
+                load_ids=frozenset(instrument_ids),
+            ),
+            "instrument_ids": instrument_ids,  # Definitions to load on start
+            "parent_symbols": {"GLBX.MDP3": {"ES.FUT"}},  # Optional definition trees
         },
     },
 )
@@ -878,19 +968,20 @@ node.build()
 
 ### Configuration parameters
 
-| Option                    | Default | Description                                                                                                                  |
-|---------------------------|---------|------------------------------------------------------------------------------------------------------------------------------|
-| `api_key`                 | `None`  | Databento API secret. Falls back to the `DATABENTO_API_KEY` environment variable when `None`.                                |
-| `http_gateway`            | `None`  | Historical HTTP gateway override for testing custom endpoints.                                                               |
-| `live_gateway`            | `None`  | Raw TCP real‑time gateway override, typically for testing only.                                                              |
-| `use_exchange_as_venue`   | `True`  | Override GLBX definition venues with the exchange MIC when definitions include one. `False` keeps the publisher‑map default. |
-| `timeout_initial_load`    | `15.0`  | Seconds to wait for instrument definitions per dataset before proceeding.                                                    |
-| `mbo_subscriptions_delay` | `3.0`   | Seconds to buffer before enabling MBO/L3 streams so initial snapshots replay in order.                                       |
-| `bars_timestamp_on_close` | `True`  | Timestamp bar `ts_event` on close. `False` timestamps bar `ts_event` on open.                                                |
-| `reconnect_timeout_mins`  | `10`    | Minutes to retry before giving up. `None` retries indefinitely. See [Connection stability](#connection-stability).           |
-| `venue_dataset_map`       | `None`  | Override the venue‑to‑dataset mappings from the canonical `publishers.json` (e.g., `{"EQUS": "EQUS.PLUS"}`).                 |
-| `parent_symbols`          | `None`  | Optional `{dataset: {parent symbols}}` to preload definition trees (e.g., `{"GLBX.MDP3": {"ES.FUT", "ES.OPT"}}`).            |
-| `instrument_ids`          | `None`  | Nautilus `InstrumentId` values to preload definitions for at startup.                                                        |
+| Option                    | Default | Description                                                           |
+|---------------------------|---------|-----------------------------------------------------------------------|
+| `api_key`                 | `None`  | Databento API secret; falls back to `DATABENTO_API_KEY`.              |
+| `http_gateway`            | `None`  | Historical HTTP endpoint override, mainly for tests.                  |
+| `live_gateway`            | `None`  | Live TCP endpoint override, mainly for tests.                         |
+| `instrument_provider`     | default | Provider settings; use `load_ids`, not `load_all=True`.               |
+| `use_exchange_as_venue`   | `True`  | Use exchange MIC venues for GLBX definitions.                         |
+| `timeout_initial_load`    | `15.0`  | Definition load timeout per dataset, in seconds.                      |
+| `mbo_subscriptions_delay` | `3.0`   | Delay before starting MBO/L3 streams, in seconds.                     |
+| `bars_timestamp_on_close` | `True`  | Use bar close time for `ts_event`; `False` uses open.                 |
+| `reconnect_timeout_mins`  | `10`    | Retry window in minutes; `None` retries indefinitely.                 |
+| `venue_dataset_map`       | `None`  | Override venue‑to‑dataset mappings.                                   |
+| `parent_symbols`          | `None`  | Preload parent definition trees by dataset.                           |
+| `instrument_ids`          | `None`  | Definitions to preload at startup.                                    |
 
 :::tip
 Use environment variables for credentials.

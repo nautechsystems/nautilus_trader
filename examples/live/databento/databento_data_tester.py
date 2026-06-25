@@ -34,11 +34,11 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # subscribed for as part of the data client configuration
 instrument_ids = [
     # InstrumentId.from_str("ES.c.0.GLBX"),  # TODO: Continuous contracts only work with GLBX for now
-    InstrumentId.from_str("ESH6.XCME"),
+    InstrumentId.from_str("ESZ6.XCME"),
     # InstrumentId.from_str("ES.FUT.XCME"),
     # InstrumentId.from_str("CL.FUT.NYMEX"),
     # InstrumentId.from_str("LO.OPT.NYMEX"),
-    # InstrumentId.from_str("AAPL.XNAS"),
+    # InstrumentId.from_str("AAPL.EQUS"),  # EQUS.MINI
     # InstrumentId.from_str("AAPL.IEXG"),
 ]
 
@@ -52,12 +52,11 @@ config_node = TradingNodeConfig(
     data_clients={
         DATABENTO: DatabentoDataClientConfig(
             http_gateway=None,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
+            instrument_provider=InstrumentProviderConfig(load_ids=frozenset(instrument_ids)),
             use_exchange_as_venue=True,
             mbo_subscriptions_delay=10.0,
             instrument_ids=instrument_ids,
             parent_symbols={"GLBX.MDP3": {"ES.FUT"}},
-            # venue_dataset_map={"XNAS": "EQUS.MINI"},
         ),
     },
     timeout_connection=30.0,
@@ -74,7 +73,6 @@ config_tester = DataTesterConfig(
     bar_types=[BarType.from_str(f"{instrument_ids[0]}-1-SECOND-LAST-EXTERNAL")],
     # bar_types=[BarType.from_str(f"{instrument_ids[0]}-1-DAY-LAST-EXTERNAL")],
     # subscribe_params={"schema": "bbo-1s"},
-    # subscribe_params={"schema": "ohlcv-eod"},
     # subscribe_book_deltas=True,
     # subscribe_book_depth=True,
     # subscribe_book_at_interval=True,
