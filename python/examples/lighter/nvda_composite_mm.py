@@ -102,7 +102,7 @@ def main() -> None:
     )
 
     node = builder.build()
-    node.add_native_strategy(
+    node.add_builtin_strategy(
         "CompositeMarketMaker",
         CompositeMarketMakerConfig(
             instrument_id=instrument_id,

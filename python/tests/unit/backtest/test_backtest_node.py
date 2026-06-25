@@ -43,8 +43,8 @@ def test_node_construction():
     assert node is not None
 
 
-def test_node_exposes_native_strategy_registration():
-    assert hasattr(BacktestNode, "add_native_strategy")
+def test_node_exposes_builtin_strategy_registration():
+    assert hasattr(BacktestNode, "add_builtin_strategy")
 
 
 def test_node_empty_configs_raises():

@@ -16,7 +16,7 @@
 """
 Polymarket Python v2 data tester example.
 
-The default path builds a live node and attaches the native Rust DataTester without
+The default path builds a live node and attaches the built-in Rust DataTester without
 connecting to Polymarket. Pass --run to start subscriptions.
 
 """
@@ -63,7 +63,7 @@ def main() -> None:
     )
 
     node = builder.build()
-    node.add_native_actor(
+    node.add_builtin_actor(
         "DataTester",
         DataTesterConfig(
             client_id=ClientId.from_str(POLYMARKET),

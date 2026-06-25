@@ -325,8 +325,8 @@ and
 ### Running Rust components
 
 Rust strategies and actors can run through three paths. The examples
-below use strategies, but the same pattern applies to actors via
-`add_actor` (pure Rust) and `add_native_actor` (from Python).
+below use strategies, but the same pattern applies to bundled actors via
+`add_actor` (pure Rust) and `add_builtin_actor` (from Python).
 
 #### Pure Rust
 
@@ -342,12 +342,13 @@ node.run().await?;
 See [Run Live Trading (Rust)](../how_to/run_rust_live_trading.md) for a
 full walkthrough.
 
-#### Native config from Python
+#### Built-in examples from Python
 
-Pass a type name and config to `add_native_strategy` to register a
-built-in Rust strategy from Python. The Rust side constructs the strategy
-and registers it with the engine. Python provides the configuration; all
-execution happens in Rust.
+Pass a type name and config to `add_builtin_strategy` to register a
+built-in example strategy from Python. This path exists to single-source
+the bundled example strategy code across Rust and Python docs, examples,
+and tests. It is not a first-class extension path for adding native
+strategies. For custom native components, use pure Rust or plugin loading.
 
 ```python
 from nautilus_trader.core.nautilus_pyo3.trading import GridMarketMakerConfig
@@ -360,7 +361,7 @@ config = GridMarketMakerConfig(
     grid_step_bps=15,
 )
 
-node.add_native_strategy("GridMarketMaker", config)
+node.add_builtin_strategy("GridMarketMaker", config)
 ```
 
 Built-in strategy configs:
@@ -374,17 +375,15 @@ Built-in strategy configs:
 | `GridMarketMakerConfig`        | `GridMarketMaker`        |
 | `HurstVpinDirectionalConfig`   | `HurstVpinDirectional`   |
 
-Built-in actor configs (via `add_native_actor`):
+`add_builtin_actor` follows the same bundled-only rule for actors used by
+examples and tests.
+
+Built-in actor configs (via `add_builtin_actor`):
 
 | Config                     | Actor                 |
 |----------------------------|-----------------------|
 | `BookImbalanceActorConfig` | `BookImbalanceActor`  |
 | `DataTesterConfig`         | `DataTester`          |
-
-Users who compile from source can add their own native components to this
-path. Add a `#[pyclass]` config, a `register_*` function, and a match arm
-in `native_strategy_register` or `native_actor_register`. The component
-then works from Python without PyO3 wrappers on the type itself.
 
 #### Plugin loading
 

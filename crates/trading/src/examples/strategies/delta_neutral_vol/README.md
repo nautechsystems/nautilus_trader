@@ -149,7 +149,7 @@ node.add_strategy(strategy)?;
 
 ## Python usage (v2)
 
-Pass the config to `add_native_strategy` on a `LiveNode` or
+Pass the config to `add_builtin_strategy` on a `LiveNode` or
 `BacktestEngine`. Python provides the configuration; the strategy
 runs entirely in Rust.
 
@@ -169,5 +169,5 @@ config = DeltaNeutralVolConfig(
     entry_iv_offset=0.02,  # Sell 2 vol points below mark
 )
 
-node.add_native_strategy("DeltaNeutralVol", config)
+node.add_builtin_strategy("DeltaNeutralVol", config)
 ```

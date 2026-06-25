@@ -42,15 +42,22 @@ use nautilus_model::{
         option_chain::{OptionChainSlice, OptionGreeks},
     },
     enums::BookType,
-    identifiers::{ActorId, ClientId, InstrumentId, OptionSeriesId, TraderId, Venue},
+    identifiers::{
+        ActorId, ClientId, ExecAlgorithmId, InstrumentId, OptionSeriesId, TraderId, Venue,
+    },
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
-    python::{data::option_chain::PyStrikeRange, instruments::instrument_any_to_pyobject},
+    orders::{OrderAny, OrderList},
+    python::{
+        data::option_chain::PyStrikeRange, instruments::instrument_any_to_pyobject,
+        orders::order_any_to_pyobject,
+    },
 };
 use pyo3::{
     prelude::*,
     types::{PyBytes, PyDict, PyList},
 };
+use ustr::Ustr;
 
 use crate::{
     actor::{
@@ -62,6 +69,9 @@ use crate::{
     clock::Clock,
     component::{Component, with_component_registry},
     enums::ComponentState,
+    logging::{CMD, RECV},
+    messages::execution::TradingCommand,
+    msgbus::{self, ShareableMessageHandler},
     python::{
         cache::PyCache,
         clock::PyClock,
@@ -197,6 +207,84 @@ impl DataActorNative for PyDataActorInner {
 
 #[expect(clippy::needless_pass_by_ref_mut)]
 impl PyDataActorInner {
+    fn execute_exec_algorithm_command(&mut self, command: &TradingCommand) -> anyhow::Result<()> {
+        if self.core.config.log_commands {
+            let id = self.core.actor_id;
+            log::info!("{id} {RECV}{CMD} {command:?}");
+        }
+
+        if self.core.state() != ComponentState::Running {
+            return Ok(());
+        }
+
+        match command {
+            TradingCommand::SubmitOrder(cmd) => {
+                let order = DataActor::cache(self).try_order(&cmd.client_order_id)?;
+                self.dispatch_on_order(order)
+                    .map_err(|e| anyhow::anyhow!("Python on_order failed: {e}"))
+            }
+            TradingCommand::SubmitOrderList(cmd) => {
+                let orders = self.orders_for_list(&cmd.order_list)?;
+                self.dispatch_on_order_list(cmd.order_list.clone(), orders)
+                    .map_err(|e| anyhow::anyhow!("Python on_order_list failed: {e}"))
+            }
+            _ => {
+                log::warn!("Unhandled command type: {command:?}");
+                Ok(())
+            }
+        }
+    }
+
+    fn orders_for_list(&self, order_list: &OrderList) -> anyhow::Result<Vec<OrderAny>> {
+        let cache = DataActor::cache(self);
+        let mut orders = Vec::with_capacity(order_list.client_order_ids.len());
+
+        for client_order_id in &order_list.client_order_ids {
+            orders.push(cache.try_order(client_order_id)?);
+        }
+
+        Ok(orders)
+    }
+
+    fn dispatch_on_order(&mut self, order: OrderAny) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| -> PyResult<()> {
+                let py_order = order_any_to_pyobject(py, order)?;
+                py_self.call_method1(py, "on_order", (py_order,))?;
+                Ok(())
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_order_list(
+        &mut self,
+        order_list: OrderList,
+        orders: Vec<OrderAny>,
+    ) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| -> PyResult<()> {
+                if py_self.bind(py).hasattr("on_order_list")? {
+                    let py_order_list = order_list.into_py_any_unwrap(py);
+                    let py_orders = orders
+                        .into_iter()
+                        .map(|order| order_any_to_pyobject(py, order))
+                        .collect::<PyResult<Vec<_>>>()?;
+                    let py_orders = PyList::new(py, py_orders)?;
+
+                    py_self.call_method1(py, "on_order_list", (py_order_list, py_orders))?;
+                } else {
+                    for order in orders {
+                        let py_order = order_any_to_pyobject(py, order)?;
+                        py_self.call_method1(py, "on_order", (py_order,))?;
+                    }
+                }
+                Ok(())
+            })?;
+        }
+        Ok(())
+    }
+
     fn dispatch_on_start(&self) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| py_self.call_method0(py, "on_start"))?;
@@ -770,6 +858,21 @@ impl PyDataActor {
         let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = inner_ref;
         with_actor_registry(|registry| registry.insert(actor_id, actor_trait_ref));
     }
+}
+
+pub fn register_python_exec_algorithm_endpoint(exec_algorithm_id: ExecAlgorithmId) {
+    let actor_id = Ustr::from(exec_algorithm_id.inner().as_str());
+    let endpoint: Ustr = format!("{exec_algorithm_id}.execute").into();
+    let handler = ShareableMessageHandler::from_typed(move |command: &TradingCommand| {
+        if let Some(mut algo) = try_get_actor_unchecked::<PyDataActorInner>(&actor_id) {
+            if let Err(e) = algo.execute_exec_algorithm_command(command) {
+                log::error!("Error executing command on Python algorithm {actor_id}: {e}");
+            }
+        } else {
+            log::error!("Python execution algorithm {actor_id} not found in registry");
+        }
+    });
+    msgbus::register_any(endpoint.into(), handler);
 }
 
 impl DataActor for PyDataActorInner {

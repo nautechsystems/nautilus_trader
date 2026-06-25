@@ -180,8 +180,8 @@ copying the node wiring below into a `main` in your own project that depends on
 the crates from [Project setup](#project-setup).
 
 From a checkout, with the credential variables set, the shipped binary builds
-the node, registers all three clients, adds the native strategy, and exits without
-connecting:
+the node, registers all three clients, adds the built-in example strategy, and
+exits without connecting:
 
 ```bash
 cargo run --bin lighter-nvda-composite-mm --package nautilus-tutorials --features examples

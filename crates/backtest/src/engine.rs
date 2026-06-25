@@ -507,34 +507,6 @@ impl BacktestEngine {
         Ok(())
     }
 
-    /// Adds a strategy to the backtest engine.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the strategy is already registered or the trader is in an invalid
-    /// state for strategy registration.
-    pub fn add_strategy<T>(&mut self, strategy: T) -> anyhow::Result<()>
-    where
-        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
-    {
-        self.kernel.trader.borrow_mut().add_strategy(strategy)
-    }
-
-    /// Adds the given strategies to the backtest engine. Stops at the first error.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any strategy fails to register; preceding strategies remain registered.
-    pub fn add_strategies<T>(&mut self, strategies: Vec<T>) -> anyhow::Result<()>
-    where
-        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
-    {
-        for strategy in strategies {
-            self.add_strategy(strategy)?;
-        }
-        Ok(())
-    }
-
     /// Adds an actor to the backtest engine.
     ///
     /// # Errors
@@ -559,6 +531,34 @@ impl BacktestEngine {
     {
         for actor in actors {
             self.add_actor(actor)?;
+        }
+        Ok(())
+    }
+
+    /// Adds a strategy to the backtest engine.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the strategy is already registered or the trader is in an invalid
+    /// state for strategy registration.
+    pub fn add_strategy<T>(&mut self, strategy: T) -> anyhow::Result<()>
+    where
+        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
+    {
+        self.kernel.trader.borrow_mut().add_strategy(strategy)
+    }
+
+    /// Adds the given strategies to the backtest engine. Stops at the first error.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any strategy fails to register; preceding strategies remain registered.
+    pub fn add_strategies<T>(&mut self, strategies: Vec<T>) -> anyhow::Result<()>
+    where
+        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
+    {
+        for strategy in strategies {
+            self.add_strategy(strategy)?;
         }
         Ok(())
     }

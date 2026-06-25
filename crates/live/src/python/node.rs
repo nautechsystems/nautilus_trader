@@ -18,8 +18,12 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr};
 
 use nautilus_common::{
-    actor::data_actor::ImportableActorConfig, cache::CacheConfig, enums::Environment,
-    live::get_runtime, logging::logger::LoggerConfig, python::actor::PyDataActor,
+    actor::data_actor::ImportableActorConfig,
+    cache::CacheConfig,
+    enums::Environment,
+    live::get_runtime,
+    logging::logger::LoggerConfig,
+    python::actor::{PyDataActor, register_python_exec_algorithm_endpoint},
 };
 #[cfg(feature = "examples")]
 use nautilus_core::python::to_pytype_err;
@@ -511,57 +515,6 @@ impl LiveNode {
         Ok(())
     }
 
-    /// Adds a Rust-native plug-in component from a cdylib.
-    #[pyo3(name = "add_plugin", signature = (path, type_name, config=None, sha256=None))]
-    fn py_add_plugin(
-        &mut self,
-        path: String,
-        type_name: String,
-        config: Option<HashMap<String, Py<PyAny>>>,
-        sha256: Option<String>,
-    ) -> PyResult<()> {
-        let config = PluginConfig {
-            path,
-            type_name,
-            config: match config {
-                Some(config) => coerce_json_config(config)?,
-                None => HashMap::new(),
-            },
-            sha256,
-        };
-
-        self.add_plugin(config).map_err(to_pyruntime_err)
-    }
-
-    /// Adds a compiled-in native Rust strategy from its type name and config.
-    ///
-    /// The type name determines which built-in strategy is constructed.
-    /// All execution happens in Rust; Python is the configuration layer.
-    #[cfg(feature = "examples")]
-    #[pyo3(name = "add_native_strategy")]
-    fn py_add_native_strategy(
-        &mut self,
-        type_name: &str,
-        config: &Bound<'_, PyAny>,
-    ) -> PyResult<()> {
-        let register = native_strategy_register(type_name).ok_or_else(|| {
-            to_pytype_err(format!("Unsupported native strategy type: {type_name}"))
-        })?;
-        register(self, config)
-    }
-
-    /// Adds a compiled-in native Rust actor from its type name and config.
-    ///
-    /// The type name determines which built-in actor is constructed.
-    /// All execution happens in Rust; Python is the configuration layer.
-    #[cfg(feature = "examples")]
-    #[pyo3(name = "add_native_actor")]
-    fn py_add_native_actor(&mut self, type_name: &str, config: &Bound<'_, PyAny>) -> PyResult<()> {
-        let register = native_actor_register(type_name)
-            .ok_or_else(|| to_pytype_err(format!("Unsupported native actor type: {type_name}")))?;
-        register(self, config)
-    }
-
     #[allow(
         unsafe_code,
         reason = "Required for Python exec algorithm component registration"
@@ -714,6 +667,8 @@ impl LiveNode {
         })
         .map_err(to_pyruntime_err)?;
 
+        register_python_exec_algorithm_endpoint(exec_algorithm_id);
+
         self.kernel_mut()
             .trader
             .borrow_mut()
@@ -722,6 +677,60 @@ impl LiveNode {
 
         log::info!("Registered Python exec algorithm {exec_algorithm_id}");
         Ok(())
+    }
+
+    /// Adds a Rust-native plug-in component from a cdylib.
+    #[pyo3(name = "add_plugin", signature = (path, type_name, config=None, sha256=None))]
+    fn py_add_plugin(
+        &mut self,
+        path: String,
+        type_name: String,
+        config: Option<HashMap<String, Py<PyAny>>>,
+        sha256: Option<String>,
+    ) -> PyResult<()> {
+        let config = PluginConfig {
+            path,
+            type_name,
+            config: match config {
+                Some(config) => coerce_json_config(config)?,
+                None => HashMap::new(),
+            },
+            sha256,
+        };
+
+        self.add_plugin(config).map_err(to_pyruntime_err)
+    }
+
+    /// Adds a built-in example actor from its type name and config.
+    ///
+    /// This method exists only to single-source bundled example actor code across
+    /// Rust and Python tests/examples. It is not a first-class extension path for
+    /// adding native actors.
+    #[cfg(feature = "examples")]
+    #[pyo3(name = "add_builtin_actor")]
+    fn py_add_builtin_actor(&mut self, type_name: &str, config: &Bound<'_, PyAny>) -> PyResult<()> {
+        let register = builtin_actor_register(type_name).ok_or_else(|| {
+            to_pytype_err(format!("Unsupported built-in actor type: {type_name}"))
+        })?;
+        register(self, config)
+    }
+
+    /// Adds a built-in example strategy from its type name and config.
+    ///
+    /// This method exists only to single-source bundled example strategy code across
+    /// Rust and Python tests/examples. It is not a first-class extension path for
+    /// adding native strategies.
+    #[cfg(feature = "examples")]
+    #[pyo3(name = "add_builtin_strategy")]
+    fn py_add_builtin_strategy(
+        &mut self,
+        type_name: &str,
+        config: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let register = builtin_strategy_register(type_name).ok_or_else(|| {
+            to_pytype_err(format!("Unsupported built-in strategy type: {type_name}"))
+        })?;
+        register(self, config)
     }
 
     fn __repr__(&self) -> String {
@@ -758,13 +767,22 @@ fn run_live_node_detached(py: Python<'_>, node: &mut LiveNode) -> PyResult<()> {
 }
 
 #[cfg(feature = "examples")]
-type NativeStrategyRegister = for<'py> fn(&mut LiveNode, &Bound<'py, PyAny>) -> PyResult<()>;
+type BuiltinActorRegister = for<'py> fn(&mut LiveNode, &Bound<'py, PyAny>) -> PyResult<()>;
 
 #[cfg(feature = "examples")]
-type NativeActorRegister = for<'py> fn(&mut LiveNode, &Bound<'py, PyAny>) -> PyResult<()>;
+type BuiltinStrategyRegister = for<'py> fn(&mut LiveNode, &Bound<'py, PyAny>) -> PyResult<()>;
 
 #[cfg(feature = "examples")]
-fn native_strategy_register(type_name: &str) -> Option<NativeStrategyRegister> {
+fn builtin_actor_register(type_name: &str) -> Option<BuiltinActorRegister> {
+    match type_name {
+        "BookImbalanceActor" => Some(register_book_imbalance_actor),
+        "DataTester" => Some(register_data_tester),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "examples")]
+fn builtin_strategy_register(type_name: &str) -> Option<BuiltinStrategyRegister> {
     match type_name {
         "CompositeMarketMaker" => Some(register_composite_market_maker),
         "DeltaNeutralVol" => Some(register_delta_neutral_vol),
@@ -772,15 +790,6 @@ fn native_strategy_register(type_name: &str) -> Option<NativeStrategyRegister> {
         "ExecTester" => Some(register_exec_tester),
         "GridMarketMaker" => Some(register_grid_market_maker),
         "HurstVpinDirectional" => Some(register_hurst_vpin_directional),
-        _ => None,
-    }
-}
-
-#[cfg(feature = "examples")]
-fn native_actor_register(type_name: &str) -> Option<NativeActorRegister> {
-    match type_name {
-        "BookImbalanceActor" => Some(register_book_imbalance_actor),
-        "DataTester" => Some(register_data_tester),
         _ => None,
     }
 }
@@ -1835,28 +1844,28 @@ class ClaimsStrategy(Strategy):
     #[case("ExecTester")]
     #[case("GridMarketMaker")]
     #[case("HurstVpinDirectional")]
-    fn test_native_strategy_register_accepts_supported_names(#[case] type_name: &str) {
-        assert!(super::native_strategy_register(type_name).is_some());
+    fn test_builtin_strategy_register_accepts_supported_names(#[case] type_name: &str) {
+        assert!(super::builtin_strategy_register(type_name).is_some());
     }
 
     #[cfg(feature = "examples")]
     #[rstest]
     #[case("BookImbalanceActor")]
     #[case("DataTester")]
-    fn test_native_actor_register_accepts_supported_names(#[case] type_name: &str) {
-        assert!(super::native_actor_register(type_name).is_some());
+    fn test_builtin_actor_register_accepts_supported_names(#[case] type_name: &str) {
+        assert!(super::builtin_actor_register(type_name).is_some());
     }
 
     #[cfg(feature = "examples")]
     #[rstest]
-    fn test_native_register_rejects_unknown_names() {
-        assert!(super::native_strategy_register("UnknownStrategy").is_none());
-        assert!(super::native_actor_register("UnknownActor").is_none());
+    fn test_builtin_register_rejects_unknown_names() {
+        assert!(super::builtin_strategy_register("UnknownStrategy").is_none());
+        assert!(super::builtin_actor_register("UnknownActor").is_none());
     }
 
     #[cfg(feature = "examples")]
     #[rstest]
-    fn test_native_strategy_register_rejects_mismatched_config() {
+    fn test_builtin_strategy_register_rejects_mismatched_config() {
         Python::initialize();
 
         let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
@@ -1866,7 +1875,7 @@ class ClaimsStrategy(Strategy):
             .unwrap();
 
         Python::attach(|py| {
-            let register = super::native_strategy_register("EmaCross").unwrap();
+            let register = super::builtin_strategy_register("EmaCross").unwrap();
             let config = PyDict::new(py);
             let error = register(&mut node, config.as_any()).unwrap_err();
 
@@ -1876,7 +1885,7 @@ class ClaimsStrategy(Strategy):
 
     #[cfg(feature = "examples")]
     #[rstest]
-    fn test_native_actor_register_rejects_mismatched_config() {
+    fn test_builtin_actor_register_rejects_mismatched_config() {
         Python::initialize();
 
         let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
@@ -1886,7 +1895,7 @@ class ClaimsStrategy(Strategy):
             .unwrap();
 
         Python::attach(|py| {
-            let register = super::native_actor_register("DataTester").unwrap();
+            let register = super::builtin_actor_register("DataTester").unwrap();
             let config = PyDict::new(py);
             let error = register(&mut node, config.as_any()).unwrap_err();
 

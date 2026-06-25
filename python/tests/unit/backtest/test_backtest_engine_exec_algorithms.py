@@ -17,8 +17,33 @@ import pytest
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
+from nautilus_trader.common import DataActor
+from nautilus_trader.common import DataActorConfig
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.trading import ExecutionAlgorithmConfig
+from nautilus_trader.trading import ImportableExecAlgorithmConfig
+
+
+class RequiredConfigBacktestExecAlgorithmConfig(DataActorConfig):
+    def __init__(
+        self,
+        exec_algorithm_id: str,
+        actor_id=None,
+        log_events: bool = True,
+        log_commands: bool = True,
+    ):
+        self.actor_id = actor_id
+        self.exec_algorithm_id = exec_algorithm_id
+        self.log_events = log_events
+        self.log_commands = log_commands
+
+
+class RequiredConfigBacktestExecAlgorithm(DataActor):
+    received_exec_algorithm_id: str | None = None
+
+    def __init__(self, config: RequiredConfigBacktestExecAlgorithmConfig):
+        super().__init__()
+        type(self).received_exec_algorithm_id = config.exec_algorithm_id
 
 
 def test_add_native_exec_algorithm_rejects_unknown_type():
@@ -48,4 +73,135 @@ def test_add_native_exec_algorithm_rejects_duplicate_registration():
     with pytest.raises(RuntimeError, match="'TWAP-DUPLICATE' is already registered"):
         engine.add_native_exec_algorithm("TwapAlgorithm", config)
 
+    engine.dispose()
+
+
+def test_add_exec_algorithm_from_config_registers_importable_algorithm():
+    RequiredConfigBacktestExecAlgorithm.received_exec_algorithm_id = None
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    config = ImportableExecAlgorithmConfig(
+        exec_algorithm_path=(
+            "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
+            "RequiredConfigBacktestExecAlgorithm"
+        ),
+        config_path=(
+            "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
+            "RequiredConfigBacktestExecAlgorithmConfig"
+        ),
+        config={"exec_algorithm_id": "BACKTEST-ALGO-CONFIG"},
+    )
+
+    engine.add_exec_algorithm_from_config(config)
+
+    assert RequiredConfigBacktestExecAlgorithm.received_exec_algorithm_id == "BACKTEST-ALGO-CONFIG"
+    engine.dispose()
+
+
+def test_add_exec_algorithm_from_config_rejects_invalid_path():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    config = ImportableExecAlgorithmConfig(
+        exec_algorithm_path="invalid_path_no_colon",
+        config_path="module:Config",
+        config={},
+    )
+
+    with pytest.raises(ValueError, match="exec_algorithm_path must be in format"):
+        engine.add_exec_algorithm_from_config(config)
+
+    engine.dispose()
+
+
+def test_add_exec_algorithm_from_config_rejects_nonexistent_module():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    config = ImportableExecAlgorithmConfig(
+        exec_algorithm_path="nonexistent.module:SomeClass",
+        config_path="nonexistent.module:SomeConfig",
+        config={},
+    )
+
+    with pytest.raises(RuntimeError, match="Failed to import module"):
+        engine.add_exec_algorithm_from_config(config)
+
+    engine.dispose()
+
+
+def test_add_exec_algorithm_from_config_rejects_duplicate_registration():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    config = ImportableExecAlgorithmConfig(
+        exec_algorithm_path="tests.unit.common.actor:TestExecAlgorithm",
+        config_path="tests.unit.common.actor:TestExecAlgorithmConfig",
+        config={"actor_id": "BACKTEST-ALGO-DUPLICATE"},
+    )
+    engine.add_exec_algorithm_from_config(config)
+
+    with pytest.raises(RuntimeError, match="'BACKTEST-ALGO-DUPLICATE' is already registered"):
+        engine.add_exec_algorithm_from_config(config)
+
+    engine.dispose()
+
+
+def test_add_exec_algorithm_from_config_rejects_running_engine():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    config = ImportableExecAlgorithmConfig(
+        exec_algorithm_path=(
+            "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
+            "RequiredConfigBacktestExecAlgorithm"
+        ),
+        config_path=(
+            "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
+            "RequiredConfigBacktestExecAlgorithmConfig"
+        ),
+        config={"exec_algorithm_id": "BACKTEST-ALGO-RUNNING"},
+    )
+
+    try:
+        engine.run(streaming=True)
+        with pytest.raises(RuntimeError, match="Cannot add execution algorithms to running trader"):
+            engine.add_exec_algorithm_from_config(config)
+    finally:
+        engine.dispose()
+
+
+def test_add_exec_algorithm_from_config_rejects_disposed_engine():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    config = ImportableExecAlgorithmConfig(
+        exec_algorithm_path=(
+            "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
+            "RequiredConfigBacktestExecAlgorithm"
+        ),
+        config_path=(
+            "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
+            "RequiredConfigBacktestExecAlgorithmConfig"
+        ),
+        config={"exec_algorithm_id": "BACKTEST-ALGO-DISPOSED"},
+    )
+
+    engine.run()
+    engine.dispose()
+
+    with pytest.raises(RuntimeError, match="Cannot add components to disposed trader"):
+        engine.add_exec_algorithm_from_config(config)
+
+
+def test_add_exec_algorithms_from_configs_registers_multiple_algorithms():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    configs = [
+        ImportableExecAlgorithmConfig(
+            exec_algorithm_path="tests.unit.common.actor:TestExecAlgorithm",
+            config_path="tests.unit.common.actor:TestExecAlgorithmConfig",
+            config={"actor_id": "BACKTEST-ALGO-A"},
+        ),
+        ImportableExecAlgorithmConfig(
+            exec_algorithm_path="tests.unit.common.actor:TestExecAlgorithm",
+            config_path="tests.unit.common.actor:TestExecAlgorithmConfig",
+            config={"actor_id": "BACKTEST-ALGO-B"},
+        ),
+    ]
+
+    engine.add_exec_algorithms_from_configs(configs)
+
+    with pytest.raises(RuntimeError, match="'BACKTEST-ALGO-A' is already registered"):
+        engine.add_exec_algorithm_from_config(configs[0])
+    with pytest.raises(RuntimeError, match="'BACKTEST-ALGO-B' is already registered"):
+        engine.add_exec_algorithm_from_config(configs[1])
     engine.dispose()

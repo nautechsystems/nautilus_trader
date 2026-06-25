@@ -81,6 +81,8 @@ This release includes many breaking changes across the user-facing Rust v2 APIs.
 - Removed `CacheConfig.database` and `MessageBusConfig.backing`; pass adapters separately
 - Removed common `DatabaseConfig` and `MessageBusBackingConfig`; use Redis/Postgres configs
 - Renamed message bus database terminology to backing in Rust message bus APIs
+- Renamed `add_native_actor` to `add_builtin_actor` for bundled example actors
+- Renamed `add_native_strategy` to `add_builtin_strategy` for bundled example strategies
 - Renamed Rust/PyO3 instrument `tick_scheme_name` to `tick_scheme`; Cython keeps `tick_scheme_name`
 - Renamed `BitmexInstrumentType::StockPerpetual` to `TradFiPerpetual` (covers equities, FX, and commodities)
 
