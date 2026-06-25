@@ -237,6 +237,12 @@ jobs:
         run: |
           uv sync --group test --no-install-package nautilus-trader
           uv pip install "../dist/"*.whl
+          # Pin pandas test deps here until v2 runtime deps are settled
+          uv pip install --only-binary :all: \
+            "numpy==2.4.6" \
+            "pandas==3.0.3" \
+            "python-dateutil==2.9.0.post0" \
+            "six==1.17.0"
           cd /tmp && uv run --project "$GITHUB_WORKSPACE/${{ env.PACKAGE_DIR }}" --no-sync pytest \
             --import-mode=importlib \
             --rootdir="$GITHUB_WORKSPACE/${{ env.PACKAGE_DIR }}" \
