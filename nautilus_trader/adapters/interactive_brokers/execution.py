@@ -1227,8 +1227,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 else:
                     setattr(ib_order, field, fn(value))
 
-        if self.instrument_provider.find(order.instrument_id).is_inverse:
-            ib_order.cashQty = int(ib_order.totalQuantity)
+        # IBKR accepts a cash quantity (`cashQty`) only for BUY orders on these instruments (e.g.
+        # PAXOS crypto); a SELL must use the base/coin quantity (`totalQuantity`). Previously this
+        # converted every inverse order to cashQty and truncated a fractional coin quantity with
+        # int() (e.g. 0.031 -> 0), which made IBKR reject SELLs ("size value cannot be zero").
+        if is_inverse and order.side == OrderSide.BUY:
+            ib_order.cashQty = float(ib_order.totalQuantity)
             ib_order.totalQuantity = 0
 
         if isinstance(order, TrailingStopLimitOrder | TrailingStopMarketOrder):
