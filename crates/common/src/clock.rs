@@ -2349,7 +2349,8 @@ mod tests {
         let timers_for_handler = Arc::clone(&timers);
         let cancellations_for_handler = Arc::clone(&cancellations);
         let cancel_all_for_handler = Arc::clone(&cancel_all);
-        let api = ClockApi::from_handlers(
+
+        let clock = ClockApi::from_handlers(
             || UnixNanos::from(1_700_000_000_123_456_789),
             move |name, alert_time_ns, _callback, allow_past| {
                 alerts_for_handler.lock().expect(MUTEX_POISONED).push((
@@ -2394,38 +2395,40 @@ mod tests {
         let alert_time = DateTime::from_timestamp_nanos(1_700_000_000_333_000_000);
         let start_time = DateTime::from_timestamp_nanos(1_700_000_000_444_000_000);
         let stop_time = DateTime::from_timestamp_nanos(1_700_000_001_444_000_000);
-        api.set_time_alert("alert", alert_time, None, Some(false))
+        clock
+            .set_time_alert("alert", alert_time, None, Some(false))
             .unwrap();
-        api.set_timer(
-            "timer",
-            Duration::from_millis(250),
-            Some(start_time),
-            Some(stop_time),
-            None,
-            Some(true),
-            Some(false),
-        )
-        .unwrap();
-        api.cancel_timer("alpha");
-        api.cancel_timers();
+        clock
+            .set_timer(
+                "timer",
+                Duration::from_millis(250),
+                Some(start_time),
+                Some(stop_time),
+                None,
+                Some(true),
+                Some(false),
+            )
+            .unwrap();
+        clock.cancel_timer("alpha");
+        clock.cancel_timers();
 
         assert_eq!(
-            api.timestamp_ns(),
+            clock.timestamp_ns(),
             UnixNanos::from(1_700_000_000_123_456_789)
         );
-        assert_eq!(api.timestamp_us(), 1_700_000_000_123_456);
-        assert_eq!(api.timestamp_ms(), 1_700_000_000_123);
-        assert_eq!(api.timestamp(), 1_700_000_000.123_456_7);
+        assert_eq!(clock.timestamp_us(), 1_700_000_000_123_456);
+        assert_eq!(clock.timestamp_ms(), 1_700_000_000_123);
+        assert_eq!(clock.timestamp(), 1_700_000_000.123_456_7);
         assert_eq!(
-            api.utc_now(),
+            clock.utc_now(),
             DateTime::from_timestamp_nanos(1_700_000_000_123_456_789)
         );
-        assert_eq!(api.timer_names(), vec!["alpha", "beta"]);
-        assert_eq!(api.timer_count(), 2);
-        assert!(api.timer_exists("alpha"));
-        assert!(!api.timer_exists("gamma"));
+        assert_eq!(clock.timer_names(), vec!["alpha", "beta"]);
+        assert_eq!(clock.timer_count(), 2);
+        assert!(clock.timer_exists("alpha"));
+        assert!(!clock.timer_exists("gamma"));
         assert_eq!(
-            api.next_time_ns("alpha"),
+            clock.next_time_ns("alpha"),
             Some(UnixNanos::from(1_700_000_000_999_000_000))
         );
         assert_eq!(
