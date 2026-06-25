@@ -252,6 +252,10 @@ class MyActor(Actor):
         self.log.info(f"Received real-time bar: {bar}")
 ```
 
+When `validate_data_sequence=True`, subscribe to live bars via the `request_bars()`
+`callback` (rather than a separate `subscribe_bars()` call) so the stream starts only
+after history has loaded; see [Working with bars: request vs. subscribe](data.md#working-with-bars-request-vs-subscribe).
+
 Separating historical and real-time handlers lets you apply different processing logic
 based on context. For example:
 
