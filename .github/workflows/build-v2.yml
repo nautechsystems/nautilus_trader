@@ -513,21 +513,21 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
-          pattern: "*.whl"
+          pattern: "nautilus_trader-*.whl"
           merge-multiple: true
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
         uses: ./.github/actions/attest-build-provenance-retry
         with:
-          subject-path: "dist/*.whl"
+          subject-path: "dist/nautilus_trader-*.whl"
 
       - name: Verify wheel attestations
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
           ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
-        run: bash ./scripts/ci/verify-gh-attestations.bash dist/*.whl
+        run: bash ./scripts/ci/verify-gh-attestations.bash dist/nautilus_trader-*.whl
 
       - name: Publish wheels to Cloudflare R2 (v2 bucket)
         uses: ./.github/actions/publish-wheels
@@ -656,24 +656,24 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
-          pattern: "*.whl"
+          pattern: "nautilus_trader-*.whl"
           merge-multiple: true
 
       - name: Generate PyPI publish attestations
-        run: bash ./scripts/ci/sign-pypi-attestations.bash dist/*.whl
+        run: bash ./scripts/ci/sign-pypi-attestations.bash dist/nautilus_trader-*.whl
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
         uses: ./.github/actions/attest-build-provenance-retry
         with:
-          subject-path: "dist/*.whl"
+          subject-path: "dist/nautilus_trader-*.whl"
 
       - name: Verify wheel attestations
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
           ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
-        run: bash ./scripts/ci/verify-gh-attestations.bash dist/*.whl
+        run: bash ./scripts/ci/verify-gh-attestations.bash dist/nautilus_trader-*.whl
 
       - name: Publish wheels to PyPI
         if: success()

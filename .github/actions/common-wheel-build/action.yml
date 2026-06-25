@@ -102,4 +102,4 @@ runs:
       shell: bash
       run: |-
         bash scripts/ci/retry-on-corruption.sh uv sync --all-groups --all-extras --no-install-package nautilus_trader
-        bash scripts/ci/retry-on-corruption.sh uv pip install dist/*.whl
+        bash scripts/ci/retry-on-corruption.sh uv pip install dist/nautilus_trader-*.whl
