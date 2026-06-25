@@ -137,7 +137,7 @@ pub(super) async fn handle_historical_bars_subscription(
     let mut last_disconnection_ns = None;
     // Only stamp last_disconnection_ns after receiving real data, mirroring the Python
     // adapter's _had_ib_connection guard. historical_data_streaming() returns Ok after
-    // sending the request — server-side errors arrive later via subscription.next(). A
+    // sending the request; server-side errors arrive later via subscription.next(). A
     // pre-data startup failure must not cap the warmup window to now.
     let mut had_connection = false;
 

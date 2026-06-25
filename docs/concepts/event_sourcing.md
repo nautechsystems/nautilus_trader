@@ -298,23 +298,23 @@ to the catalog**. Unsupported catalog classes fail loading until replay adds a t
 contract for that class.
 :::
 
-## Data sequence sidecar design
+## Data marker sidecar
 
 :::note
-This section is a design target. Nautilus does not yet implement the sidecar writer, reader, or
-config flag.
+The marker sidecar shipped in `crates/event_store/src/markers/`. It is opt-in via
+`EventStoreConfig.data_markers` (`crates/system/src/event_store.rs`) and stays off by default.
 :::
 
-Exact data delivery order is not inferred from catalog timestamps. The compact sidecar design
-records data markers observed at the message-bus dispatch boundary, beside the event-store run,
-without writing full market-data payloads into `EventStoreEntry` rows.
+Exact data delivery order is not inferred from catalog timestamps. The marker sidecar records
+data observed at the message-bus dispatch boundary, beside the event-store run, without writing
+full market-data payloads into `EventStoreEntry` rows.
 
-The sidecar can support one audit claim: when marker capture is enabled, Nautilus observed data
-delivery markers in `marker_seq` order at the bus boundary for that run, and each marker contains
-enough identity to join back to candidate catalog rows. It cannot prove that catalog timestamps
-alone define bus order, reconstruct a data point when the catalog row is absent or changed, prove
-venue send order before Nautilus observed the message, or say anything about runs where marker
-capture was disabled.
+The sidecar supports one audit claim: when marker capture is enabled, Nautilus observed data
+delivery in `marker_seq` order at the bus boundary for that run, and each marker carries enough
+identity to join back to candidate catalog rows. It cannot prove that catalog timestamps alone
+define bus order, reconstruct a data point when the catalog row is absent or changed, prove venue
+send order before Nautilus observed the message, or say anything about runs where marker capture
+was disabled.
 
 Markers do not consume event-store `seq` values and do not create gaps in the entry table. Each
 marker has its own monotonically increasing `marker_seq` plus `event_seq_before`, the largest
@@ -323,17 +323,17 @@ next event-store entry after a marker from `event_seq_before + 1`; markers that 
 `event_seq_before` are ordered by `marker_seq`. Event-store `seq` remains the replay-order
 authority for state-affecting entries.
 
-The minimal marker fields are:
+The sidecar has two marker kinds:
 
-- `marker_seq`: run-local marker order.
-- `event_seq_before`: nearest prior event-store entry.
-- `topic`: bus topic observed by the tap.
-- `data_cls`: catalog class, such as `quotes`, `trades`, or `bars`.
-- `identifier`: instrument ID for quotes and trades, or bar type for bars.
-- `ts_event` and `ts_init`: catalog row timestamp keys.
-- `same_ts_ordinal`: observed ordinal among markers with the same `data_cls`, `identifier`, and
-  `ts_init`.
-- `record_fingerprint`: fixed-size hash over the canonical typed row fields.
+- **Cursor snapshots** (`DataCursorSnapshot`): the default capture mode. Each snapshot records
+  `marker_seq`, `event_seq_before`, `ts_init`, and the `StreamCursor` entries that advanced since
+  the previous snapshot. A `StreamCursor` carries the stream `slot`, the highest `ts_init` seen
+  in that slot (`ts_init_hi`), and the record `count`. A `StreamDictEntry` maps each `slot` to its
+  `data_cls` (`BookDeltas`, `BookDepth10`, `Quote`, `Trade`, `Bar`) and instrument `identifier`.
+- **High-fidelity markers** (`HiFiMarker`): opt-in per instrument via
+  `DataMarkerConfig.high_fidelity`. Each records `marker_seq`, `event_seq_before`, `slot`,
+  `ts_event`, `ts_init`, `same_ts_ordinal`, and a 32-byte `record_fingerprint` over the canonical
+  typed row fields.
 
 `same_ts_ordinal` and `record_fingerprint` disambiguate duplicate same-timestamp data without
 storing prices, quantities, sizes, or MessagePack payloads. If two catalog rows are byte-identical
@@ -345,10 +345,9 @@ The stable contract is the marker schema, opt-in capture and reader primitives, 
 verification, and catalog join rules. Analysis tools can build on that contract to select windows,
 interpret venue-specific data, rank or cluster markers, present reports, and package run bundles.
 
-The sidecar stays off by default when implemented. A separate config flag enables marker capture,
-and the disabled path installs no data marker writer. Cache replay and live restart do not read
-this sidecar: snapshot-tail replay still applies event-store entries in `seq` order, and live
-restart still boots from cache-owned state plus the event-store parent link.
+With marker capture disabled, no data marker writer is installed. Cache replay and live restart do
+not read this sidecar: snapshot-tail replay still applies event-store entries in `seq` order, and
+live restart still boots from cache-owned state plus the event-store parent link.
 
 These APIs **do not**:
 
