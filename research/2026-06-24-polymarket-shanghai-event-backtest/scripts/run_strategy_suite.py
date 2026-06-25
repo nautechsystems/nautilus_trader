@@ -116,12 +116,16 @@ def main() -> None:
             "gross_notional",
             "settlement_pnl",
             "return_on_gross_notional",
-            "bbo_group_mismatch_count",
-            "bbo_group_compared",
+            "snapshot_pairs",
+            "snapshot_bbo_mismatches",
+            "snapshot_bbo_mismatch_rate",
+            "trades_checked",
+            "trades_off_book",
+            "trade_off_book_rate",
+            "trade_side_touch_rate",
             "summary_json",
             "result_label",
             "results_validated",
-            "bbo_group_mismatch_rate",
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -139,12 +143,20 @@ def main() -> None:
                 "gross_notional": summary["backtest"]["gross_notional"],
                 "settlement_pnl": summary["backtest"]["settlement_pnl"],
                 "return_on_gross_notional": summary["backtest"]["return_on_gross_notional"],
-                "bbo_group_mismatch_count": summary["replay_quality"]["bbo_group_mismatch_count"],
-                "bbo_group_compared": summary["replay_quality"]["bbo_group_compared"],
+                "snapshot_pairs": summary["replay_quality"]["snapshot_alignment"]["snapshot_pairs"],
+                "snapshot_bbo_mismatches": summary["replay_quality"]["snapshot_alignment"][
+                    "snapshot_bbo_mismatches"
+                ],
+                "snapshot_bbo_mismatch_rate": summary["replay_quality"]["snapshot_alignment"][
+                    "snapshot_bbo_mismatch_rate"
+                ],
+                "trades_checked": summary["replay_quality"]["trade_sanity"]["trades_checked"],
+                "trades_off_book": summary["replay_quality"]["trade_sanity"]["trades_off_book"],
+                "trade_off_book_rate": summary["replay_quality"]["trade_sanity"]["trade_off_book_rate"],
+                "trade_side_touch_rate": summary["replay_quality"]["trade_sanity"]["trade_side_touch_rate"],
                 "summary_json": summary["outputs"]["summary_json"],
                 "result_label": summary["replay_quality"]["result_label"],
                 "results_validated": summary["replay_quality"]["results_validated"],
-                "bbo_group_mismatch_rate": summary["replay_quality"]["bbo_group_mismatch_rate"],
             }
             writer.writerow(row)
 

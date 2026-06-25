@@ -30,11 +30,33 @@
     "tick_size_change_events": 1,
     "replay_events_after_initial_book": 333976,
     "skipped_before_initial_book": 525,
-    "bbo_row_mismatch_count": 41350,
-    "bbo_group_compared": 150787,
-    "bbo_group_mismatch_count": 11891,
-    "bbo_group_mismatch_rate": 0.07885958338583565,
-    "bbo_mismatch_warn_threshold": 0.01,
+    "pmxt_derived_bbo_diagnostic": {
+      "note": "PMXT row best_bid/best_ask is treated as a stale/derived diagnostic field, not replay ground truth.",
+      "bbo_row_mismatch_count": 41350,
+      "bbo_mismatch_warn_threshold": 0.01
+    },
+    "snapshot_alignment": {
+      "snapshot_pairs": 1274,
+      "snapshot_bbo_mismatches": 386,
+      "snapshot_bbo_mismatch_rate": 0.3029827315541601,
+      "snapshot_full_book_mismatches": 1095,
+      "snapshot_full_book_mismatch_rate": 0.859497645211931,
+      "snapshot_bbo_mismatch_warn_threshold": 0.01
+    },
+    "book_sanity": {
+      "crossed_or_locked_books": 5048,
+      "negative_spread_samples": 2093
+    },
+    "trade_sanity": {
+      "trades_checked": 607,
+      "trades_without_book": 10,
+      "trades_inside_or_at_book": 539,
+      "trades_side_touch": 387,
+      "trades_off_book": 68,
+      "trade_off_book_rate": 0.11202635914332784,
+      "trade_side_touch_rate": 0.6375617792421746,
+      "trade_off_book_warn_threshold": 0.2
+    },
     "results_validated": false,
     "result_label": "smoke_test_unvalidated"
   },

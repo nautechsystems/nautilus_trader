@@ -9,7 +9,7 @@ This is intentionally a small research harness, not a production engine:
 - reads the event_index + gamma raw metadata;
 - reads the curated PMXT orderbook parquet;
 - rebuilds one selected token's L2 book from book + price_change events;
-- validates replayed BBO against PMXT best_bid/best_ask fields;
+- checks snapshot-to-snapshot replay alignment and trade-vs-book sanity;
 - simulates one simple strategy/fill model;
 - writes small JSON/CSV outputs for inspection.
 """
@@ -39,6 +39,9 @@ POLYREAPER_CURATED_ROOT = Path("C:/Projects/PolyReaper/data/curated/polymarket/e
 DEFAULT_CURATED_ROOT = LOCAL_CURATED_ROOT if LOCAL_CURATED_ROOT.exists() else POLYREAPER_CURATED_ROOT
 DEFAULT_OUT_DIR = ROOT / "research" / "2026-06-24-polymarket-shanghai-event-backtest" / "data"
 BBO_MISMATCH_WARN_THRESHOLD = 0.01
+SNAPSHOT_BBO_MISMATCH_WARN_THRESHOLD = 0.01
+TRADE_OFF_BOOK_WARN_THRESHOLD = 0.20
+PRICE_EPSILON = 1e-9
 
 
 @dataclass(frozen=True)
@@ -223,6 +226,33 @@ def update_level(levels: dict[float, float], price: float, size: float) -> None:
         levels[price] = size
 
 
+def books_equal(left: dict[float, float], right: dict[float, float]) -> bool:
+    if left.keys() != right.keys():
+        return False
+    return all(abs(left[price] - right[price]) <= PRICE_EPSILON for price in left)
+
+
+def bbo_equal(left: tuple[float | None, float | None], right: tuple[float | None, float | None]) -> bool:
+    return all(
+        (a is None and b is None) or (a is not None and b is not None and abs(a - b) <= PRICE_EPSILON)
+        for a, b in zip(left, right, strict=True)
+    )
+
+
+def update_book_from_price_change(
+    bids: dict[float, float],
+    asks: dict[float, float],
+    *,
+    price: float,
+    size: float,
+    side: str,
+) -> None:
+    if side == "BUY":
+        update_level(bids, price, size)
+    elif side == "SELL":
+        update_level(asks, price, size)
+
+
 def append_fill(
     fills: list[dict[str, Any]],
     *,
@@ -292,71 +322,6 @@ def fill_decision(
     return None, 0.0, 0.0
 
 
-def count_grouped_bbo_mismatches(df: pd.DataFrame) -> tuple[int, int]:
-    """Compare PMXT BBO after applying all rows with the same receive timestamp.
-
-    PMXT price_change rows often arrive as small batches sharing the same
-    timestamp_received. A row-by-row comparison can over-count mismatches when
-    best_bid/best_ask describe the post-batch book. This grouped check is the
-    replay-quality metric used for the report.
-    """
-
-    bids: dict[float, float] = {}
-    asks: dict[float, float] = {}
-    initialized = False
-    current_ts: Any = None
-    expected_bid: float | None = None
-    expected_ask: float | None = None
-    compared = 0
-    mismatches = 0
-
-    def close_group() -> None:
-        nonlocal compared, mismatches
-        if not initialized or expected_bid is None or expected_ask is None:
-            return
-        best_bid, best_ask = best_bid_ask(bids, asks)
-        compared += 1
-        if best_bid is None or best_ask is None:
-            mismatches += 1
-            return
-        if abs(best_bid - expected_bid) > 1e-9 or abs(best_ask - expected_ask) > 1e-9:
-            mismatches += 1
-
-    for row in df.itertuples(index=False):
-        ts = row.timestamp_received
-        if current_ts is None:
-            current_ts = ts
-        elif ts != current_ts:
-            close_group()
-            current_ts = ts
-            expected_bid = None
-            expected_ask = None
-
-        event_type = row.event_type
-        if event_type == "book":
-            bids = parse_levels(row.bids)
-            asks = parse_levels(row.asks)
-            initialized = True
-        elif event_type == "price_change" and initialized:
-            price = as_float(row.price)
-            size = as_float(row.size)
-            if price is None or size is None:
-                continue
-            side = str(row.side).upper()
-            if side == "BUY":
-                update_level(bids, price, size)
-            elif side == "SELL":
-                update_level(asks, price, size)
-            pmxt_bid = as_float(getattr(row, "best_bid", None))
-            pmxt_ask = as_float(getattr(row, "best_ask", None))
-            if pmxt_bid is not None and pmxt_ask is not None:
-                expected_bid = pmxt_bid
-                expected_ask = pmxt_ask
-
-    close_group()
-    return compared, mismatches
-
-
 def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     if args.quote_size <= 0:
         raise SystemExit("--quote-size must be > 0")
@@ -421,16 +386,37 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     price_change_events = 0
     trade_events = 0
     tick_events = 0
+    snapshot_pairs = 0
+    snapshot_bbo_mismatches = 0
+    snapshot_full_book_mismatches = 0
+    crossed_or_locked_books = 0
+    negative_spread_samples = 0
+    trades_checked = 0
+    trades_without_book = 0
+    trades_inside_or_at_book = 0
+    trades_side_touch = 0
+    trades_off_book = 0
 
     for row in df.itertuples(index=False):
         event_type = row.event_type
         ts = row.timestamp_received
 
         if event_type == "book":
-            bids = parse_levels(row.bids)
-            asks = parse_levels(row.asks)
+            next_bids = parse_levels(row.bids)
+            next_asks = parse_levels(row.asks)
+            if initialized:
+                snapshot_pairs += 1
+                if not bbo_equal(best_bid_ask(bids, asks), best_bid_ask(next_bids, next_asks)):
+                    snapshot_bbo_mismatches += 1
+                if not books_equal(bids, next_bids) or not books_equal(asks, next_asks):
+                    snapshot_full_book_mismatches += 1
+            bids = next_bids
+            asks = next_asks
             initialized = True
             book_events += 1
+            best_bid, best_ask = best_bid_ask(bids, asks)
+            if best_bid is not None and best_ask is not None and best_bid >= best_ask:
+                crossed_or_locked_books += 1
         elif event_type == "price_change":
             price_change_events += 1
             if not initialized:
@@ -441,19 +427,31 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
             side = str(row.side).upper()
             if price is None or size is None:
                 continue
-            if side == "BUY":
-                update_level(bids, price, size)
-            elif side == "SELL":
-                update_level(asks, price, size)
+            update_book_from_price_change(bids, asks, price=price, size=size, side=side)
         elif event_type == "last_trade_price":
             trade_events += 1
             if not initialized:
+                trades_without_book += 1
                 skipped_before_book += 1
                 continue
             trade_price = as_float(row.price)
             trade_size = as_float(row.size)
             if trade_price is None or trade_size is None:
                 continue
+            current_bid, current_ask = best_bid_ask(bids, asks)
+            if current_bid is None or current_ask is None:
+                trades_without_book += 1
+            else:
+                trades_checked += 1
+                if current_bid - PRICE_EPSILON <= trade_price <= current_ask + PRICE_EPSILON:
+                    trades_inside_or_at_book += 1
+                else:
+                    trades_off_book += 1
+                trade_side = str(row.side).upper()
+                if trade_side == "BUY" and abs(trade_price - current_ask) <= PRICE_EPSILON:
+                    trades_side_touch += 1
+                elif trade_side == "SELL" and abs(trade_price - current_bid) <= PRICE_EPSILON:
+                    trades_side_touch += 1
             if args.strategy != "maker_bbo":
                 continue
             fill_side, fill_qty, fill_price = fill_decision(
@@ -553,6 +551,11 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
                 bbo_row_mismatch += 1
             elif abs(best_bid - pmxt_bid) > 1e-9 or abs(best_ask - pmxt_ask) > 1e-9:
                 bbo_row_mismatch += 1
+        if event_type == "price_change" and best_bid is not None and best_ask is not None:
+            if best_bid >= best_ask:
+                crossed_or_locked_books += 1
+            if best_ask - best_bid < -PRICE_EPSILON:
+                negative_spread_samples += 1
 
         if event_type in {"book", "price_change", "tick_size_change"}:
             mid = None if best_bid is None or best_ask is None else (best_bid + best_ask) / 2
@@ -702,13 +705,23 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     buy_qty = sum(f["quantity"] for f in fills if f["fill_side"] == "BUY")
     sell_qty = sum(f["quantity"] for f in fills if f["fill_side"] == "SELL")
     gross_notional = sum(f["quantity"] * f["price"] for f in fills)
-    bbo_group_compared, bbo_group_mismatch = count_grouped_bbo_mismatches(df)
-    bbo_group_mismatch_rate = None
-    if bbo_group_compared:
-        bbo_group_mismatch_rate = bbo_group_mismatch / bbo_group_compared
+    snapshot_bbo_mismatch_rate = None
+    if snapshot_pairs:
+        snapshot_bbo_mismatch_rate = snapshot_bbo_mismatches / snapshot_pairs
+    snapshot_full_book_mismatch_rate = None
+    if snapshot_pairs:
+        snapshot_full_book_mismatch_rate = snapshot_full_book_mismatches / snapshot_pairs
+    trade_off_book_rate = None
+    if trades_checked:
+        trade_off_book_rate = trades_off_book / trades_checked
+    trade_side_touch_rate = None
+    if trades_checked:
+        trade_side_touch_rate = trades_side_touch / trades_checked
     results_validated = (
-        bbo_group_mismatch_rate is not None
-        and bbo_group_mismatch_rate <= BBO_MISMATCH_WARN_THRESHOLD
+        snapshot_bbo_mismatch_rate is not None
+        and snapshot_bbo_mismatch_rate <= SNAPSHOT_BBO_MISMATCH_WARN_THRESHOLD
+        and trade_off_book_rate is not None
+        and trade_off_book_rate <= TRADE_OFF_BOOK_WARN_THRESHOLD
     )
     summary = {
         "selection": {
@@ -744,11 +757,33 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
             "tick_size_change_events": tick_events,
             "replay_events_after_initial_book": replay_events,
             "skipped_before_initial_book": skipped_before_book,
-            "bbo_row_mismatch_count": bbo_row_mismatch,
-            "bbo_group_compared": bbo_group_compared,
-            "bbo_group_mismatch_count": bbo_group_mismatch,
-            "bbo_group_mismatch_rate": bbo_group_mismatch_rate,
-            "bbo_mismatch_warn_threshold": BBO_MISMATCH_WARN_THRESHOLD,
+            "pmxt_derived_bbo_diagnostic": {
+                "note": "PMXT row best_bid/best_ask is treated as a stale/derived diagnostic field, not replay ground truth.",
+                "bbo_row_mismatch_count": bbo_row_mismatch,
+                "bbo_mismatch_warn_threshold": BBO_MISMATCH_WARN_THRESHOLD,
+            },
+            "snapshot_alignment": {
+                "snapshot_pairs": snapshot_pairs,
+                "snapshot_bbo_mismatches": snapshot_bbo_mismatches,
+                "snapshot_bbo_mismatch_rate": snapshot_bbo_mismatch_rate,
+                "snapshot_full_book_mismatches": snapshot_full_book_mismatches,
+                "snapshot_full_book_mismatch_rate": snapshot_full_book_mismatch_rate,
+                "snapshot_bbo_mismatch_warn_threshold": SNAPSHOT_BBO_MISMATCH_WARN_THRESHOLD,
+            },
+            "book_sanity": {
+                "crossed_or_locked_books": crossed_or_locked_books,
+                "negative_spread_samples": negative_spread_samples,
+            },
+            "trade_sanity": {
+                "trades_checked": trades_checked,
+                "trades_without_book": trades_without_book,
+                "trades_inside_or_at_book": trades_inside_or_at_book,
+                "trades_side_touch": trades_side_touch,
+                "trades_off_book": trades_off_book,
+                "trade_off_book_rate": trade_off_book_rate,
+                "trade_side_touch_rate": trade_side_touch_rate,
+                "trade_off_book_warn_threshold": TRADE_OFF_BOOK_WARN_THRESHOLD,
+            },
             "results_validated": results_validated,
             "result_label": "validated_baseline" if results_validated else "smoke_test_unvalidated",
         },

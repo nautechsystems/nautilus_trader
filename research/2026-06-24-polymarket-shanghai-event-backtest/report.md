@@ -1,17 +1,31 @@
 # Polymarket 上海温度事件回测 smoke-test 报告
 
-日期：2026-06-24
+更新：2026-06-25
 
-## 1. 这次做了什么
+## 1. 这次验证重点
 
-在 `nautilus_trader` 仓库下建立一个轻量研究目录，用瘦身后的 PMXT event parquet 先跑通事件级 replay 和几个 baseline 策略形态：
+这次不再把 PMXT 行内 `best_bid` / `best_ask` 当作 replay ground truth。更合理的判断是：
+
+- `book` snapshot 和 `price_change` 才是盘口事件事实；
+- 行内 `best_bid` / `best_ask` 更像 PMXT 额外附带的派生字段，可能 stale、批量更新或刷新较慢；
+- 因此它只能作为 diagnostic，不能直接判定本地 L2 replay 错。
+
+当前更重要的校验变成两件事：
+
+1. **snapshot-to-snapshot replay alignment**  
+   从一个 `book` snapshot 开始应用后续 `price_change`，到下一次 `book` snapshot 前，看本地 replay 出来的盘口是否能和下一次 snapshot 对齐。
+
+2. **trade vs book sanity**  
+   对每条 `last_trade_price`，看实际成交价是否能被当时本地 L2 book 解释：是否落在 bid/ask 区间内，是否按 side 打到 touch。
+
+## 2. 当前目录组织
 
 ```text
 research/2026-06-24-polymarket-shanghai-event-backtest/
+├── suite_manifest.json
 ├── scripts/
 │   ├── run_event_backtest.py
 │   └── run_strategy_suite.py
-├── suite_manifest.json
 ├── data/
 │   ├── strategy_suite_summary.csv
 │   └── <event>__<market>__<side>__<strategy>__<params>/
@@ -21,87 +35,37 @@ research/2026-06-24-polymarket-shanghai-event-backtest/
 └── report.md
 ```
 
-这还不是正式 NautilusTrader adapter，也还不是已验证的策略收益报告，而是 adapter 前的 smoke-test 层：先确认 PMXT 数据能被读取、replay、产出 fills / BBO / summary，同时把 replay mismatch 明确暴露出来。
+批量入口：
 
-## 2. 输入数据
-
-当前脚本优先读取本仓库下：
-
-```text
-data/curated/polymarket/events/
+```powershell
+python research\2026-06-24-polymarket-shanghai-event-backtest\scripts\run_strategy_suite.py
 ```
 
-如果本仓库没有复制 parquet，则临时读取本机已有：
+事件、market、side、策略和默认参数放在：
 
 ```text
-C:/Projects/PolyReaper/data/curated/polymarket/events/
+suite_manifest.json
 ```
 
-本次跑了两个已结算事件：
+## 3. 跑了哪些样本
 
 | event | market | token | 结算 |
 | --- | --- | --- | --- |
 | `highest-temperature-in-shanghai-on-june-9-2026` | `25°C` | YES | 1.0 |
 | `highest-temperature-in-shanghai-on-june-10-2026` | `28°C` | YES | 1.0 |
 
-## 3. 策略组织方式
+策略形态：
 
-目前每个策略都是同一个 replay 引擎上的一个 `--strategy`：
-
-```powershell
-python research\2026-06-24-polymarket-shanghai-event-backtest\scripts\run_event_backtest.py --strategy maker_bbo
-```
-
-批量跑 suite。事件、market、side、策略和默认参数放在 `suite_manifest.json`，后续扩展优先改 manifest，不改 Python 常量：
-
-```powershell
-python research\2026-06-24-polymarket-shanghai-event-backtest\scripts\run_strategy_suite.py
-```
-
-如需显式指定数据根目录：
-
-```powershell
-python research\2026-06-24-polymarket-shanghai-event-backtest\scripts\run_strategy_suite.py --curated-root C:\path\to\events
-```
-
-建议后续继续沿用这个组织方式：
-
-1. `run_event_backtest.py` 保持为单 event / 单 token / 单 strategy 的可复现入口；
-2. `suite_manifest.json` 负责声明 event、market、side、strategy、默认参数；
-3. `run_strategy_suite.py` 负责读取 manifest 并批量执行；
-4. 每个 run 输出到独立参数化子目录，避免同一策略不同参数互相覆盖；
-5. 每个 run 目录内包含 `summary.json`、`fills.csv`、`bbo_5min.csv`；
-6. suite 聚合成 `strategy_suite_summary.csv`；
-7. 后续接 NautilusTrader 时，把这些策略迁移成正式 Strategy / Actor，把现在的 replay 与 fill model 迁移成 adapter / data catalog / execution model。
-
-## 4. 本次 baseline 策略
-
-| strategy | 含义 | 主要假设 |
+| strategy | 含义 | 主要用途 |
 | --- | --- | --- |
-| `maker_bbo` | 持续在当前 best bid / best ask 两边挂单，用 `last_trade_price` 判断是否被打到 | 保守 maker fill；不估 queue ahead |
-| `buy_hold_first_ask` | 第一次看到有效 ask 时买入 10 份并持有到结算 | 用于验证结算、PnL、路径读取 |
-| `momentum_taker` | 每 5 分钟看 mid 变化，涨超 0.03 买，跌超 0.03 卖 | 假设可在 BBO 顶层立即成交 |
-| `contrarian_taker` | momentum 的反向版本 | 同上 |
+| `maker_bbo` | 在 replay BBO 两边挂单，用 trade print 判断是否被打到 | 测 maker fill plumbing |
+| `buy_hold_first_ask` | 第一次看到有效 ask 后买入并持有到结算 | 测结算/PnL sanity |
+| `momentum_taker` | 每 5 分钟看 mid 变化，顺势吃单 | 测 taker 策略路径 |
+| `contrarian_taker` | momentum 的反向版本 | 测反向策略路径 |
 
-所有策略暂不建模：
+这些不是策略收益结论，只是 smoke-test。
 
-- taker delay；
-- latency；
-- partial fill；
-- queue priority / queue ahead；
-- fee / reward / rebate；
-- event-level negRisk / combo 约束。
-
-## 5. 结果摘要
-
-注意：因为 BBO replay mismatch 仍高于 1% 阈值，当前所有结果在 JSON/CSV 中都标记为：
-
-```text
-result_label = smoke_test_unvalidated
-results_validated = false
-```
-
-所以下表只能说明 pipeline 能跑、PnL 归因能落盘，不能作为策略有效性的结论。
+## 4. 新的 replay quality 指标
 
 输出聚合文件：
 
@@ -109,11 +73,37 @@ results_validated = false
 research/2026-06-24-polymarket-shanghai-event-backtest/data/strategy_suite_summary.csv
 ```
 
-每个 run 的明细输出在参数化子目录里，例如：
+关键 replay 指标如下。四个策略共享同一 event/token 的 replay quality，所以同一个 event 下四行指标相同。
+
+| event | snapshot BBO mismatch | trade off-book | trade side-touch | 当前判断 |
+| --- | ---: | ---: | ---: | --- |
+| Jun 9 / 25°C YES | 30.30% | 11.20% | 63.76% | smoke-test, unvalidated |
+| Jun 10 / 28°C YES | 25.53% | 6.14% | 79.36% | smoke-test, unvalidated |
+
+解释：
+
+- **snapshot BBO mismatch**：从上一个 `book` snapshot replay 到下一个 `book` snapshot 时，本地 BBO 和下一次 snapshot BBO 不一致的比例。
+- **trade off-book**：成交价不在当前本地 bid/ask 区间内的比例。
+- **trade side-touch**：如果 side=BUY，成交价是否等于当时 ask；如果 side=SELL，成交价是否等于当时 bid。
+
+## 5. 现在怎么看结果
+
+当前所有结果仍标记为：
 
 ```text
-research/2026-06-24-polymarket-shanghai-event-backtest/data/highest-temperature-in-shanghai-on-june-9-2026__25degC__yes__maker_bbo__fillconservative__q10__max100__freq5min__thr0p03/
+result_label = smoke_test_unvalidated
+results_validated = false
 ```
+
+原因已经不是“PMXT 行内 BBO 对不上”，而是：
+
+1. snapshot-to-snapshot 对齐率还不够好；
+2. replay 过程中仍出现 crossed/locked book 或 negative spread；
+3. 一部分 trade print 不能被当前本地 book 直接解释。
+
+这说明第一阶段 plumbing 能跑通，但正式回测前还需要继续确认 PMXT delta 语义。
+
+## 6. 结果表
 
 | event | market | strategy | fills | ending inventory | gross notional | settlement PnL | label |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
@@ -126,38 +116,20 @@ research/2026-06-24-polymarket-shanghai-event-backtest/data/highest-temperature-
 | Jun 10 | 28°C YES | `momentum_taker` | 24 | 100.00 | 127.1000 | 35.9000 | smoke-test |
 | Jun 10 | 28°C YES | `contrarian_taker` | 24 | -100.00 | 125.0000 | -45.0000 | smoke-test |
 
-尤其 `buy_hold_first_ask` 因为选的是事后已知 winner，只是 sanity check，不是可交易策略。
+尤其 `buy_hold_first_ask` 选的是事后已知 winner，只是 sanity check，不是可交易策略。
 
-## 6. Replay 质量观察
-
-两份 event 都能完成 L2 replay，但本地重建 BBO 与 PMXT 行内 `best_bid` / `best_ask` 不完全一致。
-
-脚本保留两个口径：
-
-1. row-level：每条 `price_change` 后立刻对比 BBO；
-2. grouped：把相同 `timestamp_received` 视为一个小批次，批量应用后对比最后一条 BBO。
-
-grouped mismatch 明显低于 row-level mismatch，说明 PMXT `best_bid` / `best_ask` 可能更接近批次后状态，不能简单按单行事件顺序解释。但 grouped mismatch 仍然存在，并且超过当前脚本的 1% warning threshold，所以输出被标记为 `smoke_test_unvalidated`。
-
-## 7. 下一步建议
+## 7. 下一步
 
 P0：
 
-- 固化 replay consistency check；
-- 把策略 suite 的 event/market/strategy 配置挪成 YAML/JSON；
-- 明确 PMXT `price_change.size`、`book` snapshot reset、`timestamp` vs `timestamp_received` 的处理规则；
-- 将 single-token PnL 扩展成 event-level accounting。
+- 继续查 `price_change.side` 和 `price_change.size` 的语义；
+- 针对 snapshot mismatch 抽样输出 diff，看是 top-of-book 错、某些 level 漏删，还是 snapshot 本身不是完整 book；
+- 检查 `timestamp` vs `timestamp_received` 排序；
+- 对 trade off-book 样本做明细抽查：trade 是发生在更新前、更新后，还是 Polymarket delay / batch 造成的可解释偏差。
 
 P1：
 
-- 接 NautilusTrader catalog / custom data；
-- 实现 Polymarket instrument / order book / fill model adapter；
-- 把 taker delay、partial fill、queue ahead 做成 sensitivity 参数；
-- 加 fee / reward / rebate / settlement 数据。
-
-P2：
-
-- 批量跑更多 event；
-- 加策略参数 sweep；
-- 加报告自动生成；
-- 接 live/paper 数据做 PMXT 外部数据 cross-check。
+- 把 validation 输出扩展成可读的 sample CSV；
+- 做 event-level accounting，而不是只跑单 token；
+- 加 taker delay、partial fill、queue-ahead sensitivity；
+- 再接 NautilusTrader catalog / custom data。
